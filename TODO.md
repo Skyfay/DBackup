@@ -50,6 +50,9 @@
     - [x] List all backup jobs
     - [x] Job Editor (Select Source, Destination, Schedule)
     - [x] Manual Trigger Button
+- [x] **Theme Support**
+    - [x] Dark / Light / System Mode
+    - [x] Auto-detection & Settings Toggle
 - [x] **History & Logs**
     - [x] List past executions
     - [x] View detailed logs per execution

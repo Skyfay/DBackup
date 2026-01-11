@@ -84,37 +84,64 @@ export const MySQLAdapter: DatabaseAdapter = {
             const creationUser = usePrivileged ? config.privilegedAuth.user : config.user;
             const creationPass = usePrivileged ? config.privilegedAuth.password : config.password;
 
-            // Ensure database exists before restoring
-            const createCmd = `mysql -h ${config.host} -P ${config.port} -u ${creationUser} --protocol=tcp ${creationPass ? `-p"${creationPass}"` : ''} -e 'CREATE DATABASE IF NOT EXISTS \`${config.database}\`'`;
+            // Handle multiple databases (check if array or comma string)
+            let dbs: string[] = [];
+            if (Array.isArray(config.database)) {
+                dbs = config.database;
+            } else if (typeof config.database === 'string') {
+                dbs = config.database.split(',').map((s: string) => s.trim());
+            } else if (config.database) {
+                dbs = [String(config.database)];
+            }
 
-            try {
-                // Log simplified command to hide password
-                logs.push(`Attempting to ensure database '${config.database}' exists (User: ${creationUser})...`);
-                await execAsync(createCmd);
-                logs.push(`Database '${config.database}' ensured successfully.`);
+            const isMultiDb = dbs.length > 1;
 
-                // If we used a privileged user, we MUST grant permissions to the original user
-                if (usePrivileged) {
-                    logs.push(`Granting permissions to '${config.user}'...`);
-                    // Grant for local and wildcard host to be safe
-                    // Escaping backticks with backslash to prevent shell execution
-                    const grantCmd = `mysql -h ${config.host} -P ${config.port} -u ${creationUser} --protocol=tcp ${creationPass ? `-p"${creationPass}"` : ''} -e "GRANT ALL PRIVILEGES ON \\\`${config.database}\\\`.* TO '${config.user}'@'%'; GRANT ALL PRIVILEGES ON \\\`${config.database}\\\`.* TO '${config.user}'@'localhost'; FLUSH PRIVILEGES;"`;
-                     // We ignore errors on the second grant if one succeeds, but simple execution is fine.
-                     // It might fail if user doesn't exist for that host, but we try both.
-                    try {
-                         await execAsync(grantCmd);
-                         logs.push(`Permissions granted to '${config.user}'.`);
-                    } catch (grantErr: any) {
-                         logs.push(`Warning: Failed to grant permissions: ${grantErr.message}`);
+            if (isMultiDb) {
+                 logs.push(`Multi-database restore detected (${dbs.join(', ')}). Skipping explicit CREATE DATABASE check (assuming dump handles it).`);
+                 // If using privileged user, we try to grant permissions for ALL databases
+                 if (usePrivileged) {
+                    for (const dbName of dbs) {
+                        try {
+                             logs.push(`Granting permissions for '${dbName}'...`);
+                             const grantCmd = `mysql -h ${config.host} -P ${config.port} -u ${creationUser} --protocol=tcp ${creationPass ? `-p"${creationPass}"` : ''} -e "GRANT ALL PRIVILEGES ON \\\`${dbName}\\\`.* TO '${config.user}'@'%'; GRANT ALL PRIVILEGES ON \\\`${dbName}\\\`.* TO '${config.user}'@'localhost'; FLUSH PRIVILEGES;"`;
+                             await execAsync(grantCmd);
+                             logs.push(`Permissions granted for '${dbName}'.`);
+                        } catch (grantErr: any) {
+                             logs.push(`Warning: Failed to grant permissions for '${dbName}': ${grantErr.message}`);
+                        }
                     }
-                }
+                 }
+            } else {
+                // SINGLE DB Logic: Ensure database exists before restoring
+                const createCmd = `mysql -h ${config.host} -P ${config.port} -u ${creationUser} --protocol=tcp ${creationPass ? `-p"${creationPass}"` : ''} -e 'CREATE DATABASE IF NOT EXISTS \`${config.database}\`'`;
 
-            } catch (e: any) {
-                // Try to extract the specific MySQL error message
-                const msg = e.message || "";
-                const match = msg.match(/ERROR \d+.*$/m);
-                const cleanError = match ? match[0] : msg;
-                logs.push(`Warning: Failed to create/ensure database '${config.database}': ${cleanError}`);
+                try {
+                    // Log simplified command to hide password
+                    logs.push(`Attempting to ensure database '${config.database}' exists (User: ${creationUser})...`);
+                    await execAsync(createCmd);
+                    logs.push(`Database '${config.database}' ensured successfully.`);
+
+                    // If we used a privileged user, we MUST grant permissions to the original user
+                    if (usePrivileged) {
+                        logs.push(`Granting permissions to '${config.user}'...`);
+                        // Grant for local and wildcard host to be safe
+                        // Escaping backticks with backslash to prevent shell execution
+                        const grantCmd = `mysql -h ${config.host} -P ${config.port} -u ${creationUser} --protocol=tcp ${creationPass ? `-p"${creationPass}"` : ''} -e "GRANT ALL PRIVILEGES ON \\\`${config.database}\\\`.* TO '${config.user}'@'%'; GRANT ALL PRIVILEGES ON \\\`${config.database}\\\`.* TO '${config.user}'@'localhost'; FLUSH PRIVILEGES;"`;
+                        try {
+                            await execAsync(grantCmd);
+                            logs.push(`Permissions granted to '${config.user}'.`);
+                        } catch (grantErr: any) {
+                            logs.push(`Warning: Failed to grant permissions: ${grantErr.message}`);
+                        }
+                    }
+
+                } catch (e: any) {
+                    // Try to extract the specific MySQL error message
+                    const msg = e.message || "";
+                    const match = msg.match(/ERROR \d+.*$/m);
+                    const cleanError = match ? match[0] : msg;
+                    logs.push(`Warning: Failed to create/ensure database '${config.database}': ${cleanError}`);
+                }
             }
 
              // Add --protocol=tcp to avoid socket issues on localhost
@@ -124,7 +151,12 @@ export const MySQLAdapter: DatabaseAdapter = {
                 command += ` -p"${config.password}"`;
             }
 
-            command += ` ${config.database} < "${sourcePath}"`;
+            // Only append database name if it's a single DB restore
+            if (!isMultiDb) {
+                command += ` ${config.database}`;
+            }
+
+            command += ` < "${sourcePath}"`;
 
             logs.push(`Executing restore command: ${command.replace(/-p"[^"]*"/, '-p"*****"')}`);
 

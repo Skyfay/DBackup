@@ -132,7 +132,7 @@ export default function StoragePage() {
         setRestoring(true);
         // Don't clear logs immediately if retrying, but here we probably want to to show fresh attempt
         setRestoreLogs(null);
-        
+
         try {
             const payload: any = {
                  file: restoreFile.path,
@@ -354,9 +354,9 @@ export default function StoragePage() {
                                                 <Input type="password" value={privPass} onChange={e => setPrivPass(e.target.value)} placeholder="Secret" />
                                             </div>
                                         </div>
-                                        <Button 
-                                            size="sm" 
-                                            className="w-full" 
+                                        <Button
+                                            size="sm"
+                                            className="w-full"
                                             onClick={() => confirmRestore(true)}
                                             disabled={restoring}
                                         >

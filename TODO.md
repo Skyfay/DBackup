@@ -60,13 +60,21 @@
     - [x] View detailed logs per execution
     - [ ] Download backup artifact (if local/accessible)
 - [ ] **Storage Explorer & Restore**
-    - [ ] List backups per Destination
-    - [ ] Download backup artifacts
-    - [ ] Restore workflow (Select Source, Type-Check, Rename)
-    - [ ] Filtering (Size, Source, Job)
+    - [x] List backups per Destination
+    - [x] Download backup artifacts
+    - [x] Restore workflow (Select Source, Type-Check, Rename)
+    - [x] Filtering (Size, Source, Job)
 - [ ] **Dashboard Home**
     - [ ] Real statistics (Success rate, Total size)
     - [ ] Recent activity feed
+
+## 🛠 Database Management & Playground
+- [ ] **Direct SQL Execution**
+    - [ ] Connect directly to database sources
+    - [ ] Execute custom SQL queries
+- [ ] **Query Library**
+    - [ ] Library of standard commands (User permission management, Create DB, etc.)
+    - [ ] Simple UI integration for common administrative tasks
 
 ## ⚙️ Backend Engine
 - [x] **Backup Runner**

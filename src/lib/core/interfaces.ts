@@ -47,6 +47,11 @@ export interface DatabaseAdapter extends BaseAdapter {
      * @param sourcePath The path to the dump file
      */
     restore(config: any, sourcePath: string): Promise<BackupResult>;
+
+    /**
+     * Optional method to analyze a dump file and return contained databases
+     */
+    analyzeDump?: (sourcePath: string) => Promise<string[]>;
 }
 
 export type FileInfo = {

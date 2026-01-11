@@ -69,9 +69,47 @@ export default function StoragePage() {
     const [privUser, setPrivUser] = useState("root");
     const [privPass, setPrivPass] = useState("");
 
+    // Advanced Restore State
+    const [analyzedDbs, setAnalyzedDbs] = useState<string[]>([]);
+    const [dbConfig, setDbConfig] = useState<{ id: string, name: string, targetName: string, selected: boolean }[]>([]);
+
     useEffect(() => {
         fetchAdapters();
     }, []);
+
+    useEffect(() => {
+        if (restoreFile) {
+            analyzeBackup(restoreFile);
+        }
+    }, [restoreFile]);
+
+    const analyzeBackup = async (file: FileInfo) => {
+        try {
+            const res = await fetch(`/api/storage/${selectedDestination}/analyze`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ file: file.path })
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                if (data.databases && data.databases.length > 0) {
+                    setAnalyzedDbs(data.databases);
+                    setDbConfig(data.databases.map((db: string) => ({
+                        id: db,
+                        name: db,
+                        targetName: db,
+                        selected: true
+                    })));
+                } else {
+                     setAnalyzedDbs([]);
+                     setDbConfig([]);
+                }
+            }
+        } catch (e) {
+            console.error("Analysis failed", e);
+        }
+    };
 
     useEffect(() => {
         if (selectedDestination) {
@@ -124,27 +162,29 @@ export default function StoragePage() {
         setRestoreLogs(null);
         setShowPrivileged(false);
         setPrivPass("");
+        setAnalyzedDbs([]);
+        setDbConfig([]);
     };
 
     const confirmRestore = async (usePrivileged = false) => {
         if (!restoreFile || !targetSource) return;
 
         setRestoring(true);
-        // Don't clear logs immediately if retrying, but here we probably want to to show fresh attempt
+        // Don't clear logs immediately if retrying
         setRestoreLogs(null);
 
         try {
+            // Check if we use advanced mapping
+            let mapping = undefined;
+            if (analyzedDbs.length > 0) {
+                 mapping = dbConfig.map(c => ({ originalName: c.name, targetName: c.targetName, selected: c.selected }));
+            }
+
             const payload: any = {
                  file: restoreFile.path,
                 targetSourceId: targetSource,
-                targetDatabaseName: targetDbName || undefined
-            };
-
-            if (usePrivileged) {
-                payload.privilegedAuth = {
-                    user: privUser,
-                    password: privPass
-                };
+                targetDatabaseName: targetDbName || undefined,
+                databaseMapping: mapping
             }
 
             const res = await fetch(`/api/storage/${selectedDestination}/restore`, {
@@ -310,17 +350,53 @@ export default function StoragePage() {
                                 </Select>
                             </div>
 
-                            <div className="space-y-2">
-                                <Label>Target Database Name (Optional)</Label>
-                                <Input
-                                    placeholder="Enter to rename / restore as new..."
-                                    value={targetDbName}
-                                    onChange={(e) => setTargetDbName(e.target.value)}
-                                />
-                                <p className="text-xs text-muted-foreground">
-                                    Leave empty to overwrite the original database (<b>Warning: Data will be lost</b>).
-                                </p>
-                            </div>
+                            {analyzedDbs.length > 0 ? (
+                                <div className="space-y-2 border rounded-md p-3">
+                                    <Label>Databases detected in Dump</Label>
+                                    <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                                        {dbConfig.map((db, idx) => (
+                                            <div key={db.id} className="flex items-center gap-2 p-2 bg-secondary/50 rounded-sm">
+                                                <input
+                                                    type="checkbox"
+                                                    className="w-4 h-4"
+                                                    checked={db.selected}
+                                                    onChange={e => {
+                                                        const newC = [...dbConfig];
+                                                        newC[idx].selected = e.target.checked;
+                                                        setDbConfig(newC);
+                                                    }}
+                                                />
+                                                <div className="flex-1 grid grid-cols-2 gap-2 items-center">
+                                                    <span className="text-sm font-medium truncate" title={db.name}>{db.name}</span>
+                                                    <Input
+                                                        className="h-7 text-xs"
+                                                        placeholder="Target Name"
+                                                        value={db.targetName}
+                                                        onChange={e => {
+                                                             const newC = [...dbConfig];
+                                                             newC[idx].targetName = e.target.value;
+                                                             setDbConfig(newC);
+                                                        }}
+                                                    />
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <p className="text-[10px] text-muted-foreground">Uncheck to skip. Rename to restore to a different database.</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-2">
+                                    <Label>Target Database Name (Optional)</Label>
+                                    <Input
+                                        placeholder="Enter to rename / restore as new..."
+                                        value={targetDbName}
+                                        onChange={(e) => setTargetDbName(e.target.value)}
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                        Leave empty to overwrite the original database (<b>Warning: Data will be lost</b>).
+                                    </p>
+                                </div>
+                            )}
                         </div>
                     ) : (
                          <div className="space-y-4 py-4">

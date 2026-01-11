@@ -18,7 +18,17 @@ A robust, self-hosted solution for automating database backups. Manage sources, 
 - **Modern Dashboard**: Built with Next.js 16, Shadcn UI, and Tailwind CSS.
 - **Secure**: Validation for database connections and credential management.
 
-## 🛠️ Tech Stack
+## � Preview
+
+| Dashboard | Configuration |
+|:---:|:---:|
+| ![Dashboard](docs/images/overview.png) | ![Configuration](docs/images/edit-configuration.png) |
+
+| Storage Explorer |
+|:---:|
+| ![Storage Explorer](docs/images/storage-explorer.png) |
+
+## �🛠️ Tech Stack
 
 - **Framework**: [Next.js 16](https://nextjs.org) (App Router)
 - **Database**: SQLite (via Prisma ORM) for application state

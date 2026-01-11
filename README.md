@@ -2,7 +2,7 @@
 
 Interactive control plane to model backup targets, storage locations, and pluggable notification channels. Built with Next.js App Router, Tailwind CSS 3, and shadcn/ui components.
 
-## Quickstart
+## Quickstart / Starten
 
 ```bash
 pnpm install
@@ -31,3 +31,7 @@ Then open http://localhost:3000. The dashboard uses mock data and in-memory stat
 - Storage backends: extend `StorageLocationType` and use the same `createStorageLocation` helper.
 
 For architecture notes and AI prompts, see [docs/AI.md](docs/AI.md).
+
+## shadcn/ui Hinweis
+- UI-Komponenten folgen dem shadcn/ui-Stil (Radix + Tailwind). Sie liegen unter `src/components/ui` und nutzen `tailwindcss-animate`, `class-variance-authority`, `lucide-react`, etc.
+- Kein CLI-Scaffold nötig; bei Bedarf kannst du weitere Komponenten nach https://ui.shadcn.com/ ergänzen.

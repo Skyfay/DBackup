@@ -35,7 +35,7 @@ export async function runJob(jobId: string) {
         data: {
             jobId: job.id,
             status: "Running",
-            log: JSON.stringify({ steps: [] }),
+            logs: JSON.stringify([]),
             startedAt: new Date(),
         }
     });
@@ -126,8 +126,8 @@ export async function runJob(jobId: string) {
             where: { id: execution.id },
             data: {
                 status: status,
-                finishedAt: new Date(),
-                log: JSON.stringify(logs) // Store as simple string array for now
+                endedAt: new Date(),
+                logs: JSON.stringify(logs) // Store as simple string array for now
             }
         });
 

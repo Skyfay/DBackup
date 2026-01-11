@@ -3,8 +3,9 @@ import { runJob } from "@/lib/runner";
 
 export async function POST(
     req: NextRequest,
-    { params }: { params: { id: string } }
+    props: { params: Promise<{ id: string }> }
 ) {
+    const params = await props.params;
     const id = params.id;
 
     // We run this asynchronously to not block the UI if it takes long

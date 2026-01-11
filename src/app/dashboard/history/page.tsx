@@ -19,8 +19,8 @@ interface Execution {
     job: { name: string };
     status: "Running" | "Success" | "Failed";
     startedAt: string;
-    finishedAt?: string;
-    log: string; // JSON string
+    endedAt?: string;
+    logs: string; // JSON string
 }
 
 export default function HistoryPage() {
@@ -84,8 +84,8 @@ export default function HistoryPage() {
                                 </TableCell>
                                 <TableCell>{format(new Date(exec.startedAt), "PPpp")}</TableCell>
                                 <TableCell>
-                                    {exec.finishedAt ?
-                                        `${Math.round((new Date(exec.finishedAt).getTime() - new Date(exec.startedAt).getTime()) / 1000)}s`
+                                    {exec.endedAt ?
+                                        `${Math.round((new Date(exec.endedAt).getTime() - new Date(exec.startedAt).getTime()) / 1000)}s`
                                         : "-"
                                     }
                                 </TableCell>
@@ -112,7 +112,7 @@ export default function HistoryPage() {
                         </DialogDescription>
                     </DialogHeader>
                     <ScrollArea className="h-[400px] w-full rounded-md border p-4 bg-muted font-mono text-xs">
-                        {selectedLog && parseLogs(selectedLog.log).map((line: string, i: number) => (
+                        {selectedLog && parseLogs(selectedLog.logs).map((line: string, i: number) => (
                             <div key={i} className="mb-1 border-b border-border/50 pb-0.5 last:border-0">
                                 {line}
                             </div>

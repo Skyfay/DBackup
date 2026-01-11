@@ -36,7 +36,7 @@ export const MongoDBSchema = z.object({
 });
 
 export const LocalStorageSchema = z.object({
-    basePath: z.string().min(1, "Base path is required"),
+    basePath: z.string().min(1, "Base path is required").default("/backups").describe("Absolute path to store backups (e.g., /backups)"),
 });
 
 export const DiscordSchema = z.object({

@@ -18,6 +18,7 @@ model AdapterConfig {
 
   jobsSource      Job[] @relation("Source")
   jobsDestination Job[] @relation("Destination")
+  jobsNotification Job[] @relation("Notifications")
 }
 
 model Job {
@@ -31,6 +32,8 @@ model Job {
 
   destinationId String
   destination   AdapterConfig @relation("Destination", fields: [destinationId], references: [id])
+
+  notifications AdapterConfig[] @relation("Notifications")
 
   executions    Execution[]
 

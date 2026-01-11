@@ -19,12 +19,12 @@
 
 ## 🔌 Adapters Implementation
 ### Database Sources
-- [ ] **MySQL / MariaDB Adapter** (`mysqldump`)
+- [x] **MySQL / MariaDB Adapter** (`mysqldump`)
 - [ ] **PostgreSQL Adapter** (`pg_dump`)
 - [ ] **MongoDB Adapter** (`mongodump`)
 
 ### Storage Destinations
-- [ ] **Local Filesystem Adapter**
+- [x] **Local Filesystem Adapter**
 - [ ] **S3 Compatible Storage Adapter** (AWS, MinIO, Cloudflare R2)
 - [ ] **FTP / SFTP Adapter**
 - [ ] **Cloud Providers** (Google Drive, Dropbox, OneDrive) - *Optional/Later*

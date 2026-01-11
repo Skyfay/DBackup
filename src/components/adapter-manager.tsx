@@ -72,6 +72,7 @@ export function AdapterManager({ type, title, description }: AdapterManagerProps
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [availableAdapters, setAvailableAdapters] = useState<AdapterDefinition[]>([]);
     const [editingId, setEditingId] = useState<string | null>(null);
+    const [deletingId, setDeletingId] = useState<string | null>(null);
 
     useEffect(() => {
         // Filter definitions by type
@@ -91,8 +92,13 @@ export function AdapterManager({ type, title, description }: AdapterManagerProps
         }
     };
 
-    const handleDelete = async (id: string) => {
-        if (!confirm("Are you sure you want to delete this configuration?")) return;
+    const handleDelete = (id: string) => {
+        setDeletingId(id);
+    };
+
+    const confirmDelete = async () => {
+        if (!deletingId) return;
+        const id = deletingId;
 
         try {
             const res = await fetch(`/api/adapters/${id}`, { method: 'DELETE' });
@@ -104,6 +110,8 @@ export function AdapterManager({ type, title, description }: AdapterManagerProps
             }
         } catch (error) {
              toast.error("Error deleting configuration");
+        } finally {
+            setDeletingId(null);
         }
     };
 
@@ -152,6 +160,23 @@ export function AdapterManager({ type, title, description }: AdapterManagerProps
                     )}
                 </DialogContent>
             </Dialog>
+
+            <AlertDialog open={!!deletingId} onOpenChange={(open) => !open && setDeletingId(null)}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This action cannot be undone. This will permanently delete this configuration.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                            Delete
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }

@@ -4,6 +4,16 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -49,6 +59,7 @@ export default function JobsPage() {
 
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editingJob, setEditingJob] = useState<Job | null>(null);
+    const [deletingId, setDeletingId] = useState<string | null>(null);
 
     useEffect(() => {
         fetchJobs();
@@ -75,13 +86,21 @@ export default function JobsPage() {
         } catch (error) { toast.error("Failed to fetch adapters"); }
     };
 
-    const handleDelete = async (id: string) => {
-         if (!confirm("Are you sure?")) return;
-         try {
-             await fetch(`/api/jobs/${id}`, { method: 'DELETE' });
-             fetchJobs();
-             toast.success("Job deleted");
-         } catch(e) { toast.error("Failed to delete"); }
+    const handleDelete = (id: string) => {
+        setDeletingId(id);
+    };
+
+    const confirmDelete = async () => {
+        if (!deletingId) return;
+        try {
+            await fetch(`/api/jobs/${deletingId}`, { method: 'DELETE' });
+            fetchJobs();
+            toast.success("Job deleted");
+        } catch(e) {
+            toast.error("Failed to delete");
+        } finally {
+            setDeletingId(null);
+        }
     };
 
      const handleRunMatch = async (id: string) => {
@@ -171,6 +190,23 @@ export default function JobsPage() {
                     )}
                 </DialogContent>
             </Dialog>
+
+            <AlertDialog open={!!deletingId} onOpenChange={(open) => !open && setDeletingId(null)}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This action cannot be undone. This will permanently delete the backup job.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                            Delete
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }

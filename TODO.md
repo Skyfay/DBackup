@@ -53,6 +53,8 @@
 - [x] **Theme Support**
     - [x] Dark / Light / System Mode
     - [x] Auto-detection & Settings Toggle
+- [x] **UX Improvements**
+    - [x] Standardize Delete Confirmation Modal (Replace browser native confirm)
 - [x] **History & Logs**
     - [x] List past executions
     - [x] View detailed logs per execution

@@ -1,12 +1,11 @@
+import { AdapterManager } from "@/components/adapter-manager";
+
 export default function NotificationsPage() {
     return (
-         <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <h2 className="text-3xl font-bold tracking-tight">Notifications</h2>
-            </div>
-             <div className="rounded-md border p-8 text-center text-muted-foreground">
-                No notification channels configured.
-            </div>
-        </div>
+         <AdapterManager
+            type="notification"
+            title="Notifications"
+            description="Configure channels to receive alerts about your backups."
+        />
     )
 }

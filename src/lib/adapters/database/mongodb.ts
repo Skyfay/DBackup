@@ -1,5 +1,5 @@
 import { DatabaseAdapter, BackupResult } from "@/lib/core/interfaces";
-import { z } from "zod";
+import { MongoDBSchema } from "@/lib/adapters/definitions";
 import { exec } from "child_process";
 import fs from "fs/promises";
 import util from "util";
@@ -10,24 +10,16 @@ export const MongoDBAdapter: DatabaseAdapter = {
     id: "mongodb",
     type: "database",
     name: "MongoDB",
-    configSchema: z.object({
-        uri: z.string().optional().describe("Connection URI (overrides other settings)"),
-        host: z.string().default("localhost"),
-        port: z.number().default(27017),
-        user: z.string().optional(),
-        password: z.string().optional(),
-        database: z.string().optional().describe("Database name (optional, dumps all if empty)"),
-        options: z.string().optional().describe("Additional mongodump options"),
-    }),
+    configSchema: MongoDBSchema,
 
     async dump(config: any, destinationPath: string): Promise<BackupResult> {
         const startedAt = new Date();
         const logs: string[] = [];
-        
+
         try {
             // mongodump creates a directory by default, or an archive with --archive
             // We want a single file, so we use --archive
-            
+
             let command = `mongodump`;
 
             if (config.uri) {
@@ -54,14 +46,14 @@ export const MongoDBAdapter: DatabaseAdapter = {
             logs.push(`Executing command: ${command.replace(/--password "[^"]*"/, '--password "*****"')}`);
 
             const { stdout, stderr } = await execAsync(command);
-            
+
             // mongodump writes to stderr
             if (stderr) {
                 logs.push(`stderr: ${stderr}`);
             }
-            
+
             const stats = await fs.stat(destinationPath);
-            
+
             return {
                 success: true,
                 path: destinationPath,
@@ -97,13 +89,13 @@ export const MongoDBAdapter: DatabaseAdapter = {
                 if (config.user && config.password) {
                      command += ` --username "${config.user}" --password "${config.password}"`;
                 }
-                // For restore, if database is specified, we might want to restore INTO that db using --nsInclude? 
+                // For restore, if database is specified, we might want to restore INTO that db using --nsInclude?
                 // Classic mongorestore behavior depends on the archive content.
                 // If using --archive --gzip, it usually restores what's in there.
             }
 
             command += ` --archive="${sourcePath}" --gzip`;
-            
+
             logs.push(`Executing restore command: ${command.replace(/--password "[^"]*"/, '--password "*****"')}`);
 
             const { stdout, stderr } = await execAsync(command);

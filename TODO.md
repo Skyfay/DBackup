@@ -30,19 +30,20 @@
 - [ ] **Cloud Providers** (Google Drive, Dropbox, OneDrive) - *Optional/Later*
 
 ### Notifications
-- [ ] **Discord Webhook**
-- [ ] **Email (SMTP)**
+- [x] **Discord Webhook**
+- [x] **Email (SMTP)**
 - [ ] **Slack / Teams**
 
 ## 🖥 Dashboard & Features
-- [ ] **Sources Management**
-    - [ ] List all sources
-    - [ ] Create/Edit source configuration
+- [x] **Sources Management**
+    - [x] List all sources
+    - [x] Create/Edit source configuration
     - [ ] Test connection
-- [ ] **Destinations Management**
-    - [ ] List all destinations
-    - [ ] Create/Edit destination configuration
+- [x] **Destinations Management**
+    - [x] List all destinations
+    - [x] Create/Edit destination configuration
     - [ ] Test connection
+- [x] **Notifications Management** (Added)
 - [ ] **Jobs Management**
     - [ ] List all backup jobs
     - [ ] Job Editor (Select Source, Destination, Schedule)

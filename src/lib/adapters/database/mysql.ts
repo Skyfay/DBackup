@@ -1,5 +1,5 @@
 import { DatabaseAdapter, BackupResult } from "@/lib/core/interfaces";
-import { z } from "zod";
+import { MySQLSchema } from "@/lib/adapters/definitions";
 import { exec } from "child_process";
 import fs from "fs/promises";
 import util from "util";
@@ -10,14 +10,7 @@ export const MySQLAdapter: DatabaseAdapter = {
     id: "mysql",
     type: "database",
     name: "MySQL / MariaDB",
-    configSchema: z.object({
-        host: z.string().default("localhost"),
-        port: z.number().default(3306),
-        user: z.string().min(1, "User is required"),
-        password: z.string().optional(),
-        database: z.string().min(1, "Database name is required"),
-        options: z.string().optional().describe("Additional mysqldump options"),
-    }),
+    configSchema: MySQLSchema,
 
     async dump(config: any, destinationPath: string): Promise<BackupResult> {
         const startedAt = new Date();

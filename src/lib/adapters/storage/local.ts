@@ -1,16 +1,14 @@
 import { StorageAdapter } from "@/lib/core/interfaces";
-import { z } from "zod";
+import { LocalStorageSchema } from "@/lib/adapters/definitions";
 import fs from "fs/promises";
 import path from "path";
-import { existsSync, mkdirSync } from "fs";
+import { existsSync } from "fs";
 
 export const LocalFileSystemAdapter: StorageAdapter = {
     id: "local-filesystem",
     type: "storage",
     name: "Local Filesystem",
-    configSchema: z.object({
-        basePath: z.string().min(1, "Base path is required"),
-    }),
+    configSchema: LocalStorageSchema,
 
     async upload(config: { basePath: string }, localPath: string, remotePath: string): Promise<boolean> {
         try {

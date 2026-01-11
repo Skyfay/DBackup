@@ -1,36 +1,90 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Database Backup Manager
 
-## Getting Started
+> **⚠️ Work in Progress**: This project is currently under active development. There is no stable release available yet. Use at your own risk.
+> Check out [TODO.md](TODO.md) to see the roadmap and pending tasks.
 
-First, run the development server:
+> **Note**: This project is primarily developed on GitLab. This GitHub repository is a mirror.
+> **Main Repository**: [https://gitlab.com/Skyfay/database-backup-manager](https://gitlab.com/Skyfay/database-backup-manager)
+
+A robust, self-hosted solution for automating database backups. Manage sources, destinations, and backup schedules through a modern web interface.
+
+## 🚀 Features
+
+- **Multi-Database Support**: Backup **MySQL**, **PostgreSQL**, and **MongoDB**. (Additional databases planned)
+- **Flexible Storage**: Store backups on **Local Filesystem**. (S3, Cloud Providers, and FTP coming soon)
+- **Automated Scheduling**: Configure cron-based backup schedules for your jobs.
+- **Notifications**: Get alerts via **Discord** or **Email** when backups succeed or fail.
+- **Restore & Management**: Browse backup history, view logs, and restore databases directly from the UI.
+- **Modern Dashboard**: Built with Next.js 16, Shadcn UI, and Tailwind CSS.
+- **Secure**: Validation for database connections and credential management.
+
+## 🛠️ Tech Stack
+
+- **Framework**: [Next.js 16](https://nextjs.org) (App Router)
+- **Database**: SQLite (via Prisma ORM) for application state
+- **UI Components**: [shadcn/ui](https://ui.shadcn.com)
+- **Styling**: Tailwind CSS
+- **Scheduler**: Custom Node-based scheduler
+
+## 📦 Getting Started
+
+### Prerequisites
+
+- Node.js (v18+)
+- Package manager (`pnpm` recommended, `npm` or `yarn` work too)
+- Docker (optional, for running test databases)
+
+### Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone https://gitlab.com/Skyfay/database-backup-manager.git
+   cd database-backup-manager
+   ```
+
+2. **Install dependencies**
+   ```bash
+   pnpm install
+   # or
+   npm install
+   ```
+
+3. **Configure Environment**
+   Set up your `.env` file containing your database configuration and app secrets.
+   ```bash
+   # Example
+   DATABASE_URL="file:./dev.db"
+   ```
+
+4. **Initialize Database**
+   Push the schema to your local database:
+   ```bash
+   npx prisma db push
+   npx prisma generate
+   ```
+
+## 👨‍💻 Development
+
+Start the development server:
 
 ```bash
+pnpm dev
+# or
 npm run dev
 # or
 yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the dashboard.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 🐳 Testing Infrastructure
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+To spin up test instances of MySQL, Postgres, and MongoDB for development:
 
-## Learn More
+```bash
+docker-compose -f docker-compose.test.yml up -d
+```
 
-To learn more about Next.js, take a look at the following resources:
+## 📝 License
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+[MIT](LICENSE)

@@ -28,8 +28,16 @@ export const DiscordAdapter: NotificationAdapter = {
                     ]
                 };
 
-                if (context.size) {
-                    embed.fields.push({ name: "Size", value: `${(context.size / 1024 / 1024).toFixed(2)} MB`, inline: true });
+                if (context.size !== undefined) {
+                    let sizeStr = "";
+                    if (context.size < 1024) {
+                        sizeStr = `${context.size} B`;
+                    } else if (context.size < 1024 * 1024) {
+                        sizeStr = `${(context.size / 1024).toFixed(2)} KB`;
+                    } else {
+                        sizeStr = `${(context.size / 1024 / 1024).toFixed(2)} MB`;
+                    }
+                    embed.fields.push({ name: "Size", value: sizeStr, inline: true });
                 }
 
                 if (context.error) {

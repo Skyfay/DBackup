@@ -104,16 +104,16 @@ export default function HistoryPage() {
             </div>
 
             <Dialog open={!!selectedLog} onOpenChange={(open) => !open && setSelectedLog(null)}>
-                <DialogContent className="max-w-2xl">
+                <DialogContent className="max-w-[80vw] w-full max-h-[80vh] overflow-hidden flex flex-col">
                     <DialogHeader>
                         <DialogTitle>Execution Logs - {selectedLog?.job?.name}</DialogTitle>
                         <DialogDescription>
                             {selectedLog?.startedAt && format(new Date(selectedLog.startedAt), "PPpp")}
                         </DialogDescription>
                     </DialogHeader>
-                    <ScrollArea className="h-[400px] w-full rounded-md border p-4 bg-muted font-mono text-xs">
+                    <ScrollArea className="flex-1 w-full rounded-md border p-4 bg-muted font-mono text-xs">
                         {selectedLog && parseLogs(selectedLog.logs).map((line: string, i: number) => (
-                            <div key={i} className="mb-1 border-b border-border/50 pb-0.5 last:border-0">
+                            <div key={i} className="mb-1 border-b border-border/50 pb-0.5 last:border-0 whitespace-pre-wrap break-all">
                                 {line}
                             </div>
                         ))}

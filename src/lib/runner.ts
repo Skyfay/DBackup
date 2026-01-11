@@ -48,6 +48,7 @@ export async function runJob(jobId: string) {
 
     let status: "Success" | "Failed" = "Success";
     let tempFile: string | null = null;
+    let dumpSize = 0;
 
     try {
         log("Initialization started");
@@ -85,6 +86,7 @@ export async function runJob(jobId: string) {
             tempFile = dumpResult.path;
         }
 
+        dumpSize = dumpResult.size || 0;
         log(`Dump successful. Size: ${dumpResult.size} bytes`);
 
         // 6. Execute Upload (Destination)
@@ -151,6 +153,10 @@ export async function runJob(jobId: string) {
                         const channelConfig = JSON.parse(channel.config);
                         await notifyAdapter.send(channelConfig, `Backup Job '${job.name}' finished with status: ${status}`, {
                              jobName: job.name,
+                             adapterName: job.source.name,
+                             success: status === "Success",
+                             duration: new Date().getTime() - execution.startedAt.getTime(),
+                             size: dumpSize,
                              status,
                              logs
                         });

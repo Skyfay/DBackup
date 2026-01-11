@@ -78,19 +78,43 @@ export const MySQLAdapter: DatabaseAdapter = {
         const logs: string[] = [];
 
         try {
+            // Determine credentials for DB creation
+            // If privilegedAuth is provided, use it. Otherwise use standard config.
+            const usePrivileged = !!config.privilegedAuth;
+            const creationUser = usePrivileged ? config.privilegedAuth.user : config.user;
+            const creationPass = usePrivileged ? config.privilegedAuth.password : config.password;
+
             // Ensure database exists before restoring
-            // Use single quotes for the shell command to prevent backtick expansion
-            const createCmd = `mysql -h ${config.host} -P ${config.port} -u ${config.user} --protocol=tcp ${config.password ? `-p"${config.password}"` : ''} -e 'CREATE DATABASE IF NOT EXISTS \`${config.database}\`'`;
+            const createCmd = `mysql -h ${config.host} -P ${config.port} -u ${creationUser} --protocol=tcp ${creationPass ? `-p"${creationPass}"` : ''} -e 'CREATE DATABASE IF NOT EXISTS \`${config.database}\`'`;
 
             try {
+                // Log simplified command to hide password
+                logs.push(`Attempting to ensure database '${config.database}' exists (User: ${creationUser})...`);
                 await execAsync(createCmd);
-                logs.push(`Database '${config.database}' ensured.`);
+                logs.push(`Database '${config.database}' ensured successfully.`);
+
+                // If we used a privileged user, we MUST grant permissions to the original user
+                if (usePrivileged) {
+                    logs.push(`Granting permissions to '${config.user}'...`);
+                    // Grant for local and wildcard host to be safe
+                    // Escaping backticks with backslash to prevent shell execution
+                    const grantCmd = `mysql -h ${config.host} -P ${config.port} -u ${creationUser} --protocol=tcp ${creationPass ? `-p"${creationPass}"` : ''} -e "GRANT ALL PRIVILEGES ON \\\`${config.database}\\\`.* TO '${config.user}'@'%'; GRANT ALL PRIVILEGES ON \\\`${config.database}\\\`.* TO '${config.user}'@'localhost'; FLUSH PRIVILEGES;"`;
+                     // We ignore errors on the second grant if one succeeds, but simple execution is fine.
+                     // It might fail if user doesn't exist for that host, but we try both.
+                    try {
+                         await execAsync(grantCmd);
+                         logs.push(`Permissions granted to '${config.user}'.`);
+                    } catch (grantErr: any) {
+                         logs.push(`Warning: Failed to grant permissions: ${grantErr.message}`);
+                    }
+                }
+
             } catch (e: any) {
                 // Try to extract the specific MySQL error message
                 const msg = e.message || "";
                 const match = msg.match(/ERROR \d+.*$/m);
                 const cleanError = match ? match[0] : msg;
-                logs.push(`Warning: Failed to create database '${config.database}' (User permissions?): ${cleanError}`);
+                logs.push(`Warning: Failed to create/ensure database '${config.database}': ${cleanError}`);
             }
 
              // Add --protocol=tcp to avoid socket issues on localhost

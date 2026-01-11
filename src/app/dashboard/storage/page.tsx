@@ -64,6 +64,11 @@ export default function StoragePage() {
     const [restoring, setRestoring] = useState(false);
     const [restoreLogs, setRestoreLogs] = useState<string[] | null>(null);
 
+    // Privileged restore state
+    const [showPrivileged, setShowPrivileged] = useState(false);
+    const [privUser, setPrivUser] = useState("root");
+    const [privPass, setPrivPass] = useState("");
+
     useEffect(() => {
         fetchAdapters();
     }, []);
@@ -117,22 +122,35 @@ export default function StoragePage() {
         setTargetSource("");
         setTargetDbName("");
         setRestoreLogs(null);
+        setShowPrivileged(false);
+        setPrivPass("");
     };
 
-    const confirmRestore = async () => {
+    const confirmRestore = async (usePrivileged = false) => {
         if (!restoreFile || !targetSource) return;
 
         setRestoring(true);
+        // Don't clear logs immediately if retrying, but here we probably want to to show fresh attempt
         setRestoreLogs(null);
+        
         try {
+            const payload: any = {
+                 file: restoreFile.path,
+                targetSourceId: targetSource,
+                targetDatabaseName: targetDbName || undefined
+            };
+
+            if (usePrivileged) {
+                payload.privilegedAuth = {
+                    user: privUser,
+                    password: privPass
+                };
+            }
+
             const res = await fetch(`/api/storage/${selectedDestination}/restore`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    file: restoreFile.path,
-                    targetSourceId: targetSource,
-                    targetDatabaseName: targetDbName || undefined
-                })
+                body: JSON.stringify(payload)
             });
 
             const data = await res.json();
@@ -142,8 +160,14 @@ export default function StoragePage() {
                 setRestoreFile(null); // Close modal
             } else {
                 toast.error("Restore failed");
-                if (data.logs) {
-                    setRestoreLogs(data.logs);
+                const logs = data.logs || [];
+                if (logs.length > 0) {
+                     setRestoreLogs(logs);
+                     // Check for common permission errors to show retry UI
+                     const logString = logs.join('\n');
+                     if (logString.includes("Access denied") || logString.includes("User permissions?")) {
+                         setShowPrivileged(true);
+                     }
                 } else {
                     setRestoreLogs(["Error: " + (data.error || "Unknown error")]);
                 }
@@ -310,12 +334,41 @@ export default function StoragePage() {
                         {!restoreLogs ? (
                             <>
                                 <Button variant="outline" onClick={() => setRestoreFile(null)} disabled={restoring}>Cancel</Button>
-                                <Button onClick={confirmRestore} disabled={!targetSource || restoring}>
+                                <Button onClick={() => confirmRestore(false)} disabled={!targetSource || restoring}>
                                     {restoring ? "Restoring..." : "Start Restore"}
                                 </Button>
                             </>
                         ) : (
-                            <Button onClick={() => setRestoreLogs(null)}>Back to Settings</Button>
+                            <div className="flex flex-col w-full gap-4">
+                                {showPrivileged && (
+                                    <div className="bg-muted p-4 rounded-md border text-sm space-y-3">
+                                        <p className="font-semibold text-warning-foreground">Permission Denied?</p>
+                                        <p className="text-muted-foreground">Try restoring using a privileged user (e.g., 'root') to create the database.</p>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div className="space-y-1">
+                                                <Label>Root User</Label>
+                                                <Input value={privUser} onChange={e => setPrivUser(e.target.value)} placeholder="root" />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <Label>Root Password</Label>
+                                                <Input type="password" value={privPass} onChange={e => setPrivPass(e.target.value)} placeholder="Secret" />
+                                            </div>
+                                        </div>
+                                        <Button 
+                                            size="sm" 
+                                            className="w-full" 
+                                            onClick={() => confirmRestore(true)}
+                                            disabled={restoring}
+                                        >
+                                            {restoring ? "Retrying as Root..." : "Retry with Privileges"}
+                                        </Button>
+                                    </div>
+                                )}
+                                <div className="flex justify-end gap-2">
+                                     <Button variant="outline" onClick={() => setRestoreFile(null)}>Close</Button>
+                                     <Button variant="secondary" onClick={() => { setRestoreLogs(null); setShowPrivileged(false); }}>Back to Settings</Button>
+                                </div>
+                            </div>
                         )}
                     </DialogFooter>
                 </DialogContent>

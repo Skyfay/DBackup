@@ -67,12 +67,11 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         // Override database name if provided
         if (targetDatabaseName) {
             dbConf.database = targetDatabaseName;
-            // Also update URI if present? MongoDB uses URI.
-            if (dbConf.uri) {
-                // This is tricky. Replacing DB in URI is complex regex.
-                // For MVP let's assume host/port/db struct or user input handles it.
-                // Or maybe warn: "Cannot rename when using URI connection strings"
-            }
+        }
+
+        // Add privileged auth if provided
+        if (body.privilegedAuth) {
+            dbConf.privilegedAuth = body.privilegedAuth;
         }
 
         const restoreResult = await sourceAdapter.restore(dbConf, tempFile);

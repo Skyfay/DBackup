@@ -5,6 +5,7 @@ from livereload import Server
 from server.database_setup import db, Auth, Databases
 from server.databases import test_mysql_connection, test_postgresql_connection, test_mongodb_connection
 from server import database_setup
+from server.backup import BackupFactory
 
 
 # Create the app.
@@ -187,6 +188,26 @@ def login():
 def logout():
     session.pop('username', None)
     return redirect(url_for('login'))
+
+
+@app.route('/backup/create/<int:db_id>')
+def create_backup(db_id):
+    if 'username' not in session:
+        return redirect(url_for('login'))
+
+    db_entry = Databases.query.get_or_404(db_id)
+
+    try:
+        strategy = BackupFactory.get_backup_strategy(db_entry.db_type)
+        success, filepath, msg = strategy.backup(db_entry)
+
+        if success:
+            # In Zukunft: Redirect zur Backup-Liste mit Success-Message
+            return f"Backup erfolgreich erstellt: {filepath}"
+        else:
+            return f"Backup fehlgeschlagen: {msg}"
+    except Exception as e:
+        return f"Fehler: {str(e)}"
 
 @app.errorhandler(404)
 def not_found(error):

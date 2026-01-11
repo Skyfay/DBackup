@@ -160,3 +160,4 @@ cython_debug/
 .idea/
 ./src/.idea
 src/data/local.db
+backups/

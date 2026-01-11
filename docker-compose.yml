@@ -14,13 +14,11 @@ services:
       - 5001:5000
     volumes:
       - .:/app
-    networks:
-      network:
-        ipv4_address: 172.28.0.2
 
   mysql:
-    image: mysql:latest
+    image: mysql:8.0
     container_name: my_test_mysql
+    command: --default-authentication-plugin=mysql_native_password
     environment:
       MYSQL_ROOT_PASSWORD: test
       MYSQL_DATABASE: test_db
@@ -28,9 +26,6 @@ services:
       MYSQL_PASSWORD: password
     ports:
       - "3306:3306"
-    networks:
-      network:
-        ipv4_address: 172.28.0.3
 
   postgres:
     image: postgres:latest
@@ -41,9 +36,6 @@ services:
       POSTGRES_USER: user
     ports:
       - "5432:5432"
-    networks:
-      network:
-        ipv4_address: 172.28.0.4
 
   mongo:
     image: mongo:latest
@@ -53,17 +45,3 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: rootpassword
     ports:
       - "27017:27017"
-    networks:
-      network:
-        ipv4_address: 172.28.0.5
-
-networks:
-  network:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 172.28.0.0/16
-
-
-# docker-compose up --build -d
-# command: django-admin startproject app

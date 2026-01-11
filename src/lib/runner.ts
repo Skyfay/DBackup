@@ -75,6 +75,7 @@ export async function runJob(jobId: string) {
         const sourceConfig = JSON.parse(job.source.config);
 
         // Determine Metadata from Config
+        // Common logic to determine DB count, matching Adapter logic
         try {
               const dbVal = sourceConfig.database;
               const options = sourceConfig.options || "";
@@ -97,11 +98,20 @@ export async function runJob(jobId: string) {
                   } else if (dbVal.trim().length > 0) {
                       label = 'Single DB';
                       count = 1;
+                  } else {
+                       // Empty string usually implies default DB or all?
+                       // If no database specified, mysqldump might fail or dump nothing depending on args.
+                       label = 'No DB selected';
+                       count = 0;
                   }
               }
+
+              // Debug log to help identify issues
+              console.log(`[Job ${job.name}] Calculated metadata:`, { label, count, dbVal });
+
               metadata = { label, count };
         } catch (e) {
-            // Ignore metadata parsing error
+            console.error(`[Job ${job.name}] Failed to calculate metadata:`, e);
         }
 
         // Ensure config has required fields passed from the Source entity logic if needed

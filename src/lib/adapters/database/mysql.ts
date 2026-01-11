@@ -123,244 +123,164 @@ export const MySQLAdapter: DatabaseAdapter = {
         const logs: string[] = [];
 
         try {
-            // Check for explicit database mapping (Multi-DB Selective Restore)
             const dbMapping = config.databaseMapping as { originalName: string, targetName: string, selected: boolean }[] | undefined;
             const usePrivileged = !!config.privilegedAuth;
             const creationUser = usePrivileged ? config.privilegedAuth.user : config.user;
             const creationPass = usePrivileged ? config.privilegedAuth.password : config.password;
 
+            // Determine operation mode
+            // Mode 1: Mapping (Advanced) -> Explicitly selective or renaming
+            // Mode 2: Force Target (Simple) -> User specified a single target DB, we must dump everything there
+            // Mode 3: Passive (Full/Auto) -> No specific target enforcement, let the dump dictate (e.g. multi-db restore without rename)
+
+            // For now, if config.database is set, we treat it as "Target".
+            // Ideally we'd know if it was overridden.
+            // Assumption: If the user is using the "Simple Restore" UI, they picked a target source & optional database name.
+            // If they provided a database name, they expect content to go there.
+
+            // To ensure we don't break "Full Restore", we really need to know if the user INTENDED to override.
+            // But let's assume if there is NO mapping, and there IS a config.database, we are in "Single Target" mode.
+            // Most MySQL Adapters have a default DB (e.g. 'mysql' or 'app').
+            // So config.database is almost ALWAYS set.
+            // This makes it risky to always strip USE.
+
+            // New Heuristic:
+            // If config.database is set, AND the user didn't request a mapping, we typically just run `mysql db < file`.
+            // As we saw, this fails for Multi-DB dumps attempting to target a specific DB.
+            // So we will implement a Stream Processor that strips USE/CREATE DATABASE *only if* we are ignoring the dump's structure.
+
+            // Let's implement a universal Stream Restore that covers all cases.
+
+            // Pre-Ensure Target DB(s)
             if (dbMapping && dbMapping.length > 0) {
-                // ADVANCED STREAMING RESTORE
-                logs.push("Starting selective/renaming restore...");
-
-                // 1. Ensure target databases exist
-                const selectedDbs = dbMapping.filter(m => m.selected);
-                for (const db of selectedDbs) {
+                 const selectedDbs = dbMapping.filter(m => m.selected);
+                 for (const db of selectedDbs) {
                     const targetName = db.targetName || db.originalName;
-                     const createCmd = `mysql -h ${config.host} -P ${config.port} -u ${creationUser} --protocol=tcp ${creationPass ? `-p"${creationPass}"` : ''} -e 'CREATE DATABASE IF NOT EXISTS \`${targetName}\`'`;
-                     try {
-                        await execAsync(createCmd);
-                        logs.push(`Database '${targetName}' ensured.`);
+                    await this.ensureDatabase(config, targetName, creationUser, creationPass, usePrivileged, logs);
+                 }
+            } else if (config.database) {
+                // Ensure the single target database exists
+                await this.ensureDatabase(config, config.database, creationUser, creationPass, usePrivileged, logs);
+            }
 
-                        if (usePrivileged) {
-                             const grantCmd = `mysql -h ${config.host} -P ${config.port} -u ${creationUser} --protocol=tcp ${creationPass ? `-p"${creationPass}"` : ''} -e "GRANT ALL PRIVILEGES ON \\\`${targetName}\\\`.* TO '${config.user}'@'%'; GRANT ALL PRIVILEGES ON \\\`${targetName}\\\`.* TO '${config.user}'@'localhost'; FLUSH PRIVILEGES;"`;
-                             await execAsync(grantCmd);
-                             logs.push(`Permissions granted for '${targetName}'.`);
-                        }
-                     } catch(e: any) {
-                         logs.push(`Warning ensures DB '${targetName}': ${e.message}`);
-                     }
+            return new Promise((resolve, reject) => {
+                const args = [
+                    '-h', config.host,
+                    '-P', String(config.port),
+                    '-u', config.user,
+                    '--protocol=tcp'
+                ];
+                if(config.password) args.push(`-p${config.password}`);
+
+                // If we are in "Single Target" mode, we connect directly to that DB
+                const singleTargetDb = (!dbMapping || dbMapping.length === 0) && config.database ? config.database : null;
+                if (singleTargetDb) {
+                     args.push(singleTargetDb);
                 }
 
-                // 2. Stream and Transform
-                return new Promise((resolve, reject) => {
-                    const fileStream = createReadStream(sourcePath);
-                    const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
+                const mysqlProc = spawn('mysql', args, { stdio: ['pipe', 'pipe', 'pipe'] });
 
-                    // Spawn MySQL process
-                    let mysqlCmd = `mysql -h ${config.host} -P ${config.port} -u ${config.user} --protocol=tcp`;
-                    if (config.password) mysqlCmd += ` -p"${config.password}"`;
-
-                    // Shell-quote or just use array for spawn? spawn is safer for passwords but we use exec style for now.
-                    // Wait, piping to exec's stdin is hard if we use exec(command).
-                    // Better to use spawn.
-                    const args = [
-                        '-h', config.host,
-                        '-P', String(config.port),
-                        '-u', config.user,
-                        '--protocol=tcp'
-                    ];
-                    if(config.password) args.push(`-p${config.password}`);
-
-                    const mysqlProc = spawn('mysql', args, { stdio: ['pipe', 'pipe', 'pipe'] });
-
-                    mysqlProc.stderr.on('data', (d) => logs.push(`MySQL Stderr: ${d.toString()}`));
-                    mysqlProc.on('error', (err) => reject({ success: false, logs, error: err.message, startedAt, completedAt: new Date() }));
-
-                    mysqlProc.on('close', (code) => {
-                        if (code === 0) {
-                            resolve({ success: true, logs, startedAt, completedAt: new Date() });
-                        } else {
-                             resolve({ success: false, logs, error: `MySQL exited with code ${code}`, startedAt, completedAt: new Date() });
-                        }
-                    });
-
-                    // Streaming Logic
-                    let currentOriginalDb: string | null = null;
-                    let skipCurrentSection = false;
-                    let currentTargetName: string | null = null;
-
-                    rl.on('line', (line) => {
-                        // Detect DB context switch
-                        // USE `foo`;
-                        const useMatch = line.match(/^USE `([^`]+)`;/i);
-                        if (useMatch) {
-                            const dbName = useMatch[1];
-                            currentOriginalDb = dbName;
-
-                            // Check mapping
-                            const map = dbMapping.find(m => m.originalName === dbName);
-                            if (map) {
-                                if (!map.selected) {
-                                    skipCurrentSection = true;
-                                    return; // Don't write this line
-                                } else {
-                                    skipCurrentSection = false;
-                                    currentTargetName = map.targetName || map.originalName;
-                                    // REWRITE the line
-                                    mysqlProc.stdin.write(`USE \`${currentTargetName}\`;\n`);
-                                    return;
-                                }
-                            } else {
-                                // DB found in file but not in mapping? Default to Include or Skip?
-                                // If we inspected file fully, it should be in mapping.
-                                // If not, maybe just pass through?
-                                skipCurrentSection = false;
-                            }
-                        }
-
-                        // Also detect CREATE DATABASE `foo`
-                        // We might want to filter these out if we created them manually above,
-                        // OR rewrite them if we want the dump to do it.
-                        // Since we pre-created them, we can probably just rewrite/skip.
-                        const createMatch = line.match(/^CREATE DATABASE (?:IF NOT EXISTS )?`([^`]+)`/i);
-                        if (createMatch) {
-                            const dbName = createMatch[1];
-                             const map = dbMapping.find(m => m.originalName === dbName);
-                             if (map) {
-                                 if (!map.selected) {
-                                     // Skip this create statement and subsequent lines presumably?
-                                     // Well, wait for USE to toggle skip flag?
-                                     // Usually CREATE is followed by USE.
-                                     // Let's just ignore CREATE statement itself if not selected.
-                                     return;
-                                 } else {
-                                     // Rewrite
-                                     const target = map.targetName || map.originalName;
-                                     mysqlProc.stdin.write(`CREATE DATABASE IF NOT EXISTS \`${target}\`;\n`);
-                                     return;
-                                 }
-                             }
-                        }
-
-                        if (!skipCurrentSection) {
-                            mysqlProc.stdin.write(line + '\n');
-                        }
-                    });
-
-                    rl.on('close', () => {
-                        mysqlProc.stdin.end();
-                    });
+                mysqlProc.stderr.on('data', (d) => {
+                    const msg = d.toString();
+                    if (!msg.includes("Using a password")) logs.push(`MySQL: ${msg}`);
                 });
 
-            }
-
-            // LEGACY / SINGLE DB FLOW (unchanged mostly)
-            // Determine credentials for DB creation
-
-            let dbs: string[] = [];
-            if (Array.isArray(config.database)) {
-                dbs = config.database;
-            } else if (typeof config.database === 'string') {
-                dbs = config.database.split(',').map((s: string) => s.trim());
-            } else if (config.database) {
-                dbs = [String(config.database)];
-            }
-
-            const isMultiDb = dbs.length > 1;
-
-            if (isMultiDb) {
-                 logs.push(`Multi-database restore detected (${dbs.join(', ')}). Skipping explicit CREATE DATABASE check (assuming dump handles it).`);
-                 // If using privileged user, we try to grant permissions for ALL databases
-                 if (usePrivileged) {
-                    for (const dbName of dbs) {
-                        try {
-                             logs.push(`Granting permissions for '${dbName}'...`);
-                             const grantCmd = `mysql -h ${config.host} -P ${config.port} -u ${creationUser} --protocol=tcp ${creationPass ? `-p"${creationPass}"` : ''} -e "GRANT ALL PRIVILEGES ON \\\`${dbName}\\\`.* TO '${config.user}'@'%'; GRANT ALL PRIVILEGES ON \\\`${dbName}\\\`.* TO '${config.user}'@'localhost'; FLUSH PRIVILEGES;"`;
-                             await execAsync(grantCmd);
-                             logs.push(`Permissions granted for '${dbName}'.`);
-                        } catch (grantErr: any) {
-                             logs.push(`Warning: Failed to grant permissions for '${dbName}': ${grantErr.message}`);
-                        }
+                mysqlProc.on('error', (err) => reject({ success: false, logs, error: err.message, startedAt, completedAt: new Date() }));
+                mysqlProc.on('close', (code) => {
+                    if (code === 0) {
+                        resolve({ success: true, logs, startedAt, completedAt: new Date() });
+                    } else {
+                        resolve({ success: false, logs, error: `MySQL exited with code ${code}`, startedAt, completedAt: new Date() });
                     }
-                 }
-            } else {
-                // SINGLE DB Logic: Ensure database exists before restoring
-                const createCmd = `mysql -h ${config.host} -P ${config.port} -u ${creationUser} --protocol=tcp ${creationPass ? `-p"${creationPass}"` : ''} -e 'CREATE DATABASE IF NOT EXISTS \`${config.database}\`'`;
+                });
 
-                try {
-                    // Log simplified command to hide password
-                    logs.push(`Attempting to ensure database '${config.database}' exists (User: ${creationUser})...`);
-                    await execAsync(createCmd);
-                    logs.push(`Database '${config.database}' ensured successfully.`);
+                const fileStream = createReadStream(sourcePath);
+                const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
 
-                    // If we used a privileged user, we MUST grant permissions to the original user
-                    if (usePrivileged) {
-                        logs.push(`Granting permissions to '${config.user}'...`);
-                        // Grant for local and wildcard host to be safe
-                        // Escaping backticks with backslash to prevent shell execution
-                        const grantCmd = `mysql -h ${config.host} -P ${config.port} -u ${creationUser} --protocol=tcp ${creationPass ? `-p"${creationPass}"` : ''} -e "GRANT ALL PRIVILEGES ON \\\`${config.database}\\\`.* TO '${config.user}'@'%'; GRANT ALL PRIVILEGES ON \\\`${config.database}\\\`.* TO '${config.user}'@'localhost'; FLUSH PRIVILEGES;"`;
-                        try {
-                            await execAsync(grantCmd);
-                            logs.push(`Permissions granted to '${config.user}'.`);
-                        } catch (grantErr: any) {
-                            logs.push(`Warning: Failed to grant permissions: ${grantErr.message}`);
+                let skipCurrentSection = false;
+                let currentTargetName: string | null = null;
+
+                rl.on('line', (line) => {
+                    // 1. Handle "Use" statements
+                    const useMatch = line.match(/^USE `([^`]+)`;/i);
+                    if (useMatch) {
+                        const originalDb = useMatch[1];
+
+                        if (dbMapping) {
+                            const map = dbMapping.find(m => m.originalName === originalDb);
+                             if (map) {
+                                if (!map.selected) {
+                                    skipCurrentSection = true;
+                                    return;
+                                }
+                                skipCurrentSection = false;
+                                currentTargetName = map.targetName || map.originalName;
+                                mysqlProc.stdin.write(`USE \`${currentTargetName}\`;\n`);
+                                return;
+                            } else {
+                                // Not in mapping? If we are doing selective restore, we might skip or default.
+                                // Let's default to skip if mapping implies exclusivity, otherwise pass.
+                                // Actually user selects checks. Unchecked are in the list with selected=false.
+                                // If it's missing entirely (new db?), pass through?
+                                skipCurrentSection = false;
+                            }
+                        } else if (singleTargetDb) {
+                            // Single Target Mode: We want to FORCE everything into singleTargetDb.
+                            // So we IGNORE the USE statement to prevent switching away.
+                            logs.push(`Ignoring 'USE ${originalDb}' to enforce target '${singleTargetDb}'`);
+                            return;
                         }
                     }
 
-                } catch (e: any) {
-                    // Try to extract the specific MySQL error message
-                    const msg = e.message || "";
-                    const match = msg.match(/ERROR \d+.*$/m);
-                    const cleanError = match ? match[0] : msg;
-                    logs.push(`Warning: Failed to create/ensure database '${config.database}': ${cleanError}`);
-                }
-            }
+                    // 2. Handle "Create Database" statements
+                    const createMatch = line.match(/^CREATE DATABASE (?:IF NOT EXISTS )?`([^`]+)`/i);
+                    if (createMatch) {
+                        const originalDb = createMatch[1];
 
-             // Add --protocol=tcp to avoid socket issues on localhost
-             let command = `mysql -h ${config.host} -P ${config.port} -u ${config.user} --protocol=tcp`;
+                        if (dbMapping) {
+                             const map = dbMapping.find(m => m.originalName === originalDb);
+                             if (map && !map.selected) return;
+                             // Rewriting handled by pre-ensure + USE switch, but if we want to allow Creates:
+                             // We already pre-created. So we can skip.
+                             return;
+                        } else if (singleTargetDb) {
+                            // Single Target Mode: Ignore Create DB (we already ensured target exists)
+                            return;
+                        }
+                    }
 
-            if (config.password) {
-                command += ` -p"${config.password}"`;
-            }
+                    // 3. Write line if not skipped
+                    if (!skipCurrentSection) {
+                        mysqlProc.stdin.write(line + '\n');
+                    }
+                });
 
-            // Only append database name if it's a single DB restore
-            if (!isMultiDb) {
-                command += ` ${config.database}`;
-            }
-
-            command += ` < "${sourcePath}"`;
-
-            logs.push(`Executing restore command: ${command.replace(/-p"[^"]*"/, '-p"*****"')}`);
-
-            const { stdout, stderr } = await execAsync(command);
-             if (stderr) {
-                logs.push(`stderr: ${stderr}`);
-            }
-
-            return {
-                success: true,
-                logs,
-                startedAt,
-                completedAt: new Date(),
-            };
+                rl.on('close', () => {
+                    logs.push(`Stream finished.`);
+                    mysqlProc.stdin.end();
+                });
+            });
 
         } catch (error: any) {
-            // Clean up error message
-            const msg = error.message || "";
-            const match = msg.match(/ERROR \d+.*$/m);
-            const cleanError = match ? match[0] : msg;
-
-            logs.push(`Error: ${cleanError}`);
-
-            return {
-                success: false,
-                logs,
-                error: cleanError,
-                startedAt,
-                completedAt: new Date(),
-            };
+             const msg = error.message || "";
+             logs.push(`Error: ${msg}`);
+             return { success: false, logs, error: msg, startedAt, completedAt: new Date() };
         }
+    },
+
+    async ensureDatabase(config: any, dbName: string, user: string, pass: string | undefined, privileged: boolean, logs: string[]) {
+         const createCmd = `mysql -h ${config.host} -P ${config.port} -u ${user} --protocol=tcp ${pass ? `-p"${pass}"` : ''} -e 'CREATE DATABASE IF NOT EXISTS \`${dbName}\`'`;
+         try {
+            await execAsync(createCmd);
+            logs.push(`Database '${dbName}' ensured.`);
+            if (privileged) {
+                 const grantCmd = `mysql -h ${config.host} -P ${config.port} -u ${user} --protocol=tcp ${pass ? `-p"${pass}"` : ''} -e "GRANT ALL PRIVILEGES ON \\\`${dbName}\\\`.* TO '${config.user}'@'%'; GRANT ALL PRIVILEGES ON \\\`${dbName}\\\`.* TO '${config.user}'@'localhost'; FLUSH PRIVILEGES;"`;
+                 await execAsync(grantCmd);
+                 logs.push(`Permissions granted for '${dbName}'.`);
+            }
+         } catch(e: any) {
+             logs.push(`Warning ensures DB '${dbName}': ${e.message}`);
+         }
     },
 
     async test(config: any): Promise<{ success: boolean; message: string }> {

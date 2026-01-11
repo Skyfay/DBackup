@@ -43,9 +43,10 @@ model Job {
 
 model Execution {
   id        String   @id @default(uuid())
-  jobId     String
-  job       Job      @relation(fields: [jobId], references: [id])
+  jobId     String?
+  job       Job?     @relation(fields: [jobId], references: [id])
 
+  type      String   @default("Backup") // 'Backup', 'Restore'
   status    String   // 'pending', 'running', 'success', 'failed'
   logs      String   // JSON array of logs
   startedAt DateTime @default(now())

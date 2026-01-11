@@ -15,12 +15,14 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface Execution {
     id: string;
-    jobId: string;
-    job: { name: string };
+    jobId?: string;
+    job?: { name: string };
+    type?: string;
     status: "Running" | "Success" | "Failed";
     startedAt: string;
     endedAt?: string;
     logs: string; // JSON string
+    path?: string;
 }
 
 export default function HistoryPage() {
@@ -60,7 +62,8 @@ export default function HistoryPage() {
                 <Table>
                     <TableHeader>
                         <TableRow>
-                            <TableHead>Job Name</TableHead>
+                            <TableHead>Job / Resource</TableHead>
+                            <TableHead>Type</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead>Started At</TableHead>
                             <TableHead>Duration</TableHead>
@@ -70,13 +73,23 @@ export default function HistoryPage() {
                     <TableBody>
                         {executions.length === 0 ? (
                              <TableRow>
-                                <TableCell colSpan={5} className="text-center h-24 text-muted-foreground">
+                                <TableCell colSpan={6} className="text-center h-24 text-muted-foreground">
                                     No executions found.
                                 </TableCell>
                             </TableRow>
                         ) : executions.map((exec) => (
                             <TableRow key={exec.id}>
-                                <TableCell className="font-medium">{exec.job?.name || "Deleted Job"}</TableCell>
+                                <TableCell className="font-medium">
+                                    {exec.job?.name || (
+                                        <div className="flex flex-col">
+                                            <span>Manual Action</span>
+                                            {exec.path && <span className="text-[10px] text-muted-foreground truncate max-w-[200px]" title={exec.path}>{exec.path}</span>}
+                                        </div>
+                                    )}
+                                </TableCell>
+                                <TableCell>
+                                    <Badge variant="outline">{exec.type || "Backup"}</Badge>
+                                </TableCell>
                                 <TableCell>
                                     <Badge variant={exec.status === "Success" ? "secondary" : exec.status === "Failed" ? "destructive" : "default"}>
                                         {exec.status}

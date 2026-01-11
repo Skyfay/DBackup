@@ -101,5 +101,18 @@ export const PostgresAdapter: DatabaseAdapter = {
                 completedAt: new Date(),
             };
         }
+    },
+
+    async test(config: any): Promise<{ success: boolean; message: string }> {
+        try {
+            const env = { ...process.env, PGPASSWORD: config.password };
+            // Simple query to check connection
+            const command = `psql -h ${config.host} -p ${config.port} -U ${config.user} -d ${config.database} -c "SELECT 1"`;
+
+            await execAsync(command, { env });
+            return { success: true, message: "Connection successful" };
+        } catch (error: any) {
+             return { success: false, message: "Connection failed: " + (error.stderr || error.message) };
+        }
     }
 }

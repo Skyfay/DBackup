@@ -120,5 +120,32 @@ export const MongoDBAdapter: DatabaseAdapter = {
                 completedAt: new Date(),
             };
         }
+    },
+
+    async test(config: any): Promise<{ success: boolean; message: string }> {
+        try {
+            // MongoDB command line tool usually is 'mongosh' or legacy 'mongo'
+            // We'll try mongosh first as it's the modern default.
+
+            let command = `mongosh --eval "db.runCommand({ ping: 1 })" --quiet`;
+
+            if (config.uri) {
+                command += ` "${config.uri}"`;
+            } else {
+                command += ` --host "${config.host}" --port ${config.port}`;
+                if (config.user && config.password) {
+                     command += ` --username "${config.user}" --password "${config.password}"`;
+                }
+                if (config.database) {
+                     // Connect to specific DB, though ping works generally
+                     command += ` "${config.database}"`;
+                }
+            }
+
+            await execAsync(command);
+            return { success: true, message: "Connection successful" };
+        } catch (error: any) {
+             return { success: false, message: "Connection failed: " + (error.stderr || error.message) };
+        }
     }
 }

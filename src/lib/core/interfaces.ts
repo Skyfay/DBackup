@@ -11,6 +11,10 @@ export interface BaseAdapter {
     id: string; // Unique identifier (e.g., 'mysql', 's3')
     name: string; // Display name
     configSchema: z.ZodObject<any>; // Schema for configuration
+    /**
+     * Optional method to test the connection configuration
+     */
+    test?: (config: any) => Promise<{ success: boolean; message: string }>;
 }
 
 export type BackupResult = {

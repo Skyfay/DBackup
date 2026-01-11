@@ -38,7 +38,7 @@
 - [x] **Sources Management**
     - [x] List all sources
     - [x] Create/Edit source configuration
-    - [ ] Test connection
+    - [x] Test connection (Auto-test on creation + Force option)
 - [x] **Destinations Management**
     - [x] List all destinations
     - [x] Create/Edit destination configuration

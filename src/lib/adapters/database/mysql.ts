@@ -102,5 +102,20 @@ export const MySQLAdapter: DatabaseAdapter = {
                 completedAt: new Date(),
             };
         }
+    },
+
+    async test(config: any): Promise<{ success: boolean; message: string }> {
+        try {
+            let command = `mysqladmin ping -h ${config.host} -P ${config.port} -u ${config.user} --connect-timeout=5`;
+             if (config.password) {
+                // Using MYSQL_PWD env var logic relative to exec might be safer but inline works for MVP
+                command += ` -p"${config.password}"`;
+            }
+
+            await execAsync(command);
+            return { success: true, message: "Connection successful" };
+        } catch (error: any) {
+            return { success: false, message: "Connection failed: " + (error.stderr || error.message) };
+        }
     }
 }

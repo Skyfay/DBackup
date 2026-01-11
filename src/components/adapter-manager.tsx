@@ -196,6 +196,33 @@ function AdapterForm({ type, adapters, onSuccess, initialData }: { type: string,
 
 
     const onSubmit = async (data: any) => {
+        if (type === 'database') {
+             const toastId = toast.loading("Testing connection...");
+             try {
+                 const testRes = await fetch('/api/adapters/test-connection', {
+                     method: 'POST',
+                     headers: { 'Content-Type': 'application/json' },
+                     body: JSON.stringify({ adapterId: data.adapterId, config: data.config })
+                 });
+
+                 const testResult = await testRes.json();
+
+                 if (testResult.success) {
+                     toast.success("Connection test successful", { id: toastId });
+                 } else {
+                     toast.dismiss(toastId);
+                     if (!confirm(`Connection Test Failed:\n${testResult.message}\n\nDo you want to save anyway?`)) {
+                         return; // Abort save
+                     }
+                 }
+             } catch (e) {
+                 toast.dismiss(toastId);
+                 if (!confirm("Could not test connection due to an error. Save anyway?")) {
+                     return;
+                 }
+             }
+        }
+
         try {
             const url = initialData ? `/api/adapters/${initialData.id}` : '/api/adapters';
             const method = initialData ? 'PUT' : 'POST';

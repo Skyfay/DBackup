@@ -44,22 +44,22 @@
     - [x] Create/Edit destination configuration
     - [ ] Test connection
 - [x] **Notifications Management** (Added)
-- [ ] **Jobs Management**
-    - [ ] List all backup jobs
-    - [ ] Job Editor (Select Source, Destination, Schedule)
-    - [ ] Manual Trigger Button
-- [ ] **History & Logs**
-    - [ ] List past executions
-    - [ ] View detailed logs per execution
+- [x] **Jobs Management**
+    - [x] List all backup jobs
+    - [x] Job Editor (Select Source, Destination, Schedule)
+    - [x] Manual Trigger Button
+- [x] **History & Logs**
+    - [x] List past executions
+    - [x] View detailed logs per execution
     - [ ] Download backup artifact (if local/accessible)
 - [ ] **Dashboard Home**
     - [ ] Real statistics (Success rate, Total size)
     - [ ] Recent activity feed
 
 ## ⚙️ Backend Engine
-- [ ] **Backup Runner**
-    - [ ] Implement orchestration logic (Dump -> Compress -> Upload -> Notify)
-    - [ ] Error handling & Retries
-- [ ] **Scheduler**
-    - [ ] Implement Cron scheduler (e.g., `node-cron` or similar)
-    - [ ] Manage active jobs
+- [x] **Backup Runner**
+    - [x] Implement orchestration logic (Dump -> Compress -> Upload -> Notify)
+    - [x] Error handling & Retries
+- [x] **Scheduler**
+    - [x] Implement Cron scheduler (e.g., `node-cron` or similar)
+    - [x] Manage active jobs

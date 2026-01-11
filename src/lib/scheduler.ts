@@ -1,5 +1,5 @@
 import cron from "node-cron";
-import { prisma } from "@/lib/prisma";
+import prisma from "@/lib/prisma";
 import { runJob } from "@/lib/runner";
 
 export class BackupScheduler {

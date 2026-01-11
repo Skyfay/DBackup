@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import prisma from "@/lib/prisma";
 import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters";
 import { DatabaseAdapter, StorageAdapter, NotificationAdapter } from "@/lib/core/interfaces";

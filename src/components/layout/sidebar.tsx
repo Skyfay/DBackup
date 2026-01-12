@@ -22,7 +22,7 @@ export function Sidebar() {
 
     return (
         <div className="w-64 border-r bg-background h-screen flex flex-col hidden md:flex sticky top-0">
-            <div className="p-6 border-b">
+            <div className="h-16 flex items-center px-6 border-b">
                 <h1 className="text-xl font-bold tracking-tight">Backup Manager</h1>
             </div>
             <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
@@ -40,8 +40,17 @@ export function Sidebar() {
                     </Button>
                 ))}
             </nav>
-            <div className="p-4 border-t text-xs text-muted-foreground text-center">
-                v1.0.0
+            <div className="p-4 border-t">
+                {/* Future User Profile Section */}
+                <div className="flex items-center gap-3 rounded-lg border p-3 shadow-sm bg-muted/50 cursor-not-allowed opacity-75">
+                    <div className="h-9 w-9 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold">
+                        A
+                    </div>
+                    <div className="flex flex-col">
+                        <span className="text-sm font-medium">Admin User</span>
+                        <span className="text-xs text-muted-foreground">admin@local</span>
+                    </div>
+                </div>
             </div>
         </div>
     )

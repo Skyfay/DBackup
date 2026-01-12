@@ -1,6 +1,26 @@
 import { NotificationAdapter } from "@/lib/core/interfaces";
 import { EmailSchema } from "@/lib/adapters/definitions";
 import nodemailer from "nodemailer";
+import { formatBytes } from "@/lib/utils";
+
+const createTransporter = (config: any) => {
+    const secure = config.secure === "ssl";
+    const options: any = {
+        host: config.host,
+        port: config.port,
+        secure: secure,
+        auth: (config.user && config.password) ? {
+            user: config.user,
+            pass: config.password,
+        } : undefined,
+    };
+
+    if (config.secure === "none") {
+        options.ignoreTLS = true;
+    }
+
+    return nodemailer.createTransport(options);
+};
 
 export const EmailAdapter: NotificationAdapter = {
     id: "email",
@@ -10,16 +30,7 @@ export const EmailAdapter: NotificationAdapter = {
 
     async test(config: any): Promise<{ success: boolean; message: string }> {
         try {
-            const transporter = nodemailer.createTransport({
-                host: config.host,
-                port: config.port,
-                secure: config.secure,
-                auth: (config.user && config.password) ? {
-                    user: config.user,
-                    pass: config.password,
-                } : undefined,
-            });
-
+            const transporter = createTransporter(config);
             await transporter.verify();
             return { success: true, message: "SMTP connection verified successfully!" };
         } catch (error: any) {
@@ -29,15 +40,7 @@ export const EmailAdapter: NotificationAdapter = {
 
     async send(config: any, message: string, context?: any): Promise<boolean> {
         try {
-            const transporter = nodemailer.createTransport({
-                host: config.host,
-                port: config.port,
-                secure: config.secure,
-                auth: (config.user && config.password) ? {
-                    user: config.user,
-                    pass: config.password,
-                } : undefined,
-            });
+            const transporter = createTransporter(config);
 
             // Verify connection configuration
             await transporter.verify();
@@ -54,7 +57,7 @@ export const EmailAdapter: NotificationAdapter = {
                         <li><strong>Status:</strong> ${context.success ? "Success" : "Failed"}</li>
                         <li><strong>Adapter:</strong> ${context.adapterName || "Unknown"}</li>
                         <li><strong>Duration:</strong> ${context.duration ? `${context.duration}ms` : "N/A"}</li>
-                        ${context.size ? `<li><strong>Size:</strong> ${(context.size / 1024 / 1024).toFixed(2)} MB</li>` : ''}
+                        ${context.size !== undefined ? `<li><strong>Size:</strong> ${formatBytes(context.size)}</li>` : ''}
                         ${context.error ? `<li><strong>Error:</strong> ${context.error}</li>` : ''}
                     </ul>
                 `;

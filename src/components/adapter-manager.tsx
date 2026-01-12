@@ -481,16 +481,37 @@ const saveConfig = async (data: any) => {
                 {selectedAdapter && (
                     <div className="space-y-4 border p-4 rounded-md bg-muted/30">
                         <h4 className="text-sm font-medium">Configuration</h4>
-                         {/* Dynamic Form Fields based on Zod Schema */}
-                         {/* This is a simplified renderer. For complex schemas, a recursive component is better. */}
                          {Object.keys((selectedAdapter.configSchema as any).shape).map((key) => {
                              const shape = (selectedAdapter.configSchema as any).shape[key];
+
+                             // Helper to unwrap Zod wrappers (default, optional, etc.)
+                             let unwrappedShape = shape;
+                             while (
+                                unwrappedShape instanceof z.ZodOptional ||
+                                unwrappedShape instanceof z.ZodNullable ||
+                                unwrappedShape instanceof z.ZodDefault ||
+                                unwrappedShape._def?.typeName === "ZodDefault" ||
+                                unwrappedShape._def?.typeName === "ZodOptional"
+                             ) {
+                                 unwrappedShape = unwrappedShape._def.innerType;
+                             }
+
                              const label = key.charAt(0).toUpperCase() + key.slice(1);
-                             const isBoolean = shape instanceof z.ZodBoolean || shape._def?.typeName === "ZodBoolean";
-                             // Very basic type checking
+                             const isBoolean = unwrappedShape instanceof z.ZodBoolean || unwrappedShape._def?.typeName === "ZodBoolean";
+                             const isEnum = unwrappedShape instanceof z.ZodEnum || unwrappedShape._def?.typeName === "ZodEnum";
                              const isPassword = key.toLowerCase().includes("password") || key.toLowerCase().includes("secret");
                              const description = shape.description;
                              const isDatabaseField = key === 'database' && type === 'database';
+
+                             const PLACEHOLDERS: Record<string, string> = {
+                                "email.from": "\"Backup Service\" <backup@example.com>",
+                                "email.host": "smtp.example.com",
+                                "email.user": "user@example.com",
+                                "from": "name@example.com",
+                                "to": "admin@example.com",
+                                "host": "localhost",
+                             };
+                             const placeholder = PLACEHOLDERS[`${selectedAdapter.id}.${key}`] || PLACEHOLDERS[key];
 
                              return (
                                  <FormField
@@ -505,7 +526,6 @@ const saveConfig = async (data: any) => {
                                             </div>
                                             <FormControl>
                                                 {isBoolean ? (
-                                                    // Checkbox for boolean
                                                     <input
                                                         type="checkbox"
                                                         checked={field.value}
@@ -586,10 +606,30 @@ const saveConfig = async (data: any) => {
                                                              {isLoadingDbs ? <Loader2 className="h-4 w-4 animate-spin" /> : "Load"}
                                                         </Button>
                                                     </div>
+                                                ) : isEnum ? (
+                                                     <Select
+                                                        onValueChange={field.onChange}
+                                                        defaultValue={field.value}
+                                                        value={field.value}
+                                                    >
+                                                        <FormControl>
+                                                            <SelectTrigger>
+                                                                <SelectValue placeholder="Select..." />
+                                                            </SelectTrigger>
+                                                        </FormControl>
+                                                        <SelectContent>
+                                                            {((unwrappedShape as any).options || (unwrappedShape as any)._def?.values || []).map((val: string) => (
+                                                                <SelectItem key={val} value={val} className="capitalize">
+                                                                    {val === "none" ? "None (Insecure)" : val === "ssl" ? "SSL / TLS" : val === "starttls" ? "STARTTLS" : val}
+                                                                </SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
                                                 ) : (
                                                     <Input
                                                         type={isPassword ? "password" : "text"}
                                                         {...field}
+                                                        placeholder={placeholder}
                                                         value={field.value || ""}
                                                         onChange={(e) => {
                                                             const val = e.target.value;

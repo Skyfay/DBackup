@@ -11,6 +11,7 @@ import {
     TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
+import { formatBytes } from "@/lib/utils";
 
 // This type is used to define the shape of our data.
 export type FileInfo = {
@@ -104,14 +105,7 @@ export const createColumns = ({ onRestore, onDownload, onDelete }: ColumnsProps)
         },
         cell: ({ row }) => {
             const size = parseFloat(row.getValue("size"));
-            let formatted = "0 B";
-
-            if (size > 0) {
-                const k = 1024;
-                const units = ["B", "KB", "MB", "GB", "TB"];
-                const i = Math.floor(Math.log(size) / Math.log(k));
-                formatted = parseFloat((size / Math.pow(k, i)).toFixed(2)) + " " + units[i];
-            }
+            const formatted = formatBytes(size);
 
             return <div className="font-medium font-mono text-xs text-right pr-4">{formatted}</div>;
         },

@@ -48,10 +48,10 @@ export const DiscordSchema = z.object({
 export const EmailSchema = z.object({
     host: z.string().min(1, "SMTP Host is required"),
     port: z.coerce.number().default(587),
-    secure: z.boolean().default(false),
+    secure: z.enum(["none", "ssl", "starttls"]).default("starttls"),
     user: z.string().optional(),
     password: z.string().optional(),
-    from: z.string().email("Valid From email is required"),
+    from: z.string().min(1, "From email is required"),
     to: z.string().email("Valid To email is required"),
 });
 

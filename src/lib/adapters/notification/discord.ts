@@ -1,5 +1,6 @@
 import { NotificationAdapter } from "@/lib/core/interfaces";
 import { DiscordSchema } from "@/lib/adapters/definitions";
+import { formatBytes } from "@/lib/utils";
 
 export const DiscordAdapter: NotificationAdapter = {
     id: "discord",
@@ -51,15 +52,7 @@ export const DiscordAdapter: NotificationAdapter = {
                 };
 
                 if (context.size !== undefined) {
-                    let sizeStr = "";
-                    if (context.size < 1024) {
-                        sizeStr = `${context.size} B`;
-                    } else if (context.size < 1024 * 1024) {
-                        sizeStr = `${(context.size / 1024).toFixed(2)} KB`;
-                    } else {
-                        sizeStr = `${(context.size / 1024 / 1024).toFixed(2)} MB`;
-                    }
-                    embed.fields.push({ name: "Size", value: sizeStr, inline: true });
+                    embed.fields.push({ name: "Size", value: formatBytes(context.size), inline: true });
                 }
 
                 if (context.error) {

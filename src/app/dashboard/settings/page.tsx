@@ -1,9 +1,11 @@
 import { AppearanceForm } from "@/components/settings/appearance-form";
 import { AccountForm } from "@/components/settings/account-form";
 import { SecurityForm } from "@/components/settings/security-form";
+import { PasskeyList } from "@/components/settings/passkey-list";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { auth } from "@/auth";
 import prisma from "@/lib/prisma";
+import { getPasskeys } from "@/actions/passkeys";
 
 export default async function SettingsPage() {
     const session = await auth();
@@ -19,6 +21,7 @@ export default async function SettingsPage() {
         isTwoFactorEnabled = dbUser?.isTwoFactorEnabled || false;
     }
 
+    const passkeys = await getPasskeys();
 
     return (
          <div className="space-y-6">
@@ -34,8 +37,9 @@ export default async function SettingsPage() {
                 <TabsContent value="account" className="space-y-4">
                     <AccountForm user={user} />
                 </TabsContent>
-                <TabsContent value="security" className="space-y-4">
+                <TabsContent value="security" className="space-y-6">
                     <SecurityForm isTwoFactorEnabled={isTwoFactorEnabled} />
+                    <PasskeyList passkeys={passkeys} />
                 </TabsContent>
                 <TabsContent value="appearance" className="space-y-4">
                      <AppearanceForm />

@@ -25,6 +25,8 @@
     "@radix-ui/react-switch": "^1.2.6",
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-tooltip": "^1.2.8",
+    "@simplewebauthn/browser": "^13.2.2",
+    "@simplewebauthn/server": "^13.2.2",
     "@tanstack/react-table": "^8.21.3",
     "@types/bcryptjs": "^3.0.0",
     "@types/qrcode": "^1.5.6",

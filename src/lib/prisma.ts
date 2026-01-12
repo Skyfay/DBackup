@@ -4,12 +4,15 @@ const prismaClientSingleton = () => {
   return new PrismaClient()
 }
 
-declare global {
-  var prisma: undefined | ReturnType<typeof prismaClientSingleton>
-}
+// Use a unique key to force a fresh instance if the previous one is stale in the dev server process
+// @ts-ignore
+const globalForPrisma = globalThis as unknown as { prisma: PrismaClient }
 
-const prisma = globalThis.prisma ?? prismaClientSingleton()
+const prisma = globalForPrisma.prisma || prismaClientSingleton()
 
 export default prisma
 
-if (process.env.NODE_ENV !== 'production') globalThis.prisma = prisma
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
+
+// Verify client version
+console.log("Prisma Client Loaded");

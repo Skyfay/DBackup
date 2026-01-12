@@ -70,6 +70,7 @@ model User {
 
   totpSecret       String?
   isTwoFactorEnabled Boolean @default(false)
+  currentChallenge String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -130,3 +131,7 @@ model Authenticator {
 
   @@id([userId, credentialID])
 }
+
+// Add temporary token fields for custom 2FA flows
+
+// Add createdAt to Authenticator manually via edit since I can't append easily

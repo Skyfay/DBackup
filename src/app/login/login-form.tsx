@@ -1,4 +1,4 @@
-'use client';
+"use client"
 
 import {
   Card,
@@ -12,12 +12,17 @@ import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { useState } from 'react';
 import { authenticate } from './actions';
-import { AuthError } from 'next-auth'; // We need to check if we can import this client side or need to handle error string
+import { signIn } from "next-auth/react";
+import { startAuthentication } from "@simplewebauthn/browser";
+import { generatePasskeyAuthenticationOptions, verifyPasskeyFor2FA } from "@/actions/passkeys";
+import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
 
 export default function LoginForm() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
   const [showTwoFactor, setShowTwoFactor] = useState(false);
+  const [verifyingPasskey, setVerifyingPasskey] = useState(false);
 
   // Store credentials temporarily for the second step
   const [email, setEmail] = useState("");
@@ -29,16 +34,6 @@ export default function LoginForm() {
     setErrorMessage(null);
 
     const formData = new FormData(event.currentTarget);
-
-    // If we are in step 1 (no code shown yet), we might be resubmitting with code if logic was unified
-    // But here we split logic:
-    // 1. Submit email/pass -> Server Action
-    // 2. Server Action -> Returns "2FA_REQUIRED" error
-    // 3. UI shows Code Input
-    // 4. User submits again -> Server Action sends email/pass/code
-
-    // However, we are using the `authenticate` server action which calls `signIn`.
-    // We need to pass the state to it.
 
     if (showTwoFactor) {
         formData.append("email", email);
@@ -62,6 +57,50 @@ export default function LoginForm() {
 
     setIsPending(false);
   };
+
+  const handlePasskeyLogin = async () => {
+    try {
+        await signIn('webauthn');
+    } catch (error) {
+        console.error(error);
+        setErrorMessage("Passkey login failed");
+    }
+  }
+
+  const handlePasskey2FA = async () => {
+      setVerifyingPasskey(true);
+      try {
+          // 1. Get Options
+          const options = await generatePasskeyAuthenticationOptions(email);
+          // 2. Start Auth (Browser)
+          const asseResp = await startAuthentication(options);
+          // 3. Verify on Server & Get Token
+          const { success, token } = await verifyPasskeyFor2FA(asseResp, email);
+
+          if (success && token) {
+              // 4. Submit to credentials provider with token
+              const formData = new FormData();
+              formData.append("email", email);
+              formData.append("password", password);
+              formData.append("twoFactorToken", token);
+
+              const result = await authenticate(undefined, formData);
+              if (result) {
+                  setErrorMessage(result);
+              }
+          }
+      } catch (error) {
+          console.error(error);
+          // Check for predictable errors
+          if (error instanceof Error && error.message.includes('Verification failed')) {
+               setErrorMessage("Passkey verification failed");
+          } else {
+               setErrorMessage("Passkey verification failed or cancelled");
+          }
+      } finally {
+          setVerifyingPasskey(false);
+      }
+  }
 
   return (
     <Card className="mx-auto max-w-sm w-full">
@@ -96,27 +135,61 @@ export default function LoginForm() {
           )}
 
           {showTwoFactor && (
-            <div className="grid gap-2">
-              <Label htmlFor="code">Two-Factor Code</Label>
-              <Input
-                id="code"
-                type="text"
-                name="code"
-                placeholder="123456"
-                required
-                autoFocus
-                maxLength={6}
-                pattern="\d{6}"
-              />
-              <p className="text-xs text-muted-foreground">
-                  Enter the code from your authenticator app.
-              </p>
+            <div className="grid gap-4">
+               <div className="grid gap-2">
+                  <Label htmlFor="code">Two-Factor Code (TOTP)</Label>
+                  <Input
+                    id="code"
+                    type="text"
+                    name="code"
+                    placeholder="123456"
+                    // optional because we might use passkey
+                    autoFocus
+                    maxLength={6}
+                    pattern="\d{6}"
+                  />
+               </div>
+
+               <div className="relative">
+                    <div className="absolute inset-0 flex items-center">
+                        <span className="w-full border-t" />
+                    </div>
+                    <div className="relative flex justify-center text-xs uppercase">
+                        <span className="bg-background px-2 text-muted-foreground">
+                            OR
+                        </span>
+                    </div>
+                </div>
+
+                <Button type="button" variant="outline" onClick={handlePasskey2FA} disabled={verifyingPasskey}>
+                    {verifyingPasskey && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Verify with Passkey
+                </Button>
             </div>
           )}
 
-          <Button type="submit" className="w-full" disabled={isPending}>
-            {isPending ? "Logging in..." : (showTwoFactor ? "Verify" : "Login")}
+          <Button type="submit" className="w-full" disabled={isPending || verifyingPasskey}>
+            {isPending ? "Logging in..." : (showTwoFactor ? "Verify Code" : "Login")}
           </Button>
+
+          {!showTwoFactor && (
+            <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-background px-2 text-muted-foreground">
+                        Or continue with
+                    </span>
+                </div>
+            </div>
+          )}
+
+           {!showTwoFactor && (
+             <Button type="button" variant="outline" className="w-full" onClick={handlePasskeyLogin}>
+                Login with Passkey
+             </Button>
+           )}
 
           <div
             className="flex h-8 items-end space-x-1"

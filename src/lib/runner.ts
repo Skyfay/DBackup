@@ -109,7 +109,14 @@ export async function runJob(jobId: string) {
               // Debug log to help identify issues
               console.log(`[Job ${job.name}] Calculated metadata:`, { label, count, dbVal });
 
-              metadata = { label, count };
+              metadata = {
+                  label,
+                  count,
+                  jobName: job.name,
+                  sourceName: job.source.name,
+                  sourceType: job.source.type,
+                  adapterId: job.source.adapterId
+              };
         } catch (e) {
             console.error(`[Job ${job.name}] Failed to calculate metadata:`, e);
         }

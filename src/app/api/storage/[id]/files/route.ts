@@ -128,6 +128,16 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
                      if (meta.label) {
                          dbInfo = { count: meta.count || '?', label: meta.label };
                      }
+                     if (meta.jobName) {
+                         // Override the inferred job/source info with historical snapshot if available
+                         return {
+                             ...file,
+                             jobName: meta.jobName,
+                             sourceName: meta.sourceName,
+                             sourceType: meta.sourceType,
+                             dbInfo
+                         }
+                     }
                  } catch (e) {}
              }
 

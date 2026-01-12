@@ -133,44 +133,54 @@ export default function JobsPage() {
 
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {jobs.map(job => (
-                    <Card key={job.id} className={job.enabled ? "" : "opacity-75"}>
-                        <CardHeader className="pb-3">
-                            <div className="flex justify-between items-start">
-                                <CardTitle className="text-lg">{job.name}</CardTitle>
-                                {job.enabled ?
-                                    <CheckCircle className="h-4 w-4 text-green-500" /> :
-                                    <Pause className="h-4 w-4 text-yellow-500" />
-                                }
+                    <Card key={job.id} className={`group relative overflow-hidden transition-all hover:shadow-md border-muted-foreground/20 ${job.enabled ? "" : "opacity-75 bg-muted/30"}`}>
+                        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-background/50 backdrop-blur-sm rounded-md p-0.5">
+                             <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-primary/10 hover:text-primary" onClick={() => handleRunMatch(job.id)} title="Run Job">
+                                <Play className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditingJob(job); setIsDialogOpen(true); }}>
+                                <Edit className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleDelete(job.id)}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                        </div>
+
+                        <CardHeader className="flex flex-row items-center gap-4 pb-2">
+                            <div className={`flex h-10 w-10 items-center justify-center rounded-md ${job.enabled ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+                                <Clock className="h-5 w-5" />
                             </div>
-                            <CardDescription className="flex items-center text-xs mt-1">
-                                 <Clock className="w-3 h-3 mr-1" /> {job.schedule}
-                            </CardDescription>
+                            <div className="grid gap-1">
+                                <div className="flex items-center gap-2">
+                                     <CardTitle className="text-base font-semibold leading-none tracking-tight">
+                                        {job.name}
+                                    </CardTitle>
+                                    {job.enabled ?
+                                        <CheckCircle className="h-3 w-3 text-green-500" /> :
+                                        <Pause className="h-3 w-3 text-yellow-500" />
+                                    }
+                                </div>
+                                <CardDescription className="text-xs font-mono">
+                                     {job.schedule}
+                                </CardDescription>
+                            </div>
                         </CardHeader>
-                        <CardContent className="space-y-2 text-sm">
-                            <div className="flex justify-between border-b pb-2">
-                                <span className="text-muted-foreground">Source</span>
-                                <span className="font-medium">{job.source.name}</span>
-                            </div>
-                            <div className="flex justify-between border-b pb-2">
-                                <span className="text-muted-foreground">Destination</span>
-                                <span className="font-medium">{job.destination.name}</span>
-                            </div>
-                             <div className="flex justify-between">
-                                <span className="text-muted-foreground">Notifications</span>
-                                <span className="font-medium">{job.notifications.length} channels</span>
+                        <CardContent>
+                            <div className="grid gap-1.5 text-xs text-muted-foreground mt-2">
+                                <div className="flex items-center justify-between gap-2">
+                                    <span className="capitalize">Source:</span>
+                                    <span className="font-medium truncate max-w-[120px]">{job.source.name}</span>
+                                </div>
+                                <div className="flex items-center justify-between gap-2">
+                                    <span className="capitalize">Destination:</span>
+                                    <span className="font-medium truncate max-w-[120px]">{job.destination.name}</span>
+                                </div>
+                                <div className="flex items-center justify-between gap-2">
+                                    <span className="capitalize">Notifications:</span>
+                                    <span className="font-medium truncate max-w-[120px]">{job.notifications.length} channels</span>
+                                </div>
                             </div>
                         </CardContent>
-                        <CardFooter className="flex justify-end gap-2 pt-2">
-                             <Button variant="outline" size="sm" onClick={() => handleRunMatch(job.id)}>
-                                <Play className="h-3 w-3 mr-1" /> Run
-                            </Button>
-                            <Button variant="ghost" size="icon" onClick={() => { setEditingJob(job); setIsDialogOpen(true); }}>
-                                <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => handleDelete(job.id)}>
-                                <Trash2 className="h-4 w-4" />
-                            </Button>
-                        </CardFooter>
                     </Card>
                 ))}
             </div>

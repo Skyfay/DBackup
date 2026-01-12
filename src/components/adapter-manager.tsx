@@ -39,7 +39,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Trash2, Plus, Edit, AlertCircle, Check, ChevronsUpDown, Loader2 } from "lucide-react";
+import { Trash2, Plus, Edit, AlertCircle, Check, ChevronsUpDown, Loader2, Database, HardDrive, MessageSquare, Mail, Folder, Disc, Bell } from "lucide-react";
 import { toast } from "sonner";
 import {
     AlertDialog,
@@ -183,36 +183,72 @@ export function AdapterManager({ type, title, description }: AdapterManagerProps
     );
 }
 
+function getAdapterIcon(adapterId: string) {
+    const id = adapterId.toLowerCase();
+    if (id.includes('mysql') || id.includes('postgres') || id.includes('mongo')) return Database;
+    if (id.includes('local')) return Folder;
+    if (id.includes('s3') || id.includes('r2') || id.includes('minio')) return HardDrive;
+    if (id.includes('discord') || id.includes('slack')) return MessageSquare;
+    if (id.includes('email') || id.includes('smtp')) return Mail;
+    return Disc;
+}
+
 function AdapterCard({ config, definition, onDelete, onEdit }: { config: AdapterConfig, definition: AdapterDefinition, onDelete: () => void, onEdit: () => void }) {
     const parsedConfig = JSON.parse(config.config);
+    const Icon = getAdapterIcon(definition?.id || config.adapterId);
+
+    // Helper to format config values for display
+    const getDisplayValue = (key: string, value: any) => {
+        if (key.toLowerCase().includes('password') || key.toLowerCase().includes('secret') || key.toLowerCase().includes('token') || key.toLowerCase().includes('key')) {
+            return '••••••••';
+        }
+        if (typeof value === 'object') return JSON.stringify(value);
+        return String(value);
+    };
+
+    // Filter out complex or empty keys for the preview
+    const displayEntries = Object.entries(parsedConfig)
+        .filter(([key, val]) => val !== "" && val !== null && val !== undefined && !['options'].includes(key))
+        .slice(0, 4);
+
     return (
-        <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-lg font-medium">
-                     {config.name}
-                </CardTitle>
-                <div className="bg-primary/10 text-primary px-2 py-1 rounded text-xs font-semibold">
-                    {definition?.name || config.adapterId}
+        <Card className="group relative overflow-hidden transition-all hover:shadow-md border-muted-foreground/20">
+             <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-background/50 backdrop-blur-sm rounded-md p-0.5">
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onEdit}>
+                    <Edit className="h-3.5 w-3.5" />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={onDelete}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+            </div>
+
+            <CardHeader className="flex flex-row items-center gap-4 pb-2">
+                <div className="flex h-10 w-10 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                    <Icon className="h-5 w-5" />
+                </div>
+                <div className="grid gap-1">
+                    <CardTitle className="text-base font-semibold leading-none tracking-tight">
+                         {config.name}
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                        {definition?.name || config.adapterId}
+                    </CardDescription>
                 </div>
             </CardHeader>
             <CardContent>
-                <div className="text-xs text-muted-foreground mt-2 space-y-1">
-                    {Object.entries(parsedConfig).slice(0, 3).map(([key, value]) => (
-                         <div key={key} className="flex justify-between">
-                            <span className="capitalize">{key}:</span>
-                            <span className="font-mono truncate max-w-[150px]">{String(value)}</span>
-                        </div>
-                    ))}
+                <div className="grid gap-1.5 text-xs text-muted-foreground mt-2">
+                    {displayEntries.length > 0 ? (
+                        displayEntries.map(([key, value]) => (
+                             <div key={key} className="flex items-center justify-between gap-2">
+                                <span className="capitalize">{key}:</span>
+                                <span className="font-mono truncate max-w-[120px]" title={String(value)}>{getDisplayValue(key, value)}</span>
+                            </div>
+                        ))
+                    ) : (
+                        <div className="text-xs text-muted-foreground italic">No specific configuration</div>
+                    )}
                 </div>
             </CardContent>
-            <CardFooter className="flex justify-end gap-2">
-                 <Button variant="ghost" size="icon" onClick={onEdit}>
-                    <Edit className="h-4 w-4" />
-                </Button>
-                <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={onDelete}>
-                    <Trash2 className="h-4 w-4" />
-                </Button>
-            </CardFooter>
         </Card>
     )
 }

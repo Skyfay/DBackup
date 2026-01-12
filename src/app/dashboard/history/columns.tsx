@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import { FileText } from "lucide-react";
+import { formatDuration } from "@/lib/utils";
 
 export interface Execution {
     id: string;
@@ -75,9 +76,7 @@ export const createColumns = (onViewLogs: (execution: Execution) => void): Colum
             if (!end) return <span className="text-muted-foreground italic">Running...</span>;
 
             const diff = end.getTime() - start.getTime();
-            const minutes = Math.floor(diff / 60000);
-            const seconds = ((diff % 60000) / 1000).toFixed(0);
-            return <span>{minutes}m {seconds}s</span>;
+            return <span>{formatDuration(diff)}</span>;
         }
     },
     {

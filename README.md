@@ -90,6 +90,8 @@ pnpm dev
 
 Open [http://localhost:3000/dashboard](http://localhost:3000/dashboard) with your browser to see the dashboard.
 
+> **Note**: You must create the first user account manually via the login screen ("Sign Up"). This self-registration feature is only available for the very first user to establish the administrator account.
+
 ## 🐳 Testing Infrastructure
 
 To spin up test instances of MySQL, Postgres, and MongoDB for development:

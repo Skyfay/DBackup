@@ -1,10 +1,31 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname } from "next/navigation"
-import { LayoutDashboard, Database, HardDrive, FolderOpen, CalendarClock, History, Settings, Bell } from "lucide-react"
+import { usePathname, useRouter } from "next/navigation"
+import { LayoutDashboard, Database, HardDrive, FolderOpen, CalendarClock, History, Settings, Bell, ChevronsUpDown, LogOut, Moon, Sun, Monitor } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { useSession, signOut } from "@/lib/auth-client"
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuGroup,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+    DropdownMenuSub,
+    DropdownMenuSubTrigger,
+    DropdownMenuSubContent,
+    DropdownMenuPortal,
+} from "@/components/ui/dropdown-menu"
+import {
+    Avatar,
+    AvatarFallback,
+    AvatarImage,
+} from "@/components/ui/avatar"
+import { Skeleton } from "@/components/ui/skeleton"
+import { useTheme } from "next-themes"
 
 const sidebarItems = [
     { icon: LayoutDashboard, label: "Overview", href: "/dashboard" },
@@ -19,6 +40,30 @@ const sidebarItems = [
 
 export function Sidebar() {
     const pathname = usePathname()
+    const { data: session, isPending } = useSession()
+    const router = useRouter()
+    const { setTheme } = useTheme()
+
+    const handleSignOut = async () => {
+        await signOut({
+            fetchOptions: {
+                onSuccess: () => {
+                    router.push("/")
+                }
+            }
+        })
+    }
+
+    // Get initials from name or email
+    const getInitials = (name?: string) => {
+        if (!name) return "U";
+        return name
+            .split(" ")
+            .map((n) => n[0])
+            .join("")
+            .toUpperCase()
+            .substring(0, 2);
+    };
 
     return (
         <div className="w-64 border-r bg-background h-screen flex flex-col hidden md:flex sticky top-0">
@@ -41,16 +86,80 @@ export function Sidebar() {
                 ))}
             </nav>
             <div className="p-4 border-t">
-                {/* Future User Profile Section */}
-                <div className="flex items-center gap-3 rounded-lg border p-3 shadow-sm bg-muted/50 cursor-not-allowed opacity-75">
-                    <div className="h-9 w-9 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold">
-                        A
+                {isPending ? (
+                     <div className="flex items-center gap-3 rounded-lg border p-3 shadow-sm bg-muted/50">
+                        <Skeleton className="h-9 w-9 rounded-full" />
+                        <div className="flex flex-col gap-1">
+                            <Skeleton className="h-4 w-24" />
+                            <Skeleton className="h-3 w-32" />
+                        </div>
                     </div>
-                    <div className="flex flex-col">
-                        <span className="text-sm font-medium">Admin User</span>
-                        <span className="text-xs text-muted-foreground">admin@local</span>
-                    </div>
-                </div>
+                ) : session ? (
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" className="relative h-auto w-full justify-start gap-2 px-2 hover:bg-sidebar-accent">
+                                <Avatar className="h-8 w-8 rounded-lg">
+                                    <AvatarImage src={session.user.image || ""} alt={session.user.name} />
+                                    <AvatarFallback className="rounded-lg">{getInitials(session.user.name)}</AvatarFallback>
+                                </Avatar>
+                                <div className="grid flex-1 text-left text-sm leading-tight">
+                                    <span className="truncate font-semibold">{session.user.name}</span>
+                                    <span className="truncate text-xs text-muted-foreground">{session.user.email}</span>
+                                </div>
+                                <ChevronsUpDown className="ml-auto size-4" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                            className="w-[--radix-dropdown-menu-trigger-width] min-w-56 rounded-lg"
+                            side="top" // Open upwards as it is at the bottom
+                            align="end"
+                            sideOffset={4}
+                        >
+                            <DropdownMenuLabel className="p-0 font-normal">
+                                <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
+                                    <Avatar className="h-8 w-8 rounded-lg">
+                                        <AvatarImage src={session.user.image || ""} alt={session.user.name} />
+                                        <AvatarFallback className="rounded-lg">{getInitials(session.user.name)}</AvatarFallback>
+                                    </Avatar>
+                                    <div className="grid flex-1 text-left text-sm leading-tight">
+                                        <span className="truncate font-semibold">{session.user.name}</span>
+                                        <span className="truncate text-xs text-muted-foreground">{session.user.email}</span>
+                                    </div>
+                                </div>
+                            </DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                             <DropdownMenuGroup>
+                                <DropdownMenuSub>
+                                    <DropdownMenuSubTrigger>
+                                        <Monitor className="mr-2 h-4 w-4" />
+                                        <span>Theme</span>
+                                    </DropdownMenuSubTrigger>
+                                    <DropdownMenuPortal>
+                                        <DropdownMenuSubContent>
+                                            <DropdownMenuItem onClick={() => setTheme("light")}>
+                                                <Sun className="mr-2 h-4 w-4" />
+                                                <span>Light</span>
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => setTheme("dark")}>
+                                                <Moon className="mr-2 h-4 w-4" />
+                                                <span>Dark</span>
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => setTheme("system")}>
+                                                <Monitor className="mr-2 h-4 w-4" />
+                                                <span>System</span>
+                                            </DropdownMenuItem>
+                                        </DropdownMenuSubContent>
+                                    </DropdownMenuPortal>
+                                </DropdownMenuSub>
+                            </DropdownMenuGroup>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={handleSignOut}>
+                                <LogOut className="mr-2 h-4 w-4" />
+                                Log out
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                ) : null}
             </div>
         </div>
     )

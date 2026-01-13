@@ -2,7 +2,7 @@
 
 import { ColumnDef } from "@tanstack/react-table"
 import { Button } from "@/components/ui/button"
-import { MoreHorizontal, Trash } from "lucide-react"
+import { MoreHorizontal, Trash, Pencil } from "lucide-react"
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -16,12 +16,16 @@ import { toast } from "sonner"
 import { User } from "@prisma/client"
 import { format } from "date-fns"
 import { DataTable } from "@/components/ui/data-table"
+import { useState } from "react"
+import { EditUserDialog } from "./edit-user-dialog"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
 interface UserTableProps {
     data: User[];
 }
 
 export function UserTable({ data }: UserTableProps) {
+    const [editingUser, setEditingUser] = useState<User | null>(null)
 
     const handleDelete = async (userId: string) => {
          toast.promise(deleteUser(userId), {
@@ -45,9 +49,10 @@ export function UserTable({ data }: UserTableProps) {
                 const image = row.getValue("image") as string;
                 const name = row.getValue("name") as string;
                 return (
-                    <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs overflow-hidden">
-                        {image ? <img src={image} alt={name} className="h-full w-full object-cover" /> : name?.charAt(0).toUpperCase()}
-                    </div>
+                    <Avatar className="h-8 w-8">
+                        <AvatarImage src={image} alt={name} />
+                        <AvatarFallback>{name?.charAt(0).toUpperCase()}</AvatarFallback>
+                    </Avatar>
                 )
             },
         },
@@ -80,13 +85,16 @@ export function UserTable({ data }: UserTableProps) {
                             </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
                             <DropdownMenuItem
                                 onClick={() => navigator.clipboard.writeText(user.id)}
                             >
                                 Copy User ID
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => setEditingUser(user)}>
+                                <Pencil className="mr-2 h-4 w-4" />
+                                Edit User
+                            </DropdownMenuItem>
                             <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => handleDelete(user.id)}>
                                 <Trash className="mr-2 h-4 w-4" />
                                 Delete User
@@ -99,6 +107,13 @@ export function UserTable({ data }: UserTableProps) {
     ]
 
     return (
-        <DataTable columns={columns} data={data} searchKey="email" />
+        <>
+            <DataTable columns={columns} data={data} searchKey="email" />
+            <EditUserDialog
+                user={editingUser}
+                open={!!editingUser}
+                onOpenChange={(open) => !open && setEditingUser(null)}
+            />
+        </>
     )
 }

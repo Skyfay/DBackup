@@ -31,3 +31,22 @@ export async function deleteUser(userId: string) {
         return { success: false, error: "Failed to delete user" };
     }
 }
+
+export async function updateUser(userId: string, data: { name?: string; email?: string }) {
+    try {
+        await prisma.user.update({
+            where: {
+                id: userId
+            },
+            data: {
+                name: data.name,
+                email: data.email
+            }
+        });
+        revalidatePath("/dashboard/users");
+        return { success: true };
+    } catch (error) {
+         console.error(error);
+        return { success: false, error: "Failed to update user" };
+    }
+}

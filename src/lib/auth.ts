@@ -17,10 +17,25 @@ export const auth = betterAuth({
                 const url = new URL(ctx.request.url);
                 if (url.pathname.includes("/sign-up/email")) {
                     const userCount = await prisma.user.count();
+                    // If users exist, check if the requester is authenticated (admin)
                     if (userCount > 0) {
-                         throw new APIError("FORBIDDEN", {
-                            message: "Registration is disabled because an admin account already exists."
-                         });
+                        try {
+                            // We need to construct a headers object that matches what getSession expects
+                            // The context request headers are available
+                            const session = await auth.api.getSession({
+                                headers: ctx.headers
+                            });
+
+                            if (session) {
+                                return; // Allow if authenticated
+                            }
+                        } catch (e) {
+                            // Ignore error, verify session failed
+                        }
+
+                        throw new APIError("FORBIDDEN", {
+                           message: "Registration is disabled because an admin account already exists."
+                        });
                     }
                 }
             }

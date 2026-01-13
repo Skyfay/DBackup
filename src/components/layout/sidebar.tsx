@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { LayoutDashboard, Database, HardDrive, FolderOpen, CalendarClock, History, Settings, Bell, ChevronsUpDown, LogOut, Moon, Sun, Monitor } from "lucide-react"
+import { LayoutDashboard, Database, HardDrive, FolderOpen, CalendarClock, History, Settings, Bell, ChevronsUpDown, LogOut, Moon, Sun, Monitor, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { useSession, signOut } from "@/lib/auth-client"
@@ -35,6 +35,7 @@ const sidebarItems = [
     { icon: CalendarClock, label: "Jobs", href: "/dashboard/jobs" },
     { icon: History, label: "History", href: "/dashboard/history" },
     { icon: Bell, label: "Notifications", href: "/dashboard/notifications" },
+    { icon: Users, label: "Users", href: "/dashboard/users" },
     { icon: Settings, label: "Settings", href: "/dashboard/settings" },
 ]
 

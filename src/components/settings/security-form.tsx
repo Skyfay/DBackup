@@ -34,15 +34,12 @@ export function SecurityForm() {
     // Check if 2FA is enabled from session
     const isTwoFactorEnabled = session?.user?.twoFactorEnabled
 
+
     const handleEnable2FA = async () => {
         setIsPending(true)
         try {
             const result = await authClient.twoFactor.enable({
-                password: password // Better-Auth requires password to enable 2FA usually, or we can just get the secret first?
-                                   // Actually client.twoFactor.enable({ password }) returns data...
-                                   // Let's assume we need to prompt for password first if not passed,
-                                   // but the library might handle it.
-                                   // Wait, better-auth docs say: enable({ password: ... }) returns Promise<{ totpURI: string, backupCodes: string[] } | { error: ... }>
+                password: password
             })
 
             if (result.error) {
@@ -56,7 +53,7 @@ export function SecurityForm() {
             }
         } catch (error) {
             console.error(error)
-            toast.error("Ein Fehler ist aufgetreten")
+            toast.error("An error occurred")
         } finally {
             setIsPending(false)
         }
@@ -74,12 +71,12 @@ export function SecurityForm() {
                 return
             }
 
-            toast.success("Zwei-Faktor-Authentifizierung wurde aktiviert")
+            toast.success("Two-factor authentication enabled successfully")
             setTotpURI(null)
             setShowBackupCodes(true)
         } catch (error) {
            console.error(error)
-           toast.error("Verifizierung fehlgeschlagen")
+           toast.error("Verification failed")
         } finally {
             setIsPending(false)
         }
@@ -99,9 +96,9 @@ export function SecurityForm() {
                 return
             }
 
-            toast.success("Zwei-Faktor-Authentifizierung deaktiviert")
+            toast.success("Two-factor authentication disabled")
         } catch (error) {
-            toast.error("Fehler beim Deaktivieren")
+            toast.error("Error disabling 2FA")
         } finally {
             setIsDisabling(false)
             setPassword("")
@@ -115,17 +112,17 @@ export function SecurityForm() {
     return (
         <Card>
             <CardHeader>
-                <CardTitle>Sicherheit</CardTitle>
+                <CardTitle>Security</CardTitle>
                 <CardDescription>
-                    Verwalten Sie Ihre Sicherheitseinstellungen und die Zwei-Faktor-Authentifizierung.
+                    Manage your account security settings and two-factor authentication.
                 </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
                 <div className="flex items-center justify-between space-x-2">
                     <div className="space-y-0.5">
-                        <Label className="text-base">Zwei-Faktor-Authentifizierung (2FA)</Label>
+                        <Label className="text-base">Two-Factor Authentication (2FA)</Label>
                         <p className="text-sm text-muted-foreground">
-                            Erhöhen Sie die Sicherheit Ihres Kontos durch einen zweiten Bestätigungsschritt.
+                            Enhance your account security with a second verification step.
                         </p>
                     </div>
                     {isTwoFactorEnabled ? (
@@ -133,18 +130,18 @@ export function SecurityForm() {
                             <DialogTrigger asChild>
                                 <Button variant="destructive" size="sm" disabled={isDisabling}>
                                     {isDisabling && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                    Deaktivieren
+                                    Disable
                                 </Button>
                             </DialogTrigger>
                             <DialogContent>
                                 <DialogHeader>
-                                    <DialogTitle>2FA Deaktivieren</DialogTitle>
+                                    <DialogTitle>Disable 2FA</DialogTitle>
                                     <DialogDescription>
-                                        Bitte geben Sie Ihr Passwort ein, um die Zwei-Faktor-Authentifizierung zu deaktivieren.
+                                        Please enter your password to disable two-factor authentication.
                                     </DialogDescription>
                                 </DialogHeader>
                                 <div className="space-y-2 py-4">
-                                    <Label htmlFor="password-disable">Passwort</Label>
+                                    <Label htmlFor="password-disable">Password</Label>
                                     <Input
                                         id="password-disable"
                                         type="password"
@@ -153,9 +150,9 @@ export function SecurityForm() {
                                     />
                                 </div>
                                 <DialogFooter>
-                                    <Button variant="outline" onClick={() => setPassword("")}>Abbrechen</Button>
+                                    <Button variant="outline" onClick={() => setPassword("")}>Cancel</Button>
                                     <Button variant="destructive" onClick={handleDisable2FA} disabled={!password || isDisabling}>
-                                        Deaktivieren
+                                        Disable
                                     </Button>
                                 </DialogFooter>
                             </DialogContent>
@@ -164,22 +161,22 @@ export function SecurityForm() {
                         <Dialog>
                              <DialogTrigger asChild>
                                 <Button variant="default" size="sm">
-                                    Aktivieren
+                                    Enable
                                 </Button>
                             </DialogTrigger>
                             <DialogContent className="sm:max-w-md">
                                 <DialogHeader>
-                                    <DialogTitle>2FA Einrichten</DialogTitle>
+                                    <DialogTitle>Set up 2FA</DialogTitle>
                                     <DialogDescription>
-                                       Schützen Sie Ihr Konto in zwei Schritten.
+                                       Protect your account in two steps.
                                     </DialogDescription>
                                 </DialogHeader>
 
                                 {!totpURI && !showBackupCodes && (
                                     <div className="space-y-4 py-4">
-                                        <p className="text-sm">Geben Sie Ihr Passwort ein, um die Einrichtung zu starten.</p>
+                                        <p className="text-sm">Enter your password to start the setup.</p>
                                         <div className="space-y-2">
-                                            <Label htmlFor="password-enable">Passwort</Label>
+                                            <Label htmlFor="password-enable">Password</Label>
                                             <Input
                                                 id="password-enable"
                                                 type="password"
@@ -189,7 +186,7 @@ export function SecurityForm() {
                                         </div>
                                         <Button onClick={handleEnable2FA} disabled={!password || isPending} className="w-full">
                                             {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                            Fortfahren
+                                            Continue
                                         </Button>
                                     </div>
                                 )}
@@ -200,10 +197,10 @@ export function SecurityForm() {
                                             <QRCodeSVG value={totpURI} size={150} />
                                         </div>
                                         <p className="text-sm text-muted-foreground text-center">
-                                            Scannen Sie diesen QR-Code mit Ihrer Authenticator-App (z.B. Google Authenticator, Authy).
+                                            Scan this QR code with your authenticator app (e.g. Google Authenticator, Authy).
                                         </p>
                                         <div className="space-y-2">
-                                            <Label htmlFor="code">Verifizierungs-Code</Label>
+                                            <Label htmlFor="code">Verification Code</Label>
                                             <Input
                                                 id="code"
                                                 placeholder="123456"
@@ -214,7 +211,7 @@ export function SecurityForm() {
                                         </div>
                                          <Button onClick={handleVerifyTOTP} disabled={verificationCode.length !== 6 || isPending} className="w-full">
                                             {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                            Verifizieren & Aktivieren
+                                            Verify & Enable
                                         </Button>
                                     </div>
                                 )}
@@ -223,13 +220,13 @@ export function SecurityForm() {
                                      <div className="space-y-4 py-4">
                                         <div className="flex items-center gap-2 text-green-600 mb-2">
                                             <CheckCircle2 className="h-5 w-5" />
-                                            <span className="font-medium">2FA erfolgreich aktiviert!</span>
+                                            <span className="font-medium">2FA enabled successfully!</span>
                                         </div>
                                         <Alert>
                                             <AlertCircle className="h-4 w-4" />
-                                            <AlertTitle>Backup-Codes</AlertTitle>
+                                            <AlertTitle>Backup Codes</AlertTitle>
                                             <AlertDescription>
-                                                Speichern Sie diese Codes sicher ab. Sie können verwendet werden, wenn Sie Zugriff auf Ihr Gerät verlieren.
+                                                Save these codes securely. You can use them if you lose access to your device.
                                             </AlertDescription>
                                         </Alert>
                                         <div className="grid grid-cols-2 gap-2 mt-4 bg-muted p-4 rounded-md font-mono text-sm">
@@ -238,7 +235,7 @@ export function SecurityForm() {
                                             ))}
                                         </div>
                                         <Button className="w-full" onClick={() => setShowBackupCodes(false)}>
-                                            Fertig
+                                            Done
                                         </Button>
                                      </div>
                                 )}

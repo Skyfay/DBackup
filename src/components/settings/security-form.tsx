@@ -125,7 +125,7 @@ export function SecurityForm() {
                             Enhance your account security with a second verification step.
                         </p>
                     </div>
-                    {isTwoFactorEnabled ? (
+                    {isTwoFactorEnabled && !showBackupCodes ? (
                          <Dialog>
                             <DialogTrigger asChild>
                                 <Button variant="destructive" size="sm" disabled={isDisabling}>

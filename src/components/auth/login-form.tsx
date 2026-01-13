@@ -4,7 +4,7 @@ import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
-import { signIn, signUp } from "@/lib/auth-client"
+import { signIn, signUp, authClient } from "@/lib/auth-client"
 import { Button } from "@/components/ui/button"
 import {
   Form,
@@ -15,6 +15,7 @@ import {
   FormMessage,
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
@@ -34,6 +35,8 @@ export function LoginForm({ allowSignUp = true }: LoginFormProps) {
   const router = useRouter()
   const [isLogin, setIsLogin] = useState(true)
   const [loading, setLoading] = useState(false)
+  const [twoFactorStep, setTwoFactorStep] = useState(false)
+  const [totpCode, setTotpCode] = useState("")
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -44,6 +47,29 @@ export function LoginForm({ allowSignUp = true }: LoginFormProps) {
     },
   })
 
+  async function handleVerify2FA() {
+      setLoading(true)
+      try {
+          await authClient.twoFactor.verifyOtp({
+              code: totpCode,
+              fetchOptions: {
+                  onSuccess: () => {
+                       router.push("/dashboard")
+                       toast.success("Login successful")
+                  },
+                  onError: (ctx) => {
+                      toast.error(ctx.error.message)
+                      setLoading(false)
+                  }
+              }
+          })
+      } catch (error) {
+          console.error(error)
+          toast.error("An error occurred")
+          setLoading(false)
+      }
+  }
+
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setLoading(true)
     try {
@@ -53,10 +79,22 @@ export function LoginForm({ allowSignUp = true }: LoginFormProps) {
           password: values.password,
           callbackURL: "/dashboard",
           fetchOptions: {
-            onSuccess: () => {
+            onSuccess: (ctx) => {
+               console.log("Login Success Context:", ctx);
+               if (ctx.data?.twoFactorRedirect) {
+                 setTwoFactorStep(true)
+                 setLoading(false)
+                 return
+               }
               router.push("/dashboard")
             },
             onError: (ctx) => {
+              console.log("Login Error Context:", ctx);
+              if (ctx.error.code === "TWO_FACTOR_REQUIRED" || ctx.error.message.includes("2FA") || ctx.error.message.includes("Two factor")) {
+                 setTwoFactorStep(true)
+                 setLoading(false)
+                 return
+              }
               toast.error(ctx.error.message)
               setLoading(false)
             }
@@ -84,6 +122,56 @@ export function LoginForm({ allowSignUp = true }: LoginFormProps) {
        console.error(error);
        setLoading(false);
     }
+  }
+
+  if (twoFactorStep) {
+      return (
+          <Card className="w-[350px]">
+               <CardHeader>
+                  <CardTitle>Two-Factor Authentication</CardTitle>
+                  <CardDescription>Enter the code from your authenticator app.</CardDescription>
+               </CardHeader>
+               <CardContent>
+                   <div className="space-y-4">
+                       <div className="space-y-2">
+                           <Label htmlFor="2fa-code">Verification Code</Label>
+                           <Input
+                              id="2fa-code"
+                              value={totpCode}
+                              onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                              placeholder="123456"
+                              className="text-center tracking-widest text-lg"
+                              maxLength={6}
+                              autoFocus
+                              onKeyDown={(e) => {
+                                  if (e.key === "Enter" && totpCode.length === 6) {
+                                      handleVerify2FA()
+                                  }
+                              }}
+                           />
+                       </div>
+                       <Button
+                          onClick={handleVerify2FA}
+                          className="w-full"
+                          disabled={loading || totpCode.length !== 6}
+                       >
+                          {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                          Verify
+                       </Button>
+                       <Button
+                          variant="ghost"
+                          className="w-full"
+                          onClick={() => {
+                              setTwoFactorStep(false)
+                              setTotpCode("")
+                          }}
+                       >
+                           Back to Login
+                       </Button>
+                   </div>
+               </CardContent>
+          </Card>
+      )
   }
 
   return (

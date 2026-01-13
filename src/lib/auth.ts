@@ -13,12 +13,15 @@ export const auth = betterAuth({
     },
     hooks: {
         before: async (ctx) => {
-            if (ctx.path === "/sign-up/email") {
-                const userCount = await prisma.user.count();
-                if (userCount > 0) {
-                     throw new APIError("FORBIDDEN", {
-                        message: "Registration is disabled because an admin account already exists."
-                     });
+            if (ctx.request?.url) { // Ensure request and url exist
+                const url = new URL(ctx.request.url);
+                if (url.pathname.includes("/sign-up/email")) {
+                    const userCount = await prisma.user.count();
+                    if (userCount > 0) {
+                         throw new APIError("FORBIDDEN", {
+                            message: "Registration is disabled because an admin account already exists."
+                         });
+                    }
                 }
             }
         }

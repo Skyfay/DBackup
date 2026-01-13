@@ -3,9 +3,9 @@
 import { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { format } from "date-fns";
 import { FileText } from "lucide-react";
 import { formatDuration } from "@/lib/utils";
+import { DateDisplay } from "@/components/date-display";
 
 export interface Execution {
     id: string;
@@ -64,7 +64,7 @@ export const createColumns = (onViewLogs: (execution: Execution) => void): Colum
         accessorKey: "startedAt",
         header: "Started At",
         cell: ({ row }) => {
-             return format(new Date(row.getValue("startedAt")), "PPpp");
+             return <DateDisplay date={row.getValue("startedAt")} format="PPpp" />;
         }
     },
     {

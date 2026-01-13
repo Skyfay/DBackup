@@ -1,9 +1,9 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import prisma from "@/lib/prisma";
-import { format } from "date-fns";
 import { formatDuration } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Database, HardDrive } from "lucide-react";
+import { DateDisplay } from "@/components/date-display";
 
 export async function RecentActivity() {
     const activities = await prisma.execution.findMany({
@@ -62,7 +62,7 @@ export async function RecentActivity() {
                                             <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                                 {meta.sourceName && <span>{meta.sourceName}</span>}
                                                 <span>•</span>
-                                                <span>{format(execution.startedAt, "PP p")}</span>
+                                                <span><DateDisplay date={execution.startedAt} format="PP p" /></span>
                                             </div>
                                         </div>
                                     </div>

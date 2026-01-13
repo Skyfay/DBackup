@@ -1,9 +1,9 @@
 "use client";
 
 import { ColumnDef } from "@tanstack/react-table";
-import { format } from "date-fns";
 import { ArrowUpDown, RotateCcw, Trash2, Download, Database, HardDrive } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DateDisplay } from "@/components/date-display";
 import {
     Tooltip,
     TooltipContent,
@@ -125,7 +125,7 @@ export const createColumns = ({ onRestore, onDownload, onDelete }: ColumnsProps)
         },
         cell: ({ row }) => {
             const dateStr: string = row.getValue("lastModified");
-            return <div className="text-sm text-muted-foreground">{format(new Date(dateStr), "PP p")}</div>;
+            return <div className="text-sm text-muted-foreground"><DateDisplay date={dateStr} format="PP p" /></div>;
         },
     },
     {

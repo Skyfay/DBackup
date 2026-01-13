@@ -19,6 +19,7 @@ import { DataTable } from "@/components/ui/data-table"
 import { useState } from "react"
 import { EditUserDialog } from "./edit-user-dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { DateDisplay } from "@/components/date-display"
 
 interface UserTableProps {
     data: User[];
@@ -68,7 +69,7 @@ export function UserTable({ data }: UserTableProps) {
             accessorKey: "createdAt",
             header: "Created At",
             cell: ({ row }) => {
-                return <div>{format(new Date(row.getValue("createdAt")), 'PPp')}</div>
+                return <div><DateDisplay date={row.getValue("createdAt")} format="PPp" /></div>
             },
         },
         {

@@ -1,3 +1,5 @@
+"use server"
+
 import prisma from "@/lib/prisma";
 import { User } from "better-auth";
 import { revalidatePath } from "next/cache";

@@ -7,6 +7,15 @@ export const auth = betterAuth({
     database: prismaAdapter(prisma, {
         provider: "sqlite",
     }),
+    user: {
+        additionalFields: {
+            timezone: {
+                type: "string",
+                required: false,
+                defaultValue: "UTC"
+            }
+        }
+    },
     emailAndPassword: {
         enabled: true,
         autoSignIn: true
@@ -33,11 +42,11 @@ export const auth = betterAuth({
                         } catch (e) {
                             // ignore
                         }
-                        
+
                         // Check if we are checking access permission
                         return {
                             success: false, // Explicitly match type
-                            error: "Registration is restricted to administrators." 
+                            error: "Registration is restricted to administrators."
                         } as any; /* Type casting to bypass strict typing if APIError is not matching context return */
                     }
                 }

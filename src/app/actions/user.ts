@@ -45,6 +45,7 @@ export async function updateUser(userId: string, data: { name?: string; email?: 
             }
         });
         revalidatePath("/dashboard/users");
+        revalidatePath("/dashboard/settings");
         return { success: true };
     } catch (error) {
          console.error(error);

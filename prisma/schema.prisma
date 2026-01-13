@@ -63,6 +63,7 @@ model User {
   email         String
   emailVerified Boolean
   image         String?
+  timezone      String    @default("UTC")
   createdAt     DateTime
   updatedAt     DateTime
   sessions      Session[]

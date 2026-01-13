@@ -95,7 +95,8 @@
 
 ## 🔐 Authentication & Security
 - [ ] **User Management**
-    - [ ] Login page
+    - [x] Login page
+    - [x] Setup Better-Auth (Clean implementation)
     - [ ] Auth via OIDC
     - [ ] Passkey only, TOTP for 2FA
     - [ ] Multi-User Setup

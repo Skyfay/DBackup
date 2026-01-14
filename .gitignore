@@ -47,4 +47,4 @@ prisma/dev.db
 backups/
 
 # uploads
-public/uploads/
+storage/avatars/

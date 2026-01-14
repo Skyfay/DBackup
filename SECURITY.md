@@ -65,9 +65,9 @@ This document outlines the security vulnerabilities identified during the audit 
     - [x] Configure `better-auth` middleware or manual session check to protect `/dashboard/*` and `/api/*` routes by default.
     - [x] Exclude public routes (e.g., `/`, `/api/auth/*`, `/login`).
 
-- [ ] **Review File Upload Storage**
-    - [ ] Consider moving uploads outside of `public/` to a private directory (e.g., `storage/uploads`).
-    - [ ] Create an API route `GET /api/avatar/[filename]` to serve these files with correct headers (`Content-Type`, `X-Content-Type-Options: nosniff`).
+- [x] **Review File Upload Storage**
+    - [x] Consider moving uploads outside of `public/` to a private directory (e.g., `storage/uploads`).
+    - [x] Create an API route `GET /api/avatar/[filename]` to serve these files with correct headers (`Content-Type`, `X-Content-Type-Options: nosniff`).
 
 ## Reporting New Issues
 If you discover a new vulnerability, please add it to this document or create a new issue labeled `security`.

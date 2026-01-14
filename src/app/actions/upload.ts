@@ -31,12 +31,30 @@ async function validateImageSignature(file: File): Promise<boolean> {
 
 // Helper function to delete old avatar file
 async function deleteOldAvatar(userImage: string | null) {
-    if (!userImage || !userImage.startsWith('/uploads/avatars/')) return;
+    // Old format: /uploads/avatars/filename
+    // New format: /api/avatar/filename
+    if (!userImage) return;
+
+    let filename: string;
+    if (userImage.startsWith('/uploads/avatars/')) {
+        filename = path.basename(userImage);
+    } else if (userImage.startsWith('/api/avatar/')) {
+        filename = path.basename(userImage);
+    } else {
+        return;
+    }
 
     try {
-        const filename = path.basename(userImage);
-        const filepath = path.join(process.cwd(), "public", "uploads", "avatars", filename);
-        await unlink(filepath);
+        // Try deleting from new location first
+        let filepath = path.join(process.cwd(), "storage", "avatars", filename);
+
+        // If not found, try old location (migration support)
+        try {
+            await unlink(filepath);
+        } catch {
+             filepath = path.join(process.cwd(), "public", "uploads", "avatars", filename);
+             await unlink(filepath);
+        }
     } catch (error) {
         console.error("Failed to delete old avatar file:", error);
         // Continue execution even if file deletion fails
@@ -71,14 +89,18 @@ export async function uploadAvatar(formData: FormData) {
     const buffer = Buffer.from(await file.arrayBuffer());
     const filename = `${session.user.id}-${Date.now()}${path.extname(file.name)}`;
 
-    // Ensure the uploads directory matches where we created it (public/uploads/avatars)
-    const uploadDir = path.join(process.cwd(), "public", "uploads", "avatars");
+    // Save to private storage
+    const uploadDir = path.join(process.cwd(), "storage", "avatars");
+    // Ensure dir exists
+    const fs = require('fs');
+    if (!fs.existsSync(uploadDir)){
+        fs.mkdirSync(uploadDir, { recursive: true });
+    }
+
     const filepath = path.join(uploadDir, filename);
 
     try {
-        // Delete old avatar if it exists (check database explicitly to get latest state if needed,
-        // but session.user.image is usually sufficient handled by better-auth session)
-        // Ideally we should fetch the user from DB to be sure, but session is likely fresh enough or we can fetch.
+        // Delete old avatar if it exists
         const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { image: true } });
         if (user?.image) {
             await deleteOldAvatar(user.image);
@@ -86,7 +108,7 @@ export async function uploadAvatar(formData: FormData) {
 
         await writeFile(filepath, buffer);
 
-        const publicUrl = `/uploads/avatars/${filename}`;
+        const publicUrl = `/api/avatar/${filename}`;
 
         await prisma.user.update({
             where: { id: session.user.id },

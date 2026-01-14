@@ -8,75 +8,65 @@ datasource db {
 }
 
 model AdapterConfig {
-  id          String   @id @default(uuid())
-  name        String
-  type        String   // 'database', 'storage', 'notification'
-  adapterId   String   // 'mysql', 's3', etc.
-  config      String   // JSON string of config
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  jobsSource      Job[] @relation("Source")
-  jobsDestination Job[] @relation("Destination")
-  jobsNotification Job[] @relation("Notifications")
+  id               String   @id @default(uuid())
+  name             String
+  type             String
+  adapterId        String
+  config           String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  jobsDestination  Job[]    @relation("Destination")
+  jobsSource       Job[]    @relation("Source")
+  jobsNotification Job[]    @relation("Notifications")
 }
 
 model Job {
-  id            String   @id @default(uuid())
+  id            String          @id @default(uuid())
   name          String
-  schedule      String   // Cron expression
-  enabled       Boolean  @default(true)
-
+  schedule      String
+  enabled       Boolean         @default(true)
   sourceId      String
-  source        AdapterConfig @relation("Source", fields: [sourceId], references: [id])
-
   destinationId String
-  destination   AdapterConfig @relation("Destination", fields: [destinationId], references: [id])
-
-  notifications AdapterConfig[] @relation("Notifications")
-
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
   executions    Execution[]
-
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  destination   AdapterConfig   @relation("Destination", fields: [destinationId], references: [id])
+  source        AdapterConfig   @relation("Source", fields: [sourceId], references: [id])
+  notifications AdapterConfig[] @relation("Notifications")
 }
 
 model Execution {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   jobId     String?
-  job       Job?     @relation(fields: [jobId], references: [id])
-
-  type      String   @default("Backup") // 'Backup', 'Restore'
-  status    String   // 'pending', 'running', 'success', 'failed'
-  logs      String   // JSON array of logs
-  startedAt DateTime @default(now())
+  type      String    @default("Backup")
+  status    String
+  logs      String
+  startedAt DateTime  @default(now())
   endedAt   DateTime?
-
-  size      Int?     // Size in bytes
-  path      String?  // Path in destination
-  metadata  String?  // JSON metadata (e.g. number of DBs)
+  size      Int?
+  path      String?
+  metadata  String?
+  job       Job?      @relation(fields: [jobId], references: [id])
 }
 
 model User {
-  id            String    @id
-  name          String
-  email         String
-  emailVerified Boolean
-  image         String?
-  timezone      String    @default("UTC")
-  dateFormat    String    @default("P") // e.g. "P" for localized date, "yyyy-MM-dd" for ISO
-  timeFormat    String    @default("p") // e.g. "p" for localized time, "HH:mm" for 24h
-  createdAt     DateTime
-  updatedAt     DateTime
-  sessions      Session[]
-  accounts      Account[]
+  id               String     @id
+  name             String
+  email            String     @unique
+  emailVerified    Boolean
+  image            String?
+  timezone         String     @default("UTC")
+  dateFormat       String     @default("P")
+  timeFormat       String     @default("p")
+  createdAt        DateTime
+  updatedAt        DateTime
   twoFactorEnabled Boolean?
+  passkeyTwoFactor Boolean?   @default(false)
   twoFactor        TwoFactor?
-
+  accounts         Account[]
   passkeys         Passkey[]
-  passkeyTwoFactor Boolean? @default(false)
+  sessions         Session[]
 
-  @@unique([email])
   @@map("user")
 }
 
@@ -84,33 +74,31 @@ model TwoFactor {
   id          String @id
   secret      String
   backupCodes String
-  userId      String
+  userId      String @unique
   user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  @@unique([userId])
 }
 
 model Passkey {
-  id             String    @id
-  name           String?
-  publicKey      String
-  userId         String
-  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  credentialID   String
-  counter        Int
-  deviceType     String
-  backedUp       Boolean
-  transports     String?
-  createdAt      DateTime?
-  aaguid         String?
+  id           String    @id
+  name         String?
+  publicKey    String
+  userId       String
+  credentialID String    @unique
+  counter      Int
+  deviceType   String
+  backedUp     Boolean
+  transports   String?
+  createdAt    DateTime?
+  aaguid       String?
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([credentialID])
   @@map("passkey")
 }
 
 model Session {
   id        String   @id
   expiresAt DateTime
-  token     String
+  token     String   @unique
   createdAt DateTime
   updatedAt DateTime
   ipAddress String?
@@ -118,7 +106,6 @@ model Session {
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([token])
   @@map("session")
 }
 
@@ -127,7 +114,6 @@ model Account {
   accountId             String
   providerId            String
   userId                String
-  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   accessToken           String?
   refreshToken          String?
   idToken               String?
@@ -137,6 +123,7 @@ model Account {
   password              String?
   createdAt             DateTime
   updatedAt             DateTime
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("account")
 }

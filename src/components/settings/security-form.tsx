@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { format } from "date-fns"
+import { togglePasskeyTwoFactor as togglePasskeyAction } from "@/app/actions/user"
 
 export function SecurityForm() {
     const { data: session, refetch } = authClient.useSession()
@@ -190,12 +191,19 @@ export function SecurityForm() {
         }
 
         try {
-            // Update user preference
-            await authClient.user.update({
-                passkeyTwoFactor: checked
-            })
-            await refetch()
-            toast.success(checked ? "Passkey configured as 2FA" : "Passkey configured for login only")
+            // Update user preference via Server Action
+            if (session?.user?.id) {
+                const result = await togglePasskeyAction(session.user.id, checked)
+                if (result.success) {
+                    toast.success(checked ? "Passkey configured as 2FA" : "Passkey configured for login only")
+                    // Force a session refresh
+                    await refetch()
+                    // Reload to ensure state is consistent
+                    window.location.reload()
+                } else {
+                     toast.error(result.error || "Failed to update settings")
+                }
+            }
         } catch (error) {
             toast.error("Failed to update settings")
         }

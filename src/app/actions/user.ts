@@ -26,9 +26,30 @@ export async function deleteUser(userId: string) {
             }
         });
         revalidatePath("/dashboard/users");
+        revalidatePath("/dashboard/settings");
         return { success: true };
     } catch (error) {
-        return { success: false, error: "Failed to delete user" };
+        return { success: false, error: "Failed to update user" };
+    }
+}
+
+export async function togglePasskeyTwoFactor(userId: string, enabled: boolean) {
+    try {
+        await prisma.user.update({
+            where: {
+                id: userId
+            },
+            data: {
+                passkeyTwoFactor: enabled,
+                twoFactorEnabled: enabled // Force enable native 2FA flag to trigger 2FA flow
+            }
+        });
+        
+        revalidatePath("/dashboard/settings");
+        return { success: true };
+    } catch (error) {
+        console.error(error);
+        return { success: false, error: "Failed to update passkey settings" };
     }
 }
 

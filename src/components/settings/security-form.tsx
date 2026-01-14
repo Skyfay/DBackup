@@ -177,7 +177,20 @@ export function SecurityForm() {
                   toast.error(result.error.message)
              } else {
                  toast.success("Passkey deleted")
-                 await fetchPasskeys()
+
+                 // Fetch updated list to check if any passkeys remain
+                 const listResult = await authClient.passkey.listUserPasskeys()
+                 const remaining = listResult.data || []
+                 setPasskeys(remaining)
+
+                 // If no passkeys remain and Passkey 2FA was enabled, disable it automatically
+                 if (remaining.length === 0 && isPasskeyTwoFactor && session?.user?.id) {
+                     const toggleResult = await togglePasskeyAction(session.user.id, false)
+                     if (toggleResult.success) {
+                         toast.info("Passkey 2FA has been disabled because you removed your last passkey.")
+                         await refetch()
+                     }
+                 }
              }
         } catch (error) {
             toast.error("Failed to delete passkey")

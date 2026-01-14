@@ -17,8 +17,9 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml* ./
 # Install pnpm if needed or use corepack
 RUN corepack enable && corepack prepare pnpm@latest --activate
-# Using --force because of potential pnpm version mismatch in lockfile
-RUN pnpm install --frozen-lockfile --force
+# Using --no-frozen-lockfile because of pnpm version mismatch (lockfile ignored by --force)
+# We regenerate the lockfile during build
+RUN pnpm install --no-frozen-lockfile
 
 # 2. Builder Phase
 FROM base AS builder

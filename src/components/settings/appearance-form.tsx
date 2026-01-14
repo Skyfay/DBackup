@@ -11,6 +11,8 @@ export function AppearanceForm() {
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
+    // This is necessary to avoid hydration mismatch with next-themes.
+    // It triggers a re-render to ensure the correct theme is displayed after client-side hydration.
     setMounted(true)
   }, [])
 

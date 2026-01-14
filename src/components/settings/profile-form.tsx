@@ -115,7 +115,7 @@ export function ProfileForm({ user }: ProfileFormProps) {
             } else {
                 toast.error(result.error || "Failed to update avatar");
             }
-        } catch (error) {
+        } catch {
             toast.error("An error occurred while uploading");
         } finally {
             setIsUploading(false);
@@ -136,7 +136,7 @@ export function ProfileForm({ user }: ProfileFormProps) {
             } else {
                 toast.error(result.error || "Failed to remove avatar");
             }
-        } catch (error) {
+        } catch {
             toast.error("An error occurred while removing avatar");
         } finally {
             setIsUploading(false);
@@ -265,7 +265,7 @@ export function ProfileForm({ user }: ProfileFormProps) {
                                                 </Button>
                                             </FormControl>
                                         </PopoverTrigger>
-                                        <PopoverContent className="w-[300px] p-0">
+                                        <PopoverContent className="w-75 p-0">
                                             <Command>
                                                 <CommandInput placeholder="Search timezone..." />
                                                 <CommandList>

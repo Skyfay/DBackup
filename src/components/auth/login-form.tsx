@@ -42,7 +42,14 @@ export function LoginForm({ allowSignUp = true }: LoginFormProps) {
   const handlePasskeyLogin = async () => {
         setLoading(true)
         try {
-            const result = await signIn.passkey()
+            const result = await signIn.passkey({
+                fetchOptions: {
+                    onSuccess: () => {
+                        toast.success("Login successful")
+                        router.push("/dashboard")
+                    }
+                }
+            })
              if (result?.error) {
                 toast.error(result.error.message || "Failed to sign in with passkey")
             }

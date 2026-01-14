@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters";
 import { StorageAdapter } from "@/lib/core/interfaces";
+import { decryptConfig } from "@/lib/crypto";
 import prisma from "@/lib/prisma";
 import path from "path";
 import os from "os";
@@ -31,7 +32,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
         }
 
         const adapter = registry.get(adapterConfig.adapterId) as StorageAdapter;
-        const config = JSON.parse(adapterConfig.config);
+        const config = decryptConfig(JSON.parse(adapterConfig.config));
 
         const tempDir = os.tmpdir();
         tempFile = path.join(tempDir, path.basename(file));

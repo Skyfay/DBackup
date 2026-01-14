@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { encryptConfig, decryptConfig } from "@/lib/crypto";
 
 export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
@@ -10,7 +11,33 @@ export async function GET(req: NextRequest) {
             where: type ? { type } : undefined,
             orderBy: { createdAt: 'desc' }
         });
-        return NextResponse.json(adapters);
+
+        const decryptedAdapters = adapters.map(adapter => {
+            try {
+                // Parse the config JSON first
+                const configObj = JSON.parse(adapter.config);
+                // Decrypt sensitive fields
+                const decryptedConfig = decryptConfig(configObj);
+                // Return adapter with config object (or string depending on frontend expectation)
+                // The frontend seems to expect objects if we look at similar code or just stringified
+                // Actually the API previously returned the raw Prisma result where `config` is string.
+                // However, the frontend likely JSON.parse() it.
+                // Wait, Prisma returns `config` as string because schema says `String`.
+
+                // If I modify the response here, I should make sure I am consistent.
+                // If I return the string, I should stringify it back.
+
+                return {
+                    ...adapter,
+                    config: JSON.stringify(decryptedConfig)
+                };
+            } catch (e) {
+                console.error(`Failed to process config for adapter ${adapter.id}`, e);
+                return adapter; // Return as-is if error (fallback)
+            }
+        });
+
+        return NextResponse.json(decryptedAdapters);
     } catch (error) {
         return NextResponse.json({ error: "Failed to fetch adapters" }, { status: 500 });
     }
@@ -26,8 +53,14 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
         }
 
-        // Ensure config is string
-        const configString = typeof config === 'string' ? config : JSON.stringify(config);
+        // Ensure config is object for encryption
+        const configObj = typeof config === 'string' ? JSON.parse(config) : config;
+
+        // Encrypt sensitive fields
+        const encryptedConfig = encryptConfig(configObj);
+
+        // Stringify for storage
+        const configString = JSON.stringify(encryptedConfig);
 
         const newAdapter = await prisma.adapterConfig.create({
             data: {

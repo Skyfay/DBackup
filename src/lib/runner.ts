@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters";
+import { decryptConfig } from "@/lib/crypto";
 import { DatabaseAdapter, StorageAdapter, NotificationAdapter } from "@/lib/core/interfaces";
 import path from "path";
 import fs from "fs";
@@ -72,7 +73,7 @@ export async function runJob(jobId: string) {
 
         // 5. Execute Dump (Source)
         log(`Starting Dump from ${job.source.name} (${job.source.type})...`);
-        const sourceConfig = JSON.parse(job.source.config);
+        const sourceConfig = decryptConfig(JSON.parse(job.source.config));
 
         // Determine Metadata from Config
         // Common logic to determine DB count, matching Adapter logic
@@ -140,7 +141,7 @@ export async function runJob(jobId: string) {
 
         // 6. Execute Upload (Destination)
         log(`Starting Upload to ${job.destination.name} (${job.destination.type})...`);
-        const destConfig = JSON.parse(job.destination.config);
+        const destConfig = decryptConfig(JSON.parse(job.destination.config));
 
         // Define remote path (Standard: /backups/JobName/FileName)
         finalRemotePath = `/backups/${job.name}/${path.basename(tempFile)}`;
@@ -202,7 +203,7 @@ export async function runJob(jobId: string) {
                     const notifyAdapter = registry.get(channel.adapterId) as NotificationAdapter;
 
                     if (notifyAdapter) {
-                        const channelConfig = JSON.parse(channel.config);
+                        const channelConfig = decryptConfig(JSON.parse(channel.config));
                         await notifyAdapter.send(channelConfig, `Backup Job '${job.name}' finished with status: ${status}`, {
                              jobName: job.name,
                              adapterName: job.source.name,

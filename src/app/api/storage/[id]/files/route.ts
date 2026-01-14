@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters"; // Import registration
 import { StorageAdapter } from "@/lib/core/interfaces";
+import { decryptConfig } from "@/lib/crypto";
 import prisma from "@/lib/prisma";
 
 // Ensure adapters are registered in this route handler environment
@@ -29,7 +30,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
         }
 
         // Parse config
-        const config = JSON.parse(adapterConfig.config);
+        const config = decryptConfig(JSON.parse(adapterConfig.config));
 
         // List files (assuming root for now, or use query param for subdirs logic later)
         const files = await adapter.list(config, "");
@@ -145,7 +146,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
              if (dbInfo.label === '' && job && job.source) {
                   try {
                       // Attempt to parse source config to guess DB count
-                      const sc = JSON.parse(job.source.config);
+                      const sc = decryptConfig(JSON.parse(job.source.config));
                       const dbVal = sc.database;
 
                       // Check for all-databases option
@@ -215,7 +216,7 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ id: st
             return NextResponse.json({ error: "Adapter implementation not found" }, { status: 500 });
         }
 
-        const config = JSON.parse(adapterConfig.config);
+        const config = decryptConfig(JSON.parse(adapterConfig.config));
         const success = await adapter.delete(config, path);
 
         if (!success) {

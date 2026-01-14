@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { encryptConfig } from "@/lib/crypto";
 
 export async function DELETE(
     req: NextRequest,
@@ -51,7 +52,9 @@ export async function PUT(
         const body = await req.json();
         const { name, config } = body;
 
-        const configString = typeof config === 'string' ? config : JSON.stringify(config);
+        const configObj = typeof config === 'string' ? JSON.parse(config) : config;
+        const encryptedConfig = encryptConfig(configObj);
+        const configString = JSON.stringify(encryptedConfig);
 
         const updatedAdapter = await prisma.adapterConfig.update({
             where: { id: params.id },

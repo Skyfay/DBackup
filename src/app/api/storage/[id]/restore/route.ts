@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters";
 import { StorageAdapter, DatabaseAdapter } from "@/lib/core/interfaces";
+import { decryptConfig } from "@/lib/crypto";
 import prisma from "@/lib/prisma";
 import path from "path";
 import os from "os";
@@ -85,7 +86,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         const tempDir = os.tmpdir();
         tempFile = path.join(tempDir, path.basename(file));
 
-        const sConf = JSON.parse(storageConfig.config);
+        const sConf = decryptConfig(JSON.parse(storageConfig.config));
         const downloadSuccess = await storageAdapter.download(sConf, file, tempFile);
 
         if (!downloadSuccess) {
@@ -98,7 +99,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         }
 
         // 4. Restore
-        const dbConf = JSON.parse(sourceConfig.config);
+        const dbConf = decryptConfig(JSON.parse(sourceConfig.config));
 
         // Override database name if provided
         if (targetDatabaseName) {

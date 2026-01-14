@@ -129,7 +129,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
 
              const job = potentialJobName ? jobMap.get(potentialJobName) : null;
 
-             let dbInfo = { count: 'Unknown', label: '' };
+             let dbInfo: { count: string | number; label: string } = { count: 'Unknown', label: '' };
 
              // 1. Try to get metadata from Execution record (Historical accuracy)
              const metaStr = executionMap.get(file.path);
@@ -149,7 +149,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
                              dbInfo
                          }
                      }
-                 } catch (e) {}
+                 } catch {}
              }
 
              // 2. Fallback to current config
@@ -178,7 +178,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
                                dbInfo = { count: '?', label: 'Unknown' };
                           }
                       }
-                  } catch (e) {
+                  } catch {
                       // ignore parse error
                   }
              }
@@ -194,9 +194,10 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
 
         return NextResponse.json(enrichedFiles);
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("List files error:", error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
+        return NextResponse.json({ error: errorMessage }, { status: 500 });
     }
 }
 
@@ -235,8 +236,9 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ id: st
 
         return NextResponse.json({ success: true });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Delete file error:", error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
+        return NextResponse.json({ error: errorMessage }, { status: 500 });
     }
 }

@@ -66,11 +66,18 @@ A robust, self-hosted solution for automating database backups. Manage sources, 
    # Better Auth Configuration
    BETTER_AUTH_SECRET="your-super-secret-key-here"
    BETTER_AUTH_URL="http://localhost:3000" # Set to your domain in production
+
+   # Data Encryption (AES-256-GCM)
+   ENCRYPTION_KEY="your-64-char-hex-key-here"
    ```
 
-   > **Tip**: You can generate a secure secret using `openssl`:
+   > **Tip**: You can generate secure secrets using `openssl`:
    > ```bash
+   > # For BETTER_AUTH_SECRET
    > openssl rand -base64 32
+   >
+   > # For ENCRYPTION_KEY (Required: 32 bytes as hex string)
+   > openssl rand -hex 32
    > ```
 
 4. **Initialize Database**

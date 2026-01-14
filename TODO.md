@@ -74,8 +74,8 @@
     - [x] Restore workflow (Select Source, Type-Check, Rename)
     - [x] Filtering (Size, Source, Job)
 - [ ] **Dashboard Home**
-    - [ ] Real statistics (Success rate, Total size)
-    - [ ] Recent activity feed
+    - [X] Real statistics (Success rate, Total size)
+    - [X] Recent activity feed
 
 ## 🛠 Database Management & Playground
 - [ ] **Direct SQL Execution**
@@ -98,9 +98,10 @@
     - [x] Login page
     - [x] Setup Better-Auth (Clean implementation)
     - [ ] Auth via OIDC
-    - [ ] Passkey only, TOTP for 2FA
-    - [ ] Multi-User Setup
+    - [X] TOTP for 2FA
+    - [ ] Passkey only or 2FA
+    - [X] Multi-User Setup
     - [ ] User Permissions
 - [ ] **Data Security**
     - [ ] Backup Encryption (Encrypt resulting artifacts)
-    - [ ] Credential Encryption (Encrypt DB passwords in database at rest via AES)
+    - [X] Credential Encryption (Encrypt DB passwords in database at rest via AES)

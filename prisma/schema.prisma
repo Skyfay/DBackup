@@ -101,6 +101,7 @@ model Passkey {
   backedUp       Boolean
   transports     String?
   createdAt      DateTime?
+  aaguid         String?
 
   @@unique([credentialID])
   @@map("passkey")

@@ -32,7 +32,7 @@ export const createColumns = (onViewLogs: (execution: Execution) => void): Colum
                         {row.getValue("jobName")}
                     </span>
                     {execution.path && (
-                        <span className="text-[10px] text-muted-foreground truncate max-w-[200px]" title={execution.path}>
+                        <span className="text-[10px] text-muted-foreground truncate max-w-150" title={execution.path}>
                             {execution.path}
                         </span>
                     )}

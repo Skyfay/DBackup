@@ -59,7 +59,7 @@ RUN mkdir -p /backups /app/storage/avatars /app/db && \
     chown -R nextjs:nodejs /backups /app/storage /app/db
 
 # Install Prisma globally to run migrations at startup
-RUN npm install -g prisma
+RUN npm install -g prisma@5
 
 USER nextjs
 

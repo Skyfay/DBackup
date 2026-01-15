@@ -32,7 +32,15 @@ export default async function SettingsPage() {
                 </TabsList>
 
                 <TabsContent value="profile" className="space-y-4">
-                    <ProfileForm user={session.user} />
+                    <ProfileForm user={{
+                        ...session.user,
+                        timezone: session.user.timezone || "UTC",
+                        dateFormat: session.user.dateFormat || "P",
+                        timeFormat: session.user.timeFormat || "p",
+                        passkeyTwoFactor: session.user.passkeyTwoFactor || false,
+                        twoFactorEnabled: session.user.twoFactorEnabled || false,
+                        image: session.user.image || null
+                    }} />
                 </TabsContent>
 
                 <TabsContent value="appearance" className="space-y-4">

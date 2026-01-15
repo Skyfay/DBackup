@@ -9,6 +9,7 @@ RUN apk add --no-cache \
     mysql-client \
     postgresql-client \
     mongodb-tools \
+    openssl \
     zip
 
 # 1. Install Dependencies

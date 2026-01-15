@@ -25,10 +25,10 @@ build-and-publish:
     - export LOWERCASE_PROJECT_PATH=$(echo "$CI_PROJECT_PATH" | tr '[:upper:]' '[:lower:]')
     - export DOCKER_IMAGE_NAME="$CI_REGISTRY/$LOWERCASE_PROJECT_PATH"
 
-    # Calculate Tags
-    - TAGS="-t $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG"
-
+    # Calculate Tags and Build
     - |
+      TAGS="-t $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG"
+      
       if echo "$CI_COMMIT_TAG" | grep -q "\-dev"; then
         echo "🚧 Development Build detected (-dev suffix)"
         TAGS="$TAGS -t $DOCKER_IMAGE_NAME:dev"
@@ -45,8 +45,8 @@ build-and-publish:
            TAGS="$TAGS -t $DOCKER_IMAGE_NAME:$MAJOR_TAG"
         fi
       fi
-
-    - echo "🐳 Building and Pushing for AMD64 and ARM64 with tags: $TAGS"
-    - docker buildx build --platform linux/amd64,linux/arm64 --push $TAGS .
+      
+      echo "🐳 Building and Pushing for AMD64 and ARM64 with tags: $TAGS"
+      docker buildx build --platform linux/amd64,linux/arm64 --push $TAGS .
   only:
     - tags

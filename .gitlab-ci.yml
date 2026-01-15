@@ -17,37 +17,36 @@ build-and-publish:
     - echo "🔐 Docker Login..."
     - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
 
+    # Setup Docker Buildx for Multi-Arch
+    - docker buildx create --use
+    - docker buildx inspect --bootstrap
+
     # Projektname in Kleinbuchstaben umwandeln
     - export LOWERCASE_PROJECT_PATH=$(echo "$CI_PROJECT_PATH" | tr '[:upper:]' '[:lower:]')
     - export DOCKER_IMAGE_NAME="$CI_REGISTRY/$LOWERCASE_PROJECT_PATH"
-    - echo "🐳 Baue Docker-Image - $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG"
 
-    - docker build -t "$DOCKER_IMAGE_NAME:$CI_COMMIT_TAG" .
-
-    - echo "📤 Push specific tag..."
-    - docker push "$DOCKER_IMAGE_NAME:$CI_COMMIT_TAG"
+    # Calculate Tags
+    - TAGS="-t $DOCKER_IMAGE_NAME:$CI_COMMIT_TAG"
 
     - |
       if echo "$CI_COMMIT_TAG" | grep -q "\-dev"; then
-        echo "🚧 Development Build detected (-dev suffix). Pushing 'dev' tag..."
-        docker tag "$DOCKER_IMAGE_NAME:$CI_COMMIT_TAG" "$DOCKER_IMAGE_NAME:dev"
-        docker push "$DOCKER_IMAGE_NAME:dev"
+        echo "🚧 Development Build detected (-dev suffix)"
+        TAGS="$TAGS -t $DOCKER_IMAGE_NAME:dev"
       elif echo "$CI_COMMIT_TAG" | grep -q "\-beta"; then
-        echo "🧪 Beta Build detected (-beta suffix). Pushing 'beta' tag..."
-        docker tag "$DOCKER_IMAGE_NAME:$CI_COMMIT_TAG" "$DOCKER_IMAGE_NAME:beta"
-        docker push "$DOCKER_IMAGE_NAME:beta"
+        echo "🧪 Beta Build detected (-beta suffix)"
+        TAGS="$TAGS -t $DOCKER_IMAGE_NAME:beta"
       else
-        echo "🚀 Release Build detected. Pushing 'latest' tag..."
-        docker tag "$DOCKER_IMAGE_NAME:$CI_COMMIT_TAG" "$DOCKER_IMAGE_NAME:latest"
-        docker push "$DOCKER_IMAGE_NAME:latest"
+        echo "🚀 Release Build detected"
+        TAGS="$TAGS -t $DOCKER_IMAGE_NAME:latest"
 
-        # Major version logic (e.g. v1 from v1.2.3)
+        # Major version logic
         MAJOR_TAG=$(echo "$CI_COMMIT_TAG" | sed -nE 's/^(v[0-9]+)\..*$/\1/p')
         if [ -n "$MAJOR_TAG" ] && [ "$MAJOR_TAG" != "v0" ]; then
-           echo "🏷️ Pushing Major Version Tag: $MAJOR_TAG"
-           docker tag "$DOCKER_IMAGE_NAME:$CI_COMMIT_TAG" "$DOCKER_IMAGE_NAME:$MAJOR_TAG"
-           docker push "$DOCKER_IMAGE_NAME:$MAJOR_TAG"
+           TAGS="$TAGS -t $DOCKER_IMAGE_NAME:$MAJOR_TAG"
         fi
       fi
+
+    - echo "🐳 Building and Pushing for AMD64 and ARM64 with tags: $TAGS"
+    - docker buildx build --platform linux/amd64,linux/arm64 --push $TAGS .
   only:
     - tags

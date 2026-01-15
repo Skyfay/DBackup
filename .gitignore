@@ -42,6 +42,7 @@ next-env.d.ts
 
 # db
 prisma/dev.db
+prisma/dev.db-journal
 db-data/
 
 # backups

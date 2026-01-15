@@ -107,6 +107,20 @@ To spin up test instances of MySQL, Postgres, and MongoDB for development:
 docker-compose -f docker-compose.test.yml up -d
 ```
 
+## 📦 Release Preparation
+
+If you make changes to the database schema (`prisma/schema.prisma`), you must create a new migration before creating a release tag. This ensures that the production database is updated correctly.
+
+```bash
+# 1. Update schema.prisma
+# 2. Create a new migration (this also generates your local client)
+npx prisma migrate dev --name describe_your_changes
+
+# 3. Commit the new migration folder
+git add prisma/migrations
+git commit -m "chore: add db migration for feature xyz"
+```
+
 ## 📝 License
 
 [MIT](LICENSE)

@@ -1,6 +1,6 @@
 services:
   app:
-    build: .
+    image: registry.gitlab.com/skyfay/database-backup-manager:dev
     restart: always
     ports:
       - "3000:3000"

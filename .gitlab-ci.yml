@@ -32,6 +32,10 @@ build-and-publish:
         echo "🚧 Development Build detected (-dev suffix). Pushing 'dev' tag..."
         docker tag "$DOCKER_IMAGE_NAME:$CI_COMMIT_TAG" "$DOCKER_IMAGE_NAME:dev"
         docker push "$DOCKER_IMAGE_NAME:dev"
+      elif echo "$CI_COMMIT_TAG" | grep -q "\-beta"; then
+        echo "🧪 Beta Build detected (-beta suffix). Pushing 'beta' tag..."
+        docker tag "$DOCKER_IMAGE_NAME:$CI_COMMIT_TAG" "$DOCKER_IMAGE_NAME:beta"
+        docker push "$DOCKER_IMAGE_NAME:beta"
       else
         echo "🚀 Release Build detected. Pushing 'latest' tag..."
         docker tag "$DOCKER_IMAGE_NAME:$CI_COMMIT_TAG" "$DOCKER_IMAGE_NAME:latest"

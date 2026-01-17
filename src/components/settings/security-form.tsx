@@ -25,7 +25,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { togglePasskeyTwoFactor as togglePasskeyAction } from "@/app/actions/user"
 import { User, Passkey } from "@prisma/client"
 
-export function SecurityForm() {
+interface SecurityFormProps {
+    canUpdatePassword: boolean;
+    canManage2FA: boolean;
+    canManagePasskeys: boolean;
+}
+
+export function SecurityForm({ canUpdatePassword, canManage2FA, canManagePasskeys }: SecurityFormProps) {
     const { data: session, refetch } = authClient.useSession()
     const [isPending, setIsPending] = useState(false)
     const [totpURI, setTotpURI] = useState<string | null>(null)
@@ -248,7 +254,7 @@ export function SecurityForm() {
                          {isTwoFactorEnabled && !showBackupCodes ? (
                              <Dialog open={isDisableDialogOpen} onOpenChange={setIsDisableDialogOpen}>
                                 <DialogTrigger asChild>
-                                    <Button variant="destructive" size="sm" disabled={isDisabling}>
+                                    <Button variant="destructive" size="sm" disabled={isDisabling || !canManage2FA}>
                                         {isDisabling && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                                         Disable
                                     </Button>
@@ -287,7 +293,7 @@ export function SecurityForm() {
                                     }
                                 }}>
                                  <DialogTrigger asChild>
-                                    <Button variant="default" size="sm" disabled={isPasskeyTwoFactor}>
+                                    <Button variant="default" size="sm" disabled={isPasskeyTwoFactor || !canManage2FA}>
                                         Enable
                                     </Button>
                                 </DialogTrigger>
@@ -400,7 +406,7 @@ export function SecurityForm() {
                            </div>
                            <Dialog open={isAddPasskeyOpen} onOpenChange={setIsAddPasskeyOpen}>
                                 <DialogTrigger asChild>
-                                    <Button variant="outline" size="sm">
+                                    <Button variant="outline" size="sm" disabled={!canManagePasskeys}>
                                         <Plus className="h-4 w-4 mr-2" />
                                         Add Passkey
                                     </Button>
@@ -449,7 +455,7 @@ export function SecurityForm() {
                                                     {pk.createdAt ? <DateDisplay date={pk.createdAt} /> : '-'}
                                                 </TableCell>
                                                 <TableCell>
-                                                    <Button variant="ghost" size="icon" onClick={() => handleDeletePasskey(pk.id)}>
+                                                    <Button variant="ghost" size="icon" onClick={() => handleDeletePasskey(pk.id)} disabled={!canManagePasskeys}>
                                                         <Trash2 className="h-4 w-4 text-destructive" />
                                                     </Button>
                                                 </TableCell>
@@ -471,7 +477,7 @@ export function SecurityForm() {
                                 <Switch
                                     checked={isPasskeyTwoFactor}
                                     onCheckedChange={togglePasskeyTwoFactor}
-                                    disabled={isTwoFactorEnabled && !isPasskeyTwoFactor} // Disable switch if TOTP is ON, user must disable TOTP first (or my handle function tells them)
+                                    disabled={!canManagePasskeys || (isTwoFactorEnabled && !isPasskeyTwoFactor)} // Disable switch if TOTP is ON, user must disable TOTP first (or my handle function tells them)
                                 />
                             </div>
                         )}

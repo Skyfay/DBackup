@@ -6,6 +6,8 @@ import { ProfileForm } from "@/components/settings/profile-form";
 import { SecurityForm } from "@/components/settings/security-form";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { redirect } from "next/navigation";
+import { getUserPermissions } from "@/lib/access-control";
+import { PERMISSIONS } from "@/lib/permissions";
 
 export default async function SettingsPage() {
     // Await headers() correctly as it is a Promise in newer Next.js versions
@@ -17,6 +19,13 @@ export default async function SettingsPage() {
     if (!session) {
         redirect("/login");
     }
+
+    const permissions = await getUserPermissions();
+    const canUpdateName = permissions.includes(PERMISSIONS.PROFILE.UPDATE_NAME);
+    const canUpdateEmail = permissions.includes(PERMISSIONS.PROFILE.UPDATE_EMAIL);
+    const canUpdatePassword = permissions.includes(PERMISSIONS.PROFILE.UPDATE_PASSWORD);
+    const canManage2FA = permissions.includes(PERMISSIONS.PROFILE.MANAGE_2FA);
+    const canManagePasskeys = permissions.includes(PERMISSIONS.PROFILE.MANAGE_PASSKEYS);
 
     return (
         <div className="space-y-6">
@@ -32,15 +41,19 @@ export default async function SettingsPage() {
                 </TabsList>
 
                 <TabsContent value="profile" className="space-y-4">
-                    <ProfileForm user={{
-                        ...session.user,
-                        timezone: session.user.timezone || "UTC",
-                        dateFormat: session.user.dateFormat || "P",
-                        timeFormat: session.user.timeFormat || "p",
-                        passkeyTwoFactor: session.user.passkeyTwoFactor || false,
-                        twoFactorEnabled: session.user.twoFactorEnabled || false,
-                        image: session.user.image || null
-                    }} />
+                    <ProfileForm
+                        user={{
+                            ...session.user,
+                            timezone: session.user.timezone || "UTC",
+                            dateFormat: session.user.dateFormat || "P",
+                            timeFormat: session.user.timeFormat || "p",
+                            passkeyTwoFactor: session.user.passkeyTwoFactor || false,
+                            twoFactorEnabled: session.user.twoFactorEnabled || false,
+                            image: session.user.image || null
+                        }}
+                        canUpdateName={canUpdateName}
+                        canUpdateEmail={canUpdateEmail}
+                    />
                 </TabsContent>
 
                 <TabsContent value="appearance" className="space-y-4">
@@ -48,7 +61,11 @@ export default async function SettingsPage() {
                 </TabsContent>
 
                 <TabsContent value="security" className="space-y-4">
-                    <SecurityForm />
+                    <SecurityForm
+                        canUpdatePassword={canUpdatePassword}
+                        canManage2FA={canManage2FA}
+                        canManagePasskeys={canManagePasskeys}
+                    />
                 </TabsContent>
             </Tabs>
         </div>

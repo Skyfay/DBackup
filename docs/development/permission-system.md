@@ -107,6 +107,13 @@ This file contains the helper functions to verify permissions on both the server
 *   `notifications:read`: Access the notifications center.
 *   `notifications:write`: Manage notification settings or mark as read (if applicable).
 
+### User Profile & Security
+*   `profile:update_name`: Allow user to change their display name.
+*   `profile:update_email`: Allow user to change their email address.
+*   `profile:update_password`: Allow user to change their login password.
+*   `profile:manage_2fa`: Allow user to enable/disable TOTP Two-Factor Authentication.
+*   `profile:manage_passkeys`: Allow user to add/remove Passkeys.
+
 ## 5. Implementation Guide
 
 ### Backend: Protecting Server Actions

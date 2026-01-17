@@ -57,10 +57,12 @@ const formSchema = z.object({
 })
 
 interface ProfileFormProps {
-    user: User
+    user: User;
+    canUpdateName: boolean;
+    canUpdateEmail: boolean;
 }
 
-export function ProfileForm({ user }: ProfileFormProps) {
+export function ProfileForm({ user, canUpdateName, canUpdateEmail }: ProfileFormProps) {
     const [isUploading, setIsUploading] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(user.image);
@@ -222,7 +224,7 @@ export function ProfileForm({ user }: ProfileFormProps) {
                                 <FormItem>
                                     <FormLabel>Name</FormLabel>
                                     <FormControl>
-                                        <Input placeholder="John Doe" {...field} />
+                                        <Input placeholder="John Doe" {...field} disabled={!canUpdateName} />
                                     </FormControl>
                                     <FormMessage />
                                 </FormItem>
@@ -235,7 +237,7 @@ export function ProfileForm({ user }: ProfileFormProps) {
                                 <FormItem>
                                     <FormLabel>Email</FormLabel>
                                     <FormControl>
-                                        <Input placeholder="john@example.com" {...field} />
+                                        <Input placeholder="john@example.com" {...field} disabled={!canUpdateEmail} />
                                     </FormControl>
                                     <FormDescription>
                                         This is the email you use to sign in.

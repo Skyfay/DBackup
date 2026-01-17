@@ -34,6 +34,13 @@ export const PERMISSIONS = {
     READ: "notifications:read",
     WRITE: "notifications:write",
   },
+  PROFILE: {
+    UPDATE_NAME: "profile:update_name",
+    UPDATE_EMAIL: "profile:update_email",
+    UPDATE_PASSWORD: "profile:update_password",
+    MANAGE_2FA: "profile:manage_2fa",
+    MANAGE_PASSKEYS: "profile:manage_passkeys",
+  },
 } as const;
 
 export type Permission =
@@ -54,7 +61,12 @@ export type Permission =
   | typeof PERMISSIONS.STORAGE.DELETE
   | typeof PERMISSIONS.HISTORY.READ
   | typeof PERMISSIONS.NOTIFICATIONS.READ
-  | typeof PERMISSIONS.NOTIFICATIONS.WRITE;
+  | typeof PERMISSIONS.NOTIFICATIONS.WRITE
+  | typeof PERMISSIONS.PROFILE.UPDATE_NAME
+  | typeof PERMISSIONS.PROFILE.UPDATE_EMAIL
+  | typeof PERMISSIONS.PROFILE.UPDATE_PASSWORD
+  | typeof PERMISSIONS.PROFILE.MANAGE_2FA
+  | typeof PERMISSIONS.PROFILE.MANAGE_PASSKEYS;
 
 export const AVAILABLE_PERMISSIONS = [
   // Users & Groups
@@ -84,4 +96,11 @@ export const AVAILABLE_PERMISSIONS = [
   // Notifications
   { id: PERMISSIONS.NOTIFICATIONS.READ, label: "View Notifications", category: "Notifications" },
   { id: PERMISSIONS.NOTIFICATIONS.WRITE, label: "Manage Notifications", category: "Notifications" },
+
+  // Profile & Security
+  { id: PERMISSIONS.PROFILE.UPDATE_NAME, label: "Update Own Name", category: "Profile" },
+  { id: PERMISSIONS.PROFILE.UPDATE_EMAIL, label: "Update Own Email", category: "Profile" },
+  { id: PERMISSIONS.PROFILE.UPDATE_PASSWORD, label: "Update Own Password", category: "Profile" },
+  { id: PERMISSIONS.PROFILE.MANAGE_2FA, label: "Manage 2FA", category: "Profile" },
+  { id: PERMISSIONS.PROFILE.MANAGE_PASSKEYS, label: "Manage Passkeys", category: "Profile" },
 ];

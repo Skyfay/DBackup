@@ -20,13 +20,21 @@ import { useState } from "react"
 import { EditUserDialog } from "./edit-user-dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { DateDisplay } from "@/components/date-display"
+import { Badge } from "@/components/ui/badge"
+import { GroupWithStats } from "./group-table"
 
-interface UserTableProps {
-    data: User[];
+// Create an extended User type that includes the group relation
+type UserWithGroup = User & {
+    group?: GroupWithStats | null
 }
 
-export function UserTable({ data }: UserTableProps) {
-    const [editingUser, setEditingUser] = useState<User | null>(null)
+interface UserTableProps {
+    data: UserWithGroup[];
+    groups: GroupWithStats[];
+}
+
+export function UserTable({ data, groups }: UserTableProps) {
+    const [editingUser, setEditingUser] = useState<UserWithGroup | null>(null)
 
     const handleDelete = async (userId: string) => {
          toast.promise(deleteUser(userId), {
@@ -42,7 +50,7 @@ export function UserTable({ data }: UserTableProps) {
         });
     }
 
-    const columns: ColumnDef<User>[] = [
+    const columns: ColumnDef<UserWithGroup>[] = [
         {
             accessorKey: "image",
             header: "",
@@ -64,6 +72,18 @@ export function UserTable({ data }: UserTableProps) {
         {
             accessorKey: "email",
             header: "Email",
+        },
+        {
+            id: "group",
+            header: "Group",
+            cell: ({ row }) => {
+                const group = row.original.group;
+                return group ? (
+                    <Badge variant="outline">{group.name}</Badge>
+                ) : (
+                    <span className="text-muted-foreground text-sm">-</span>
+                );
+            }
         },
         {
             accessorKey: "createdAt",
@@ -109,12 +129,15 @@ export function UserTable({ data }: UserTableProps) {
 
     return (
         <>
-            <DataTable columns={columns} data={data} searchKey="email" />
-            <EditUserDialog
-                user={editingUser}
-                open={!!editingUser}
-                onOpenChange={(open) => !open && setEditingUser(null)}
-            />
+            <DataTable columns={columns} data={data} />
+            {editingUser && (
+                <EditUserDialog
+                    user={editingUser}
+                    groups={groups}
+                    open={!!editingUser}
+                    onOpenChange={(open) => !open && setEditingUser(null)}
+                />
+            )}
         </>
     )
 }

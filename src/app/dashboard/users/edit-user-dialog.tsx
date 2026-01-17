@@ -17,6 +17,13 @@ import {
     FormLabel,
     FormMessage,
 } from "@/components/ui/form"
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
@@ -24,21 +31,24 @@ import * as z from "zod"
 import { useState, useEffect } from "react"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
-import { updateUser } from "@/app/actions/user"
+import { updateUser, updateUserGroup } from "@/app/actions/user"
 import { User } from "@prisma/client"
+import { GroupWithStats } from "./group-table"
 
 const formSchema = z.object({
     name: z.string().min(2, "Name must be at least 2 characters."),
     email: z.string().email("Invalid email address."),
+    groupId: z.string().optional(),
 })
 
 interface EditUserDialogProps {
-    user: User | null;
+    user: User & { group?: GroupWithStats | null } | null;
+    groups: GroupWithStats[];
     open: boolean;
     onOpenChange: (open: boolean) => void;
 }
 
-export function EditUserDialog({ user, open, onOpenChange }: EditUserDialogProps) {
+export function EditUserDialog({ user, groups, open, onOpenChange }: EditUserDialogProps) {
     const [loading, setLoading] = useState(false)
 
     const form = useForm<z.infer<typeof formSchema>>({
@@ -46,6 +56,7 @@ export function EditUserDialog({ user, open, onOpenChange }: EditUserDialogProps
         defaultValues: {
             name: "",
             email: "",
+            groupId: "none",
         },
     })
 
@@ -54,6 +65,7 @@ export function EditUserDialog({ user, open, onOpenChange }: EditUserDialogProps
             form.reset({
                 name: user.name,
                 email: user.email,
+                groupId: user.group?.id || "none",
             })
         }
     }, [user, form])
@@ -62,16 +74,32 @@ export function EditUserDialog({ user, open, onOpenChange }: EditUserDialogProps
         if (!user) return;
         setLoading(true)
         try {
-            const res = await updateUser(user.id, values);
-            if (res.success) {
-                toast.success("User updated successfully");
-                onOpenChange(false);
-            } else {
-                toast.error(res.error as string);
+            // Update profile
+            const profileRes = await updateUser(user.id, {
+                 name: values.name,
+                 email: values.email
+            });
+
+            if (!profileRes.success) {
+                  throw new Error(profileRes.error as string);
             }
-        } catch (error) {
+
+            // Update group if changed
+            const currentGroupId = user.group?.id || "none";
+            const newGroupId = values.groupId || "none";
+
+            if (currentGroupId !== newGroupId) {
+                 const groupRes = await updateUserGroup(user.id, newGroupId);
+                 if (!groupRes.success) {
+                     throw new Error(groupRes.error as string);
+                 }
+            }
+
+            toast.success("User updated successfully");
+            onOpenChange(false);
+        } catch (error: any) {
             console.error(error)
-            toast.error("An error occurred")
+            toast.error(error.message || "An error occurred")
         } finally {
             setLoading(false)
         }
@@ -83,7 +111,7 @@ export function EditUserDialog({ user, open, onOpenChange }: EditUserDialogProps
                 <DialogHeader>
                     <DialogTitle>Edit User</DialogTitle>
                     <DialogDescription>
-                        Make changes to the user&apos;s profile here. Click save when you&apos;re done.
+                        Make changes to the user&apos;s profile and access level here.
                     </DialogDescription>
                 </DialogHeader>
                 <Form {...form}>
@@ -101,23 +129,54 @@ export function EditUserDialog({ user, open, onOpenChange }: EditUserDialogProps
                                 </FormItem>
                             )}
                         />
-                         <FormField
+                        <FormField
                             control={form.control}
                             name="email"
                             render={({ field }) => (
                                 <FormItem>
                                     <FormLabel>Email</FormLabel>
                                     <FormControl>
-                                        <Input placeholder="user@example.com" {...field} />
+                                        <Input placeholder="john@example.com" {...field} />
                                     </FormControl>
                                     <FormMessage />
                                 </FormItem>
                             )}
                         />
+
+                        <FormField
+                            control={form.control}
+                            name="groupId"
+                            render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>Group Assignment</FormLabel>
+                                    <Select
+                                        onValueChange={field.onChange}
+                                        defaultValue={field.value}
+                                        value={field.value}
+                                    >
+                                        <FormControl>
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Select a group" />
+                                            </SelectTrigger>
+                                        </FormControl>
+                                        <SelectContent>
+                                            <SelectItem value="none">No Group</SelectItem>
+                                            {groups.map((group) => (
+                                                <SelectItem key={group.id} value={group.id}>
+                                                    {group.name}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <FormMessage />
+                                </FormItem>
+                            )}
+                        />
+
                         <DialogFooter>
                             <Button type="submit" disabled={loading}>
                                 {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                Save changes
+                                Save Changes
                             </Button>
                         </DialogFooter>
                     </form>

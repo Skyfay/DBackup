@@ -8,8 +8,29 @@ export async function getUsers() {
     return await prisma.user.findMany({
         orderBy: {
             createdAt: 'desc'
+        },
+        include: {
+            group: true
         }
     });
+}
+
+export async function updateUserGroup(userId: string, groupId: string | null) {
+    try {
+        await prisma.user.update({
+            where: {
+                id: userId
+            },
+            data: {
+                groupId: groupId === "none" ? null : groupId
+            }
+        });
+        revalidatePath("/dashboard/users");
+        return { success: true };
+    } catch (error) {
+        console.error("Failed to update user group:", error);
+        return { success: false, error: "Failed to update user group" };
+    }
 }
 
 export async function deleteUser(userId: string) {

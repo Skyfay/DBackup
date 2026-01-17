@@ -7,21 +7,19 @@ import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
-    DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { deleteUser } from "@/app/actions/user"
 import { toast } from "sonner"
 import { User } from "@prisma/client"
-import { format } from "date-fns"
 import { DataTable } from "@/components/ui/data-table"
 import { useState } from "react"
-import { EditUserDialog } from "./edit-user-dialog"
+import { EditUserDialogComponent as EditUserDialog } from "@/app/dashboard/users/edit-user-dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { DateDisplay } from "@/components/date-display"
 import { Badge } from "@/components/ui/badge"
-import { GroupWithStats } from "./group-table"
+import { GroupWithStats } from "@/types"
 
 // Create an extended User type that includes the group relation
 type UserWithGroup = User & {
@@ -31,9 +29,10 @@ type UserWithGroup = User & {
 interface UserTableProps {
     data: UserWithGroup[];
     groups: GroupWithStats[];
+    canManage: boolean;
 }
 
-export function UserTable({ data, groups }: UserTableProps) {
+export function UserTable({ data, groups, canManage }: UserTableProps) {
     const [editingUser, setEditingUser] = useState<UserWithGroup | null>(null)
 
     const handleDelete = async (userId: string) => {
@@ -96,6 +95,8 @@ export function UserTable({ data, groups }: UserTableProps) {
             id: "actions",
             cell: ({ row }) => {
                 const user = row.original
+
+                if (!canManage) return null;
 
                 return (
                     <DropdownMenu>

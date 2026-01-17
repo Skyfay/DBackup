@@ -15,25 +15,16 @@ import { toast } from "sonner"
 import { DateDisplay } from "@/components/date-display"
 import { DataTable } from "@/components/ui/data-table"
 import { useState } from "react"
-import { EditGroupDialog } from "./edit-group-dialog"
+import { EditGroupDialog } from "@/app/dashboard/users/edit-group-dialog"
 import { Badge } from "@/components/ui/badge"
-
-export type GroupWithStats = {
-    id: string;
-    name: string;
-    permissions: string[];
-    createdAt: Date;
-    updatedAt: Date;
-    _count: {
-        users: number;
-    }
-}
+import { GroupWithStats } from "@/types"
 
 interface GroupTableProps {
     data: GroupWithStats[];
+    canManage: boolean;
 }
 
-export function GroupTable({ data }: GroupTableProps) {
+export function GroupTable({ data, canManage }: GroupTableProps) {
     const [editingGroup, setEditingGroup] = useState<GroupWithStats | null>(null)
 
     const handleDelete = async (id: string) => {
@@ -88,6 +79,8 @@ export function GroupTable({ data }: GroupTableProps) {
             cell: ({ row }) => {
                 const group = row.original
 
+                if (!canManage) return null;
+
                 return (
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -128,7 +121,7 @@ export function GroupTable({ data }: GroupTableProps) {
                 <EditGroupDialog
                     group={editingGroup}
                     open={!!editingGroup}
-                    onOpenChange={(open) => !open && setEditingGroup(null)}
+                    onOpenChange={(open: boolean) => !open && setEditingGroup(null)}
                 />
             )}
         </>

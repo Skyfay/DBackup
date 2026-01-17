@@ -28,7 +28,7 @@ import { Loader2 } from "lucide-react"
 import { updateGroup } from "@/app/actions/group"
 import { AVAILABLE_PERMISSIONS } from "@/lib/permissions"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { GroupWithStats } from "./group-table"
+import { GroupWithStats } from "@/types"
 
 const formSchema = z.object({
     name: z.string().min(1, "Name is required"),

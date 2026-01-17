@@ -3,8 +3,12 @@
 import prisma from "@/lib/prisma";
 import { User } from "better-auth";
 import { revalidatePath } from "next/cache";
+import { checkPermission, getCurrentUserWithGroup } from "@/lib/access-control";
+import { PERMISSIONS } from "@/lib/permissions";
 
 export async function getUsers() {
+    await checkPermission(PERMISSIONS.USERS.READ);
+
     return await prisma.user.findMany({
         orderBy: {
             createdAt: 'desc'
@@ -16,6 +20,8 @@ export async function getUsers() {
 }
 
 export async function updateUserGroup(userId: string, groupId: string | null) {
+    await checkPermission(PERMISSIONS.USERS.WRITE);
+
     try {
         await prisma.user.update({
             where: {
@@ -34,6 +40,8 @@ export async function updateUserGroup(userId: string, groupId: string | null) {
 }
 
 export async function deleteUser(userId: string) {
+    await checkPermission(PERMISSIONS.USERS.WRITE);
+
     try {
         // Check if user is the last one? maybe not necessary for now but good practice
         const userCount = await prisma.user.count();
@@ -55,6 +63,14 @@ export async function deleteUser(userId: string) {
 }
 
 export async function togglePasskeyTwoFactor(userId: string, enabled: boolean) {
+    const currentUser = await getCurrentUserWithGroup();
+    if (!currentUser) throw new Error("Unauthorized");
+
+    // Allow user to edit their own settings, otherwise require permission
+    if (currentUser.id !== userId) {
+        await checkPermission(PERMISSIONS.USERS.WRITE);
+    }
+
     try {
         await prisma.user.update({
             where: {
@@ -75,6 +91,14 @@ export async function togglePasskeyTwoFactor(userId: string, enabled: boolean) {
 }
 
 export async function updateUser(userId: string, data: { name?: string; email?: string; timezone?: string; dateFormat?: string; timeFormat?: string }) {
+    const currentUser = await getCurrentUserWithGroup();
+    if (!currentUser) throw new Error("Unauthorized");
+
+    // Allow user to edit their own profile, otherwise require permission
+    if (currentUser.id !== userId) {
+        await checkPermission(PERMISSIONS.USERS.WRITE);
+    }
+
     try {
         await prisma.user.update({
             where: {

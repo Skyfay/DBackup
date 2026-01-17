@@ -3,6 +3,8 @@
 import prisma from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { checkPermission } from "@/lib/access-control";
+import { PERMISSIONS } from "@/lib/permissions";
 
 const groupSchema = z.object({
     name: z.string().min(1, "Name is required"),
@@ -12,6 +14,8 @@ const groupSchema = z.object({
 export type GroupFormValues = z.infer<typeof groupSchema>;
 
 export async function getGroups() {
+    await checkPermission(PERMISSIONS.GROUPS.READ);
+
     const groups = await prisma.group.findMany({
         orderBy: {
             createdAt: 'desc'
@@ -31,6 +35,8 @@ export async function getGroups() {
 }
 
 export async function createGroup(data: GroupFormValues) {
+    await checkPermission(PERMISSIONS.GROUPS.WRITE);
+
     try {
         const validated = groupSchema.parse(data);
 
@@ -50,6 +56,8 @@ export async function createGroup(data: GroupFormValues) {
 }
 
 export async function updateGroup(id: string, data: GroupFormValues) {
+    await checkPermission(PERMISSIONS.GROUPS.WRITE);
+
     try {
         const validated = groupSchema.parse(data);
 
@@ -70,6 +78,8 @@ export async function updateGroup(id: string, data: GroupFormValues) {
 }
 
 export async function deleteGroup(id: string) {
+    await checkPermission(PERMISSIONS.GROUPS.WRITE);
+
     try {
         await prisma.group.delete({
             where: { id }

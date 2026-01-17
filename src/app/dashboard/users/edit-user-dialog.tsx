@@ -33,7 +33,7 @@ import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
 import { updateUser, updateUserGroup } from "@/app/actions/user"
 import { User } from "@prisma/client"
-import { GroupWithStats } from "./group-table"
+import { GroupWithStats } from "@/types"
 
 const formSchema = z.object({
     name: z.string().min(2, "Name must be at least 2 characters."),
@@ -41,14 +41,14 @@ const formSchema = z.object({
     groupId: z.string().optional(),
 })
 
-interface EditUserDialogProps {
+export interface EditUserDialogProps {
     user: User & { group?: GroupWithStats | null } | null;
     groups: GroupWithStats[];
     open: boolean;
     onOpenChange: (open: boolean) => void;
 }
 
-export function EditUserDialog({ user, groups, open, onOpenChange }: EditUserDialogProps) {
+export function EditUserDialogComponent({ user, groups, open, onOpenChange }: EditUserDialogProps) {
     const [loading, setLoading] = useState(false)
 
     const form = useForm<z.infer<typeof formSchema>>({

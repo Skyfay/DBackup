@@ -5,10 +5,16 @@ import { GroupTable } from "./group-table";
 import { CreateUserDialog } from "./create-user-dialog";
 import { CreateGroupDialog } from "./create-group-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { getUserPermissions } from "@/lib/access-control";
+import { PERMISSIONS } from "@/lib/permissions";
 
 export default async function UsersPage() {
     const users = await getUsers();
     const groups = await getGroups();
+    const permissions = await getUserPermissions();
+
+    const canManageUsers = permissions.includes(PERMISSIONS.USERS.WRITE);
+    const canManageGroups = permissions.includes(PERMISSIONS.GROUPS.WRITE);
 
     return (
         <div className="space-y-6">
@@ -27,16 +33,20 @@ export default async function UsersPage() {
                     <TabsTrigger value="groups">Groups</TabsTrigger>
                 </TabsList>
                 <TabsContent value="users" className="space-y-4">
-                    <div className="flex justify-end">
-                        <CreateUserDialog />
-                    </div>
-                    <UserTable data={users} />
+                    {canManageUsers && (
+                        <div className="flex justify-end">
+                            <CreateUserDialog />
+                        </div>
+                    )}
+                    <UserTable data={users} groups={groups} canManage={canManageUsers} />
                 </TabsContent>
                 <TabsContent value="groups" className="space-y-4">
-                    <div className="flex justify-end">
-                        <CreateGroupDialog />
-                    </div>
-                    <GroupTable data={groups} />
+                    {canManageGroups && (
+                        <div className="flex justify-end">
+                            <CreateGroupDialog />
+                        </div>
+                    )}
+                    <GroupTable data={groups} canManage={canManageGroups} />
                 </TabsContent>
             </Tabs>
         </div>

@@ -129,4 +129,4 @@ git commit -m "chore: add db migration for feature xyz"
 
 ## 📝 License
 
-[MIT](LICENSE)
+[GNU GENERAL PUBLIC LICENSE](LICENSE)

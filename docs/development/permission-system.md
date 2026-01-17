@@ -133,15 +133,30 @@ To hide UI elements (buttons, links) for unauthorized users, fetch permissions i
 **Example (Page):**
 ```typescript
 // src/app/dashboard/sources/page.tsx
+import { AdapterManager } from "@/components/adapter-manager";
+import { getUserPermissions } from "@/lib/access-control";
+import { PERMISSIONS } from "@/lib/permissions";
+
 export default async function Page() {
     const permissions = await getUserPermissions();
-    const canEdit = permissions.includes(PERMISSIONS.SOURCES.WRITE);
+    const canManage = permissions.includes(PERMISSIONS.SOURCES.WRITE);
 
-    return <SourcesTable canEdit={canEdit} />;
+    return (
+        <AdapterManager
+            type="database"
+            title="Sources"
+            canManage={canManage}
+        />
+    );
 }
 ```
 
-## 6. Access Control Rules
+### Complex Pages (Server/Client Split)
+For complex pages like **Jobs** or **Storage**, we split the logic into a Server Page (fetching permissions) and a Client Component (UI logic).
+
+**Example pattern:**
+1. `src/app/dashboard/jobs/page.tsx` (Server): Fetches `canManage`, `canExecute`.
+2. `src/app/dashboard/jobs/jobs-client.tsx` (Client): Receives props and handles UI state.
 
 ### Auto-Promotion (First User)
 The first user registered in the system is automatically assigned to a "SuperAdmin" group containing ALL permissions.

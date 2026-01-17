@@ -51,3 +51,6 @@ backups/
 # uploads
 storage/avatars/*
 !storage/avatars/.gitkeepstorage/avatars/.gitkeep
+
+# Jetbrains
+.idea

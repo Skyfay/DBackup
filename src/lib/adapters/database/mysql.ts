@@ -122,8 +122,7 @@ export const MySQLAdapter: DatabaseAdapter = {
             // No password in args anymore
             logs.push(`Executing command: mysqldump ${args.join(' ')}`);
 
-            const { stdout, stderr } = await execFileAsync('mysqldump', args, { env }
-            const { stdout, stderr } = await execFileAsync('mysqldump', args);
+            const { stdout, stderr } = await execFileAsync('mysqldump', args, { env });
 
             if (stderr) {
                 logs.push(`stderr: ${stderr}`);
@@ -204,6 +203,7 @@ export const MySQLAdapter: DatabaseAdapter = {
                     '-P', String(config.port),
                     '-u', config.user,
                     '--protocol=tcp'
+                ];
                 const env = { ...process.env };
                 if(config.password) env.MYSQL_PWD = config.password;
 
@@ -213,8 +213,7 @@ export const MySQLAdapter: DatabaseAdapter = {
                      args.push(singleTargetDb);
                 }
 
-                const mysqlProc = spawn('mysql', args, { stdio: ['pipe', 'pipe', 'pipe'], env
-                const mysqlProc = spawn('mysql', args, { stdio: ['pipe', 'pipe', 'pipe'] });
+                const mysqlProc = spawn('mysql', args, { stdio: ['pipe', 'pipe', 'pipe'], env });
 
                 mysqlProc.stderr.on('data', (d) => {
                     const msg = d.toString();

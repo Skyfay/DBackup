@@ -108,6 +108,12 @@
     - [x] **User Assignment**: Assign users to specific groups.
     - [x] **Access Control**: Implement permission guards (Server Actions & Components).
     - [x] Administrator manage other user (eg. reset 2FA)
+    - [ ] **UX & Refinement**:
+        - [ ] Show 2FA Status (Active/Inactive) in User Table
+        - [ ] Invite Flow (Email link) or Force Password Change on first login
+        - [ ] "Self-Service" Concept (Allow users to edit own profile regardless of strict permissions)
+- [ ] **Audit & Compliance**
+    - [ ] **Audit Logs**: Track sensitive user actions (Login, Create/Delete User, Change Permissions)
 - [ ] **Data Security**
     - [ ] Backup Encryption (Encrypt resulting artifacts)
     - [X] Credential Encryption (Encrypt DB passwords in database at rest via AES)

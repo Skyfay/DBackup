@@ -27,7 +27,7 @@ Einführung eines `src/services` Ordners. Server Actions (`src/app/actions`) sol
 ---
 
 ## 2. Kernlogik: Pipeline Pattern für `runner.ts`
-**Status:** [ ] Offen
+**Status:** [x] Erledigt
 
 **Problem:**
 Die Datei `src/lib/runner.ts` ist ein "God Object". Sie macht alles: Pfade berechnen, DB Dump aufrufen, Files zippen, verschlüsseln, hochladen, Datenbank updaten. Das ist schwer zu warten und fehleranfällig zu erweitern.
@@ -36,14 +36,14 @@ Die Datei `src/lib/runner.ts` ist ein "God Object". Sie macht alles: Pfade berec
 Aufbrechen des Prozesses in kleine, isolierte "Steps" (Pipeline Pattern).
 
 **Tasks:**
-- [ ] **Interface definieren:** Ein cleanes Interface für einen `PipelineStep` definieren (Input -> Process -> Output).
-- [ ] **Steps extrahieren:** Logik in einzelne Dateien unter `src/lib/runner/steps/` aufteilen:
+- [x] **Interface definieren:** Ein cleanes Interface für einen `PipelineStep` definieren (Input -> Process -> Output).
+- [x] **Steps extrahieren:** Logik in einzelne Dateien unter `src/lib/runner/steps/` aufteilen:
     - `01-prepare-context.ts` (Pfade, Config)
     - `02-execute-dump.ts` (Adapter Aufruf)
     - `03-compress-encrypt.ts` (Optional)
     - `04-upload-storage.ts` (Upload zu S3/FTP/etc.)
     - `05-cleanup.ts` (Temp Files löschen)
-- [ ] **Runner Orchestrator:** `runner.ts` so umschreiben, dass er nur noch diese Steps nacheinander aufruft und Errors fängt.
+- [x] **Runner Orchestrator:** `runner.ts` so umschreiben, dass er nur noch diese Steps nacheinander aufruft und Errors fängt.
 
 ---
 

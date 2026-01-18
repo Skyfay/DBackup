@@ -1,0 +1,63 @@
+import { RunnerContext } from "../types";
+import prisma from "@/lib/prisma";
+import fs from "fs";
+import { registry } from "@/lib/core/registry";
+import { NotificationAdapter } from "@/lib/core/interfaces";
+import { decryptConfig } from "@/lib/crypto";
+
+export async function stepCleanup(ctx: RunnerContext) {
+    // 1. Filesystem Cleanup
+    if (ctx.tempFile && fs.existsSync(ctx.tempFile)) {
+        try {
+            fs.unlinkSync(ctx.tempFile);
+            ctx.log("Temporary file cleaned up");
+        } catch (e) {
+            ctx.log("Warning: Failed to cleanup temp file");
+        }
+    }
+}
+
+export async function stepFinalize(ctx: RunnerContext) {
+    if (!ctx.execution) return;
+
+    // 1. Update Execution Record
+    await prisma.execution.update({
+        where: { id: ctx.execution.id },
+        data: {
+            status: ctx.status,
+            endedAt: new Date(),
+            logs: JSON.stringify(ctx.logs), // Should be serialized JSON
+            size: ctx.dumpSize,
+            path: ctx.finalRemotePath,
+            metadata: ctx.metadata ? JSON.stringify(ctx.metadata) : null
+        }
+    });
+
+    // 2. Notifications
+    if (ctx.job && ctx.job.notifications && ctx.job.notifications.length > 0) {
+        ctx.log("Sending notifications...");
+
+        for (const channel of ctx.job.notifications) {
+            try {
+                const notifyAdapter = registry.get(channel.adapterId) as NotificationAdapter;
+
+                if (notifyAdapter) {
+                    const channelConfig = decryptConfig(JSON.parse(channel.config));
+
+                    await notifyAdapter.send(channelConfig, `Backup Job '${ctx.job.name}' finished with status: ${ctx.status}`, {
+                         jobName: ctx.job.name,
+                         adapterName: ctx.job.source?.name,
+                         success: ctx.status === "Success",
+                         duration: new Date().getTime() - ctx.startedAt.getTime(),
+                         size: ctx.dumpSize || 0,
+                         status: ctx.status,
+                         logs: ctx.logs
+                    });
+                }
+            } catch (e) {
+                console.error("Failed to send notification", e);
+                ctx.log(`Failed to send notification to channel ${channel.name}`);
+            }
+        }
+    }
+}

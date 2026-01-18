@@ -36,14 +36,12 @@ export const MySQLAdapter: DatabaseAdapter = {
         const dbs = new Set<string>();
 
         try {
-            const fileStream = createReadStream(sourcePath);
-            const rl = readline.createInterface({
-                input: fileStream,
-                crlfDelay: Infinity
-            });
+            // Use grep for fast scan
+            // Search for: USE `...`; | CREATE DATABASE ... | -- Current Database: ...
+            const { stdout } = await execFileAsync('grep', ['-E', '^USE |CREATE DATABASE |-- Current Database:', sourcePath], { maxBuffer: 10 * 1024 * 1024 });
 
-            // Scan file
-            for await (const line of rl) {
+            const lines = stdout.split('\n');
+            for (const line of lines) {
                 // 1. Look for USE statements (most reliable for multi-db context)
                 // Matches: USE `dbname`;
                 const useMatch = line.match(/^USE `([^`]+)`;/i);
@@ -68,8 +66,11 @@ export const MySQLAdapter: DatabaseAdapter = {
                     dbs.add(currentMatch[1]);
                 }
             }
-        } catch (e) {
-            console.error("Error analyzing MySQL dump:", e);
+        } catch (e: any) {
+            // grep exit code 1 means no matches
+            if (e.code !== 1) {
+                console.error("Error analyzing MySQL dump:", e);
+            }
         }
 
         return Array.from(dbs);

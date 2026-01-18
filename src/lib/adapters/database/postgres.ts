@@ -18,12 +18,15 @@ export const PostgresAdapter: DatabaseAdapter = {
     async analyzeDump(sourcePath: string): Promise<string[]> {
         const dbs = new Set<string>();
         try {
-            const fileStream = createReadStream(sourcePath);
-            const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
+            // Use grep for fast scanning of large files (avoid reading GBs into Node)
+            // Search for: CREATE DATABASE ... or \connect ...
+            const { stdout } = await execFileAsync('grep', ['-E', '^CREATE DATABASE |^\\\\connect ', sourcePath], {
+                maxBuffer: 10 * 1024 * 1024 // 10MB buffer for matched lines
+            });
 
-            for await (const line of rl) {
+            const lines = stdout.split('\n');
+            for (const line of lines) {
                 // Matches: CREATE DATABASE "dbname" or CREATE DATABASE dbname
-                // Postgres identifiers can be quoted or unquoted
                 const createMatch = line.match(/^CREATE DATABASE "?([^";\s]+)"? /i);
                 if (createMatch) dbs.add(createMatch[1]);
 
@@ -31,8 +34,13 @@ export const PostgresAdapter: DatabaseAdapter = {
                 const connectMatch = line.match(/^\\connect "?([^"\s]+)"?/i);
                 if (connectMatch) dbs.add(connectMatch[1]);
             }
-        } catch (e) {
-            console.error("Error analyzing Postgres dump:", e);
+        } catch (e: any) {
+            // grep returns exit code 1 if no matches found, which is fine
+            if (e.code !== 1) {
+                 console.error("Error analyzing Postgres dump:", e);
+            }
+            // If grep fails (e.g. not found), we return empty or try fallback?
+            // In our Docker env, grep should exist.
         }
         return Array.from(dbs);
     },

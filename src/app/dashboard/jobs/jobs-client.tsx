@@ -167,6 +167,19 @@ export function JobsClient({ canManage, canExecute }: JobsClientProps) {
             )
         },
         {
+            id: "compression",
+            header: "Compression",
+            cell: ({ row }) => {
+                const comp = row.original.compression;
+                if (!comp || comp === "NONE") return <span className="text-muted-foreground text-sm">-</span>;
+                return (
+                     <Badge variant="outline" className="text-[10px] h-5 px-1.5 border-blue-200 text-blue-700 dark:text-blue-400 dark:border-blue-900">
+                        {comp}
+                    </Badge>
+                );
+            }
+        },
+        {
             id: "encryption",
             header: "Encryption",
             cell: ({ row }) => {

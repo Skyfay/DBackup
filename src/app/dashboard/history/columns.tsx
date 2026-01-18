@@ -17,6 +17,7 @@ export interface Execution {
     endedAt?: string;
     logs: string; // JSON string
     path?: string;
+    metadata?: string;
 }
 
 export const createColumns = (onViewLogs: (execution: Execution) => void): ColumnDef<Execution>[] => [

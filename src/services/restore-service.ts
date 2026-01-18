@@ -24,7 +24,7 @@ export interface RestoreInput {
 
 export class RestoreService {
     async restore(input: RestoreInput) {
-        const { storageConfigId, file, targetSourceId, targetDatabaseName, databaseMapping, privilegedAuth } = input;
+        const { file } = input;
 
         // Start Logging Execution
         const execution = await prisma.execution.create({
@@ -37,12 +37,54 @@ export class RestoreService {
             }
         });
         const executionId = execution.id;
+
+        // Run in background (do not await)
+        this.runRestoreProcess(executionId, input).catch(err => {
+            console.error(`Background restore failed for ${executionId}:`, err);
+        });
+
+        return { success: true, executionId, message: "Restore started" };
+    }
+
+    private async runRestoreProcess(executionId: string, input: RestoreInput) {
+        const { storageConfigId, file, targetSourceId, targetDatabaseName, databaseMapping, privilegedAuth } = input;
         let tempFile: string | null = null;
+
+        // Log Buffer
+        let internalLogs: string[] = [`Starting restore for ${file}`];
+        let lastLogUpdate = Date.now();
+        let currentProgress = 0;
+
+        const flushLogs = async (force = false) => {
+            const now = Date.now();
+            if (force || now - lastLogUpdate > 2000) { // Update every 2 seconds max
+                await prisma.execution.update({
+                    where: { id: executionId },
+                    data: {
+                        logs: JSON.stringify(internalLogs),
+                        metadata: JSON.stringify({ progress: currentProgress })
+                    }
+                }).catch(() => {});
+                lastLogUpdate = now;
+            }
+        };
+
+        const log = (msg: string) => {
+            internalLogs.push(msg);
+            flushLogs(); // Throttled
+        };
+
+        const updateProgress = (p: number) => {
+             currentProgress = p;
+             flushLogs();
+        };
 
         try {
             if (!file || !targetSourceId) {
                 throw new Error("Missing file or targetSourceId");
             }
+
+            log(`Initiating restore process...`);
 
             // 1. Get Storage Adapter
             const storageConfig = await prisma.adapterConfig.findUnique({ where: { id: storageConfigId } });
@@ -67,6 +109,7 @@ export class RestoreService {
             }
 
             // 3. Download File
+            log(`Downloading backup file: ${file}...`);
             const tempDir = os.tmpdir();
             tempFile = path.join(tempDir, path.basename(file));
 
@@ -76,8 +119,10 @@ export class RestoreService {
             if (!downloadSuccess) {
                 throw new Error("Failed to download file from storage");
             }
+            log(`Download complete.`);
 
             // 4. Restore
+            log(`Starting database restore on ${sourceConfig.name}...`);
             const dbConf = decryptConfig(JSON.parse(sourceConfig.config));
 
             // Override database name if provided
@@ -95,38 +140,43 @@ export class RestoreService {
                 dbConf.privilegedAuth = privilegedAuth;
             }
 
-            const restoreResult = await sourceAdapter.restore(dbConf, tempFile);
+            const restoreResult = await sourceAdapter.restore(dbConf, tempFile, (msg) => {
+                log(msg); // Live logs from adapter
+            }, (p) => {
+                updateProgress(p); // Progress updates
+            });
 
             if (!restoreResult.success) {
+                // Final update
+                internalLogs = restoreResult.logs; // Sync final logs
                 await prisma.execution.update({
                     where: { id: executionId },
                     data: {
                         status: 'Failed',
                         endedAt: new Date(),
-                        logs: JSON.stringify(restoreResult.logs)
+                        logs: JSON.stringify(internalLogs)
                     }
                 });
-                return { success: false, logs: restoreResult.logs, error: restoreResult.error };
+            } else {
+                internalLogs = restoreResult.logs;
+                log(`Restore completed successfully.`);
+                await prisma.execution.update({
+                    where: { id: executionId },
+                    data: {
+                        status: 'Success',
+                        endedAt: new Date(),
+                        logs: JSON.stringify(internalLogs)
+                    }
+                });
             }
-
-            await prisma.execution.update({
-                where: { id: executionId },
-                data: {
-                    status: 'Success',
-                    endedAt: new Date(),
-                    logs: JSON.stringify(restoreResult.logs)
-                }
-            });
-
-            return { success: true, logs: restoreResult.logs };
 
         } catch (error: any) {
             console.error("Restore service error:", error);
+            log(`Fatal Error: ${error.message}`);
             await prisma.execution.update({
                 where: { id: executionId },
-                data: { status: 'Failed', endedAt: new Date(), logs: JSON.stringify([`Error: ${error.message}`]) }
+                data: { status: 'Failed', endedAt: new Date(), logs: JSON.stringify(internalLogs) }
             });
-            throw error;
         } finally {
             if (tempFile && fs.existsSync(tempFile)) {
                 try { fs.unlinkSync(tempFile); } catch {}

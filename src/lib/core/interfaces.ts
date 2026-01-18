@@ -51,15 +51,18 @@ export interface DatabaseAdapter extends BaseAdapter {
      * Dumps the database to a local file path
      * @param config The user configuration for this adapter
      * @param destinationPath The path where the dump should be saved locally
+     * @param onLog Optional callback for live logs
      */
-    dump(config: any, destinationPath: string): Promise<BackupResult>;
+    dump(config: any, destinationPath: string, onLog?: (msg: string) => void): Promise<BackupResult>;
 
     /**
      * Restores the database from a local file path
      * @param config The user configuration for this adapter
      * @param sourcePath The path to the dump file
+     * @param onLog Optional callback for live logs
+     * @param onProgress Optional callback for progress (0-100)
      */
-    restore(config: any, sourcePath: string): Promise<BackupResult>;
+    restore(config: any, sourcePath: string, onLog?: (msg: string) => void, onProgress?: (percentage: number) => void): Promise<BackupResult>;
 
     /**
      * Optional method to analyze a dump file and return contained databases

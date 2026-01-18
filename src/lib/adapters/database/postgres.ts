@@ -45,9 +45,14 @@ export const PostgresAdapter: DatabaseAdapter = {
         return Array.from(dbs);
     },
 
-    async dump(config: any, destinationPath: string): Promise<BackupResult> {
+    async dump(config: any, destinationPath: string, onLog?: (msg: string) => void): Promise<BackupResult> {
         const startedAt = new Date();
         const logs: string[] = [];
+
+        const log = (msg: string) => {
+            logs.push(msg);
+            if (onLog) onLog(msg);
+        };
 
         try {
             // Postgres uses PGPASSWORD env var typically or .pgpass file, but we can set env for the command
@@ -91,22 +96,22 @@ export const PostgresAdapter: DatabaseAdapter = {
                 // Let's stick to default or let user specify in options, but we redirect output.
                 const args = [...baseArgs, '-f', destinationPath, dbs[0]];
 
-                logs.push(`Executing command: pg_dump ${args.join(' ')}`);
+                log(`Executing command: pg_dump ${args.join(' ')}`);
 
                 const { stdout, stderr } = await execFileAsync('pg_dump', args, { env });
 
                 // pg_dump might output info to stderr even on success
                 if (stderr) {
-                    logs.push(`stderr: ${stderr}`);
+                    log(`stderr: ${stderr}`);
                 }
             }
             // Case 2: Multiple Databases (Pipe output sequentially)
             else {
-                logs.push(`Dumping multiple databases: ${dbs.join(', ')}`);
+                log(`Dumping multiple databases: ${dbs.join(', ')}`);
                 const writeStream = createWriteStream(destinationPath);
 
                 for (const db of dbs) {
-                    logs.push(`Starting dump for ${db}...`);
+                    log(`Starting dump for ${db}...`);
                     // Use --create so the dump file knows to create the DB context
                     const args = [...baseArgs, '--create', db];
 
@@ -117,7 +122,7 @@ export const PostgresAdapter: DatabaseAdapter = {
                         child.stdout.pipe(writeStream, { end: false });
 
                         child.stderr.on('data', (data) => {
-                            logs.push(`[${db}] stderr: ${data.toString()}`);
+                            log(`[${db}] stderr: ${data.toString()}`);
                         });
 
                         child.on('error', (err) => {
@@ -132,7 +137,7 @@ export const PostgresAdapter: DatabaseAdapter = {
                             }
                         });
                     });
-                    logs.push(`Completed dump for ${db}`);
+                    log(`Completed dump for ${db}`);
                 }
 
                 writeStream.end();
@@ -150,7 +155,7 @@ export const PostgresAdapter: DatabaseAdapter = {
             };
 
         } catch (error: any) {
-            logs.push(`Error: ${error.message}`);
+            log(`Error: ${error.message}`);
             return {
                 success: false,
                 logs,
@@ -161,11 +166,31 @@ export const PostgresAdapter: DatabaseAdapter = {
         }
     },
 
-    async restore(config: any, sourcePath: string): Promise<BackupResult> {
+    async restore(config: any, sourcePath: string, onLog?: (msg: string) => void, onProgress?: (p: number) => void): Promise<BackupResult> {
         const startedAt = new Date();
         const logs: string[] = [];
+        const log = (msg: string) => {
+            logs.push(msg);
+            if (onLog) onLog(msg);
+        };
 
         try {
+            // Get file size for progress
+            const stats = await fs.stat(sourcePath);
+            const totalSize = stats.size;
+            let processedSize = 0;
+            let lastProgress = 0;
+
+            const updateProgress = (chunkLen: number) => {
+                if (!onProgress || totalSize === 0) return;
+                processedSize += chunkLen;
+                const p = Math.round((processedSize / totalSize) * 100);
+                if (p > lastProgress) {
+                    lastProgress = p;
+                    onProgress(p);
+                }
+            };
+
             const env = { ...process.env };
             if (config.password) {
                 env.PGPASSWORD = config.password;
@@ -176,7 +201,7 @@ export const PostgresAdapter: DatabaseAdapter = {
 
             // If mapping is provided, we need to stream and filter the SQL
             if (mapping && mapping.length > 0) {
-                logs.push("Performing Selective/Mapped Restore...");
+                log("Performing Selective/Mapped Restore...");
 
                 // 1. Build map for quick lookup
                 const dbMap = new Map<string, { target: string, selected: boolean }>();
@@ -191,12 +216,12 @@ export const PostgresAdapter: DatabaseAdapter = {
                     '-d', 'postgres' // Connect to default DB to issue CREATE DATABASE commands
                 ];
 
-                logs.push(`Executing restore stream to: psql ${args.join(' ')}`);
+                log(`Executing restore stream to: psql ${args.join(' ')}`);
 
                 await new Promise<void>((resolve, reject) => {
                     const psql = spawn('psql', args, { env, stdio: ['pipe', 'pipe', 'pipe'] });
 
-                    psql.stderr.on('data', (d) => logs.push(`stderr: ${d}`));
+                    psql.stderr.on('data', (d) => log(`stderr: ${d}`));
                     // psql.stdout.on('data', (d) => logs.push(`stdout: ${d}`)); // Verbose
 
                     psql.on('close', (code) => {
@@ -208,6 +233,10 @@ export const PostgresAdapter: DatabaseAdapter = {
 
                     // 3. Create Transform Stream to filter/rewrite SQL
                     const fileStream = createReadStream(sourcePath, { encoding: 'utf8', highWaterMark: 64 * 1024 });
+
+                    fileStream.on('data', (chunk) => {
+                         updateProgress(chunk.length);
+                    });
 
                     let currentDb: string | null = null;
                     let skipMode = false;
@@ -308,12 +337,37 @@ export const PostgresAdapter: DatabaseAdapter = {
                     '-f', sourcePath
                 ];
 
-                logs.push(`Executing direct restore command: psql ${args.join(' ')}`);
+                // Note: Standard psql -f does not provide progress hooks easily
+                // because it opens the file internally.
+                // To support progress, we MUST pipe instead of using -f, even for direct restore.
+                // Let's switch to piping for consistency and progress.
 
-                const { stdout, stderr } = await execFileAsync('psql', args, { env });
-                 if (stderr) {
-                    logs.push(`stderr: ${stderr}`);
-                }
+                log(`Executing direct restore command: psql (piped)`);
+
+                // Remove -f sourcePath and add proper connection args
+                const pipeArgs = [
+                     '-h', config.host,
+                    '-p', String(config.port),
+                    '-U', config.user,
+                    '-d', config.database
+                ];
+
+                await new Promise<void>((resolve, reject) => {
+                    const psql = spawn('psql', pipeArgs, { env, stdio: ['pipe', 'pipe', 'pipe'] });
+
+                    psql.stderr.on('data', (d) => log(`stderr: ${d}`));
+
+                    psql.on('close', (code) => {
+                        if (code === 0) resolve();
+                        else reject(new Error(`psql exited with code ${code}`));
+                    });
+
+                    psql.on('error', (err) => reject(err));
+
+                    const stream = createReadStream(sourcePath);
+                    stream.on('data', (c) => updateProgress(c.length));
+                    stream.pipe(psql.stdin);
+                });
             }
 
             return {
@@ -324,7 +378,7 @@ export const PostgresAdapter: DatabaseAdapter = {
             };
 
         } catch (error: any) {
-             logs.push(`Error: ${error.message}`);
+             log(`Error: ${error.message}`);
             return {
                 success: false,
                 logs,

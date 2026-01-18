@@ -32,11 +32,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
             privilegedAuth
         });
 
-        if (!result.success) {
-            return NextResponse.json({ error: result.error || "Restore failed", logs: result.logs }, { status: 500 });
-        }
-
-        return NextResponse.json(result);
+        // result contains { success: true, executionId: string, message: "Restore started" }
+        return NextResponse.json(result, { status: 202 });
 
     } catch (error: any) {
         console.error("Restore error:", error);

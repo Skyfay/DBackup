@@ -19,6 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Database } from "lucide-react";
 import { toast } from "sonner";
 import { FileInfo } from "@/app/dashboard/storage/columns";
+import { useRouter } from "next/navigation";
 
 interface AdapterConfig {
     id: string;
@@ -60,6 +61,7 @@ export function RestoreDialog({ file, open, onOpenChange, destinationId, sources
     const [privPass, setPrivPass] = useState("");
 
     const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const router = useRouter();
 
     const resetState = useCallback(() => {
         setTargetSource("");
@@ -144,11 +146,13 @@ export function RestoreDialog({ file, open, onOpenChange, destinationId, sources
             const data = await res.json();
 
             if (res.ok && data.success) {
-                toast.success("Restore completed successfully");
+                toast.success("Restore started in background");
                 onSuccess();
                 onOpenChange(false);
+                // Redirect to history to show progress
+                router.push(`/dashboard/history?executionId=${data.executionId}&autoOpen=true`);
             } else {
-                toast.error("Restore failed");
+                toast.error("Restore request failed");
                 const logs = data.logs || [];
                 if (logs.length > 0) {
                      setRestoreLogs(logs);

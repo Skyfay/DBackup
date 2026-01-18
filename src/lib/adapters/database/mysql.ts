@@ -76,9 +76,13 @@ export const MySQLAdapter: DatabaseAdapter = {
         return Array.from(dbs);
     },
 
-    async dump(config: any, destinationPath: string): Promise<BackupResult> {
+    async dump(config: any, destinationPath: string, onLog?: (msg: string) => void): Promise<BackupResult> {
         const startedAt = new Date();
         const logs: string[] = [];
+        const log = (msg: string) => {
+            logs.push(msg);
+            if (onLog) onLog(msg);
+        };
 
         try {
             // Determine databases to backup
@@ -121,12 +125,12 @@ export const MySQLAdapter: DatabaseAdapter = {
             args.push(`--result-file=${destinationPath}`);
 
             // No password in args anymore
-            logs.push(`Executing command: mysqldump ${args.join(' ')}`);
+            log(`Executing command: mysqldump ${args.join(' ')}`);
 
             const { stdout, stderr } = await execFileAsync('mysqldump', args, { env });
 
             if (stderr) {
-                logs.push(`stderr: ${stderr}`);
+                log(`stderr: ${stderr}`);
             }
 
             // Check file size
@@ -142,7 +146,7 @@ export const MySQLAdapter: DatabaseAdapter = {
             };
 
         } catch (error: any) {
-            logs.push(`Error: ${error.message}`);
+            log(`Error: ${error.message}`);
             return {
                 success: false,
                 logs,
@@ -153,11 +157,31 @@ export const MySQLAdapter: DatabaseAdapter = {
         }
     },
 
-    async restore(config: any, sourcePath: string): Promise<BackupResult> {
+    async restore(config: any, sourcePath: string, onLog?: (msg: string) => void, onProgress?: (p: number) => void): Promise<BackupResult> {
         const startedAt = new Date();
         const logs: string[] = [];
+        const log = (msg: string) => {
+            logs.push(msg);
+            if (onLog) onLog(msg);
+        };
 
         try {
+            // Get file size for progress
+            const stats = await fs.stat(sourcePath);
+            const totalSize = stats.size;
+            let processedSize = 0;
+            let lastProgress = 0;
+
+            const updateProgress = (chunkLen: number) => {
+                if (!onProgress || totalSize === 0) return;
+                processedSize += chunkLen;
+                const p = Math.round((processedSize / totalSize) * 100);
+                if (p > lastProgress) {
+                    lastProgress = p;
+                    onProgress(p);
+                }
+            };
+
             const dbMapping = config.databaseMapping as { originalName: string, targetName: string, selected: boolean }[] | undefined;
             const usePrivileged = !!config.privilegedAuth;
             const creationUser = usePrivileged ? config.privilegedAuth.user : config.user;
@@ -218,7 +242,7 @@ export const MySQLAdapter: DatabaseAdapter = {
 
                 mysqlProc.stderr.on('data', (d) => {
                     const msg = d.toString();
-                    if (!msg.includes("Using a password")) logs.push(`MySQL: ${msg}`);
+                    if (!msg.includes("Using a password")) log(`MySQL: ${msg}`);
                 });
 
                 mysqlProc.on('error', (err) => reject({ success: false, logs, error: err.message, startedAt, completedAt: new Date() }));
@@ -231,6 +255,12 @@ export const MySQLAdapter: DatabaseAdapter = {
                 });
 
                 const fileStream = createReadStream(sourcePath);
+
+                // Track progress
+                fileStream.on('data', (chunk) => {
+                     updateProgress(chunk.length);
+                });
+
                 const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
 
                 let skipCurrentSection = false;
@@ -263,7 +293,7 @@ export const MySQLAdapter: DatabaseAdapter = {
                         } else if (singleTargetDb) {
                             // Single Target Mode: We want to FORCE everything into singleTargetDb.
                             // So we IGNORE the USE statement to prevent switching away.
-                            logs.push(`Ignoring 'USE ${originalDb}' to enforce target '${singleTargetDb}'`);
+                            log(`Ignoring 'USE ${originalDb}' to enforce target '${singleTargetDb}'`);
                             return;
                         }
                     }
@@ -292,7 +322,7 @@ export const MySQLAdapter: DatabaseAdapter = {
                 });
 
                 rl.on('close', () => {
-                    logs.push(`Stream finished.`);
+                    log(`Stream finished.`);
                     mysqlProc.stdin.end();
                 });
             });

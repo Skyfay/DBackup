@@ -12,14 +12,52 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
 import { DataTable } from "@/components/ui/data-table";
 import { createColumns, Execution } from "./columns";
+import { useSearchParams, useRouter } from "next/navigation";
+import { Loader2 } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
 
 export default function HistoryPage() {
+    return (
+        <HistoryContent />
+    )
+}
+
+function HistoryContent() {
     const [executions, setExecutions] = useState<Execution[]>([]);
     const [selectedLog, setSelectedLog] = useState<Execution | null>(null);
+    const searchParams = useSearchParams();
+    const router = useRouter();
+
+    // Auto-open logic
+    const executionId = searchParams.get("executionId");
+
+    // Sync selectedLog with latest executions data to enable live updates in modal
+    useEffect(() => {
+        if (selectedLog) {
+            const updatedLog = executions.find(e => e.id === selectedLog.id);
+            // Only update if the content has actually changed to prevent loops
+            if (updatedLog && JSON.stringify(updatedLog) !== JSON.stringify(selectedLog)) {
+                setSelectedLog(updatedLog);
+            }
+        }
+    }, [executions, selectedLog]);
+
+    useEffect(() => {
+        if (executionId && executions.length > 0) {
+            // Check if we are already viewing it or explicitly closed it (not easily tracked here without ref, but let's assume if query param exists we want to open)
+            // To prevent re-opening, we remove the query param immediately after finding the log
+            const found = executions.find(e => e.id === executionId);
+            if (found && !selectedLog) {
+                setSelectedLog(found);
+                // Clear the query param so it doesn't re-trigger on close
+                router.replace("/dashboard/history", { scroll: false });
+            }
+        }
+    }, [executions, executionId, selectedLog, router]);
 
     useEffect(() => {
         fetchHistory();
-        const interval = setInterval(fetchHistory, 5000); // Poll every 5s
+        const interval = setInterval(fetchHistory, 2000); // Poll faster (2s) for live feel
         return () => clearInterval(interval);
     }, []);
 
@@ -54,6 +92,17 @@ export default function HistoryPage() {
         }
     ], []);
 
+    const parseMetadata = (json?: string | null) => {
+        if (!json) return null;
+        try {
+            return JSON.parse(json);
+        } catch {
+            return null;
+        }
+    };
+
+    const progress = selectedLog ? parseMetadata(selectedLog.metadata)?.progress : 0;
+
     return (
         <div className="space-y-6">
              <div className="flex items-center justify-between">
@@ -67,14 +116,29 @@ export default function HistoryPage() {
                 filterableColumns={filterableColumns}
             />
 
-            <Dialog open={!!selectedLog} onOpenChange={(open) => !open && setSelectedLog(null)}>
+            <Dialog open={!!selectedLog} onOpenChange={(open) => { if(!open) setSelectedLog(null); }}>
                 <DialogContent className="max-w-[80vw] w-full max-h-[80vh] overflow-hidden flex flex-col">
                     <DialogHeader>
-                        <DialogTitle>Execution Logs - {selectedLog?.job?.name || selectedLog?.type || "Unknown Activity"}</DialogTitle>
+                        <DialogTitle className="flex items-center gap-2">
+                             {selectedLog?.status === "Running" && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+                             Execution Logs - {selectedLog?.job?.name || selectedLog?.type || "Unknown Activity"}
+                        </DialogTitle>
                         <DialogDescription>
                             {selectedLog?.startedAt && format(new Date(selectedLog.startedAt), "PPpp")}
+                            {selectedLog?.status === "Running" && " (Live)"}
                         </DialogDescription>
                     </DialogHeader>
+
+                     {selectedLog?.status === "Running" && typeof progress === 'number' && (
+                        <div className="px-4 py-2 space-y-1 bg-secondary/20">
+                            <div className="flex justify-between text-xs text-muted-foreground">
+                                <span>Restoring Database...</span>
+                                <span>{progress}%</span>
+                            </div>
+                            <Progress value={progress} className="h-2" />
+                        </div>
+                    )}
+
                     <ScrollArea className="flex-1 w-full rounded-md border p-4 bg-muted font-mono text-xs">
                         {selectedLog && parseLogs(selectedLog.logs).map((line: string, i: number) => (
                             <div key={i} className="mb-1 border-b border-border/50 pb-0.5 last:border-0 whitespace-pre-wrap break-all">

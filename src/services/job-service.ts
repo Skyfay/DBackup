@@ -1,0 +1,111 @@
+import prisma from "@/lib/prisma";
+import { scheduler } from "@/lib/scheduler";
+
+export interface CreateJobInput {
+    name: string;
+    schedule: string;
+    sourceId: string;
+    destinationId: string;
+    notificationIds?: string[];
+    enabled?: boolean;
+}
+
+export interface UpdateJobInput {
+    name?: string;
+    schedule?: string;
+    sourceId?: string;
+    destinationId?: string;
+    notificationIds?: string[];
+    enabled?: boolean;
+}
+
+export class JobService {
+    async getJobs() {
+        return prisma.job.findMany({
+            include: {
+                source: true,
+                destination: true,
+                notifications: true,
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+    }
+
+    async getJobById(id: string) {
+        return prisma.job.findUnique({
+            where: { id },
+            include: {
+                source: true,
+                destination: true,
+                notifications: true,
+            }
+        });
+    }
+
+    async createJob(input: CreateJobInput) {
+        const { name, schedule, sourceId, destinationId, notificationIds, enabled } = input;
+
+        const newJob = await prisma.job.create({
+            data: {
+                name,
+                schedule,
+                sourceId,
+                destinationId,
+                enabled: enabled !== undefined ? enabled : true,
+                notifications: {
+                    connect: notificationIds?.map((id) => ({ id })) || []
+                }
+            },
+            include: {
+                source: true,
+                destination: true,
+                notifications: true,
+            }
+        });
+
+        // Trigger scheduler refresh to pick up the new job
+        await scheduler.refresh();
+
+        return newJob;
+    }
+
+    async updateJob(id: string, input: UpdateJobInput) {
+        const { name, schedule, sourceId, destinationId, notificationIds, enabled } = input;
+
+        const updatedJob = await prisma.job.update({
+            where: { id },
+            data: {
+                name,
+                schedule,
+                enabled,
+                sourceId,
+                destinationId,
+                notifications: {
+                    set: [], // Clear existing relations
+                    connect: notificationIds?.map((id) => ({ id })) || []
+                }
+            },
+            include: {
+                source: true,
+                destination: true,
+                notifications: true,
+            }
+        });
+
+        await scheduler.refresh();
+
+        return updatedJob;
+    }
+
+    async deleteJob(id: string) {
+        const deletedJob = await prisma.job.delete({
+            where: { id },
+        });
+
+        await scheduler.refresh();
+
+        return deletedJob;
+    }
+}
+
+export const jobService = new JobService();

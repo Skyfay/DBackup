@@ -5,7 +5,7 @@ Dieses Dokument dient als Roadmap für die technische Konsolidierung des Projekt
 WICHTIG: Arbeite diese Punkte sequenziell ab. Markiere erledigte Punkte mit `[x]`.
 
 ## 1. Architektur: Service Layer einführen
-**Status:** [ ] Offen
+**Status:** [ ] Offen (In Progress)
 
 **Problem:**
 Aktuell vermischt sich Business-Logik (Datenbank-Updates, komplexe Validierungen) mit der Transport-Schicht (Server Actions) oder liegt in riesigen Utility-Files.
@@ -18,8 +18,8 @@ Einführung eines `src/services` Ordners. Server Actions (`src/app/actions`) sol
 4.  Ergebnis zurückgeben (oder revalidieren)
 
 **Tasks:**
-- [ ] **Ordnerstruktur erstellen:** `src/services/` anlegen.
-- [ ] **JobService:** CRUD Logik für Jobs aus Actions extrahieren -> `src/services/job-service.ts`.
+- [x] **Ordnerstruktur erstellen:** `src/services/` anlegen.
+- [x] **JobService:** CRUD Logik für Jobs aus Actions extrahieren -> `src/services/job-service.ts`.
 - [ ] **BackupService:** Logik zum Starten/Triggern von Backups extrahieren -> `src/services/backup-service.ts`.
 - [ ] **RestoreService:** Logik für Wiederherstellung -> `src/services/restore-service.ts`.
 - [ ] **AuthService:** (Optional) Falls Auth-Logik komplexer wird.

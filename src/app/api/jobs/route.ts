@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
-import { scheduler } from "@/lib/scheduler";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { checkPermission } from "@/lib/access-control";
 import { PERMISSIONS } from "@/lib/permissions";
+import { jobService } from "@/services/job-service";
 
 export async function GET(req: NextRequest) {
     const session = await auth.api.getSession({
@@ -18,14 +17,7 @@ export async function GET(req: NextRequest) {
     try {
         await checkPermission(PERMISSIONS.JOBS.READ);
 
-        const jobs = await prisma.job.findMany({
-            include: {
-                source: true,
-                destination: true,
-                notifications: true,
-            },
-            orderBy: { createdAt: 'desc' }
-        });
+        const jobs = await jobService.getJobs();
         return NextResponse.json(jobs);
     } catch (error) {
         return NextResponse.json({ error: "Failed to fetch jobs" }, { status: 500 });
@@ -52,26 +44,14 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
         }
 
-        const newJob = await prisma.job.create({
-            data: {
-                name,
-                schedule,
-                sourceId,
-                destinationId,
-                enabled: enabled !== undefined ? enabled : true,
-                notifications: {
-                    connect: notificationIds?.map((id: string) => ({ id })) || []
-                }
-            },
-            include: {
-                source: true,
-                destination: true,
-                notifications: true,
-            }
+        const newJob = await jobService.createJob({
+            name,
+            schedule,
+            sourceId,
+            destinationId,
+            notificationIds,
+            enabled
         });
-
-        // Refresh scheduler to pick up the new job
-        await scheduler.refresh();
 
         return NextResponse.json(newJob, { status: 201 });
     } catch (error) {

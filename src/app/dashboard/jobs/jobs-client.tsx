@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { JobForm, JobData, AdapterOption } from "@/components/dashboard/jobs/job-form";
 import { Badge } from "@/components/ui/badge";
 import { Plus } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 // Extended Job type for display (includes related entity names)
 interface Job extends JobData {
@@ -41,6 +42,7 @@ export function JobsClient({ canManage, canExecute }: JobsClientProps) {
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editingJob, setEditingJob] = useState<JobData | null>(null);
     const [deletingId, setDeletingId] = useState<string | null>(null);
+    const router = useRouter();
 
     const fetchJobs = async () => {
         try {
@@ -95,12 +97,15 @@ export function JobsClient({ canManage, canExecute }: JobsClientProps) {
     };
 
     const runJob = async (id: string) => {
-        toast.info("Job started...");
+        toast.info("Starting backup job...");
         try {
             const res = await fetch(`/api/jobs/${id}/run`, { method: "POST" });
             const data = await res.json();
             if (data.success) {
-                toast.success("Job executed successfully");
+                toast.success("Job started successfully");
+                if (data.executionId) {
+                    router.push(`/dashboard/history?executionId=${data.executionId}`);
+                }
             } else {
                 toast.error(`Job failed: ${data.error}`);
             }

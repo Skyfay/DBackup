@@ -14,6 +14,7 @@ export interface RunnerContext {
 
     logs: string[];
     log: (msg: string) => void;
+    updateProgress: (percent: number, stage?: string) => void;
 
     sourceAdapter?: DatabaseAdapter;
     destAdapter?: StorageAdapter;

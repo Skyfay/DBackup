@@ -103,7 +103,7 @@ function HistoryContent() {
 
     const metadata = selectedLog ? parseMetadata(selectedLog.metadata) : null;
     const progress = metadata?.progress ?? 0;
-    const stage = metadata?.stage || "Restoring...";
+    const stage = metadata?.stage || (selectedLog?.type === "Restore" ? "Restoring..." : "Initializing...");
 
     return (
         <div className="space-y-6">

@@ -41,9 +41,9 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
 
         // Delegate logic to Service with decrypt flag
         // Note: storageService handles config retrieval, decryption and adapter lookup
-        const success = await storageService.downloadFile(params.id, file, tempFile, decrypt);
+        const result = await storageService.downloadFile(params.id, file, tempFile, decrypt);
 
-        if (!success) {
+        if (!result.success) {
              if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
              return NextResponse.json({ error: "Download failed" }, { status: 500 });
         }
@@ -55,14 +55,20 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
         fs.unlinkSync(tempFile);
 
         let downloadFilename = path.basename(file);
-        if (decrypt && downloadFilename.endsWith('.enc')) {
+
+        if (result.isZip) {
+            downloadFilename = downloadFilename.replace(/\.enc$/, '') + '.zip';
+            // If it was eg. backup.sql.enc -> backup.sql.zip
+            // If just backup.enc -> backup.zip
+            if (!downloadFilename.endsWith('.zip')) downloadFilename += '.zip';
+        } else if (decrypt && downloadFilename.endsWith('.enc')) {
             downloadFilename = downloadFilename.slice(0, -4);
         }
 
         return new NextResponse(fileBuffer, {
             headers: {
                 "Content-Disposition": `attachment; filename="${downloadFilename}"`,
-                "Content-Type": "application/octet-stream",
+                "Content-Type": result.isZip ? "application/zip" : "application/octet-stream",
             }
         });
 

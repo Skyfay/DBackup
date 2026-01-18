@@ -8,6 +8,7 @@ import { getProfileMasterKey } from "@/services/encryption-service";
 import { createDecryptionStream } from "@/lib/crypto-stream";
 import path from "path";
 import os from "os";
+import AdmZip from "adm-zip";
 
 export type RichFileInfo = FileInfo & {
     jobName?: string;
@@ -260,7 +261,7 @@ export class StorageService {
     /**
      * Downloads a file from storage to a local path.
      */
-    async downloadFile(adapterConfigId: string, remotePath: string, localDestination: string, decrypt: boolean = false): Promise<boolean> {
+    async downloadFile(adapterConfigId: string, remotePath: string, localDestination: string, decrypt: boolean = false): Promise<{ success: boolean; isZip?: boolean }> {
         const adapterConfig = await prisma.adapterConfig.findUnique({
            where: { id: adapterConfigId }
        });
@@ -285,12 +286,12 @@ export class StorageService {
            throw new Error(`Failed to decrypt configuration for ${adapterConfigId}: ${(e as Error).message}`);
        }
 
-       // 1. Download basic file
-       const success = await adapter.download(config, remotePath, localDestination);
-       if (!success) return false;
-
-       // 2. Decrypt if requested
+       // 1. Decrypt if requested (Explicit Decryption)
        if (decrypt) {
+            // Download basic file first
+            const success = await adapter.download(config, remotePath, localDestination);
+            if (!success) return { success: false };
+
             const metaRemotePath = remotePath + ".meta.json";
             const tempMetaPath = path.join(os.tmpdir(), "dlmeta_" + Date.now() + ".json");
 
@@ -300,11 +301,14 @@ export class StorageService {
 
                 // If adapter supports read, use it (faster)
                 if (adapter.read) {
-                    const content = await adapter.read(config, metaRemotePath);
-                    if (content) meta = JSON.parse(content);
+                    try {
+                        const content = await adapter.read(config, metaRemotePath);
+                        if (content) meta = JSON.parse(content);
+                    } catch {}
                 }
-                // Fallback to download
-                else {
+
+                // Fallback to download if read failed or not supported
+                if (!meta) {
                      const metaSuccess = await adapter.download(config, metaRemotePath, tempMetaPath).catch(() => false);
                      if (metaSuccess) {
                          const content = await fs.readFile(tempMetaPath, 'utf-8');
@@ -332,6 +336,8 @@ export class StorageService {
                     await fs.unlink(localDestination);
                     await fs.rename(decryptedPath, localDestination);
                 }
+
+                return { success: true, isZip: false };
             } catch (e: any) {
                 console.error("Decryption during download failed:", e);
                 // Return failed state so API returns 500
@@ -339,7 +345,60 @@ export class StorageService {
             }
        }
 
-       return true;
+       // 2. Encrypted File Download (No Decryption) -> Bundle .meta.json if present
+       if (remotePath.endsWith('.enc')) {
+           const tempDir = path.dirname(localDestination);
+           const baseName = path.basename(remotePath);
+           const tempMain = path.join(tempDir, `tmp_main_${Date.now()}_${baseName}`);
+           const tempMeta = path.join(tempDir, `tmp_meta_${Date.now()}_${baseName}.meta.json`);
+           const metaRemotePath = remotePath + ".meta.json";
+
+           try {
+               // Download Main File to Temp
+               const mainSuccess = await adapter.download(config, remotePath, tempMain);
+               if (!mainSuccess) return { success: false };
+
+               // Try Download Meta
+               let metaFound = false;
+               try {
+                   const metaSuccess = await adapter.download(config, metaRemotePath, tempMeta);
+                   if (metaSuccess) metaFound = true;
+               } catch {}
+
+               if (metaFound) {
+                   // Create ZIP
+                   try {
+                       const zip = new AdmZip();
+                       zip.addLocalFile(tempMain, "", baseName);
+                       zip.addLocalFile(tempMeta, "", baseName + ".meta.json");
+                       zip.writeZip(localDestination);
+
+                       return { success: true, isZip: true };
+                   } catch (zipError) {
+                       console.error("Zip creation failed:", zipError);
+                       // Fallback: Return original file only
+                       await fs.rename(tempMain, localDestination);
+                       return { success: true, isZip: false };
+                   } finally {
+                       // Cleanup temps
+                       try { await fs.unlink(tempMain); } catch {}
+                       try { await fs.unlink(tempMeta); } catch {}
+                   }
+               } else {
+                   // No metadata found, return original file
+                   await fs.rename(tempMain, localDestination);
+                   return { success: true, isZip: false };
+               }
+           } catch (e) {
+               try { await fs.unlink(tempMain).catch(()=>{}); } catch {}
+               try { await fs.unlink(tempMeta).catch(()=>{}); } catch {}
+               throw e;
+           }
+       }
+
+       // 3. Normal File Download
+       const success = await adapter.download(config, remotePath, localDestination);
+       return { success, isZip: false };
     }
 }
 

@@ -110,125 +110,8 @@ export function EncryptionProfilesList() {
         });
     }
 
-    const downloadRecoveryKit = (profileName: string, key: string) => {
-        const readmeContent = `# Recovery Kit for Profile: ${profileName}
-generated at ${new Date().toISOString()}
-
-## ⚠️ WARNING
-Store this file securely! This key allows decrypting all backups created with this profile.
-
-## Master Key (Hex)
-${key}
-
-## How to Decrypt Manually
-You can decrypt your .enc backups using the provided 'decrypt_backup.js' script (requires Node.js).
-
-Usage:
-   node decrypt_backup.js <your-backup-file.enc> ${key}
-
-## Requirements
-- Node.js installed
-- The .meta.json file must be present next to the .enc file
-`;
-
-        const scriptContent = `const fs = require('fs');
-const crypto = require('crypto');
-const path = require('path');
-
-// Usage: node decrypt_backup.js <input_file.enc> <hex_key>
-// Or:    node decrypt_backup.js <input_file.enc> <hex_key> <output_file>
-
-const args = process.argv.slice(2);
-
-if (args.length < 2) {
-    console.error('Usage: node decrypt_backup.js <input_file.enc> <hex_key> [output_file]');
-    process.exit(1);
-}
-
-const inputFile = args[0];
-const hexKey = args[1];
-
-if (!fs.existsSync(inputFile)) {
-    console.error(\`Error: Input file '\${inputFile}' not found.\`);
-    process.exit(1);
-}
-
-const metaFile = inputFile + '.meta.json';
-if (!fs.existsSync(metaFile)) {
-    console.error(\`Error: Metadata file '\${metaFile}' not found.\`);
-    console.error('The decryption requires the IV and AuthTag stored in the .meta.json sidecar file.');
-    process.exit(1);
-}
-
-let outputFile = args[2];
-if (!outputFile) {
-    if (inputFile.endsWith('.enc')) {
-        outputFile = inputFile.substring(0, inputFile.length - 4);
-    } else {
-        outputFile = inputFile + '.dec';
-    }
-}
-
-try {
-    const metaContent = fs.readFileSync(metaFile, 'utf8');
-    const meta = JSON.parse(metaContent);
-
-    if (!meta.encryption || !meta.encryption.iv || !meta.encryption.authTag) {
-        console.error('Error: valid encryption metadata (iv, authTag) not found in .meta.json');
-        process.exit(1);
-    }
-
-    console.log('Starting decryption...');
-    const masterKey = Buffer.from(hexKey, 'hex');
-    const iv = Buffer.from(meta.encryption.iv, 'hex');
-    const authTag = Buffer.from(meta.encryption.authTag, 'hex');
-
-    const decipher = crypto.createDecipheriv('aes-256-gcm', masterKey, iv);
-    decipher.setAuthTag(authTag);
-
-    const input = fs.createReadStream(inputFile);
-    const output = fs.createWriteStream(outputFile);
-
-    input.pipe(decipher).pipe(output);
-
-    output.on('finish', () => {
-        console.log('Decryption successful! ✅');
-    });
-
-    decipher.on('error', (err) => {
-        console.error('Decryption failed! ❌');
-        console.error(err.message);
-        fs.unlink(outputFile, () => {});
-        process.exit(1);
-    });
-
-} catch (err) {
-    console.error('Unexpected error:', err.message);
-    process.exit(1);
-}
-`;
-
-        // Download README
-        const blob = new Blob([readmeContent], { type: 'text/markdown' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `RECOVERY_KIT_${profileName.replace(/\s+/g, '_')}.md`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-
-        // Download Script
-        const scriptBlob = new Blob([scriptContent], { type: 'text/javascript' });
-        const scriptUrl = URL.createObjectURL(scriptBlob);
-        const sa = document.createElement('a');
-        sa.href = scriptUrl;
-        sa.download = 'decrypt_backup.js';
-        document.body.appendChild(sa);
-        sa.click();
-        document.body.removeChild(sa);
-        URL.revokeObjectURL(scriptUrl);
+    const downloadRecoveryKit = (profileId: string) => {
+        window.location.href = `/api/vault/${profileId}/recovery-kit`;
     }
 
     const columns: ColumnDef<EncryptionProfile>[] = [
@@ -444,9 +327,8 @@ try {
                                         className="shrink-0 h-8 text-xs"
                                         variant="outline"
                                         onClick={() =>
-                                            profiles.find(p => p.id === revealedKey?.id) &&
                                             revealedKey &&
-                                            downloadRecoveryKit(profiles.find(p => p.id === revealedKey?.id)!.name, revealedKey.key)
+                                            downloadRecoveryKit(revealedKey.id)
                                         }
                                     >
                                         Download .zip

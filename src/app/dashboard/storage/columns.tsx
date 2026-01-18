@@ -53,7 +53,7 @@ export const createColumns = ({ onRestore, onDownload, onDelete, canDownload, ca
         )
     },
     {
-        id: "source",
+        accessorKey: "sourceType",
         header: "Source",
         cell: ({ row }) => {
             const name = row.original.sourceName;
@@ -66,10 +66,13 @@ export const createColumns = ({ onRestore, onDownload, onDelete, canDownload, ca
                     {type && <Badge variant="outline" className="text-[10px] h-5 px-1.5">{type}</Badge>}
                 </div>
             );
-        }
+        },
+        filterFn: (row, id, value) => {
+            return value.includes(row.getValue(id))
+        },
     },
     {
-        id: "job",
+        accessorKey: "jobName",
         header: "Job context",
         cell: ({ row }) => {
             const name = row.original.jobName;
@@ -91,7 +94,10 @@ export const createColumns = ({ onRestore, onDownload, onDelete, canDownload, ca
                     )}
                 </div>
             );
-        }
+        },
+        filterFn: (row, id, value) => {
+            return value.includes(row.getValue(id))
+        },
     },
     {
         accessorKey: "size",

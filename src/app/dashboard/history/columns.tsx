@@ -58,7 +58,10 @@ export const createColumns = (onViewLogs: (execution: Execution) => void): Colum
                     {status}
                 </Badge>
             );
-        }
+        },
+        filterFn: (row, id, value) => {
+            return value.includes(row.getValue(id))
+        },
     },
     {
         accessorKey: "startedAt",

@@ -42,13 +42,30 @@ export default function HistoryPage() {
 
     const columns = useMemo(() => createColumns(setSelectedLog), []);
 
+    const filterableColumns = useMemo(() => [
+        {
+            id: "status",
+            title: "Status",
+            options: [
+                { label: "Success", value: "Success" },
+                { label: "Failed", value: "Failed" },
+                { label: "Running", value: "Running" },
+            ]
+        }
+    ], []);
+
     return (
         <div className="space-y-6">
              <div className="flex items-center justify-between">
                 <h2 className="text-3xl font-bold tracking-tight">Execution History</h2>
             </div>
 
-            <DataTable columns={columns} data={executions} searchKey="jobName" />
+            <DataTable
+                columns={columns}
+                data={executions}
+                searchKey="jobName"
+                filterableColumns={filterableColumns}
+            />
 
             <Dialog open={!!selectedLog} onOpenChange={(open) => !open && setSelectedLog(null)}>
                 <DialogContent className="max-w-[80vw] w-full max-h-[80vh] overflow-hidden flex flex-col">

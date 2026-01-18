@@ -154,6 +154,24 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
         canDelete
     }), [handleRestoreClick, handleDownload, handleDeleteClick, canDownload, canRestore, canDelete]);
 
+    const filterableColumns = useMemo(() => {
+        const jobs = Array.from(new Set(files.map(f => f.jobName).filter(Boolean).filter(n => n !== "Unknown"))) as string[];
+        const types = Array.from(new Set(files.map(f => f.sourceType).filter(Boolean))) as string[];
+
+        return [
+            {
+                id: "sourceType",
+                title: "Source Type",
+                options: types.map(t => ({ label: t, value: t }))
+            },
+            {
+                id: "jobName",
+                title: "Job",
+                options: jobs.map(j => ({ label: j, value: j }))
+            }
+        ];
+    }, [files]);
+
     return (
         <div className="space-y-6">
             <h2 className="text-3xl font-bold tracking-tight">Storage Explorer</h2>
@@ -182,7 +200,11 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
                         {loading ? (
                              <div className="flex justify-center p-8">Loading files...</div>
                         ) : (
-                             <DataTable columns={columns} data={files} />
+                             <DataTable
+                                columns={columns}
+                                data={files}
+                                filterableColumns={filterableColumns}
+                             />
                         )}
                     </CardContent>
                  </Card>

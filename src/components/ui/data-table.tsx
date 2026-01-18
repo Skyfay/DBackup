@@ -43,18 +43,34 @@ import {
     ChevronRight,
     ChevronsLeft,
     ChevronsRight,
+    X,
 } from "lucide-react";
+import { DataTableFacetedFilter } from "./data-table-faceted-filter";
+
+export interface DataTableFilterOption {
+    label: string
+    value: string
+    icon?: React.ComponentType<{ className?: string }>
+}
+
+export interface DataTableFilterableColumn<TData> {
+    id: keyof TData | string;
+    title: string;
+    options: DataTableFilterOption[];
+}
 
 interface DataTableProps<TData, TValue> {
     columns: ColumnDef<TData, TValue>[];
     data: TData[];
     searchKey?: string;
+    filterableColumns?: DataTableFilterableColumn<TData>[];
 }
 
 export function DataTable<TData, TValue>({
     columns,
     data,
     searchKey = "name",
+    filterableColumns = [],
 }: DataTableProps<TData, TValue>) {
     const [sorting, setSorting] = React.useState<SortingState>([]);
     const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
@@ -80,17 +96,42 @@ export function DataTable<TData, TValue>({
         },
     });
 
+    const isFiltered = table.getState().columnFilters.length > 0;
+
     return (
         <div className="w-full">
-            <div className="flex items-center py-4">
-                <Input
-                    placeholder="Filter..."
-                    value={(table.getColumn(searchKey)?.getFilterValue() as string) ?? ""}
-                    onChange={(event) =>
-                        table.getColumn(searchKey)?.setFilterValue(event.target.value)
-                    }
-                    className="max-w-sm"
-                />
+            <div className="flex items-center justify-between py-4">
+                <div className="flex flex-1 items-center space-x-2">
+                    <Input
+                        placeholder="Filter..."
+                        value={(table.getColumn(searchKey)?.getFilterValue() as string) ?? ""}
+                        onChange={(event) =>
+                            table.getColumn(searchKey)?.setFilterValue(event.target.value)
+                        }
+                        className="h-8 w-[150px] lg:w-[250px]"
+                    />
+                    {filterableColumns.length > 0 &&
+                        filterableColumns.map((column) => (
+                            table.getColumn(column.id as string) && (
+                                <DataTableFacetedFilter
+                                    key={String(column.id)}
+                                    column={table.getColumn(column.id as string)}
+                                    title={column.title}
+                                    options={column.options}
+                                />
+                            )
+                        ))}
+                    {isFiltered && (
+                        <Button
+                            variant="ghost"
+                            onClick={() => table.resetColumnFilters()}
+                            className="h-8 px-2 lg:px-3"
+                        >
+                            Reset
+                            <X className="ml-2 h-4 w-4" />
+                        </Button>
+                    )}
+                </div>
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                         <Button variant="outline" className="ml-auto">

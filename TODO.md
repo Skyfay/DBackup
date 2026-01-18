@@ -43,8 +43,9 @@
     - [ ] Dockerfile optimization
     - [ ] docker-compose setup
 - [ ] **Meta-Backup**
-    - [ ] Export/Import App Configuration
-
+    - [ ] Export/Import App Configuration- [ ] **Version Management**
+    - [ ] Display current version in Settings/Footer
+    - [ ] Check for updates (GitLab/GitHub API) & UI Notification
 ## 🔌 Adapters Implementation
 ### Database Sources
 - [x] **MySQL / MariaDB Adapter** (`mysqldump`)

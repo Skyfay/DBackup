@@ -129,23 +129,31 @@ git commit -m "chore: add db migration for feature xyz"
 
 ## � Gallery
 
-| Backup Jobs | Storage Explorer |
-|:---:|:---:|
-| ![Jobs](docs/images/jobs.png) | ![Storage](docs/images/storage-explorer.png) |
+### Backup Jobs
+![Jobs](docs/images/jobs.png)
 
-| Execution History | Encryption Vault |
-|:---:|:---:|
-| ![History](docs/images/history.png) | ![Vault](docs/images/vault.png) |
+### Storage Explorer
+![Storage](docs/images/storage-explorer.png)
 
-| Group Permissions | Configuration |
-|:---:|:---:|
-| ![Permissions](docs/images/group-permission.png) | ![Config](docs/images/edit-configuration.png) |
+### Execution History
+![History](docs/images/history.png)
 
-| User Profile | Light Mode |
-|:---:|:---:|
-| ![Profile](docs/images/profile.png) | ![Light Mode](docs/images/dashboard-light-theme.png) |
+### Encryption Vault
+![Vault](docs/images/vault.png)
 
-<!-- Security Settings -->
+### Group Permissions
+![Permissions](docs/images/group-permission.png)
+
+### Configuration
+<img src="docs/images/edit-configuration.png" width="400" alt="Configuration" />
+
+### User Profile
+![Profile](docs/images/profile.png)
+
+### Light Mode
+![Light Mode](docs/images/dashboard-light-theme.png)
+
+### Security Settings
 ![Security](docs/images/security.png)
 
 ## �📝 License

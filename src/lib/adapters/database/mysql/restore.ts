@@ -4,6 +4,7 @@ import { spawn } from "child_process";
 import { createReadStream } from "fs";
 import { Transform } from "stream";
 import fs from "fs/promises";
+import { waitForProcess } from "@/lib/adapters/process";
 
 export async function prepareRestore(config: any, databases: string[]): Promise<void> {
     const usePrivileged = !!config.privilegedAuth;
@@ -11,14 +12,8 @@ export async function prepareRestore(config: any, databases: string[]): Promise<
     const pass = usePrivileged ? config.privilegedAuth.password : config.password;
 
     for (const dbName of databases) {
-        // Validate dbName to prevent injection if not handled by mysql cli?
-        // mysql cli handles escaping if we quote it, but better be safe.
-        // Actually we pass it in ` ` quotes in the query string.
         if (/[^a-zA-Z0-9_$-]/.test(dbName)) {
-            // Basic validation, though mysql allows more with backticks.
-            // We trust the input from our own UI/Service layer mostly?
         }
-
         const args = ['-h', config.host, '-P', String(config.port), '-u', user, '--protocol=tcp'];
         const env = { ...process.env };
         if (pass) env.MYSQL_PWD = pass;
@@ -29,8 +24,6 @@ export async function prepareRestore(config: any, databases: string[]): Promise<
             if (e.message && (e.message.includes("Access denied") || e.message.includes("ERROR 1044"))) {
                 throw new Error(`Access denied for user '${user}' to database '${dbName}'. User permissions?`);
             }
-            // We ignore other errors for now (e.g. connection refused will be caught later? or should we throw?)
-            // If we can't connect now, we probably can't restore later.
             throw e;
         }
     }
@@ -45,7 +38,6 @@ export async function restore(config: any, sourcePath: string, onLog?: (msg: str
     };
 
     try {
-        // Get file size for progress
         const stats = await fs.stat(sourcePath);
         const totalSize = stats.size;
         let processedSize = 0;
@@ -66,30 +58,6 @@ export async function restore(config: any, sourcePath: string, onLog?: (msg: str
         const creationUser = usePrivileged ? config.privilegedAuth.user : config.user;
         const creationPass = usePrivileged ? config.privilegedAuth.password : config.password;
 
-        // Determine operation mode
-        // Mode 1: Mapping (Advanced) -> Explicitly selective or renaming
-        // Mode 2: Force Target (Simple) -> User specified a single target DB, we must dump everything there
-        // Mode 3: Passive (Full/Auto) -> No specific target enforcement, let the dump dictate (e.g. multi-db restore without rename)
-
-        // For now, if config.database is set, we treat it as "Target".
-        // Ideally we'd know if it was overridden.
-        // Assumption: If the user is using the "Simple Restore" UI, they picked a target source & optional database name.
-        // If they provided a database name, they expect content to go there.
-
-        // To ensure we don't break "Full Restore", we really need to know if the user INTENDED to override.
-        // But let's assume if there is NO mapping, and there IS a config.database, we are in "Single Target" mode.
-        // Most MySQL Adapters have a default DB (e.g. 'mysql' or 'app').
-        // So config.database is almost ALWAYS set.
-        // This makes it risky to always strip USE.
-
-        // New Heuristic:
-        // If config.database is set, AND the user didn't request a mapping, we typically just run `mysql db < file`.
-        // As we saw, this fails for Multi-DB dumps attempting to target a specific DB.
-        // So we will implement a Stream Processor that strips USE/CREATE DATABASE *only if* we are ignoring the dump's structure.
-
-        // Let's implement a universal Stream Restore that covers all cases.
-
-        // Pre-Ensure Target DB(s)
         if (dbMapping && dbMapping.length > 0) {
                 const selectedDbs = dbMapping.filter(m => m.selected);
                 for (const db of selectedDbs) {
@@ -97,166 +65,126 @@ export async function restore(config: any, sourcePath: string, onLog?: (msg: str
                 await ensureDatabase(config, targetName, creationUser, creationPass, usePrivileged, logs);
                 }
         } else if (config.database) {
-            // Ensure the single target database exists
             await ensureDatabase(config, config.database, creationUser, creationPass, usePrivileged, logs);
         }
 
-        return new Promise((resolve, reject) => {
-            const args = [
-                '-h', config.host,
-                '-P', String(config.port),
-                '-u', config.user,
-                '--protocol=tcp'
-            ];
-            const env = { ...process.env };
-            if(config.password) env.MYSQL_PWD = config.password;
+        const args = [
+            '-h', config.host,
+            '-P', String(config.port),
+            '-u', config.user,
+            '--protocol=tcp'
+        ];
+        const env = { ...process.env };
+        if(config.password) env.MYSQL_PWD = config.password;
 
-            // Determine effective target database for CLI context
-            let effectiveTargetDb: string | null = null;
+        let effectiveTargetDb: string | null = null;
 
-            if (dbMapping && dbMapping.length > 0) {
-                    const selected = dbMapping.filter(m => m.selected);
-                    if (selected.length === 1) {
-                        // If exactly one DB is selected via mapping, use it as initial context
-                        // This fixes restores of single-DB dumps that lack 'USE db;' statements
-                        effectiveTargetDb = selected[0].targetName || selected[0].originalName;
-                    }
-            } else if (config.database) {
-                    effectiveTargetDb = config.database;
-            }
-
-            if (effectiveTargetDb) {
-                    args.push(effectiveTargetDb);
-            }
-
-            const mysqlProc = spawn('mysql', args, { stdio: ['pipe', 'pipe', 'pipe'], env });
-
-            mysqlProc.stderr.on('data', (d) => {
-                const msg = d.toString();
-                if (!msg.includes("Using a password")) log(`MySQL: ${msg}`);
-            });
-
-            mysqlProc.on('error', (err) => reject({ success: false, logs, error: err.message, startedAt, completedAt: new Date() }));
-
-            // Track completion
-            let isCompleted = false;
-            const finish = (code: number) => {
-                if (isCompleted) return;
-                isCompleted = true;
-                if (code === 0) {
-                    resolve({ success: true, logs, startedAt, completedAt: new Date() });
-                } else {
-                    resolve({ success: false, logs, error: `MySQL exited with code ${code}`, startedAt, completedAt: new Date() });
+        if (dbMapping && dbMapping.length > 0) {
+                const selected = dbMapping.filter(m => m.selected);
+                if (selected.length === 1) {
+                    effectiveTargetDb = selected[0].targetName || selected[0].originalName;
                 }
-            };
+        } else if (config.database) {
+                effectiveTargetDb = config.database;
+        }
 
-            mysqlProc.on('close', finish);
+        if (effectiveTargetDb) {
+                args.push(effectiveTargetDb);
+        }
 
-            const fileStream = createReadStream(sourcePath, { highWaterMark: 64 * 1024 });
+        const mysqlProc = spawn('mysql', args, { stdio: ['pipe', 'pipe', 'pipe'], env });
 
-            // Stream Transformer for Progress & Filtering
-            let currentTargetName: string | null = null;
-            let skipCurrentSection = false;
+        const fileStream = createReadStream(sourcePath, { highWaterMark: 64 * 1024 });
 
-            // Helper to chunk-split lines (simple version for streams)
-            // Note: For perfect SQL parsing we'd need a real parser, but line-based grep is standard for dumps.
-            // We use a Transform that buffers lines.
-            let buffer = '';
+        let currentTargetName: string | null = null;
+        let skipCurrentSection = false;
+        let buffer = '';
 
-            const transformStream = new Transform({
-                objectMode: true, // We process chunks but might emit lines? No, let's keep it buffer based for speed.
-                transform(chunk: Buffer, encoding, callback) {
-                    // 1. Progress
-                    updateProgress(chunk.length);
+        const transformStream = new Transform({
+            objectMode: true,
+            transform(chunk: Buffer, encoding, callback) {
+                updateProgress(chunk.length);
 
-                    // 2. Filter Logic (if needed)
-                    // If we used effectiveTargetDb because of single mapping, we still need to filter/rewrite (e.g. to catch USE statements that might switch away)
-                    // But singleTargetDb variable is gone. We used effectiveTargetDb logic.
-                    const useRawPass = !dbMapping && config.database; // legacy mode without mapping
+                const useRawPass = !dbMapping && config.database;
 
-                    if (useRawPass) {
-                        // Direct Pass-through (Fastest)
-                        this.push(chunk);
-                        callback();
-                        return;
-                    }
+                if (useRawPass) {
+                    this.push(chunk);
+                    callback();
+                    return;
+                }
 
-                    // String processing for filtering
-                    // CAUTION: This is slower than raw pipe. But needed for selective restore.
-                    // Ideally we only do this if dbMapping is present.
+                let data = buffer + chunk.toString();
+                const lines = data.split('\n');
+                buffer = lines.pop() || '';
 
-                    let data = buffer + chunk.toString();
-                    const lines = data.split('\n');
-                    buffer = lines.pop() || ''; // Keep last partial line
+                const output: string[] = [];
 
-                    const output: string[] = [];
-
-                    for (const line of lines) {
-                            // Logic for filtering
-                            const useMatch = line.match(/^USE `([^`]+)`;/i);
-                            if (useMatch) {
-                                const originalDb = useMatch[1];
-                                if (dbMapping) {
-                                    const map = dbMapping.find(m => m.originalName === originalDb);
-                                    if (map) {
-                                        if (!map.selected) {
-                                            skipCurrentSection = true;
-                                        } else {
-                                            skipCurrentSection = false;
-                                            const target = map.targetName || map.originalName;
-                                            output.push(`USE \`${target}\`;`);
-                                        }
-                                    } else {
-                                        skipCurrentSection = false; // Default include?
-                                        output.push(line);
-                                    }
-                                    continue;
-                                } else if (effectiveTargetDb) {
-                                    // Ignore USE in single target mode
-                                continue;
-                                }
-                            }
-
-                            const createMatch = line.match(/^CREATE DATABASE (?:IF NOT EXISTS )?`([^`]+)`/i);
-                            if (createMatch) {
-                            const originalDb = createMatch[1];
+                for (const line of lines) {
+                        const useMatch = line.match(/^USE `([^`]+)`;/i);
+                        if (useMatch) {
+                            const originalDb = useMatch[1];
                             if (dbMapping) {
                                 const map = dbMapping.find(m => m.originalName === originalDb);
-                                if (map && !map.selected) continue; // Skip create
+                                if (map) {
+                                    if (!map.selected) {
+                                        skipCurrentSection = true;
+                                    } else {
+                                        skipCurrentSection = false;
+                                        const target = map.targetName || map.originalName;
+                                        output.push(`USE \`${target}\`;`);
+                                    }
+                                } else {
+                                    skipCurrentSection = false;
+                                    output.push(line);
+                                }
+                                continue;
                             } else if (effectiveTargetDb) {
-                                continue; // Skip create in single target
+                                continue;
                             }
-                            }
+                        }
 
-                            if (!skipCurrentSection) {
-                                output.push(line);
-                            }
-                    }
+                        const createMatch = line.match(/^CREATE DATABASE (?:IF NOT EXISTS )?`([^`]+)`/i);
+                        if (createMatch) {
+                        const originalDb = createMatch[1];
+                        if (dbMapping) {
+                            const map = dbMapping.find(m => m.originalName === originalDb);
+                            if (map && !map.selected) continue;
+                        } else if (effectiveTargetDb) {
+                            continue;
+                        }
+                        }
 
-                    if (output.length > 0) {
-                        this.push(output.join('\n') + '\n');
-                    }
-                    callback();
-                },
-                flush(callback) {
-                    if (buffer) {
-                        if (!skipCurrentSection) this.push(buffer);
-                    }
-                    callback();
+                        if (!skipCurrentSection) {
+                            output.push(line);
+                        }
                 }
-            });
 
-            // Handle Pipe Errors
-            fileStream.on('error', (err) => mysqlProc.kill());
-            transformStream.on('error', (err) => mysqlProc.kill());
-            mysqlProc.stdin.on('error', (err) => {
-                    // Usually EPIPE if mysql closes early
-                    // log(`MySQL Stdin Error: ${err.message}`);
-            });
-
-            // EXECUTE PIPELINE
-            fileStream.pipe(transformStream).pipe(mysqlProc.stdin);
+                if (output.length > 0) {
+                    this.push(output.join('\n') + '\n');
+                }
+                callback();
+            },
+            flush(callback) {
+                if (buffer) {
+                    if (!skipCurrentSection) this.push(buffer);
+                }
+                callback();
+            }
         });
+
+        fileStream.on('error', (err) => mysqlProc.kill());
+        transformStream.on('error', (err) => mysqlProc.kill());
+        mysqlProc.stdin.on('error', (err) => {
+        });
+
+        fileStream.pipe(transformStream).pipe(mysqlProc.stdin);
+
+        await waitForProcess(mysqlProc, 'mysql', (d) => {
+                const msg = d.toString();
+                if (!msg.includes("Using a password")) log(`MySQL: ${msg}`);
+        });
+
+        return { success: true, logs, startedAt, completedAt: new Date() };
 
     } catch (error: any) {
             const msg = error.message || "";

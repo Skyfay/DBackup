@@ -3,6 +3,7 @@ import { execFileAsync } from "./connection";
 import { spawn } from "child_process";
 import { createWriteStream } from "fs";
 import fs from "fs/promises";
+import { waitForProcess } from "@/lib/adapters/process";
 
 export async function dump(config: any, destinationPath: string, onLog?: (msg: string) => void, onProgress?: (percentage: number) => void): Promise<BackupResult> {
     const startedAt = new Date();
@@ -74,28 +75,14 @@ export async function dump(config: any, destinationPath: string, onLog?: (msg: s
                 // Use --create so the dump file knows to create the DB context
                 const args = [...baseArgs, '--create', db];
 
-                await new Promise<void>((resolve, reject) => {
-                    const child = spawn('pg_dump', args, { env });
+                const child = spawn('pg_dump', args, { env });
 
-                    // Pipe stdout to file, but don't close the stream when this child exits
-                    child.stdout.pipe(writeStream, { end: false });
+                // Pipe stdout to file, but don't close the stream when this child exits
+                child.stdout.pipe(writeStream, { end: false });
 
-                    child.stderr.on('data', (data) => {
-                        log(`[${db}] stderr: ${data.toString()}`);
-                    });
+                // Use shared process monitor
+                await waitForProcess(child, `pg_dump for ${db}`, (msg) => log(`[${db}] stderr: ${msg}`));
 
-                    child.on('error', (err) => {
-                        reject(new Error(`Failed to start pg_dump for ${db}: ${err.message}`));
-                    });
-
-                    child.on('close', (code) => {
-                        if (code === 0) {
-                            resolve();
-                        } else {
-                            reject(new Error(`pg_dump for ${db} exited with code ${code}`));
-                        }
-                    });
-                });
                 log(`Completed dump for ${db}`);
             }
 

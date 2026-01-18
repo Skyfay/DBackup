@@ -4,6 +4,7 @@ import { spawn } from "child_process";
 import { createReadStream } from "fs";
 import { Transform } from "stream";
 import fs from "fs/promises";
+import { waitForProcess } from "@/lib/adapters/process";
 
 export async function prepareRestore(config: any, databases: string[]): Promise<void> {
     const usePrivileged = !!config.privilegedAuth;
@@ -103,18 +104,8 @@ export async function restore(config: any, sourcePath: string, onLog?: (msg: str
 
             log(`Executing restore stream to: psql ${args.join(' ')}`);
 
-            await new Promise<void>((resolve, reject) => {
+            await new Promise<void>(async (resolve, reject) => {
                 const psql = spawn('psql', args, { env, stdio: ['pipe', 'pipe', 'pipe'] });
-
-                psql.stderr.on('data', (d) => log(`stderr: ${d}`));
-                // psql.stdout.on('data', (d) => logs.push(`stdout: ${d}`)); // Verbose
-
-                psql.on('close', (code) => {
-                    if (code === 0) resolve();
-                    else reject(new Error(`psql exited with code ${code}`));
-                });
-
-                psql.on('error', (err) => reject(err));
 
                 // 3. Create Transform Stream to filter/rewrite SQL
                 const fileStream = createReadStream(sourcePath, { encoding: 'utf8', highWaterMark: 64 * 1024 });
@@ -210,6 +201,13 @@ export async function restore(config: any, sourcePath: string, onLog?: (msg: str
 
                 // Pipe: File -> Transformer -> PSQL
                 fileStream.pipe(transformer).pipe(psql.stdin);
+
+                try {
+                    await waitForProcess(psql, 'psql', (d) => log(`stderr: ${d}`));
+                    resolve();
+                } catch (err) {
+                    reject(err);
+                }
             });
 
         } else {
@@ -238,21 +236,19 @@ export async function restore(config: any, sourcePath: string, onLog?: (msg: str
                 '-d', config.database
             ];
 
-            await new Promise<void>((resolve, reject) => {
+            await new Promise<void>(async (resolve, reject) => {
                 const psql = spawn('psql', pipeArgs, { env, stdio: ['pipe', 'pipe', 'pipe'] });
-
-                psql.stderr.on('data', (d) => log(`stderr: ${d}`));
-
-                psql.on('close', (code) => {
-                    if (code === 0) resolve();
-                    else reject(new Error(`psql exited with code ${code}`));
-                });
-
-                psql.on('error', (err) => reject(err));
 
                 const stream = createReadStream(sourcePath);
                 stream.on('data', (c) => updateProgress(c.length));
                 stream.pipe(psql.stdin);
+
+                try {
+                    await waitForProcess(psql, 'psql', (d) => log(`stderr: ${d}`));
+                    resolve();
+                } catch (err) {
+                    reject(err);
+                }
             });
         }
 

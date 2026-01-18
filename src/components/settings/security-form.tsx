@@ -24,6 +24,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { togglePasskeyTwoFactor as togglePasskeyAction } from "@/app/actions/user"
 import { User, Passkey } from "@prisma/client"
+import { formatTwoFactorCode } from "@/lib/utils"
 
 interface SecurityFormProps {
     canUpdatePassword: boolean;
@@ -338,7 +339,7 @@ export function SecurityForm({ canUpdatePassword, canManage2FA, canManagePasskey
                                                     id="code"
                                                     placeholder="123456"
                                                     value={verificationCode}
-                                                    onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                                    onChange={(e) => setVerificationCode(formatTwoFactorCode(e.target.value))}
                                                     className="text-center text-lg tracking-widest"
                                                 />
                                             </div>

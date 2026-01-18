@@ -20,6 +20,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Loader2, Fingerprint } from "lucide-react"
+import { formatTwoFactorCode } from "@/lib/utils"
 
 const formSchema = z.object({
   email: z.string().email(),
@@ -202,7 +203,7 @@ export function LoginForm({ allowSignUp = true }: LoginFormProps) {
                                   if (isBackupCode) {
                                       setTotpCode(e.target.value)
                                   } else {
-                                      setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))
+                                      setTotpCode(formatTwoFactorCode(e.target.value))
                                   }
                               }}
                               placeholder={isBackupCode ? "XXXX-XXXX-XXXX" : "123456"}

@@ -27,3 +27,9 @@ export function formatDuration(ms: number) {
   if (minutes === 0) return `${remainingSeconds}s`;
   return `${minutes}m ${remainingSeconds}s`;
 }
+
+export function formatTwoFactorCode(value: string): string {
+  // Remove non-digits and limit to 6 characters
+  return value.replace(/\D/g, '').slice(0, 6);
+}
+

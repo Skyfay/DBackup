@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { toast } from "sonner"
 import { Loader2, Lock, Plus, Trash2, AlertTriangle, ShieldCheck, Key, Download, Copy, Eye, EyeOff } from "lucide-react"
 import { EncryptionProfile } from "@prisma/client"
@@ -317,21 +318,6 @@ try {
                                             {profile.description && (
                                                 <div className="text-xs text-muted-foreground">{profile.description}</div>
                                             )}
-                                            {revealedKey?.id === profile.id && (
-                                                <div className="mt-2 p-2 bg-muted rounded border border-amber-200 dark:border-amber-900/50 flex items-center justify-between gap-2 animate-in fade-in slide-in-from-top-1">
-                                                    <code className="text-[10px] break-all font-mono text-amber-700 dark:text-amber-400 select-all">
-                                                        {revealedKey.key}
-                                                    </code>
-                                                    <div className="flex shrink-0">
-                                                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(revealedKey.key)}>
-                                                            <Copy className="h-3 w-3" />
-                                                        </Button>
-                                                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => downloadRecoveryKit(profile.name, revealedKey.key)} title="Download Recovery Kit">
-                                                            <Download className="h-3 w-3" />
-                                                        </Button>
-                                                    </div>
-                                                </div>
-                                            )}
                                         </TableCell>
                                         <TableCell>
                                             <DateDisplay date={profile.createdAt} />
@@ -342,13 +328,12 @@ try {
                                                     variant="ghost"
                                                     size="icon"
                                                     onClick={() => handleRevealKey(profile.id, profile.name)}
-                                                    className={revealedKey?.id === profile.id ? "text-amber-500 bg-amber-50 dark:bg-amber-950/20" : ""}
-                                                    title={revealedKey?.id === profile.id ? "Hide Key" : "Reveal Key"}
+                                                    title="Reveal Master Key & Recovery Options"
                                                 >
                                                     {isRevealing && revealedKey?.id !== profile.id ? (
                                                         <Loader2 className="h-4 w-4 animate-spin" />
                                                     ) : (
-                                                        revealedKey?.id === profile.id ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />
+                                                        <Eye className="h-4 w-4" />
                                                     )}
                                                 </Button>
 
@@ -387,6 +372,89 @@ try {
                         <Button variant="destructive" onClick={handleDelete} disabled={isDeleting}>
                             {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                             Delete Permanently
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Reveal Key Dialog */}
+            <Dialog open={!!revealedKey} onOpenChange={(open) => !open && setRevealedKey(null)}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <ShieldCheck className="h-5 w-5 text-amber-500" />
+                            Master Key Recovery
+                        </DialogTitle>
+                        <DialogDescription>
+                            This <strong>Master Key</strong> is required to decrypt your backups.
+                            Store it securely. If you lose this key, your backups are lost forever.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-4 py-2">
+                        <Alert variant="destructive" className="py-2">
+                            <AlertTriangle className="h-4 w-4" />
+                            <AlertTitle className="ml-2 text-sm font-semibold">Security Warning</AlertTitle>
+                            <AlertDescription className="ml-2 text-xs">
+                                Do not share this key. Anyone with this key and your backup files can access your data.
+                            </AlertDescription>
+                        </Alert>
+
+                        <div className="space-y-2">
+                            <Label>Raw Master Key (Hex)</Label>
+                            <div className="flex gap-2">
+                                <Input
+                                    value={revealedKey?.key || ""}
+                                    readOnly
+                                    className="font-mono text-xs bg-muted"
+                                />
+                                <Button
+                                    variant="outline"
+                                    size="icon"
+                                    className="shrink-0"
+                                    onClick={() => revealedKey && copyToClipboard(revealedKey.key)}
+                                    title="Copy to Clipboard"
+                                >
+                                    <Copy className="h-4 w-4" />
+                                </Button>
+                            </div>
+                        </div>
+
+                        <div className="pt-2">
+                            <Card className="bg-muted/50 border-amber-200 dark:border-amber-900/30">
+                                <CardContent className="p-4 flex flex-col gap-2">
+                                    <div className="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-500">
+                                        <Download className="h-4 w-4" />
+                                        Emergency Recovery Kit
+                                    </div>
+                                    <p className="text-xs text-muted-foreground mb-2">
+                                        Download a secure package containing this key and a standalone decryption script.
+                                        Keep this safe (e.g., on a USB drive).
+                                    </p>
+                                    <Button
+                                        className="w-full"
+                                        variant="outline"
+                                        onClick={() =>
+                                            profiles.find(p => p.id === revealedKey?.id) &&
+                                            revealedKey &&
+                                            downloadRecoveryKit(profiles.find(p => p.id === revealedKey?.id)!.name, revealedKey.key)
+                                        }
+                                    >
+                                        Download Kit (.zip)
+                                    </Button>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    </div>
+
+                    <DialogFooter className="sm:justify-start">
+                        <Button
+                            type="button"
+                            variant="secondary"
+                            className="w-full"
+                            onClick={() => setRevealedKey(null)}
+                        >
+                            Close
                         </Button>
                     </DialogFooter>
                 </DialogContent>

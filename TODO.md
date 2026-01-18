@@ -79,6 +79,8 @@
     - [x] Auto-detection & Settings Toggle
 - [x] **UX Improvements**
     - [x] Standardize Delete Confirmation Modal (Replace browser native confirm)
+    - [x] Refactor Listings to DataTables (Vault, Adapters, Jobs)
+    - [x] Standardize Page Headers & Cards
 - [x] **History & Logs**
     - [x] List past executions
     - [x] View detailed logs per execution

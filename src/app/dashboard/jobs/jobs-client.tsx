@@ -22,6 +22,9 @@ import { Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { getEncryptionProfiles } from "@/app/actions/encryption";
 import { Skeleton } from "@/components/ui/skeleton";
+import { DataTable } from "@/components/ui/data-table";
+import { ColumnDef } from "@tanstack/react-table";
+import { useMemo } from "react";
 
 // Extended Job type for display (includes related entity names)
 interface Job extends JobData {
@@ -123,6 +126,85 @@ export function JobsClient({ canManage, canExecute }: JobsClientProps) {
         } catch { toast.error("Execution request failed"); }
     };
 
+    const columns = useMemo<ColumnDef<Job>[]>(() => [
+        {
+            accessorKey: "name",
+            header: "Job Name",
+            cell: ({ row }) => (
+                <div className="flex flex-col">
+                    <span className="font-medium">{row.original.name}</span>
+                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Clock className="h-3 w-3" /> {row.original.schedule}
+                    </span>
+                </div>
+            )
+        },
+        {
+            accessorKey: "enabled",
+            header: "Status",
+            cell: ({ row }) => (
+                <Badge variant={row.original.enabled ? "default" : "secondary"}>
+                    {row.original.enabled ? "Enabled" : "Paused"}
+                </Badge>
+            )
+        },
+        {
+            accessorKey: "source.name",
+            header: "Source",
+            cell: ({ row }) => (
+                <div className="flex items-center gap-2">
+                    {row.original.source.name}
+                </div>
+            )
+        },
+        {
+            accessorKey: "destination.name",
+            header: "Destination",
+            cell: ({ row }) => (
+                <div className="flex items-center gap-2">
+                    {row.original.destination.name}
+                </div>
+            )
+        },
+        {
+            id: "encryption",
+            header: "Encryption",
+            cell: ({ row }) => {
+                const profile = row.original.encryptionProfile;
+                return profile ? (
+                     <Badge variant="outline" className="border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-500">
+                        <Lock className="mr-1 h-3 w-3" />
+                        {profile.name}
+                    </Badge>
+                ) : (
+                    <span className="text-muted-foreground text-sm">-</span>
+                );
+            }
+        },
+        {
+            id: "actions",
+            header: () => <div className="text-right">Actions</div>,
+            cell: ({ row }) => (
+                <div className="flex justify-end gap-1">
+                     {canExecute && (
+                        <Button variant="ghost" size="icon" onClick={() => runJob(row.original.id)} title="Run Now">
+                            <Play className="h-4 w-4 text-green-500" />
+                        </Button>
+                    )}
+                    {canManage && (
+                        <>
+                            <Button variant="ghost" size="icon" onClick={() => { setEditingJob(row.original); setIsDialogOpen(true); }}>
+                                <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={() => handleDelete(row.original.id)}>
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                        </>
+                    )}
+                </div>
+            )
+        }
+    ], [canManage, canExecute]);
 
     if (isLoading) {
         return (
@@ -132,30 +214,25 @@ export function JobsClient({ canManage, canExecute }: JobsClientProps) {
                         <h2 className="text-3xl font-bold tracking-tight">Backup Jobs</h2>
                         <p className="text-muted-foreground">Manage and schedule automated backup tasks.</p>
                     </div>
-                    {canManage && <Skeleton className="h-10 w-32" />}
                 </div>
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    {[1, 2, 3].map((i) => (
-                        <Card key={i} className="overflow-hidden">
-                            <CardHeader className="pb-2">
-                                <div className="flex justify-between items-start">
-                                    <div className="space-y-2">
-                                        <Skeleton className="h-5 w-32" />
-                                        <Skeleton className="h-3 w-24" />
-                                    </div>
-                                    <Skeleton className="h-8 w-16" />
-                                </div>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="space-y-3 pt-2">
-                                    <Skeleton className="h-4 w-full" />
-                                    <Skeleton className="h-4 w-full" />
-                                    <Skeleton className="h-4 w-2/3" />
-                                </div>
-                            </CardContent>
-                        </Card>
-                    ))}
-                </div>
+                <Card>
+                    <CardHeader>
+                        <div className="flex justify-between items-center">
+                            <div className="space-y-2">
+                                <Skeleton className="h-5 w-32" />
+                                <Skeleton className="h-4 w-48" />
+                            </div>
+                            {canManage && <Skeleton className="h-10 w-32" />}
+                        </div>
+                    </CardHeader>
+                    <CardContent>
+                         <div className="space-y-4">
+                             <Skeleton className="h-12 w-full" />
+                             <Skeleton className="h-12 w-full" />
+                             <Skeleton className="h-12 w-full" />
+                         </div>
+                    </CardContent>
+                </Card>
             </div>
         )
     }
@@ -167,94 +244,31 @@ export function JobsClient({ canManage, canExecute }: JobsClientProps) {
                     <h2 className="text-3xl font-bold tracking-tight">Backup Jobs</h2>
                     <p className="text-muted-foreground">Manage and schedule automated backup tasks.</p>
                 </div>
-                {canManage && (
-                    <Button onClick={() => { setEditingJob(null); setIsDialogOpen(true); }}>
-                        <Plus className="mr-2 h-4 w-4" /> Create Job
-                    </Button>
-                )}
             </div>
 
-            {jobs.length === 0 ? (
-                <div className="flex h-[450px] shrink-0 items-center justify-center rounded-md border border-dashed">
-                    <div className="mx-auto flex max-w-[420px] flex-col items-center justify-center text-center">
-                        <h3 className="mt-4 text-lg font-semibold">No jobs configured</h3>
-                        <p className="mb-4 mt-2 text-sm text-muted-foreground">
-                            Create your first backup job to start automating your database backups.
-                        </p>
+            <Card>
+                <CardHeader>
+                    <div className="flex justify-between items-center">
+                        <div>
+                            <CardTitle>Jobs</CardTitle>
+                            <CardDescription>Configure and monitor your backup schedules.</CardDescription>
+                        </div>
                         {canManage && (
                             <Button onClick={() => { setEditingJob(null); setIsDialogOpen(true); }}>
                                 <Plus className="mr-2 h-4 w-4" /> Create Job
                             </Button>
                         )}
                     </div>
-                </div>
-            ) : (
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    {jobs.map((job) => (
-                        <Card key={job.id} className="relative overflow-hidden group hover:border-primary/50 transition-colors">
-                            <CardHeader className="pb-2">
-                                <div className="flex justify-between items-start">
-                                    <div className="space-y-1">
-                                        <CardTitle>{job.name}</CardTitle>
-                                        <CardDescription className="flex items-center gap-2">
-                                            <Clock className="h-3 w-3" /> {job.schedule}
-                                        </CardDescription>
-                                    </div>
-                                    <div className="flex gap-1">
-                                        {canExecute && (
-                                            <Button variant="ghost" size="icon" onClick={() => runJob(job.id)} title="Run Now">
-                                                <Play className="h-4 w-4 text-green-500" />
-                                            </Button>
-                                        )}
-                                        {canManage && (
-                                            <>
-                                                <Button variant="ghost" size="icon" onClick={() => { setEditingJob(job); setIsDialogOpen(true); }}>
-                                                    <Edit className="h-4 w-4" />
-                                                </Button>
-                                                <Button variant="ghost" size="icon" onClick={() => handleDelete(job.id)}>
-                                                    <Trash2 className="h-4 w-4 text-destructive" />
-                                                </Button>
-                                            </>
-                                        )}
-                                    </div>
-                                </div>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="space-y-2 text-sm text-muted-foreground">
-                                    <div className="flex items-center justify-between gap-2">
-                                        <span className="capitalize flex items-center gap-1.5"><Badge variant={job.enabled ? "default" : "secondary"} className="h-5 px-1.5 text-[10px]">{job.enabled ? "Enabled" : "Paused"}</Badge></span>
-                                    </div>
-                                    <div className="flex items-center justify-between gap-2">
-                                        <span className="capitalize">Source:</span>
-                                        <span className="font-medium truncate max-w-30">{job.source.name}</span>
-                                    </div>
-                                    <div className="flex items-center justify-between gap-2">
-                                        <span className="capitalize">Destination:</span>
-                                        <span className="font-medium truncate max-w-30">{job.destination.name}</span>
-                                    </div>
-                                    <div className="flex items-center justify-between gap-2">
-                                        <span className="capitalize">Notifications:</span>
-                                        <span className="font-medium truncate max-w-30">{job.notifications.length} channels</span>
-                                    </div>
-                                    {job.encryptionProfile ? (
-                                        <div className="flex items-center justify-between gap-2">
-                                            <span className="capitalize">Encryption:</span>
-                                            <Badge variant="outline" className="h-5 px-1.5 text-[10px] gap-1 border-amber-500/30 bg-amber-500/5 hover:bg-amber-500/10 hover:text-amber-600 dark:hover:text-amber-400">
-                                                <Lock className="h-2 w-2" /> {job.encryptionProfile.name}
-                                            </Badge>
-                                        </div>
-                                    ) : (
-                                        <div className="flex items-center justify-between gap-2">
-                                            <span className="capitalize">Encryption:</span>
-                                            <span className="text-muted-foreground italic text-xs">Off</span>
-                                        </div>
-                                    )}
-                                </div>
-                            </CardContent>
-                        </Card>
-                    ))}
-                </div>
-            )}
+                </CardHeader>
+                <CardContent>
+                    <DataTable
+                        columns={columns}
+                        data={jobs}
+                        searchKey="name"
+                    />
+                </CardContent>
+            </Card>
+
 
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
                 <DialogContent>

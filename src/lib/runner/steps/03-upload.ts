@@ -27,10 +27,16 @@ export async function stepUpload(ctx: RunnerContext) {
     let currentFile = ctx.tempFile;
     const transformStreams: any[] = [];
 
+    // Determine Action Label for UI
+    const actions: string[] = [];
+    if (compression && compression !== 'NONE') actions.push("Compressing");
+    if (job.encryptionProfileId) actions.push("Encrypting");
+    const processingLabel = actions.length > 0 ? actions.join(" & ") : "Processing";
+
     // 0. Progress Monitor for Local Processing
     const sourceSize = statSync(ctx.tempFile).size;
     const progressMonitor = new ProgressMonitorStream(sourceSize, (processed, total, percent) => {
-        ctx.updateProgress(percent, `Processing (${formatBytes(processed)} / ${formatBytes(total)})`);
+        ctx.updateProgress(percent, `${processingLabel} (${formatBytes(processed)} / ${formatBytes(total)})`);
     });
     // Add monitor FIRST
     // Only if we actually have transforms. If no compression/encryption, we skip local processing.
@@ -78,7 +84,7 @@ export async function stepUpload(ctx: RunnerContext) {
 
     // EXECUTE PIPELINE
     if (transformStreams.length > 0) {
-        ctx.updateProgress(0, "Processing Backup (Compression/Encryption)...");
+        ctx.updateProgress(0, `${processingLabel}...`);
         ctx.log(`Processing pipeline -> ${path.basename(currentFile)}`);
 
         // Inject Progress Monitor at the start

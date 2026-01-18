@@ -122,4 +122,20 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  @keyframes indeterminate {
+    0% {
+      transform: translateX(-100%) scaleX(0.2);
+    }
+    50% {
+      transform: translateX(0%) scaleX(0.5);
+    }
+    100% {
+      transform: translateX(100%) scaleX(0.2);
+    }
+  }
+
+  .animate-indeterminate {
+    animation: indeterminate 1.5s infinite linear;
+  }
 }

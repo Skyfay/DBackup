@@ -135,9 +135,15 @@ function HistoryContent() {
                         <div className="px-4 py-2 space-y-1 bg-secondary/20">
                             <div className="flex justify-between text-xs text-muted-foreground">
                                 <span>{stage}</span>
-                                <span>{progress}%</span>
+                                <span>{progress > 0 ? `${progress}%` : ''}</span>
                             </div>
-                            <Progress value={progress} className="h-2" />
+                            {progress > 0 ? (
+                                <Progress value={progress} className="h-2" />
+                            ) : (
+                                <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+                                    <div className="h-full w-full animate-indeterminate rounded-full bg-primary/50 origin-left-right"></div>
+                                </div>
+                            )}
                         </div>
                     )}
 

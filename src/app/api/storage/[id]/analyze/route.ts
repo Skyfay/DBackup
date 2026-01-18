@@ -65,6 +65,27 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         tempFile = path.join(tempDir, path.basename(file));
         const sConf = decryptConfig(JSON.parse(storageConfig.config));
 
+        // OPTIMIZATION: Try to read sidecar metadata first
+        if (storageAdapter.read) {
+            try {
+                const metaPath = file + ".meta.json";
+                const metaContent = await storageAdapter.read(sConf, metaPath);
+                if (metaContent) {
+                    const meta = JSON.parse(metaContent);
+                    if (meta.databases) {
+                         if (Array.isArray(meta.databases.names) && meta.databases.names.length > 0) {
+                              return NextResponse.json({ databases: meta.databases.names });
+                         }
+                         if (Array.isArray(meta.databases)) {
+                              return NextResponse.json({ databases: meta.databases });
+                         }
+                    }
+                }
+            } catch (e) {
+                // Fallthrough
+            }
+        }
+
         const downloadSuccess = await storageAdapter.download(sConf, file, tempFile);
         if (!downloadSuccess) return NextResponse.json({ error: "Download failed" }, { status: 500 });
 

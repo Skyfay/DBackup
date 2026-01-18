@@ -30,19 +30,35 @@ export async function stepExecuteDump(ctx: RunnerContext) {
 
         let label = 'Unknown';
         let count: number | string = 'Unknown';
+        let names: string[] = [];
 
         if (isAll) {
             label = 'All DBs';
             count = 'All';
+            // Try to fetch DB names for accurate metadata
+            if (sourceAdapter.getDatabases) {
+                try {
+                    const fetched = await sourceAdapter.getDatabases(sourceConfig);
+                    if (fetched && fetched.length > 0) {
+                        names = fetched;
+                        count = names.length;
+                        label = `${names.length} DBs (fetched)`;
+                    }
+                } catch (e: any) {
+                    ctx.log(`Warning: Could not fetch DB list for metadata: ${e.message}`);
+                }
+            }
         } else if (Array.isArray(dbVal)) {
+            names = dbVal;
             label = `${dbVal.length} DBs`;
             count = dbVal.length;
         } else if (typeof dbVal === 'string') {
             if (dbVal.includes(',')) {
-                const parts = dbVal.split(',').filter((s: string) => s.trim().length > 0);
-                label = `${parts.length} DBs`;
-                count = parts.length;
+                names = dbVal.split(',').map((s: string) => s.trim()).filter((s: string) => s.length > 0);
+                label = `${names.length} DBs`;
+                count = names.length;
             } else if (dbVal.trim().length > 0) {
+                names = [dbVal.trim()];
                 label = 'Single DB';
                 count = 1;
             } else {
@@ -54,6 +70,7 @@ export async function stepExecuteDump(ctx: RunnerContext) {
         ctx.metadata = {
             label,
             count,
+            names,
             jobName: job.name,
             sourceName: job.source.name,
             sourceType: job.source.type,

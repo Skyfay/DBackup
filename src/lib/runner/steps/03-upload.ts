@@ -29,7 +29,8 @@ export async function stepUpload(ctx: RunnerContext) {
             sourceType: job.source.adapterId,
             sourceId: job.source.id,
             databases: {
-                count: typeof ctx.metadata?.count === 'number' ? ctx.metadata.count : 0
+                count: typeof ctx.metadata?.count === 'number' ? ctx.metadata.count : 0,
+                names: Array.isArray(ctx.metadata?.names) ? ctx.metadata.names : undefined
             },
             timestamp: new Date().toISOString(),
             originalFileName: path.basename(ctx.tempFile)

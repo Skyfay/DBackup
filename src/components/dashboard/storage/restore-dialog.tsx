@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Database } from "lucide-react";
 import { toast } from "sonner";
 import { FileInfo } from "@/app/dashboard/storage/columns";
@@ -58,6 +59,8 @@ export function RestoreDialog({ file, open, onOpenChange, destinationId, sources
     const [privUser, setPrivUser] = useState("root");
     const [privPass, setPrivPass] = useState("");
 
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+
     const resetState = useCallback(() => {
         setTargetSource("");
         setTargetDbName("");
@@ -70,6 +73,7 @@ export function RestoreDialog({ file, open, onOpenChange, destinationId, sources
     }, []);
 
     const analyzeBackup = useCallback(async (file: FileInfo) => {
+        setIsAnalyzing(true);
         try {
             const res = await fetch(`/api/storage/${destinationId}/analyze`, {
                 method: 'POST',
@@ -91,6 +95,8 @@ export function RestoreDialog({ file, open, onOpenChange, destinationId, sources
             }
         } catch {
             console.error("Analysis failed");
+        } finally {
+            setIsAnalyzing(false);
         }
     }, [destinationId]);
 
@@ -199,7 +205,16 @@ export function RestoreDialog({ file, open, onOpenChange, destinationId, sources
                             </Select>
                         </div>
 
-                        {analyzedDbs.length > 0 ? (
+                        {isAnalyzing ? (
+                            <div className="space-y-2 border rounded-md p-3">
+                                <Label>Analyzing Backup...</Label>
+                                <div className="space-y-2">
+                                    <Skeleton className="h-8 w-full" />
+                                    <Skeleton className="h-8 w-full" />
+                                    <Skeleton className="h-8 w-full" />
+                                </div>
+                            </div>
+                        ) : analyzedDbs.length > 0 ? (
                             <div className="space-y-2 border rounded-md p-3">
                                 <Label>Databases detected in Dump</Label>
                                 <div className="space-y-2 max-h-50 overflow-y-auto">

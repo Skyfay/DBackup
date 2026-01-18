@@ -3,7 +3,7 @@ import prisma from "@/lib/prisma";
 import { formatDuration } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Database, HardDrive, Loader2 } from "lucide-react";
-import { DateDisplay } from "@/components/date-display";
+import { DateDisplay } from "@/components/utils/date-display";
 import Link from "next/link";
 
 export async function RecentActivity() {

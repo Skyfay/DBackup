@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FileText } from "lucide-react";
 import { formatDuration } from "@/lib/utils";
-import { DateDisplay } from "@/components/date-display";
+import { DateDisplay } from "@/components/utils/date-display";
 
 export interface Execution {
     id: string;

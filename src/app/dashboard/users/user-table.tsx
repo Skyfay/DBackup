@@ -17,7 +17,7 @@ import { DataTable } from "@/components/ui/data-table"
 import { useState } from "react"
 import { EditUserDialogComponent as EditUserDialog } from "@/app/dashboard/users/edit-user-dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { DateDisplay } from "@/components/date-display"
+import { DateDisplay } from "@/components/utils/date-display"
 import { Badge } from "@/components/ui/badge"
 import { GroupWithStats } from "@/types"
 

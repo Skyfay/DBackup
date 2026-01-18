@@ -11,7 +11,7 @@ import { Loader2, CheckCircle2, AlertCircle, Fingerprint, Plus, Trash2, Smartpho
 import { QRCodeSVG } from "qrcode.react"
 import { toast } from "sonner"
 import { Switch } from "@/components/ui/switch"
-import { DateDisplay } from "@/components/date-display"
+import { DateDisplay } from "@/components/utils/date-display"
 import {
   Dialog,
   DialogContent,

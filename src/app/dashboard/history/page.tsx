@@ -15,7 +15,7 @@ import { createColumns, Execution } from "./columns";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
-import { DateDisplay } from "@/components/date-display";
+import { DateDisplay } from "@/components/utils/date-display";
 
 export default function HistoryPage() {
     return (

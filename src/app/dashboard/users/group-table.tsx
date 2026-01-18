@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { deleteGroup } from "@/app/actions/group"
 import { toast } from "sonner"
-import { DateDisplay } from "@/components/date-display"
+import { DateDisplay } from "@/components/utils/date-display"
 import { DataTable } from "@/components/ui/data-table"
 import { useState } from "react"
 import { EditGroupDialog } from "@/app/dashboard/users/edit-group-dialog"

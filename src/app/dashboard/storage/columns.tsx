@@ -3,7 +3,7 @@
 import { ColumnDef } from "@tanstack/react-table";
 import { ArrowUpDown, Database, HardDrive } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { DateDisplay } from "@/components/date-display";
+import { DateDisplay } from "@/components/utils/date-display";
 import { formatBytes } from "@/lib/utils";
 import { NameCell } from "@/components/dashboard/storage/cells/name-cell";
 // import { SourceJobCell } from "@/components/dashboard/storage/cells/source-job-cell";

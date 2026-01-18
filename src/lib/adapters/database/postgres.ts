@@ -1,7 +1,8 @@
 import { DatabaseAdapter, BackupResult } from "@/lib/core/interfaces";
 import { PostgresSchema } from "@/lib/adapters/definitions";
-import { execFile } from "child_process";
+import { execFile, spawn } from "child_process";
 import fs from "fs/promises";
+import { createWriteStream } from "fs";
 import util from "util";
 
 const execFileAsync = util.promisify(execFile);
@@ -23,7 +24,7 @@ export const PostgresAdapter: DatabaseAdapter = {
                 env.PGPASSWORD = config.password;
             }
 
-            const args: string[] = [
+            const baseArgs: string[] = [
                 '-h', config.host,
                 '-p', String(config.port),
                 '-U', config.user
@@ -34,27 +35,75 @@ export const PostgresAdapter: DatabaseAdapter = {
                  const parts = config.options.match(/[^\s"']+|"([^"]*)"|'([^']*)'/g) || [];
                  for (const part of parts) {
                      if (part.startsWith('"') && part.endsWith('"')) {
-                        args.push(part.slice(1, -1));
+                        baseArgs.push(part.slice(1, -1));
                      } else if (part.startsWith("'") && part.endsWith("'")) {
-                        args.push(part.slice(1, -1));
+                        baseArgs.push(part.slice(1, -1));
                      } else {
-                        args.push(part);
+                        baseArgs.push(part);
                      }
                  }
             }
 
-            // Custom format is often better for restores, but plain text is more generic.
-            // Let's stick to default or let user specify in options, but we redirect output.
-            args.push('-f', destinationPath);
-            args.push(config.database);
+            // Determine databases
+            let dbs: string[] = [];
+            if (Array.isArray(config.database)) {
+                dbs = config.database;
+            } else if (typeof config.database === 'string') {
+                dbs = config.database.split(',').map((s: string) => s.trim()).filter(Boolean);
+            }
+            if (dbs.length === 0 && config.database) dbs = [config.database];
 
-            logs.push(`Executing command: pg_dump ${args.join(' ')}`);
+            // Case 1: Single Database (Default optimized path)
+            if (dbs.length === 1) {
+                // Custom format is often better for restores, but plain text is more generic.
+                // Let's stick to default or let user specify in options, but we redirect output.
+                const args = [...baseArgs, '-f', destinationPath, dbs[0]];
 
-            const { stdout, stderr } = await execFileAsync('pg_dump', args, { env });
+                logs.push(`Executing command: pg_dump ${args.join(' ')}`);
 
-            // pg_dump might output info to stderr even on success
-            if (stderr) {
-                logs.push(`stderr: ${stderr}`);
+                const { stdout, stderr } = await execFileAsync('pg_dump', args, { env });
+
+                // pg_dump might output info to stderr even on success
+                if (stderr) {
+                    logs.push(`stderr: ${stderr}`);
+                }
+            }
+            // Case 2: Multiple Databases (Pipe output sequentially)
+            else {
+                logs.push(`Dumping multiple databases: ${dbs.join(', ')}`);
+                const writeStream = createWriteStream(destinationPath);
+
+                for (const db of dbs) {
+                    logs.push(`Starting dump for ${db}...`);
+                    // Use --create so the dump file knows to create the DB context
+                    const args = [...baseArgs, '--create', db];
+
+                    await new Promise<void>((resolve, reject) => {
+                        const child = spawn('pg_dump', args, { env });
+
+                        // Pipe stdout to file, but don't close the stream when this child exits
+                        child.stdout.pipe(writeStream, { end: false });
+
+                        child.stderr.on('data', (data) => {
+                            logs.push(`[${db}] stderr: ${data.toString()}`);
+                        });
+
+                        child.on('error', (err) => {
+                            reject(new Error(`Failed to start pg_dump for ${db}: ${err.message}`));
+                        });
+
+                        child.on('close', (code) => {
+                            if (code === 0) {
+                                resolve();
+                            } else {
+                                reject(new Error(`pg_dump for ${db} exited with code ${code}`));
+                            }
+                        });
+                    });
+                    logs.push(`Completed dump for ${db}`);
+                }
+
+                writeStream.end();
             }
 
             const stats = await fs.stat(destinationPath);

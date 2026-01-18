@@ -43,7 +43,7 @@ model Execution {
   logs      String
   startedAt DateTime  @default(now())
   endedAt   DateTime?
-  size      Int?
+  size      BigInt?
   path      String?
   metadata  String?
   job       Job?      @relation(fields: [jobId], references: [id])

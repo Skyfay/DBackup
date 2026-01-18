@@ -122,3 +122,10 @@
 - [ ] **Data Security**
     - [ ] Backup Encryption (Encrypt resulting artifacts)
     - [X] Credential Encryption (Encrypt DB passwords in database at rest via AES)
+
+## 📡 Live Monitoring & Testing
+- [ ] **Live Backup Progress**
+    - [ ] Real-time file size updates during "Dump" phase
+    - [ ] UI Polling/Socket to show progress bar to user
+- [ ] **Stress Testing**
+    - [ ] Script to generate 1GB+ Dummy Data (Postgres/MySQL)

@@ -12,7 +12,7 @@ export interface DatabaseAdapter extends BaseAdapter {
     type: 'database';
 
     // Core methods
-    dump(config: any, destPath: string, onLog?: (msg: string) => void): Promise<BackupResult>;
+    dump(config: any, destPath: string, onLog?: (msg: string) => void, onProgress?: (percentage: number) => void): Promise<BackupResult>;
     restore(config: any, sourcePath: string, onLog?: (msg: string) => void, onProgress?: (p: number) => void): Promise<BackupResult>;
 
     // Verification methods
@@ -82,9 +82,27 @@ If your adapter supports renaming databases or restoring only specific ones from
 - **Warning**: String manipulation in buffers is tricky. Ensure you handle chunk boundaries or use a line-aware stream reader properly.
 
 ## 3. Implementing `dump`
-- Similar to restore, use streaming to write to `destinationPath`.
-- Ensure you capture errors correctly.
-- If possible, verify the file size after dump to ensure it's not empty.
+
+### Critical for Live Progress
+The Backup Manager uses a "File Watcher" technique to monitor the dump progress in real-time.
+1.  **Streaming is Mandatory**: You **MUST** stream the output of your database tool directly to the `destinationPath` file.
+    - ✅ **Good**: `spawn('mysqldump', ...).stdout.pipe(createWriteStream(destPath))`
+    - ❌ **Bad**: Buffering output in memory and writing it with `fs.writeFile` at the end. (This causes the UI to show 0MB until the job finishes).
+
+### Method Signature
+```typescript
+async dump(
+  config: any,
+  destinationPath: string,
+  onLog?: (msg: string) => void,
+  onProgress?: (percent: number) => void // Optional, if tool provides %
+): Promise<BackupResult>
+```
+
+### Best Practices
+- **Standard Output**: Most tools (like `pg_dump`, `mongodump` --archive) write to stdout. Pipe this directly to a file write stream.
+- **Error Handling**: Listen to `stderr` and pass it to `onLog`. If the process exit code is non-zero, throw an error or return `{ success: false }`.
+- **Empty File Check**: After the process finishes, check `fs.stat(destinationPath).size`. If it's 0 bytes, the dump likely failed silently (e.g., authentication error).
 
 ## 4. `analyzeDump` (Optional)
 To support the "Selective Restore" UI, your adapter can implement `analyzeDump`.

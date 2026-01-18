@@ -3,7 +3,8 @@ import { MySQLSchema } from "@/lib/adapters/definitions";
 import { execFile, spawn } from "child_process";
 import fs from "fs/promises";
 import { createReadStream } from "fs";
-import readline from "readline";
+import { Transform } from "stream";
+import { pipeline } from "stream/promises";
 import util from "util";
 
 const execFileAsync = util.promisify(execFile);
@@ -246,85 +247,121 @@ export const MySQLAdapter: DatabaseAdapter = {
                 });
 
                 mysqlProc.on('error', (err) => reject({ success: false, logs, error: err.message, startedAt, completedAt: new Date() }));
-                mysqlProc.on('close', (code) => {
+
+                // Track completion
+                let isCompleted = false;
+                const finish = (code: number) => {
+                    if (isCompleted) return;
+                    isCompleted = true;
                     if (code === 0) {
                         resolve({ success: true, logs, startedAt, completedAt: new Date() });
                     } else {
                         resolve({ success: false, logs, error: `MySQL exited with code ${code}`, startedAt, completedAt: new Date() });
                     }
-                });
+                };
 
-                const fileStream = createReadStream(sourcePath);
+                mysqlProc.on('close', finish);
 
-                // Track progress
-                fileStream.on('data', (chunk) => {
-                     updateProgress(chunk.length);
-                });
+                const fileStream = createReadStream(sourcePath, { highWaterMark: 64 * 1024 });
 
-                const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
-
-                let skipCurrentSection = false;
+                // Stream Transformer for Progress & Filtering
                 let currentTargetName: string | null = null;
+                let skipCurrentSection = false;
 
-                rl.on('line', (line) => {
-                    // 1. Handle "Use" statements
-                    const useMatch = line.match(/^USE `([^`]+)`;/i);
-                    if (useMatch) {
-                        const originalDb = useMatch[1];
+                // Helper to chunk-split lines (simple version for streams)
+                // Note: For perfect SQL parsing we'd need a real parser, but line-based grep is standard for dumps.
+                // We use a Transform that buffers lines.
+                let buffer = '';
 
-                        if (dbMapping) {
-                            const map = dbMapping.find(m => m.originalName === originalDb);
-                             if (map) {
-                                if (!map.selected) {
-                                    skipCurrentSection = true;
-                                    return;
+                const transformStream = new Transform({
+                    objectMode: true, // We process chunks but might emit lines? No, let's keep it buffer based for speed.
+                    transform(chunk: Buffer, encoding, callback) {
+                        // 1. Progress
+                        updateProgress(chunk.length);
+
+                        // 2. Filter Logic (if needed)
+                        if (!dbMapping && !singleTargetDb) {
+                            // Direct Pass-through (Fastest)
+                            this.push(chunk);
+                            callback();
+                            return;
+                        }
+
+                        // String processing for filtering
+                        // CAUTION: This is slower than raw pipe. But needed for selective restore.
+                        // Ideally we only do this if dbMapping is present.
+
+                        let data = buffer + chunk.toString();
+                        const lines = data.split('\n');
+                        buffer = lines.pop() || ''; // Keep last partial line
+
+                        const output: string[] = [];
+
+                        for (const line of lines) {
+                             // Logic for filtering
+                             const useMatch = line.match(/^USE `([^`]+)`;/i);
+                             if (useMatch) {
+                                 const originalDb = useMatch[1];
+                                 if (dbMapping) {
+                                     const map = dbMapping.find(m => m.originalName === originalDb);
+                                     if (map) {
+                                         if (!map.selected) {
+                                             skipCurrentSection = true;
+                                         } else {
+                                             skipCurrentSection = false;
+                                             const target = map.targetName || map.originalName;
+                                             output.push(`USE \`${target}\`;`);
+                                         }
+                                     } else {
+                                         skipCurrentSection = false; // Default include?
+                                         output.push(line);
+                                     }
+                                     continue;
+                                 } else if (singleTargetDb) {
+                                     // Ignore USE in single target mode
+                                    continue;
+                                 }
+                             }
+
+                             const createMatch = line.match(/^CREATE DATABASE (?:IF NOT EXISTS )?`([^`]+)`/i);
+                             if (createMatch) {
+                                const originalDb = createMatch[1];
+                                if (dbMapping) {
+                                    const map = dbMapping.find(m => m.originalName === originalDb);
+                                    if (map && !map.selected) continue; // Skip create
+                                } else if (singleTargetDb) {
+                                    continue; // Skip create in single target
                                 }
-                                skipCurrentSection = false;
-                                currentTargetName = map.targetName || map.originalName;
-                                mysqlProc.stdin.write(`USE \`${currentTargetName}\`;\n`);
-                                return;
-                            } else {
-                                // Not in mapping? If we are doing selective restore, we might skip or default.
-                                // Let's default to skip if mapping implies exclusivity, otherwise pass.
-                                // Actually user selects checks. Unchecked are in the list with selected=false.
-                                // If it's missing entirely (new db?), pass through?
-                                skipCurrentSection = false;
-                            }
-                        } else if (singleTargetDb) {
-                            // Single Target Mode: We want to FORCE everything into singleTargetDb.
-                            // So we IGNORE the USE statement to prevent switching away.
-                            log(`Ignoring 'USE ${originalDb}' to enforce target '${singleTargetDb}'`);
-                            return;
+                             }
+
+                             if (!skipCurrentSection) {
+                                 output.push(line);
+                             }
                         }
-                    }
 
-                    // 2. Handle "Create Database" statements
-                    const createMatch = line.match(/^CREATE DATABASE (?:IF NOT EXISTS )?`([^`]+)`/i);
-                    if (createMatch) {
-                        const originalDb = createMatch[1];
-
-                        if (dbMapping) {
-                             const map = dbMapping.find(m => m.originalName === originalDb);
-                             if (map && !map.selected) return;
-                             // Rewriting handled by pre-ensure + USE switch, but if we want to allow Creates:
-                             // We already pre-created. So we can skip.
-                             return;
-                        } else if (singleTargetDb) {
-                            // Single Target Mode: Ignore Create DB (we already ensured target exists)
-                            return;
+                        if (output.length > 0) {
+                            this.push(output.join('\n') + '\n');
                         }
-                    }
-
-                    // 3. Write line if not skipped
-                    if (!skipCurrentSection) {
-                        mysqlProc.stdin.write(line + '\n');
+                        callback();
+                    },
+                    flush(callback) {
+                        if (buffer) {
+                            if (!skipCurrentSection) this.push(buffer);
+                        }
+                        callback();
                     }
                 });
 
-                rl.on('close', () => {
-                    log(`Stream finished.`);
-                    mysqlProc.stdin.end();
+                // Handle Pipe Errors
+                fileStream.on('error', (err) => mysqlProc.kill());
+                transformStream.on('error', (err) => mysqlProc.kill());
+                mysqlProc.stdin.on('error', (err) => {
+                     // Usually EPIPE if mysql closes early
+                     // log(`MySQL Stdin Error: ${err.message}`);
                 });
+
+                // EXECUTE PIPELINE
+                fileStream.pipe(transformStream).pipe(mysqlProc.stdin);
             });
 
         } catch (error: any) {

@@ -3,6 +3,7 @@ import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters";
 import { StorageAdapter, DatabaseAdapter } from "@/lib/core/interfaces";
 import { decryptConfig } from "@/lib/crypto";
+import { formatBytes } from "@/lib/utils";
 import path from "path";
 import os from "os";
 import fs from "fs";
@@ -118,20 +119,10 @@ export class RestoreService {
 
             const sConf = decryptConfig(JSON.parse(storageConfig.config));
 
-            // Format bytes helper
-            const formatSize = (bytes: number) => {
-                if (bytes === 0) return '0 B';
-                const k = 1024;
-                const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-                const i = Math.floor(Math.log(bytes) / Math.log(k));
-                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-            };
-
-            updateProgress(0, "Downloading...");
 
             const downloadSuccess = await storageAdapter.download(sConf, file, tempFile, (processed, total) => {
                 const percent = total > 0 ? Math.round((processed / total) * 100) : 0;
-                const stageText = `Downloading (${formatSize(processed)} / ${formatSize(total)})`;
+                const stageText = `Downloading (${formatBytes(processed)} / ${formatBytes(total)})`;
                 updateProgress(percent, stageText);
             });
 
@@ -142,7 +133,8 @@ export class RestoreService {
 
             // 4. Restore
             log(`Starting database restore on ${sourceConfig.name}...`);
-            updateProgress(0, "Restoring Database...");
+            const totalSize = fs.statSync(tempFile).size;
+            updateProgress(0, `Restoring (0 B / ${formatBytes(totalSize)})...`);
 
             const dbConf = decryptConfig(JSON.parse(sourceConfig.config));
 
@@ -164,7 +156,13 @@ export class RestoreService {
             const restoreResult = await sourceAdapter.restore(dbConf, tempFile, (msg) => {
                 log(msg); // Live logs from adapter
             }, (p) => {
-                updateProgress(p, "Restoring Database..."); // Progress updates
+                // If the adapter gives us raw bytes implicitly or checks file stream we might get percentage.
+                // Adapters typically return 0-100 number.
+                // We can reconstruct "processed bytes" estimate for display if we want, or just update the percentage.
+                // For accurate bytes, we'd need to change adapter interface again, but percentage + total size is good enough for "Restoring (X / Total)..."
+                // Estimate processed:
+                const estimatedProcessed = Math.floor((p / 100) * totalSize);
+                updateProgress(p, `Restoring (${formatBytes(estimatedProcessed)} / ${formatBytes(totalSize)})`);
             });
 
             if (!restoreResult.success) {

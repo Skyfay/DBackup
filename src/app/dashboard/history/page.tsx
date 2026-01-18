@@ -57,7 +57,7 @@ function HistoryContent() {
 
     useEffect(() => {
         fetchHistory();
-        const interval = setInterval(fetchHistory, 2000); // Poll faster (2s) for live feel
+        const interval = setInterval(fetchHistory, 1000); // Poll faster (1s) for live feel
         return () => clearInterval(interval);
     }, []);
 

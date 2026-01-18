@@ -2,6 +2,8 @@ import { StatsCards } from "@/components/dashboard/widgets/stats-cards";
 import { RecentActivity } from "@/components/dashboard/widgets/recent-activity";
 import { StorageStatus } from "@/components/dashboard/widgets/storage-status";
 
+export const dynamic = "force-dynamic";
+
 export default function DashboardPage() {
   return (
     <div className="space-y-6">

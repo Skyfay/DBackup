@@ -54,9 +54,14 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
 
         fs.unlinkSync(tempFile);
 
+        let downloadFilename = path.basename(file);
+        if (decrypt && downloadFilename.endsWith('.enc')) {
+            downloadFilename = downloadFilename.slice(0, -4);
+        }
+
         return new NextResponse(fileBuffer, {
             headers: {
-                "Content-Disposition": `attachment; filename="${path.basename(file)}"`,
+                "Content-Disposition": `attachment; filename="${downloadFilename}"`,
                 "Content-Type": "application/octet-stream",
             }
         });

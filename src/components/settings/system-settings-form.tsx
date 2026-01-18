@@ -19,9 +19,10 @@ import { updateSystemSettings } from "@/app/actions/settings"
 import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Loader2 } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 const formSchema = z.object({
-    maxConcurrentJobs: z.coerce.number().min(1).max(50),
+    maxConcurrentJobs: z.coerce.number().min(1).max(10),
 })
 
 interface SystemSettingsFormProps {
@@ -71,9 +72,23 @@ export function SystemSettingsForm({ initialMaxConcurrentJobs }: SystemSettingsF
                             render={({ field }) => (
                                 <FormItem>
                                     <FormLabel>Max Concurrent Jobs</FormLabel>
-                                    <FormControl>
-                                        <Input type="number" {...field} />
-                                    </FormControl>
+                                    <Select
+                                        onValueChange={field.onChange}
+                                        defaultValue={String(field.value)}
+                                    >
+                                        <FormControl>
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Select limit" />
+                                            </SelectTrigger>
+                                        </FormControl>
+                                        <SelectContent>
+                                            {Array.from({ length: 10 }, (_, i) => i + 1).map((num) => (
+                                                <SelectItem key={num} value={String(num)}>
+                                                    {num} Job{num > 1 ? "s" : ""}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
                                     <FormDescription>
                                         The maximum number of backup jobs that can run simultaneously.
                                         Jobs will be queued if this limit is reached.

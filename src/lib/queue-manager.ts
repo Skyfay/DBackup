@@ -17,7 +17,7 @@ export async function processQueue() {
 
     // 2. Count running jobs
     const runningCount = await prisma.execution.count({
-        where: { status: "RUNNING" }
+        where: { status: "Running" }
     });
 
     if (runningCount >= maxJobs) {
@@ -30,7 +30,7 @@ export async function processQueue() {
 
     // 3. Get pending jobs (FIFO)
     const pendingJobs = await prisma.execution.findMany({
-        where: { status: "PENDING" },
+        where: { status: "Pending" },
         orderBy: { startedAt: 'asc' }, // Creation time
         take: availableSlots,
         include: { job: true }

@@ -9,7 +9,7 @@ import { checkPermission } from "@/lib/access-control";
 import { PERMISSIONS } from "@/lib/permissions";
 
 const settingsSchema = z.object({
-    maxConcurrentJobs: z.coerce.number().min(1).max(50),
+    maxConcurrentJobs: z.coerce.number().min(1).max(10),
 });
 
 export async function updateSystemSettings(data: z.infer<typeof settingsSchema>) {

@@ -17,7 +17,7 @@ export async function runJob(jobId: string) {
         const execution = await prisma.execution.create({
             data: {
                 jobId: jobId,
-                status: "PENDING",
+                status: "Pending",
                 logs: JSON.stringify([`${new Date().toISOString()}: Job queued`]),
                 metadata: JSON.stringify({ progress: 0, stage: "Queued" })
             }
@@ -45,7 +45,7 @@ export async function performExecution(executionId: string, jobId: string) {
     await prisma.execution.update({
         where: { id: executionId },
         data: {
-            status: "RUNNING",
+            status: "Running",
             startedAt: new Date(), // Reset start time to actual run time
         }
     });

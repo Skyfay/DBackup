@@ -29,7 +29,10 @@ export default async function SettingsPage() {
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
-                <h2 className="text-3xl font-bold tracking-tight">System Settings</h2>
+                <div>
+                   <h2 className="text-3xl font-bold tracking-tight">System Settings</h2>
+                   <p className="text-muted-foreground">Configure global system parameters.</p>
+                </div>
             </div>
 
             <div className="grid gap-6">

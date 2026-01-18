@@ -186,7 +186,10 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
 
     return (
         <div className="space-y-6">
-            <h2 className="text-3xl font-bold tracking-tight">Storage Explorer</h2>
+            <div>
+                <h2 className="text-3xl font-bold tracking-tight">Storage Explorer</h2>
+                <p className="text-muted-foreground">Browse, download, and restore backup files from your destinations.</p>
+            </div>
 
             <div className="flex items-center space-x-4">
                 <div className="w-[300px]">

@@ -1,13 +1,14 @@
 "use client";
 
 import { ColumnDef } from "@tanstack/react-table";
-import { ArrowUpDown } from "lucide-react";
+import { ArrowUpDown, Database, HardDrive } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DateDisplay } from "@/components/date-display";
 import { formatBytes } from "@/lib/utils";
 import { NameCell } from "@/components/dashboard/storage/cells/name-cell";
-import { SourceJobCell } from "@/components/dashboard/storage/cells/source-job-cell";
+// import { SourceJobCell } from "@/components/dashboard/storage/cells/source-job-cell";
 import { ActionsCell } from "@/components/dashboard/storage/cells/actions-cell";
+import { Badge } from "@/components/ui/badge";
 
 // This type is used to define the shape of our data.
 export type FileInfo = {
@@ -52,16 +53,45 @@ export const createColumns = ({ onRestore, onDownload, onDelete, canDownload, ca
         )
     },
     {
-        accessorKey: "sourceName",
-        header: "Source & Job",
-        cell: ({ row }) => (
-            <SourceJobCell
-                jobName={row.original.jobName}
-                sourceName={row.original.sourceName}
-                sourceType={row.original.sourceType}
-                dbLabel={row.original.dbInfo?.label}
-            />
-        )
+        id: "source",
+        header: "Source",
+        cell: ({ row }) => {
+            const name = row.original.sourceName;
+            const type = row.original.sourceType;
+            if (!name || name === "Unknown") return <span className="text-muted-foreground">-</span>;
+            return (
+                <div className="flex items-center gap-2 text-sm">
+                    <Database className="h-3 w-3 text-muted-foreground" />
+                    <span>{name}</span>
+                    {type && <Badge variant="outline" className="text-[10px] h-5 px-1.5">{type}</Badge>}
+                </div>
+            );
+        }
+    },
+    {
+        id: "job",
+        header: "Job context",
+        cell: ({ row }) => {
+            const name = row.original.jobName;
+            const dbLabel = row.original.dbInfo?.label;
+
+            if ((!name || name === "Unknown") && (!dbLabel || dbLabel === "Unknown"))
+                return <span className="text-muted-foreground text-xs">-</span>;
+
+            return (
+                <div className="flex items-center gap-2 text-sm">
+                    {name && name !== "Unknown" && (
+                         <>
+                            <HardDrive className="h-3 w-3 text-muted-foreground" />
+                            <span>{name}</span>
+                         </>
+                    )}
+                    {dbLabel && dbLabel !== "Unknown" && (
+                        <Badge variant="secondary" className="text-[10px] h-5 px-1.5">{dbLabel}</Badge>
+                    )}
+                </div>
+            );
+        }
     },
     {
         accessorKey: "size",

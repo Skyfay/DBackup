@@ -49,6 +49,17 @@ export const LocalFileSystemAdapter: StorageAdapter = {
         }
     },
 
+    async read(config: { basePath: string }, remotePath: string): Promise<string | null> {
+        try {
+            const sourcePath = path.join(config.basePath, remotePath);
+            if (!existsSync(sourcePath)) return null;
+            return await fs.readFile(sourcePath, 'utf-8');
+        } catch (error) {
+            console.error("Local read failed:", error);
+            return null;
+        }
+    },
+
     async list(config: { basePath: string }, remotePath: string = ""): Promise<FileInfo[]> {
         try {
             const dirPath = path.join(config.basePath, remotePath);

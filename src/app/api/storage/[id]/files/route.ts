@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters"; // Import registration
-import { StorageAdapter } from "@/lib/core/interfaces";
+import { StorageAdapter, BackupMetadata } from "@/lib/core/interfaces";
 import { decryptConfig } from "@/lib/crypto";
 import prisma from "@/lib/prisma";
 import { auth } from "@/lib/auth";
@@ -47,11 +47,36 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
         const config = decryptConfig(JSON.parse(adapterConfig.config));
 
         // List files (assuming root for now, or use query param for subdirs logic later)
-        const files = await adapter.list(config, "");
+        const allFiles = await adapter.list(config, "");
 
-        // Enrich with Job and Source info
+        // Filter Backups vs Metadata
+        const backups = allFiles.filter(f => !f.name.endsWith('.meta.json'));
+        const metadataFiles = allFiles.filter(f => f.name.endsWith('.meta.json'));
+
+        // Load Sidecar Metadata
+        const metadataMap = new Map<string, BackupMetadata>();
+        if (adapter.read) {
+            const metaReads = metadataFiles.map(async (metaFile) => {
+                try {
+                    const content = await adapter.read!(config, metaFile.path);
+                    if (content) {
+                        const meta = JSON.parse(content) as BackupMetadata;
+                        // Key should correspond to the backup file name.
+                        // We saved it as backupFile + ".meta.json"
+                        // So removing suffix gives backup filename.
+                        const originalName = metaFile.name.substring(0, metaFile.name.length - 10);
+                        metadataMap.set(originalName, meta);
+                    }
+                } catch (e) {
+                    // ignore read errors
+                }
+            });
+            await Promise.all(metaReads);
+        }
+
+        // Enrich with Job and Source info (FALLBACK LOGIC PREPARATION)
         const jobNames = new Set<string>();
-        for (const file of files) {
+        for (const file of backups) {
              const parts = file.path.split('/');
              if (parts.length > 2 && parts[0] === 'backups') {
                  // backups/JobName/File
@@ -119,7 +144,23 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
             }
         });
 
-        const enrichedFiles = files.map(file => {
+        const enrichedFiles = backups.map(file => {
+             // 1. Check Sidecar Metadata (Primary Source of Truth)
+             const sidecar = metadataMap.get(file.name);
+             if (sidecar) {
+                 const count = typeof sidecar.databases === 'object' ? sidecar.databases.count : (typeof sidecar.databases === 'number' ? sidecar.databases : 0);
+                 const label = count === 0 ? "Unknown" : (count === 1 ? "Single DB" : `${count} DBs`);
+
+                 return {
+                     ...file,
+                     jobName: sidecar.jobName,
+                     sourceName: sidecar.sourceName,
+                     sourceType: sidecar.sourceType,
+                     dbInfo: { count, label }
+                 };
+             }
+
+             // 2. Fallback to Execution History / Regex Logic
              let potentialJobName = null;
              const parts = file.path.split('/');
               if (parts.length > 2 && parts[0] === 'backups') {

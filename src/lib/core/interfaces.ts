@@ -7,6 +7,18 @@ export interface AdapterConfigSchema {
     input: z.ZodObject<any>;
 }
 
+export interface BackupMetadata {
+    version: 1;
+    jobId: string;
+    jobName: string;
+    sourceName: string;
+    sourceType: string;
+    databases: string[] | { count: number; names?: string[] };
+    timestamp: string;
+    originalFileName: string;
+    sourceId: string;
+}
+
 export interface BaseAdapter {
     id: string; // Unique identifier (e.g., 'mysql', 's3')
     name: string; // Display name
@@ -73,6 +85,11 @@ export interface StorageAdapter extends BaseAdapter {
      * Downloads a file from storage to local path
      */
     download(config: any, remotePath: string, localPath: string): Promise<boolean>;
+
+    /**
+     * Reads the content of a file as a string
+     */
+    read?(config: any, remotePath: string): Promise<string | null>;
 
     /**
      * Lists files in a directory

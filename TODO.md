@@ -72,12 +72,15 @@
     - [ ] Download backup artifact (if local/accessible)
 - [ ] **Storage Explorer & Restore**
     - [x] List backups per Destination
+    - [x] Metadata / Sidecar file support
     - [x] Download backup artifacts
     - [x] Restore workflow (Select Source, Type-Check, Rename)
     - [x] Filtering (Size, Source, Job)
 - [ ] **Dashboard Home**
     - [X] Real statistics (Success rate, Total size)
     - [X] Recent activity feed
+- [ ] **Quick Setup Wizard**
+    - [ ] Combined flow (Source -> Destination -> Job)
 
 ## 🛠 Database Management & Playground
 - [ ] **Direct SQL Execution**

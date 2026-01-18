@@ -150,14 +150,16 @@ export function AdapterManager({ type, title, description, canManage = true }: A
 
             {configs.length === 0 && (
                  <div className="rounded-md border p-8 text-center text-muted-foreground bg-muted/10">
-                    {canManage ? 'No configurations found. Click "Add New" to get started.' : 'No configurations found.'}
+                    {canManage
+                        ? (type === 'notification' ? 'No notifications found. Click "Add New" to get started.' : 'No configurations found. Click "Add New" to get started.')
+                        : 'No configurations found.'}
                 </div>
             )}
 
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
                 <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
-                        <DialogTitle>{editingId ? "Edit Configuration" : "Add New Configuration"}</DialogTitle>
+                        <DialogTitle>{editingId ? "Edit Configuration" : (type === 'notification' ? "Add New Notification" : (type === 'database' ? "Add New Source" : (type === 'storage' ? "Add New Destination" : "Add New Configuration")))}</DialogTitle>
                     </DialogHeader>
                     {isDialogOpen && (
                         <AdapterForm
@@ -465,7 +467,7 @@ const saveConfig = async (data: any) => {
                         <FormItem>
                             <FormLabel>Name</FormLabel>
                             <FormControl>
-                                <Input placeholder="My Production DB" {...field} />
+                                <Input placeholder={type === "notification" ? "My Notification Channel" : "My Production DB"} {...field} />
                             </FormControl>
                             <FormMessage />
                         </FormItem>
@@ -476,30 +478,61 @@ const saveConfig = async (data: any) => {
                     control={form.control}
                     name="adapterId"
                     render={({ field }) => (
-                        <FormItem>
+                        <FormItem className="flex flex-col">
                             <FormLabel>Type</FormLabel>
-                            <Select
-                                onValueChange={(val) => {
-                                    field.onChange(val);
-                                    setSelectedAdapterId(val);
-                                    // Reset config fields on type change?
-                                }}
-                                defaultValue={field.value}
-                                disabled={!!initialData} // Disable changing type purely for simplicity for now
-                            >
-                                <FormControl>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Select a type" />
-                                    </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                    {adapters.map((adapter) => (
-                                        <SelectItem key={adapter.id} value={adapter.id}>
-                                            {adapter.name}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                            <Popover>
+                                <PopoverTrigger asChild>
+                                    <FormControl>
+                                        <Button
+                                            variant="outline"
+                                            role="combobox"
+                                            className={cn(
+                                                "w-1/2 justify-between",
+                                                !field.value && "text-muted-foreground"
+                                            )}
+                                            disabled={!!initialData}
+                                        >
+                                            {field.value
+                                                ? adapters.find(
+                                                    (adapter) => adapter.id === field.value
+                                                )?.name
+                                                : "Select a type"}
+                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                        </Button>
+                                    </FormControl>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-[250px] p-0" align="start">
+                                    <Command>
+                                        <CommandInput placeholder="Search type..." />
+                                        <CommandList>
+                                            <CommandEmpty>No type found.</CommandEmpty>
+                                            <CommandGroup>
+                                                {adapters.map((adapter) => (
+                                                    <CommandItem
+                                                        value={adapter.name}
+                                                        key={adapter.id}
+                                                        onSelect={() => {
+                                                            form.setValue("adapterId", adapter.id)
+                                                            setSelectedAdapterId(adapter.id);
+                                                            // Also trigger re-validation if needed or clear config
+                                                        }}
+                                                    >
+                                                        <Check
+                                                            className={cn(
+                                                                "mr-2 h-4 w-4",
+                                                                adapter.id === field.value
+                                                                    ? "opacity-100"
+                                                                    : "opacity-0"
+                                                            )}
+                                                        />
+                                                        {adapter.name}
+                                                    </CommandItem>
+                                                ))}
+                                            </CommandGroup>
+                                        </CommandList>
+                                    </Command>
+                                </PopoverContent>
+                            </Popover>
                             <FormMessage />
                         </FormItem>
                     )}
@@ -537,6 +570,16 @@ const saveConfig = async (data: any) => {
                                 "from": "name@example.com",
                                 "to": "admin@example.com",
                                 "host": "localhost",
+                                // DB Ports
+                                "mysql.port": "3306",
+                                "postgres.port": "5432",
+                                "mongodb.port": "27017",
+                                "email.port": "587",
+                                "mongodb.uri": "mongodb://user:password@localhost:27017/db?authSource=admin",
+                                // Options Examples
+                                "mysql.options": "--single-transaction --quick",
+                                "postgres.options": "--clean --if-exists",
+                                "mongodb.options": "--gzip --oplog",
                              };
                              const placeholder = PLACEHOLDERS[`${selectedAdapter.id}.${key}`] || PLACEHOLDERS[key];
 

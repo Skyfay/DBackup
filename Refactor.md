@@ -22,7 +22,7 @@ Einführung eines `src/services` Ordners. Server Actions (`src/app/actions`) sol
 - [x] **JobService:** CRUD Logik für Jobs aus Actions extrahieren -> `src/services/job-service.ts`.
 - [x] **BackupService:** Logik zum Starten/Triggern von Backups extrahieren -> `src/services/backup-service.ts`.
 - [x] **RestoreService:** Logik für Wiederherstellung -> `src/services/restore-service.ts`.
-- [ ] **AuthService:** (Optional) Falls Auth-Logik komplexer wird.
+- [X] **AuthService:** (Optional) Falls Auth-Logik komplexer wird.
 
 ---
 

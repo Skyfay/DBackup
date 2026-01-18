@@ -16,6 +16,8 @@
 - [x] **Architecture**
     - [x] Define Adapter Interfaces (Database, Storage, Notification)
     - [x] Create Type Definitions
+    - [x] Refactor User Logic to Service Layer
+
 
 ## 📦 Deployment & Maintenance
 - [ ] **Containerization**

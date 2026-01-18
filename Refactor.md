@@ -48,7 +48,7 @@ Aufbrechen des Prozesses in kleine, isolierte "Steps" (Pipeline Pattern).
 ---
 
 ## 3. UI: Komponenten Entkopplung
-**Status:** [ ] Offen
+**Status:** [x] Erledigt
 
 **Problem:**
 In Listenansichten (z.B. `actions/storage/columns.tsx` oder `dashboard/page.tsx`) wird oft zu viel Logik (Formatierung, Badges, Icons) direkt definiert. Die Dateien werden unübersichtlich.
@@ -57,8 +57,8 @@ In Listenansichten (z.B. `actions/storage/columns.tsx` oder `dashboard/page.tsx`
 Extraktion von "dummen" UI-Komponenten.
 
 **Tasks:**
-- [ ] **Cell-Renderer extrahieren:** Komplexe Spalten in `src/components/dashboard/[domain]/cells/` auslagern (z.B. `StatusCell`, `ActionMenu`).
-- [ ] **Shared Components:** Wiederkehrende Patterns (z.B. "Card mit Header und Action Button") vereinheitlichen.
+- [x] **Cell-Renderer extrahieren:** Komplexe Spalten in `src/components/dashboard/[domain]/cells/` auslagern (z.B. `StatusCell`, `ActionMenu`).
+- [x] **Shared Components:** Wiederkehrende Patterns (z.B. "Card mit Header und Action Button") oder komplexe Dialoge vereinheitlichen.
 
 ---
 

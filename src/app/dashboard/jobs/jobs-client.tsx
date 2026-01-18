@@ -14,43 +14,18 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { Edit, Play, Trash2, Plus, Clock, Pause, CheckCircle } from "lucide-react";
-import { useForm } from "react-hook-form";
+import { Edit, Play, Trash2, Clock } from "lucide-react";
 import { toast } from "sonner";
-import { z } from "zod";
+import { JobForm, JobData, AdapterOption } from "@/components/dashboard/jobs/job-form";
+import { Badge } from "@/components/ui/badge";
+import { Plus } from "lucide-react";
 
-interface Job {
-    id: string;
-    name: string;
-    schedule: string;
-    enabled: boolean;
-    sourceId: string;
-    destinationId: string;
+// Extended Job type for display (includes related entity names)
+interface Job extends JobData {
     source: { name: string, type: string };
     destination: { name: string, type: string };
-    notifications: { id: string, name: string }[];
     createdAt: string;
 }
-
-interface AdapterOption {
-    id: string;
-    name: string;
-    adapterId: string;
-}
-
-const jobSchema = z.object({
-    name: z.string().min(1, "Name is required"),
-    schedule: z.string().min(1, "Cron schedule is required"),
-    sourceId: z.string().min(1, "Source is required"),
-    destinationId: z.string().min(1, "Destination is required"),
-    notificationIds: z.array(z.string()).optional(),
-    enabled: z.boolean().default(true),
-});
 
 interface JobsClientProps {
     canManage: boolean;
@@ -64,7 +39,7 @@ export function JobsClient({ canManage, canExecute }: JobsClientProps) {
     const [notificationChannels, setNotificationChannels] = useState<AdapterOption[]>([]);
 
     const [isDialogOpen, setIsDialogOpen] = useState(false);
-    const [editingJob, setEditingJob] = useState<Job | null>(null);
+    const [editingJob, setEditingJob] = useState<JobData | null>(null);
     const [deletingId, setDeletingId] = useState<string | null>(null);
 
     useEffect(() => {
@@ -104,49 +79,36 @@ export function JobsClient({ canManage, canExecute }: JobsClientProps) {
     const confirmDelete = async () => {
         if (!deletingId) return;
         try {
-            const res = await fetch(`/api/jobs/${deletingId}`, { method: 'DELETE' });
-            const data = await res.json();
-
+            const res = await fetch(`/api/jobs/${deletingId}`, { method: "DELETE" });
             if (res.ok) {
-                fetchJobs();
                 toast.success("Job deleted");
+                fetchJobs();
             } else {
-                toast.error(data.error || "Failed to delete job");
+                toast.error("Failed to delete job");
             }
-        } catch {
-            toast.error("Failed to delete");
-        } finally {
-            setDeletingId(null);
-        }
+        } catch { toast.error("Error deleting job"); }
+        setDeletingId(null);
     };
 
-     const handleRunMatch = async (id: string) => {
-         // Optimistic check? Or rely on API.
-         if (!canExecute) {
-             toast.error("You do not have permission to execute jobs");
-             return;
-         }
-
-        toast.promise(
-            fetch(`/api/jobs/${id}/run`, { method: "POST" }).then(async (res) => {
-                const data = await res.json();
-                if (!res.ok || !data.success) throw new Error(data.error || "Failed");
-                return data;
-            }),
-            {
-                loading: "Starting backup job...",
-                success: "Job executed successfully",
-                error: (err) => `Job failed: ${err.message}`
+    const runJob = async (id: string) => {
+        toast.info("Job started...");
+        try {
+            const res = await fetch(`/api/jobs/${id}/run`, { method: "POST" });
+            const data = await res.json();
+            if (data.success) {
+                toast.success("Job executed successfully");
+            } else {
+                toast.error(`Job failed: ${data.error}`);
             }
-        );
+        } catch { toast.error("Execution request failed"); }
     };
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex justify-between items-center">
                 <div>
-                     <h2 className="text-3xl font-bold tracking-tight">Backup Jobs</h2>
-                     <p className="text-muted-foreground">Manage automated backup schedules.</p>
+                    <h2 className="text-3xl font-bold tracking-tight">Backup Jobs</h2>
+                    <p className="text-muted-foreground">Manage and schedule automated backup tasks.</p>
                 </div>
                 {canManage && (
                     <Button onClick={() => { setEditingJob(null); setIsDialogOpen(true); }}>
@@ -155,48 +117,41 @@ export function JobsClient({ canManage, canExecute }: JobsClientProps) {
                 )}
             </div>
 
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {jobs.map(job => (
-                    <Card key={job.id} className={`group relative overflow-hidden transition-all hover:shadow-md border-muted-foreground/20 ${job.enabled ? "" : "opacity-75 bg-muted/30"}`}>
-                        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-background/50 backdrop-blur-sm rounded-md p-0.5">
-                            {canExecute && (
-                                <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-primary/10 hover:text-primary" onClick={() => handleRunMatch(job.id)} title="Run Job">
-                                    <Play className="h-3.5 w-3.5" />
-                                </Button>
-                            )}
-                            {canManage && (
-                                <>
-                                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditingJob(job); setIsDialogOpen(true); }}>
-                                        <Edit className="h-3.5 w-3.5" />
-                                    </Button>
-                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleDelete(job.id)}>
-                                        <Trash2 className="h-3.5 w-3.5" />
-                                    </Button>
-                                </>
-                            )}
-                        </div>
-
-                        <CardHeader className="flex flex-row items-center gap-4 pb-2">
-                            <div className={`flex h-10 w-10 items-center justify-center rounded-md ${job.enabled ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
-                                <Clock className="h-5 w-5" />
-                            </div>
-                            <div className="grid gap-1">
-                                <div className="flex items-center gap-2">
-                                     <CardTitle className="text-base font-semibold leading-none tracking-tight">
-                                        {job.name}
-                                    </CardTitle>
-                                    {job.enabled ?
-                                        <CheckCircle className="h-3 w-3 text-green-500" /> :
-                                        <Pause className="h-3 w-3 text-yellow-500" />
-                                    }
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {jobs.map((job) => (
+                    <Card key={job.id} className="relative overflow-hidden group hover:border-primary/50 transition-colors">
+                        <CardHeader className="pb-2">
+                             <div className="flex justify-between items-start">
+                                <div className="space-y-1">
+                                    <CardTitle>{job.name}</CardTitle>
+                                    <CardDescription className="flex items-center gap-2">
+                                        <Clock className="h-3 w-3" /> {job.schedule}
+                                    </CardDescription>
                                 </div>
-                                <CardDescription className="text-xs font-mono">
-                                     {job.schedule}
-                                </CardDescription>
-                            </div>
+                                <div className="flex gap-1">
+                                    {canExecute && (
+                                        <Button variant="ghost" size="icon" onClick={() => runJob(job.id)} title="Run Now">
+                                            <Play className="h-4 w-4 text-green-500" />
+                                        </Button>
+                                    )}
+                                    {canManage && (
+                                        <>
+                                            <Button variant="ghost" size="icon" onClick={() => { setEditingJob(job); setIsDialogOpen(true); }}>
+                                                <Edit className="h-4 w-4" />
+                                            </Button>
+                                            <Button variant="ghost" size="icon" onClick={() => handleDelete(job.id)}>
+                                                <Trash2 className="h-4 w-4 text-destructive" />
+                                            </Button>
+                                        </>
+                                    )}
+                                </div>
+                             </div>
                         </CardHeader>
                         <CardContent>
-                            <div className="grid gap-1.5 text-xs text-muted-foreground mt-2">
+                            <div className="space-y-2 text-sm text-muted-foreground">
+                                <div className="flex items-center justify-between gap-2">
+                                     <span className="capitalize flex items-center gap-1.5"><Badge variant={job.enabled ? "default" : "secondary"} className="h-5 px-1.5 text-[10px]">{job.enabled ? "Enabled" : "Paused"}</Badge></span>
+                                </div>
                                 <div className="flex items-center justify-between gap-2">
                                     <span className="capitalize">Source:</span>
                                     <span className="font-medium truncate max-w-[120px]">{job.source.name}</span>
@@ -250,141 +205,4 @@ export function JobsClient({ canManage, canExecute }: JobsClientProps) {
             </AlertDialog>
         </div>
     );
-}
-
-interface JobFormProps {
-    sources: AdapterOption[];
-    destinations: AdapterOption[];
-    notifications: AdapterOption[];
-    initialData: Job | null;
-    onSuccess: () => void;
-}
-
-function JobForm({ sources, destinations, notifications, initialData, onSuccess }: JobFormProps) {
-    const form = useForm({
-        resolver: zodResolver(jobSchema),
-        defaultValues: {
-            name: initialData?.name || "",
-            schedule: initialData?.schedule || "0 0 * * *",
-            sourceId: initialData?.sourceId || "",
-            destinationId: initialData?.destinationId || "",
-            notificationIds: initialData?.notifications?.map((n) => n.id) || [],
-            enabled: initialData?.enabled ?? true,
-        }
-    });
-
-    const onSubmit = async (data: z.infer<typeof jobSchema>) => {
-         try {
-            const url = initialData ? `/api/jobs/${initialData.id}` : '/api/jobs';
-            const method = initialData ? 'PUT' : 'POST';
-
-            const res = await fetch(url, {
-                method,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            });
-
-            if (res.ok) {
-                toast.success(initialData ? "Job updated" : "Job created");
-                onSuccess();
-            } else {
-                 const result = await res.json();
-                 toast.error(result.error || "Operation failed");
-            }
-        } catch { toast.error("Error occurred"); }
-    };
-
-    return (
-        <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                 <FormField control={form.control} name="name" render={({ field }) => (
-                    <FormItem>
-                        <FormLabel>Job Name</FormLabel>
-                        <FormControl><Input placeholder="Daily Production Backup" {...field} /></FormControl>
-                        <FormMessage />
-                    </FormItem>
-                )} />
-
-                <div className="grid grid-cols-2 gap-4">
-                    <FormField control={form.control} name="sourceId" render={({ field }) => (
-                        <FormItem>
-                            <FormLabel>Source</FormLabel>
-                            <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                <FormControl><SelectTrigger><SelectValue placeholder="Select Source" /></SelectTrigger></FormControl>
-                                <SelectContent>
-                                    {sources.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-                                </SelectContent>
-                            </Select>
-                            <FormMessage />
-                        </FormItem>
-                    )} />
-
-                    <FormField control={form.control} name="destinationId" render={({ field }) => (
-                         <FormItem>
-                            <FormLabel>Destination</FormLabel>
-                            <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                <FormControl><SelectTrigger><SelectValue placeholder="Select Destination" /></SelectTrigger></FormControl>
-                                <SelectContent>
-                                    {destinations.map((d) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
-                                </SelectContent>
-                            </Select>
-                            <FormMessage />
-                        </FormItem>
-                    )} />
-                </div>
-
-                <FormField control={form.control} name="schedule" render={({ field }) => (
-                    <FormItem>
-                        <FormLabel>Schedule (Cron)</FormLabel>
-                        <FormControl><Input placeholder="0 0 * * *" {...field} /></FormControl>
-                        <FormDescription>Standard cron expression (e.g. 0 0 * * * for daily at midnight)</FormDescription>
-                        <FormMessage />
-                    </FormItem>
-                )} />
-
-                 <FormField control={form.control} name="notificationIds" render={({ field }) => (
-                    <FormItem>
-                        <FormLabel>Notifications (Optional)</FormLabel>
-                         <Select onValueChange={(val) => {
-                             const current = field.value || [];
-                             if(!current.includes(val)) field.onChange([...current, val]);
-                         }} >
-                            <FormControl><SelectTrigger><SelectValue placeholder="Add Notification Channel" /></SelectTrigger></FormControl>
-                             <SelectContent>
-                                {notifications.map((n) => <SelectItem key={n.id} value={n.id}>{n.name}</SelectItem>)}
-                            </SelectContent>
-                        </Select>
-                        {field.value && field.value.length > 0 && (
-                            <div className="flex gap-2 flex-wrap mt-2">
-                                {field.value.map((id: string) => {
-                                    const n = notifications.find((x) => x.id === id);
-                                    return (
-                                        <div key={id} className="bg-secondary text-secondary-foreground px-2 py-1 rounded text-xs flex items-center">
-                                            {n?.name}
-                                            <button type="button" onClick={() => field.onChange((field.value || []).filter((x: string) => x !== id))} className="ml-1 hover:text-destructive">×</button>
-                                        </div>
-                                    )
-                                })}
-                            </div>
-                        )}
-                        <FormMessage />
-                    </FormItem>
-                )} />
-
-                <FormField control={form.control} name="enabled" render={({ field }) => (
-                     <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
-                        <div className="space-y-0.5">
-                            <FormLabel>Enabled</FormLabel>
-                            <FormDescription>Pause automated execution without deleting</FormDescription>
-                        </div>
-                        <FormControl>
-                            <Switch checked={field.value} onCheckedChange={field.onChange} />
-                        </FormControl>
-                    </FormItem>
-                )} />
-
-                <Button type="submit" className="w-full">Save Job</Button>
-            </form>
-        </Form>
-    )
 }

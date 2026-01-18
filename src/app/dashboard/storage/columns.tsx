@@ -1,17 +1,13 @@
 "use client";
 
 import { ColumnDef } from "@tanstack/react-table";
-import { ArrowUpDown, RotateCcw, Trash2, Download, Database, HardDrive } from "lucide-react";
+import { ArrowUpDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DateDisplay } from "@/components/date-display";
-import {
-    Tooltip,
-    TooltipContent,
-    TooltipProvider,
-    TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { Badge } from "@/components/ui/badge";
 import { formatBytes } from "@/lib/utils";
+import { NameCell } from "@/components/dashboard/storage/cells/name-cell";
+import { SourceJobCell } from "@/components/dashboard/storage/cells/source-job-cell";
+import { ActionsCell } from "@/components/dashboard/storage/cells/actions-cell";
 
 // This type is used to define the shape of our data.
 export type FileInfo = {
@@ -48,48 +44,24 @@ export const createColumns = ({ onRestore, onDownload, onDelete, canDownload, ca
                 </Button>
             );
         },
-        cell: ({ row }) => {
-            const path = row.original.path;
-            const name = row.getValue("name") as string;
-            return (
-                <div className="flex flex-col space-y-1">
-                    <span className="font-medium text-sm">{name}</span>
-                    <span className="text-[10px] text-muted-foreground truncate max-w-[250px] font-mono" title={path}>{path}</span>
-                </div>
-            )
-        }
+        cell: ({ row }) => (
+            <NameCell
+                name={row.getValue("name")}
+                path={row.original.path}
+            />
+        )
     },
     {
         accessorKey: "sourceName",
         header: "Source & Job",
-        cell: ({ row }) => {
-            const job = row.original.jobName;
-            const source = row.original.sourceName;
-            const type = row.original.sourceType;
-
-            if (!job && !source) return <span className="text-muted-foreground">-</span>
-
-            return (
-                <div className="flex flex-col space-y-1">
-                    {source !== "Unknown" && (
-                         <div className="flex items-center gap-1.5 text-sm">
-                             <Database className="h-3 w-3 text-muted-foreground" />
-                             <span>{source}</span>
-                             {type && <Badge variant="outline" className="text-[9px] h-4 px-1">{type}</Badge>}
-                         </div>
-                    )}
-                    {job !== "Unknown" && (
-                         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                             <HardDrive className="h-3 w-3" />
-                             <span>{job}</span>
-                             {row.original.dbInfo?.label && row.original.dbInfo.label !== "Unknown" && (
-                                 <Badge variant="secondary" className="text-[9px] h-4 px-1">{row.original.dbInfo.label}</Badge>
-                             )}
-                         </div>
-                    )}
-                </div>
-            )
-        }
+        cell: ({ row }) => (
+            <SourceJobCell
+                jobName={row.original.jobName}
+                sourceName={row.original.sourceName}
+                sourceType={row.original.sourceType}
+                dbLabel={row.original.dbInfo?.label}
+            />
+        )
     },
     {
         accessorKey: "size",
@@ -133,51 +105,16 @@ export const createColumns = ({ onRestore, onDownload, onDelete, canDownload, ca
     },
     {
         id: "actions",
-        cell: ({ row }) => {
-            const file = row.original;
-
-            return (
-                <div className="flex items-center justify-end gap-2">
-                    {canDownload && (
-                        <TooltipProvider>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onDownload(file)}>
-                                        <Download className="h-4 w-4" />
-                                    </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>Download</TooltipContent>
-                            </Tooltip>
-                        </TooltipProvider>
-                    )}
-
-                    {canRestore && (
-                        <TooltipProvider>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onRestore(file)}>
-                                        <RotateCcw className="h-4 w-4" />
-                                    </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>Restore</TooltipContent>
-                            </Tooltip>
-                        </TooltipProvider>
-                    )}
-
-                    {canDelete && (
-                        <TooltipProvider>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => onDelete(file)}>
-                                        <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>Delete</TooltipContent>
-                            </Tooltip>
-                        </TooltipProvider>
-                    )}
-                </div>
-            );
-        },
+        cell: ({ row }) => (
+            <ActionsCell
+                file={row.original}
+                onDownload={onDownload}
+                onRestore={onRestore}
+                onDelete={onDelete}
+                canDownload={canDownload}
+                canRestore={canRestore}
+                canDelete={canDelete}
+            />
+        ),
     },
 ];

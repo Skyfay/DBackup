@@ -20,6 +20,13 @@ export interface DatabaseAdapter extends BaseAdapter {
     getDatabases(config: any): Promise<string[]>;
 
     // Advanced features (Optional but recommended)
+    /**
+     * Pre-flight check before restore.
+     * Use this to verify if the user has permissions to create the target databases.
+     * If this fails with a permission error, the UI will prompt for privileged credentials.
+     */
+    prepareRestore?(config: any, databases: string[]): Promise<void>;
+
     analyzeDump?(sourcePath: string): Promise<string[]>;
 }
 ```

@@ -16,16 +16,46 @@ export interface RestoreInput {
     file: string;
     targetSourceId: string;
     targetDatabaseName?: string;
-    databaseMapping?: Record<string, string>;
+    databaseMapping?: Record<string, string> | any[];
     privilegedAuth?: {
-        username?: string;
+        user?: string;
         password?: string;
     };
 }
 
 export class RestoreService {
     async restore(input: RestoreInput) {
-        const { file } = input;
+        const { file, storageConfigId, targetSourceId, targetDatabaseName, databaseMapping, privilegedAuth } = input;
+
+        // Pre-flight check: Verify Permissions / Connectivity if supported
+        const targetConfig = await prisma.adapterConfig.findUnique({ where: { id: targetSourceId } });
+        if (!targetConfig) throw new Error("Target source not found");
+
+        if (targetConfig.type === 'database') {
+            const targetAdapter = registry.get(targetConfig.adapterId) as DatabaseAdapter;
+            if (targetAdapter && targetAdapter.prepareRestore) {
+                let dbsToCheck: string[] = [];
+
+                if (Array.isArray(databaseMapping)) {
+                    // Handle array format (from UI)
+                    dbsToCheck = databaseMapping
+                        .filter((m: any) => m.selected)
+                        .map((m: any) => m.targetName || m.originalName);
+                } else if (databaseMapping) {
+                    // Handle Record format
+                    dbsToCheck = Object.values(databaseMapping);
+                } else if (targetDatabaseName) {
+                    dbsToCheck = [targetDatabaseName];
+                }
+
+                if (dbsToCheck.length > 0) {
+                    const dbConf = decryptConfig(JSON.parse(targetConfig.config));
+                    if (privilegedAuth) dbConf.privilegedAuth = privilegedAuth;
+
+                    await targetAdapter.prepareRestore(dbConf, dbsToCheck);
+                }
+            }
+        }
 
         // Start Logging Execution
         const execution = await prisma.execution.create({

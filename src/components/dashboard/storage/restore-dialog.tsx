@@ -154,6 +154,8 @@ export function RestoreDialog({ file, open, onOpenChange, destinationId, sources
             } else {
                 toast.error("Restore request failed");
                 const logs = data.logs || [];
+                const errorMessage = data.error || "Unknown error";
+
                 if (logs.length > 0) {
                      setRestoreLogs(logs);
                      const logString = logs.join('\n');
@@ -161,7 +163,11 @@ export function RestoreDialog({ file, open, onOpenChange, destinationId, sources
                          setShowPrivileged(true);
                      }
                 } else {
-                    setRestoreLogs(["Error: " + (data.error || "Unknown error")]);
+                    // Fallback if no logs (e.g. pre-flight check failed)
+                    setRestoreLogs(["Error: " + errorMessage]);
+                    if (errorMessage.includes("Access denied") || errorMessage.includes("User permissions?")) {
+                        setShowPrivileged(true);
+                    }
                 }
             }
         } catch {

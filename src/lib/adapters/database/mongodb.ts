@@ -12,6 +12,53 @@ export const MongoDBAdapter: DatabaseAdapter = {
     name: "MongoDB",
     configSchema: MongoDBSchema,
 
+    async prepareRestore(config: any, databases: string[]): Promise<void> {
+        const usePrivileged = !!config.privilegedAuth;
+        const user = usePrivileged ? config.privilegedAuth.user : config.user;
+        const pass = usePrivileged ? config.privilegedAuth.password : config.password;
+
+        const args = ['--quiet'];
+        if (config.uri) {
+            args.push(config.uri);
+        } else {
+            args.push('--host', config.host);
+            args.push('--port', String(config.port));
+        }
+
+        if (user && pass) {
+            args.push('--username', user);
+            args.push('--password', pass);
+            if (config.authenticationDatabase) {
+                 args.push('--authenticationDatabase', config.authenticationDatabase);
+            } else if (!config.uri) {
+                 args.push('--authenticationDatabase', 'admin');
+            }
+        }
+
+        for (const dbName of databases) {
+             const evalScript = `
+                try {
+                    var target = db.getSiblingDB('${dbName.replace(/'/g, "\\'")}');
+                    target.createCollection('__perm_check_tmp');
+                    target.getCollection('__perm_check_tmp').drop();
+                } catch(e) {
+                    print('ERROR: ' + e.message);
+                    quit(1);
+                }
+             `;
+
+             try {
+                await execFileAsync('mongosh', [...args, '--eval', evalScript]);
+             } catch(e: any) {
+                 const msg = e.stdout || e.stderr || e.message || "";
+                 if (msg.includes("not authorized") || msg.includes("Authorization") || msg.includes("requires authentication") || msg.includes("command create requires")) {
+                     throw new Error(`Access denied to database '${dbName}'. Permissions?`);
+                 }
+                 throw e;
+             }
+        }
+    },
+
     async dump(config: any, destinationPath: string, onLog?: (msg: string) => void, onProgress?: (percentage: number) => void): Promise<BackupResult> {
         const startedAt = new Date();
         const logs: string[] = [];

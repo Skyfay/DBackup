@@ -15,6 +15,52 @@ export const PostgresAdapter: DatabaseAdapter = {
     name: "PostgreSQL",
     configSchema: PostgresSchema,
 
+    async prepareRestore(config: any, databases: string[]): Promise<void> {
+         const usePrivileged = !!config.privilegedAuth;
+         const user = usePrivileged ? config.privilegedAuth.user : config.user;
+         const pass = usePrivileged ? config.privilegedAuth.password : config.password;
+
+         const env = { ...process.env };
+         if (pass) env.PGPASSWORD = pass;
+
+         const baseArgs = [
+             '-h', config.host,
+             '-p', String(config.port),
+             '-U', user,
+             '-d', 'postgres' // Maintenance DB
+         ];
+
+         for (const dbName of databases) {
+             // Check existence
+             try {
+                 // We use -t (tuples only) -A (no align) to get clean output
+                 const { stdout } = await execFileAsync('psql', [...baseArgs, '-t', '-A', '-c', `SELECT 1 FROM pg_database WHERE datname = '${dbName}'`], { env });
+
+                 if (stdout.trim() === '1') {
+                     // Exists
+                     continue;
+                 }
+
+                 // Try create
+                 // Note: We need to be careful about SQL injection here if dbName comes from untrusted source,
+                 // but usually it's from our own UI. Proper escaping is good practice.
+                 const safeDbName = `"${dbName.replace(/"/g, '""')}"`;
+                 await execFileAsync('psql', [...baseArgs, '-c', `CREATE DATABASE ${safeDbName}`], { env });
+
+             } catch (e: any) {
+                 const msg = e.stderr || e.message || "";
+                 if (msg.includes("permission denied")) {
+                      throw new Error(`Access denied for user '${user}' to create database '${dbName}'. User permissions?`);
+                 }
+                 // If it failed because it exists (race condition), ignore.
+                  if (msg.includes("already exists")) {
+                     continue;
+                 }
+                 throw e;
+             }
+         }
+    },
+
     async analyzeDump(sourcePath: string): Promise<string[]> {
         const dbs = new Set<string>();
         try {

@@ -33,6 +33,37 @@ export const MySQLAdapter: DatabaseAdapter = {
     name: "MySQL / MariaDB",
     configSchema: MySQLSchema,
 
+    async prepareRestore(config: any, databases: string[]): Promise<void> {
+        const usePrivileged = !!config.privilegedAuth;
+        const user = usePrivileged ? config.privilegedAuth.user : config.user;
+        const pass = usePrivileged ? config.privilegedAuth.password : config.password;
+
+        for (const dbName of databases) {
+            // Validate dbName to prevent injection if not handled by mysql cli?
+            // mysql cli handles escaping if we quote it, but better be safe.
+            // Actually we pass it in ` ` quotes in the query string.
+            if (/[^a-zA-Z0-9_$-]/.test(dbName)) {
+                // Basic validation, though mysql allows more with backticks.
+                // We trust the input from our own UI/Service layer mostly?
+            }
+
+            const args = ['-h', config.host, '-P', String(config.port), '-u', user, '--protocol=tcp'];
+            const env = { ...process.env };
+            if (pass) env.MYSQL_PWD = pass;
+
+            try {
+                await execFileAsync('mysql', [...args, '-e', `CREATE DATABASE IF NOT EXISTS \`${dbName}\``], { env });
+            } catch (e: any) {
+                if (e.message && (e.message.includes("Access denied") || e.message.includes("ERROR 1044"))) {
+                    throw new Error(`Access denied for user '${user}' to database '${dbName}'. User permissions?`);
+                }
+                // We ignore other errors for now (e.g. connection refused will be caught later? or should we throw?)
+                // If we can't connect now, we probably can't restore later.
+                throw e;
+            }
+        }
+    },
+
     async analyzeDump(sourcePath: string): Promise<string[]> {
         const dbs = new Set<string>();
 

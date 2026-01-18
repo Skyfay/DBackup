@@ -48,6 +48,13 @@ export type BackupResult = {
 export interface DatabaseAdapter extends BaseAdapter {
     type: 'database';
     /**
+     * Optional method to prepare/validate restore before starting.
+     * Useful for permission checks (e.g. Can I create the database?).
+     * If this fails, the promise should reject (or return error status).
+     */
+    prepareRestore?(config: any, databases: string[]): Promise<void>;
+
+    /**
      * Dumps the database to a local file path
      * @param config The user configuration for this adapter
      * @param destinationPath The path where the dump should be saved locally

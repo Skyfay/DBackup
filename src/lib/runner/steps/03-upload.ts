@@ -2,7 +2,11 @@ import { RunnerContext } from "../types";
 import { decryptConfig } from "@/lib/crypto";
 import path from "path";
 import fs from "fs/promises";
+import { createReadStream, createWriteStream } from "fs";
+import { pipeline } from "stream/promises";
 import { BackupMetadata } from "@/lib/core/interfaces";
+import { getProfileMasterKey } from "@/services/encryption-service";
+import { createEncryptionStream } from "@/lib/crypto-stream";
 
 export async function stepUpload(ctx: RunnerContext) {
     if (!ctx.job || !ctx.destAdapter || !ctx.tempFile) throw new Error("Context not ready for upload");
@@ -11,6 +15,50 @@ export async function stepUpload(ctx: RunnerContext) {
     const destAdapter = ctx.destAdapter;
 
     ctx.log(`Starting Upload to ${job.destination.name} (${job.destination.type})...`);
+
+    // --- ENCRYPTION PROCESS ---
+    let encryptionMeta: BackupMetadata['encryption'] = undefined;
+    if (job.encryptionProfileId) {
+        try {
+            ctx.log(`Encryption enabled. Profile ID: ${job.encryptionProfileId}`);
+            ctx.updateProgress(0, "Encrypting Backup...");
+
+            const masterKey = await getProfileMasterKey(job.encryptionProfileId);
+            const { stream: encryptStream, getAuthTag, iv } = createEncryptionStream(masterKey);
+
+            const encryptedTempFile = ctx.tempFile + ".enc";
+
+            // Stream: TempFile -> Encrypt -> EncryptedTempFile
+            await pipeline(
+                createReadStream(ctx.tempFile),
+                encryptStream,
+                createWriteStream(encryptedTempFile)
+            );
+
+            // Get Auth Tag (only available after stream finish)
+            const authTag = getAuthTag();
+
+            encryptionMeta = {
+                enabled: true,
+                profileId: job.encryptionProfileId,
+                algorithm: 'aes-256-gcm',
+                iv: iv.toString('hex'),
+                authTag: authTag.toString('hex')
+            };
+
+            ctx.log(`Encryption successful.`);
+
+            // Cleanup original unencrypted file
+            await fs.unlink(ctx.tempFile);
+
+            // Point context to the new encrypted file
+            ctx.tempFile = encryptedTempFile;
+
+        } catch (error: any) {
+            throw new Error(`Encryption failed: ${error.message}`);
+        }
+    }
+    // --- END ENCRYPTION PROCESS ---
 
     const destConfig = decryptConfig(JSON.parse(job.destination.config));
 
@@ -33,7 +81,8 @@ export async function stepUpload(ctx: RunnerContext) {
                 names: Array.isArray(ctx.metadata?.names) ? ctx.metadata.names : undefined
             },
             timestamp: new Date().toISOString(),
-            originalFileName: path.basename(ctx.tempFile)
+            originalFileName: path.basename(ctx.tempFile),
+            encryption: encryptionMeta
         };
 
         const metaPath = ctx.tempFile + ".meta.json";

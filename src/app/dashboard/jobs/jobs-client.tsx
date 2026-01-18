@@ -14,18 +14,20 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Edit, Play, Trash2, Clock } from "lucide-react";
+import { Edit, Play, Trash2, Clock, Lock } from "lucide-react";
 import { toast } from "sonner";
-import { JobForm, JobData, AdapterOption } from "@/components/dashboard/jobs/job-form";
+import { JobForm, JobData, AdapterOption, EncryptionOption } from "@/components/dashboard/jobs/job-form";
 import { Badge } from "@/components/ui/badge";
 import { Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { getEncryptionProfiles } from "@/app/actions/encryption";
 
 // Extended Job type for display (includes related entity names)
 interface Job extends JobData {
     source: { name: string, type: string };
     destination: { name: string, type: string };
     createdAt: string;
+    encryptionProfile?: { name: string };
 }
 
 interface JobsClientProps {
@@ -38,6 +40,7 @@ export function JobsClient({ canManage, canExecute }: JobsClientProps) {
     const [sources, setSources] = useState<AdapterOption[]>([]);
     const [destinations, setDestinations] = useState<AdapterOption[]>([]);
     const [notificationChannels, setNotificationChannels] = useState<AdapterOption[]>([]);
+    const [encryptionProfiles, setEncryptionProfiles] = useState<EncryptionOption[]>([]);
 
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editingJob, setEditingJob] = useState<JobData | null>(null);
@@ -66,6 +69,11 @@ export function JobsClient({ canManage, canExecute }: JobsClientProps) {
             setSources(s);
             setDestinations(d);
             setNotificationChannels(n);
+
+            const encRes = await getEncryptionProfiles();
+            if (encRes.success && encRes.data) {
+                setEncryptionProfiles(encRes.data.map((p: any) => ({ id: p.id, name: p.name })));
+            }
         } catch { toast.error("Failed to fetch adapters"); }
     };
 
@@ -189,6 +197,7 @@ export function JobsClient({ canManage, canExecute }: JobsClientProps) {
                             sources={sources}
                             destinations={destinations}
                             notifications={notificationChannels}
+                            encryptionProfiles={encryptionProfiles}
                             initialData={editingJob}
                             onSuccess={() => { setIsDialogOpen(false); fetchJobs(); }}
                         />

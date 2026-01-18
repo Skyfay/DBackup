@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
+import { Lock } from "lucide-react";
 
 export interface JobData {
     id: string;
@@ -17,6 +18,7 @@ export interface JobData {
     enabled: boolean;
     sourceId: string;
     destinationId: string;
+    encryptionProfileId?: string;
     notifications: { id: string, name: string }[];
 }
 
@@ -26,11 +28,17 @@ export interface AdapterOption {
     adapterId: string;
 }
 
+export interface EncryptionOption {
+    id: string;
+    name: string;
+}
+
 const jobSchema = z.object({
     name: z.string().min(1, "Name is required"),
     schedule: z.string().min(1, "Cron schedule is required"),
     sourceId: z.string().min(1, "Source is required"),
     destinationId: z.string().min(1, "Destination is required"),
+    encryptionProfileId: z.string().optional(),
     notificationIds: z.array(z.string()).optional(),
     enabled: z.boolean().default(true),
 });
@@ -39,11 +47,12 @@ interface JobFormProps {
     sources: AdapterOption[];
     destinations: AdapterOption[];
     notifications: AdapterOption[];
+    encryptionProfiles: EncryptionOption[];
     initialData: JobData | null;
     onSuccess: () => void;
 }
 
-export function JobForm({ sources, destinations, notifications, initialData, onSuccess }: JobFormProps) {
+export function JobForm({ sources, destinations, notifications, encryptionProfiles, initialData, onSuccess }: JobFormProps) {
     const form = useForm({
         resolver: zodResolver(jobSchema),
         defaultValues: {
@@ -51,6 +60,7 @@ export function JobForm({ sources, destinations, notifications, initialData, onS
             schedule: initialData?.schedule || "0 0 * * *",
             sourceId: initialData?.sourceId || "",
             destinationId: initialData?.destinationId || "",
+            encryptionProfileId: initialData?.encryptionProfileId || "",
             notificationIds: initialData?.notifications?.map((n) => n.id) || [],
             enabled: initialData?.enabled ?? true,
         }
@@ -115,6 +125,26 @@ export function JobForm({ sources, destinations, notifications, initialData, onS
                         </FormItem>
                     )} />
                 </div>
+
+                <FormField control={form.control} name="encryptionProfileId" render={({ field }) => (
+                    <FormItem>
+                        <FormLabel className="flex items-center gap-2">
+                            <Lock className="h-3 w-3" />
+                            Encryption (Optional)
+                        </FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value || ""}>
+                            <FormControl><SelectTrigger><SelectValue placeholder="No Encryption" /></SelectTrigger></FormControl>
+                            <SelectContent>
+                                <SelectItem value="">None (Unencrypted)</SelectItem>
+                                {encryptionProfiles.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+                        <FormDescription>
+                            Select a key to encrypt the backup. Backups can only be restored if this key exists.
+                        </FormDescription>
+                        <FormMessage />
+                    </FormItem>
+                )} />
 
                 <FormField control={form.control} name="schedule" render={({ field }) => (
                     <FormItem>

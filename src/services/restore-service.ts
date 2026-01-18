@@ -1,12 +1,16 @@
 import prisma from "@/lib/prisma";
 import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters";
-import { StorageAdapter, DatabaseAdapter } from "@/lib/core/interfaces";
+import { StorageAdapter, DatabaseAdapter, BackupMetadata } from "@/lib/core/interfaces";
 import { decryptConfig } from "@/lib/crypto";
 import { formatBytes } from "@/lib/utils";
 import path from "path";
 import os from "os";
 import fs from "fs";
+import { pipeline } from "stream/promises";
+import { createReadStream, createWriteStream } from "fs";
+import { getProfileMasterKey } from "@/services/encryption-service";
+import { createDecryptionStream } from "@/lib/crypto-stream";
 
 // Ensure adapters are loaded
 registerAdapters();
@@ -149,6 +153,32 @@ export class RestoreService {
 
             const sConf = decryptConfig(JSON.parse(storageConfig.config));
 
+            // --- DECRYPTION PRE-CHECK ---
+            let isEncrypted = false;
+            let encryptionMeta: BackupMetadata['encryption'] = undefined;
+
+            try {
+                const metaRemotePath = file + ".meta.json";
+                const tempMetaPath = path.join(os.tmpdir(), "meta_" + Date.now() + ".json");
+
+                // Try to download metadata to check for encryption keys
+                const metaDownSuccess = await storageAdapter.download(sConf, metaRemotePath, tempMetaPath, () => {}).catch(() => false);
+
+                if (metaDownSuccess) {
+                    const metaContent = await fs.promises.readFile(tempMetaPath, 'utf-8');
+                    const metadata = JSON.parse(metaContent);
+                    if (metadata.encryption && metadata.encryption.enabled) {
+                        isEncrypted = true;
+                        encryptionMeta = metadata.encryption;
+                        log("Detected encrypted backup.");
+                    }
+                    await fs.promises.unlink(tempMetaPath).catch(() => {});
+                }
+            } catch (e: any) {
+                log(`Warning: Failed to check metadata: ${e.message}`);
+            }
+            // --- END PRE-CHECK ---
+
 
             const downloadSuccess = await storageAdapter.download(sConf, file, tempFile, (processed, total) => {
                 const percent = total > 0 ? Math.round((processed / total) * 100) : 0;
@@ -160,6 +190,46 @@ export class RestoreService {
                 throw new Error("Failed to download file from storage");
             }
             log(`Download complete.`);
+
+            // --- DECRYPTION EXECUTION ---
+            if (isEncrypted && encryptionMeta) {
+                try {
+                    log(`Decrypting backup (Profile: ${encryptionMeta.profileId})...`);
+                    updateProgress(0, "Decrypting Backup...");
+
+                    const masterKey = await getProfileMasterKey(encryptionMeta.profileId);
+                    const iv = Buffer.from(encryptionMeta.iv, 'hex');
+                    const authTag = Buffer.from(encryptionMeta.authTag, 'hex');
+
+                    const decryptStream = createDecryptionStream(masterKey, iv, authTag);
+
+                    // Logic to determine output filename (strip .enc or append .dec)
+                    let decryptedTempFile = tempFile;
+                    if (tempFile.endsWith('.enc')) {
+                        decryptedTempFile = tempFile.slice(0, -4);
+                    } else {
+                        decryptedTempFile = tempFile + ".dec";
+                    }
+
+                    await pipeline(
+                        createReadStream(tempFile),
+                        decryptStream,
+                        createWriteStream(decryptedTempFile)
+                    );
+
+                    log("Decryption successful.");
+
+                    // Cleanup encrypted file
+                    await fs.promises.unlink(tempFile);
+
+                    // Switch to decrypted file for restore
+                    tempFile = decryptedTempFile;
+
+                } catch (e: any) {
+                    throw new Error(`Decryption failed: ${e.message}`);
+                }
+            }
+            // --- END DECRYPTION EXECUTION ---
 
             // 4. Restore
             log(`Starting database restore on ${sourceConfig.name}...`);

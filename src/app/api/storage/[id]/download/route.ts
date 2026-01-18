@@ -28,6 +28,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
 
         const { searchParams } = new URL(req.url);
         const file = searchParams.get("file");
+        const decrypt = searchParams.get("decrypt") === "true";
 
         if (!file) {
              return NextResponse.json({ error: "Missing file param" }, { status: 400 });
@@ -38,9 +39,9 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
         const tempName = `${path.basename(file)}_${Date.now()}`;
         tempFile = path.join(tempDir, tempName);
 
-        // Delegate logic to Service
+        // Delegate logic to Service with decrypt flag
         // Note: storageService handles config retrieval, decryption and adapter lookup
-        const success = await storageService.downloadFile(params.id, file, tempFile);
+        const success = await storageService.downloadFile(params.id, file, tempFile, decrypt);
 
         if (!success) {
              if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);

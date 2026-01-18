@@ -5,6 +5,7 @@ import { getUserPermissions } from "@/lib/access-control";
 import { PERMISSIONS } from "@/lib/permissions";
 import prisma from "@/lib/prisma";
 import { SystemSettingsForm } from "@/components/settings/system-settings-form";
+import { EncryptionProfilesList } from "@/components/settings/encryption-profiles-list";
 
 export default async function SettingsPage() {
     const headersList = await headers();
@@ -12,6 +13,7 @@ export default async function SettingsPage() {
         headers: headersList
     });
 
+    // ... check session ...
     if (!session) {
         redirect("/login");
     }
@@ -31,7 +33,13 @@ export default async function SettingsPage() {
                 <h2 className="text-3xl font-bold tracking-tight">System Settings</h2>
             </div>
 
-            <SystemSettingsForm initialMaxConcurrentJobs={maxConcurrentJobs} />
+            <div className="grid gap-6">
+                 {/* Connection / Environment Settings */}
+                <SystemSettingsForm initialMaxConcurrentJobs={maxConcurrentJobs} />
+
+                {/* Security Vault */}
+                <EncryptionProfilesList />
+            </div>
         </div>
     );
 }

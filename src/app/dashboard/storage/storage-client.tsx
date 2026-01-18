@@ -103,13 +103,16 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
         }
     };
 
-    const handleDownload = useCallback((file: FileInfo) => {
+    const handleDownload = useCallback((file: FileInfo, decrypt?: boolean) => {
         if (!canDownload) {
             toast.error("Permission denied");
             return;
         }
         // Trigger download via API
-        const url = `/api/storage/${selectedDestination}/download?file=${encodeURIComponent(file.path)}`;
+        let url = `/api/storage/${selectedDestination}/download?file=${encodeURIComponent(file.path)}`;
+        if (decrypt) {
+            url += "&decrypt=true";
+        }
         window.open(url, '_blank');
     }, [canDownload, selectedDestination]);
 

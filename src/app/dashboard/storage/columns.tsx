@@ -20,11 +20,13 @@ export type FileInfo = {
     sourceName?: string;
     sourceType?: string;
     dbInfo?: { count: string | number; label: string };
+    isEncrypted?: boolean;
+    encryptionProfileId?: string;
 };
 
 interface ColumnsProps {
     onRestore: (file: FileInfo) => void;
-    onDownload: (file: FileInfo) => void;
+    onDownload: (file: FileInfo, decrypt?: boolean) => void;
     onDelete: (file: FileInfo) => void;
     canDownload: boolean;
     canRestore: boolean;
@@ -49,6 +51,7 @@ export const createColumns = ({ onRestore, onDownload, onDelete, canDownload, ca
             <NameCell
                 name={row.getValue("name")}
                 path={row.original.path}
+                isEncrypted={row.original.isEncrypted}
             />
         )
     },

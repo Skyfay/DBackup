@@ -20,19 +20,31 @@ model AdapterConfig {
   jobsNotification Job[]    @relation("Notifications")
 }
 
+model EncryptionProfile {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  secretKey   String
+  jobs        Job[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 model Job {
-  id            String          @id @default(uuid())
-  name          String
-  schedule      String
-  enabled       Boolean         @default(true)
-  sourceId      String
-  destinationId String
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  executions    Execution[]
-  destination   AdapterConfig   @relation("Destination", fields: [destinationId], references: [id])
-  source        AdapterConfig   @relation("Source", fields: [sourceId], references: [id])
-  notifications AdapterConfig[] @relation("Notifications")
+  id                  String             @id @default(uuid())
+  name                String
+  schedule            String
+  enabled             Boolean            @default(true)
+  sourceId            String
+  destinationId       String
+  encryptionProfileId String?
+  encryptionProfile   EncryptionProfile? @relation(fields: [encryptionProfileId], references: [id])
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  executions          Execution[]
+  destination         AdapterConfig      @relation("Destination", fields: [destinationId], references: [id])
+  source              AdapterConfig      @relation("Source", fields: [sourceId], references: [id])
+  notifications       AdapterConfig[]    @relation("Notifications")
 }
 
 model Execution {

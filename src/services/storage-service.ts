@@ -2,12 +2,20 @@ import prisma from "@/lib/prisma";
 import { registry } from "@/lib/core/registry";
 import { StorageAdapter, FileInfo, BackupMetadata } from "@/lib/core/interfaces";
 import { decryptConfig } from "@/lib/crypto";
+import { pipeline } from "stream/promises";
+import { createReadStream, createWriteStream, promises as fs } from "fs";
+import { getProfileMasterKey } from "@/services/encryption-service";
+import { createDecryptionStream } from "@/lib/crypto-stream";
+import path from "path";
+import os from "os";
 
 export type RichFileInfo = FileInfo & {
     jobName?: string;
     sourceName?: string;
     sourceType?: string;
     dbInfo?: { count: string | number; label: string };
+    isEncrypted?: boolean;
+    encryptionProfileId?: string;
 };
 
 export class StorageService {
@@ -138,16 +146,24 @@ export class StorageService {
         return backups.map(file => {
              // 1. Check Sidecar Metadata (Primary Source of Truth)
              const sidecar = metadataMap.get(file.name);
+             let isEncrypted = file.name.endsWith('.enc');
+             let encryptionProfileId: string | undefined = undefined;
+
              if (sidecar) {
                  const count = typeof sidecar.databases === 'object' ? (sidecar.databases as any).count : (typeof sidecar.databases === 'number' ? sidecar.databases : 0);
                  const label = count === 0 ? "Unknown" : (count === 1 ? "Single DB" : `${count} DBs`);
+
+                 if (sidecar.encryption?.enabled) isEncrypted = true;
+                 encryptionProfileId = sidecar.encryption?.profileId;
 
                  return {
                      ...file,
                      jobName: sidecar.jobName,
                      sourceName: sidecar.sourceName,
                      sourceType: sidecar.sourceType,
-                     dbInfo: { count, label }
+                     dbInfo: { count, label },
+                     isEncrypted,
+                     encryptionProfileId
                  };
              }
 
@@ -244,7 +260,7 @@ export class StorageService {
     /**
      * Downloads a file from storage to a local path.
      */
-    async downloadFile(adapterConfigId: string, remotePath: string, localDestination: string): Promise<boolean> {
+    async downloadFile(adapterConfigId: string, remotePath: string, localDestination: string, decrypt: boolean = false): Promise<boolean> {
         const adapterConfig = await prisma.adapterConfig.findUnique({
            where: { id: adapterConfigId }
        });
@@ -269,7 +285,61 @@ export class StorageService {
            throw new Error(`Failed to decrypt configuration for ${adapterConfigId}: ${(e as Error).message}`);
        }
 
-       return await adapter.download(config, remotePath, localDestination);
+       // 1. Download basic file
+       const success = await adapter.download(config, remotePath, localDestination);
+       if (!success) return false;
+
+       // 2. Decrypt if requested
+       if (decrypt) {
+            const metaRemotePath = remotePath + ".meta.json";
+            const tempMetaPath = path.join(os.tmpdir(), "dlmeta_" + Date.now() + ".json");
+
+            try {
+                // Try to get metadata logic
+                let meta: any = null;
+
+                // If adapter supports read, use it (faster)
+                if (adapter.read) {
+                    const content = await adapter.read(config, metaRemotePath);
+                    if (content) meta = JSON.parse(content);
+                }
+                // Fallback to download
+                else {
+                     const metaSuccess = await adapter.download(config, metaRemotePath, tempMetaPath).catch(() => false);
+                     if (metaSuccess) {
+                         const content = await fs.readFile(tempMetaPath, 'utf-8');
+                         meta = JSON.parse(content);
+                         await fs.unlink(tempMetaPath).catch(() => {});
+                     }
+                }
+
+                if (meta && meta.encryption && meta.encryption.enabled) {
+                    const masterKey = await getProfileMasterKey(meta.encryption.profileId);
+                    const iv = Buffer.from(meta.encryption.iv, 'hex');
+                    const authTag = Buffer.from(meta.encryption.authTag, 'hex');
+
+                    const decryptStream = createDecryptionStream(masterKey, iv, authTag);
+                    const decryptedPath = localDestination + ".dec";
+
+                    // Decrypt to .dec file
+                    await pipeline(
+                        createReadStream(localDestination),
+                        decryptStream,
+                        createWriteStream(decryptedPath)
+                    );
+
+                    // Replace Original with Decrypted
+                    await fs.unlink(localDestination);
+                    await fs.rename(decryptedPath, localDestination);
+                }
+            } catch (e: any) {
+                console.error("Decryption during download failed:", e);
+                // Return failed state so API returns 500
+                throw new Error("Decryption failed: " + e.message);
+            }
+       }
+
+       return true;
     }
 }
 

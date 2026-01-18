@@ -17,6 +17,13 @@ export interface BackupMetadata {
     timestamp: string;
     originalFileName: string;
     sourceId: string;
+    encryption?: {
+        enabled: boolean;
+        profileId: string;
+        algorithm: 'aes-256-gcm';
+        iv: string;
+        authTag: string;
+    };
 }
 
 export interface BaseAdapter {

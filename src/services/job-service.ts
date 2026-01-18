@@ -7,6 +7,7 @@ export interface CreateJobInput {
     sourceId: string;
     destinationId: string;
     notificationIds?: string[];
+    encryptionProfileId?: string;
     enabled?: boolean;
 }
 
@@ -16,6 +17,7 @@ export interface UpdateJobInput {
     sourceId?: string;
     destinationId?: string;
     notificationIds?: string[];
+    encryptionProfileId?: string;
     enabled?: boolean;
 }
 
@@ -26,6 +28,7 @@ export class JobService {
                 source: true,
                 destination: true,
                 notifications: true,
+                encryptionProfile: { select: { id: true, name: true } }
             },
             orderBy: { createdAt: 'desc' }
         });
@@ -38,12 +41,13 @@ export class JobService {
                 source: true,
                 destination: true,
                 notifications: true,
+                encryptionProfile: true
             }
         });
     }
 
     async createJob(input: CreateJobInput) {
-        const { name, schedule, sourceId, destinationId, notificationIds, enabled } = input;
+        const { name, schedule, sourceId, destinationId, notificationIds, enabled, encryptionProfileId } = input;
 
         const newJob = await prisma.job.create({
             data: {
@@ -52,6 +56,7 @@ export class JobService {
                 sourceId,
                 destinationId,
                 enabled: enabled !== undefined ? enabled : true,
+                encryptionProfileId: encryptionProfileId || null,
                 notifications: {
                     connect: notificationIds?.map((id) => ({ id })) || []
                 }
@@ -70,7 +75,7 @@ export class JobService {
     }
 
     async updateJob(id: string, input: UpdateJobInput) {
-        const { name, schedule, sourceId, destinationId, notificationIds, enabled } = input;
+        const { name, schedule, sourceId, destinationId, notificationIds, enabled, encryptionProfileId } = input;
 
         const updatedJob = await prisma.job.update({
             where: { id },
@@ -80,6 +85,7 @@ export class JobService {
                 enabled,
                 sourceId,
                 destinationId,
+                encryptionProfileId: encryptionProfileId === "" ? null : encryptionProfileId,
                 notifications: {
                     set: [], // Clear existing relations
                     connect: notificationIds?.map((id) => ({ id })) || []

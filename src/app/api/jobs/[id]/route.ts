@@ -39,7 +39,7 @@ export async function PUT(
     const params = await props.params;
     try {
         const body = await req.json();
-        const { name, schedule, sourceId, destinationId, notificationIds, enabled } = body;
+        const { name, schedule, sourceId, destinationId, notificationIds, enabled, encryptionProfileId } = body;
 
         const updatedJob = await jobService.updateJob(params.id, {
             name,
@@ -47,7 +47,8 @@ export async function PUT(
             enabled,
             sourceId,
             destinationId,
-            notificationIds
+            notificationIds,
+            encryptionProfileId
         });
 
         return NextResponse.json(updatedJob);

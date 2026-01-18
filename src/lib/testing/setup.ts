@@ -1,4 +1,4 @@
-import { vi } from 'vitest';
+import { vi, beforeEach } from 'vitest';
 
 // Hier können wir globale Mocks definieren
 // z.B. window.matchMedia für UI Komponenten

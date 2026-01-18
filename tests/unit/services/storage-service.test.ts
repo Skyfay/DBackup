@@ -28,7 +28,7 @@ describe('StorageService', () => {
         it('should list files successfully given valid config', async () => {
             // Arrange
             const mockFiles: FileInfo[] = [
-                { name: 'backup.sql', path: '/backup.sql', size: 1024, type: 'file', updatedAt: new Date(), mimeType: 'text/plain' }
+                { name: 'backup.sql', path: '/backup.sql', size: 1024, lastModified: new Date() }
             ];
 
             const mockAdapterImplementation = {
@@ -109,8 +109,8 @@ describe('StorageService', () => {
          it('should return files with enriched metadata from sidecars', async () => {
             // Mock Data
              const mockFiles: FileInfo[] = [
-                { name: 'backup.sql', path: 'backup.sql', size: 1024, type: 'file', updatedAt: new Date(), mimeType: 'text/plain' },
-                { name: 'backup.sql.meta.json', path: 'backup.sql.meta.json', size: 100, type: 'file', updatedAt: new Date(), mimeType: 'application/json' }
+                { name: 'backup.sql', path: 'backup.sql', size: 1024, lastModified: new Date() },
+                { name: 'backup.sql.meta.json', path: 'backup.sql.meta.json', size: 100, lastModified: new Date() }
             ];
 
             const sidecarData = {

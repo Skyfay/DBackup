@@ -91,7 +91,7 @@ export class StorageService {
                         const originalName = metaFile.name.substring(0, metaFile.name.length - 10);
                         metadataMap.set(originalName, meta);
                     }
-                } catch (e) {
+                } catch {
                     // ignore read errors
                 }
             });

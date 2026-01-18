@@ -186,11 +186,14 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
                      }
                      if (meta.jobName) {
                          // Override the inferred job/source info with historical snapshot if available
+                         // Prefer adapterId (e.g. 'mysql') over generic type ('database')
+                         const realType = meta.adapterId || meta.sourceType;
+
                          return {
                              ...file,
                              jobName: meta.jobName,
                              sourceName: meta.sourceName,
-                             sourceType: meta.sourceType,
+                             sourceType: realType,
                              dbInfo
                          }
                      }

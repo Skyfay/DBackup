@@ -87,7 +87,12 @@ export interface StorageAdapter extends BaseAdapter {
     /**
      * Downloads a file from storage to local path
      */
-    download(config: any, remotePath: string, localPath: string): Promise<boolean>;
+    download(
+        config: any,
+        remotePath: string,
+        localPath: string,
+        onProgress?: (processed: number, total: number) => void
+    ): Promise<boolean>;
 
     /**
      * Reads the content of a file as a string

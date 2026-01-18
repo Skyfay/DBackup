@@ -101,7 +101,9 @@ function HistoryContent() {
         }
     };
 
-    const progress = selectedLog ? parseMetadata(selectedLog.metadata)?.progress : 0;
+    const metadata = selectedLog ? parseMetadata(selectedLog.metadata) : null;
+    const progress = metadata?.progress ?? 0;
+    const stage = metadata?.stage || "Restoring...";
 
     return (
         <div className="space-y-6">
@@ -129,10 +131,10 @@ function HistoryContent() {
                         </DialogDescription>
                     </DialogHeader>
 
-                     {selectedLog?.status === "Running" && typeof progress === 'number' && (
+                     {selectedLog?.status === "Running" && (
                         <div className="px-4 py-2 space-y-1 bg-secondary/20">
                             <div className="flex justify-between text-xs text-muted-foreground">
-                                <span>Restoring Database...</span>
+                                <span>{stage}</span>
                                 <span>{progress}%</span>
                             </div>
                             <Progress value={progress} className="h-2" />

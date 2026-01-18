@@ -33,7 +33,8 @@ export class RestoreService {
                 status: 'Running',
                 logs: JSON.stringify([`Starting restore for ${file}`]),
                 startedAt: new Date(),
-                path: file
+                path: file,
+                metadata: JSON.stringify({ progress: 0, stage: 'Initializing' })
             }
         });
         const executionId = execution.id;
@@ -54,15 +55,16 @@ export class RestoreService {
         let internalLogs: string[] = [`Starting restore for ${file}`];
         let lastLogUpdate = Date.now();
         let currentProgress = 0;
+        let currentStage = "Initializing";
 
         const flushLogs = async (force = false) => {
             const now = Date.now();
-            if (force || now - lastLogUpdate > 2000) { // Update every 2 seconds max
+            if (force || now - lastLogUpdate > 1000) { // Update every 1 second
                 await prisma.execution.update({
                     where: { id: executionId },
                     data: {
                         logs: JSON.stringify(internalLogs),
-                        metadata: JSON.stringify({ progress: currentProgress })
+                        metadata: JSON.stringify({ progress: currentProgress, stage: currentStage })
                     }
                 }).catch(() => {});
                 lastLogUpdate = now;
@@ -74,8 +76,9 @@ export class RestoreService {
             flushLogs(); // Throttled
         };
 
-        const updateProgress = (p: number) => {
+        const updateProgress = (p: number, stage?: string) => {
              currentProgress = p;
+             if (stage) currentStage = stage;
              flushLogs();
         };
 
@@ -114,7 +117,23 @@ export class RestoreService {
             tempFile = path.join(tempDir, path.basename(file));
 
             const sConf = decryptConfig(JSON.parse(storageConfig.config));
-            const downloadSuccess = await storageAdapter.download(sConf, file, tempFile);
+
+            // Format bytes helper
+            const formatSize = (bytes: number) => {
+                if (bytes === 0) return '0 B';
+                const k = 1024;
+                const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            };
+
+            updateProgress(0, "Downloading...");
+
+            const downloadSuccess = await storageAdapter.download(sConf, file, tempFile, (processed, total) => {
+                const percent = total > 0 ? Math.round((processed / total) * 100) : 0;
+                const stageText = `Downloading (${formatSize(processed)} / ${formatSize(total)})`;
+                updateProgress(percent, stageText);
+            });
 
             if (!downloadSuccess) {
                 throw new Error("Failed to download file from storage");
@@ -123,6 +142,8 @@ export class RestoreService {
 
             // 4. Restore
             log(`Starting database restore on ${sourceConfig.name}...`);
+            updateProgress(0, "Restoring Database...");
+
             const dbConf = decryptConfig(JSON.parse(sourceConfig.config));
 
             // Override database name if provided
@@ -143,7 +164,7 @@ export class RestoreService {
             const restoreResult = await sourceAdapter.restore(dbConf, tempFile, (msg) => {
                 log(msg); // Live logs from adapter
             }, (p) => {
-                updateProgress(p); // Progress updates
+                updateProgress(p, "Restoring Database..."); // Progress updates
             });
 
             if (!restoreResult.success) {

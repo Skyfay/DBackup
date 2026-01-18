@@ -2,7 +2,8 @@ import { StorageAdapter, FileInfo } from "@/lib/core/interfaces";
 import { LocalStorageSchema } from "@/lib/adapters/definitions";
 import fs from "fs/promises";
 import path from "path";
-import { existsSync, statSync } from "fs";
+import { existsSync, statSync, createReadStream, createWriteStream } from "fs";
+import { pipeline } from "stream/promises";
 
 export const LocalFileSystemAdapter: StorageAdapter = {
     id: "local-filesystem",
@@ -27,7 +28,12 @@ export const LocalFileSystemAdapter: StorageAdapter = {
         }
     },
 
-    async download(config: { basePath: string }, remotePath: string, localPath: string): Promise<boolean> {
+    async download(
+        config: { basePath: string },
+        remotePath: string,
+        localPath: string,
+        onProgress?: (processed: number, total: number) => void
+    ): Promise<boolean> {
         try {
             const sourcePath = path.join(config.basePath, remotePath);
 
@@ -41,7 +47,21 @@ export const LocalFileSystemAdapter: StorageAdapter = {
                 await fs.mkdir(localDir, { recursive: true });
             }
 
-            await fs.copyFile(sourcePath, localPath);
+            // Use streaming copy to track progress
+            const size = statSync(sourcePath).size;
+            let processed = 0;
+
+            const sourceStream = createReadStream(sourcePath);
+            const destStream = createWriteStream(localPath);
+
+            if (onProgress) {
+                sourceStream.on('data', (chunk) => {
+                    processed += chunk.length;
+                    onProgress(processed, size);
+                });
+            }
+
+            await pipeline(sourceStream, destStream);
             return true;
         } catch (error) {
             console.error("Local download failed:", error);

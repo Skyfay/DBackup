@@ -8,9 +8,9 @@ import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { toast } from "sonner"
-import { Loader2, Lock, Plus, Trash2, AlertTriangle, ShieldCheck } from "lucide-react"
+import { Loader2, Lock, Plus, Trash2, AlertTriangle, ShieldCheck, Key, Download, Copy, Eye, EyeOff } from "lucide-react"
 import { EncryptionProfile } from "@prisma/client"
-import { createEncryptionProfile, deleteEncryptionProfile, getEncryptionProfiles } from "@/app/actions/encryption"
+import { createEncryptionProfile, deleteEncryptionProfile, getEncryptionProfiles, revealMasterKey } from "@/app/actions/encryption"
 import { DateDisplay } from "@/components/utils/date-display"
 
 export function EncryptionProfilesList() {
@@ -26,6 +26,10 @@ export function EncryptionProfilesList() {
     // Delete Dialog State
     const [profileToDelete, setProfileToDelete] = useState<EncryptionProfile | null>(null)
     const [isDeleting, setIsDeleting] = useState(false)
+
+    // Reveal Key State
+    const [revealedKey, setRevealedKey] = useState<{ id: string, key: string } | null>(null)
+    const [isRevealing, setIsRevealing] = useState(false)
 
     const fetchProfiles = async () => {
         setLoading(true)
@@ -72,6 +76,294 @@ export function EncryptionProfilesList() {
         } else {
             toast.error(res.error || "Failed to delete profile")
         }
+    }
+
+    const handleRevealKey = async (id: string, name: string) => {
+        if (revealedKey?.id === id) {
+            setRevealedKey(null);
+            return;
+        }
+
+        setIsRevealing(true);
+        const res = await revealMasterKey(id);
+        setIsRevealing(false);
+
+        if (res.success && res.data) {
+            setRevealedKey({ id, key: res.data });
+        } else {
+            toast.error(res.error || "Failed to retrieve key");
+        }
+    }
+
+    const copyToClipboard = (text: string) => {
+        navigator.clipboard.writeText(text);
+        toast.success("Key copied to clipboard");
+    }
+
+    const downloadRecoveryKit = (profileName: string, key: string) => {
+        const readmeContent = `# Recovery Kit for Profile: ${profileName}
+generated at ${new Date().toISOString()}
+
+## ⚠️ WARNING
+Store this file securely! This key allows decrypting all backups created with this profile.
+
+## Master Key (Hex)
+${key}
+
+## How to Decrypt Manually
+You can decrypt your .enc backups using the provided 'decrypt_backup.js' script (requires Node.js).
+
+Usage:
+   node decrypt_backup.js <your-backup-file.enc> ${key}
+
+## Requirements
+- Node.js installed
+- The .meta.json file must be present next to the .enc file
+`;
+
+        const scriptContent = `const fs = require('fs');
+const crypto = require('crypto');
+const path = require('path');
+
+// Usage: node decrypt_backup.js <input_file.enc> <hex_key>
+// Or:    node decrypt_backup.js <input_file.enc> <hex_key> <output_file>
+
+const args = process.argv.slice(2);
+
+if (args.length < 2) {
+    console.error('Usage: node decrypt_backup.js <input_file.enc> <hex_key> [output_file]');
+    process.exit(1);
+}
+
+const inputFile = args[0];
+const hexKey = args[1];
+
+if (!fs.existsSync(inputFile)) {
+    console.error(\`Error: Input file '\${inputFile}' not found.\`);
+    process.exit(1);
+}
+
+const metaFile = inputFile + '.meta.json';
+if (!fs.existsSync(metaFile)) {
+    console.error(\`Error: Metadata file '\${metaFile}' not found.\`);
+    console.error('The decryption requires the IV and AuthTag stored in the .meta.json sidecar file.');
+    process.exit(1);
+}
+
+let outputFile = args[2];
+if (!outputFile) {
+    if (inputFile.endsWith('.enc')) {
+        outputFile = inputFile.substring(0, inputFile.length - 4);
+    } else {
+        outputFile = inputFile + '.dec';
+    }
+}
+
+try {
+    const metaContent = fs.readFileSync(metaFile, 'utf8');
+    const meta = JSON.parse(metaContent);
+
+    if (!meta.encryption || !meta.encryption.iv || !meta.encryption.authTag) {
+        console.error('Error: valid encryption metadata (iv, authTag) not found in .meta.json');
+        process.exit(1);
+    }
+
+    console.log('Starting decryption...');
+    const masterKey = Buffer.from(hexKey, 'hex');
+    const iv = Buffer.from(meta.encryption.iv, 'hex');
+    const authTag = Buffer.from(meta.encryption.authTag, 'hex');
+
+    const decipher = crypto.createDecipheriv('aes-256-gcm', masterKey, iv);
+    decipher.setAuthTag(authTag);
+
+    const input = fs.createReadStream(inputFile);
+    const output = fs.createWriteStream(outputFile);
+
+    input.pipe(decipher).pipe(output);
+
+    output.on('finish', () => {
+        console.log('Decryption successful! ✅');
+    });
+
+    decipher.on('error', (err) => {
+        console.error('Decryption failed! ❌');
+        console.error(err.message);
+        fs.unlink(outputFile, () => {});
+        process.exit(1);
+    });
+
+} catch (err) {
+    console.error('Unexpected error:', err.message);
+    process.exit(1);
+}
+`;
+
+        // Download README
+        const blob = new Blob([readmeContent], { type: 'text/markdown' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `RECOVERY_KIT_${profileName.replace(/\s+/g, '_')}.md`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        // Download Script
+        const scriptBlob = new Blob([scriptContent], { type: 'text/javascript' });
+        const scriptUrl = URL.createObjectURL(scriptBlob);
+        const sa = document.createElement('a');
+        sa.href = scriptUrl;
+        sa.download = 'decrypt_backup.js';
+        document.body.appendChild(sa);
+        sa.click();
+        document.body.removeChild(sa);
+        URL.revokeObjectURL(scriptUrl);
+    }
+
+    const handleRevealKey = async (id: string, name: string) => {
+        if (revealedKey?.id === id) {
+            setRevealedKey(null);
+            return;
+        }
+
+        setIsRevealing(true);
+        const res = await revealMasterKey(id);
+        setIsRevealing(false);
+
+        if (res.success && res.data) {
+            setRevealedKey({ id, key: res.data });
+        } else {
+            toast.error(res.error || "Failed to retrieve key");
+        }
+    }
+
+    const copyToClipboard = (text: string) => {
+        navigator.clipboard.writeText(text);
+        toast.success("Key copied to clipboard");
+    }
+
+    const downloadRecoveryKit = (profileName: string, key: string) => {
+        const readmeContent = `# Recovery Kit for Profile: ${profileName}
+generated at ${new Date().toISOString()}
+
+## ⚠️ WARNING
+Store this file securely! This key allows decrypting all backups created with this profile.
+
+## Master Key (Hex)
+${key}
+
+## How to Decrypt Manually
+You can decrypt your .enc backups using the provided 'decrypt_backup.js' script (requires Node.js).
+
+Usage:
+   node decrypt_backup.js <your-backup-file.enc> ${key}
+
+## Requirements
+- Node.js installed
+- The .meta.json file must be present next to the .enc file
+`;
+
+        const scriptContent = `const fs = require('fs');
+const crypto = require('crypto');
+const path = require('path');
+
+// Usage: node decrypt_backup.js <input_file.enc> <hex_key>
+// Or:    node decrypt_backup.js <input_file.enc> <hex_key> <output_file>
+
+const args = process.argv.slice(2);
+
+if (args.length < 2) {
+    console.error('Usage: node decrypt_backup.js <input_file.enc> <hex_key> [output_file]');
+    process.exit(1);
+}
+
+const inputFile = args[0];
+const hexKey = args[1];
+
+if (!fs.existsSync(inputFile)) {
+    console.error(\`Error: Input file '\${inputFile}' not found.\`);
+    process.exit(1);
+}
+
+const metaFile = inputFile + '.meta.json';
+if (!fs.existsSync(metaFile)) {
+    console.error(\`Error: Metadata file '\${metaFile}' not found.\`);
+    console.error('The decryption requires the IV and AuthTag stored in the .meta.json sidecar file.');
+    process.exit(1);
+}
+
+let outputFile = args[2];
+if (!outputFile) {
+    if (inputFile.endsWith('.enc')) {
+        outputFile = inputFile.substring(0, inputFile.length - 4);
+    } else {
+        outputFile = inputFile + '.dec';
+    }
+}
+
+try {
+    const metaContent = fs.readFileSync(metaFile, 'utf8');
+    const meta = JSON.parse(metaContent);
+
+    if (!meta.encryption || !meta.encryption.iv || !meta.encryption.authTag) {
+        console.error('Error: valid encryption metadata (iv, authTag) not found in .meta.json');
+        process.exit(1);
+    }
+
+    console.log('Starting decryption...');
+    const masterKey = Buffer.from(hexKey, 'hex');
+    const iv = Buffer.from(meta.encryption.iv, 'hex');
+    const authTag = Buffer.from(meta.encryption.authTag, 'hex');
+
+    const decipher = crypto.createDecipheriv('aes-256-gcm', masterKey, iv);
+    decipher.setAuthTag(authTag);
+
+    const input = fs.createReadStream(inputFile);
+    const output = fs.createWriteStream(outputFile);
+
+    input.pipe(decipher).pipe(output);
+
+    output.on('finish', () => {
+        console.log('Decryption successful! ✅');
+    });
+
+    decipher.on('error', (err) => {
+        console.error('Decryption failed! ❌');
+        console.error(err.message);
+        fs.unlink(outputFile, () => {});
+        process.exit(1);
+    });
+
+} catch (err) {
+    console.error('Unexpected error:', err.message);
+    process.exit(1);
+}
+`;
+
+        // We create a simple text file download for now, or just the README.
+        // Ideally we would zip it, but for simplicity let's just download the README with the key instructions.
+
+        const blob = new Blob([readmeContent], { type: 'text/markdown' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `RECOVERY_KIT_${profileName.replace(/\s+/g, '_')}.md`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        // Also download script
+        const scriptBlob = new Blob([scriptContent], { type: 'text/javascript' });
+        const scriptUrl = URL.createObjectURL(scriptBlob);
+        const sa = document.createElement('a');
+        sa.href = scriptUrl;
+        sa.download = 'decrypt_backup.js';
+        document.body.appendChild(sa);
+        sa.click();
+        document.body.removeChild(sa);
+        URL.revokeObjectURL(scriptUrl);
     }
 
     return (
@@ -148,31 +440,60 @@ export function EncryptionProfilesList() {
                             <TableHeader>
                                 <TableRow>
                                     <TableHead>Profile Name</TableHead>
-                                    <TableHead>Description</TableHead>
                                     <TableHead>Created</TableHead>
-                                    <TableHead className="w-[80px]"></TableHead>
+                                    <TableHead className="text-right">Actions</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {profiles.map((profile) => (
                                     <TableRow key={profile.id}>
-                                        <TableCell className="font-medium flex items-center gap-2">
-                                            <Lock className="h-3 w-3 text-muted-foreground" />
-                                            {profile.name}
+                                        <TableCell>
+                                            <div className="font-medium flex items-center gap-2">
+                                                <Key className="h-4 w-4 text-amber-500" />
+                                                {profile.name}
+                                            </div>
+                                            {profile.description && (
+                                                <div className="text-xs text-muted-foreground">{profile.description}</div>
+                                            )}
+                                            {revealedKey?.id === profile.id && (
+                                                <div className="mt-2 p-2 bg-muted rounded border border-amber-200 dark:border-amber-900/50 flex items-center justify-between gap-2 animate-in fade-in slide-in-from-top-1">
+                                                    <code className="text-[10px] break-all font-mono text-amber-700 dark:text-amber-400 select-all">
+                                                        {revealedKey.key}
+                                                    </code>
+                                                    <div className="flex shrink-0">
+                                                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(revealedKey.key)}>
+                                                            <Copy className="h-3 w-3" />
+                                                        </Button>
+                                                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => downloadRecoveryKit(profile.name, revealedKey.key)} title="Download Recovery Kit">
+                                                            <Download className="h-3 w-3" />
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </TableCell>
-                                        <TableCell>{profile.description || "-"}</TableCell>
                                         <TableCell>
                                             <DateDisplay date={profile.createdAt} />
                                         </TableCell>
-                                        <TableCell>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="text-destructive hover:text-destructive/90 hover:bg-destructive/10"
-                                                onClick={() => setProfileToDelete(profile)}
-                                            >
-                                                <Trash2 className="h-4 w-4" />
-                                            </Button>
+                                        <TableCell className="text-right">
+                                            <div className="flex justify-end gap-1">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    onClick={() => handleRevealKey(profile.id, profile.name)}
+                                                    className={revealedKey?.id === profile.id ? "text-amber-500 bg-amber-50 dark:bg-amber-950/20" : ""}
+                                                    title={revealedKey?.id === profile.id ? "Hide Key" : "Reveal Key"}
+                                                >
+                                                    {isRevealing && revealedKey?.id !== profile.id ? (
+                                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                                    ) : (
+                                                        revealedKey?.id === profile.id ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />
+                                                    )}
+                                                </Button>
+
+                                                <Button variant="ghost" size="icon" onClick={() => setProfileToDelete(profile)}>
+                                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                                </Button>
+                                            </div>
                                         </TableCell>
                                     </TableRow>
                                 ))}

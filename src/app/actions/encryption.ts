@@ -35,6 +35,28 @@ export async function getEncryptionProfiles() {
 }
 
 /**
+ * Revels the decrypted master key for a profile.
+ * Requires SETTINGS:WRITE permission (highly sensitive).
+ */
+export async function revealMasterKey(id: string) {
+    const headersList = await headers();
+    const session = await auth.api.getSession({ headers: headersList });
+    if (!session) return { success: false, error: "Unauthorized" };
+
+    const permissions = await getUserPermissions();
+    if (!permissions.includes(PERMISSIONS.SETTINGS.WRITE)) {
+        return { success: false, error: "Insufficient permissions" };
+    }
+
+    try {
+        const key = await encryptionService.getDecryptedMasterKey(id);
+        return { success: true, data: key };
+    } catch (e: any) {
+        return { success: false, error: e.message };
+    }
+}
+
+/**
  * Creates a new encryption profile.
  * Requires SETTINGS:WRITE permission.
  */

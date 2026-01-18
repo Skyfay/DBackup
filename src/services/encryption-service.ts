@@ -43,6 +43,22 @@ export async function getEncryptionProfile(id: string) {
 }
 
 /**
+ * Returns the decrypted master key (hex string) for a specific profile.
+ * SECURITY: Only use this when strictly necessary (e.g. performing backup/restore or explicit export).
+ */
+export async function getDecryptedMasterKey(id: string): Promise<string> {
+    const profile = await prisma.encryptionProfile.findUnique({
+        where: { id }
+    });
+
+    if (!profile) {
+        throw new Error(`Encryption profile ${id} not found`);
+    }
+
+    return decrypt(profile.secretKey);
+}
+
+/**
  * Deletes an encryption profile.
  * WARNING: This will render all backups using this profile permanently unreadable.
  */

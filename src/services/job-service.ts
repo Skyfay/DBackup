@@ -8,6 +8,7 @@ export interface CreateJobInput {
     destinationId: string;
     notificationIds?: string[];
     encryptionProfileId?: string;
+    compression?: string;
     enabled?: boolean;
 }
 
@@ -18,6 +19,7 @@ export interface UpdateJobInput {
     destinationId?: string;
     notificationIds?: string[];
     encryptionProfileId?: string;
+    compression?: string;
     enabled?: boolean;
 }
 
@@ -47,7 +49,7 @@ export class JobService {
     }
 
     async createJob(input: CreateJobInput) {
-        const { name, schedule, sourceId, destinationId, notificationIds, enabled, encryptionProfileId } = input;
+        const { name, schedule, sourceId, destinationId, notificationIds, enabled, encryptionProfileId, compression } = input;
 
         const newJob = await prisma.job.create({
             data: {
@@ -57,6 +59,7 @@ export class JobService {
                 destinationId,
                 enabled: enabled !== undefined ? enabled : true,
                 encryptionProfileId: encryptionProfileId || null,
+                compression: compression || "NONE",
                 notifications: {
                     connect: notificationIds?.map((id) => ({ id })) || []
                 }
@@ -75,7 +78,7 @@ export class JobService {
     }
 
     async updateJob(id: string, input: UpdateJobInput) {
-        const { name, schedule, sourceId, destinationId, notificationIds, enabled, encryptionProfileId } = input;
+        const { name, schedule, sourceId, destinationId, notificationIds, enabled, encryptionProfileId, compression } = input;
 
         const updatedJob = await prisma.job.update({
             where: { id },
@@ -85,6 +88,7 @@ export class JobService {
                 enabled,
                 sourceId,
                 destinationId,
+                compression,
                 encryptionProfileId: encryptionProfileId === "" ? null : encryptionProfileId,
                 notifications: {
                     set: [], // Clear existing relations

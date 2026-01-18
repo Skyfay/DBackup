@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
         await checkPermission(PERMISSIONS.JOBS.WRITE);
 
         const body = await req.json();
-        const { name, schedule, sourceId, destinationId, notificationIds, enabled, encryptionProfileId } = body;
+        const { name, schedule, sourceId, destinationId, notificationIds, enabled, encryptionProfileId, compression } = body;
 
 
         if (!name || !schedule || !sourceId || !destinationId) {
@@ -51,7 +51,8 @@ export async function POST(req: NextRequest) {
             destinationId,
             notificationIds,
             enabled,
-            encryptionProfileId // Pass to service
+            encryptionProfileId,
+            compression
         });
 
         return NextResponse.json(newJob, { status: 201 });

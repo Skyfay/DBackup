@@ -149,6 +149,7 @@ export class StorageService {
              const sidecar = metadataMap.get(file.name);
              let isEncrypted = file.name.endsWith('.enc');
              let encryptionProfileId: string | undefined = undefined;
+             let compression: string | undefined = undefined;
 
              if (sidecar) {
                  const count = typeof sidecar.databases === 'object' ? (sidecar.databases as any).count : (typeof sidecar.databases === 'number' ? sidecar.databases : 0);
@@ -156,6 +157,7 @@ export class StorageService {
 
                  if (sidecar.encryption?.enabled) isEncrypted = true;
                  encryptionProfileId = sidecar.encryption?.profileId;
+                 compression = sidecar.compression;
 
                  return {
                      ...file,
@@ -164,9 +166,14 @@ export class StorageService {
                      sourceType: sidecar.sourceType,
                      dbInfo: { count, label },
                      isEncrypted,
-                     encryptionProfileId
+                     encryptionProfileId,
+                     compression
                  };
              }
+
+             // Check for compression by extension if not found in sidecar
+             if (file.name.endsWith('.gz')) compression = 'GZIP';
+             else if (file.name.endsWith('.br')) compression = 'BROTLI';
 
              // 2. Fallback to Execution History / Regex Logic
              let potentialJobName = null;
@@ -199,7 +206,10 @@ export class StorageService {
                              jobName: meta.jobName,
                              sourceName: meta.sourceName,
                              sourceType: realType,
-                             dbInfo
+                             dbInfo,
+                             isEncrypted,
+                             encryptionProfileId,
+                             compression
                          }
                      }
                  } catch {}
@@ -212,7 +222,10 @@ export class StorageService {
                      jobName: job.name,
                      sourceName: job.source.name,
                      sourceType: job.source.type, // e.g. 'database'
-                     dbInfo
+                     dbInfo,
+                     isEncrypted,
+                     encryptionProfileId,
+                     compression
                  }
              }
 
@@ -222,7 +235,10 @@ export class StorageService {
                  jobName: potentialJobName || 'Unknown',
                  sourceName: 'Unknown',
                  sourceType: 'unknown',
-                 dbInfo
+                 dbInfo,
+                 isEncrypted,
+                 encryptionProfileId,
+                 compression
              };
         });
     }

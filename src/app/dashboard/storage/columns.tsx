@@ -22,6 +22,7 @@ export type FileInfo = {
     dbInfo?: { count: string | number; label: string };
     isEncrypted?: boolean;
     encryptionProfileId?: string;
+    compression?: string;
 };
 
 interface ColumnsProps {
@@ -54,6 +55,15 @@ export const createColumns = ({ onRestore, onDownload, onDelete, canDownload, ca
                 isEncrypted={row.original.isEncrypted}
             />
         )
+    },
+    {
+        accessorKey: "compression",
+        header: "Comp",
+        cell: ({ row }) => {
+            const comp = row.original.compression;
+            if (!comp || comp === "NONE") return <span className="text-muted-foreground text-xs">-</span>;
+            return <Badge variant="outline" className="text-[10px] h-5 px-1.5 border-blue-200 text-blue-700 dark:text-blue-400 dark:border-blue-900">{comp}</Badge>;
+        }
     },
     {
         accessorKey: "sourceType",

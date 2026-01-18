@@ -18,6 +18,8 @@ export async function getEncryptionProfiles() {
 
     const permissions = await getUserPermissions();
     const hasAccess =
+        permissions.includes(PERMISSIONS.VAULT.READ) ||
+        permissions.includes(PERMISSIONS.VAULT.WRITE) ||
         permissions.includes(PERMISSIONS.SETTINGS.READ) ||
         permissions.includes(PERMISSIONS.JOBS.READ) ||
         permissions.includes(PERMISSIONS.JOBS.WRITE);
@@ -44,7 +46,8 @@ export async function revealMasterKey(id: string) {
     if (!session) return { success: false, error: "Unauthorized" };
 
     const permissions = await getUserPermissions();
-    if (!permissions.includes(PERMISSIONS.SETTINGS.WRITE)) {
+    // Revealing the key is a sensitive operation, effectively admin access to that key
+    if (!permissions.includes(PERMISSIONS.VAULT.WRITE) && !permissions.includes(PERMISSIONS.SETTINGS.WRITE)) {
         return { success: false, error: "Insufficient permissions" };
     }
 
@@ -66,12 +69,13 @@ export async function createEncryptionProfile(name: string, description?: string
     if (!session) return { success: false, error: "Unauthorized" };
 
     const permissions = await getUserPermissions();
-    if (!permissions.includes(PERMISSIONS.SETTINGS.WRITE)) {
+    if (!permissions.includes(PERMISSIONS.VAULT.WRITE) && !permissions.includes(PERMISSIONS.SETTINGS.WRITE)) {
         return { success: false, error: "Insufficient permissions" };
     }
 
     try {
         const profile = await encryptionService.createEncryptionProfile(name, description);
+        revalidatePath("/dashboard/vault");
         revalidatePath("/dashboard/settings");
         revalidatePath("/dashboard/jobs"); // Revalidate jobs usually where dropdowns are
         return { success: true, data: profile };
@@ -82,7 +86,7 @@ export async function createEncryptionProfile(name: string, description?: string
 
 /**
  * Deletes an encryption profile.
- * Requires SETTINGS:WRITE permission.
+ * Requires VAULT:WRITE or SETTINGS:WRITE permission.
  */
 export async function deleteEncryptionProfile(id: string) {
     const headersList = await headers();
@@ -90,7 +94,7 @@ export async function deleteEncryptionProfile(id: string) {
     if (!session) return { success: false, error: "Unauthorized" };
 
     const permissions = await getUserPermissions();
-    if (!permissions.includes(PERMISSIONS.SETTINGS.WRITE)) {
+    if (!permissions.includes(PERMISSIONS.VAULT.WRITE) && !permissions.includes(PERMISSIONS.SETTINGS.WRITE)) {
         return { success: false, error: "Insufficient permissions" };
     }
 
@@ -98,6 +102,8 @@ export async function deleteEncryptionProfile(id: string) {
         // Warning: This action is destructive and might brick backups.
         // The service does the deletion. Caller should warn user.
         await encryptionService.deleteEncryptionProfile(id);
+        revalidatePath("/dashboard/vault");
+        revalidatePath("/dashboard/settings");
         revalidatePath("/dashboard/settings");
         revalidatePath("/dashboard/jobs");
         return { success: true };

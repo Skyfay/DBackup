@@ -11,6 +11,7 @@ const PERMISSIONS = {
   STORAGE: { READ: "storage:read", DOWNLOAD: "storage:download", RESTORE: "storage:restore", DELETE: "storage:delete" },
   HISTORY: { READ: "history:read" },
   NOTIFICATIONS: { READ: "notifications:read", WRITE: "notifications:write" },
+  VAULT: { READ: "vault:read", WRITE: "vault:write" },
   PROFILE: { UPDATE_NAME: "profile:update_name", UPDATE_EMAIL: "profile:update_email", UPDATE_PASSWORD: "profile:update_password", MANAGE_2FA: "profile:manage_2fa", MANAGE_PASSKEYS: "profile:manage_passkeys" },
   SETTINGS: { READ: "settings:read", WRITE: "settings:write" }
 };

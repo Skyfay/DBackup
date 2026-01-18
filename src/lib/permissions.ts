@@ -34,6 +34,10 @@ export const PERMISSIONS = {
     READ: "notifications:read",
     WRITE: "notifications:write",
   },
+  VAULT: {
+    READ: "vault:read",
+    WRITE: "vault:write",
+  },
   PROFILE: {
     UPDATE_NAME: "profile:update_name",
     UPDATE_EMAIL: "profile:update_email",
@@ -66,6 +70,8 @@ export type Permission =
   | typeof PERMISSIONS.HISTORY.READ
   | typeof PERMISSIONS.NOTIFICATIONS.READ
   | typeof PERMISSIONS.NOTIFICATIONS.WRITE
+  | typeof PERMISSIONS.VAULT.READ
+  | typeof PERMISSIONS.VAULT.WRITE
   | typeof PERMISSIONS.PROFILE.UPDATE_NAME
   | typeof PERMISSIONS.PROFILE.UPDATE_EMAIL
   | typeof PERMISSIONS.PROFILE.UPDATE_PASSWORD
@@ -102,6 +108,10 @@ export const AVAILABLE_PERMISSIONS = [
   // Notifications
   { id: PERMISSIONS.NOTIFICATIONS.READ, label: "View Notifications", category: "Notifications" },
   { id: PERMISSIONS.NOTIFICATIONS.WRITE, label: "Manage Notifications", category: "Notifications" },
+
+  // Vault
+  { id: PERMISSIONS.VAULT.READ, label: "View Vault (Encryption Profiles)", category: "Vault" },
+  { id: PERMISSIONS.VAULT.WRITE, label: "Manage Vault (Create/Delete Keys)", category: "Vault" },
 
   // Profile & Security
   { id: PERMISSIONS.PROFILE.UPDATE_NAME, label: "Update Own Name", category: "Profile" },

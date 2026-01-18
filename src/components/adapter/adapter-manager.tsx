@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
 import { ADAPTER_DEFINITIONS, AdapterDefinition } from "@/lib/adapters/definitions";
+import { Skeleton } from "@/components/ui/skeleton";
 
 import { AdapterManagerProps, AdapterConfig } from "./types";
 import { AdapterCard } from "./adapter-card";
@@ -19,6 +20,7 @@ export function AdapterManager({ type, title, description, canManage = true }: A
     const [availableAdapters, setAvailableAdapters] = useState<AdapterDefinition[]>([]);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [deletingId, setDeletingId] = useState<string | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
         // Filter definitions by type
@@ -27,6 +29,7 @@ export function AdapterManager({ type, title, description, canManage = true }: A
     }, [type]);
 
     const fetchConfigs = async () => {
+        setIsLoading(true);
         try {
             const res = await fetch(`/api/adapters?type=${type}`);
             if (res.ok) {
@@ -38,6 +41,8 @@ export function AdapterManager({ type, title, description, canManage = true }: A
             }
         } catch (error) {
             toast.error("Failed to load configurations");
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -73,32 +78,57 @@ export function AdapterManager({ type, title, description, canManage = true }: A
                     <h2 className="text-3xl font-bold tracking-tight">{title}</h2>
                     <p className="text-muted-foreground">{description}</p>
                 </div>
-                {canManage && (
+                {canManage && !isLoading && (
                     <Button onClick={() => { setEditingId(null); setIsDialogOpen(true); }}>
                         <Plus className="mr-2 h-4 w-4" /> Add New
                     </Button>
                 )}
+                {canManage && isLoading && (
+                    <Skeleton className="h-10 w-28" />
+                )}
             </div>
 
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {configs.map((config) => (
-                    <AdapterCard
-                        key={config.id}
-                        config={config}
-                        definition={ADAPTER_DEFINITIONS.find(d => d.id === config.adapterId)!}
-                        onDelete={() => handleDelete(config.id)}
-                        onEdit={() => { setEditingId(config.id); setIsDialogOpen(true); }}
-                        canManage={canManage}
-                    />
-                ))}
-            </div>
-
-            {configs.length === 0 && (
-                 <div className="rounded-md border p-8 text-center text-muted-foreground bg-muted/10">
-                    {canManage
-                        ? (type === 'notification' ? 'No notifications found. Click "Add New" to get started.' : 'No configurations found. Click "Add New" to get started.')
-                        : 'No configurations found.'}
+            {isLoading ? (
+                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                    {[1, 2, 3].map((i) => (
+                        <div key={i} className="rounded-lg border bg-card text-card-foreground shadow-sm">
+                            <div className="p-6 flex flex-row items-start justify-between space-y-0 pb-2">
+                                <div className="space-y-2">
+                                    <Skeleton className="h-5 w-32" />
+                                    <Skeleton className="h-3 w-20" />
+                                </div>
+                                <Skeleton className="h-10 w-10 rounded-full" />
+                            </div>
+                            <div className="p-6 pt-0 mt-4 space-y-2">
+                                <Skeleton className="h-4 w-full" />
+                                <Skeleton className="h-4 w-2/3" />
+                            </div>
+                        </div>
+                    ))}
                 </div>
+            ) : (
+                <>
+                    <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                        {configs.map((config) => (
+                            <AdapterCard
+                                key={config.id}
+                                config={config}
+                                definition={ADAPTER_DEFINITIONS.find(d => d.id === config.adapterId)!}
+                                onDelete={() => handleDelete(config.id)}
+                                onEdit={() => { setEditingId(config.id); setIsDialogOpen(true); }}
+                                canManage={canManage}
+                            />
+                        ))}
+                    </div>
+
+                    {configs.length === 0 && (
+                        <div className="rounded-md border p-8 text-center text-muted-foreground bg-muted/10">
+                            {canManage
+                                ? (type === 'notification' ? 'No notifications found. Click "Add New" to get started.' : 'No configurations found. Click "Add New" to get started.')
+                                : 'No configurations found.'}
+                        </div>
+                    )}
+                </>
             )}
 
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

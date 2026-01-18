@@ -21,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { getEncryptionProfiles } from "@/app/actions/encryption";
+import { Skeleton } from "@/components/ui/skeleton";
 
 // Extended Job type for display (includes related entity names)
 interface Job extends JobData {
@@ -41,6 +42,7 @@ export function JobsClient({ canManage, canExecute }: JobsClientProps) {
     const [destinations, setDestinations] = useState<AdapterOption[]>([]);
     const [notificationChannels, setNotificationChannels] = useState<AdapterOption[]>([]);
     const [encryptionProfiles, setEncryptionProfiles] = useState<EncryptionOption[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
 
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editingJob, setEditingJob] = useState<JobData | null>(null);
@@ -80,8 +82,9 @@ export function JobsClient({ canManage, canExecute }: JobsClientProps) {
     useEffect(() => {
         // Wrap in IIFE or just call them, but ensure async pattern is clean
         const init = async () => {
-             await fetchJobs();
-             await fetchAdapters();
+             setIsLoading(true);
+             await Promise.all([fetchJobs(), fetchAdapters()]);
+             setIsLoading(false);
         };
         init();
     }, []);
@@ -119,6 +122,43 @@ export function JobsClient({ canManage, canExecute }: JobsClientProps) {
             }
         } catch { toast.error("Execution request failed"); }
     };
+
+
+    if (isLoading) {
+        return (
+            <div className="space-y-6">
+                <div className="flex justify-between items-center">
+                    <div>
+                        <h2 className="text-3xl font-bold tracking-tight">Backup Jobs</h2>
+                        <p className="text-muted-foreground">Manage and schedule automated backup tasks.</p>
+                    </div>
+                    {canManage && <Skeleton className="h-10 w-32" />}
+                </div>
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    {[1, 2, 3].map((i) => (
+                        <Card key={i} className="overflow-hidden">
+                            <CardHeader className="pb-2">
+                                <div className="flex justify-between items-start">
+                                    <div className="space-y-2">
+                                        <Skeleton className="h-5 w-32" />
+                                        <Skeleton className="h-3 w-24" />
+                                    </div>
+                                    <Skeleton className="h-8 w-16" />
+                                </div>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="space-y-3 pt-2">
+                                    <Skeleton className="h-4 w-full" />
+                                    <Skeleton className="h-4 w-full" />
+                                    <Skeleton className="h-4 w-2/3" />
+                                </div>
+                            </CardContent>
+                        </Card>
+                    ))}
+                </div>
+            </div>
+        )
+    }
 
     return (
         <div className="space-y-6">

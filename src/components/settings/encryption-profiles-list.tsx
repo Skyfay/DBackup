@@ -421,18 +421,19 @@ try {
                         </div>
 
                         <div className="pt-2">
-                            <Card className="bg-muted/50 border-amber-200 dark:border-amber-900/30">
-                                <CardContent className="p-4 flex flex-col gap-2">
-                                    <div className="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-500">
-                                        <Download className="h-4 w-4" />
-                                        Emergency Recovery Kit
+                            <Card className="bg-muted/50">
+                                <CardContent className="p-3 flex items-center justify-between gap-3">
+                                    <div className="flex flex-col gap-1">
+                                        <div className="flex items-center gap-2 font-medium text-sm">
+                                            <Download className="h-4 w-4" />
+                                            Recovery Kit
+                                        </div>
+                                        <p className="text-[10px] text-muted-foreground leading-tight">
+                                            Includes key & decryption script.
+                                        </p>
                                     </div>
-                                    <p className="text-xs text-muted-foreground mb-2">
-                                        Download a secure package containing this key and a standalone decryption script.
-                                        Keep this safe (e.g., on a USB drive).
-                                    </p>
                                     <Button
-                                        className="w-full"
+                                        className="shrink-0 h-8 text-xs"
                                         variant="outline"
                                         onClick={() =>
                                             profiles.find(p => p.id === revealedKey?.id) &&
@@ -440,7 +441,7 @@ try {
                                             downloadRecoveryKit(profiles.find(p => p.id === revealedKey?.id)!.name, revealedKey.key)
                                         }
                                     >
-                                        Download Kit (.zip)
+                                        Download .zip
                                     </Button>
                                 </CardContent>
                             </Card>

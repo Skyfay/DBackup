@@ -32,10 +32,11 @@ This document outlines the roadmap for refactoring database adapters to support 
     - Implement `MariaDBDialect` handling `--skip-ssl` instead of `--ssl-mode`.
 
 ### Phase 3: Version Detection & integration
-- [ ] **Step 5: Implement Version Detection**
-    - Update `test-connection` endpoint to run `SELECT VERSION()`.
-    - Store the detected version in the adapter config (e.g., `detectedVersion`, `engineVariant`).
-    - Display the detected version in the Adapter Form (e.g., a "Verified: MySQL 8.0.35" badge).
+- [x] **Step 5: Implement Version Detection**
+    - Update `test-connection` endpoint (via interfaces/adapter impl) to run `SELECT VERSION()`.
+    - `src/lib/core/interfaces.ts`: Updated `test` signature.
+    - `src/lib/adapters/database/mysql/connection.ts`: Implemented version fetching.
+
 - [ ] **Step 6: Wire Dialects into Runner**
     - Modify `dump.ts` and `restore.ts` to instantiate the correct dialect based on the config.
     - Replace hardcoded argument arrays with `dialect.getDumpArgs()`.

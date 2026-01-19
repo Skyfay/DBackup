@@ -24,21 +24,35 @@ export async function ensureDatabase(config: any, dbName: string, user: string, 
     }
 }
 
-export async function test(config: any): Promise<{ success: boolean; message: string }> {
+export async function test(config: any): Promise<{ success: boolean; message: string; version?: string }> {
     try {
-        // Force protocol=tcp to ensure we connect via network port (vital for Docker on localhost)
-        const args = ['ping', '-h', config.host, '-P', String(config.port), '-u', config.user, '--protocol=tcp', '--connect-timeout=5'];
+        // 1. Basic Ping Test
+        const pingArgs = ['ping', '-h', config.host, '-P', String(config.port), '-u', config.user, '--protocol=tcp', '--connect-timeout=5'];
 
         if (config.password) {
-            args.push(`-p${config.password}`);
+            pingArgs.push(`-p${config.password}`);
         }
 
         if (config.disableSsl) {
-            args.push('--skip-ssl');
+            pingArgs.push('--skip-ssl');
         }
 
-        await execFileAsync('mysqladmin', args);
-        return { success: true, message: "Connection successful" };
+        await execFileAsync('mysqladmin', pingArgs);
+
+        // 2. Version Check (if ping successful)
+        const versionArgs = ['-h', config.host, '-P', String(config.port), '-u', config.user, '--protocol=tcp', '-N', '-s', '-e', 'SELECT VERSION()'];
+
+        if (config.password) {
+            versionArgs.push(`-p${config.password}`);
+        }
+        if (config.disableSsl) {
+            versionArgs.push('--skip-ssl');
+        }
+
+        const { stdout } = await execFileAsync('mysql', versionArgs);
+        const version = stdout.trim();
+
+        return { success: true, message: "Connection successful", version };
     } catch (error: any) {
         return { success: false, message: "Connection failed: " + (error.stderr || error.message) };
     }

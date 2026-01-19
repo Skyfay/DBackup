@@ -322,7 +322,7 @@ export class RestoreService {
 
             if (!restoreResult.success) {
                 // Final update
-                internalLogs = restoreResult.logs; // Sync final logs
+                // internalLogs.push(...restoreResult.logs); // logs are live streamed via callback, no need to append or replace
                 await prisma.execution.update({
                     where: { id: executionId },
                     data: {
@@ -332,7 +332,7 @@ export class RestoreService {
                     }
                 });
             } else {
-                internalLogs = restoreResult.logs;
+                // internalLogs.push(...restoreResult.logs);
                 log(`Restore completed successfully.`);
                 await prisma.execution.update({
                     where: { id: executionId },

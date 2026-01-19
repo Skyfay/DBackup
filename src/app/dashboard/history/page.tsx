@@ -161,13 +161,13 @@ function HistoryContent() {
                         </div>
                     )}
 
-                    <ScrollArea className="flex-1 w-full rounded-md border p-4 bg-muted font-mono text-xs">
+                    <div className="flex-1 w-full rounded-md border p-4 bg-muted font-mono text-xs overflow-y-auto">
                         {selectedLog && parseLogs(selectedLog.logs).map((line: string, i: number) => (
                             <div key={i} className="mb-1 border-b border-border/50 pb-0.5 last:border-0 whitespace-pre-wrap break-all">
                                 {line}
                             </div>
                         ))}
-                    </ScrollArea>
+                    </div>
                 </DialogContent>
             </Dialog>
         </div>

@@ -1,6 +1,10 @@
 import { MySQLBaseDialect } from "./mysql-base";
 
 export class MariaDBDialect extends MySQLBaseDialect {
+    supportsVersion(version: string): boolean {
+        return version.toLowerCase().includes('mariadb') || parseFloat(version) >= 10.0;
+    }
+
     protected appendAuthArgs(args: string[], config: any) {
         // MariaDB tools prefer --skip-ssl over --ssl-mode
         if (config.disableSsl) {

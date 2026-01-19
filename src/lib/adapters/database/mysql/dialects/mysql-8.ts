@@ -1,6 +1,10 @@
 import { MySQLBaseDialect } from "./mysql-base";
 
 export class MySQL80Dialect extends MySQLBaseDialect {
+    supportsVersion(version: string): boolean {
+        return version.includes('8.0.') || parseFloat(version) >= 8.0;
+    }
+
     getDumpArgs(config: any, databases: string[]): string[] {
         const args = super.getDumpArgs(config, databases);
 

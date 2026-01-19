@@ -151,3 +151,11 @@
     - [ ] UI Polling/Socket to show progress bar to user
 - [ ] **Stress Testing**
     - [ ] Script to generate 1GB+ Dummy Data (Postgres/MySQL)
+
+## ✅ Refactoring & Quality Assurance
+- [x] **Codebase Security Audit**
+    - [x] Automated Permissions Check (ensure all Actions verify RBAC)
+    - [x] Secure sensitive Server Actions
+- [x] **Testing Infrastructure**
+    - [x] Modernize Adapter Tests (Switch to Dialect-based testing)
+    - [x] Verify supported database versions

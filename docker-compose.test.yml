@@ -4,7 +4,7 @@ services:
   # MySQL Test Database
   mysql-test:
     image: mysql:8.0
-    container_name: backup-manager-test-mysql
+    container_name: mysql-test
     environment:
       MYSQL_ROOT_PASSWORD: rootpassword
       MYSQL_DATABASE: testdb
@@ -13,12 +13,12 @@ services:
     ports:
       - "3306:3306"
     volumes:
-      - mysql_data:/var/lib/mysql
+      - mysql-test:/var/lib/mysql
 
   # PostgreSQL Test Database
   postgres-test:
     image: postgres:15
-    container_name: backup-manager-test-postgres
+    container_name: postgres-test
     environment:
       POSTGRES_DB: testdb
       POSTGRES_USER: testuser
@@ -26,12 +26,12 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres-test:/var/lib/postgresql/data
 
   # MongoDB Test Database
   mongo-test:
     image: mongo:6.0
-    container_name: backup-manager-test-mongo
+    container_name: mongo-test
     environment:
       MONGO_INITDB_ROOT_USERNAME: root
       MONGO_INITDB_ROOT_PASSWORD: rootpassword
@@ -39,10 +39,10 @@ services:
     ports:
       - "27017:27017"
     volumes:
-      - mongo_data:/data/db
+      - mongo-test:/data/db
       - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
 
 volumes:
-  mysql_data:
-  postgres_data:
-  mongo_data:
+  mysql-test:
+  postgres-test:
+  mongo-test:

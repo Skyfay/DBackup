@@ -62,8 +62,6 @@ export async function dump(config: any, destinationPath: string, onLog?: (msg: s
         return {
             success: true,
             path: destinationPath,
-// ...existing code...
-            path: destinationPath,
             size: stats.size,
             logs,
             startedAt,

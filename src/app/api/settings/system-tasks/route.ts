@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
         headers: await headers()
     });
     if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    await checkPermission(PERMISSIONS.SETTINGS.UPDATE);
+    await checkPermission(PERMISSIONS.SETTINGS.WRITE);
 
     const body = await req.json();
     const { taskId, schedule } = body;
@@ -56,7 +56,7 @@ export async function PUT(req: NextRequest) {
         headers: await headers()
     });
     if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    await checkPermission(PERMISSIONS.SETTINGS.UPDATE);
+    await checkPermission(PERMISSIONS.SETTINGS.WRITE);
 
     const body = await req.json();
     const { taskId } = body;

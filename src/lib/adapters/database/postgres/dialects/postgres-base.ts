@@ -1,6 +1,10 @@
 import { DatabaseDialect } from "../../common/dialect";
 
 export class PostgresBaseDialect implements DatabaseDialect {
+    supportsVersion(version: string): boolean {
+        return true;
+    }
+
     getDumpArgs(config: any, databases: string[]): string[] {
         const args: string[] = [
             '-h', config.host,

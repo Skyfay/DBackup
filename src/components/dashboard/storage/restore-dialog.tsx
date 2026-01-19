@@ -291,8 +291,7 @@ export function RestoreDialog({ file, open, onOpenChange, destinationId, sources
                                     <Table>
                                         <TableHeader className="bg-muted/50">
                                             <TableRow className="hover:bg-transparent border-b text-xs uppercase tracking-wider">
-                                                <TableHead className="w-[30px]"></TableHead>
-                                                <TableHead>Source DB</TableHead>
+                                                <TableHead colSpan={2}>Source DB</TableHead>
                                                 <TableHead className="w-[30px]"></TableHead>
                                                 <TableHead>Target DB Name</TableHead>
                                             </TableRow>

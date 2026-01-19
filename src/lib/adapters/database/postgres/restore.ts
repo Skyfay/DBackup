@@ -3,7 +3,7 @@ import { execFileAsync } from "./connection";
 import { getDialect } from "./dialects";
 import { spawn } from "child_process";
 import { createReadStream } from "fs";
-import { Transform } from "stream";
+import { Transform, TransformCallback } from "stream";
 import fs from "fs/promises";
 import { waitForProcess } from "@/lib/adapters/process";
 
@@ -117,40 +117,13 @@ export async function restore(config: any, sourcePath: string, onLog?: (msg: str
 
                 const transformer = new Transform({
                     objectMode: true, // We process lines? No, we process chunks but parse lines.
-                    // Wait, text processing on buffer chunks is hard.
-                    // The original code probably used a line reader or buffer splitter.
-                    // I need to be careful NOT to destroy the existing complex logic below this block.
-                    // I will just replace the top part and keep the transformer logic as is (via "oldString" context).
-                    // THIS IS RISKY with replace_string_in_file for large blocks.
-                    // I will trust the file read logic.
-                });
-                // ... transformer logic ...
-            });
-            // To ensure I don't break the complex Transformer logic, I will restart the edit and include the transformer.
-        } else {
-             // Simple Restore (Single DB or Full Cluster Dump being restored as is)
-             let targetDb = config.database;
-             // If user specified a database in "Restore to..." field (passed via config override in restore-service)
-             // we use it. If not, default to 'postgres' if config.database is array or missing?
-             if (Array.isArray(targetDb) || !targetDb) targetDb = 'postgres';
-
-             const args = dialect.getRestoreArgs(config, targetDb);
-
-             log(`Executing restore to: psql ${args.join(' ')}`);
-
-             // ... spawn logic ...
-        }
-
-        // I will stop here and use the Edit block carefully.
-    } catch(e) { throw e; } // stub
-}
-
                     decodeStrings: false,
-                    transform(chunk: string | Buffer, encoding, callback) {
+                    transform(chunk: string | Buffer, encoding: BufferEncoding, callback: TransformCallback) {
                         const lines = chunk.toString().split('\n');
                         const output: string[] = [];
 
                         for (const line of lines) {
+
                             // Detect Context Switches
                             // Check CREATE DATABASE
                             const createMatch = line.match(/^CREATE DATABASE "?([^";\s]+)"? /i);

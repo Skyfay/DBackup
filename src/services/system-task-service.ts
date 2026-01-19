@@ -56,16 +56,27 @@ export class SystemTaskService {
         for (const source of sources) {
             try {
                 const adapter = registry.get(source.adapterId) as DatabaseAdapter;
-                if (!adapter || !adapter.test) continue;
+                if (!adapter) {
+                    console.warn(`[SystemTask] Adapter implementation not found: ${source.adapterId}`);
+                    continue;
+                }
+                if (!adapter.test) {
+                    console.log(`[SystemTask] Adapter ${source.adapterId} does not support test/version check.`);
+                    continue;
+                }
 
                 // Decrypt config
                 let config;
                 try {
                     config = decryptConfig(JSON.parse(source.config));
-                } catch { continue; }
+                } catch(e: any) {
+                    console.error(`[SystemTask] Config decrypt failed for ${source.name}: ${e.message}`);
+                    continue;
+                }
 
-                // Test Connection
+                console.log(`[SystemTask] Testing connection for ${source.name} (${source.adapterId})...`);
                 const result = await adapter.test(config);
+                console.log(`[SystemTask] Result for ${source.name}: success=${result.success} version=${result.version}`);
 
                 if (result.success && result.version) {
                     // Update Metadata
@@ -97,7 +108,7 @@ export class SystemTaskService {
                 }
 
             } catch (e: any) {
-                console.error(`[SystemTask] Failed check for ${source.name}:`, e.message);
+                console.error(`[SystemTask] Failed check for ${source.name}:`, e);
             }
         }
     }

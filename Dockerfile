@@ -10,7 +10,8 @@ RUN apk add --no-cache \
     postgresql-client \
     mongodb-tools \
     openssl \
-    zip
+    zip \
+    su-exec
 
 # 1. Install Dependencies
 FROM base AS deps
@@ -61,12 +62,12 @@ RUN mkdir -p /backups /app/storage/avatars /app/db && \
 # Install Prisma globally to run migrations at startup
 RUN npm install -g prisma@5
 
-USER nextjs
+# User nextjs removed to allow permission fix at runtime
 
 EXPOSE 3000
 
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-# Run migrations before starting the app
-CMD ["/bin/sh", "-c", "prisma migrate deploy && node server.js"]
+# Fix permissions for volumes, then switch to nextjs user to run app
+CMD ["/bin/sh", "-c", "mkdir -p /app/db /app/storage /backups && chown -R nextjs:nodejs /app/db /app/storage /backups && su-exec nextjs:nodejs /bin/sh -c 'prisma migrate deploy && node server.js'"]

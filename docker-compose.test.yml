@@ -1,49 +1,99 @@
-version: '3.8'
-
 services:
-  # MySQL Test Database
-  mysql-test:
+  # --- MySQL Family ---
+
+  # MySQL 8.0 (Modern)
+  mysql-8:
     image: mysql:8.0
+    container_name: dbm-test-mysql-8
     command: --default-authentication-plugin=mysql_native_password
-    container_name: mysql-test
     environment:
       MYSQL_ROOT_PASSWORD: rootpassword
       MYSQL_DATABASE: testdb
-      MYSQL_USER: testuser
-      MYSQL_PASSWORD: testpassword
     ports:
-      - "3306:3306"
-    volumes:
-      - mysql-test:/var/lib/mysql
+      - "33308:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
 
-  # PostgreSQL Test Database
-  postgres-test:
-    image: postgres:15
-    container_name: postgres-test
+  # MySQL 5.7 (Legacy)
+  mysql-57:
+    image: mysql:5.7
+    platform: linux/amd64
+    container_name: dbm-test-mysql-57
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: testdb
+    ports:
+      - "33357:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  # MariaDB (Latest Stable)
+  mariadb:
+    image: mariadb:11
+    container_name: dbm-test-mariadb
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: testdb
+    ports:
+      - "33311:3306"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      timeout: 20s
+      retries: 10
+
+  # --- PostgreSQL Family ---
+
+  # Postgres 16 (Modern)
+  postgres-16:
+    image: postgres:16-alpine
+    container_name: dbm-test-pg-16
     environment:
       POSTGRES_DB: testdb
       POSTGRES_USER: testuser
       POSTGRES_PASSWORD: testpassword
     ports:
-      - "5432:5432"
-    volumes:
-      - postgres-test:/var/lib/postgresql/data
+      - "54416:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U testuser -d testdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
-  # MongoDB Test Database
-  mongo-test:
+  # Postgres 12 (Legacy)
+  postgres-12:
+    image: postgres:12-alpine
+    container_name: dbm-test-pg-12
+    environment:
+      POSTGRES_DB: testdb
+      POSTGRES_USER: testuser
+      POSTGRES_PASSWORD: testpassword
+    ports:
+      - "54412:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U testuser -d testdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # --- MongoDB ---
+
+  mongo-6:
     image: mongo:6.0
-    container_name: mongo-test
+    container_name: dbm-test-mongo-6
     environment:
       MONGO_INITDB_ROOT_USERNAME: root
       MONGO_INITDB_ROOT_PASSWORD: rootpassword
       MONGO_INITDB_DATABASE: testdb
     ports:
-      - "27017:27017"
+      - "27717:27017"
     volumes:
-      - mongo-test:/data/db
       - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
-
-volumes:
-  mysql-test:
-  postgres-test:
-  mongo-test:
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 10s
+      retries: 5

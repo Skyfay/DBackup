@@ -19,6 +19,7 @@ export type FileInfo = {
     jobName?: string;
     sourceName?: string;
     sourceType?: string;
+    engineVersion?: string;
     dbInfo?: { count: string | number; label: string };
     isEncrypted?: boolean;
     encryptionProfileId?: string;
@@ -102,6 +103,15 @@ export const createColumns = ({ onRestore, onDownload, onDelete, canDownload, ca
         filterFn: (row, id, value) => {
             return value.includes(row.getValue(id))
         },
+    },
+    {
+        accessorKey: "engineVersion",
+        header: "DB Version",
+        cell: ({ row }) => {
+            const v = row.original.engineVersion;
+            if (!v) return <span className="text-muted-foreground text-xs">-</span>;
+            return <Badge variant="secondary" className="text-[10px] h-5 px-1.5">{v}</Badge>;
+        }
     },
     {
         accessorKey: "compression",

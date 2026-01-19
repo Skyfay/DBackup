@@ -14,6 +14,7 @@ export type RichFileInfo = FileInfo & {
     jobName?: string;
     sourceName?: string;
     sourceType?: string;
+    engineVersion?: string;
     dbInfo?: { count: string | number; label: string };
     isEncrypted?: boolean;
     encryptionProfileId?: string;
@@ -164,6 +165,7 @@ export class StorageService {
                      jobName: sidecar.jobName,
                      sourceName: sidecar.sourceName,
                      sourceType: sidecar.sourceType,
+                     engineVersion: sidecar.engineVersion,
                      dbInfo: { count, label },
                      isEncrypted,
                      encryptionProfileId,

@@ -133,6 +133,7 @@ export async function stepUpload(ctx: RunnerContext) {
                 count: typeof ctx.metadata?.count === 'number' ? ctx.metadata.count : 0,
                 names: Array.isArray(ctx.metadata?.names) ? ctx.metadata.names : undefined
             },
+            engineVersion: ctx.metadata?.engineVersion,
             timestamp: new Date().toISOString(),
             originalFileName: path.basename(ctx.tempFile),
             compression: compressionMeta,

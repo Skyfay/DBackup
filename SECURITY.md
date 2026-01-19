@@ -1,48 +1,77 @@
-# Security Audit & Remediation Plan
+# Security Audit Report 2.0
 
-**Date:** January 15, 2026
-**Status:** Completed
+**Datum:** 24. Mai 2024
+**Status:** In Review
+**Auditor:** GitHub Copilot (DevSecOps)
 
-## Executive Summary
+## 1. Kritische Schwachstellen (High Risk)
 
-The security audit has been completed. Critical issues regarding RCE and API authentication have been resolved. The file upload system has been secured by moving storage outside of the public directory. Password exposure in process lists was identified in database adapters and remediation has been applied for Postgres and MySQL.
+### 1.1. Server-Side Request Forgery (SSRF) via DB Host
+**Ort:** Datenbank-Verbindungsaufbau (`checkConnection`, Backup Jobs)
+**Risiko:**
+Ein Benutzer kann als `host` interne IP-Adressen (z.B. `127.0.0.1`, `169.254.169.254` für Cloud-Metadaten) oder lokale Dienste angeben.
+Da der `mysqldump`/`pg_dump` Prozess vom Server ausgeführt wird, könnte ein Angreifer das Netzwerk scannen oder interne Dienste angreifen.
+**Empfehlung:**
+- Implementierung einer `Blocklist` für private IP-Ranges (RFC 1918), sofern nicht explizit erlaubt.
+- Docker Network Isolation: Der Container sollte nur Zugriff auf konfigurierte Bridges haben.
 
-## Identified Vulnerabilities
+### 1.2. Path Traversal bei Backup-Dateinamen
+**Ort:** `Dump`-Service & `Storage`-Service
+**Risiko:**
+Wenn der Benutzer den Namen eines Backups oder Jobs beeinflussen kann, besteht die Gefahr, dass Dateien außerhalb des erlaubten `storage/`-Verzeichnisses geschrieben werden.
+Beispiel Input: `../../../../etc/cron.d/malicious`
+**Empfehlung:**
+- Strenge Validierung aller Dateinamen mit `path.basename()`.
+- Verwendung eines festen `safeJoin`-Utilitys, das sicherstellt, dass der resultierende Pfad *innerhalb* des `ROOT_BACKUP_DIR` liegt.
 
-### 1. Unauthenticated API Routes (Critical)
-*   **Status:** **Fixed**
-*   **Verification:** All API routes (`/api/adapters`, `/api/jobs`, etc.) now implement `auth.api.getSession` checks.
-
-### 2. Remote Code Execution (RCE) Risk (Critical)
-*   **Status:** **Fixed**
-*   **Details:** Adapters now use `execFile` instead of `exec`, preventing shell command injection. Arguments are passed as arrays.
-
-### 3. Missing Global Middleware (Medium)
-*   **Status:** **Fixed**
-*   **Details:** Middleware protects `/dashboard` and `/api` routes (except auth).
-
-### 4. Public Uploads Isolation (Medium)
-*   **Status:** **Fixed**
-*   **Details:**  
-    - Uploads moved to `storage/avatars` (private directory).
-    - Served via `GET /api/avatar/[filename]` with:
-        - Authentication check.
-        - Path traversal protection (`path.basename`).
-        - Correct Content-Type headers.
-
-### 5. Sensitive Data Exposure in Process List (Medium)
-*   **Location:** MySQL and Postgres Adapters
-*   **Issue:** Database passwords were passed as command-line arguments to `mysqldump`/`mysql`. This allows any user on the system to see the password via `ps aux`.
-*   **Status:** **Fixed**
-*   **Remediation:**  
-    - **Postgres:** Uses `PGPASSWORD` environment variable.
-    - **MySQL:** Uses `MYSQL_PWD` environment variable.
-    - **MongoDB:** Passwords are currently passed via CLI. Due to `mongodump` limitations, this is a known risk. Access to the server shell implies high privilege already.
+### 1.3 Man-in-the-Middle (MitM) durch "Disable SSL"
+**Ort:** Neue MySQL/MariaDB Konfiguration
+**Risiko:**
+Die angefragte Funktion `disableSsl` erlaubt Verbindungen ohne Zertifikatsvalidierung.
+**Empfehlung:**
+- In der UI muss dies als **"Unsicher"** markiert werden (rotes Warnschild).
+- Im Code muss sichergestellt werden, dass dies *niemals* der Default ist.
 
 ---
 
-## Ongoing Security Measures
+## 2. Mittlere Risiken (Medium Risk)
 
-*   **Dependency Scanning:** Weekly checks for npm vulnerabilities.
-*   **Code Review:** All new adapters must use `execFile` and environment variables for secrets.
-*   **CSRF:** Next.js Server Actions and API session checks provide sufficient coverage.
+### 2.1. DoS durch "Zip Bomb" oder massive Logs
+**Ort:** Restore-Funktion & Log-Dateien
+**Risiko:**
+Das System lädt SQL-Dumps oder Zip-Dateien hoch. Eine speziell präparierte Datei ("Zip Bomb") kann beim Entpacken den Speicher (RAM) oder die Festplatte (Disk usage) sprengen und den Server zum Absturz bringen.
+**Empfehlung:**
+- Limits für Dateigrößen in Nginx/Next.js Config.
+- Stream-Verarbeitung statt Buffer im RAM (wird teilweise schon genutzt, muss aber für *alle* Adapter gelten).
+
+### 2.2. Privilege Escalation via Docker Socket
+**Ort:** `docker-compose.yml` (potenziell)
+**Risiko:**
+Falls die App in Zukunft Docker-Container steuern soll (z.B. um DBs zu stoppen) und der `/var/run/docker.sock` gemountet wird, ist das gleichbedeutend mit Root-Zugriff auf den Host.
+**Empfehlung:**
+- **Niemals** den Docker Socket mounten.
+- App-Container sollte als `USER node` (nicht root) laufen (siehe Dockerfile-Check).
+
+---
+
+## 3. Architektur-Review & Best Practices
+
+### 3.1. Authentication & Authorization (Better-Auth)
+**Status:** ✅ Solide
+- Die Trennung von `auth-client` und Server-Side `auth` ist korrekt.
+- Middleware prüft Session-Existenz.
+- **Zu prüfen:** Wird `checkPermission()` wirklich in *jeder* Server Action aufgerufen? (Automatischer Test empfohlen).
+
+### 3.2. Secret Management
+**Status:** ⚠️ Beobachtung
+- Passwörter werden nun via Environment-Variablen an Adapter übergeben (`MYSQL_PWD`). Das ist gut.
+- **Aber:** Bei MongoDB (`mongodump`) ist die Übergabe per CLI oft unumgänglich oder schwierig. Hier muss geprüft werden, ob die Prozess-Liste (`ps aux`) Passwörter leakt, während der Job läuft.
+
+---
+
+## 4. Action Plan (Sofortmaßnahmen)
+
+1.  **Code-Check Adapter:** Sicherstellen, dass Argumente für `execFile` strikt typisiert sind (keine String-Konkatenation).
+2.  **Path Sanitization Utility:** Erstellen einer zentralen Funktion `resolveSafePath(base, input)`, die überall genutzt wird, wo Dateien geschrieben/gelesen werden.
+3.  **Permissions Audit:** Ein Skript schreiben, das alle `actions/*.ts` Dateien scannt und warnt, wenn `checkPermission` fehlt.
+4.  **Network Policy:** Festlegen, ob der Docker-Container nach außen telefonieren darf (Egress Filtering).

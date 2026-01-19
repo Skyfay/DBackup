@@ -1,6 +1,9 @@
 import { BackupResult } from "@/lib/core/interfaces";
 import { execFileAsync } from "./connection";
+import { getDialect } from "./dialects";
 import fs from "fs/promises";
+import { createWriteStream } from "fs";
+import { spawn } from "child_process";
 
 export async function dump(config: any, destinationPath: string, onLog?: (msg: string) => void, onProgress?: (percentage: number) => void): Promise<BackupResult> {
     const startedAt = new Date();
@@ -17,57 +20,49 @@ export async function dump(config: any, destinationPath: string, onLog?: (msg: s
         else if(config.database && config.database.includes(',')) dbs = config.database.split(',');
         else if(config.database) dbs = [config.database];
 
-        const args: string[] = [
-            '-h', config.host,
-            '-P', String(config.port),
-            '-u', config.user,
-            '--protocol=tcp'
-        ];
-
-        if (config.disableSsl) {
-            args.push('--skip-ssl');
-        }
+        // --- DIALECT INTEGRATION ---
+        const dialect = getDialect(config.type === 'mariadb' ? 'mariadb' : 'mysql', config.detectedVersion);
+        const args = dialect.getDumpArgs(config, dbs);
 
         const env = { ...process.env };
         if (config.password) {
             env.MYSQL_PWD = config.password;
         }
 
-        if (config.options) {
-            const parts = config.options.match(/[^\s"']+|"([^"]*)"|'([^']*)'/g) || [];
-            for (const part of parts) {
-                if (part.startsWith('"') && part.endsWith('"')) {
-                    args.push(part.slice(1, -1));
-                } else if (part.startsWith("'") && part.endsWith("'")) {
-                    args.push(part.slice(1, -1));
-                } else {
-                    args.push(part);
-                }
-            }
-        }
+        log(`Starting dump with args: mysqldump ${args.join(' ').replace(config.password || '', '******')}`);
 
-        if (dbs.length > 1) {
-            args.push('--databases', ...dbs);
-        } else if (dbs.length === 1) {
-            args.push(dbs[0]);
-        }
+        // Use spawn for streaming output (Best Practice from Guide)
+        const dumpProcess = spawn('mysqldump', args, { env });
+        const writeStream = createWriteStream(destinationPath);
 
-        args.push(`--result-file=${destinationPath}`);
+        dumpProcess.stdout.pipe(writeStream);
 
-        // No password in args anymore
-        log(`Executing command: mysqldump ${args.join(' ')}`);
+        dumpProcess.stderr.on('data', (data) => {
+            log(`[mysqldump] ${data.toString()}`);
+        });
 
-        const { stdout, stderr } = await execFileAsync('mysqldump', args, { env });
+        await new Promise<void>((resolve, reject) => {
+            dumpProcess.on('close', (code) => {
+                if (code === 0) resolve();
+                else reject(new Error(`mysqldump exited with code ${code}`));
+            });
+            dumpProcess.on('error', (err) => reject(err));
+            writeStream.on('error', (err) => reject(err));
+        });
 
-        if (stderr) {
-            log(`stderr: ${stderr}`);
-        }
-
-        // Check file size
+        // Verify dump file size
         const stats = await fs.stat(destinationPath);
+        if (stats.size === 0) {
+            throw new Error("Dump file is empty. Check logs/permissions.");
+        }
+
+        const sizeMB = (stats.size / 1024 / 1024).toFixed(2);
+        log(`Dump finished successfully. Size: ${sizeMB} MB`);
 
         return {
             success: true,
+            path: destinationPath,
+// ...existing code...
             path: destinationPath,
             size: stats.size,
             logs,

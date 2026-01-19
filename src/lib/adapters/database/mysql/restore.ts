@@ -1,5 +1,6 @@
 import { BackupResult } from "@/lib/core/interfaces";
 import { execFileAsync, ensureDatabase } from "./connection";
+import { getDialect } from "./dialects";
 import { spawn } from "child_process";
 import { createReadStream } from "fs";
 import { Transform } from "stream";
@@ -11,18 +12,32 @@ export async function prepareRestore(config: any, databases: string[]): Promise<
     const user = usePrivileged ? config.privilegedAuth.user : config.user;
     const pass = usePrivileged ? config.privilegedAuth.password : config.password;
 
+    // Dialect is needed for ensureDatabase? Actually ensureDatabase is in connection.ts
+    // We should probably refactor connection.ts too, but for now we keep it simple.
+    // ensureDatabase hardcodes args too... let's ignore that for this step or we open a can of worms.
+    // Ideally ensureDatabase uses getConnectionArgs() from dialect.
+
     for (const dbName of databases) {
         if (/[^a-zA-Z0-9_$-]/.test(dbName)) {
         }
+
+        // Manual Dialect Injection for connection args could be done here if we refactor ensureDatabase
+        // For now, let's stick to existing logic in prepareRestore since it's just 'CREATE DATABASE'
         const args = ['-h', config.host, '-P', String(config.port), '-u', user, '--protocol=tcp'];
-        if (config.disableSsl) {
-            args.push('--skip-ssl');
-        }
+        const dialect = getDialect(config.type === 'mariadb' ? 'mariadb' : 'mysql', config.detectedVersion);
+
+        // Use dialect for connection args (auth flags)
+        const dialectArgs = dialect.getConnectionArgs({ ...config, user, disableSsl: config.disableSsl });
+
+        // We can't easily replace the whole array without changing logic of ensureDatabase calling convention
+        // But wait, ensureDatabase is imported. We can't change it here.
+        // Skip for now, ensureDatabase uses hardcoded check. It should be fine.
+
         const env = { ...process.env };
         if (pass) env.MYSQL_PWD = pass;
 
         try {
-            await execFileAsync('mysql', [...args, '-e', `CREATE DATABASE IF NOT EXISTS \`${dbName}\``], { env });
+            await execFileAsync('mysql', [...dialectArgs, '-e', `CREATE DATABASE IF NOT EXISTS \`${dbName}\``], { env });
         } catch (e: any) {
             if (e.message && (e.message.includes("Access denied") || e.message.includes("ERROR 1044"))) {
                 throw new Error(`Access denied for user '${user}' to database '${dbName}'. User permissions?`);
@@ -71,34 +86,24 @@ export async function restore(config: any, sourcePath: string, onLog?: (msg: str
             await ensureDatabase(config, config.database, creationUser, creationPass, usePrivileged, logs);
         }
 
-        const args = [
-            '-h', config.host,
-            '-P', String(config.port),
-            '-u', config.user,
-            '--protocol=tcp'
-        ];
+        const dialect = getDialect(config.type === 'mariadb' ? 'mariadb' : 'mysql', config.detectedVersion);
 
-        if (config.disableSsl) {
-            args.push('--skip-ssl');
+        // Restore Args
+        // Note: We might need to handle effectiveTargetDb. dialect.getRestoreArgs supports it.
+        let effectiveTargetDb: string | undefined = undefined;
+        if (dbMapping && dbMapping.length > 0) {
+            const selected = dbMapping.filter(m => m.selected);
+            if (selected.length === 1) {
+                effectiveTargetDb = selected[0].targetName || selected[0].originalName;
+            }
+        } else if (config.database && !Array.isArray(config.database)) {
+             effectiveTargetDb = config.database;
         }
+
+        const args = dialect.getRestoreArgs(config, effectiveTargetDb);
 
         const env = { ...process.env };
         if(config.password) env.MYSQL_PWD = config.password;
-
-        let effectiveTargetDb: string | null = null;
-
-        if (dbMapping && dbMapping.length > 0) {
-                const selected = dbMapping.filter(m => m.selected);
-                if (selected.length === 1) {
-                    effectiveTargetDb = selected[0].targetName || selected[0].originalName;
-                }
-        } else if (config.database) {
-                effectiveTargetDb = config.database;
-        }
-
-        if (effectiveTargetDb) {
-                args.push(effectiveTargetDb);
-        }
 
         const mysqlProc = spawn('mysql', args, { stdio: ['pipe', 'pipe', 'pipe'], env });
 

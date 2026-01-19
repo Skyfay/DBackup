@@ -24,6 +24,7 @@ import { FileInfo } from "@/app/dashboard/storage/columns";
 import { useRouter } from "next/navigation";
 import { formatBytes } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { DateDisplay } from "@/components/utils/date-display";
 
 interface AdapterConfig {
     id: string;
@@ -215,12 +216,12 @@ export function RestoreDialog({ file, open, onOpenChange, destinationId, sources
                     </div>
                     <div className="flex-1 space-y-1">
                         <p className="font-medium leading-none">{file.name}</p>
-                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
                             <span className="flex items-center gap-1">
                                 <HardDrive className="h-3 w-3" /> {formatBytes(file.size)}
                             </span>
-                            <span>
-                                {new Date(file.lastModified).toLocaleString()}
+                            <span className="flex items-center">
+                                <DateDisplay date={file.lastModified} className="text-xs" />
                             </span>
                             {file.sourceType && (
                                 <Badge variant="secondary" className="h-5 px-1.5 text-[10px] tracking-normal">
@@ -416,7 +417,7 @@ export function RestoreDialog({ file, open, onOpenChange, destinationId, sources
                 )}
 
 
-                <DialogFooter className="gap-2 sm:gap-0">
+                <DialogFooter>
                      {!restoreLogs && (
                          <>
                             <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>

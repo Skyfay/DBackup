@@ -24,6 +24,10 @@ export async function dump(config: any, destinationPath: string, onLog?: (msg: s
             '--protocol=tcp'
         ];
 
+        if (config.disableSsl) {
+            args.push('--skip-ssl');
+        }
+
         const env = { ...process.env };
         if (config.password) {
             env.MYSQL_PWD = config.password;

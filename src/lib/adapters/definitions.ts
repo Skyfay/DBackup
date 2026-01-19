@@ -14,6 +14,17 @@ export const MySQLSchema = z.object({
     password: z.string().optional(),
     database: z.union([z.string(), z.array(z.string())]).default(""),
     options: z.string().optional().describe("Additional mysqldump options"),
+    disableSsl: z.boolean().default(false).describe("Disable SSL (Use for self-signed development DBs)"),
+});
+
+export const MariaDBSchema = z.object({
+    host: z.string().default("localhost"),
+    port: z.coerce.number().default(3306),
+    user: z.string().min(1, "User is required"),
+    password: z.string().optional(),
+    database: z.union([z.string(), z.array(z.string())]).default(""),
+    options: z.string().optional().describe("Additional mariadb-dump options"),
+    disableSsl: z.boolean().default(false).describe("Disable SSL (Use for self-signed development DBs)"),
 });
 
 export const PostgresSchema = z.object({

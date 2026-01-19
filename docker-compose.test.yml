@@ -4,6 +4,7 @@ services:
   # MySQL Test Database
   mysql-test:
     image: mysql:8.0
+    command: --default-authentication-plugin=mysql_native_password
     container_name: mysql-test
     environment:
       MYSQL_ROOT_PASSWORD: rootpassword

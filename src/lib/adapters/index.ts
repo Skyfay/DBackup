@@ -1,5 +1,6 @@
 import { registry } from "@/lib/core/registry";
 import { MySQLAdapter } from "./database/mysql";
+import { MariaDBAdapter } from "./database/mariadb";
 import { PostgresAdapter } from "./database/postgres";
 import { MongoDBAdapter } from "./database/mongodb";
 import { LocalFileSystemAdapter } from "./storage/local";
@@ -13,6 +14,7 @@ export function registerAdapters() {
     if (initialized) return;
 
     registry.register(MySQLAdapter);
+    registry.register(MariaDBAdapter);
     registry.register(PostgresAdapter);
     registry.register(MongoDBAdapter);
 

@@ -15,6 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
 
 import { AdapterDefinition } from "@/lib/adapters/definitions";
@@ -95,7 +96,7 @@ export function AdapterForm({ type, adapters, onSuccess, initialData }: { type: 
                  toast.success(`Loaded ${newDbs.length} databases`);
                  setIsDbListOpen(true);
              } else {
-                 toast.error("Failed to list databases: " + (data.error || "Unknown"));
+                 toast.error("Failed to list databases: " + (data.message || data.error || "Unknown"));
              }
         } catch(e) {
             console.error(e);
@@ -312,7 +313,13 @@ export function AdapterForm({ type, adapters, onSuccess, initialData }: { type: 
                                  unwrappedShape = unwrappedShape._def.innerType;
                              }
 
-                             const label = key.charAt(0).toUpperCase() + key.slice(1);
+                             let label = key.charAt(0).toUpperCase() + key.slice(1);
+                             // Fix CamelCase to Space Case
+                             label = label.replace(/([A-Z])/g, ' $1').trim();
+                             // Specific fix for SSL
+                             if (key === 'disableSsl') label = "Disable SSL";
+                             if (key === 'uri') label = "URI";
+
                              const isBoolean = unwrappedShape instanceof z.ZodBoolean || unwrappedShape._def?.typeName === "ZodBoolean";
                              const isEnum = unwrappedShape instanceof z.ZodEnum || unwrappedShape._def?.typeName === "ZodEnum";
                              const isPassword = key.toLowerCase().includes("password") || key.toLowerCase().includes("secret");
@@ -352,11 +359,9 @@ export function AdapterForm({ type, adapters, onSuccess, initialData }: { type: 
                                             </div>
                                             <FormControl>
                                                 {isBoolean ? (
-                                                    <input
-                                                        type="checkbox"
+                                                    <Switch
                                                         checked={field.value}
-                                                        onChange={field.onChange}
-                                                        className="h-4 w-4"
+                                                        onCheckedChange={field.onChange}
                                                     />
                                                 ) : isDatabaseField ? (
                                                     <div className="flex gap-2">

@@ -15,6 +15,9 @@ export async function prepareRestore(config: any, databases: string[]): Promise<
         if (/[^a-zA-Z0-9_$-]/.test(dbName)) {
         }
         const args = ['-h', config.host, '-P', String(config.port), '-u', user, '--protocol=tcp'];
+        if (config.disableSsl) {
+            args.push('--skip-ssl');
+        }
         const env = { ...process.env };
         if (pass) env.MYSQL_PWD = pass;
 
@@ -74,6 +77,11 @@ export async function restore(config: any, sourcePath: string, onLog?: (msg: str
             '-u', config.user,
             '--protocol=tcp'
         ];
+
+        if (config.disableSsl) {
+            args.push('--skip-ssl');
+        }
+
         const env = { ...process.env };
         if(config.password) env.MYSQL_PWD = config.password;
 

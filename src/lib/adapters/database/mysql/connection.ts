@@ -5,6 +5,9 @@ export const execFileAsync = util.promisify(execFile);
 
 export async function ensureDatabase(config: any, dbName: string, user: string, pass: string | undefined, privileged: boolean, logs: string[]) {
     const args = ['-h', config.host, '-P', String(config.port), '-u', user, '--protocol=tcp'];
+    if (config.disableSsl) {
+        args.push('--skip-ssl');
+    }
     const env = { ...process.env };
     if (pass) env.MYSQL_PWD = pass;
 
@@ -26,8 +29,12 @@ export async function test(config: any): Promise<{ success: boolean; message: st
         // Force protocol=tcp to ensure we connect via network port (vital for Docker on localhost)
         const args = ['ping', '-h', config.host, '-P', String(config.port), '-u', config.user, '--protocol=tcp', '--connect-timeout=5'];
 
-            if (config.password) {
+        if (config.password) {
             args.push(`-p${config.password}`);
+        }
+
+        if (config.disableSsl) {
+            args.push('--skip-ssl');
         }
 
         await execFileAsync('mysqladmin', args);
@@ -39,6 +46,9 @@ export async function test(config: any): Promise<{ success: boolean; message: st
 
 export async function getDatabases(config: any): Promise<string[]> {
     const args = ['-h', config.host, '-P', String(config.port), '-u', config.user, '--protocol=tcp'];
+    if (config.disableSsl) {
+        args.push('--skip-ssl');
+    }
     if (config.password) {
         args.push(`-p${config.password}`);
     }

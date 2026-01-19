@@ -266,7 +266,7 @@ export function RestoreDialog({ file, open, onOpenChange, destinationId, sources
                                 </SelectContent>
                             </Select>
                             <p className="text-[0.8rem] text-muted-foreground">
-                                All data in the target database(s) will be overwritten.
+                                Existing databases with matching names will be overwritten. Rename targets below to restore as new databases.
                             </p>
                         </div>
 

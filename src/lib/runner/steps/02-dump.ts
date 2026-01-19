@@ -70,6 +70,18 @@ export async function stepExecuteDump(ctx: RunnerContext) {
             }
         }
 
+        // Fetch engine version
+        let engineVersion = 'unknown';
+        if (sourceAdapter.test) {
+            try {
+                const testRes = await sourceAdapter.test(sourceConfig);
+                if (testRes.success && testRes.version) {
+                    engineVersion = testRes.version;
+                    ctx.log(`Detected engine version: ${engineVersion}`);
+                }
+            } catch(e) { /* ignore */ }
+        }
+
         ctx.metadata = {
             label,
             count,
@@ -77,7 +89,8 @@ export async function stepExecuteDump(ctx: RunnerContext) {
             jobName: job.name,
             sourceName: job.source.name,
             sourceType: job.source.type,
-            adapterId: job.source.adapterId
+            adapterId: job.source.adapterId,
+            engineVersion
         };
 
         ctx.log(`Metadata calculated: ${label}`);

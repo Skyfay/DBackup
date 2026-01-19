@@ -13,6 +13,7 @@ export interface BackupMetadata {
     jobName: string;
     sourceName: string;
     sourceType: string;
+    engineVersion?: string;
     databases: string[] | { count: number; names?: string[] };
     timestamp: string;
     originalFileName: string;

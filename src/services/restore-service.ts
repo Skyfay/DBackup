@@ -179,6 +179,29 @@ export class RestoreService {
                         compressionMeta = metadata.compression;
                         log(`Detected ${compressionMeta} compression.`);
                     }
+
+                    // Version Check
+                    if (metadata.engineVersion) {
+                        const usageConfig = { ...decryptConfig(JSON.parse(sourceConfig.config)) };
+                         if (privilegedAuth) {
+                           usageConfig.privilegedAuth = privilegedAuth;
+                           // Some adapters might need user/pass merged to root
+                           if (privilegedAuth.user) usageConfig.user = privilegedAuth.user;
+                           if (privilegedAuth.password) usageConfig.password = privilegedAuth.password;
+                        }
+
+                        try {
+                            const test = await sourceAdapter.test?.(usageConfig);
+                            if (test?.success && test.version) {
+                                log(`Compatibility Check: Backup Version [${metadata.engineVersion}] vs Target [${test.version}]`);
+                                // Simple string comparison for major versions could be added here
+                                if (parseFloat(metadata.engineVersion) > parseFloat(test.version)) {
+                                    log(`WARNING: You are restoring a newer version backup (${metadata.engineVersion}) to an older database (${test.version}). This might fail.`);
+                                }
+                            }
+                        } catch(e) { /* ignore connection tests during restore init */ }
+                    }
+
                     await fs.promises.unlink(tempMetaPath).catch(() => {});
                 }
             } catch (e: any) {

@@ -1,22 +1,12 @@
-services:
-  # --- MySQL Family ---
+version: '3.8'
 
-  # MySQL 8.0 (Modern)
-  mysql-8:
-    image: mysql:8.0
-    container_name: dbm-test-mysql-8
-    command: --default-authentication-plugin=mysql_native_password
-    environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: testdb
-    ports:
-      - "33308:3306"
-    healthcheck:
-      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
-      timeout: 20s
-      retries: 10
+services:
+  # ==========================================
+  # MySQL Family
+  # ==========================================
 
   # MySQL 5.7 (Legacy)
+  # Platform: linux/amd64 required for Apple Silicon
   mysql-57:
     image: mysql:5.7
     platform: linux/amd64
@@ -31,10 +21,58 @@ services:
       timeout: 20s
       retries: 10
 
-  # MariaDB (Latest Stable)
-  mariadb:
-    image: mariadb:11
-    container_name: dbm-test-mariadb
+  # MySQL 8.0 (Current Standard)
+  mysql-8:
+    image: mysql:8.0
+    container_name: dbm-test-mysql-8
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: testdb
+    ports:
+      - "33380:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  # MySQL 9.1 (Innovation)
+  mysql-9:
+    image: mysql:9.1
+    container_name: dbm-test-mysql-9
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: testdb
+    ports:
+      - "33390:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  # ==========================================
+  # MariaDB Family
+  # ==========================================
+
+  # MariaDB 10 (Legacy Stable)
+  mariadb-10:
+    image: mariadb:10.11
+    container_name: dbm-test-mariadb-10
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: testdb
+    ports:
+      - "33310:3306"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      timeout: 20s
+      retries: 10
+
+  # MariaDB 11 (Current Stable)
+  mariadb-11:
+    image: mariadb:11.4
+    container_name: dbm-test-mariadb-11
     environment:
       MYSQL_ROOT_PASSWORD: rootpassword
       MYSQL_DATABASE: testdb
@@ -45,25 +83,11 @@ services:
       timeout: 20s
       retries: 10
 
-  # --- PostgreSQL Family ---
+  # ==========================================
+  # PostgreSQL Family
+  # ==========================================
 
-  # Postgres 16 (Modern)
-  postgres-16:
-    image: postgres:16-alpine
-    container_name: dbm-test-pg-16
-    environment:
-      POSTGRES_DB: testdb
-      POSTGRES_USER: testuser
-      POSTGRES_PASSWORD: testpassword
-    ports:
-      - "54416:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U testuser -d testdb"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  # Postgres 12 (Legacy)
+  # Postgres 12
   postgres-12:
     image: postgres:12-alpine
     container_name: dbm-test-pg-12
@@ -79,8 +103,128 @@ services:
       timeout: 5s
       retries: 5
 
-  # --- MongoDB ---
+  # Postgres 13
+  postgres-13:
+    image: postgres:13-alpine
+    container_name: dbm-test-pg-13
+    environment:
+      POSTGRES_DB: testdb
+      POSTGRES_USER: testuser
+      POSTGRES_PASSWORD: testpassword
+    ports:
+      - "54413:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U testuser -d testdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
+  # Postgres 14
+  postgres-14:
+    image: postgres:14-alpine
+    container_name: dbm-test-pg-14
+    environment:
+      POSTGRES_DB: testdb
+      POSTGRES_USER: testuser
+      POSTGRES_PASSWORD: testpassword
+    ports:
+      - "54414:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U testuser -d testdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Postgres 15
+  postgres-15:
+    image: postgres:15-alpine
+    container_name: dbm-test-pg-15
+    environment:
+      POSTGRES_DB: testdb
+      POSTGRES_USER: testuser
+      POSTGRES_PASSWORD: testpassword
+    ports:
+      - "54415:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U testuser -d testdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Postgres 16
+  postgres-16:
+    image: postgres:16-alpine
+    container_name: dbm-test-pg-16
+    environment:
+      POSTGRES_DB: testdb
+      POSTGRES_USER: testuser
+      POSTGRES_PASSWORD: testpassword
+    ports:
+      - "54416:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U testuser -d testdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Postgres 17 (Latest Stable)
+  postgres-17:
+    image: postgres:17-alpine
+    container_name: dbm-test-pg-17
+    environment:
+      POSTGRES_DB: testdb
+      POSTGRES_USER: testuser
+      POSTGRES_PASSWORD: testpassword
+    ports:
+      - "54417:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U testuser -d testdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================
+  # MongoDB Family
+  # ==========================================
+
+  # MongoDB 4.4 (Older Legacy)
+  mongo-4:
+    image: mongo:4.4
+    platform: linux/amd64
+    container_name: dbm-test-mongo-4
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: rootpassword
+      MONGO_INITDB_DATABASE: testdb
+    ports:
+      - "27704:27017"
+    volumes:
+      - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongo localhost:27017/test --quiet
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  # MongoDB 5.0
+  mongo-5:
+    image: mongo:5.0
+    container_name: dbm-test-mongo-5
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: rootpassword
+      MONGO_INITDB_DATABASE: testdb
+    ports:
+      - "27705:27017"
+    volumes:
+      - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  # MongoDB 6.0
   mongo-6:
     image: mongo:6.0
     container_name: dbm-test-mongo-6
@@ -89,7 +233,43 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: rootpassword
       MONGO_INITDB_DATABASE: testdb
     ports:
-      - "27717:27017"
+      - "27706:27017"
+    volumes:
+      - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  # MongoDB 7.0
+  mongo-7:
+    image: mongo:7.0
+    container_name: dbm-test-mongo-7
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: rootpassword
+      MONGO_INITDB_DATABASE: testdb
+    ports:
+      - "27707:27017"
+    volumes:
+      - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  # MongoDB 8.0 (Latest)
+  mongo-8:
+    image: mongo:8.0
+    container_name: dbm-test-mongo-8
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: rootpassword
+      MONGO_INITDB_DATABASE: testdb
+    ports:
+      - "27708:27017"
     volumes:
       - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
     healthcheck:

@@ -3,7 +3,7 @@ import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters";
 import { StorageAdapter, DatabaseAdapter, BackupMetadata } from "@/lib/core/interfaces";
 import { decryptConfig } from "@/lib/crypto";
-import { formatBytes } from "@/lib/utils";
+import { formatBytes, compareVersions } from "@/lib/utils";
 import path from "path";
 import os from "os";
 import fs from "fs";
@@ -58,6 +58,43 @@ export class RestoreService {
                     if (privilegedAuth) dbConf.privilegedAuth = privilegedAuth;
 
                     await targetAdapter.prepareRestore(dbConf, dbsToCheck);
+                }
+            }
+        }
+
+        // Version Compatibility Check
+        const storageConfig = await prisma.adapterConfig.findUnique({ where: { id: storageConfigId } });
+        if (storageConfig && targetConfig.type === 'database') {
+            const storageAdapter = registry.get(storageConfig.adapterId) as StorageAdapter;
+            const targetAdapter = registry.get(targetConfig.adapterId) as DatabaseAdapter;
+
+            if (storageAdapter && storageAdapter.read && targetAdapter && targetAdapter.test) {
+                try {
+                    const storageConf = decryptConfig(JSON.parse(storageConfig.config));
+                    const metaPath = file + ".meta.json";
+                    const metadataContent = await storageAdapter.read(storageConf, metaPath);
+
+                    if (metadataContent) {
+                        const metadata = JSON.parse(metadataContent) as BackupMetadata;
+                        if (metadata.engineVersion) {
+                            const dbConf = decryptConfig(JSON.parse(targetConfig.config));
+                            if (privilegedAuth) dbConf.privilegedAuth = privilegedAuth;
+
+                            const testResult = await targetAdapter.test(dbConf);
+                            if (testResult.success && testResult.version) {
+                                // Check if Source (Backup) > Target (Current Server)
+                                if (compareVersions(metadata.engineVersion, testResult.version) > 0) {
+                                     throw new Error(`Running restore of a newer database version (${metadata.engineVersion}) on an older server (${testResult.version}) is not recommended. This can cause severe incompatibility issues.`);
+                                }
+                            }
+                        }
+                    }
+                } catch (e: any) {
+                    if (e.message && e.message.includes('not recommended')) {
+                        throw e;
+                    }
+                    // Ignore metadata read errors (e.g. file missing) or other non-critical issues
+                    console.warn(`[RestoreService] Version check skipped: ${e.message}`);
                 }
             }
         }

@@ -97,6 +97,7 @@
     - [x] Metadata / Sidecar file support
     - [x] Download backup artifacts
     - [x] Restore workflow (Select Source, Type-Check, Rename)
+    - [x] Version Conflict Safeguard (Prevent Restore of new -> old)
     - [x] Filtering (Size, Source, Job)
 - [ ] **Dashboard Home**
     - [X] Real statistics (Success rate, Total size)

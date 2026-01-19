@@ -1,30 +1,27 @@
 import { BackupResult } from "@/lib/core/interfaces";
 import { execFileAsync } from "./connection";
+import { getDialect } from "./dialects";
+import { spawn } from "child_process";
+import { createReadStream } from "fs";
+import { waitForProcess } from "@/lib/adapters/process";
 
 export async function prepareRestore(config: any, databases: string[]): Promise<void> {
-    const usePrivileged = !!config.privilegedAuth;
-    const user = usePrivileged ? config.privilegedAuth.user : config.user;
-    const pass = usePrivileged ? config.privilegedAuth.password : config.password;
-
-    const args = ['--quiet'];
-    if (config.uri) {
-        args.push(config.uri);
-    } else {
-        args.push('--host', config.host);
-        args.push('--port', String(config.port));
+    // Determine credentials (privileged or standard)
+    const usageConfig = { ...config };
+    if (config.privilegedAuth) {
+        usageConfig.user = config.privilegedAuth.user;
+        usageConfig.password = config.privilegedAuth.password;
     }
 
-    if (user && pass) {
-        args.push('--username', user);
-        args.push('--password', pass);
-        if (config.authenticationDatabase) {
-                args.push('--authenticationDatabase', config.authenticationDatabase);
-        } else if (!config.uri) {
-                args.push('--authenticationDatabase', 'admin');
-        }
-    }
+    const dialect = getDialect('mongodb', config.detectedVersion);
+    // getConnectionArgs returns generic host/port/auth args suitable for tools like mongosh
+    const args = dialect.getConnectionArgs(usageConfig);
+
+    // Check if --quiet is needed or already in args
+    if (!args.includes('--quiet')) args.unshift('--quiet');
 
     for (const dbName of databases) {
+            // Permission check script
             const evalScript = `
             try {
                 var target = db.getSiblingDB('${dbName.replace(/'/g, "\\'")}');
@@ -37,7 +34,8 @@ export async function prepareRestore(config: any, databases: string[]): Promise<
             `;
 
             try {
-            await execFileAsync('mongosh', [...args, '--eval', evalScript]);
+                // We use mongosh for eval execution
+                await execFileAsync('mongosh', [...args, '--eval', evalScript]);
             } catch(e: any) {
                 const msg = e.stdout || e.stderr || e.message || "";
                 if (msg.includes("not authorized") || msg.includes("Authorization") || msg.includes("requires authentication") || msg.includes("command create requires")) {
@@ -48,39 +46,45 @@ export async function prepareRestore(config: any, databases: string[]): Promise<
     }
 }
 
-export async function restore(config: any, sourcePath: string): Promise<BackupResult> {
+export async function restore(config: any, sourcePath: string, onLog?: (msg: string) => void): Promise<BackupResult> {
     const startedAt = new Date();
     const logs: string[] = [];
 
+    const log = (msg: string) => {
+        logs.push(msg);
+        if (onLog) onLog(msg);
+    };
+
     try {
-        const args: string[] = [];
+        const dialect = getDialect('mongodb', config.detectedVersion);
+        const args = dialect.getRestoreArgs(config);
 
-        if (config.uri) {
-                args.push(`--uri=${config.uri}`);
-        } else {
-            args.push('--host', config.host);
-            args.push('--port', String(config.port));
-            if (config.user && config.password) {
-                    args.push('--username', config.user);
-                    args.push('--password', config.password);
-            }
-        }
-
-        args.push(`--archive=${sourcePath}`);
-        args.push('--gzip');
-
-        // Log command (mask password)
+        // Masking for logs
         const logArgs = args.map(arg => {
-            if (arg === config.password) return '*****';
-            if (arg.startsWith('--uri=')) return arg.replace(/mongodb(\+srv)?:\/\/([^:]+):([^@]+)@/, 'mongodb$1://$2:*****@');
+            if(arg.startsWith('--password')) return '--password=******';
+            if(arg.startsWith('mongodb')) return 'mongodb://...';
             return arg;
         });
-        logs.push(`Executing restore command: mongorestore ${logArgs.join(' ')}`);
 
-        const { stdout, stderr } = await execFileAsync('mongorestore', args);
-            if (stderr) {
-            logs.push(`stderr: ${stderr}`);
-        }
+        log(`Starting restore with args: mongorestore ${logArgs.join(' ')}`);
+
+        // Spawn process
+        const restoreProcess = spawn('mongorestore', args);
+        const readStream = createReadStream(sourcePath);
+
+        readStream.pipe(restoreProcess.stdin);
+
+        restoreProcess.stderr.on('data', (data) => {
+             log(`[mongorestore] ${data.toString()}`);
+        });
+
+        // Handle stream errors
+        readStream.on('error', (err) => {
+            log(`Read stream error: ${err.message}`);
+            restoreProcess.kill();
+        });
+
+        await waitForProcess(restoreProcess, 'mongorestore');
 
         return {
             success: true,
@@ -90,7 +94,7 @@ export async function restore(config: any, sourcePath: string): Promise<BackupRe
         };
 
     } catch (error: any) {
-            logs.push(`Error: ${error.message}`);
+        log(`Restore failed: ${error.message}`);
         return {
             success: false,
             logs,

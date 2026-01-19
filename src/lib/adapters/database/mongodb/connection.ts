@@ -3,9 +3,14 @@ import util from "util";
 
 export const execFileAsync = util.promisify(execFile);
 
-export async function test(config: any): Promise<{ success: boolean; message: string }> {
+export async function test(config: any): Promise<{ success: boolean; message: string; version?: string }> {
     try {
         const args = ['--eval', 'db.runCommand({ ping: 1 })', '--quiet'];
+
+        // Construct args helper
+        // Since we don't have the dialect available cleanly here without circle dependency if dialect imports connection utils?
+        // Actually dialect is safe to import. But dialect uses this file? No.
+        // But for now, let's keep the args construction here or duplicate logic slightly to avoid heavy coupling.
 
         if (config.uri) {
             args.push(config.uri);
@@ -24,7 +29,15 @@ export async function test(config: any): Promise<{ success: boolean; message: st
         }
 
         await execFileAsync('mongosh', args);
-        return { success: true, message: "Connection successful" };
+
+        // Fetch Version
+        const versionArgs = [...args];
+        versionArgs[1] = 'db.version()'; // Replace ping command
+
+        const { stdout } = await execFileAsync('mongosh', versionArgs);
+        const version = stdout.trim();
+
+        return { success: true, message: "Connection successful", version };
     } catch (error: any) {
             return { success: false, message: "Connection failed: " + (error.stderr || error.message) };
     }

@@ -3,7 +3,7 @@ import util from "util";
 
 export const execFileAsync = util.promisify(execFile);
 
-export async function test(config: any): Promise<{ success: boolean; message: string }> {
+export async function test(config: any): Promise<{ success: boolean; message: string; version?: string }> {
     const dbsToTry = ['postgres', 'template1'];
     if (typeof config.database === 'string' && config.database) dbsToTry.push(config.database);
 
@@ -12,9 +12,13 @@ export async function test(config: any): Promise<{ success: boolean; message: st
 
     for (const db of dbsToTry) {
         try {
-            const args = ['-h', config.host, '-p', String(config.port), '-U', config.user, '-d', db, '-c', 'SELECT 1'];
-            await execFileAsync('psql', args, { env });
-            return { success: true, message: "Connection successful" };
+            const args = ['-h', config.host, '-p', String(config.port), '-U', config.user, '-d', db, '-t', '-c', 'SELECT version()'];
+            const { stdout } = await execFileAsync('psql', args, { env });
+
+            // Clean up version string (e.g. "PostgreSQL 16.1 on ...")
+            const version = stdout.trim().split('on')[0].trim();
+
+            return { success: true, message: "Connection successful", version };
         } catch (error: any) {
             lastError = error;
         }

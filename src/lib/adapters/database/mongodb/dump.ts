@@ -1,72 +1,70 @@
 import { BackupResult } from "@/lib/core/interfaces";
 import { execFileAsync } from "./connection";
+import { getDialect } from "./dialects";
+import { spawn } from "child_process";
+import { createWriteStream } from "fs";
 import fs from "fs/promises";
+import { waitForProcess } from "@/lib/adapters/process";
 
 export async function dump(config: any, destinationPath: string, onLog?: (msg: string) => void, onProgress?: (percentage: number) => void): Promise<BackupResult> {
     const startedAt = new Date();
     const logs: string[] = [];
 
+    const log = (msg: string) => {
+        logs.push(msg);
+        if (onLog) onLog(msg);
+    };
+
     try {
-        // mongodump creates a directory by default, or an archive with --archive
-        // We want a single file, so we use --archive
+        // Prepare DB list
+         let dbs: string[] = [];
+        if (Array.isArray(config.database)) {
+            dbs = config.database;
+        } else if (typeof config.database === 'string') {
+            dbs = config.database.split(',').map((s: string) => s.trim()).filter(Boolean);
+        }
+        if (dbs.length === 0 && config.database) dbs = [config.database];
 
-        const args: string[] = [];
+        const dialect = getDialect('mongodb', config.detectedVersion);
 
-        if (config.uri) {
-            // simple URI sanitization for logs
-            const sanitizedUri = config.uri.replace(/mongodb(\+srv)?:\/\/([^:]+):([^@]+)@/, 'mongodb$1://$2:*****@');
-            logs.push(`Using URI: ${sanitizedUri}`);
-            args.push(`--uri=${config.uri}`);
-        } else {
-            args.push('--host', config.host);
-            args.push('--port', String(config.port));
+        // Mongo dump logic with Dialect integration
+        // Note: Dialect handles --archive flag which streams to stdout if no path given.
 
-            if (config.user && config.password) {
-                    args.push('--username', config.user);
-                    args.push('--password', config.password);
-                    if (config.authenticationDatabase) {
-                        args.push('--authenticationDatabase', config.authenticationDatabase);
-                    } else {
-                        args.push('--authenticationDatabase', 'admin');
-                    }
-            }
-            if (config.database) {
-                args.push('--db', config.database);
-            }
+        const targetDbs = (dbs.length > 0) ? [dbs[0]] : [];
+        if (dbs.length > 1) {
+             log(`Warning: Multiple databases selected but mongodump archive only supports one or all. Dumping '${dbs[0]}' only.`);
         }
 
-        if (config.options) {
-            const parts = config.options.match(/[^\s"']+|"([^"]*)"|'([^']*)'/g) || [];
-            for (const part of parts) {
-                if (part.startsWith('"') && part.endsWith('"')) {
-                    args.push(part.slice(1, -1));
-                } else if (part.startsWith("'") && part.endsWith("'")) {
-                    args.push(part.slice(1, -1));
-                } else {
-                    args.push(part);
-                }
-            }
-        }
+        const args = dialect.getDumpArgs(config, targetDbs);
 
-        args.push(`--archive=${destinationPath}`);
-        args.push('--gzip');
-
-        // Log command (mask password)
+        // Mask password in logs
+        // Note: Dialect returns args array. We log it safely.
+        // Simple masking for standard args. URI masking is harder but Dialect should handle it?
+        // Or we just do generic masking.
         const logArgs = args.map(arg => {
-            if (arg === config.password) return '*****';
-            if (arg.startsWith('--uri=')) return arg.replace(/mongodb(\+srv)?:\/\/([^:]+):([^@]+)@/, 'mongodb$1://$2:*****@');
+            if(arg.startsWith('--password')) return '--password=******';
+            if(arg.startsWith('mongodb')) return 'mongodb://...'; // simple mask
             return arg;
         });
-        logs.push(`Executing command: mongodump ${logArgs.join(' ')}`);
 
-        const { stdout, stderr } = await execFileAsync('mongodump', args);
+        log(`Starting dump with args: mongodump ${logArgs.join(' ')}`);
 
-        // mongodump writes to stderr
-        if (stderr) {
-            logs.push(`stderr: ${stderr}`);
-        }
+        const dumpProcess = spawn('mongodump', args);
+        const writeStream = createWriteStream(destinationPath);
 
+        dumpProcess.stdout.pipe(writeStream);
+
+        dumpProcess.stderr.on('data', (data) => {
+            log(`[mongodump] ${data.toString()}`);
+        });
+
+        await waitForProcess(dumpProcess, 'mongodump');
+
+        // Verify
         const stats = await fs.stat(destinationPath);
+        if (stats.size === 0) {
+            throw new Error("Dump file is empty. Check logs/permissions.");
+        }
 
         return {
             success: true,
@@ -78,7 +76,7 @@ export async function dump(config: any, destinationPath: string, onLog?: (msg: s
         };
 
     } catch (error: any) {
-        logs.push(`Error: ${error.message}`);
+        log(`Dump failed: ${error.message}`);
         return {
             success: false,
             logs,

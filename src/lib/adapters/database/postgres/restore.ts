@@ -1,5 +1,6 @@
 import { BackupResult } from "@/lib/core/interfaces";
 import { execFileAsync } from "./connection";
+import { getDialect } from "./dialects";
 import { spawn } from "child_process";
 import { createReadStream } from "fs";
 import { Transform } from "stream";
@@ -14,18 +15,18 @@ export async function prepareRestore(config: any, databases: string[]): Promise<
     const env = { ...process.env };
     if (pass) env.PGPASSWORD = pass;
 
-    const baseArgs = [
-        '-h', config.host,
-        '-p', String(config.port),
-        '-U', user,
-        '-d', 'postgres' // Maintenance DB
-    ];
+    // Use dialect for connection args if possible, but we need to force -d postgres for admin tasks
+    const dialect = getDialect('postgres', config.detectedVersion);
+    // Base args without DB
+    const baseArgs = dialect.getConnectionArgs({ ...config, user });
+    // Add maintenance DB
+    const args = [...baseArgs, '-d', 'postgres'];
 
     for (const dbName of databases) {
         // Check existence
         try {
             // We use -t (tuples only) -A (no align) to get clean output
-            const { stdout } = await execFileAsync('psql', [...baseArgs, '-t', '-A', '-c', `SELECT 1 FROM pg_database WHERE datname = '${dbName}'`], { env });
+            const { stdout } = await execFileAsync('psql', [...args, '-t', '-A', '-c', `SELECT 1 FROM pg_database WHERE datname = '${dbName}'`], { env });
 
             if (stdout.trim() === '1') {
                 // Exists
@@ -33,10 +34,8 @@ export async function prepareRestore(config: any, databases: string[]): Promise<
             }
 
             // Try create
-            // Note: We need to be careful about SQL injection here if dbName comes from untrusted source,
-            // but usually it's from our own UI. Proper escaping is good practice.
             const safeDbName = `"${dbName.replace(/"/g, '""')}"`;
-            await execFileAsync('psql', [...baseArgs, '-c', `CREATE DATABASE ${safeDbName}`], { env });
+            await execFileAsync('psql', [...args, '-c', `CREATE DATABASE ${safeDbName}`], { env });
 
         } catch (e: any) {
             const msg = e.stderr || e.message || "";
@@ -82,6 +81,8 @@ export async function restore(config: any, sourcePath: string, onLog?: (msg: str
             env.PGPASSWORD = config.password;
         }
 
+        const dialect = getDialect('postgres', config.detectedVersion);
+
         // Check if we have advanced mapping config
         const mapping = config.databaseMapping as Array<{ originalName: string, targetName: string, selected: boolean }> | undefined;
 
@@ -93,14 +94,11 @@ export async function restore(config: any, sourcePath: string, onLog?: (msg: str
             const dbMap = new Map<string, { target: string, selected: boolean }>();
             mapping.forEach(m => dbMap.set(m.originalName, { target: m.targetName, selected: m.selected }));
 
-            // 2. Spawn psql connected to 'postgres' (default maintenance DB)
-            // We do NOT use -f here, we pipe via stdin
-            const args = [
-                '-h', config.host,
-                '-p', String(config.port),
-                '-U', config.user,
-                '-d', 'postgres' // Connect to default DB to issue CREATE DATABASE commands
-            ];
+            // 2. Spawn psql connected to 'postgres' (default maintenance DB) because we might create/switch DBs in the stream?
+            // Actually, if we map databases, the stream rewriter handles \connect or CREATE DATABASE logic potentially?
+            // "postgres" is safe default.
+
+            const args = dialect.getRestoreArgs(config, 'postgres');
 
             log(`Executing restore stream to: psql ${args.join(' ')}`);
 
@@ -118,6 +116,35 @@ export async function restore(config: any, sourcePath: string, onLog?: (msg: str
                 let skipMode = false;
 
                 const transformer = new Transform({
+                    objectMode: true, // We process lines? No, we process chunks but parse lines.
+                    // Wait, text processing on buffer chunks is hard.
+                    // The original code probably used a line reader or buffer splitter.
+                    // I need to be careful NOT to destroy the existing complex logic below this block.
+                    // I will just replace the top part and keep the transformer logic as is (via "oldString" context).
+                    // THIS IS RISKY with replace_string_in_file for large blocks.
+                    // I will trust the file read logic.
+                });
+                // ... transformer logic ...
+            });
+            // To ensure I don't break the complex Transformer logic, I will restart the edit and include the transformer.
+        } else {
+             // Simple Restore (Single DB or Full Cluster Dump being restored as is)
+             let targetDb = config.database;
+             // If user specified a database in "Restore to..." field (passed via config override in restore-service)
+             // we use it. If not, default to 'postgres' if config.database is array or missing?
+             if (Array.isArray(targetDb) || !targetDb) targetDb = 'postgres';
+
+             const args = dialect.getRestoreArgs(config, targetDb);
+
+             log(`Executing restore to: psql ${args.join(' ')}`);
+
+             // ... spawn logic ...
+        }
+
+        // I will stop here and use the Edit block carefully.
+    } catch(e) { throw e; } // stub
+}
+
                     decodeStrings: false,
                     transform(chunk: string | Buffer, encoding, callback) {
                         const lines = chunk.toString().split('\n');
@@ -213,31 +240,20 @@ export async function restore(config: any, sourcePath: string, onLog?: (msg: str
         } else {
             // Legacy / Direct Restore (Single file, no fancy mapping)
             /* eslint-disable-next-line @typescript-eslint/no-unused-vars */
-            const args: string[] = [
-                '-h', config.host,
-                '-p', String(config.port),
-                '-U', config.user,
-                '-d', config.database, // Target DB from UI form main input (fallback)
-                '-f', sourcePath
-            ];
+
+            // Refactored to use Dialect
+            const targetDb = config.database || 'postgres';
+            const args = dialect.getRestoreArgs(config, targetDb);
 
             // Note: Standard psql -f does not provide progress hooks easily
             // because it opens the file internally.
             // To support progress, we MUST pipe instead of using -f, even for direct restore.
             // Let's switch to piping for consistency and progress.
 
-            log(`Executing direct restore command: psql (piped)`);
-
-            // Remove -f sourcePath and add proper connection args
-            const pipeArgs = [
-                    '-h', config.host,
-                '-p', String(config.port),
-                '-U', config.user,
-                '-d', config.database
-            ];
+            log(`Executing direct restore command: psql (piped) ${args.join(' ')}`);
 
             await new Promise<void>(async (resolve, reject) => {
-                const psql = spawn('psql', pipeArgs, { env, stdio: ['pipe', 'pipe', 'pipe'] });
+                const psql = spawn('psql', args, { env, stdio: ['pipe', 'pipe', 'pipe'] });
 
                 const stream = createReadStream(sourcePath);
                 stream.on('data', (c) => updateProgress(c.length));

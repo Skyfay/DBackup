@@ -168,7 +168,7 @@ export function JobForm({ sources, destinations, notifications, encryptionProfil
                             <FormField control={form.control} name="sourceId" render={({ field }) => (
                                 <FormItem className="flex flex-col">
                                     <FormLabel>Source</FormLabel>
-                                    <Popover open={sourceOpen} onOpenChange={setSourceOpen}>
+                                    <Popover open={sourceOpen} onOpenChange={setSourceOpen} modal={true}>
                                         <PopoverTrigger asChild>
                                             <FormControl>
                                                 <Button
@@ -220,7 +220,7 @@ export function JobForm({ sources, destinations, notifications, encryptionProfil
                             <FormField control={form.control} name="destinationId" render={({ field }) => (
                                 <FormItem className="flex flex-col">
                                     <FormLabel>Destination</FormLabel>
-                                    <Popover open={destOpen} onOpenChange={setDestOpen}>
+                                    <Popover open={destOpen} onOpenChange={setDestOpen} modal={true}>
                                         <PopoverTrigger asChild>
                                             <FormControl>
                                                 <Button
@@ -476,7 +476,7 @@ export function JobForm({ sources, destinations, notifications, encryptionProfil
                         <FormField control={form.control} name="notificationIds" render={({ field }) => (
                             <FormItem className="flex flex-col">
                                 <FormLabel>Active Notification Channels</FormLabel>
-                                <Popover open={notifyOpen} onOpenChange={setNotifyOpen}>
+                                <Popover open={notifyOpen} onOpenChange={setNotifyOpen} modal={true}>
                                     <PopoverTrigger asChild>
                                         <FormControl>
                                             <Button

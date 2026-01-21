@@ -1,5 +1,6 @@
 import { DatabaseAdapter, StorageAdapter } from "@/lib/core/interfaces";
 import { Job, AdapterConfig, Execution } from "@prisma/client";
+import { LogEntry, LogLevel, LogType } from "@/lib/core/logs";
 
 export type JobWithRelations = Job & {
     source: AdapterConfig;
@@ -12,8 +13,9 @@ export interface RunnerContext {
     job?: JobWithRelations;
     execution?: Execution;
 
-    logs: string[];
-    log: (msg: string) => void;
+    logs: LogEntry[];
+    // Extended log function, simplified version compatible with old signature (msg: string)
+    log: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void;
     updateProgress: (percent: number, stage?: string) => void;
 
     sourceAdapter?: DatabaseAdapter;

@@ -6,6 +6,7 @@ import { stepRetention } from "@/lib/runner/steps/05-retention";
 import { stepCleanup, stepFinalize } from "@/lib/runner/steps/04-completion";
 import prisma from "@/lib/prisma";
 import { processQueue } from "@/lib/queue-manager";
+import { LogEntry, LogLevel, LogType } from "@/lib/core/logs";
 
 /**
  * Entry point for scheduling/running a job.
@@ -15,11 +16,18 @@ export async function runJob(jobId: string) {
     console.log(`[Runner] Enqueuing Job ID: ${jobId}`);
 
     try {
+        const initialLog: LogEntry = {
+            timestamp: new Date().toISOString(),
+            level: "info",
+            type: "general",
+            message: "Job queued"
+        };
+
         const execution = await prisma.execution.create({
             data: {
                 jobId: jobId,
                 status: "Pending",
-                logs: JSON.stringify([`${new Date().toISOString()}: Job queued`]),
+                logs: JSON.stringify([initialLog]),
                 metadata: JSON.stringify({ progress: 0, stage: "Queued" })
             }
         });
@@ -60,7 +68,21 @@ export async function performExecution(executionId: string, jobId: string) {
 
     // Fetch initial logs (the "Job queued" message)
     const initialExe = await prisma.execution.findUnique({ where: { id: executionId } });
-    const logs: string[] = initialExe?.logs ? JSON.parse(initialExe.logs) : [];
+
+    // Parse logs and normalize to LogEntry[]
+    let rawLogs: (string | LogEntry)[] = initialExe?.logs ? JSON.parse(initialExe.logs) : [];
+    const logs: LogEntry[] = rawLogs.map(l => {
+        if (typeof l === 'string') {
+             const parts = l.split(": ");
+             return {
+                 timestamp: parts[0]?.length > 10 ? parts[0] : new Date().toISOString(),
+                 level: "info",
+                 type: "general",
+                 message: parts.slice(1).join(": ") || l
+             };
+        }
+        return l;
+    });
 
     // Throttled flush function
     let isFlushing = false;
@@ -105,10 +127,18 @@ export async function performExecution(executionId: string, jobId: string) {
         }
     };
 
-    const log = (msg: string) => {
-        console.log(`[Job ${jobId}] ${msg}`);
-        logs.push(`${new Date().toISOString()}: ${msg}`);
-        // Can't await inside sync log function, but flushLogs is async and handles it
+    const log = (message: string, level: LogLevel = 'info', type: LogType = 'general', details?: string) => {
+        const entry: LogEntry = {
+            timestamp: new Date().toISOString(),
+            level,
+            type,
+            message,
+            details
+        };
+
+        console.log(`[Job ${jobId}] [${level}] ${message}`);
+        logs.push(entry);
+
         flushLogs(executionId);
     };
 

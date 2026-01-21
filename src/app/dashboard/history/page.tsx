@@ -17,6 +17,8 @@ import { Loader2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { DateDisplay } from "@/components/utils/date-display";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { LogViewer } from "@/components/execution/log-viewer";
+import { Badge } from "@/components/ui/badge";
 
 export default function HistoryPage() {
     return (
@@ -133,40 +135,40 @@ function HistoryContent() {
             </Card>
 
             <Dialog open={!!selectedLog} onOpenChange={(open) => { if(!open) setSelectedLog(null); }}>
-                <DialogContent className="max-w-[80vw] w-full max-h-[80vh] overflow-hidden flex flex-col">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2">
-                             {selectedLog?.status === "Running" && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
-                             Execution Logs - {selectedLog?.job?.name || selectedLog?.type || "Unknown Activity"}
+                <DialogContent className="max-w-[80vw] w-full max-h-[85vh] h-full flex flex-col p-0 gap-0 overflow-hidden bg-zinc-950 border-zinc-800">
+                    <DialogHeader className="p-6 pb-4 border-b border-white/10 shrink-0">
+                        <DialogTitle className="flex items-center gap-3">
+                             {selectedLog?.status === "Running" && <Loader2 className="h-4 w-4 animate-spin text-emerald-500" />}
+                             <span className="font-mono">{selectedLog?.job?.name || selectedLog?.type || "Manual Job"}</span>
+                             {selectedLog?.status && (
+                                <Badge variant={selectedLog.status === 'Success' ? 'default' : selectedLog.status === 'Failed' ? 'destructive' : 'secondary'}>
+                                    {selectedLog.status}
+                                </Badge>
+                             )}
                         </DialogTitle>
-                        <DialogDescription>
+                        <DialogDescription className="text-zinc-400">
                             {selectedLog?.startedAt && <DateDisplay date={selectedLog.startedAt} format="PPpp" />}
-                            {selectedLog?.status === "Running" && " (Live)"}
                         </DialogDescription>
                     </DialogHeader>
 
                      {selectedLog?.status === "Running" && (
-                        <div className="px-4 py-2 space-y-1 bg-secondary/20">
-                            <div className="flex justify-between text-xs text-muted-foreground">
+                        <div className="px-6 py-3 bg-zinc-900/50 border-b border-white/5 shrink-0">
+                            <div className="flex justify-between text-xs text-zinc-400 mb-2">
                                 <span>{stage}</span>
                                 <span>{progress > 0 ? `${progress}%` : ''}</span>
                             </div>
                             {progress > 0 ? (
-                                <Progress value={progress} className="h-2" />
+                                <Progress value={progress} className="h-1.5 bg-zinc-800" />
                             ) : (
-                                <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
-                                    <div className="h-full w-full animate-indeterminate rounded-full bg-primary/50 origin-left-right"></div>
+                                <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
+                                    <div className="h-full w-full animate-indeterminate rounded-full bg-emerald-500/50 origin-left-right"></div>
                                 </div>
                             )}
                         </div>
                     )}
 
-                    <div className="flex-1 w-full rounded-md border p-4 bg-muted font-mono text-xs overflow-y-auto">
-                        {selectedLog && parseLogs(selectedLog.logs).map((line: string, i: number) => (
-                            <div key={i} className="mb-1 border-b border-border/50 pb-0.5 last:border-0 whitespace-pre-wrap break-all">
-                                {line}
-                            </div>
-                        ))}
+                    <div className="flex-1 min-h-0 bg-black/20">
+                         <LogViewer logs={selectedLog ? parseLogs(selectedLog.logs) : []} className="h-full border-0 bg-transparent" />
                     </div>
                 </DialogContent>
             </Dialog>

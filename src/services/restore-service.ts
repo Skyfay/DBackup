@@ -3,7 +3,7 @@ import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters";
 import { StorageAdapter, DatabaseAdapter, BackupMetadata } from "@/lib/core/interfaces";
 import { decryptConfig } from "@/lib/crypto";
-import { formatBytes, compareVersions } from "@/lib/utils";
+import { compareVersions } from "@/lib/utils";
 import path from "path";
 import os from "os";
 import fs from "fs";
@@ -12,6 +12,8 @@ import { createReadStream, createWriteStream } from "fs";
 import { getProfileMasterKey } from "@/services/encryption-service";
 import { createDecryptionStream } from "@/lib/crypto-stream";
 import { getDecompressionStream, CompressionType } from "@/lib/compression";
+import { randomUUID } from "crypto";
+import { LogEntry, LogLevel } from "@/lib/core/logs";
 
 // Ensure adapters are loaded
 registerAdapters();
@@ -99,12 +101,21 @@ export class RestoreService {
             }
         }
 
+        // Initial Structured Log
+        const initialLog: LogEntry = {
+            timestamp: new Date().toISOString(),
+            message: `Starting restore for ${path.basename(file)}`,
+            level: 'info',
+            type: 'general',
+            stage: 'Initializing'
+        };
+
         // Start Logging Execution
         const execution = await prisma.execution.create({
             data: {
                 type: 'Restore',
                 status: 'Running',
-                logs: JSON.stringify([`Starting restore for ${file}`]),
+                logs: JSON.stringify([initialLog]),
                 startedAt: new Date(),
                 path: file,
                 metadata: JSON.stringify({ progress: 0, stage: 'Initializing' })
@@ -125,7 +136,15 @@ export class RestoreService {
         let tempFile: string | null = null;
 
         // Log Buffer
-        let internalLogs: string[] = [`Starting restore for ${file}`];
+        const internalLogs: LogEntry[] = [{
+            timestamp: new Date().toISOString(),
+            message: `Starting restore for ${path.basename(file)}`,
+            level: 'info',
+            type: 'general',
+            stage: 'Initializing'
+        }];
+
+        // State
         let lastLogUpdate = Date.now();
         let currentProgress = 0;
         let currentStage = "Initializing";
@@ -144,9 +163,16 @@ export class RestoreService {
             }
         };
 
-        const log = (msg: string) => {
-            internalLogs.push(msg);
-            flushLogs(); // Throttled
+        const log = (msg: string, level: LogLevel = 'info') => {
+            const entry: LogEntry = {
+                timestamp: new Date().toISOString(),
+                message: msg,
+                level: level,
+                type: 'general',
+                stage: currentStage
+            };
+            internalLogs.push(entry);
+            flushLogs(level === 'error'); // Force flush on error
         };
 
         const updateProgress = (p: number, stage?: string) => {
@@ -160,7 +186,7 @@ export class RestoreService {
                 throw new Error("Missing file or targetSourceId");
             }
 
-            log(`Initiating restore process...`);
+            log(`Initiating restore process...`, 'info');
 
             // 1. Get Storage Adapter
             const storageConfig = await prisma.adapterConfig.findUnique({ where: { id: storageConfigId } });
@@ -185,7 +211,8 @@ export class RestoreService {
             }
 
             // 3. Download File
-            log(`Downloading backup file: ${file}...`);
+            updateProgress(5, "Downloading");
+            log(`Downloading backup file: ${file}...`, 'info');
             const tempDir = os.tmpdir();
             tempFile = path.join(tempDir, path.basename(file));
 
@@ -210,11 +237,11 @@ export class RestoreService {
                     if (metadata.encryption && metadata.encryption.enabled) {
                         isEncrypted = true;
                         encryptionMeta = metadata.encryption;
-                        log("Detected encrypted backup.");
+                        log("Detected encrypted backup.", 'info');
                     }
                     if (metadata.compression && metadata.compression !== 'NONE') {
                         compressionMeta = metadata.compression;
-                        log(`Detected ${compressionMeta} compression.`);
+                        log(`Detected ${compressionMeta} compression.`, 'info');
                     }
 
                     // Version Check
@@ -230,10 +257,10 @@ export class RestoreService {
                         try {
                             const test = await sourceAdapter.test?.(usageConfig);
                             if (test?.success && test.version) {
-                                log(`Compatibility Check: Backup Version [${metadata.engineVersion}] vs Target [${test.version}]`);
+                                log(`Compatibility Check: Backup Version [${metadata.engineVersion}] vs Target [${test.version}]`, 'info');
                                 // Simple string comparison for major versions could be added here
                                 if (parseFloat(metadata.engineVersion) > parseFloat(test.version)) {
-                                    log(`WARNING: You are restoring a newer version backup (${metadata.engineVersion}) to an older database (${test.version}). This might fail.`);
+                                    log(`WARNING: You are restoring a newer version backup (${metadata.engineVersion}) to an older database (${test.version}). This might fail.`, 'warning');
                                 }
                             }
                         } catch(e) { /* ignore connection tests during restore init */ }
@@ -242,11 +269,11 @@ export class RestoreService {
                     await fs.promises.unlink(tempMetaPath).catch(() => {});
                 }
             } catch (e: any) {
-                log(`Warning: Failed to check sidecar metadata: ${e.message}`);
+                log(`Warning: Failed to check sidecar metadata: ${e.message}`, 'warning');
 
                 // Fallback: Extension based detection
                 if (file.endsWith('.enc')) {
-                    log("Fallback: Detected encryption via .enc extension");
+                    log("Fallback: Detected encryption via .enc extension", 'warning');
                     // We can't proceed with fallback encryption as we need IV/AuthTag from metadata
                     throw new Error("Encrypted file detected but metadata missing. Cannot decrypt without IV/AuthTag.");
                 }
@@ -258,20 +285,23 @@ export class RestoreService {
 
             const downloadSuccess = await storageAdapter.download(sConf, file, tempFile, (processed, total) => {
                 const percent = total > 0 ? Math.round((processed / total) * 100) : 0;
-                const stageText = `Downloading (${formatBytes(processed)} / ${formatBytes(total)})`;
-                updateProgress(percent, stageText);
+                // Only log sparingly or update progress
+                if (percent % 10 === 0 && percent > 0) {
+                     // We don't want to spam logs
+                }
+                updateProgress(Math.floor(percent / 2), "Downloading"); // Map download to 0-50% overall? Or just use stage "Downloading"
             });
 
             if (!downloadSuccess) {
                 throw new Error("Failed to download file from storage");
             }
-            log(`Download complete.`);
+            log(`Download complete.`, 'success');
 
             // --- DECRYPTION EXECUTION ---
             if (isEncrypted && encryptionMeta) {
                 try {
-                    log(`Decrypting backup (Profile: ${encryptionMeta.profileId})...`);
-                    updateProgress(0, "Decrypting Backup...");
+                    log(`Decrypting backup (Profile: ${encryptionMeta.profileId})...`, 'info');
+                    updateProgress(0, "Decrypting");
 
                     const masterKey = await getProfileMasterKey(encryptionMeta.profileId);
                     const iv = Buffer.from(encryptionMeta.iv, 'hex');
@@ -293,7 +323,7 @@ export class RestoreService {
                         createWriteStream(decryptedTempFile)
                     );
 
-                    log("Decryption successful.");
+                    log("Decryption successful.", 'success');
 
                     // Cleanup encrypted file
                     await fs.promises.unlink(tempFile);
@@ -310,8 +340,8 @@ export class RestoreService {
             // --- DECOMPRESSION EXECUTION ---
             if (compressionMeta && compressionMeta !== 'NONE') {
                 try {
-                    log(`Decompressing backup (${compressionMeta})...`);
-                    updateProgress(0, "Decompressing Backup...");
+                    log(`Decompressing backup (${compressionMeta})...`, 'info');
+                    updateProgress(0, "Decompressing");
 
                     const decompStream = getDecompressionStream(compressionMeta);
                     if (decompStream) {
@@ -329,7 +359,7 @@ export class RestoreService {
                             createWriteStream(unpackedFile)
                         );
 
-                        log("Decompression successful.");
+                        log("Decompression successful.", 'success');
 
                         // Cleanup compressed file
                         await fs.promises.unlink(tempFile);
@@ -344,10 +374,8 @@ export class RestoreService {
             // --- END DECOMPRESSION EXECUTION ---
 
             // 4. Restore
-            log(`Starting database restore on ${sourceConfig.name}...`);
-
-            const totalSize = fs.statSync(tempFile).size;
-            updateProgress(0, `Restoring (0 B / ${formatBytes(totalSize)})...`);
+            updateProgress(0, "Restoring Database");
+            log(`Starting database restore on ${sourceConfig.name}...`, 'info');
 
             const dbConf = decryptConfig(JSON.parse(sourceConfig.config));
             // Inject adapterId as type for Dialect selection
@@ -369,20 +397,25 @@ export class RestoreService {
             }
 
             const restoreResult = await sourceAdapter.restore(dbConf, tempFile, (msg) => {
-                log(msg); // Live logs from adapter
+                // Determine level based on msg content
+                let level: LogLevel = 'info';
+                const lower = msg.toLowerCase();
+                if (lower.includes('error') || lower.includes('fail') || lower.includes('fatal')) level = 'error';
+                else if (lower.includes('warn')) level = 'warning';
+
+                log(msg, level);
             }, (p) => {
-                // If the adapter gives us raw bytes implicitly or checks file stream we might get percentage.
-                // Adapters typically return 0-100 number.
-                // We can reconstruct "processed bytes" estimate for display if we want, or just update the percentage.
-                // For accurate bytes, we'd need to change adapter interface again, but percentage + total size is good enough for "Restoring (X / Total)..."
-                // Estimate processed:
-                const estimatedProcessed = Math.floor((p / 100) * totalSize);
-                updateProgress(p, `Restoring (${formatBytes(estimatedProcessed)} / ${formatBytes(totalSize)})`);
+                updateProgress(p, "Restoring Database");
             });
 
             if (!restoreResult.success) {
-                // Final update
-                // internalLogs.push(...restoreResult.logs); // logs are live streamed via callback, no need to append or replace
+                if (restoreResult.error) {
+                    log(restoreResult.error, 'error');
+                }
+
+                log(`Restore adapter reported failure. Check logs above.`, 'error');
+                updateProgress(100, "Failed");
+
                 await prisma.execution.update({
                     where: { id: executionId },
                     data: {
@@ -392,8 +425,8 @@ export class RestoreService {
                     }
                 });
             } else {
-                // internalLogs.push(...restoreResult.logs);
-                log(`Restore completed successfully.`);
+                log(`Restore completed successfully.`, 'success');
+                updateProgress(100, "Completed");
                 await prisma.execution.update({
                     where: { id: executionId },
                     data: {
@@ -406,7 +439,9 @@ export class RestoreService {
 
         } catch (error: any) {
             console.error("Restore service error:", error);
-            log(`Fatal Error: ${error.message}`);
+            log(`Fatal Error: ${error.message}`, 'error');
+            updateProgress(100, "Failed");
+
             await prisma.execution.update({
                 where: { id: executionId },
                 data: { status: 'Failed', endedAt: new Date(), logs: JSON.stringify(internalLogs) }
@@ -415,6 +450,7 @@ export class RestoreService {
             if (tempFile && fs.existsSync(tempFile)) {
                 try { fs.unlinkSync(tempFile); } catch {}
             }
+            flushLogs(true);
         }
     }
 }

@@ -20,7 +20,8 @@ import {
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
-} from "@/components/ui/accordion"
+} from "@/components/ui/accordion";
+import { DateDisplay } from "@/components/utils/date-display";
 
 interface LogViewerProps {
   logs: (LogEntry | string)[];
@@ -96,11 +97,12 @@ export function LogViewer({ logs, className, autoScroll = true, status }: LogVie
 
       // Cleanup final group status if job is done
       if (currentGroup) {
-           const hasError = currentGroup.logs.some(l => l.level === 'error');
+           const group = currentGroup as LogGroup;
+           const hasError = group.logs.some(l => l.level === 'error');
            if (hasError) {
-               currentGroup.status = 'failed';
+               group.status = 'failed';
            } else if (status && status !== 'Running') {
-               currentGroup.status = 'success';
+               group.status = 'success';
            }
       }
 
@@ -247,8 +249,8 @@ function LogItem({ entry }: { entry: LogEntry }) {
     <div className="group relative pl-2 hover:bg-white/5 rounded px-2 transition-colors">
       <div className="flex items-start gap-3 py-1">
         {/* Timestamp */}
-        <div className="shrink-0 text-xs text-zinc-600 w-[60px] pt-0.5 font-mono">
-           {isValidDate(entry.timestamp) ? format(new Date(entry.timestamp), "HH:mm:ss") : "--:--:--"}
+        <div className="shrink-0 text-xs text-zinc-600 w-[80px] pt-0.5 font-mono">
+           <DateDisplay date={entry.timestamp} format="pp" />
         </div>
 
         {/* Icon & Message Container */}

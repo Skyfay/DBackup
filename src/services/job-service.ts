@@ -9,6 +9,7 @@ export interface CreateJobInput {
     notificationIds?: string[];
     encryptionProfileId?: string;
     compression?: string;
+    retention?: string;
     enabled?: boolean;
 }
 
@@ -20,6 +21,7 @@ export interface UpdateJobInput {
     notificationIds?: string[];
     encryptionProfileId?: string;
     compression?: string;
+    retention?: string;
     enabled?: boolean;
 }
 
@@ -49,7 +51,7 @@ export class JobService {
     }
 
     async createJob(input: CreateJobInput) {
-        const { name, schedule, sourceId, destinationId, notificationIds, enabled, encryptionProfileId, compression } = input;
+        const { name, schedule, sourceId, destinationId, notificationIds, enabled, encryptionProfileId, compression, retention } = input;
 
         const newJob = await prisma.job.create({
             data: {
@@ -60,6 +62,7 @@ export class JobService {
                 enabled: enabled !== undefined ? enabled : true,
                 encryptionProfileId: encryptionProfileId || null,
                 compression: compression || "NONE",
+                retention: retention || "{}",
                 notifications: {
                     connect: notificationIds?.map((id) => ({ id })) || []
                 }
@@ -78,7 +81,7 @@ export class JobService {
     }
 
     async updateJob(id: string, input: UpdateJobInput) {
-        const { name, schedule, sourceId, destinationId, notificationIds, enabled, encryptionProfileId, compression } = input;
+        const { name, schedule, sourceId, destinationId, notificationIds, enabled, encryptionProfileId, compression, retention } = input;
 
         const updatedJob = await prisma.job.update({
             where: { id },
@@ -89,6 +92,7 @@ export class JobService {
                 sourceId,
                 destinationId,
                 compression,
+                retention,
                 encryptionProfileId: encryptionProfileId === "" ? null : encryptionProfileId,
                 notifications: {
                     set: [], // Clear existing relations

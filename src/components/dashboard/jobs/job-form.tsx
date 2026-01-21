@@ -38,6 +38,7 @@ export interface JobData {
     encryptionProfileId?: string;
     compression: string;
     retention: string;
+    notificationEvents?: string;
     notifications: { id: string, name: string }[];
 }
 
@@ -60,6 +61,7 @@ const jobSchema = z.object({
     encryptionProfileId: z.string().optional(),
     compression: z.enum(["NONE", "GZIP", "BROTLI"]).default("NONE"),
     notificationIds: z.array(z.string()).optional(),
+    notificationEvents: z.enum(["ALWAYS", "FAILURE_ONLY", "SUCCESS_ONLY"]).default("ALWAYS"),
     enabled: z.boolean().default(true),
     retention: z.object({
         mode: z.enum(["NONE", "SIMPLE", "SMART"]),
@@ -104,6 +106,7 @@ export function JobForm({ sources, destinations, notifications, encryptionProfil
             encryptionProfileId: initialData?.encryptionProfileId || "no-encryption",
             compression: (initialData?.compression as "NONE" | "GZIP" | "BROTLI") || "NONE",
             notificationIds: initialData?.notifications?.map((n) => n.id) || [],
+            notificationEvents: (initialData?.notificationEvents as "ALWAYS" | "FAILURE_ONLY" | "SUCCESS_ONLY") || "ALWAYS",
             enabled: initialData?.enabled ?? true,
             retention: defaultRetention
         }
@@ -449,7 +452,27 @@ export function JobForm({ sources, destinations, notifications, encryptionProfil
                     </TabsContent>
 
                     {/* TAB 4: NOTIFICATIONS */}
-                    <TabsContent value="notifications" className="pt-4">
+                    <TabsContent value="notifications" className="pt-4 space-y-4">
+                        <FormField control={form.control} name="notificationEvents" render={({ field }) => (
+                            <FormItem>
+                                <FormLabel>Notification Trigger</FormLabel>
+                                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                    <FormControl>
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Select trigger" />
+                                        </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                        <SelectItem value="ALWAYS">Always (Success & Failure)</SelectItem>
+                                        <SelectItem value="FAILURE_ONLY">On Failure Only</SelectItem>
+                                        <SelectItem value="SUCCESS_ONLY">On Success Only</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <FormDescription>Choose when to send alerts.</FormDescription>
+                                <FormMessage />
+                            </FormItem>
+                        )} />
+
                         <FormField control={form.control} name="notificationIds" render={({ field }) => (
                             <FormItem className="flex flex-col">
                                 <FormLabel>Active Notification Channels</FormLabel>

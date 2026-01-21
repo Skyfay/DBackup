@@ -48,6 +48,7 @@ model Job {
   destination         AdapterConfig      @relation("Destination", fields: [destinationId], references: [id])
   source              AdapterConfig      @relation("Source", fields: [sourceId], references: [id])
   notifications       AdapterConfig[]    @relation("Notifications")
+  notificationEvents  String             @default("ALWAYS") // "ALWAYS", "FAILURE_ONLY", "SUCCESS_ONLY"
 }
 
 model Execution {

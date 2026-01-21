@@ -35,28 +35,39 @@ export async function stepFinalize(ctx: RunnerContext) {
 
     // 2. Notifications
     if (ctx.job && ctx.job.notifications && ctx.job.notifications.length > 0) {
-        ctx.log("Sending notifications...");
+        const condition = ctx.job.notificationEvents || "ALWAYS";
+        const isSuccess = ctx.status === "Success";
+        const shouldNotify =
+            condition === "ALWAYS" ||
+            (condition === "SUCCESS_ONLY" && isSuccess) ||
+            (condition === "FAILURE_ONLY" && !isSuccess);
 
-        for (const channel of ctx.job.notifications) {
-            try {
-                const notifyAdapter = registry.get(channel.adapterId) as NotificationAdapter;
+        if (!shouldNotify) {
+            ctx.log(`Skipping notifications. Condition: ${condition}, Status: ${ctx.status}`);
+        } else {
+            ctx.log("Sending notifications...");
 
-                if (notifyAdapter) {
-                    const channelConfig = decryptConfig(JSON.parse(channel.config));
+            for (const channel of ctx.job.notifications) {
+                try {
+                    const notifyAdapter = registry.get(channel.adapterId) as NotificationAdapter;
 
-                    await notifyAdapter.send(channelConfig, `Backup Job '${ctx.job.name}' finished with status: ${ctx.status}`, {
-                         jobName: ctx.job.name,
-                         adapterName: ctx.job.source?.name,
-                         success: ctx.status === "Success",
-                         duration: new Date().getTime() - ctx.startedAt.getTime(),
-                         size: ctx.dumpSize || 0,
-                         status: ctx.status,
-                         logs: ctx.logs
-                    });
+                    if (notifyAdapter) {
+                        const channelConfig = decryptConfig(JSON.parse(channel.config));
+
+                        await notifyAdapter.send(channelConfig, `Backup Job '${ctx.job.name}' finished with status: ${ctx.status}`, {
+                             jobName: ctx.job.name,
+                             adapterName: ctx.job.source?.name,
+                             success: ctx.status === "Success",
+                             duration: new Date().getTime() - ctx.startedAt.getTime(),
+                             size: ctx.dumpSize || 0,
+                             status: ctx.status,
+                             logs: ctx.logs
+                        });
+                    }
+                } catch (e) {
+                    console.error("Failed to send notification", e);
+                    ctx.log(`Failed to send notification to channel ${channel.name}`);
                 }
-            } catch (e) {
-                console.error("Failed to send notification", e);
-                ctx.log(`Failed to send notification to channel ${channel.name}`);
             }
         }
     }

@@ -62,7 +62,7 @@
 - [x] **Discord Webhook**
 - [x] **Email (SMTP)**
 - [ ] **Slack / Teams**
-- [ ] **Notification Conditions** (Success only / Failed only)
+- [x] **Notification Conditions** (Success only / Failed only)
 
 ## 🖥 Dashboard & Features
 - [x] **Sources Management**

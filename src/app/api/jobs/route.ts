@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
         await checkPermission(PERMISSIONS.JOBS.WRITE);
 
         const body = await req.json();
-        const { name, schedule, sourceId, destinationId, notificationIds, enabled, encryptionProfileId, compression, retention } = body;
+        const { name, schedule, sourceId, destinationId, notificationIds, enabled, encryptionProfileId, compression, retention, notificationEvents } = body;
 
 
         if (!name || !schedule || !sourceId || !destinationId) {
@@ -53,7 +53,8 @@ export async function POST(req: NextRequest) {
             enabled,
             encryptionProfileId,
             compression,
-            retention: retention ? JSON.stringify(retention) : "{}"
+            retention: retention ? JSON.stringify(retention) : "{}",
+            notificationEvents
         });
 
         return NextResponse.json(newJob, { status: 201 });

@@ -11,6 +11,7 @@ export interface CreateJobInput {
     compression?: string;
     retention?: string;
     enabled?: boolean;
+    notificationEvents?: string;
 }
 
 export interface UpdateJobInput {
@@ -23,6 +24,7 @@ export interface UpdateJobInput {
     compression?: string;
     retention?: string;
     enabled?: boolean;
+    notificationEvents?: string;
 }
 
 export class JobService {
@@ -51,7 +53,7 @@ export class JobService {
     }
 
     async createJob(input: CreateJobInput) {
-        const { name, schedule, sourceId, destinationId, notificationIds, enabled, encryptionProfileId, compression, retention } = input;
+        const { name, schedule, sourceId, destinationId, notificationIds, enabled, encryptionProfileId, compression, retention, notificationEvents } = input;
 
         const newJob = await prisma.job.create({
             data: {
@@ -63,6 +65,7 @@ export class JobService {
                 encryptionProfileId: encryptionProfileId || null,
                 compression: compression || "NONE",
                 retention: retention || "{}",
+                notificationEvents: notificationEvents || "ALWAYS",
                 notifications: {
                     connect: notificationIds?.map((id) => ({ id })) || []
                 }
@@ -81,7 +84,7 @@ export class JobService {
     }
 
     async updateJob(id: string, input: UpdateJobInput) {
-        const { name, schedule, sourceId, destinationId, notificationIds, enabled, encryptionProfileId, compression, retention } = input;
+        const { name, schedule, sourceId, destinationId, notificationIds, enabled, encryptionProfileId, compression, retention, notificationEvents } = input;
 
         const updatedJob = await prisma.job.update({
             where: { id },
@@ -93,6 +96,7 @@ export class JobService {
                 destinationId,
                 compression,
                 retention,
+                notificationEvents,
                 encryptionProfileId: encryptionProfileId === "" ? null : encryptionProfileId,
                 notifications: {
                     set: [], // Clear existing relations

@@ -24,18 +24,20 @@ export type FileInfo = {
     isEncrypted?: boolean;
     encryptionProfileId?: string;
     compression?: string;
+    locked?: boolean;
 };
 
 interface ColumnsProps {
     onRestore: (file: FileInfo) => void;
     onDownload: (file: FileInfo, decrypt?: boolean) => void;
     onDelete: (file: FileInfo) => void;
+    onToggleLock: (file: FileInfo) => void;
     canDownload: boolean;
     canRestore: boolean;
     canDelete: boolean;
 }
 
-export const createColumns = ({ onRestore, onDownload, onDelete, canDownload, canRestore, canDelete }: ColumnsProps): ColumnDef<FileInfo>[] => [
+export const getColumns = ({ onRestore, onDownload, onDelete, onToggleLock, canDownload, canRestore, canDelete }: ColumnsProps): ColumnDef<FileInfo>[] => [
     {
         accessorKey: "name",
         header: ({ column }) => {
@@ -170,6 +172,7 @@ export const createColumns = ({ onRestore, onDownload, onDelete, canDownload, ca
                 onDownload={onDownload}
                 onRestore={onRestore}
                 onDelete={onDelete}
+                onToggleLock={onToggleLock}
                 canDownload={canDownload}
                 canRestore={canRestore}
                 canDelete={canDelete}

@@ -9,6 +9,7 @@ interface ActionsCellProps {
     onDownload: (file: FileInfo, decrypt?: boolean) => void;
     onRestore: (file: FileInfo) => void;
     onDelete: (file: FileInfo) => void;
+    onToggleLock?: (file: FileInfo) => void;
     canDownload: boolean;
     canRestore: boolean;
     canDelete: boolean;
@@ -19,12 +20,33 @@ export function ActionsCell({
     onDownload,
     onRestore,
     onDelete,
+    onToggleLock,
     canDownload,
     canRestore,
     canDelete
 }: ActionsCellProps) {
     return (
         <div className="flex items-center justify-end gap-2">
+            {onToggleLock && canDelete && (
+                <TooltipProvider>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className={`h-8 w-8 ${file.locked ? "text-amber-500 hover:text-amber-600" : "text-muted-foreground hover:text-foreground"}`}
+                                onClick={() => onToggleLock(file)}
+                            >
+                                {file.locked ? <FileLock2 className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                            <p>{file.locked ? "Unlock Backup (Allow deletion)" : "Lock Backup (Protect from retention)"}</p>
+                        </TooltipContent>
+                    </Tooltip>
+                </TooltipProvider>
+            )}
+
             {canDownload && (
                 file.isEncrypted ? (
                     <DropdownMenu>

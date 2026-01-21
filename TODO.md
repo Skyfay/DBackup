@@ -80,7 +80,7 @@
     - [x] List all backup jobs
     - [x] Job Editor (Select Source, Destination, Schedule)
     - [x] Manual Trigger Button
-    - [ ] Retention Policies (Smart rotation: Keep last X days/weeks)
+    - [x] Retention Policies (Smart rotation: Keep last X days/weeks)
         - [x] **Step 1: Database**: Add `retention` JSON field to `Job` model
         - [x] **Step 2: Core Logic**: Create `src/services/retention-service.ts` for GVS algorithm
         - [x] **Step 3: Unit Tests**: Write comprehensive tests for the GVS algorithm
@@ -97,13 +97,14 @@
     - [x] List past executions
     - [x] View detailed logs per execution
     - [ ] Download backup artifact (if local/accessible)
-- [ ] **Storage Explorer & Restore**
+- [x] **Storage Explorer & Restore**
     - [x] List backups per Destination
     - [x] Metadata / Sidecar file support
     - [x] Download backup artifacts
     - [x] Restore workflow (Select Source, Type-Check, Rename)
     - [x] Version Conflict Safeguard (Prevent Restore of new -> old)
     - [x] Filtering (Size, Source, Job)
+    - [x] Manual Lock/Unlock (Prevent Retention Deletion)
 - [ ] **Dashboard Home**
     - [X] Real statistics (Success rate, Total size)
     - [X] Recent activity feed

@@ -59,12 +59,39 @@ export async function stepRetention(ctx: RunnerContext) {
 
         // Filter out metadata files for the policy calculation
         // We only want to count "real" backups (artifacts)
-        const backupFiles = files.filter(f => !f.name.endsWith('.meta.json'));
+        let backupFiles = files.filter(f => !f.name.endsWith('.meta.json'));
 
-        // 3. Calculate Deletion
-        const { delete: filesToDelete, keep } = RetentionService.calculateRetention(backupFiles, policy);
+        // Check for Locked files (metadata check)
+        // Since we don't want to delete locked files, AND they usually shouldn't count towards the policy (as per user request "nicht erfasst"),
+        // we need to identify them.
+        // Performance Warning: This reads metadata for ALL files in the retention scope.
+        if (ctx.destAdapter.read) {
+             const unlockedBackups: FileInfo[] = [];
 
-        ctx.log(`Retention: Found ${backupFiles.length} backup artifacts (excluding metadata).`);
+             for (const file of backupFiles) {
+                  try {
+                      // We assume metadata is alongside
+                      const metaContent = await ctx.destAdapter.read(destConfig, file.path + ".meta.json");
+                      if (metaContent) {
+                          const meta = JSON.parse(metaContent);
+                          if (meta.locked) {
+                              ctx.log(`Retention: Ignoring locked file ${file.name}`);
+                              continue;
+                          }
+                      }
+                  } catch (e) {
+                      // If metadata read fails, assume not locked? Or fail safe?
+                      // We assume not locked to proceed with standard logic, but log it?
+                      // Or maybe we treat "missing metadata" as "old file" -> delete?
+                  }
+                  unlockedBackups.push(file);
+             }
+             backupFiles = unlockedBackups;
+        }
+
+        // Apply Policy
+        const { keep, delete: filesToDelete } = RetentionService.calculateRetention(backupFiles, policy);
+
         ctx.log(`Retention: Keeping ${keep.length}, Deleting ${filesToDelete.length}.`);
 
         // 4. Delete files

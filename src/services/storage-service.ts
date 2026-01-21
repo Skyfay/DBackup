@@ -9,6 +9,10 @@ import { createDecryptionStream } from "@/lib/crypto-stream";
 import path from "path";
 import os from "os";
 import AdmZip from "adm-zip";
+import { registerAdapters } from "@/lib/adapters";
+
+// Fix: Ensure adapters are registered before service usage
+registerAdapters();
 
 export type RichFileInfo = FileInfo & {
     jobName?: string;
@@ -18,9 +22,55 @@ export type RichFileInfo = FileInfo & {
     dbInfo?: { count: string | number; label: string };
     isEncrypted?: boolean;
     encryptionProfileId?: string;
+    locked?: boolean;
 };
 
 export class StorageService {
+    async toggleLock(adapterConfigId: string, filePath: string) {
+        const adapterConfig = await prisma.adapterConfig.findUnique({
+            where: { id: adapterConfigId }
+        });
+
+        if (!adapterConfig) throw new Error("Storage not found");
+
+        const adapter = registry.get(adapterConfig.adapterId) as StorageAdapter;
+        const config = decryptConfig(JSON.parse(adapterConfig.config));
+
+        // Define paths
+        const metaPath = filePath + ".meta.json";
+
+        let metadata: BackupMetadata;
+
+        // 1. Read existing metadata
+        try {
+            if (!adapter.read) throw new Error("Adapter does not support reading metadata");
+            const content = await adapter.read(config, metaPath);
+            if (!content) throw new Error("Metadata file not found");
+            metadata = JSON.parse(content);
+        } catch (e: any) {
+             console.error(`Toggle Lock Error: ${e.message}`, { metaPath, error: e });
+             throw new Error(`Could not read metadata for this backup: ${e.message}`);
+        }
+
+        // 2. Toggle Lock
+        metadata.locked = !metadata.locked;
+
+        // 3. Write back
+        // StorageAdapter interface usually only has 'upload' (from local file).
+        // We need 'write' (string content) or we create a temp file.
+        // Let's create a temp file.
+        const tempPath = path.join(os.tmpdir(), `meta-${Date.now()}.json`);
+        await fs.writeFile(tempPath, JSON.stringify(metadata, null, 2));
+
+        try {
+             await adapter.upload(config, tempPath, metaPath);
+        } finally {
+             await fs.unlink(tempPath).catch(() => {});
+        }
+
+        return metadata.locked;
+    }
+
     /**
      * Lists files from a specific storage adapter configuration.
      * @param adapterConfigId The ID of the AdapterConfig in the database.
@@ -169,7 +219,8 @@ export class StorageService {
                      dbInfo: { count, label },
                      isEncrypted,
                      encryptionProfileId,
-                     compression
+                     compression,
+                     locked: sidecar.locked
                  };
              }
 

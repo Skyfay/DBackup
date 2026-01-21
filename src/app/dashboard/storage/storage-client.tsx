@@ -28,7 +28,8 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { DataTable } from "@/components/ui/data-table";
-import { createColumns, FileInfo } from "./columns";
+import { getColumns, FileInfo } from "./columns";
+import { lockBackup } from "@/app/actions/storage/lock";
 import { RestoreDialog } from "@/components/dashboard/storage/restore-dialog";
 
 interface AdapterConfig {
@@ -132,6 +133,23 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
         setFileToDelete(file);
     }, [canDelete]);
 
+    const handleToggleLock = useCallback(async (file: FileInfo) => {
+        // Optimistic update or simple refresh?
+        // Simple refresh for safety
+        try {
+            const result = await lockBackup(selectedDestination, file.path);
+            if (result.success) {
+                toast.success(result.locked ? "Backup locked (Safe from retention)" : "Backup unlocked");
+                // Refresh list to update the lock icon
+                fetchFiles(selectedDestination);
+            } else {
+                toast.error(result.error || "Failed to toggle lock");
+            }
+        } catch (e) {
+            toast.error("An error occurred while toggling lock");
+        }
+    }, [selectedDestination]);
+
     const confirmDelete = async () => {
         if (!fileToDelete) return;
         setDeleting(true);
@@ -157,14 +175,15 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
         }
     };
 
-    const columns = useMemo(() => createColumns({
+    const columns = useMemo(() => getColumns({
         onRestore: handleRestoreClick,
         onDownload: handleDownload,
         onDelete: handleDeleteClick,
+        onToggleLock: handleToggleLock,
         canDownload,
         canRestore,
         canDelete
-    }), [handleRestoreClick, handleDownload, handleDeleteClick, canDownload, canRestore, canDelete]);
+    }), [handleRestoreClick, handleDownload, handleDeleteClick, handleToggleLock, canDownload, canRestore, canDelete]);
 
     const filterableColumns = useMemo(() => {
         const jobs = Array.from(new Set(files.map(f => f.jobName).filter(Boolean).filter(n => n !== "Unknown"))) as string[];

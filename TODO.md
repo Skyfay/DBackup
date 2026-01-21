@@ -81,11 +81,11 @@
     - [x] Job Editor (Select Source, Destination, Schedule)
     - [x] Manual Trigger Button
     - [ ] Retention Policies (Smart rotation: Keep last X days/weeks)
-        - [ ] **Step 1: Database**: Add `retention` JSON field to `Job` model
-        - [ ] **Step 2: Core Logic**: Create `src/services/retention-service.ts` for GVS algorithm
-        - [ ] **Step 3: Unit Tests**: Write comprehensive tests for the GVS algorithm
-        - [ ] **Step 4: Runner**: Implement `stepRetention` in the backup pipeline
-        - [ ] **Step 5: UI**: Add Retention Configuration to `JobForm` component
+        - [x] **Step 1: Database**: Add `retention` JSON field to `Job` model
+        - [x] **Step 2: Core Logic**: Create `src/services/retention-service.ts` for GVS algorithm
+        - [x] **Step 3: Unit Tests**: Write comprehensive tests for the GVS algorithm
+        - [x] **Step 4: Runner**: Implement `stepRetention` in the backup pipeline
+        - [x] **Step 5: UI**: Add Retention Configuration to `JobForm` component
 - [x] **Theme Support**
     - [x] Dark / Light / System Mode
     - [x] Auto-detection & Settings Toggle

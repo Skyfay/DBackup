@@ -2,6 +2,7 @@ import { RunnerContext } from "@/lib/runner/types";
 import { stepInitialize } from "@/lib/runner/steps/01-initialize";
 import { stepExecuteDump } from "@/lib/runner/steps/02-dump";
 import { stepUpload } from "@/lib/runner/steps/03-upload";
+import { stepRetention } from "@/lib/runner/steps/05-retention";
 import { stepCleanup, stepFinalize } from "@/lib/runner/steps/04-completion";
 import prisma from "@/lib/prisma";
 import { processQueue } from "@/lib/queue-manager";
@@ -145,6 +146,10 @@ export async function performExecution(executionId: string, jobId: string) {
         updateProgress(50, "Uploading Backup");
         // 3. Upload
         await stepUpload(ctx);
+
+        updateProgress(90, "Applying Retention Policy");
+        // 4. Retention
+        await stepRetention(ctx);
 
         updateProgress(100, "Completed");
         ctx.status = "Success";

@@ -41,6 +41,7 @@ model Job {
   encryptionProfileId String?
   encryptionProfile   EncryptionProfile? @relation(fields: [encryptionProfileId], references: [id])
   compression         String             @default("NONE")
+  retention           String             @default("{}") // Stores RetentionPolicy as JSON
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
   executions          Execution[]

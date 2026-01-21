@@ -9,7 +9,9 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { Lock } from "lucide-react";
+import { Lock, History, Calculator } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export interface JobData {
     id: string;
@@ -20,6 +22,7 @@ export interface JobData {
     destinationId: string;
     encryptionProfileId?: string;
     compression: string;
+    retention: string;
     notifications: { id: string, name: string }[];
 }
 
@@ -43,6 +46,18 @@ const jobSchema = z.object({
     compression: z.enum(["NONE", "GZIP", "BROTLI"]).default("NONE"),
     notificationIds: z.array(z.string()).optional(),
     enabled: z.boolean().default(true),
+    retention: z.object({
+        mode: z.enum(["NONE", "SIMPLE", "SMART"]),
+        simple: z.object({
+            keepCount: z.coerce.number().min(1).default(10)
+        }).optional(),
+        smart: z.object({
+            daily: z.coerce.number().min(0).default(7),
+            weekly: z.coerce.number().min(0).default(4),
+            monthly: z.coerce.number().min(0).default(12),
+            yearly: z.coerce.number().min(0).default(2),
+        }).optional()
+    })
 });
 
 interface JobFormProps {
@@ -55,6 +70,12 @@ interface JobFormProps {
 }
 
 export function JobForm({ sources, destinations, notifications, encryptionProfiles, initialData, onSuccess }: JobFormProps) {
+
+    const defaultRetention = initialData?.retention ? JSON.parse(initialData.retention) : { mode: "NONE", simple: { keepCount: 10 }, smart: { daily: 7, weekly: 4, monthly: 12, yearly: 2 } };
+    // Ensure structure even if JSON is partial
+    if (!defaultRetention.simple) defaultRetention.simple = { keepCount: 10 };
+    if (!defaultRetention.smart) defaultRetention.smart = { daily: 7, weekly: 4, monthly: 12, yearly: 2 };
+
     const form = useForm({
         resolver: zodResolver(jobSchema),
         defaultValues: {
@@ -66,6 +87,7 @@ export function JobForm({ sources, destinations, notifications, encryptionProfil
             compression: (initialData?.compression as "NONE" | "GZIP" | "BROTLI") || "NONE",
             notificationIds: initialData?.notifications?.map((n) => n.id) || [],
             enabled: initialData?.enabled ?? true,
+            retention: defaultRetention
         }
     });
 
@@ -212,6 +234,105 @@ export function JobForm({ sources, destinations, notifications, encryptionProfil
                         <FormMessage />
                     </FormItem>
                 )} />
+
+                <Card>
+                    <CardHeader className="pb-3">
+                        <CardTitle className="text-base flex items-center gap-2">
+                            <History className="h-4 w-4" />
+                            Retention Policy
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <FormField
+                            control={form.control}
+                            name="retention.mode"
+                            render={({ field }) => (
+                                <Tabs value={field.value} onValueChange={field.onChange} className="w-full">
+                                    <TabsList className="grid w-full grid-cols-3">
+                                        <TabsTrigger value="NONE">Keep All</TabsTrigger>
+                                        <TabsTrigger value="SIMPLE">Simple Limit</TabsTrigger>
+                                        <TabsTrigger value="SMART">Smart Rotation</TabsTrigger>
+                                    </TabsList>
+
+                                    <TabsContent value="NONE" className="pt-4">
+                                        <p className="text-sm text-muted-foreground">
+                                            All backups will be kept indefinitely.
+                                            <br/>Warning: This may fill up your storage quickly.
+                                        </p>
+                                    </TabsContent>
+
+                                    <TabsContent value="SIMPLE" className="pt-4">
+                                        <FormField
+                                            control={form.control}
+                                            name="retention.simple.keepCount"
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <FormLabel>Max Backups to Keep</FormLabel>
+                                                    <FormControl>
+                                                        <Input type="number" min={1} {...field} onChange={e => field.onChange(parseInt(e.target.value))} />
+                                                    </FormControl>
+                                                    <FormDescription>
+                                                        Only the newest {field.value} backups will be kept. Older ones are deleted.
+                                                    </FormDescription>
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )}
+                                        />
+                                    </TabsContent>
+
+                                    <TabsContent value="SMART" className="pt-4 space-y-4">
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <FormField
+                                                control={form.control}
+                                                name="retention.smart.daily"
+                                                render={({ field }) => (
+                                                    <FormItem>
+                                                        <FormLabel>Daily Backups</FormLabel>
+                                                        <FormControl><Input type="number" min={0} {...field} onChange={e => field.onChange(parseInt(e.target.value))} /></FormControl>
+                                                        <FormDescription>Keep for X days</FormDescription>
+                                                    </FormItem>
+                                                )}
+                                            />
+                                            <FormField
+                                                control={form.control}
+                                                name="retention.smart.weekly"
+                                                render={({ field }) => (
+                                                    <FormItem>
+                                                        <FormLabel>Weekly Backups</FormLabel>
+                                                        <FormControl><Input type="number" min={0} {...field} onChange={e => field.onChange(parseInt(e.target.value))} /></FormControl>
+                                                        <FormDescription>Keep for X weeks</FormDescription>
+                                                    </FormItem>
+                                                )}
+                                            />
+                                            <FormField
+                                                control={form.control}
+                                                name="retention.smart.monthly"
+                                                render={({ field }) => (
+                                                    <FormItem>
+                                                        <FormLabel>Monthly Backups</FormLabel>
+                                                        <FormControl><Input type="number" min={0} {...field} onChange={e => field.onChange(parseInt(e.target.value))} /></FormControl>
+                                                        <FormDescription>Keep for X months</FormDescription>
+                                                    </FormItem>
+                                                )}
+                                            />
+                                            <FormField
+                                                control={form.control}
+                                                name="retention.smart.yearly"
+                                                render={({ field }) => (
+                                                    <FormItem>
+                                                        <FormLabel>Yearly Backups</FormLabel>
+                                                        <FormControl><Input type="number" min={0} {...field} onChange={e => field.onChange(parseInt(e.target.value))} /></FormControl>
+                                                        <FormDescription>Keep for X years</FormDescription>
+                                                    </FormItem>
+                                                )}
+                                            />
+                                        </div>
+                                    </TabsContent>
+                                </Tabs>
+                            )}
+                        />
+                    </CardContent>
+                </Card>
 
                 <FormField control={form.control} name="enabled" render={({ field }) => (
                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">

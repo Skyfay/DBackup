@@ -1,4 +1,5 @@
 import { BackupResult } from "@/lib/core/interfaces";
+import { LogLevel, LogType } from "@/lib/core/logs";
 import { execFileAsync, ensureDatabase } from "./connection";
 import { getDialect } from "./dialects";
 import { spawn } from "child_process";
@@ -47,12 +48,12 @@ export async function prepareRestore(config: any, databases: string[]): Promise<
     }
 }
 
-export async function restore(config: any, sourcePath: string, onLog?: (msg: string) => void, onProgress?: (p: number) => void): Promise<BackupResult> {
+export async function restore(config: any, sourcePath: string, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void, onProgress?: (percentage: number) => void): Promise<BackupResult> {
     const startedAt = new Date();
     const logs: string[] = [];
-    const log = (msg: string) => {
+    const log = (msg: string, level: LogLevel = 'info', type: LogType = 'general', details?: string) => {
         logs.push(msg);
-        if (onLog) onLog(msg);
+        if (onLog) onLog(msg, level, type, details);
     };
 
     try {

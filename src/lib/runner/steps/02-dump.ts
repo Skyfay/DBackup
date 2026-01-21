@@ -116,7 +116,7 @@ export async function stepExecuteDump(ctx: RunnerContext) {
     }, 800);
 
     try {
-        dumpResult = await sourceAdapter.dump(sourceConfig, tempFile, (msg) => ctx.log(msg));
+        dumpResult = await sourceAdapter.dump(sourceConfig, tempFile, (msg, level, type, details) => ctx.log(msg, level, type, details));
     } finally {
         clearInterval(watcher);
     }

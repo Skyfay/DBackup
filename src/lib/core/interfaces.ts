@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { LogLevel, LogType } from "./logs";
 
 export interface AdapterConfigSchema {
     name: string;
@@ -71,7 +72,7 @@ export interface DatabaseAdapter extends BaseAdapter {
      * @param onLog Optional callback for live logs
      * @param onProgress Optional callback for progress (0-100)
      */
-    dump(config: any, destinationPath: string, onLog?: (msg: string) => void, onProgress?: (percentage: number) => void): Promise<BackupResult>;
+    dump(config: any, destinationPath: string, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void, onProgress?: (percentage: number) => void): Promise<BackupResult>;
 
     /**
      * Restores the database from a local file path
@@ -80,7 +81,7 @@ export interface DatabaseAdapter extends BaseAdapter {
      * @param onLog Optional callback for live logs
      * @param onProgress Optional callback for progress (0-100)
      */
-    restore(config: any, sourcePath: string, onLog?: (msg: string) => void, onProgress?: (percentage: number) => void): Promise<BackupResult>;
+    restore(config: any, sourcePath: string, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void, onProgress?: (percentage: number) => void): Promise<BackupResult>;
 
     /**
      * Optional method to analyze a dump file and return contained databases
@@ -101,7 +102,7 @@ export interface StorageAdapter extends BaseAdapter {
     /**
      * Uploads a local file to the storage destination
      */
-    upload(config: any, localPath: string, remotePath: string, onProgress?: (percent: number) => void): Promise<boolean>;
+    upload(config: any, localPath: string, remotePath: string, onProgress?: (percent: number) => void, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void): Promise<boolean>;
 
     /**
      * Downloads a file from storage to local path
@@ -110,7 +111,8 @@ export interface StorageAdapter extends BaseAdapter {
         config: any,
         remotePath: string,
         localPath: string,
-        onProgress?: (processed: number, total: number) => void
+        onProgress?: (processed: number, total: number) => void,
+        onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void
     ): Promise<boolean>;
 
     /**

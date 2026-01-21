@@ -1,16 +1,18 @@
 import { BackupResult } from "@/lib/core/interfaces";
+import { LogLevel, LogType } from "@/lib/core/logs";
 import { execFileAsync } from "./connection";
 import { getDialect } from "./dialects";
 import fs from "fs/promises";
 import { createWriteStream } from "fs";
+import { waitForProcess } from "@/lib/adapters/process";
 import { spawn } from "child_process";
 
-export async function dump(config: any, destinationPath: string, onLog?: (msg: string) => void, onProgress?: (percentage: number) => void): Promise<BackupResult> {
+export async function dump(config: any, destinationPath: string, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void, onProgress?: (percentage: number) => void): Promise<BackupResult> {
     const startedAt = new Date();
     const logs: string[] = [];
-    const log = (msg: string) => {
+    const log = (msg: string, level: LogLevel = 'info', type: LogType = 'general', details?: string) => {
         logs.push(msg);
-        if (onLog) onLog(msg);
+        if (onLog) onLog(msg, level, type, details);
     };
 
     try {
@@ -29,7 +31,8 @@ export async function dump(config: any, destinationPath: string, onLog?: (msg: s
             env.MYSQL_PWD = config.password;
         }
 
-        log(`Starting dump with args: mysqldump ${args.join(' ').replace(config.password || '', '******')}`);
+        const safeCmd = `mysqldump ${args.join(' ').replace(config.password || '___NONE___', '******')}`;
+        log(`Running database dump`, 'info', 'command', safeCmd);
 
         // Use spawn for streaming output (Best Practice from Guide)
         const dumpProcess = spawn('mysqldump', args, { env });
@@ -38,7 +41,7 @@ export async function dump(config: any, destinationPath: string, onLog?: (msg: s
         dumpProcess.stdout.pipe(writeStream);
 
         dumpProcess.stderr.on('data', (data) => {
-            log(`[mysqldump] ${data.toString()}`);
+            log(data.toString().trim());
         });
 
         await new Promise<void>((resolve, reject) => {

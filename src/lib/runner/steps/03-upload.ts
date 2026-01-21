@@ -146,7 +146,13 @@ export async function stepUpload(ctx: RunnerContext) {
         ctx.log(`Uploading metadata sidecar: ${path.basename(metaPath)}`);
         // We upload to the same path but with .meta.json appended
         // e.g. /backups/Job/file.sql.meta.json
-        await destAdapter.upload(destConfig, metaPath, remotePath + ".meta.json");
+        await destAdapter.upload(
+            destConfig,
+            metaPath,
+            remotePath + ".meta.json",
+            undefined,
+            (msg, level, type, details) => ctx.log(msg, level, type, details)
+        );
 
         // Try to delete temp metadata file
         await fs.unlink(metaPath).catch(() => {});
@@ -159,7 +165,7 @@ export async function stepUpload(ctx: RunnerContext) {
     ctx.updateProgress(0, "Uploading Backup...");
     const uploadSuccess = await destAdapter.upload(destConfig, ctx.tempFile, remotePath, (percent) => {
         ctx.updateProgress(percent, `Uploading Backup (${percent}%)`);
-    });
+    }, (msg, level, type, details) => ctx.log(msg, level, type, details));
 
     if (!uploadSuccess) {
         throw new Error("Upload failed (adapter returned false).");

@@ -1,4 +1,5 @@
 import { BackupResult } from "@/lib/core/interfaces";
+import { LogLevel, LogType } from "@/lib/core/logs";
 import { execFileAsync } from "./connection";
 import { getDialect } from "./dialects";
 import { spawn } from "child_process";
@@ -6,13 +7,13 @@ import { createWriteStream } from "fs";
 import fs from "fs/promises";
 import { waitForProcess } from "@/lib/adapters/process";
 
-export async function dump(config: any, destinationPath: string, onLog?: (msg: string) => void, onProgress?: (percentage: number) => void): Promise<BackupResult> {
+export async function dump(config: any, destinationPath: string, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void, onProgress?: (percentage: number) => void): Promise<BackupResult> {
     const startedAt = new Date();
     const logs: string[] = [];
 
-    const log = (msg: string) => {
+    const log = (msg: string, level: LogLevel = 'info', type: LogType = 'general', details?: string) => {
         logs.push(msg);
-        if (onLog) onLog(msg);
+        if (onLog) onLog(msg, level, type, details);
     };
 
     try {
@@ -35,7 +36,7 @@ export async function dump(config: any, destinationPath: string, onLog?: (msg: s
         // Case 1: Single Database (Stream directly)
         if (dbs.length <= 1) {
             const args = dialect.getDumpArgs(config, dbs);
-            log(`Starting dump with args: pg_dump ${args.join(' ')}`);
+            log(`Starting dump process`, 'info', 'command', `pg_dump ${args.join(' ')}`);
 
             const dumpProcess = spawn('pg_dump', args, { env });
             const writeStream = createWriteStream(destinationPath);
@@ -43,7 +44,7 @@ export async function dump(config: any, destinationPath: string, onLog?: (msg: s
             dumpProcess.stdout.pipe(writeStream);
 
             dumpProcess.stderr.on('data', (data) => {
-                 log(`[pg_dump] ${data.toString()}`);
+                 log(data.toString().trim());
             });
 
             await new Promise<void>((resolve, reject) => {
@@ -67,15 +68,16 @@ export async function dump(config: any, destinationPath: string, onLog?: (msg: s
                 // Inject --create if not present
                 if (!args.includes('--create')) args.push('--create');
 
+                log(`Running dump command`, 'info', 'command', `pg_dump ${args.join(' ')}`);
                 const child = spawn('pg_dump', args, { env });
 
                 // Pipe stdout to file, but don't close the stream when this child exits
                 child.stdout.pipe(writeStream, { end: false });
 
                 // Use shared process monitor
-                await waitForProcess(child, `pg_dump for ${db}`, (msg) => log(`[${db}] stderr: ${msg}`));
+                await waitForProcess(child, `pg_dump for ${db}`, (msg) => log(`[${db}] ${msg}`));
 
-                log(`Completed dump for ${db}`);
+                log(`Completed dump for ${db}`, 'success');
             }
 
             writeStream.end();

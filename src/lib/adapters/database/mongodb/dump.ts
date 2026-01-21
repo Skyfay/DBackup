@@ -1,4 +1,5 @@
 import { BackupResult } from "@/lib/core/interfaces";
+import { LogLevel, LogType } from "@/lib/core/logs";
 import { execFileAsync } from "./connection";
 import { getDialect } from "./dialects";
 import { spawn } from "child_process";
@@ -6,13 +7,13 @@ import { createWriteStream } from "fs";
 import fs from "fs/promises";
 import { waitForProcess } from "@/lib/adapters/process";
 
-export async function dump(config: any, destinationPath: string, onLog?: (msg: string) => void, onProgress?: (percentage: number) => void): Promise<BackupResult> {
+export async function dump(config: any, destinationPath: string, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void, onProgress?: (percentage: number) => void): Promise<BackupResult> {
     const startedAt = new Date();
     const logs: string[] = [];
 
-    const log = (msg: string) => {
+    const log = (msg: string, level: LogLevel = 'info', type: LogType = 'general', details?: string) => {
         logs.push(msg);
-        if (onLog) onLog(msg);
+        if (onLog) onLog(msg, level, type, details);
     };
 
     try {
@@ -47,7 +48,7 @@ export async function dump(config: any, destinationPath: string, onLog?: (msg: s
             return arg;
         });
 
-        log(`Starting dump with args: mongodump ${logArgs.join(' ')}`);
+        log(`Running mongo dump`, 'info', 'command', `mongodump ${logArgs.join(' ')}`);
 
         const dumpProcess = spawn('mongodump', args);
         const writeStream = createWriteStream(destinationPath);
@@ -55,7 +56,7 @@ export async function dump(config: any, destinationPath: string, onLog?: (msg: s
         dumpProcess.stdout.pipe(writeStream);
 
         dumpProcess.stderr.on('data', (data) => {
-            log(`[mongodump] ${data.toString()}`);
+            log(data.toString().trim());
         });
 
         await waitForProcess(dumpProcess, 'mongodump');

@@ -1,4 +1,5 @@
 import { StorageAdapter, FileInfo } from "@/lib/core/interfaces";
+import { LogLevel, LogType } from "@/lib/core/logs";
 import { LocalStorageSchema } from "@/lib/adapters/definitions";
 import fs from "fs/promises";
 import path from "path";
@@ -11,10 +12,12 @@ export const LocalFileSystemAdapter: StorageAdapter = {
     name: "Local Filesystem",
     configSchema: LocalStorageSchema,
 
-    async upload(config: { basePath: string }, localPath: string, remotePath: string, onProgress?: (percent: number) => void): Promise<boolean> {
+    async upload(config: { basePath: string }, localPath: string, remotePath: string, onProgress?: (percent: number) => void, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void): Promise<boolean> {
         try {
             const destPath = path.join(config.basePath, remotePath);
             const destDir = path.dirname(destPath);
+
+            if (onLog) onLog(`Preparing local destination: ${destDir}`, 'info', 'general');
 
             if (!existsSync(destDir)) {
                 await fs.mkdir(destDir, { recursive: true });
@@ -37,8 +40,9 @@ export const LocalFileSystemAdapter: StorageAdapter = {
 
             await pipeline(sourceStream, destStream);
             return true;
-        } catch (error) {
+        } catch (error: any) {
             console.error("Local upload failed:", error);
+            if (onLog) onLog(`Local upload failed: ${error.message}`, 'error', 'general', error.stack);
             return false;
         }
     },
@@ -47,7 +51,8 @@ export const LocalFileSystemAdapter: StorageAdapter = {
         config: { basePath: string },
         remotePath: string,
         localPath: string,
-        onProgress?: (processed: number, total: number) => void
+        onProgress?: (processed: number, total: number) => void,
+        onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void
     ): Promise<boolean> {
         try {
             const sourcePath = path.join(config.basePath, remotePath);

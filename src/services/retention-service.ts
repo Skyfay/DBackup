@@ -20,8 +20,12 @@ export class RetentionService {
             return { keep: files, delete: [] };
         }
 
+        // Separate locked files (Always keep, do not count towards policy)
+        const lockedFiles = files.filter(f => f.locked);
+        const processingFiles = files.filter(f => !f.locked);
+
         // Sort files by date (newest first)
-        const sortedFiles = [...files].sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
+        const sortedFiles = [...processingFiles].sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
 
         const processedFiles: FileWithReasons[] = sortedFiles.map(f => ({ file: f, keep: false, reasons: [] }));
 
@@ -31,9 +35,12 @@ export class RetentionService {
             this.applySmartPolicy(processedFiles, policy.smart);
         }
 
+        const keptFromPolicy = processedFiles.filter(f => f.keep).map(f => f.file);
+        const deletedFromPolicy = processedFiles.filter(f => !f.keep).map(f => f.file);
+
         return {
-            keep: processedFiles.filter(f => f.keep).map(f => f.file),
-            delete: processedFiles.filter(f => !f.keep).map(f => f.file)
+            keep: [...keptFromPolicy, ...lockedFiles], // Add locked files to keep list
+            delete: deletedFromPolicy
         };
     }
 

@@ -62,12 +62,7 @@ export async function stepRetention(ctx: RunnerContext) {
         let backupFiles = files.filter(f => !f.name.endsWith('.meta.json'));
 
         // Check for Locked files (metadata check)
-        // Since we don't want to delete locked files, AND they usually shouldn't count towards the policy (as per user request "nicht erfasst"),
-        // we need to identify them.
-        // Performance Warning: This reads metadata for ALL files in the retention scope.
         if (ctx.destAdapter.read) {
-             const unlockedBackups: FileInfo[] = [];
-
              for (const file of backupFiles) {
                   try {
                       // We assume metadata is alongside
@@ -75,18 +70,13 @@ export async function stepRetention(ctx: RunnerContext) {
                       if (metaContent) {
                           const meta = JSON.parse(metaContent);
                           if (meta.locked) {
-                              ctx.log(`Retention: Ignoring locked file ${file.name}`);
-                              continue;
+                              file.locked = true; // Mark as locked
                           }
                       }
                   } catch (e) {
-                      // If metadata read fails, assume not locked? Or fail safe?
-                      // We assume not locked to proceed with standard logic, but log it?
-                      // Or maybe we treat "missing metadata" as "old file" -> delete?
+                      // Ignore read errors
                   }
-                  unlockedBackups.push(file);
              }
-             backupFiles = unlockedBackups;
         }
 
         // Apply Policy

@@ -169,4 +169,53 @@ describe('RetentionService', () => {
             expect(result.keep.map(f => f.name)).toEqual(['feb.sql', 'jan.sql']);
         });
     });
+
+    describe('Locking Behavior', () => {
+        it('should keep locked files regardless of limit', () => {
+            const policy: RetentionConfiguration = {
+                mode: 'SIMPLE',
+                simple: { keepCount: 2 }
+            };
+
+            const files = [
+                createMockFile('newest.sql', new Date()),
+                createMockFile('middle.sql', subDays(today, 1)),
+                createMockFile('oldest.sql', subDays(today, 2)), // Should be deleted normally
+                { ...createMockFile('very-old-locked.sql', subDays(today, 10)), locked: true } // Locked
+            ];
+
+            const result = RetentionService.calculateRetention(files, policy);
+
+            // Expectation:
+            // 2 Newest from unlocked: 'newest', 'middle'
+            // Locked: 'very-old-locked'
+            // Total Keep: 3
+            // Deleted: 'oldest'
+
+            expect(result.keep).toHaveLength(3);
+            expect(result.keep.map(f => f.name)).toContain('very-old-locked.sql');
+            expect(result.keep.map(f => f.name)).toContain('newest.sql');
+            expect(result.keep.map(f => f.name)).toContain('middle.sql');
+
+            expect(result.delete).toHaveLength(1);
+            expect(result.delete[0].name).toBe('oldest.sql');
+        });
+
+        it('should not count locked files towards the limit', () => {
+             const policy: RetentionConfiguration = {
+                mode: 'SIMPLE',
+                simple: { keepCount: 1 }
+            };
+
+             const files = [
+                { ...createMockFile('locked-recent.sql', today), locked: true }, // Locked, ignored for count
+                createMockFile('unlocked.sql', subDays(today, 1)), // Should still be kept as the 1st unlocked
+             ];
+
+             const result = RetentionService.calculateRetention(files, policy);
+
+             expect(result.keep).toHaveLength(2);
+             expect(result.delete).toHaveLength(0);
+        });
+    });
 });

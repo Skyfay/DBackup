@@ -93,6 +93,7 @@ export type FileInfo = {
     path: string;
     size: number;
     lastModified: Date;
+    locked?: boolean;
 };
 
 export interface StorageAdapter extends BaseAdapter {

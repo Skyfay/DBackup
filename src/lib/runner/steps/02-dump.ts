@@ -102,6 +102,12 @@ export async function stepExecuteDump(ctx: RunnerContext) {
     // Ensure config has required fields passed from the Source entity logic if needed
     let dumpResult;
 
+    // Add detectedVersion to config for version-matched binary selection
+    const sourceConfigWithVersion = {
+        ...sourceConfig,
+        detectedVersion: ctx.metadata?.engineVersion || undefined
+    };
+
     // Start monitoring file size for progress updates
     const watcher = setInterval(async () => {
              // Check if file exists and get size
@@ -116,7 +122,7 @@ export async function stepExecuteDump(ctx: RunnerContext) {
     }, 800);
 
     try {
-        dumpResult = await sourceAdapter.dump(sourceConfig, tempFile, (msg, level, type, details) => ctx.log(msg, level, type, details));
+        dumpResult = await sourceAdapter.dump(sourceConfigWithVersion, tempFile, (msg, level, type, details) => ctx.log(msg, level, type, details));
     } finally {
         clearInterval(watcher);
     }

@@ -6,6 +6,7 @@ import { spawn } from "child_process";
 import { createWriteStream } from "fs";
 import fs from "fs/promises";
 import { waitForProcess } from "@/lib/adapters/process";
+import { getPostgresBinary } from "./version-utils";
 
 export async function dump(config: any, destinationPath: string, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void, onProgress?: (percentage: number) => void): Promise<BackupResult> {
     const startedAt = new Date();
@@ -33,12 +34,16 @@ export async function dump(config: any, destinationPath: string, onLog?: (msg: s
 
         const dialect = getDialect('postgres', config.detectedVersion);
 
-        // Case 1: Single Database (Stream directly)
+        // Case 1: Single Database - Use pg_dump with custom format
         if (dbs.length <= 1) {
             const args = dialect.getDumpArgs(config, dbs);
-            log(`Starting dump process`, 'info', 'command', `pg_dump ${args.join(' ')}`);
 
-            const dumpProcess = spawn('pg_dump', args, { env });
+            // Use version-matched pg_dump binary
+            const pgDumpBinary = await getPostgresBinary('pg_dump', config.detectedVersion);
+            log(`Starting single-database dump (custom format)`, 'info', 'command', `${pgDumpBinary} ${args.join(' ')}`);
+            log(`Using ${pgDumpBinary} for PostgreSQL ${config.detectedVersion}`, 'info');
+
+            const dumpProcess = spawn(pgDumpBinary, args, { env });
             const writeStream = createWriteStream(destinationPath);
 
             dumpProcess.stdout.pipe(writeStream);
@@ -56,31 +61,44 @@ export async function dump(config: any, destinationPath: string, onLog?: (msg: s
                 writeStream.on('error', (err) => reject(err));
             });
         }
-        // Case 2: Multiple Databases (Pipe output sequentially)
+        // Case 2: Multiple Databases - Use pg_dumpall for plain SQL
         else {
-            log(`Dumping multiple databases: ${dbs.join(', ')}`);
+            log(`Dumping multiple databases using pg_dumpall: ${dbs.join(', ')}`, 'info');
+            log(`Note: Using plain SQL format for multi-database support`, 'info');
+
+            const args = dialect.getDumpArgs(config, dbs);
+
+            // Use version-matched pg_dumpall binary
+            const pgDumpBinary = await getPostgresBinary('pg_dump', config.detectedVersion);
+            const pgDumpallBinary = pgDumpBinary.replace('pg_dump', 'pg_dumpall');
+
+            log(`Starting multi-database dump`, 'info', 'command', `${pgDumpallBinary} ${args.join(' ')}`);
+            log(`Using ${pgDumpallBinary} for PostgreSQL ${config.detectedVersion}`, 'info');
+
+            const dumpProcess = spawn(pgDumpallBinary, args, { env });
             const writeStream = createWriteStream(destinationPath);
 
-            for (const db of dbs) {
-                log(`Starting dump for ${db}...`);
-                const args = dialect.getDumpArgs(config, [db]);
+            dumpProcess.stdout.pipe(writeStream);
 
-                // Inject --create if not present
-                if (!args.includes('--create')) args.push('--create');
+            dumpProcess.stderr.on('data', (data) => {
+                const msg = data.toString().trim();
+                if (msg && !msg.includes('NOTICE:')) {
+                    log(msg, 'info');
+                }
+            });
 
-                log(`Running dump command`, 'info', 'command', `pg_dump ${args.join(' ')}`);
-                const child = spawn('pg_dump', args, { env });
-
-                // Pipe stdout to file, but don't close the stream when this child exits
-                child.stdout.pipe(writeStream, { end: false });
-
-                // Use shared process monitor
-                await waitForProcess(child, `pg_dump for ${db}`, (msg) => log(`[${db}] ${msg}`));
-
-                log(`Completed dump for ${db}`, 'success');
-            }
-
-            writeStream.end();
+            await new Promise<void>((resolve, reject) => {
+                dumpProcess.on('close', (code) => {
+                    if (code === 0) {
+                        log('Multi-database dump completed successfully', 'success');
+                        resolve();
+                    } else {
+                        reject(new Error(`pg_dumpall exited with code ${code}`));
+                    }
+                });
+                dumpProcess.on('error', (err) => reject(err));
+                writeStream.on('error', (err) => reject(err));
+            });
         }
 
         const stats = await fs.stat(destinationPath);

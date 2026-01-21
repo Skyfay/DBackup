@@ -381,6 +381,26 @@ export class RestoreService {
             // Inject adapterId as type for Dialect selection
             dbConf.type = sourceConfig.adapterId;
 
+            // CRITICAL: Detect target server version for version-matched binary selection
+            if (sourceAdapter.test) {
+                try {
+                    const testConf = { ...dbConf };
+                    if (privilegedAuth) {
+                        testConf.privilegedAuth = privilegedAuth;
+                    }
+
+                    const testResult = await sourceAdapter.test(testConf);
+                    if (testResult.success && testResult.version) {
+                        dbConf.detectedVersion = testResult.version;
+                        log(`Target server version: ${testResult.version}`, 'info');
+                    } else {
+                        log('Could not detect target server version, using default binary', 'warning');
+                    }
+                } catch (e: any) {
+                    log(`Version detection failed: ${e.message}`, 'warning');
+                }
+            }
+
             // Override database name if provided
             if (targetDatabaseName) {
                 dbConf.database = targetDatabaseName;

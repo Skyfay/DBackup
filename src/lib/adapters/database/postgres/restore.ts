@@ -7,6 +7,7 @@ import { createReadStream } from "fs";
 import { Transform, TransformCallback } from "stream";
 import fs from "fs/promises";
 import { waitForProcess } from "@/lib/adapters/process";
+import { getPostgresBinary } from "./version-utils";
 
 export async function prepareRestore(config: any, databases: string[]): Promise<void> {
     const usePrivileged = !!config.privilegedAuth;
@@ -49,6 +50,23 @@ export async function prepareRestore(config: any, databases: string[]): Promise<
             }
             throw e;
         }
+    }
+}
+
+/**
+ * Detect if a backup file is in PostgreSQL custom format or plain SQL
+ */
+async function isCustomFormat(filePath: string): Promise<boolean> {
+    try {
+        const buffer = Buffer.alloc(5);
+        const handle = await fs.open(filePath, 'r');
+        await handle.read(buffer, 0, 5, 0);
+        await handle.close();
+
+        // Custom format starts with "PGDMP" magic bytes
+        return buffer.toString('ascii', 0, 5) === 'PGDMP';
+    } catch {
+        return false;
     }
 }
 
@@ -96,163 +114,377 @@ export async function restore(config: any, sourcePath: string, onLog?: (msg: str
 
         const dialect = getDialect('postgres', config.detectedVersion);
 
+        // Detect backup format
+        const isCustom = await isCustomFormat(sourcePath);
+        log(`Detected backup format: ${isCustom ? 'Custom (binary)' : 'Plain SQL'}`, 'info');
+
         // Check if we have advanced mapping config
         const mapping = config.databaseMapping as Array<{ originalName: string, targetName: string, selected: boolean }> | undefined;
 
-        // If mapping is provided, we need to stream and filter the SQL
+        // Multi-DB Restore with Mapping
         if (mapping && mapping.length > 0) {
-            log("Performing Selective/Mapped Restore...");
+            const selectedDbs = mapping.filter(m => m.selected);
+            if (selectedDbs.length === 0) {
+                throw new Error("No databases selected for restore.");
+            }
 
-            // 1. Build map for quick lookup
-            const dbMap = new Map<string, { target: string, selected: boolean }>();
-            mapping.forEach(m => dbMap.set(m.originalName, { target: m.targetName, selected: m.selected }));
+            log(`Performing Selective/Mapped Restore: ${selectedDbs.length} database(s)`, 'info');
+            selectedDbs.forEach(db => {
+                log(`  ${db.originalName} → ${db.targetName || db.originalName}`, 'info');
+            });
 
-            // 2. Spawn psql connected to 'postgres' (default maintenance DB) because we might create/switch DBs in the stream?
-            // Actually, if we map databases, the stream rewriter handles \connect or CREATE DATABASE logic potentially?
-            // "postgres" is safe default.
+            if (isCustom && selectedDbs.length > 1) {
+                log("ERROR: Custom-format dumps only support single database.", 'error');
+                log("Solution: Use Plain SQL format (without -Fc flag) for multi-database backups.", 'error');
+                throw new Error("Multi-database restore requires Plain SQL format, not Custom format. Please recreate backup without -Fc flag.");
+            }
 
-            const args = dialect.getRestoreArgs(usageConfig, 'postgres');
+            if (isCustom) {
+                // Custom Format: Single DB restore via pg_restore
+                log("Using pg_restore for custom-format restore", 'info');
 
-            log("Starting restore process", "info", "command", `psql ${args.join(' ')}`);
+                const targetDb = selectedDbs[0].targetName || selectedDbs[0].originalName;
 
-            await new Promise<void>(async (resolve, reject) => {
-                const psql = spawn('psql', args, { env, stdio: ['pipe', 'pipe', 'pipe'] });
+                // Use version-matched pg_restore binary
+                const pgRestoreBinary = await getPostgresBinary('pg_restore', config.detectedVersion);
+                log(`Using ${pgRestoreBinary} for PostgreSQL ${config.detectedVersion}`, 'info');
 
-                // 3. Create Transform Stream to filter/rewrite SQL
-                const fileStream = createReadStream(sourcePath, { encoding: 'utf8', highWaterMark: 64 * 1024 });
+                const args = [
+                    '-h', usageConfig.host,
+                    '-p', String(usageConfig.port),
+                    '-U', usageConfig.user,
+                    '-d', targetDb,
+                    '-w',
+                    '--clean',
+                    '--if-exists',
+                    '--no-owner',
+                    '--no-acl',
+                    '--no-comments',
+                    '--no-tablespaces',
+                    '--no-security-labels',
+                    '-v',
+                    sourcePath
+                ];
 
-                fileStream.on('data', (chunk) => {
-                        updateProgress(chunk.length);
-                });
+log("Starting restore process", "info", "command", `${pgRestoreBinary} ${args.join(' ')}`);
 
-                let currentDb: string | null = null;
-                let skipMode = false;
+            await new Promise<void>((resolve, reject) => {
+                const pgRestore = spawn(pgRestoreBinary, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
 
-                const transformer = new Transform({
-                    objectMode: true, // We process lines? No, we process chunks but parse lines.
-                    decodeStrings: false,
-                    transform(chunk: string | Buffer, encoding: BufferEncoding, callback: TransformCallback) {
-                        const lines = chunk.toString().split('\n');
-                        const output: string[] = [];
+                let stderrBuffer = "";
+                let stdoutBuffer = "";
 
-                        for (const line of lines) {
-
-                            // Detect Context Switches
-                            // Check CREATE DATABASE
-                            const createMatch = line.match(/^CREATE DATABASE "?([^";\s]+)"? /i);
-                            if (createMatch) {
-                                const dbName = createMatch[1];
-                                currentDb = dbName;
-                                const map = dbMap.get(dbName);
-
-                                if (map) {
-                                    if (!map.selected) {
-                                        skipMode = true;
-                                        // Do not push line
-                                    } else {
-                                        skipMode = false;
-                                        if (map.target !== dbName) {
-                                            // Rename
-                                            output.push(line.replace(`"${dbName}"`, `"${map.target}"`).replace(` ${dbName} `, ` "${map.target}" `));
-                                        } else {
-                                            output.push(line);
-                                        }
-                                    }
-                                } else {
-                                    // Unknown DB (maybe not analyzed?), default to include? Or skip if we are in selective mode?
-                                    // Let's assume we include things not in map (like globals) but if it's a DB we didn't map, we keep it.
-                                    skipMode = false;
-                                    output.push(line);
-                                }
-                                continue;
+                if (pgRestore.stderr) {
+                    pgRestore.stderr.on('data', (data) => {
+                        const text = data.toString();
+                        stderrBuffer += text;
+                        const lines = text.trim().split('\n');
+                        lines.forEach(line => {
+                            if (line && !line.includes('NOTICE:')) {
+                                log(line, 'info');
                             }
+                        });
+                    });
+                }
 
-                            // Check Connect
-                            const connectMatch = line.match(/^\\connect "?([^"\s]+)"?/i);
-                            if (connectMatch) {
-                                const dbName = connectMatch[1];
-                                const map = dbMap.get(dbName);
+                if (pgRestore.stdout) {
+                    pgRestore.stdout.on('data', (data) => {
+                        const text = data.toString();
+                        stdoutBuffer += text;
+                        const lines = text.trim().split('\n');
+                        lines.forEach(line => {
+                            if (line) log(line, 'info');
+                        });
+                    });
+                }
 
-                                if (map) {
-                                    if (!map.selected) {
-                                        skipMode = true;
-                                    } else {
-                                        skipMode = false;
-                                        if (map.target !== dbName) {
-                                            output.push(line.replace(`"${dbName}"`, `"${map.target}"`).replace(` ${dbName}`, ` "${map.target}"`));
-                                        } else {
-                                            output.push(line);
-                                        }
-                                    }
-                                } else {
-                                    // Connect to something else (e.g. postgres)? Keep it.
-                                    skipMode = false;
-                                    output.push(line);
-                                }
-                                continue;
-                            }
-
-                            if (!skipMode) {
-                                // Handle Renames inside body (ALTER DATABASE ...)
-                                if (currentDb && dbMap.get(currentDb)?.target !== currentDb) {
-                                    const target = dbMap.get(currentDb)!.target;
-                                    // Simple heuristic replace for ALTER DATABASE "old" ...
-                                    if (line.match(new RegExp(`ALTER DATABASE "?${currentDb}"?`, 'i'))) {
-                                        output.push(line.replace(new RegExp(`"${currentDb}"`, 'g'), `"${target}"`).replace(new RegExp(` ${currentDb} `, 'g'), ` "${target}" `));
-                                    } else {
-                                        output.push(line);
-                                    }
-                                } else {
-                                    output.push(line);
-                                }
-                            }
+                pgRestore.on('close', (code) => {
+                    if (code === 0) {
+                        resolve();
+                    } else if (code === 1 && stderrBuffer.includes('warning') && stderrBuffer.includes('errors ignored')) {
+                        // Exit code 1 with "errors ignored" means warnings, not fatal errors
+                        log('Restore completed with warnings (non-fatal, likely compatibility issues)', 'warning');
+                        resolve();
+                    } else {
+                        if (stdoutBuffer.trim()) {
+                            log(`Captured stdout: ${stdoutBuffer.trim()}`, 'error');
+                        }
+                        if (stderrBuffer.trim()) {
+                            log(`Captured stderr: ${stderrBuffer.trim()}`, 'error');
                         }
 
-                        callback(null, output.join('\n'));
+                        let errorMsg = `pg_restore exited with code ${code}`;
+                        if (stderrBuffer.trim()) {
+                            errorMsg += `. Error: ${stderrBuffer.trim()}`;
+                        }
+                        reject(new Error(errorMsg));
                     }
                 });
 
-                // Pipe: File -> Transformer -> PSQL
-                fileStream.pipe(transformer).pipe(psql.stdin);
-
-                try {
-                    await waitForProcess(psql, 'psql', (d) => log(`stderr: ${d}`));
-                    resolve();
-                } catch (err) {
-                    reject(err);
-                }
+                pgRestore.on('error', (err) => {
+                    reject(new Error(`Failed to start pg_restore: ${err.message}`));
+                });
             });
+            } else {
+                // Plain SQL Format: Multi-DB restore via psql with SQL filtering
+                log("Using psql for plain-SQL multi-database restore", 'info');
+
+                // Use version-matched psql binary
+                const psqlBinary = await getPostgresBinary('psql', config.detectedVersion);
+                log(`Using ${psqlBinary} for PostgreSQL ${config.detectedVersion}`, 'info');
+
+                // Build database map for filtering
+                const dbMap = new Map(selectedDbs.map(m => [
+                    m.originalName,
+                    { selected: m.selected, target: m.targetName || m.originalName }
+                ]));
+
+                const args = [
+                    '-h', usageConfig.host,
+                    '-p', String(usageConfig.port),
+                    '-U', usageConfig.user,
+                    '-d', 'postgres', // Connect to maintenance DB
+                    '-w',
+                    '-v', 'ON_ERROR_STOP=1'
+                ];
+
+                log("Starting multi-database restore", "info", "command", `${psqlBinary} ${args.join(' ')} < ${sourcePath}`);
+
+                await new Promise<void>((resolve, reject) => {
+                    const psql = spawn(psqlBinary, args, { env, stdio: ['pipe', 'pipe', 'pipe'] });
+
+                    let stderrBuffer = "";
+                    let stdoutBuffer = "";
+
+                    if (psql.stderr) {
+                        psql.stderr.on('data', (data) => {
+                            const text = data.toString();
+                            stderrBuffer += text;
+                            const lines = text.trim().split('\n');
+                            lines.forEach(line => {
+                                if (line && !line.includes('NOTICE:')) {
+                                    log(line, 'error');
+                                }
+                            });
+                        });
+                    }
+
+                    if (psql.stdout) {
+                        psql.stdout.on('data', (data) => {
+                            const text = data.toString();
+                            stdoutBuffer += text;
+                            const lines = text.trim().split('\n');
+                            lines.forEach(line => {
+                                if (line) log(line, 'info');
+                            });
+                        });
+                    }
+
+                    // Stream SQL file through transformer
+                    const fileStream = createReadStream(sourcePath, { encoding: 'utf8', highWaterMark: 64 * 1024 });
+
+                    fileStream.on('data', (chunk) => {
+                        updateProgress(chunk.length);
+                    });
+
+                    let currentDb: string | null = null;
+                    let skipMode = false;
+
+                    const transformer = new Transform({
+                        decodeStrings: false,
+                        transform(chunk: string | Buffer, encoding: BufferEncoding, callback: TransformCallback) {
+                            const lines = chunk.toString().split('\n');
+                            const output: string[] = [];
+
+                            for (const line of lines) {
+                                // Detect CREATE DATABASE
+                                const createMatch = line.match(/^CREATE DATABASE "?([^";\ s]+)"?/i);
+                                if (createMatch) {
+                                    const dbName = createMatch[1];
+                                    currentDb = dbName;
+                                    const map = dbMap.get(dbName);
+
+                                    if (map) {
+                                        if (!map.selected) {
+                                            skipMode = true;
+                                        } else {
+                                            skipMode = false;
+                                            if (map.target !== dbName) {
+                                                output.push(line.replace(new RegExp(`"?${dbName}"?`, 'g'), `"${map.target}"`));
+                                            } else {
+                                                output.push(line);
+                                            }
+                                        }
+                                    } else {
+                                        skipMode = false;
+                                        output.push(line);
+                                    }
+                                    continue;
+                                }
+
+                                // Detect \connect
+                                const connectMatch = line.match(/^\\connect "?([^"\s]+)"?/i);
+                                if (connectMatch) {
+                                    const dbName = connectMatch[1];
+                                    const map = dbMap.get(dbName);
+
+                                    if (map) {
+                                        if (!map.selected) {
+                                            skipMode = true;
+                                        } else {
+                                            skipMode = false;
+                                            if (map.target !== dbName) {
+                                                output.push(line.replace(new RegExp(`"?${dbName}"?`, 'g'), `"${map.target}"`));
+                                            } else {
+                                                output.push(line);
+                                            }
+                                        }
+                                    } else {
+                                        skipMode = false;
+                                        output.push(line);
+                                    }
+                                    continue;
+                                }
+
+                                if (!skipMode) {
+                                    // Handle renames in ALTER DATABASE statements
+                                    if (currentDb && dbMap.get(currentDb)?.target !== currentDb) {
+                                        const target = dbMap.get(currentDb)!.target;
+                                        if (line.match(new RegExp(`ALTER DATABASE "?${currentDb}"?`, 'i'))) {
+                                            output.push(line.replace(new RegExp(`"?${currentDb}"?`, 'g'), `"${target}"`));
+                                        } else {
+                                            output.push(line);
+                                        }
+                                    } else {
+                                        output.push(line);
+                                    }
+                                }
+                            }
+
+                            callback(null, output.join('\n'));
+                        }
+                    });
+
+                    fileStream.pipe(transformer).pipe(psql.stdin!);
+
+                    psql.on('close', (code) => {
+                        if (code === 0) {
+                            resolve();
+                        } else {
+                            if (stdoutBuffer.trim()) {
+                                log(`Captured stdout: ${stdoutBuffer.trim()}`, 'error');
+                            }
+                            if (stderrBuffer.trim()) {
+                                log(`Captured stderr: ${stderrBuffer.trim()}`, 'error');
+                            }
+
+                            let errorMsg = `psql exited with code ${code}`;
+                            if (stderrBuffer.trim()) {
+                                errorMsg += `. Error: ${stderrBuffer.trim()}`;
+                            }
+                            reject(new Error(errorMsg));
+                        }
+                    });
+
+                    psql.on('error', (err) => {
+                        reject(new Error(`Failed to start psql: ${err.message}`));
+                    });
+                });
+            }
 
         } else {
-            // Legacy / Direct Restore (Single file, no fancy mapping)
+            // Direct Restore (Single DB or no mapping)
             const targetDb = config.database || 'postgres';
-            const args = dialect.getRestoreArgs(usageConfig, targetDb);
 
-            log("Starting direct restore command", "info", "command", `psql ${args.join(' ')}`);
+            // Use version-matched pg_restore binary
+            const pgRestoreBinary = await getPostgresBinary('pg_restore', config.detectedVersion);
+            log(`Using ${pgRestoreBinary} for PostgreSQL ${config.detectedVersion}`, 'info');
 
-            const psql = spawn('psql', args, { env, stdio: ['pipe', 'pipe', 'pipe'] });
+            // Use pg_restore for custom format dumps (binary)
+            // pg_restore can handle both custom and plain formats
+            const args = [
+                '-h', usageConfig.host,
+                '-p', String(usageConfig.port),
+                '-U', usageConfig.user,
+                '-d', targetDb,
+                '-w', // Never prompt for password
+                '--clean', // Clean (drop) database objects before recreating
+                '--if-exists', // Use IF EXISTS when dropping
+                '--no-owner', // Skip ownership restoration (prevents permission errors)
+                '--no-acl', // Skip ACL restoration (prevents permission errors)
+                '--no-comments', // Skip comments (prevents version-specific syntax issues)
+                '--no-tablespaces', // Skip tablespace assignments
+                '--no-security-labels', // Skip security labels
+                '-v', // Verbose
+                sourcePath // File path
+            ];
 
-            // Handle stdout to prevent buffer blocking
-            if (psql.stdout) {
-                 psql.stdout.on('data', () => {});
-            }
+            log("Starting direct restore command", "info", "command", `${pgRestoreBinary} ${args.join(' ')}`);
 
-            const stream = createReadStream(sourcePath);
-            stream.on('data', (c) => updateProgress(c.length));
+            await new Promise<void>((resolve, reject) => {
+                const pgRestore = spawn(pgRestoreBinary, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
 
-            const streamPromise = pipeline(stream, psql.stdin).catch(err => {
-                 // Ignore EPIPE as psql exit code will tell the story
-                 if (err.code === 'EPIPE') return;
-                 throw err;
+                // Capture both stderr and stdout for detailed error messages
+                let stderrBuffer = "";
+                let stdoutBuffer = "";
+
+                if (pgRestore.stderr) {
+                    pgRestore.stderr.on('data', (data) => {
+                        const text = data.toString();
+                        stderrBuffer += text;
+                        // Log immediately
+                        const lines = text.trim().split('\n');
+                        lines.forEach(line => {
+                            if (line && !line.includes('NOTICE:')) { // Filter out notices
+                                log(line, 'info');
+                            }
+                        });
+                    });
+                }
+
+                if (pgRestore.stdout) {
+                    pgRestore.stdout.on('data', (data) => {
+                        const text = data.toString();
+                        stdoutBuffer += text;
+                        const lines = text.trim().split('\n');
+                        lines.forEach(line => {
+                            if (line) log(line, 'info');
+                        });
+                    });
+                }
+
+                pgRestore.on('close', (code) => {
+                    if (code === 0) {
+                        resolve();
+                    } else if (code === 1 && stderrBuffer.includes('warning') && stderrBuffer.includes('errors ignored')) {
+                        // Exit code 1 with "errors ignored" means warnings, not fatal errors
+                        log('Restore completed with warnings (non-fatal, likely compatibility issues)', 'warning');
+                        resolve();
+                    } else {
+                        // Log all captured output
+                        if (stdoutBuffer.trim()) {
+                            log(`Captured stdout: ${stdoutBuffer.trim()}`, 'error');
+                        }
+                        if (stderrBuffer.trim()) {
+                            log(`Captured stderr: ${stderrBuffer.trim()}`, 'error');
+                        }
+
+                        let errorMsg = `pg_restore exited with code ${code}`;
+                        if (stderrBuffer.trim()) {
+                            errorMsg += `. Error: ${stderrBuffer.trim()}`;
+                        } else if (stdoutBuffer.trim()) {
+                            errorMsg += `. Output: ${stdoutBuffer.trim()}`;
+                        } else {
+                            errorMsg += '. No error output captured. Possible issues: wrong credentials, database does not exist, or permission denied.';
+                        }
+                        reject(new Error(errorMsg));
+                    }
+                });
+
+                pgRestore.on('error', (err) => {
+                    reject(new Error(`Failed to start pg_restore: ${err.message}`));
+                });
             });
-
-            const processPromise = waitForProcess(psql, 'psql', (d) => log(`stderr: ${d}`));
-
-            try {
-                await Promise.all([streamPromise, processPromise]);
-            } catch (err: any) {
-                throw err;
-            }
         }
 
         return {

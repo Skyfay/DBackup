@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import { format } from "date-fns";
 import {
   CheckCircle2,
@@ -9,11 +9,11 @@ import {
   Terminal,
   ChevronRight,
   ChevronDown,
-  Clock
+  Clock,
+  ArrowDown
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LogEntry } from "@/lib/core/logs";
-import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface LogViewerProps {
   logs: (LogEntry | string)[]; // Supports legacy strings and new objects
@@ -22,13 +22,43 @@ interface LogViewerProps {
 }
 
 export function LogViewer({ logs, className, autoScroll = true }: LogViewerProps) {
-  const endRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [shouldAutoScroll, setShouldAutoScroll] = useState(autoScroll);
+  const [isAtBottom, setIsAtBottom] = useState(true);
 
+  // Scroll to bottom on new logs if sticky
   useEffect(() => {
-    if (autoScroll) {
-      endRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (shouldAutoScroll && scrollRef.current) {
+        const div = scrollRef.current;
+        // Check if smooth scrolling causes issues with rapid updates (can lag behind)
+        // For logs, instant jump is often better or very fast smooth
+        div.scrollTo({ top: div.scrollHeight, behavior: "smooth" });
     }
-  }, [logs, autoScroll]);
+  }, [logs, shouldAutoScroll]);
+
+  const handleScroll = () => {
+      if (!scrollRef.current) return;
+      const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+      // Tolerance of 50px
+      const atBottom = scrollHeight - scrollTop - clientHeight < 50;
+      setIsAtBottom(atBottom);
+
+      // If user scrolls up, disable auto-scroll
+      if (!atBottom && shouldAutoScroll) {
+          setShouldAutoScroll(false);
+      }
+      // If user hits bottom clearly, re-enable auto-scroll
+      if (atBottom && !shouldAutoScroll) {
+          setShouldAutoScroll(true);
+      }
+  };
+
+  const scrollToBottom = () => {
+      setShouldAutoScroll(true);
+      if (scrollRef.current) {
+          scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+      }
+  };
 
   const parseLog = (log: LogEntry | string): LogEntry => {
     if (typeof log === "string") {
@@ -61,16 +91,29 @@ export function LogViewer({ logs, className, autoScroll = true }: LogViewerProps
   };
 
   return (
-    <div className={cn("rounded-md border bg-zinc-950 text-sm font-mono shadow-sm", className)}>
-      <ScrollArea className="h-full w-full p-4">
+    <div className={cn("rounded-md border bg-zinc-950 text-sm font-mono shadow-sm relative flex flex-col", className)}>
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="flex-1 w-full p-4 overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent"
+      >
         <div className="space-y-4">
           {logs.map((rawLog, idx) => {
             const log = parseLog(rawLog);
             return <LogItem key={`${log.timestamp}-${idx}`} entry={log} />;
           })}
-          <div ref={endRef} />
         </div>
-      </ScrollArea>
+      </div>
+
+      {!shouldAutoScroll && (
+          <button
+            onClick={scrollToBottom}
+            className="absolute bottom-4 right-8 bg-emerald-500 hover:bg-emerald-600 text-white p-2 rounded-full shadow-lg animate-in fade-in transition-all z-10"
+            title="Scroll to bottom"
+          >
+              <ArrowDown className="w-4 h-4" />
+          </button>
+      )}
     </div>
   );
 }

@@ -7,6 +7,10 @@ import { sso } from "@better-auth/sso";
 import { PERMISSIONS } from "@/lib/permissions";
 
 export const auth = betterAuth({
+    logging: {
+        level: "debug"
+    },
+    baseURL: process.env.NEXT_PUBLIC_APP_URL || process.env.BETTER_AUTH_URL || "http://localhost:3000",
     database: prismaAdapter(prisma, {
         provider: "sqlite",
     }),

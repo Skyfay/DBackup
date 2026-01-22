@@ -20,6 +20,7 @@ export interface CreateSsoProviderInput {
     tokenEndpoint: string;
     userInfoEndpoint: string;
     jwksEndpoint?: string;
+    scope?: string;
 }
 
 export interface UpdateSsoProviderInput extends Partial<CreateSsoProviderInput> {
@@ -71,7 +72,8 @@ export class OidcProviderService {
                 authorizationEndpoint: data.authorizationEndpoint,
                 tokenEndpoint: data.tokenEndpoint,
                 userInfoEndpoint: data.userInfoEndpoint,
-                jwksEndpoint: data.jwksEndpoint
+                jwksEndpoint: data.jwksEndpoint,
+                scope: data.scope
             }
         });
     }

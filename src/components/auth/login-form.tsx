@@ -45,12 +45,17 @@ export function LoginForm({ allowSignUp = true, ssoProviders = [] }: LoginFormPr
   const handleSsoLogin = async (providerId: string) => {
         setLoading(true);
         try {
-            await signIn.sso({
+            const res = await signIn.sso({
                 providerId: providerId,
-                 callbackURL: "/dashboard",
+                callbackURL: "/dashboard",
             });
-        } catch (e) {
-            toast.error("SSO Login failed");
+            if (res.error) {
+                 toast.error(res.error.message || "SSO Login failed");
+            }
+        } catch (e: any) {
+            console.error("SSO Exception:", e);
+            toast.error(e?.message || "SSO Login failed");
+        } finally {
             setLoading(false);
         }
   };

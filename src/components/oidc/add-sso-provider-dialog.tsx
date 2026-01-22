@@ -170,7 +170,7 @@ export function AddSsoProviderDialog() {
                                     placeholder="authentik-prod"
                                     required
                                     disabled={isLoading}
-                                    pattern="^[a-z0-9-_]+$"
+                                    pattern="^[a-z0-9\-_]+$"
                                     title="Only lowercase letters, numbers, dashes and underscores"
                                 />
                             </div>

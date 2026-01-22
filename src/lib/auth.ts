@@ -26,34 +26,50 @@ async function getTrustedOriginsFromDb(): Promise<string[]> {
 }
 
 /**
- * Synchronously fetch trusted SSO provider IDs from the database.
- * This is called at server startup to populate trustedProviders.
- * Note: New providers added after server start require a restart to be trusted.
+ * Cache for trusted SSO provider IDs.
+ * This is loaded at server startup and used for account linking.
+ * Adding new providers requires a server restart to be recognized as trusted.
+ *
+ * IMPORTANT: We use a single array instance and MUTATE it (not reassign)
+ * because better-auth stores the reference at config time.
  */
-function getTrustedProvidersSync(): string[] {
-    // We use a cached value that gets populated on first request
-    // For now, return a wildcard approach - we'll trust all providers by email verification
-    return [];
-}
+const trustedProvidersCache: string[] = [];
 
-// Cache for trusted providers - populated on first auth request
-let trustedProvidersCache: string[] | null = null;
-
-async function refreshTrustedProvidersCache(): Promise<string[]> {
+/**
+ * Load trusted provider IDs from database into cache.
+ * Called at module load time and can be refreshed if needed.
+ *
+ * NOTE: We use splice + push to MUTATE the array, not reassign it!
+ * Reassigning would create a new array reference, but better-auth
+ * holds a reference to the original array from config initialization.
+ */
+async function loadTrustedProviders(): Promise<void> {
     try {
         const providers = await prisma.ssoProvider.findMany({
             where: { enabled: true },
             select: { providerId: true }
         });
-        trustedProvidersCache = providers.map(p => p.providerId);
-        return trustedProvidersCache;
-    } catch {
-        return [];
+        // Clear and repopulate the SAME array (mutate, don't reassign!)
+        trustedProvidersCache.splice(0, trustedProvidersCache.length);
+        trustedProvidersCache.push(...providers.map(p => p.providerId));
+        console.log("[Auth] Loaded trusted SSO providers:", trustedProvidersCache);
+    } catch (error) {
+        console.warn("[Auth] Could not load trusted providers:", error);
+        // Don't reassign, just clear
+        trustedProvidersCache.splice(0, trustedProvidersCache.length);
     }
 }
 
-// Initialize cache on module load
-refreshTrustedProvidersCache();
+// Initialize cache on module load (async IIFE)
+loadTrustedProviders();
+
+/**
+ * Get cached trusted providers for account linking.
+ * Returns the SAME array instance that's used in config.
+ */
+function getTrustedProviders(): string[] {
+    return trustedProvidersCache;
+}
 
 export const auth = betterAuth({
     logging: {
@@ -77,11 +93,14 @@ export const auth = betterAuth({
     }),
     account: {
         // Enable automatic account linking for SSO providers
-        // All accounts from SSO providers are trusted regardless of email domain
+        // All enabled SSO providers are marked as trusted for seamless linking
         accountLinking: {
             enabled: true,
             // Allow linking accounts even if email domains don't match
             allowDifferentEmails: true,
+            // Trust all enabled SSO providers - loaded from DB at startup
+            // This allows linking even if local user has emailVerified=false
+            trustedProviders: getTrustedProviders(),
         }
     },
     user: {

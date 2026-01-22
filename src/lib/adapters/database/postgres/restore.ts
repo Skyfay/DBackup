@@ -244,17 +244,36 @@ log("Starting restore process", "info", "command", `${pgRestoreBinary} ${args.jo
                     '-p', String(usageConfig.port),
                     '-U', usageConfig.user,
                     '-d', 'postgres', // Connect to maintenance DB
-                    '-w',
-                    '-v', 'ON_ERROR_STOP=1'
+                    '-w'
+                    // Note: Removed -v ON_ERROR_STOP=1 as it causes restricted mode
+                    // which blocks \connect commands when reading from stdin
                 ];
 
                 log("Starting multi-database restore", "info", "command", `${psqlBinary} ${args.join(' ')} < ${sourcePath}`);
 
                 await new Promise<void>((resolve, reject) => {
+                    log("Spawning psql process...", 'info');
                     const psql = spawn(psqlBinary, args, { env, stdio: ['pipe', 'pipe', 'pipe'] });
 
                     let stderrBuffer = "";
                     let stdoutBuffer = "";
+                    let psqlStarted = false;
+                    let streamPiped = false;
+
+                    // Timeout detection
+                    const startTimeout = setTimeout(() => {
+                        if (!psqlStarted) {
+                            log("ERROR: psql process did not start within 10 seconds", 'error');
+                            psql.kill();
+                            reject(new Error("psql process startup timeout"));
+                        }
+                    }, 10000);
+
+                    psql.on('spawn', () => {
+                        psqlStarted = true;
+                        clearTimeout(startTimeout);
+                        log("psql process spawned successfully", 'info');
+                    });
 
                     if (psql.stderr) {
                         psql.stderr.on('data', (data) => {
@@ -262,7 +281,11 @@ log("Starting restore process", "info", "command", `${pgRestoreBinary} ${args.jo
                             stderrBuffer += text;
                             const lines = text.trim().split('\n');
                             lines.forEach(line => {
-                                if (line && !line.includes('NOTICE:')) {
+                                // Filter out noise - only log actual errors
+                                if (line &&
+                                    !line.includes('NOTICE:') &&
+                                    !line.includes('backslash commands are restricted') &&
+                                    line.toLowerCase().includes('error')) {
                                     log(line, 'error');
                                 }
                             });
@@ -273,18 +296,22 @@ log("Starting restore process", "info", "command", `${pgRestoreBinary} ${args.jo
                         psql.stdout.on('data', (data) => {
                             const text = data.toString();
                             stdoutBuffer += text;
-                            const lines = text.trim().split('\n');
-                            lines.forEach(line => {
-                                if (line) log(line, 'info');
-                            });
+                            // Don't log stdout - it's too verbose (SET, (1 row), etc.)
+                            // We only care about errors in stderr
                         });
                     }
 
                     // Stream SQL file through transformer
+                    log("Creating file stream and transformer...", 'info');
                     const fileStream = createReadStream(sourcePath, { encoding: 'utf8', highWaterMark: 64 * 1024 });
 
                     fileStream.on('data', (chunk) => {
                         updateProgress(chunk.length);
+                    });
+
+                    fileStream.on('error', (err) => {
+                        log(`File stream error: ${err.message}`, 'error');
+                        reject(err);
                     });
 
                     let currentDb: string | null = null;
@@ -297,11 +324,33 @@ log("Starting restore process", "info", "command", `${pgRestoreBinary} ${args.jo
                             const output: string[] = [];
 
                             for (const line of lines) {
+                                // Skip DROP DATABASE and DROP USER statements
+                                // prepareRestore already created DBs, and we can't drop current user
+                                if (line.match(/^DROP DATABASE/i) || line.match(/^DROP (ROLE|USER)/i)) {
+                                    // Skip this line entirely
+                                    continue;
+                                }
+
+                                // Skip CREATE USER/ROLE if it's trying to create a user that already exists
+                                // This prevents "role already exists" errors
+                                if (line.match(/^CREATE (ROLE|USER)/i)) {
+                                    // Skip - we assume users already exist
+                                    continue;
+                                }
+
                                 // Detect CREATE DATABASE
                                 const createMatch = line.match(/^CREATE DATABASE "?([^";\ s]+)"?/i);
                                 if (createMatch) {
                                     const dbName = createMatch[1];
                                     currentDb = dbName;
+
+                                    // Skip PostgreSQL system databases
+                                    const systemDatabases = ['template0', 'template1', 'postgres'];
+                                    if (systemDatabases.includes(dbName)) {
+                                        skipMode = true;
+                                        continue;
+                                    }
+
                                     const map = dbMap.get(dbName);
 
                                     if (map) {
@@ -309,15 +358,12 @@ log("Starting restore process", "info", "command", `${pgRestoreBinary} ${args.jo
                                             skipMode = true;
                                         } else {
                                             skipMode = false;
-                                            if (map.target !== dbName) {
-                                                output.push(line.replace(new RegExp(`"?${dbName}"?`, 'g'), `"${map.target}"`));
-                                            } else {
-                                                output.push(line);
-                                            }
+                                            // Skip CREATE DATABASE - prepareRestore already created it
+                                            // Just track currentDb for \connect statements
                                         }
                                     } else {
-                                        skipMode = false;
-                                        output.push(line);
+                                        // Database not in mapping - skip it
+                                        skipMode = true;
                                     }
                                     continue;
                                 }
@@ -348,8 +394,9 @@ log("Starting restore process", "info", "command", `${pgRestoreBinary} ${args.jo
 
                                 if (!skipMode) {
                                     // Handle renames in ALTER DATABASE statements
-                                    if (currentDb && dbMap.get(currentDb)?.target !== currentDb) {
-                                        const target = dbMap.get(currentDb)!.target;
+                                    const dbEntry = currentDb ? dbMap.get(currentDb) : undefined;
+                                    if (dbEntry && dbEntry.target !== currentDb) {
+                                        const target = dbEntry.target;
                                         if (line.match(new RegExp(`ALTER DATABASE "?${currentDb}"?`, 'i'))) {
                                             output.push(line.replace(new RegExp(`"?${currentDb}"?`, 'g'), `"${target}"`));
                                         } else {
@@ -365,9 +412,35 @@ log("Starting restore process", "info", "command", `${pgRestoreBinary} ${args.jo
                         }
                     });
 
+                    log("Piping file stream through transformer to psql stdin...", 'info');
+
                     fileStream.pipe(transformer).pipe(psql.stdin!);
 
+                    streamPiped = true;
+                    log("Stream piping initiated", 'info');
+
+                    // Check if stream actually starts flowing
+                    const streamTimeout = setTimeout(() => {
+                        if (streamPiped && !psql.stdin?.writable) {
+                            log("ERROR: psql stdin became unwritable", 'error');
+                        }
+                    }, 5000);
+
+                    transformer.on('error', (err) => {
+                        clearTimeout(streamTimeout);
+                        log(`Transformer error: ${err.message}`, 'error');
+                        reject(err);
+                    });
+
+                    psql.stdin?.on('error', (err) => {
+                        clearTimeout(streamTimeout);
+                        log(`psql stdin error: ${err.message}`, 'error');
+                        // Don't reject - might be normal (like EPIPE when psql closes early)
+                    });
+
                     psql.on('close', (code) => {
+                        clearTimeout(streamTimeout);
+                        log(`psql process closed with code ${code}`, 'info');
                         if (code === 0) {
                             resolve();
                         } else {

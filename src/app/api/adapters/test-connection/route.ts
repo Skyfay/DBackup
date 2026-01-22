@@ -3,6 +3,7 @@ import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
+import prisma from "@/lib/prisma";
 
 // Ensure adapters are registered
 registerAdapters();
@@ -18,7 +19,7 @@ export async function POST(req: NextRequest) {
 
     try {
         const body = await req.json();
-        const { adapterId, config } = body;
+        const { adapterId, config, configId } = body;
 
         if (!adapterId || !config) {
             return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
@@ -35,6 +36,32 @@ export async function POST(req: NextRequest) {
         }
 
         const result = await adapter.test(config);
+
+        // If test successful and we have a configId (editing existing config), update metadata
+        if (result.success && result.version && configId) {
+            try {
+                const existingConfig = await prisma.adapterConfig.findUnique({
+                    where: { id: configId },
+                    select: { metadata: true }
+                });
+
+                const currentMeta = existingConfig?.metadata ? JSON.parse(existingConfig.metadata) : {};
+                const newMeta = {
+                    ...currentMeta,
+                    engineVersion: result.version,
+                    lastCheck: new Date().toISOString(),
+                    status: 'Online'
+                };
+
+                await prisma.adapterConfig.update({
+                    where: { id: configId },
+                    data: { metadata: JSON.stringify(newMeta) }
+                });
+            } catch (metaError) {
+                console.error('[TestConnection] Failed to update metadata:', metaError);
+                // Don't fail the entire request if metadata update fails
+            }
+        }
 
         return NextResponse.json(result);
 

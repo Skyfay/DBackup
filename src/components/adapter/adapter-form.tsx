@@ -27,9 +27,8 @@ export function AdapterForm({ type, adapters, onSuccess, initialData }: { type: 
     const [connectionError, setConnectionError] = useState<string | null>(null);
     const [pendingSubmission, setPendingSubmission] = useState<any | null>(null);
 
-    // Version Detection
-    const initialConfig = initialData ? JSON.parse(initialData.config) : {};
-    const [detectedVersion, setDetectedVersion] = useState<string | null>(initialConfig.detectedVersion || null);
+    // Version Detection (nur temporär während Bearbeitungs-Session)
+    const [detectedVersion, setDetectedVersion] = useState<string | null>(null);
 
     // Multi-Select DB Logic
     const [availableDatabases, setAvailableDatabases] = useState<string[]>([]);
@@ -137,11 +136,7 @@ export function AdapterForm({ type, adapters, onSuccess, initialData }: { type: 
 
             const payload = {
                 ...data,
-                // Ensure detectedVersion is included in config if present in state but not in config object yet
-                config: {
-                    ...data.config,
-                    ...(detectedVersion ? { detectedVersion } : {})
-                },
+                config: data.config,
                 type: type // ensure type is sent
             };
 
@@ -175,7 +170,11 @@ export function AdapterForm({ type, adapters, onSuccess, initialData }: { type: 
             const res = await fetch('/api/adapters/test-connection', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ adapterId: data.adapterId, config: data.config })
+                body: JSON.stringify({
+                    adapterId: data.adapterId,
+                    config: data.config,
+                    configId: initialData?.id // Send configId if editing existing config
+                })
             });
             const result = await res.json();
 
@@ -185,15 +184,9 @@ export function AdapterForm({ type, adapters, onSuccess, initialData }: { type: 
                 toast.success(result.message || "Connection successful");
                 if (result.version) {
                     setDetectedVersion(result.version);
-                    // Update form value silently so it gets saved on submit even if user doesn't click "Test" again
-                    // But wait, saveConfig takes 'data' which is from getValues().
-                    // We need to ensure saving includes this.
                 }
             } else {
                 toast.error(result.message || "Connection failed");
-                if (result.success === false) {
-                     // Clear version on failure? Maybe keep last known.
-                }
             }
         } catch (e) {
             toast.dismiss(toastId);

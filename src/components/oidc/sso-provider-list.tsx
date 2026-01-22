@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { Trash2, ShieldCheck, Box, Settings2, Globe, CheckCircle2, UserPlus, UserX } from "lucide-react";
+import { Trash2, ShieldCheck, Box, Settings2, Globe, CheckCircle2, UserPlus, UserX, Copy } from "lucide-react";
 import { deleteSsoProvider, toggleSsoProvider } from "@/app/actions/oidc";
 import { toast } from "sonner";
 import {
@@ -116,8 +116,26 @@ function ProviderCard({ provider }: { provider: SsoProvider }) {
                     <div className="flex justify-between border-b pb-2">
                          <span className="text-muted-foreground">Issuer</span>
                          <span className="truncate max-w-[150px]" title={provider.issuer || ""}>{provider.issuer}</span>
-                    </div>
-                     <div className="flex items-center text-xs text-muted-foreground pt-2">
+                    </div>                    <div className="flex flex-col border-b pb-2 gap-1">
+                         <span className="text-muted-foreground">Callback URL</span>
+                         <div className="flex items-center gap-2 bg-muted/50 p-1 rounded border">
+                            <code className="text-[10px] flex-1 font-mono truncate select-all">
+                                {typeof window !== 'undefined' ? window.location.origin : ''}/api/auth/callback/{provider.providerId}
+                            </code>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-5 w-5 hover:bg-background"
+                                onClick={() => {
+                                    const url = `${window.location.origin}/api/auth/callback/${provider.providerId}`;
+                                    navigator.clipboard.writeText(url);
+                                    toast.success("Copied to clipboard");
+                                }}
+                            >
+                                <Copy className="h-3 w-3" />
+                            </Button>
+                         </div>
+                    </div>                     <div className="flex items-center text-xs text-muted-foreground pt-2">
                         <CheckCircle2 className="h-3 w-3 mr-1 text-green-500" />
                         Auth & Token endpoints configured
                     </div>

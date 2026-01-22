@@ -173,11 +173,6 @@ export function AddSsoProviderDialog() {
                                     pattern="^[a-z0-9-_]+$"
                                     title="Only lowercase letters, numbers, dashes and underscores"
                                 />
-                                {providerId && (
-                                    <p className="text-[10px] text-muted-foreground break-all mt-1 bg-muted p-1 rounded">
-                                        Callback URL: <span className="font-mono select-all">{typeof window !== 'undefined' ? window.location.origin : ''}/api/auth/callback/{providerId}</span>
-                                    </p>
-                                )}
                             </div>
                         </div>
 

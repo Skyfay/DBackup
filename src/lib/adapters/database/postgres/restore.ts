@@ -372,11 +372,21 @@ log("Starting restore process", "info", "command", `${pgRestoreBinary} ${args.jo
                                 const connectMatch = line.match(/^\\connect "?([^"\s]+)"?/i);
                                 if (connectMatch) {
                                     const dbName = connectMatch[1];
+
+                                    // Skip system databases
+                                    const systemDatabases = ['template0', 'template1', 'postgres'];
+                                    if (systemDatabases.includes(dbName)) {
+                                        skipMode = true;
+                                        continue;
+                                    }
+
                                     const map = dbMap.get(dbName);
 
                                     if (map) {
                                         if (!map.selected) {
                                             skipMode = true;
+                                            // Skip the \connect statement itself for unselected DBs
+                                            continue;
                                         } else {
                                             skipMode = false;
                                             if (map.target !== dbName) {
@@ -386,8 +396,9 @@ log("Starting restore process", "info", "command", `${pgRestoreBinary} ${args.jo
                                             }
                                         }
                                     } else {
-                                        skipMode = false;
-                                        output.push(line);
+                                        // Database not in mapping - skip it
+                                        skipMode = true;
+                                        continue;
                                     }
                                     continue;
                                 }

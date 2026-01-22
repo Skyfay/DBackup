@@ -50,6 +50,10 @@
 ### Database Sources
 - [x] **MySQL / MariaDB Adapter** (`mysqldump`)
 - [x] **PostgreSQL Adapter** (`pg_dump`)
+    - [ ] **Restore Improvements**:
+        - [ ] Enhanced Error Detection (Parse stderr for critical errors, stop on failures)
+        - [ ] DB Properties Preservation (Extract ENCODING, LC_COLLATE, TEMPLATE from CREATE DATABASE)
+        - [ ] Post-Restore Validation (Optional: Compare row counts, verify integrity)
 - [x] **MongoDB Adapter** (`mongodump`)
 
 ### Storage Destinations

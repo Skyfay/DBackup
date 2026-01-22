@@ -120,14 +120,14 @@ function ProviderCard({ provider }: { provider: SsoProvider }) {
                          <span className="text-muted-foreground">Callback URL</span>
                          <div className="flex items-center gap-2 bg-muted/50 p-1 rounded border">
                             <code className="text-[10px] flex-1 font-mono truncate select-all">
-                                {typeof window !== 'undefined' ? window.location.origin : ''}/api/auth/callback/{provider.providerId}
+                                {typeof window !== 'undefined' ? window.location.origin : ''}/api/auth/sso/callback/{provider.providerId}
                             </code>
                             <Button
                                 variant="ghost"
                                 size="icon"
                                 className="h-5 w-5 hover:bg-background"
                                 onClick={() => {
-                                    const url = `${window.location.origin}/api/auth/callback/${provider.providerId}`;
+                                    const url = `${window.location.origin}/api/auth/sso/callback/${provider.providerId}`;
                                     navigator.clipboard.writeText(url);
                                     toast.success("Copied to clipboard");
                                 }}

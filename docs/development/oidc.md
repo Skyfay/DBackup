@@ -72,14 +72,14 @@ model SsoProvider {
     -   Configure the `sso` plugin to use the prisma adapter.
 
 ### Phase 2: Adapter System (Backend)
-- [ ] **Interface Definition**: Create `src/lib/core/oidc-adapter.ts`.
+- [x] **Interface Definition**: Create `src/lib/core/oidc-adapter.ts`.
     -   Define `OIDCAdapter` interface (`getBetterAuthId()`, `getEndpoints(baseUrl)`, `defaultMappings`).
-- [ ] **Implement Adapters**:
+- [x] **Implement Adapters**:
     -   `AuthentikAdapter`: Asks for Base URL, generates standard path `/application/o/authorize/` etc.
     -   `PocketIDAdapter`: Specific paths.
     -   `AuraAdapter`: (If applicable).
     -   `GenericAdapter`: User manually enters all URLs.
-- [ ] **Adapter Registry**: Create `src/services/oidc-registry.ts` to manage available adapters.
+- [x] **Adapter Registry**: Create `src/services/oidc-registry.ts` to manage available adapters.
 
 ### Phase 3: Administration UI
 - [ ] **Settings Integration**:

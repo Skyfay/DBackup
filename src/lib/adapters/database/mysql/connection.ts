@@ -51,7 +51,11 @@ export async function test(config: any): Promise<{ success: boolean; message: st
         }
 
         const { stdout } = await execFileAsync('mysql', versionArgs);
-        const version = stdout.trim();
+        const rawVersion = stdout.trim();
+
+        // Extract version number only (e.g. "11.4.9-MariaDB-ubu2404" → "11.4.9" or "8.0.44" → "8.0.44")
+        const versionMatch = rawVersion.match(/^([\d.]+)/);
+        const version = versionMatch ? versionMatch[1] : rawVersion;
 
         return { success: true, message: "Connection successful", version };
     } catch (error: any) {

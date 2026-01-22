@@ -15,8 +15,10 @@ export async function test(config: any): Promise<{ success: boolean; message: st
             const args = ['-h', config.host, '-p', String(config.port), '-U', config.user, '-d', db, '-t', '-c', 'SELECT version()'];
             const { stdout } = await execFileAsync('psql', args, { env });
 
-            // Clean up version string (e.g. "PostgreSQL 16.1 on ...")
-            const version = stdout.trim().split('on')[0].trim();
+            // Extract version number only (e.g. "PostgreSQL 16.1 on ..." → "16.1")
+            const rawVersion = stdout.trim();
+            const versionMatch = rawVersion.match(/PostgreSQL\s+([\d.]+)/);
+            const version = versionMatch ? versionMatch[1] : rawVersion;
 
             return { success: true, message: "Connection successful", version };
         } catch (error: any) {

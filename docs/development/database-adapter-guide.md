@@ -50,26 +50,74 @@ export async function dump(config: any, path: string, ...) {
 }
 ```
 
-## 3. Version Detection
+## 3. Version Detection & Normalization
 
 Your adapter's `test` function should detect the database version to allow the system to choose the correct dialect.
 
-**`connection.ts` Example:**
+### ⚠️ CRITICAL: Version Format Normalization
+**Always return ONLY the numeric version** (e.g., `"16.1"`, `"8.0.44"`), stripped of any prefix or suffix.
+
+**Why?**
+1. **Consistency**: All adapters must return versions in the same format for UI display
+2. **Comparisons**: Restore pre-flight checks use `parseFloat()` to compare versions
+3. **Metadata**: Version is stored in backup metadata and must be parseable
+
+**❌ BAD Examples:**
+```typescript
+return { version: "PostgreSQL 16.1 on x86_64-pc-linux-gnu" }; // Too much info
+return { version: "11.4.9-MariaDB-ubu2404" };                 // Suffix noise
+return { version: "MongoDB 7.0.28" };                         // Prefix redundant
+```
+
+**✅ GOOD Examples:**
+```typescript
+return { version: "16.1" };    // PostgreSQL
+return { version: "11.4.9" };  // MariaDB
+return { version: "8.0.44" };  // MySQL
+return { version: "7.0.28" };  // MongoDB
+```
+
+### Implementation Pattern
 ```typescript
 export async function test(config: any) {
-    // 1. Ping
+    // 1. Ping Test
     await execFileAsync('db_cli', ['ping', ...]);
 
-    // 2. Fetch Version
+    // 2. Fetch Raw Version
     const { stdout } = await execFileAsync('db_cli', ['version', ...]);
+    const rawVersion = stdout.trim();
+
+    // 3. Extract ONLY the numeric version
+    // PostgreSQL: "PostgreSQL 16.1 on ..." → "16.1"
+    const versionMatch = rawVersion.match(/PostgreSQL\s+([\d.]+)/);
+    const version = versionMatch ? versionMatch[1] : rawVersion;
+
+    // MySQL/MariaDB: "11.4.9-MariaDB-ubu2404" → "11.4.9"
+    const versionMatch = rawVersion.match(/^([\d.]+)/);
+    const version = versionMatch ? versionMatch[1] : rawVersion;
 
     return {
         success: true,
-        message: "Connected",
-        version: stdout.trim() // e.g. "8.0.32"
+        message: "Connection successful",
+        version // MUST be numeric only!
     };
 }
 ```
+
+### Version Storage Architecture
+**Two separate storage locations:**
+
+1. **`metadata` field (Persistent, Database)**
+   - Written by: System Task (hourly) + Test Connection Button (manual)
+   - Used for: Monitoring, Audit Logs, Backup Metadata (`engineVersion`)
+   - Location: `AdapterConfig.metadata` (JSON string)
+   - Example: `{ "engineVersion": "16.1", "lastCheck": "2026-01-22T...", "status": "Online" }`
+
+2. **React State (Temporary, UI Only)**
+   - Written by: Test Connection Button during editing
+   - Used for: Immediate visual feedback (green badge)
+   - Lifetime: Current dialog session only (cleared on close)
+   - Purpose: Show user the test succeeded without persisting in config
 
 ## 4. Implementing `restore` (Critical for UX)
 
@@ -159,6 +207,151 @@ To support the "Selective Restore" UI, your adapter can implement `analyzeDump`.
 - **Performance**: Do NOT read the whole file.
 - Use tools like `grep` (via `spawn`) to quickly find `CREATE DATABASE` statements in multi-gigabyte files without generic parsing.
 
-## 7. Zod Schema
-- Define a strict Zod schema for your configuration (Host, Port, User, Password).
-- Export this schema for the UI to generate the form automatically.
+## 7. Zod Schema & Configuration
+Define a strict Zod schema for your adapter configuration. This schema is used for:
+- **UI Form Generation**: The AdapterForm component automatically renders fields
+- **Validation**: Client-side and server-side validation
+- **Type Safety**: TypeScript inference from schema
+
+### Schema Example
+```typescript
+// src/lib/adapters/definitions.ts
+export const MySQLSchema = z.object({
+    host: z.string().default("localhost"),
+    port: z.coerce.number().default(3306),
+    user: z.string().min(1, "User is required"),
+    password: z.string().optional(),
+    database: z.union([z.string(), z.array(z.string())]).default(""),
+    options: z.string().optional().describe("Additional mysqldump options"),
+    disableSsl: z.boolean().default(false).describe("Disable SSL (Use for self-signed development DBs)"),
+});
+```
+
+### Field Descriptions
+Use `.describe()` to add help text that appears below the field in the UI.
+
+### Configuration Storage
+**Two Fields in `AdapterConfig` Table:**
+
+1. **`config` (String, Encrypted)**
+   - Contains: Connection credentials, sensitive settings
+   - Encrypted: Yes (via `encryptConfig()` before storage)
+   - Example: `{"host":"localhost","port":3306,"user":"root","password":"***"}`
+   - Modified: Every save operation
+
+2. **`metadata` (String, Plain JSON)**
+   - Contains: Non-sensitive operational data
+   - Encrypted: No
+   - Example: `{"engineVersion":"8.0.44","lastCheck":"2026-01-22T...","status":"Online"}`
+   - Modified: System Task (hourly) + Test Connection
+   - **Never store credentials here!**
+
+## 8. Registry Registration
+
+Your adapter must be registered in the global registry to be discoverable by the system.
+
+### Registration File
+```typescript
+// src/lib/adapters/index.ts
+import { registry } from "@/lib/core/registry";
+import * as mysql from "./database/mysql";
+import * as postgres from "./database/postgres";
+
+export function registerAdapters() {
+    registry.register('mysql', mysql);
+    registry.register('postgres', postgres);
+    // Add your adapter here
+}
+```
+
+### Adapter Definition
+```typescript
+// src/lib/adapters/definitions.ts
+import { MySQLSchema } from "./database/mysql/schema";
+
+export const ADAPTER_DEFINITIONS: AdapterDefinition[] = [
+    {
+        id: "mysql",
+        type: "database",
+        name: "MySQL",
+        configSchema: MySQLSchema
+    },
+    // Add your adapter definition here
+];
+```
+
+## 9. API Integration & Permissions
+
+### Test Connection Endpoint
+When implementing a new adapter, the `/api/adapters/test-connection` endpoint will automatically work if your adapter exports a `test()` function.
+
+**What happens during Test Connection:**
+1. User clicks "Test Connection" in UI
+2. API calls `adapter.test(config)` with decrypted config
+3. Adapter returns `{ success: boolean, message: string, version?: string }`
+4. If successful + version exists + editing existing config:
+   - API updates `metadata` field with version + timestamp
+   - UI shows temporary green badge
+5. User saves → config is encrypted and stored
+
+### Permission Checks
+All API routes that interact with adapters **must** check permissions:
+
+```typescript
+// src/app/api/adapters/route.ts
+import { checkPermission } from "@/lib/access-control";
+import { PERMISSIONS } from "@/lib/permissions";
+
+export async function POST(req: NextRequest) {
+    // ... auth check ...
+
+    if (type === 'database') {
+        await checkPermission(PERMISSIONS.SOURCES.WRITE);
+    } else if (type === 'storage') {
+        await checkPermission(PERMISSIONS.DESTINATIONS.WRITE);
+    }
+
+    // ... proceed with operation ...
+}
+```
+
+## 10. Multi-Database Support
+
+If your adapter should support backing up multiple databases in one job (like MySQL, PostgreSQL, MongoDB):
+
+### Schema Definition
+```typescript
+database: z.union([z.string(), z.array(z.string())]).default("")
+```
+
+### getDatabases() Function
+Implement a `getDatabases()` function in your `connection.ts`:
+
+```typescript
+export async function getDatabases(config: any): Promise<string[]> {
+    const args = [...getConnectionArgs(config), 'SHOW DATABASES'];
+    const { stdout } = await execFileAsync('db_cli', args);
+    return stdout.split('\n').filter(s => s.trim());
+}
+```
+
+This enables the "Load" button in the UI to fetch available databases dynamically.
+
+## 11. Testing & Validation Checklist
+
+Before submitting your adapter, verify:
+
+- [ ] **Version Detection**: Returns numeric-only version (e.g., `"16.1"`)
+- [ ] **Streaming**: Both `dump()` and `restore()` use streams (no buffering)
+- [ ] **Progress**: Live progress works via file size monitoring (dump) and chunk counting (restore)
+- [ ] **Encryption**: Sensitive fields (password) are properly encrypted in `config`
+- [ ] **Dialects**: Version-specific logic isolated in dialect classes
+- [ ] **Error Handling**: Graceful failures with meaningful error messages
+- [ ] **Empty Dumps**: Check for 0-byte files and fail explicitly
+- [ ] **Logs**: All stderr/stdout properly forwarded to `onLog`
+- [ ] **Permissions**: API routes check appropriate permissions
+- [ ] **Registry**: Adapter registered in `src/lib/adapters/index.ts`
+- [ ] **Definition**: Added to `ADAPTER_DEFINITIONS` array
+- [ ] **Schema**: Zod schema exported and fields have descriptions
+- [ ] **Multi-DB**: If supported, `getDatabases()` implemented
+- [ ] **Test Cases**: Integration tests cover backup + restore scenarios

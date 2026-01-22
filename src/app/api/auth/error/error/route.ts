@@ -18,8 +18,9 @@ export async function GET(request: NextRequest) {
 
     const errorCode = errorMessages[error.toLowerCase()] || "sso_error";
 
-    // Redirect to login page with error parameter
-    const loginUrl = new URL("/login", request.url);
+    // Redirect to home page (login) with error parameter
+    // Note: Login is on the root page ("/"), not "/login"
+    const loginUrl = new URL("/", request.url);
     loginUrl.searchParams.set("error", errorCode);
 
     return NextResponse.redirect(loginUrl);

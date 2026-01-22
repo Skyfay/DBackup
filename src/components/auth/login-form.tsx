@@ -39,20 +39,20 @@ interface LoginFormProps {
 // Error messages for SSO errors
 const ERROR_MESSAGES: Record<string, { title: string; description: string }> = {
     sso_signup_disabled: {
-        title: "Account nicht gefunden",
-        description: "Für diesen SSO-Provider ist die automatische Benutzeranlage deaktiviert. Bitte kontaktieren Sie Ihren Administrator."
+        title: "Account not found",
+        description: "Automatic user provisioning is disabled for this SSO provider. Please contact your administrator."
     },
     sso_user_not_found: {
-        title: "Benutzer nicht gefunden",
-        description: "Es existiert kein Konto mit dieser E-Mail-Adresse."
+        title: "User not found",
+        description: "No account exists with this email address."
     },
     sso_access_denied: {
-        title: "Zugriff verweigert",
-        description: "Sie haben keine Berechtigung, sich anzumelden."
+        title: "Access denied",
+        description: "You do not have permission to sign in."
     },
     sso_error: {
-        title: "SSO-Fehler",
-        description: "Bei der Anmeldung ist ein Fehler aufgetreten. Bitte versuchen Sie es erneut."
+        title: "SSO Error",
+        description: "An error occurred during sign-in. Please try again."
     }
 };
 

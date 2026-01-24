@@ -12,18 +12,19 @@ A robust, self-hosted solution for automating database backups. Manage sources, 
 
 ## 🚀 Features
 
-- **Multi-Database Support**: Backup **MySQL**, **PostgreSQL**, and **MongoDB**.
+- **Multi-Database Support**: Backup **MySQL**, **PostgreSQL**, and **MongoDB**. (Local SQLite & MSSQL coming soon)
 - **Bank-Grade Security**:
   - **Encryption Vault**: Secure your backups with **AES-256-GCM** encryption.
   - **Encryption Profiles**: Manage multiple keys and rotate secrets easily.
   - **Recovery Kits**: Download standalone, offline decryption tools to ensure you can always recover your data, even without this application.
 - **Storage Optimization**: Built-in **GZIP** and **Brotli** compression to save storage space and bandwidth.
-- **Flexible Storage**: Store backups on the **Local Filesystem**. (S3, Cloud Providers, and FTP coming soon)
+- **Flexible Storage**: Store backups on the **Local Filesystem**, **S3 Storage**, and **SFTP**. (Cloud Providers, SMB/CIFS, and FTP coming soon)
 - **Automated Scheduling**: Configure cron-based backup schedules for your jobs.
 - **Live Activity Monitoring**: Watch backup and restore processes in real-time with detailed step-by-step logs and visual progress bars.
 - **Granular Access Control**: Define custom user groups with precise permissions for every resource and action (RBAC).
 - **Notifications**: Get alerts via **Discord** or **Email** when backups succeed or fail.
 - **Restore & Management**: Browse backup history, view logs, and restore databases directly from the UI.
+- **Health Check**: Health check for databases and storage destinations.
 - **Modern Dashboard**: Built with Next.js 16, Shadcn UI, and Tailwind CSS.
 ## 🗄️ Supported Databases
 
@@ -115,9 +116,30 @@ To spin up test instances of MySQL, Postgres, and MongoDB for development:
 docker-compose -f docker-compose.test.yml up -d
 ```
 
+If you want to add the test containers to the Database use the following command:
+
+```bash
+pnpm test:ui
+```
+
 ## 📦 Release Preparation
 
 Before creating a release tag, verify that the application builds successfully:
+
+Unit tests:
+```bash
+pnpm run test
+```
+
+Type checking:
+```bash
+pnpm run type-check
+```
+
+Linting:
+```bash
+pnpm run lint
+```
 
 ```bash
 pnpm run build

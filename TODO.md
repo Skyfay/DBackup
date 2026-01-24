@@ -58,7 +58,8 @@
 
 ### Storage Destinations
 - [x] **Local Filesystem Adapter**
-- [ ] **S3 Compatible Storage Adapter** (AWS, MinIO, Cloudflare R2, Hetzner)
+- [x] **S3 Compatible Storage Adapter** (AWS, MinIO, Cloudflare R2, Hetzner)
+    - *Implemented*: Generic S3, AWS S3, Cloudflare R2, Hetzner Object Storage
     - *Recommended Package*: `@aws-sdk/client-s3` + `@aws-sdk/lib-storage` (Streaming Support)
 - [ ] **SFTP Adapter** (SSH File Transfer Protocol)
     - *Recommended Package*: `ssh2-sftp-client`

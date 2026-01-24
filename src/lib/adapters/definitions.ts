@@ -51,6 +51,43 @@ export const LocalStorageSchema = z.object({
     basePath: z.string().min(1, "Base path is required").default("/backups").describe("Absolute path to store backups (e.g., /backups)"),
 });
 
+// --- S3 / Cloud Storage Schemas ---
+
+export const S3GenericSchema = z.object({
+    endpoint: z.string().min(1, "Endpoint is required (e.g. https://s3.example.com)"),
+    region: z.string().default("us-east-1"),
+    bucket: z.string().min(1, "Bucket name is required"),
+    accessKeyId: z.string().min(1, "Access Key is required"),
+    secretAccessKey: z.string().min(1, "Secret Key is required"),
+    forcePathStyle: z.boolean().default(false).describe("Use path-style URLs (Required for MinIO)"),
+    pathPrefix: z.string().optional().describe("Optional folder prefix (e.g. /backups)"),
+});
+
+export const S3AWSSchema = z.object({
+    region: z.string().min(1, "Region is required (e.g. us-east-1)"),
+    bucket: z.string().min(1, "Bucket name is required"),
+    accessKeyId: z.string().min(1, "Access Key is required"),
+    secretAccessKey: z.string().min(1, "Secret Key is required"),
+    pathPrefix: z.string().optional().describe("Optional folder prefix"),
+    storageClass: z.enum(["STANDARD", "STANDARD_IA", "GLACIER", "DEEP_ARCHIVE"]).default("STANDARD").describe("Storage Class for uploaded files"),
+});
+
+export const S3R2Schema = z.object({
+    accountId: z.string().min(1, "Cloudflare Account ID is required"),
+    bucket: z.string().min(1, "Bucket name is required"),
+    accessKeyId: z.string().min(1, "Access Key is required"),
+    secretAccessKey: z.string().min(1, "Secret Key is required"),
+    pathPrefix: z.string().optional().describe("Optional folder prefix"),
+});
+
+export const S3HetznerSchema = z.object({
+    region: z.enum(["fsn1", "nbg1", "hel1", "ash"]).default("fsn1").describe("Hetzner Region"),
+    bucket: z.string().min(1, "Bucket name is required"),
+    accessKeyId: z.string().min(1, "Access Key is required"),
+    secretAccessKey: z.string().min(1, "Secret Key is required"),
+    pathPrefix: z.string().optional().describe("Optional folder prefix"),
+});
+
 export const DiscordSchema = z.object({
     webhookUrl: z.string().url("Valid Webhook URL is required"),
     username: z.string().optional().default("Backup Manager"),
@@ -72,7 +109,13 @@ export const ADAPTER_DEFINITIONS: AdapterDefinition[] = [
     { id: "mariadb", type: "database", name: "MariaDB", configSchema: MariaDBSchema },
     { id: "postgres", type: "database", name: "PostgreSQL", configSchema: PostgresSchema },
     { id: "mongodb", type: "database", name: "MongoDB", configSchema: MongoDBSchema },
+
     { id: "local-filesystem", type: "storage", name: "Local Filesystem", configSchema: LocalStorageSchema },
+    { id: "s3-generic", type: "storage", name: "S3 Compatible (Generic)", configSchema: S3GenericSchema },
+    { id: "s3-aws", type: "storage", name: "Amazon S3", configSchema: S3AWSSchema },
+    { id: "s3-r2", type: "storage", name: "Cloudflare R2", configSchema: S3R2Schema },
+    { id: "s3-hetzner", type: "storage", name: "Hetzner Object Storage", configSchema: S3HetznerSchema },
+
     { id: "discord", type: "notification", name: "Discord Webhook", configSchema: DiscordSchema },
     { id: "email", type: "notification", name: "Email (SMTP)", configSchema: EmailSchema },
 ];

@@ -491,6 +491,25 @@ export function AdapterForm({ type, adapters, onSuccess, initialData }: { type: 
                "mysql.options": "--single-transaction --quick",
                "postgres.options": "--clean --if-exists",
                "mongodb.options": "--gzip --oplog",
+
+               // S3 Placeholders
+               "bucket": "my-backup-bucket",
+               "pathPrefix": "backups/prod",
+               "accessKeyId": "AKIA...",
+               "secretAccessKey": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+
+               // AWS Specific
+               "s3-aws.region": "us-east-1",
+
+               // S3 Generic
+               "s3-generic.endpoint": "https://s3.custom-provider.com",
+               "s3-generic.region": "us-east-1",
+
+               // R2 Specific
+               "s3-r2.accountId": "32c49e7943c49e7943c49e7943c49e79",
+
+               // Hetzner Specific (Enum default handles region, but just in case)
+               "s3-hetzner.pathPrefix": "server1/mysql",
             };
             const placeholder = PLACEHOLDERS[`${selectedAdapter.id}.${key}`] || PLACEHOLDERS[key];
 

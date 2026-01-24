@@ -28,6 +28,8 @@ describe('HealthCheckService', () => {
     beforeEach(() => {
         service = new HealthCheckService();
         vi.clearAllMocks();
+        // Default safe mock for log retention cleanup
+        prismaMock.healthCheckLog.deleteMany.mockResolvedValue({ count: 0 } as any);
     });
 
     it('should run checks for all adapters and update status', async () => {

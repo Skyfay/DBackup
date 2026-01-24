@@ -210,4 +210,77 @@ describe('RestoreService', () => {
             targetSourceId: 'missing-source'
         })).rejects.toThrow('Target source not found');
     });
+
+    describe('Version Compatibility Guard', () => {
+        const mockStorage = {
+            read: vi.fn(),
+            download: vi.fn(),
+        };
+        const mockDb = {
+            test: vi.fn(),
+            restore: vi.fn(),
+        };
+
+        beforeEach(() => {
+            (registry.get as any).mockImplementation((id: string) => {
+                if (id === 'local-fs') return mockStorage;
+                if (id === 'postgres') return mockDb;
+                return undefined;
+            });
+
+            prismaMock.adapterConfig.findUnique.mockImplementation(async (args: any) => {
+                if (args.where.id === 'storage-1') return mockStorageConfig as any;
+                if (args.where.id === 'source-1') return mockSourceConfig as any;
+                return null;
+            });
+        });
+
+        it('should throw error when restoring a newer version backup to an older server', async () => {
+             // Mock Metadata: Version 15.0
+             mockStorage.read.mockResolvedValue(JSON.stringify({
+                engineVersion: '15.0',
+                dbs: ['mydb']
+            }));
+
+            // Mock Target Server: Version 14.0
+            mockDb.test.mockResolvedValue({
+                success: true,
+                version: '14.0'
+            });
+
+            const input = {
+                storageConfigId: 'storage-1',
+                file: 'backup.sql',
+                targetSourceId: 'source-1',
+            };
+
+            await expect(service.restore(input)).rejects.toThrow('newer database version (15.0) on an older server (14.0)');
+        });
+
+        it('should allow restoring older version backup to newer server', async () => {
+            // Mock Metadata: Version 13.0
+            mockStorage.read.mockResolvedValue(JSON.stringify({
+               engineVersion: '13.0',
+               dbs: ['mydb']
+           }));
+
+           // Mock Target Server: Version 14.0
+           mockDb.test.mockResolvedValue({
+               success: true,
+               version: '14.0'
+           });
+
+           // Also need to allow execute creation for success path
+           prismaMock.execution.create.mockResolvedValue({ id: 'exec-success' } as any);
+           // RestoreProcess runs in background, so we just check the sync part returns success.
+
+           const result = await service.restore({
+               storageConfigId: 'storage-1',
+               file: 'backup.sql',
+               targetSourceId: 'source-1',
+           });
+
+           expect(result.success).toBe(true);
+       });
+    });
 });

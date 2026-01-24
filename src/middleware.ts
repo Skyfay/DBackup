@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { authLimiter, apiLimiter } from "./lib/rate-limit";
+import { authLimiter, apiLimiter, mutationLimiter } from "./lib/rate-limit";
 
 export async function middleware(request: NextRequest) {
     const ip = request.headers.get("x-forwarded-for") ?? "127.0.0.1";
     const path = request.nextUrl.pathname;
+    const method = request.method;
 
     // Rate Limiting Logic
     try {
@@ -12,8 +13,13 @@ export async function middleware(request: NextRequest) {
              // Strict limit for login endpoints
              await authLimiter.consume(ip);
         } else if (path.startsWith("/api/")) {
-             // General API limit
-             await apiLimiter.consume(ip);
+             // General API limit for reads
+             if (method === 'GET' || method === 'HEAD') {
+                await apiLimiter.consume(ip);
+             } else {
+                // Stricter limit for mutations (POST, PUT, DELETE, PATCH)
+                await mutationLimiter.consume(ip);
+             }
         }
     } catch {
         return new NextResponse("Too Many Requests", { status: 429 });

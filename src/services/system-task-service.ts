@@ -4,13 +4,15 @@ import { registerAdapters } from "@/lib/adapters";
 import { DatabaseAdapter } from "@/lib/core/interfaces";
 import { decryptConfig } from "@/lib/crypto";
 import { healthCheckService } from "./healthcheck-service";
+import { auditService } from "./audit-service";
 
 // Ensure adapters are registered for worker context
 registerAdapters();
 
 export const SYSTEM_TASKS = {
     UPDATE_DB_VERSIONS: "system.update_db_versions",
-    HEALTH_CHECK: "system.health_check"
+    HEALTH_CHECK: "system.health_check",
+    CLEAN_OLD_LOGS: "system.clean_audit_logs"
 };
 
 export const DEFAULT_TASK_CONFIG = {
@@ -23,6 +25,11 @@ export const DEFAULT_TASK_CONFIG = {
         interval: "*/1 * * * *", // Every minute
         label: "Health Check & Connectivity",
         description: "Periodically pings all configured database and storage adapters to track availability and latency."
+    },
+    [SYSTEM_TASKS.CLEAN_OLD_LOGS]: {
+        interval: "0 0 * * *", // Daily at midnight
+        label: "Clean Old Logs",
+        description: "Removes audit logs older than the configured retention period (default: 90 days) to prevent disk filling."
     }
 };
 
@@ -53,8 +60,26 @@ export class SystemTaskService {
             case SYSTEM_TASKS.HEALTH_CHECK:
                 await healthCheckService.performHealthCheck();
                 break;
+            case SYSTEM_TASKS.CLEAN_OLD_LOGS:
+                await this.runCleanOldLogs();
+                break;
             default:
                 console.warn(`[SystemTask] Unknown task: ${taskId}`);
+        }
+    }
+
+    private async runCleanOldLogs() {
+        try {
+            // Check if there is a configured retention period
+            const retentionKey = "audit.retentionDays";
+            const setting = await prisma.systemSetting.findUnique({ where: { key: retentionKey } });
+            const retentionDays = setting ? parseInt(setting.value) : 90; // Default 90 days
+
+            console.log(`[SystemTask] Cleaning audit logs older than ${retentionDays} days...`);
+            const deleted = await auditService.cleanOldLogs(retentionDays);
+            console.log(`[SystemTask] Deleted ${deleted.count} old audit logs.`);
+        } catch (error: any) {
+            console.error(`[SystemTask] Failed to clean audit logs: ${error.message}`);
         }
     }
 

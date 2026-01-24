@@ -13,3 +13,10 @@ export const apiLimiter = new RateLimiterMemory({
     points: 100,
     duration: 60,
 });
+
+// 20 requests per minute per IP for write operations (POST, PUT, DELETE)
+// To prevent Audit Log Flooding and other spam attacks
+export const mutationLimiter = new RateLimiterMemory({
+    points: 20,
+    duration: 60,
+});

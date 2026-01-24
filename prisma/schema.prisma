@@ -89,6 +89,7 @@ model User {
   accounts         Account[]
   passkeys         Passkey[]
   sessions         Session[]
+  auditLogs        AuditLog[]
 
   groupId String?
   group   Group?  @relation(fields: [groupId], references: [id])
@@ -234,4 +235,24 @@ model HealthCheckLog {
   adapterConfig   AdapterConfig @relation(fields: [adapterConfigId], references: [id], onDelete: Cascade)
 
   @@index([adapterConfigId, createdAt])
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  userId      String?  // Nullable because some actions might be system actions or deleted users
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  action      String   // ENUM-like string: "LOGIN", "CREATE", "UPDATE", "DELETE"
+  resource    String   // ENUM-like string: "USER", "JOB", "SOURCE", "DESTINATION", "SETTINGS"
+  resourceId  String?  // The ID of the affected object
+
+  details     String?  // JSON string storing changes (diff) or connection info
+  ipAddress   String?
+  userAgent   String?
+
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([resource])
+  @@index([createdAt])
 }

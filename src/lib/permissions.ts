@@ -30,6 +30,9 @@ export const PERMISSIONS = {
   HISTORY: {
     READ: "history:read",
   },
+  AUDIT: {
+    READ: "audit:read",
+  },
   NOTIFICATIONS: {
     READ: "notifications:read",
     WRITE: "notifications:write",

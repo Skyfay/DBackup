@@ -4,9 +4,9 @@ import { checkPermission } from "@/lib/access-control";
 import { PERMISSIONS } from "@/lib/permissions";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
-import { scheduler } from "@/lib/scheduler";
+// import { scheduler } from "@/lib/scheduler";
 
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
     const session = await auth.api.getSession({
         headers: await headers()
     });

@@ -41,7 +41,7 @@ export async function RecentActivity() {
                                     if(parsed.jobName) meta.jobName = parsed.jobName;
                                     if(parsed.sourceName) meta.sourceName = parsed.sourceName;
                                     if(parsed.sourceType) meta.sourceType = parsed.sourceType;
-                                } catch(e) {}
+                                } catch(_e) {}
                             }
 
                             // If job was deleted, fallback to Manual or Unknown

@@ -43,7 +43,7 @@ export function AdapterManager({ type, title, description, canManage = true }: A
                  const data = await res.json();
                  toast.error(data.error || "Failed to load configurations");
             }
-        } catch (error) {
+        } catch (_error) {
             toast.error("Failed to load configurations");
         } finally {
             setIsLoading(false);
@@ -68,7 +68,7 @@ export function AdapterManager({ type, title, description, canManage = true }: A
             } else {
                 toast.error(data.error || "Failed to delete");
             }
-        } catch (error) {
+        } catch (_error) {
              toast.error("Error deleting configuration");
         } finally {
             setDeletingId(null);

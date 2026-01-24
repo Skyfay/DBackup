@@ -17,7 +17,7 @@ export default async function Home({ searchParams }: HomeProps) {
         session = await auth.api.getSession({
             headers: headersList
         });
-    } catch (error) {
+    } catch (_error) {
         // Silently fail if session check fails on home, just show login
     }
 

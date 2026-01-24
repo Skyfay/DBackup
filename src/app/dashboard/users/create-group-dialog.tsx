@@ -25,11 +25,10 @@ import { useForm } from "react-hook-form"
 import * as z from "zod"
 import { useState } from "react"
 import { toast } from "sonner"
-import { Loader2, Plus, Check } from "lucide-react"
+import { Loader2, Plus } from "lucide-react" // Removed Check
 import { createGroup } from "@/app/actions/group"
 import { AVAILABLE_PERMISSIONS } from "@/lib/permissions"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Badge } from "@/components/ui/badge"
 
 const formSchema = z.object({
     name: z.string().min(1, "Name is required"),
@@ -61,7 +60,7 @@ export function CreateGroupDialog() {
             } else {
                 toast.error(result.error)
             }
-        } catch (error) {
+        } catch (_error) {
             toast.error("An unexpected error occurred")
         } finally {
             setLoading(false)
@@ -77,14 +76,6 @@ export function CreateGroupDialog() {
         return acc;
     }, {} as Record<string, typeof AVAILABLE_PERMISSIONS>);
 
-    const togglePermission = (permissionId: string) => {
-        const current = form.getValues("permissions");
-        if (current.includes(permissionId)) {
-            form.setValue("permissions", current.filter(p => p !== permissionId));
-        } else {
-            form.setValue("permissions", [...current, permissionId]);
-        }
-    }
 
     const toggleCategory = (category: string) => {
         const categoryPermissions = groupedPermissions[category].map(p => p.id);

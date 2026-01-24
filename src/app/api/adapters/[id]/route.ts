@@ -82,7 +82,7 @@ export async function PUT(
             }
         });
         return NextResponse.json(updatedAdapter);
-    } catch (error) {
+    } catch (_error) {
         return NextResponse.json({ error: "Failed to update adapter" }, { status: 500 });
     }
 }

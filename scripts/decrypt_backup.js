@@ -1,6 +1,7 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 const fs = require('fs');
 const crypto = require('crypto');
-const path = require('path');
+// const path = require('path');
 const zlib = require('zlib');
 
 // Usage: node decrypt_backup.js <input_file.enc> <hex_key>
@@ -119,7 +120,7 @@ try {
 
     // Error handling for all streams is a bit tricky with simple pipes,
     // but we attach listeners to the key components.
-    decipher.on('error', (err) => {
+    decipher.on('error', (_err) => {
         console.error('Decryption failed! ❌ (Bad key or AuthTag mismatch)');
         cleanup();
     });
@@ -128,7 +129,7 @@ try {
     output.on('error', (err) => { console.error('Output Error:', err.message); cleanup(); });
 
     function cleanup() {
-         try { fs.unlinkSync(outputFile); } catch(e){}
+         try { fs.unlinkSync(outputFile); } catch(_e){}
          process.exit(1);
     }
 

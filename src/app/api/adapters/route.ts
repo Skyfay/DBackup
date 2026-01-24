@@ -35,8 +35,8 @@ export async function GET(req: NextRequest) {
              // But existing code allowed it. Let's check permissions for each item if we proceed, or just throw 400.
              // Given the instructions "detailed explanations for complex logic", I'll enforce type for now.
              // Actually, let's filter the results if multiple types.
-             const hasSources = await checkPermission(PERMISSIONS.SOURCES.READ).then(() => true).catch(() => false);
-             const hasDestinations = await checkPermission(PERMISSIONS.DESTINATIONS.READ).then(() => true).catch(() => false);
+             // const hasSources = await checkPermission(PERMISSIONS.SOURCES.READ).then(() => true).catch(() => false);
+             // const hasDestinations = await checkPermission(PERMISSIONS.DESTINATIONS.READ).then(() => true).catch(() => false);
              // If user requests plain /api/adapters, we return only what they can see.
              // But prisma findMany filter is 'OR'.
              // Let's rely on client sending type for now, or just proceed if we assume backend is used by frontend.

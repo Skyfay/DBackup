@@ -19,7 +19,7 @@ export async function DELETE(
     try {
         await jobService.deleteJob(params.id);
         return NextResponse.json({ success: true });
-    } catch (error) {
+    } catch (_error) {
         return NextResponse.json({ error: "Failed to delete job" }, { status: 500 });
     }
 }
@@ -55,7 +55,7 @@ export async function PUT(
         });
 
         return NextResponse.json(updatedJob);
-    } catch (error) {
+    } catch (_error) {
         return NextResponse.json({ error: "Failed to update job" }, { status: 500 });
     }
 }

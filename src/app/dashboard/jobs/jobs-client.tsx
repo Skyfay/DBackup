@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -110,7 +110,7 @@ export function JobsClient({ canManage, canExecute }: JobsClientProps) {
         setDeletingId(null);
     };
 
-    const runJob = async (id: string) => {
+    const runJob = useCallback(async (id: string) => {
         toast.info("Starting backup job...");
         try {
             const res = await fetch(`/api/jobs/${id}/run`, { method: "POST" });
@@ -124,7 +124,7 @@ export function JobsClient({ canManage, canExecute }: JobsClientProps) {
                 toast.error(`Job failed: ${data.error}`);
             }
         } catch { toast.error("Execution request failed"); }
-    };
+    }, [router]);
 
     const columns = useMemo<ColumnDef<Job>[]>(() => [
         {
@@ -217,7 +217,7 @@ export function JobsClient({ canManage, canExecute }: JobsClientProps) {
                 </div>
             )
         }
-    ], [canManage, canExecute]);
+    ], [canManage, canExecute, runJob]);
 
     if (isLoading) {
         return (

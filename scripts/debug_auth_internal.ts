@@ -1,5 +1,4 @@
 
-import { auth } from "../src/lib/auth";
 import prisma from "../src/lib/prisma";
 
 async function main() {

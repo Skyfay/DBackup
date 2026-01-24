@@ -73,7 +73,7 @@ export function EditGroupDialog({ group, open, onOpenChange }: EditGroupDialogPr
             } else {
                 toast.error(result.error)
             }
-        } catch (error) {
+        } catch (_error) {
             toast.error("An unexpected error occurred")
         } finally {
             setLoading(false)
@@ -89,14 +89,6 @@ export function EditGroupDialog({ group, open, onOpenChange }: EditGroupDialogPr
         return acc;
     }, {} as Record<string, typeof AVAILABLE_PERMISSIONS>);
 
-    const togglePermission = (permissionId: string) => {
-        const current = form.getValues("permissions");
-        if (current.includes(permissionId)) {
-            form.setValue("permissions", current.filter(p => p !== permissionId));
-        } else {
-            form.setValue("permissions", [...current, permissionId]);
-        }
-    }
 
     const toggleCategory = (category: string) => {
         const categoryPermissions = groupedPermissions[category].map(p => p.id);

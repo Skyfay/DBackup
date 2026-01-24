@@ -3,11 +3,10 @@
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { writeFile, unlink } from "fs/promises";
+import { existsSync, mkdirSync } from "fs";
 import path from "path";
 import prisma from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
-import { checkPermission } from "@/lib/access-control"; // ADDED
-import { PERMISSIONS } from "@/lib/permissions";
 
 // Helper function to check magic numbers (file signatures)
 async function validateImageSignature(file: File): Promise<boolean> {
@@ -147,9 +146,8 @@ export async function uploadAvatar(formData: FormData) {
     // Save to private storage
     const uploadDir = path.join(process.cwd(), "storage", "avatars");
     // Ensure dir exists
-    const fs = require('fs');
-    if (!fs.existsSync(uploadDir)){
-        fs.mkdirSync(uploadDir, { recursive: true });
+    if (!existsSync(uploadDir)){
+        mkdirSync(uploadDir, { recursive: true });
     }
 
     const filepath = path.join(uploadDir, filename);

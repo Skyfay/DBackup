@@ -32,7 +32,7 @@ interface SecurityFormProps {
     canManagePasskeys: boolean;
 }
 
-export function SecurityForm({ canUpdatePassword, canManage2FA, canManagePasskeys }: SecurityFormProps) {
+export function SecurityForm({ canUpdatePassword: _canUpdatePassword, canManage2FA, canManagePasskeys }: SecurityFormProps) {
     const { data: session, refetch } = authClient.useSession()
     const [isPending, setIsPending] = useState(false)
     const [totpURI, setTotpURI] = useState<string | null>(null)

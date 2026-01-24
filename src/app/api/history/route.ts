@@ -5,7 +5,7 @@ import { headers } from "next/headers";
 import { checkPermission } from "@/lib/access-control";
 import { PERMISSIONS } from "@/lib/permissions";
 
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
     const session = await auth.api.getSession({
         headers: await headers()
     });
@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
             take: 100
         });
         return NextResponse.json(executions);
-    } catch (error) {
+    } catch (_error) {
         return NextResponse.json({ error: "Failed to fetch history" }, { status: 500 });
     }
 }

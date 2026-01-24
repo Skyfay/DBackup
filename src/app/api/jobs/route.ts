@@ -5,7 +5,7 @@ import { checkPermission } from "@/lib/access-control";
 import { PERMISSIONS } from "@/lib/permissions";
 import { jobService } from "@/services/job-service";
 
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
     const session = await auth.api.getSession({
         headers: await headers()
     });
@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
 
         const jobs = await jobService.getJobs();
         return NextResponse.json(jobs);
-    } catch (error) {
+    } catch (_error) {
         return NextResponse.json({ error: "Failed to fetch jobs" }, { status: 500 });
     }
 }

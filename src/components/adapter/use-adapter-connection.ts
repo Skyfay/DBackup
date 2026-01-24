@@ -49,7 +49,7 @@ export function useAdapterConnection({ adapterId, form, initialDataId }: UseAdap
                 toast.error(result.message || "Connection failed");
                 return false;
             }
-        } catch (e) {
+        } catch (_e) {
             toast.dismiss(toastId);
             toast.error("Failed to test connection");
             return false;

@@ -145,7 +145,7 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
             } else {
                 toast.error(result.error || "Failed to toggle lock");
             }
-        } catch (e) {
+        } catch (_e) {
             toast.error("An error occurred while toggling lock");
         }
     }, [selectedDestination]);

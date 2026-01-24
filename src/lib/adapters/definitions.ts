@@ -85,7 +85,7 @@ export const S3HetznerSchema = z.object({
     bucket: z.string().min(1, "Bucket name is required"),
     accessKeyId: z.string().min(1, "Access Key is required"),
     secretAccessKey: z.string().min(1, "Secret Key is required"),
-    pathPrefix: z.string().optional().describe("Optional folder prefix"),
+    pathPrefix: z.string().min(1, "Path prefix is required for Hetzner").describe("Folder prefix (Required)"),
 });
 
 export const DiscordSchema = z.object({

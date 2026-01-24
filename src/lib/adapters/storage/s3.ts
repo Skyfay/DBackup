@@ -123,6 +123,28 @@ async function s3Download(internalConfig: S3InternalConfig, remotePath: string, 
     }
 }
 
+async function s3Read(internalConfig: S3InternalConfig, remotePath: string): Promise<string | null> {
+    const client = S3ClientFactory.create(internalConfig);
+    // Note: remotePath here is usually the full path/key from list(), so we don't apply prefix again
+    // unless list() returns relative paths. Current implementation of s3List returns full keys.
+
+    try {
+        const command = new GetObjectCommand({
+            Bucket: internalConfig.bucket,
+            Key: remotePath,
+        });
+
+        const response = await client.send(command);
+        if (!response.Body) return null;
+
+        // AWS SDK v3 body has a transformToString method
+        return await response.Body.transformToString("utf-8");
+    } catch (error) {
+        // If file doesn't exist (e.g. meta.json missing), return null instead of throwing
+        return null;
+    }
+}
+
 async function s3Delete(internalConfig: S3InternalConfig, remotePath: string): Promise<boolean> {
     const client = S3ClientFactory.create(internalConfig);
 
@@ -202,7 +224,15 @@ export const S3GenericAdapter: StorageAdapter = {
         bucket: config.bucket,
         credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
         forcePathStyle: config.forcePathStyle,
-    })
+    }),
+    read: (config, ...args) => s3Read({
+        endpoint: config.endpoint,
+        region: config.region,
+        bucket: config.bucket,
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        forcePathStyle: config.forcePathStyle,
+        pathPrefix: config.pathPrefix
+    }, ...args)
 };
 
 // 2. AWS S3
@@ -238,7 +268,13 @@ export const S3AWSAdapter: StorageAdapter = {
         region: config.region,
         bucket: config.bucket,
         credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
-    })
+    }),
+    read: (config, ...args) => s3Read({
+        region: config.region,
+        bucket: config.bucket,
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        pathPrefix: config.pathPrefix
+    }, ...args)
 };
 
 // 3. Cloudflare R2
@@ -278,7 +314,14 @@ export const S3R2Adapter: StorageAdapter = {
         region: "auto",
         bucket: config.bucket,
         credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
-    })
+    }),
+    read: (config, ...args) => s3Read({
+        endpoint: `https://${config.accountId}.r2.cloudflarestorage.com`,
+        region: "auto",
+        bucket: config.bucket,
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        pathPrefix: config.pathPrefix
+    }, ...args)
 };
 
 // 4. Hetzner Object Storage
@@ -318,5 +361,12 @@ export const S3HetznerAdapter: StorageAdapter = {
         region: config.region,
         bucket: config.bucket,
         credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
-    })
+    }),
+    read: (config, ...args) => s3Read({
+        endpoint: `https://${config.region}.your-objectstorage.com`,
+        region: config.region,
+        bucket: config.bucket,
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        pathPrefix: config.pathPrefix
+    }, ...args)
 };

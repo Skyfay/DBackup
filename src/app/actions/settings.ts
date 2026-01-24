@@ -9,6 +9,7 @@ import { PERMISSIONS } from "@/lib/permissions";
 const settingsSchema = z.object({
     maxConcurrentJobs: z.coerce.number().min(1).max(10),
     disablePasskeyLogin: z.boolean().optional(),
+    auditLogRetentionDays: z.coerce.number().min(1).max(365).optional(),
 });
 
 export async function updateSystemSettings(data: z.infer<typeof settingsSchema>) {
@@ -32,6 +33,15 @@ export async function updateSystemSettings(data: z.infer<typeof settingsSchema>)
                 where: { key: "auth.disablePasskeyLogin" },
                 update: { value: String(result.data.disablePasskeyLogin) },
                 create: { key: "auth.disablePasskeyLogin", value: String(result.data.disablePasskeyLogin) },
+            });
+        }
+
+        // Audit Log Retention Setting (default 90)
+        if (result.data.auditLogRetentionDays !== undefined) {
+             await prisma.systemSetting.upsert({
+                where: { key: "audit.retentionDays" },
+                update: { value: String(result.data.auditLogRetentionDays) },
+                create: { key: "audit.retentionDays", value: String(result.data.auditLogRetentionDays) },
             });
         }
 

@@ -24,14 +24,16 @@ import { Switch } from "@/components/ui/switch"
 const formSchema = z.object({
     maxConcurrentJobs: z.coerce.number().min(1).max(10),
     disablePasskeyLogin: z.boolean().default(false),
+    auditLogRetentionDays: z.coerce.number().min(1).max(365).default(90),
 })
 
 interface SystemSettingsFormProps {
     initialMaxConcurrentJobs: number;
     initialDisablePasskeyLogin?: boolean;
+    initialAuditLogRetentionDays?: number;
 }
 
-export function SystemSettingsForm({ initialMaxConcurrentJobs, initialDisablePasskeyLogin }: SystemSettingsFormProps) {
+export function SystemSettingsForm({ initialMaxConcurrentJobs, initialDisablePasskeyLogin, initialAuditLogRetentionDays = 90 }: SystemSettingsFormProps) {
     const [isPending, setIsPending] = useState(false)
 
     const form = useForm<z.infer<typeof formSchema>>({
@@ -39,6 +41,7 @@ export function SystemSettingsForm({ initialMaxConcurrentJobs, initialDisablePas
         defaultValues: {
             maxConcurrentJobs: initialMaxConcurrentJobs,
             disablePasskeyLogin: initialDisablePasskeyLogin === true,
+            auditLogRetentionDays: initialAuditLogRetentionDays,
         },
     })
 
@@ -103,6 +106,38 @@ export function SystemSettingsForm({ initialMaxConcurrentJobs, initialDisablePas
                                     <FormDescription>
                                         The maximum number of backup jobs that can run simultaneously.
                                         Jobs will be queued if this limit is reached.
+                                    </FormDescription>
+                                    <FormMessage />
+                                </FormItem>
+                            )}
+                        />
+
+                        <FormField
+                            control={form.control}
+                            name="auditLogRetentionDays"
+                            render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>Audit Log Retention</FormLabel>
+                                    <Select
+                                        onValueChange={(val) => handleAutoSave("auditLogRetentionDays", Number(val))}
+                                        defaultValue={String(field.value)}
+                                    >
+                                        <FormControl>
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Select retention period" />
+                                            </SelectTrigger>
+                                        </FormControl>
+                                        <SelectContent>
+                                            <SelectItem value="30">30 Days</SelectItem>
+                                            <SelectItem value="60">60 Days</SelectItem>
+                                            <SelectItem value="90">90 Days (Default)</SelectItem>
+                                            <SelectItem value="180">180 Days</SelectItem>
+                                            <SelectItem value="365">1 Year</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                    <FormDescription>
+                                        Automatically delete audit logs older than the specified period.
+                                        This runs daily as part of the "Clean Old Logs" system task.
                                     </FormDescription>
                                     <FormMessage />
                                 </FormItem>

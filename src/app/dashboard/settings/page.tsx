@@ -30,6 +30,9 @@ export default async function SettingsPage() {
     const disablePasskeySetting = await prisma.systemSetting.findUnique({ where: { key: "auth.disablePasskeyLogin" } });
     const disablePasskeyLogin = disablePasskeySetting?.value === 'true';
 
+    const retentionSetting = await prisma.systemSetting.findUnique({ where: { key: "audit.retentionDays" } });
+    const auditLogRetentionDays = retentionSetting ? parseInt(retentionSetting.value) : 90;
+
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
@@ -48,6 +51,7 @@ export default async function SettingsPage() {
                     <SystemSettingsForm
                         initialMaxConcurrentJobs={maxConcurrentJobs}
                         initialDisablePasskeyLogin={disablePasskeyLogin}
+                        initialAuditLogRetentionDays={auditLogRetentionDays}
                     />
                 </TabsContent>
                 <TabsContent value="tasks" className="space-y-4">

@@ -79,13 +79,17 @@ export function SystemSettingsForm({ initialMaxConcurrentJobs, initialDisablePas
                             Configure how jobs are executed on the server.
                         </CardDescription>
                     </CardHeader>
-                    <CardContent>
+                    <CardContent className="space-y-6">
                         <FormField
                             control={form.control}
                             name="maxConcurrentJobs"
                             render={({ field }) => (
                                 <FormItem>
                                     <FormLabel>Max Concurrent Jobs</FormLabel>
+                                    <FormDescription>
+                                        The maximum number of backup jobs that can run simultaneously.
+                                        Jobs will be queued if this limit is reached.
+                                    </FormDescription>
                                     <Select
                                         onValueChange={(val) => handleAutoSave("maxConcurrentJobs", Number(val))}
                                         defaultValue={String(field.value)}
@@ -103,10 +107,6 @@ export function SystemSettingsForm({ initialMaxConcurrentJobs, initialDisablePas
                                             ))}
                                         </SelectContent>
                                     </Select>
-                                    <FormDescription>
-                                        The maximum number of backup jobs that can run simultaneously.
-                                        Jobs will be queued if this limit is reached.
-                                    </FormDescription>
                                     <FormMessage />
                                 </FormItem>
                             )}
@@ -118,6 +118,10 @@ export function SystemSettingsForm({ initialMaxConcurrentJobs, initialDisablePas
                             render={({ field }) => (
                                 <FormItem>
                                     <FormLabel>Audit Log Retention</FormLabel>
+                                    <FormDescription>
+                                        Automatically delete audit logs older than the specified period.
+                                        This runs daily as part of the "Clean Old Logs" system task.
+                                    </FormDescription>
                                     <Select
                                         onValueChange={(val) => handleAutoSave("auditLogRetentionDays", Number(val))}
                                         defaultValue={String(field.value)}
@@ -135,10 +139,6 @@ export function SystemSettingsForm({ initialMaxConcurrentJobs, initialDisablePas
                                             <SelectItem value="365">1 Year</SelectItem>
                                         </SelectContent>
                                     </Select>
-                                    <FormDescription>
-                                        Automatically delete audit logs older than the specified period.
-                                        This runs daily as part of the "Clean Old Logs" system task.
-                                    </FormDescription>
                                     <FormMessage />
                                 </FormItem>
                             )}

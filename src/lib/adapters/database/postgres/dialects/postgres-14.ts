@@ -1,4 +1,4 @@
-import { DatabaseDialect } from "../../common/dialect";
+// import { DatabaseDialect } from "../../common/dialect";
 import { PostgresBaseDialect } from "./postgres-base";
 
 /**

@@ -1,7 +1,7 @@
 import { StorageAdapter, FileInfo } from "@/lib/core/interfaces";
 import { SFTPSchema } from "@/lib/adapters/definitions";
 import Client from "ssh2-sftp-client";
-import { createReadStream, createWriteStream } from "fs";
+import { createReadStream } from "fs";
 import path from "path";
 import { LogLevel, LogType } from "@/lib/core/logs";
 
@@ -67,7 +67,7 @@ export const SFTPStorageAdapter: StorageAdapter = {
             // However, the signature is (total_transferred, chunk, total).
 
             await sftp.put(createReadStream(localPath), destination, {
-                step: (total_transferred: any, chunk: any, total: any) => {
+                step: (total_transferred: any, _chunk: any, _total: any) => {
                     if (onProgress && totalSize > 0) {
                         // total param in callback is total bytes to transfer, which is known if we pass it, but put() with stream might not know it unless we checked.
                         // We use our known totalSize.

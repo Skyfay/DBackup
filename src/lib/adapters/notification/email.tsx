@@ -1,7 +1,7 @@
 import { NotificationAdapter } from "@/lib/core/interfaces";
 import { EmailSchema } from "@/lib/adapters/definitions";
 import nodemailer from "nodemailer";
-import { formatBytes } from "@/lib/utils";
+// import { formatBytes } from "@/lib/utils";
 import React from "react";
 
 const createTransporter = (config: any) => {

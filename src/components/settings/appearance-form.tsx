@@ -13,6 +13,7 @@ export function AppearanceForm() {
   useEffect(() => {
     // This is necessary to avoid hydration mismatch with next-themes.
     // It triggers a re-render to ensure the correct theme is displayed after client-side hydration.
+    // eslint-disable-next-line
     setMounted(true)
   }, [])
 

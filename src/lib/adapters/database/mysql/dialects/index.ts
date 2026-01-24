@@ -2,7 +2,7 @@ import { DatabaseDialect } from "../../common/dialect";
 import { MySQL80Dialect } from "./mysql-8";
 import { MySQL57Dialect } from "./mysql-5-7";
 import { MariaDBDialect } from "./mariadb";
-import { MySQLBaseDialect } from "./mysql-base";
+// import { MySQLBaseDialect } from "./mysql-base";
 
 export function getDialect(adapterId: string, version?: string): DatabaseDialect {
     // 1. Explicit MariaDB Adapter Check

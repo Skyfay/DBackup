@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { RetentionService } from '@/services/retention-service';
 import { FileInfo } from '@/lib/core/interfaces';
 import { RetentionConfiguration } from '@/lib/core/retention';
-import { subDays, subMonths, subYears, subWeeks } from 'date-fns';
+import { subDays, subMonths, subWeeks } from 'date-fns';
 
 // Helper to create mock files
 const createMockFile = (name: string, date: Date): FileInfo => ({

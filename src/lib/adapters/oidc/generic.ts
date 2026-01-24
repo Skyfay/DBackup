@@ -1,4 +1,4 @@
-import { OIDCAdapter, OIDCEndpoints } from "@/lib/core/oidc-adapter";
+import { OIDCAdapter } from "@/lib/core/oidc-adapter";
 import { z } from "zod";
 
 export const GenericAdapter: OIDCAdapter = {

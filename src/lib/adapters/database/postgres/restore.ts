@@ -6,7 +6,7 @@ import { spawn } from "child_process";
 import { createReadStream } from "fs";
 import { Transform, TransformCallback } from "stream";
 import fs from "fs/promises";
-import { waitForProcess } from "@/lib/adapters/process";
+// import { waitForProcess } from "@/lib/adapters/process";
 import { getPostgresBinary } from "./version-utils";
 
 export async function prepareRestore(config: any, databases: string[]): Promise<void> {
@@ -112,7 +112,7 @@ export async function restore(config: any, sourcePath: string, onLog?: (msg: str
         // Create usage config with correct user
         const usageConfig = { ...config, user };
 
-        const dialect = getDialect('postgres', config.detectedVersion);
+        // const dialect = getDialect('postgres', config.detectedVersion);
 
         // Detect backup format
         const isCustom = await isCustomFormat(sourcePath);

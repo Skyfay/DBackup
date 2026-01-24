@@ -1,7 +1,7 @@
 import { DatabaseDialect } from "../../common/dialect";
 
 export class PostgresBaseDialect implements DatabaseDialect {
-    supportsVersion(version: string): boolean {
+    supportsVersion(_version: string): boolean {
         return true;
     }
 
@@ -91,7 +91,7 @@ export class PostgresBaseDialect implements DatabaseDialect {
          // Add options
         if (config.options) {
              const parts = config.options.match(/[^\s"']+|"([^"]*)"|'([^']*)'/g) || [];
-             for (const part of parts) {
+             for (const _part of parts) {
                  // Filter out dump-only options if mixed in config?
                  // Ideally config for restore options should be separate or general.
                  // For now, simple pass through might be risky (e.g. --clean is valid for restore via psql?)

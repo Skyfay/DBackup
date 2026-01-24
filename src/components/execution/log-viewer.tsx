@@ -110,6 +110,7 @@ export function LogViewer({ logs, className, autoScroll = true, status }: LogVie
              return prev;
          });
      }
+     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupedLogs.length, userInteracted]);
 
   // Scroll to bottom on new logs if sticky
@@ -281,7 +282,7 @@ function LogItem({ entry }: { entry: LogEntry }) {
   );
 }
 
-function isValidDate(dateStr: string) {
-    const d = new Date(dateStr);
-    return !isNaN(d.getTime());
-}
+// function isValidDate(dateStr: string) {
+//    const d = new Date(dateStr);
+//    return !isNaN(d.getTime());
+// }

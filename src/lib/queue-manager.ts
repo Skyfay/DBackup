@@ -1,8 +1,8 @@
 import prisma from "@/lib/prisma";
-import { stepExecuteDump } from "@/lib/runner/steps/02-dump";
-import { stepUpload } from "@/lib/runner/steps/03-upload";
-import { stepCleanup, stepFinalize } from "@/lib/runner/steps/04-completion";
-import { stepInitialize } from "@/lib/runner/steps/01-initialize";
+// import { stepExecuteDump } from "@/lib/runner/steps/02-dump";
+// import { stepUpload } from "@/lib/runner/steps/03-upload";
+// import { stepCleanup, stepFinalize } from "@/lib/runner/steps/04-completion";
+// import { stepInitialize } from "@/lib/runner/steps/01-initialize";
 
 /**
  * Checks the queue and starts jobs if slots are available.
@@ -58,7 +58,7 @@ async function executeQueuedJob(executionId: string, jobId: string) {
     // Note: The original 'runJob' initialized the context and execution.
     // Here we need to reconstruct what's needed for the steps.
 
-    const logs: string[] = [];
+    // const logs: string[] = [];
     // We should probably load existing logs from DB if any?
     // Usually PENDING has no logs yet.
 

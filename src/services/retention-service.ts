@@ -1,6 +1,6 @@
 import { FileInfo } from '@/lib/core/interfaces';
-import { RetentionConfiguration, RetentionMode } from '@/lib/core/retention';
-import { format, getISOWeek, getYear, getMonth } from 'date-fns';
+import { RetentionConfiguration } from '@/lib/core/retention';
+import { format, getISOWeek, getYear } from 'date-fns';
 
 type FileWithReasons = {
     file: FileInfo;

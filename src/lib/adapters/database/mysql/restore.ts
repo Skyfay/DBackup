@@ -24,11 +24,11 @@ export async function prepareRestore(config: any, databases: string[]): Promise<
 
         // Manual Dialect Injection for connection args could be done here if we refactor ensureDatabase
         // For now, let's stick to existing logic in prepareRestore since it's just 'CREATE DATABASE'
-        const args = ['-h', config.host, '-P', String(config.port), '-u', user, '--protocol=tcp'];
+        const _args = ['-h', config.host, '-P', String(config.port), '-u', user, '--protocol=tcp'];
         const dialect = getDialect(config.type === 'mariadb' ? 'mariadb' : 'mysql', config.detectedVersion);
 
         // Use dialect for connection args (auth flags)
-        const dialectArgs = dialect.getConnectionArgs({ ...config, user, disableSsl: config.disableSsl });
+        const _dialectArgs = dialect.getConnectionArgs({ ...config, user, disableSsl: config.disableSsl });
 
         // We can't easily replace the whole array without changing logic of ensureDatabase calling convention
         // But wait, ensureDatabase is imported. We can't change it here.
@@ -110,7 +110,7 @@ export async function restore(config: any, sourcePath: string, onLog?: (msg: str
 
         const fileStream = createReadStream(sourcePath, { highWaterMark: 64 * 1024 });
 
-        const currentTargetName: string | null = null;
+        // const currentTargetName: string | null = null;
         let skipCurrentSection = false;
         let buffer = '';
 
@@ -186,9 +186,9 @@ export async function restore(config: any, sourcePath: string, onLog?: (msg: str
             }
         });
 
-        fileStream.on('error', (err) => mysqlProc.kill());
-        transformStream.on('error', (err) => mysqlProc.kill());
-        mysqlProc.stdin.on('error', (err) => {
+        fileStream.on('error', (_err) => mysqlProc.kill());
+        transformStream.on('error', (_err) => mysqlProc.kill());
+        mysqlProc.stdin.on('error', (_err) => {
         });
 
         fileStream.pipe(transformStream).pipe(mysqlProc.stdin);

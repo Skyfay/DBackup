@@ -81,7 +81,7 @@ export function EncryptionProfilesList() {
         }
     }
 
-    const handleRevealKey = async (id: string, name: string) => {
+    const handleRevealKey = async (id: string, _name: string) => {
         if (revealedKey?.id === id) {
             setRevealedKey(null);
             return;

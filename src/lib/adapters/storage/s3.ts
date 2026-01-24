@@ -1,6 +1,6 @@
 import { StorageAdapter, FileInfo } from "@/lib/core/interfaces";
 import { S3GenericSchema, S3AWSSchema, S3R2Schema, S3HetznerSchema } from "@/lib/adapters/definitions";
-import { S3Client, ListObjectsV2Command, GetObjectCommand, DeleteObjectCommand, HeadBucketCommand, PutObjectCommand, StorageClass } from "@aws-sdk/client-s3";
+import { S3Client, ListObjectsV2Command, GetObjectCommand, DeleteObjectCommand, PutObjectCommand, StorageClass } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 import { createReadStream, createWriteStream } from "fs";
 import { pipeline } from "stream/promises";
@@ -145,7 +145,7 @@ async function s3Read(internalConfig: S3InternalConfig, remotePath: string): Pro
 
         // AWS SDK v3 body has a transformToString method
         return await response.Body.transformToString("utf-8");
-    } catch (error) {
+    } catch (_error) {
         // If file doesn't exist (e.g. meta.json missing), return null instead of throwing
         return null;
     }

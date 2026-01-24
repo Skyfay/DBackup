@@ -11,11 +11,11 @@ interface DateDisplayProps {
 
 export function DateDisplay({ date, format = "Pp", className }: DateDisplayProps) {
   const { data: session } = useSession()
-  // @ts-ignore - types might not be generated yet
+  // @ts-expect-error - types might not be generated yet
   const userTimezone = session?.user?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone
-  // @ts-ignore - types might not be generated yet
+  // @ts-expect-error - types might not be generated yet
   const dateFormat = session?.user?.dateFormat || "P";
-  // @ts-ignore - types might not be generated yet
+  // @ts-expect-error - types might not be generated yet
   const timeFormat = session?.user?.timeFormat || "p";
 
   if (!date) return null;

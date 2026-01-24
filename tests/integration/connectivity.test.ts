@@ -42,7 +42,7 @@ describe('Integration Tests: Database Connectivity', () => {
                 let dbs;
                 try {
                      dbs = await adapter.getDatabases(config as any);
-                } catch (e) {
+                } catch (_e) {
                     // Retry once
                     await new Promise(r => setTimeout(r, 2000));
                     dbs = await adapter.getDatabases(config as any);

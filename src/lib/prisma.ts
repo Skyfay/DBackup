@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client'
 
 // Add BigInt serialization support for JSON
 // This prevents "TypeError: Do not know how to serialize a BigInt" when passing data to client components
-// @ts-ignore
+// @ts-expect-error - BigInt toJSON is not in standard types
 BigInt.prototype.toJSON = function () {
   return this.toString()
 }

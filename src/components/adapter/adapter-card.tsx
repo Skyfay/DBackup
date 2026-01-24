@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useMemo } from "react";
+import { createElement } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Edit, Trash2 } from "lucide-react";
@@ -20,7 +20,6 @@ interface AdapterCardProps {
 export function AdapterCard({ config, definition, onDelete, onEdit, canManage }: AdapterCardProps) {
     const parsedConfig = JSON.parse(config.config);
     const Icon = getAdapterIcon(definition?.id || config.adapterId);
-    const IconComponent = useMemo(() => <Icon className="h-5 w-5" />, [Icon]);
 
     // Helper to format config values for display
     const getDisplayValue = (key: string, value: any) => {
@@ -51,7 +50,7 @@ export function AdapterCard({ config, definition, onDelete, onEdit, canManage }:
 
             <CardHeader className="flex flex-row items-center gap-4 pb-2">
                 <div className="flex h-10 w-10 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                    {IconComponent}
+                    {createElement(Icon, { className: "h-5 w-5" })}
                 </div>
                 <div className="grid gap-1">
                     <CardTitle className="text-base font-semibold leading-none tracking-tight">

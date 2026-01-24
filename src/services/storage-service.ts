@@ -324,7 +324,19 @@ export class StorageService {
             throw new Error(`Failed to decrypt configuration for ${adapterConfigId}: ${(e as Error).message}`);
         }
 
-        return await adapter.delete(config, filePath);
+        // Attempt to delete the main file
+        const mainDelete = await adapter.delete(config, filePath);
+
+        // Also try to delete potential sidecar files (.meta.json)
+        // We don't fail the operation if this fails, but it's good practice to clean up.
+        try {
+            const metaPath = filePath + ".meta.json";
+            await adapter.delete(config, metaPath);
+        } catch (e) {
+            console.warn(`Failed to delete associated metadata file for ${filePath}`, e);
+        }
+
+        return mainDelete;
     }
 
     /**

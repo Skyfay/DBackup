@@ -1,124 +1,68 @@
-# Audit Log System Plan
+# Audit Log System Documentation
 
-This document outlines the implementation plan for the **User Audit Log** feature. The goal is to track significant user actions (Authentication, Resource Management) and display them in a searchable table within the "Users & Groups" dashboard.
+This document describes the implemented User Audit Log system, which tracks significant user actions (Authentication, Resource Management, etc.) for security and compliance.
 
-## 1. Database & Schema Design
+## 1. Architecture
 
-We need a dedicated model to store audit events.
+### Database Schema
+The system uses the `AuditLog` model in Prisma (`prisma/schema.prisma`). It stores:
+*   `userId`: Who performed the action (nullable for system actions).
+*   `action`: What happened (e.g., `CREATE`, `DELETE`).
+*   `resource`: What was affected (e.g., `USER`, `JOB`).
+*   `resourceId`: ID of the affected object.
+*   `details`: JSON string with additional info (diffs, metadata).
+*   `ipAddress` / `userAgent`: Request context.
 
-### Prisma Schema (`prisma/schema.prisma`)
+### Constants (`src/lib/core/audit-types.ts`)
+To ensure consistency, we use strict constants for Actions and Resources.
 
-```prisma
-model AuditLog {
-  id          String   @id @default(uuid())
-  userId      String?  // Nullable because some actions might be system actions or deleted users
-  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+```typescript
+import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 
-  action      String   // ENUM-like string: "LOGIN", "CREATE", "UPDATE", "DELETE"
-  resource    String   // ENUM-like string: "USER", "JOB", "SOURCE", "DESTINATION", "SETTINGS"
-  resourceId  String?  // The ID of the affected object
+// AUDIT_ACTIONS: LOGIN, CREATE, UPDATE, DELETE, EXECUTE...
+// AUDIT_RESOURCES: USER, JOB, SOURCE, DESTINATION, SYSTEM...
+```
 
-  details     String?  // JSON string storing changes (diff) or connection info
-  ipAddress   String?
-  userAgent   String?
+### Service Layer (`src/services/audit-service.ts`)
+The `AuditService` handles the logic for:
+*   Writing logs to the database (`log()`).
+*   Fetching paginated and filtered logs (`getLogs()`).
+*   Generating statistics for UI filters (`getFilterStats()`).
 
-  createdAt   DateTime @default(now())
+## 2. Usage Guide
 
-  @@index([userId])
-  @@index([resource])
-  @@index([createdAt])
+### Logging an Event
+You should log an event whenever a significant state change occurs (typically in **Server Actions** or **Services**).
+
+```typescript
+import { auditService } from "@/services/audit-service";
+import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
+
+// Example: Inside a Server Action
+export async function createThing(data: any) {
+    // 1. Perform Business Logic
+    const newThing = await db.create(...);
+
+    // 2. Log Action
+    // Ensure you have the user session/ID available
+    if (session?.user) {
+        await auditService.log(
+            session.user.id,                // Actor (User ID)
+            AUDIT_ACTIONS.CREATE,           // Action
+            AUDIT_RESOURCES.JOB,            // Resource Category
+            { name: newThing.name },        // Details (stored as JSON)
+            newThing.id                     // Resource ID (Optional but recommended)
+        );
+    }
 }
 ```
 
-## 2. Shared Types (`src/lib/core/audit-types.ts`)
+### Viewing Logs
+*   **UI**: The Audit Log is accessible in the Dashboard under **Users & Groups** -> **Audit Logs** tab.
+*   **Permission**: Users need `audit:read` permission to view this tab or fetch logs via the API.
 
-Define consistent constants to avoid magic strings.
+## 3. Implementation Details
 
-```typescript
-export const AUDIT_ACTIONS = {
-  LOGIN: "LOGIN",
-  LOGOUT: "LOGOUT",
-  CREATE: "CREATE",
-  UPDATE: "UPDATE",
-  DELETE: "DELETE",
-  EXECUTE: "EXECUTE", // For running jobs manually
-} as const;
-
-export const AUDIT_RESOURCES = {
-  AUTH: "AUTH",
-  USER: "USER",
-  GROUP: "GROUP",
-  SOURCE: "SOURCE",
-  DESTINATION: "DESTINATION",
-  JOB: "JOB",
-  SYSTEM: "SYSTEM",
-} as const;
-```
-
-## 3. Core Logic (`src/services/audit-service.ts`)
-
-A centralized service to handle logging. This ensures we can swap the backend (e.g., to a file stream) later if DB becomes too heavy.
-
-**Functions:**
-*   `log(userId: string, action: string, resource: string, details?: object)`: Creating a log entry.
-*   `getLogs(filter: AuditLogFilter)`: Fetching paginated logs for the UI.
-*   `cleanOldLogs(retentionDays: number)`: Maintenance task.
-
-## 4. Permissions (`src/lib/permissions.ts`)
-
-We need to protect the audit log view.
-
-*   Add `AUDIT: { READ: "audit:read" }` to `PERMISSIONS`.
-*   Add the permission to the `SuperAdmin` group via migration script.
-
-## 5. Integration Points (Backend)
-
-We need to "hook" into existing actions to trigger logs.
-
-| Action | File | Service/Function | Notes |
-| :--- | :--- | :--- | :--- |
-| **Login** | `src/lib/auth.ts` | Better-Auth Hooks | Use `onSession` or similar callbacks if available, otherwise log in server action. |
-| **User Create** | `src/app/actions/user.ts` | `createUser` | Log after success. |
-| **User Delete** | `src/app/actions/user.ts` | `deleteUser` | Log with ID. |
-| **Adapter Create** | `src/app/actions/adapter.ts` | `createAdapter` | |
-| **Job Update** | `src/app/actions/job.ts` | `updateJob` | Capture changed fields if possible. |
-
-## 6. Frontend Implementation
-
-### UI Components
-1.  **`src/components/audit/audit-table.ts`**: A robust `DataTable` component.
-    *   Columns: `Actor` (User Avatar/Name), `Action` (Badge), `Resource`, `Details` (JSON Viewer in Popover), `Date`.
-2.  **`src/app/dashboard/users/page.tsx`**: Add a new Tab "Audit Logs".
-
-### API / Server Actions
-*   `src/app/actions/audit.ts`:
-    *   `getAuditLogs({ page, limit, resourceFilter })`: Server action to fetch data securely.
-
-## 7. Implementation Roadmap
-
-### Phase 1: Foundation (Type Safety & Database)
-- [ ] Modify `prisma/schema.prisma` to add `AuditLog`.
-- [ ] Run `npx prisma migrate dev --name init_audit_log`.
-- [ ] Create `src/lib/core/audit-types.ts`.
-- [ ] Update `src/lib/permissions.ts` with `audit:read`.
-- [ ] Update `scripts/update_perms.js` to assign `audit:read` to Admins.
-
-### Phase 2: Service Layer
-- [ ] Create `src/services/audit-service.ts` with `log` and `getLogs`.
-- [ ] Create Server Action `src/app/actions/audit.ts` exposing `getLogs`.
-
-### Phase 3: Integration (Logging Events)
-- [ ] Instrument `src/app/actions/user.ts` (Create/Update/Delete).
-- [ ] Instrument `src/app/actions/group.ts`.
-- [ ] Instrument Adapter creation/deletion.
-- [ ] (Optional) Instrument Login flow (requires checking Better-Auth capabilities or modifying login action).
-
-### Phase 4: Frontend
-- [ ] Create `AuditTable` component (`src/components/audit/...`).
-- [ ] Add "Audit" Tab to `src/app/dashboard/users/page.tsx`.
-- [ ] Implement filtering (by Action, by User).
-
-### Phase 5: Cleanup & Testing
-- [ ] Manual test: Create a user -> Check Audit Log.
-- [ ] Manual test: Delete a job -> Check Audit Log.
-- [ ] Verify `audit:read` permission works (Regular user cannot see tab).
+*   **Frontend**: `src/components/audit/audit-table.tsx` provides a data table with server-side pagination and filtering.
+*   **Server Actions**: `src/app/actions/audit.ts` exposes the data fetching logic securely (checking permissions).
+*   **Automated Login Logging**: Successful logins are automatically logged via `src/app/actions/audit-log.ts` called from the authentication flow.

@@ -27,6 +27,9 @@ export default async function SettingsPage() {
     const maxJobsSetting = await prisma.systemSetting.findUnique({ where: { key: "maxConcurrentJobs" } });
     const maxConcurrentJobs = maxJobsSetting ? parseInt(maxJobsSetting.value) : 1;
 
+    const disablePasskeySetting = await prisma.systemSetting.findUnique({ where: { key: "auth.disablePasskeyLogin" } });
+    const disablePasskeyLogin = disablePasskeySetting?.value === 'true';
+
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
@@ -42,7 +45,10 @@ export default async function SettingsPage() {
                     <TabsTrigger value="tasks">System Tasks</TabsTrigger>
                 </TabsList>
                 <TabsContent value="general" className="space-y-4">
-                    <SystemSettingsForm initialMaxConcurrentJobs={maxConcurrentJobs} />
+                    <SystemSettingsForm
+                        initialMaxConcurrentJobs={maxConcurrentJobs}
+                        initialDisablePasskeyLogin={disablePasskeyLogin}
+                    />
                 </TabsContent>
                 <TabsContent value="tasks" className="space-y-4">
                     <SystemTasksSettings />

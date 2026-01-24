@@ -17,24 +17,28 @@ import { toast } from "sonner"
 import { updateSystemSettings } from "@/app/actions/settings"
 import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Loader2 } from "lucide-react"
+import { Loader2, Shield } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 
 const formSchema = z.object({
     maxConcurrentJobs: z.coerce.number().min(1).max(10),
+    disablePasskeyLogin: z.boolean().default(false),
 })
 
 interface SystemSettingsFormProps {
     initialMaxConcurrentJobs: number;
+    initialDisablePasskeyLogin?: boolean;
 }
 
-export function SystemSettingsForm({ initialMaxConcurrentJobs }: SystemSettingsFormProps) {
+export function SystemSettingsForm({ initialMaxConcurrentJobs, initialDisablePasskeyLogin }: SystemSettingsFormProps) {
     const [isPending, setIsPending] = useState(false)
 
     const form = useForm<z.infer<typeof formSchema>>({
         resolver: zodResolver(formSchema) as any,
         defaultValues: {
             maxConcurrentJobs: initialMaxConcurrentJobs,
+            disablePasskeyLogin: initialDisablePasskeyLogin === true,
         },
     })
 
@@ -55,16 +59,16 @@ export function SystemSettingsForm({ initialMaxConcurrentJobs }: SystemSettingsF
     }
 
     return (
-        <Card>
-            <CardHeader>
-                <CardTitle>Job Execution</CardTitle>
-                <CardDescription>
-                    Configure how jobs are executed on the server.
-                </CardDescription>
-            </CardHeader>
-            <CardContent>
-                <Form {...form}>
-                    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+        <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Job Execution</CardTitle>
+                        <CardDescription>
+                            Configure how jobs are executed on the server.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
                         <FormField
                             control={form.control}
                             name="maxConcurrentJobs"
@@ -96,13 +100,50 @@ export function SystemSettingsForm({ initialMaxConcurrentJobs }: SystemSettingsF
                                 </FormItem>
                             )}
                         />
-                        <Button type="submit" disabled={isPending}>
-                            {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            Save Changes
-                        </Button>
-                    </form>
-                </Form>
-            </CardContent>
-        </Card>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader>
+                        <div className="flex items-center gap-2">
+                            <Shield className="h-5 w-5 text-muted-foreground" />
+                            <CardTitle>Authentication & Security</CardTitle>
+                        </div>
+                        <CardDescription>
+                            Configure login and security settings.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <FormField
+                            control={form.control}
+                            name="disablePasskeyLogin"
+                            render={({ field }) => (
+                                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                                    <div className="space-y-0.5">
+                                        <FormLabel className="text-base">Disable "Sign in with Passkey"</FormLabel>
+                                        <FormDescription>
+                                            Hide the passkey login button on the login screen. Does not disable passkey 2FA.
+                                        </FormDescription>
+                                    </div>
+                                    <FormControl>
+                                        <Switch
+                                            checked={field.value}
+                                            onCheckedChange={field.onChange}
+                                        />
+                                    </FormControl>
+                                </FormItem>
+                            )}
+                        />
+                    </CardContent>
+                </Card>
+
+                <div className="flex justify-end">
+                    <Button type="submit" disabled={isPending}>
+                        {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Save Changes
+                    </Button>
+                </div>
+            </form>
+        </Form>
     )
 }

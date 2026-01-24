@@ -35,6 +35,7 @@ interface LoginFormProps {
     allowSignUp?: boolean;
     ssoProviders?: { id: string; name: string; type: string; providerId: string; adapterId: string; allowProvisioning: boolean }[];
     errorCode?: string;
+    disablePasskeyLogin?: boolean;
 }
 
 // Error messages for SSO errors
@@ -57,7 +58,7 @@ const ERROR_MESSAGES: Record<string, { title: string; description: string }> = {
     }
 };
 
-export function LoginForm({ allowSignUp = true, ssoProviders = [], errorCode }: LoginFormProps) {
+export function LoginForm({ allowSignUp = true, ssoProviders = [], errorCode, disablePasskeyLogin = false }: LoginFormProps) {
   const router = useRouter()
   const [isLogin, setIsLogin] = useState(true)
   const [loading, setLoading] = useState(false)
@@ -406,26 +407,32 @@ export function LoginForm({ allowSignUp = true, ssoProviders = [], errorCode }: 
                     </div>
                 )}
 
-                <div className="relative">
-                    <div className="absolute inset-0 flex items-center">
-                        <span className="w-full border-t" />
-                    </div>
-                    <div className="relative flex justify-center text-xs uppercase">
-                        <span className="bg-background px-2 text-muted-foreground">
-                        Or
-                        </span>
-                    </div>
-                </div>
-                <Button
-                    variant="outline"
-                    type="button"
-                    className="w-full"
-                    onClick={handlePasskeyLogin}
-                    disabled={loading}
-                >
-                    <Fingerprint className="mr-2 h-4 w-4"/>
-                    Sign in with Passkey
-                </Button>
+                {!disablePasskeyLogin && (
+                    <>
+                        {ssoProviders.length === 0 && (
+                            <div className="relative">
+                                <div className="absolute inset-0 flex items-center">
+                                    <span className="w-full border-t" />
+                                </div>
+                                <div className="relative flex justify-center text-xs uppercase">
+                                    <span className="bg-background px-2 text-muted-foreground">
+                                    OR
+                                    </span>
+                                </div>
+                            </div>
+                        )}
+                        <Button
+                            variant="outline"
+                            type="button"
+                            className="w-full"
+                            onClick={handlePasskeyLogin}
+                            disabled={loading}
+                        >
+                            <Fingerprint className="mr-2 h-4 w-4"/>
+                            Sign in with Passkey
+                        </Button>
+                    </>
+                )}
             </div>
         )}
       </CardContent>

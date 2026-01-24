@@ -28,6 +28,10 @@ export default async function Home({ searchParams }: HomeProps) {
     const userCount = await prisma.user.count();
     const ssoProviders = await getPublicSsoProviders();
 
+    // Check if passkey login is disabled
+    const disablePasskeySetting = await prisma.systemSetting.findUnique({ where: { key: "auth.disablePasskeyLogin" } });
+    const disablePasskeyLogin = disablePasskeySetting?.value === 'true';
+
     return (
         <div className="flex min-h-screen flex-col items-center justify-center bg-muted/50">
              <div className="mb-8 font-bold text-2xl tracking-tight">
@@ -37,6 +41,7 @@ export default async function Home({ searchParams }: HomeProps) {
                 allowSignUp={userCount === 0}
                 ssoProviders={ssoProviders}
                 errorCode={params.error}
+                disablePasskeyLogin={disablePasskeyLogin}
             />
         </div>
     );

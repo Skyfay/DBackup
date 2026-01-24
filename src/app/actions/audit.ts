@@ -27,3 +27,15 @@ export async function getAuditLogs(
     };
   }
 }
+
+export async function getAuditFilterStats(
+    filters: Omit<AuditLogFilter, "page" | "limit"> = {}
+) {
+    try {
+        await checkPermission(PERMISSIONS.AUDIT.READ); // Same permission
+        const stats = await auditService.getFilterStats(filters);
+        return { success: true, data: stats };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}

@@ -141,6 +141,7 @@ Linting:
 pnpm run lint
 ```
 
+Build:
 ```bash
 pnpm run build
 ```

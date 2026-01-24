@@ -170,6 +170,45 @@ Database Dump → Compression Stream (optional) → Encryption Stream → Storag
 
 **Metadata File** (`.meta.json`): Stores `iv`, `authTag`, `compression`, and `profileId` for decryption. See `BackupMetadata` interface in [src/lib/core/interfaces.ts](src/lib/core/interfaces.ts).
 
+## Restore Pipeline (`src/services/restore-service.ts`)
+
+Restore runs as a background process with live progress tracking:
+
+```
+RestoreService.restore(input)
+    ↓
+1. Pre-flight checks:
+   - prepareRestore() → Verify DB permissions (can create/overwrite?)
+   - Version compatibility → Reject if backup version > target server
+    ↓
+2. Create Execution (type: "Restore", status: "Running")
+    ↓
+3. runRestoreProcess() (async background):
+   - Download backup from storage → temp file
+   - Detect encryption (read .meta.json) → Decrypt stream
+   - Detect compression → Decompress stream
+   - Call DatabaseAdapter.restore(config, tempFile)
+   - Cleanup temp files
+```
+
+**Key Features:**
+- **Database Mapping**: Restore to different DB names via `databaseMapping` parameter
+- **Privileged Auth**: Optional elevated credentials for CREATE DATABASE permissions
+- **Version Guard**: Prevents restoring newer dumps to older DB servers
+- **Streaming Decryption**: Uses same `crypto-stream.ts` as backup (reverse direction)
+
+**Input Interface:**
+```typescript
+interface RestoreInput {
+  storageConfigId: string;       // Source storage adapter
+  file: string;                  // Backup file path
+  targetSourceId: string;        // Target database adapter
+  targetDatabaseName?: string;   // Override single DB name
+  databaseMapping?: Record<string, string>; // Multi-DB rename mapping
+  privilegedAuth?: { user, password };      // Elevated credentials
+}
+```
+
 ## File Conventions
 - **Naming**: `kebab-case` (e.g., `backup-service.ts`, `user-table.tsx`)
 - **Exports**: Named exports preferred

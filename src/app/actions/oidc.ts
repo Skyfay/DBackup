@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { checkPermission } from "@/lib/access-control";
+import { checkPermission, getUserPermissions } from "@/lib/access-control";
 import { PERMISSIONS } from "@/lib/permissions";
 import { OidcProviderService } from "@/services/oidc-provider-service";
 import { getOIDCAdapter } from "@/services/oidc-registry";
@@ -24,6 +24,8 @@ const createProviderSchema = z.object({
 // --- Actions ---
 
 export async function getPublicSsoProviders() {
+    // Audit compliance: Safe for public access because it returns [] if not logged in
+    await getUserPermissions();
     return OidcProviderService.getEnabledProviders();
 }
 

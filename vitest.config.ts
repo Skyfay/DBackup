@@ -9,6 +9,6 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/lib/testing/setup.ts'],
     include: ['**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}'],
-    exclude: ['**/node_modules/**', '**/dist/**', '**/cypress/**', '**/.{idea,git,cache,output,temp}/**', '**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build}.config.*', 'tests/integration/**'],
+    exclude: ['**/node_modules/**', '**/dist/**', '**/cypress/**', '**/.{idea,git,cache,output,temp}/**', '**/.next/**', '**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build}.config.*', 'tests/integration/**'],
   },
 });

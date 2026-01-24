@@ -6,6 +6,17 @@ import path from "path";
 import { existsSync, statSync, createReadStream, createWriteStream } from "fs";
 import { pipeline } from "stream/promises";
 
+// Helper to prevent path traversal
+function resolveSafePath(basePath: string, relativePath: string): string {
+    const resolvedBase = path.resolve(basePath);
+    const resolvedTarget = path.resolve(resolvedBase, relativePath);
+
+    if (!resolvedTarget.startsWith(resolvedBase)) {
+        throw new Error(`Access denied: Illegal path traversal detected. Base: ${resolvedBase}, Target: ${resolvedTarget}`);
+    }
+    return resolvedTarget;
+}
+
 export const LocalFileSystemAdapter: StorageAdapter = {
     id: "local-filesystem",
     type: "storage",
@@ -13,8 +24,16 @@ export const LocalFileSystemAdapter: StorageAdapter = {
     configSchema: LocalStorageSchema,
 
     async upload(config: { basePath: string }, localPath: string, remotePath: string, onProgress?: (percent: number) => void, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void): Promise<boolean> {
+        let destPath: string;
         try {
-            const destPath = path.join(config.basePath, remotePath);
+            destPath = resolveSafePath(config.basePath, remotePath);
+        } catch (error: any) {
+            console.error("Local upload security check failed:", error);
+            if (onLog) onLog(error.message, 'error', 'security');
+            throw error; // Rethrow to fail explicitly
+        }
+
+        try {
             const destDir = path.dirname(destPath);
 
             if (onLog) onLog(`Preparing local destination: ${destDir}`, 'info', 'general');
@@ -54,9 +73,15 @@ export const LocalFileSystemAdapter: StorageAdapter = {
         onProgress?: (processed: number, total: number) => void,
         _onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void
     ): Promise<boolean> {
+        let sourcePath: string;
         try {
-            const sourcePath = path.join(config.basePath, remotePath);
+            sourcePath = resolveSafePath(config.basePath, remotePath);
+        } catch (error) {
+             console.error("Local download security check failed:", error);
+             throw error;
+        }
 
+        try {
             if (!existsSync(sourcePath)) {
                 console.error("File not found:", sourcePath);
                 return false;
@@ -91,10 +116,12 @@ export const LocalFileSystemAdapter: StorageAdapter = {
 
     async read(config: { basePath: string }, remotePath: string): Promise<string | null> {
         try {
-            const sourcePath = path.join(config.basePath, remotePath);
-            if (!existsSync(sourcePath)) return null;
-            return await fs.readFile(sourcePath, 'utf-8');
+             const sourcePath = resolveSafePath(config.basePath, remotePath);
+             if (!existsSync(sourcePath)) return null;
+             return await fs.readFile(sourcePath, 'utf-8');
         } catch (error) {
+            // Rethrow security errors
+            if (error instanceof Error && error.message.includes("Access denied")) throw error;
             console.error("Local read failed:", error);
             return null;
         }
@@ -102,7 +129,7 @@ export const LocalFileSystemAdapter: StorageAdapter = {
 
     async list(config: { basePath: string }, remotePath: string = ""): Promise<FileInfo[]> {
         try {
-            const dirPath = path.join(config.basePath, remotePath);
+            const dirPath = resolveSafePath(config.basePath, remotePath);
             if (!existsSync(dirPath)) {
                 return [];
             }
@@ -128,6 +155,7 @@ export const LocalFileSystemAdapter: StorageAdapter = {
             }
             return files;
         } catch (error) {
+             if (error instanceof Error && error.message.includes("Access denied")) throw error;
             console.error("Local list failed:", error);
             return [];
         }
@@ -135,12 +163,13 @@ export const LocalFileSystemAdapter: StorageAdapter = {
 
     async delete(config: { basePath: string }, remotePath: string): Promise<boolean> {
         try {
-            const targetPath = path.join(config.basePath, remotePath);
+            const targetPath = resolveSafePath(config.basePath, remotePath);
             if (!existsSync(targetPath)) return true; // Already gone
 
             await fs.unlink(targetPath);
             return true;
         } catch (error) {
+             if (error instanceof Error && error.message.includes("Access denied")) throw error;
              console.error("Local delete failed:", error);
              return false;
         }

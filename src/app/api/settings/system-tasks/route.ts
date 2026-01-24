@@ -14,11 +14,15 @@ export async function GET(_req: NextRequest) {
     await checkPermission(PERMISSIONS.SETTINGS.READ); // assuming generic settings permission
 
     const tasks = [];
-    for (const [key, _val] of Object.entries(SYSTEM_TASKS)) {
-        const schedule = await systemTaskService.getTaskConfig(key);
-        const config = DEFAULT_TASK_CONFIG[key as keyof typeof DEFAULT_TASK_CONFIG];
+    for (const [_key, taskId] of Object.entries(SYSTEM_TASKS)) {
+        const schedule = await systemTaskService.getTaskConfig(taskId);
+        // @ts-expect-error - Dictionary access
+        const config = DEFAULT_TASK_CONFIG[taskId];
+        
+        if (!config) continue;
+
         tasks.push({
-            id: key,
+            id: taskId,
             schedule,
             label: config.label,
             description: config.description

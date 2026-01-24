@@ -24,6 +24,10 @@ export class AuditService {
     resourceId?: string
   ) {
     try {
+      // Extract common metadata if present in details to populate specific columns
+      const ipAddress = details?.ipAddress as string | undefined;
+      const userAgent = details?.userAgent as string | undefined;
+
       await prisma.auditLog.create({
         data: {
           userId,
@@ -31,6 +35,8 @@ export class AuditService {
           resource,
           resourceId,
           details: details ? JSON.stringify(details) : undefined,
+          ipAddress,
+          userAgent
         },
       });
     } catch (error) {

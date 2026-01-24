@@ -22,13 +22,17 @@ export async function logLoginSuccess() {
         });
 
         if (session?.user) {
+            const reqHeaders = await headers();
+            const ip = reqHeaders.get("x-forwarded-for")?.split(',')[0] || "unknown";
+
             await auditService.log(
                 session.user.id,
                 AUDIT_ACTIONS.LOGIN,
                 AUDIT_RESOURCES.AUTH,
                 {
                    method: "web-ui",
-                   userAgent: (await headers()).get("user-agent") || "unknown"
+                   userAgent: reqHeaders.get("user-agent") || "unknown",
+                   ipAddress: ip
                 }
             );
         }

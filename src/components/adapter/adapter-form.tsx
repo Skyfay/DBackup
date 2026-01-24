@@ -6,49 +6,25 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Loader2, ChevronsUpDown, Check, AlertCircle, Info } from "lucide-react";
+import { ChevronsUpDown, Check, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-
-import { Textarea } from "@/components/ui/textarea";
 
 import { AdapterDefinition } from "@/lib/adapters/definitions";
 import { AdapterConfig } from "./types";
-
-// Constant keys for grouping
-const STORAGE_CONNECTION_KEYS = [
-    'host', 'port',
-    'endpoint', 'region',
-    'accountId', 'bucket', 'basePath',
-    'user', 'username',
-    'password', 'accessKeyId', 'secretAccessKey',
-    'privateKey', 'passphrase'
-];
-
-const STORAGE_CONFIG_KEYS = ['pathPrefix', 'storageClass', 'forcePathStyle', 'options'];
+import { STORAGE_CONFIG_KEYS, STORAGE_CONNECTION_KEYS } from "./form-constants";
+import { SchemaField } from "./schema-field";
+import { useAdapterConnection } from "./use-adapter-connection";
 
 export function AdapterForm({ type, adapters, onSuccess, initialData }: { type: string, adapters: AdapterDefinition[], onSuccess: () => void, initialData?: AdapterConfig }) {
     const [selectedAdapterId, setSelectedAdapterId] = useState<string>(initialData?.adapterId || "");
-    const [connectionError, setConnectionError] = useState<string | null>(null);
-    const [pendingSubmission, setPendingSubmission] = useState<any | null>(null);
-
-    // Version Detection (nur temporär während Bearbeitungs-Session)
-    const [detectedVersion, setDetectedVersion] = useState<string | null>(null);
-
-    // Multi-Select DB Logic
-    const [availableDatabases, setAvailableDatabases] = useState<string[]>([]);
-    const [isLoadingDbs, setIsLoadingDbs] = useState(false);
-    const [isDbListOpen, setIsDbListOpen] = useState(false);
 
     const selectedAdapter = adapters.find(a => a.id === selectedAdapterId);
 
@@ -65,66 +41,6 @@ export function AdapterForm({ type, adapters, onSuccess, initialData }: { type: 
         config: selectedAdapter ? selectedAdapter.configSchema : z.any()
     });
 
-    const fetchDatabases = async (currentConfig: any) => {
-        if (!selectedAdapterId) return;
-
-        setIsLoadingDbs(true);
-        try {
-             const testRes = await fetch('/api/adapters/test-connection', {
-                 method: 'POST',
-                 headers: { 'Content-Type': 'application/json' },
-                 body: JSON.stringify({ adapterId: selectedAdapterId, config: currentConfig })
-             });
-             const testResult = await testRes.json();
-
-             if (!testResult.success) {
-                 toast.error(`Connection failed: ${testResult.message}`);
-                 setAvailableDatabases([]);
-                 setIsLoadingDbs(false);
-                 return;
-             }
-
-             const res = await fetch('/api/adapters/access-check', {
-                 method: 'POST',
-                 headers: { 'Content-Type': 'application/json' },
-                 body: JSON.stringify({ adapterId: selectedAdapterId, config: currentConfig })
-             });
-             const data = await res.json();
-
-             if(data.success) {
-                 const newDbs = data.databases;
-                 setAvailableDatabases(newDbs);
-                 setConnectionError(null);
-
-                 // Sync Logic: Check currently selected DBs. If any are NOT in the new list, remove them.
-                 // This handles the case where DBs were deleted on the server side.
-                 const currentConfig = form.getValues().config;
-                 const currentSelected = currentConfig.database;
-
-                 if (Array.isArray(currentSelected) && currentSelected.length > 0) {
-                     const validSelection = currentSelected.filter((db: string) => newDbs.includes(db));
-
-                     if (validSelection.length !== currentSelected.length) {
-                         form.setValue('config.database', validSelection, { shouldDirty: true });
-
-                         const removedCount = currentSelected.length - validSelection.length;
-                         toast.warning(`Removed ${removedCount} unavailable database(s) from selection.`);
-                     }
-                 }
-
-                 toast.success(`Loaded ${newDbs.length} databases`);
-                 setIsDbListOpen(true);
-             } else {
-                 toast.error("Failed to list databases: " + (data.message || data.error || "Unknown"));
-             }
-        } catch(e) {
-            console.error(e);
-            toast.error("Network error while listing databases");
-        } finally {
-            setIsLoadingDbs(false);
-        }
-    };
-
     const form = useForm({
         resolver: zodResolver(schema),
         defaultValues: {
@@ -134,8 +50,25 @@ export function AdapterForm({ type, adapters, onSuccess, initialData }: { type: 
         }
     });
 
+    const {
+        connectionError,
+        setConnectionError,
+        pendingSubmission,
+        setPendingSubmission,
+        detectedVersion,
+        availableDatabases,
+        isLoadingDbs,
+        isDbListOpen,
+        setIsDbListOpen,
+        testConnection,
+        fetchDatabases
+    } = useAdapterConnection({
+        adapterId: selectedAdapterId,
+        form,
+        initialDataId: initialData?.id
+    });
+
     // Update form schema/values when adapter changes
-    // But preserve what we can? Easier to just reset config part if adapter changes
     useEffect(() => {
         if (!initialData && adapters.length === 1) {
             setSelectedAdapterId(adapters[0].id);
@@ -169,43 +102,6 @@ export function AdapterForm({ type, adapters, onSuccess, initialData }: { type: 
             }
         } catch (error) {
             toast.error("An error occurred");
-        }
-    };
-
-
-    const testConnection = async () => {
-        const data = form.getValues();
-        if (!data.adapterId) {
-            toast.error("Please select an adapter type first");
-            return;
-        }
-
-        const toastId = toast.loading("Testing connection...");
-        try {
-            const res = await fetch('/api/adapters/test-connection', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    adapterId: data.adapterId,
-                    config: data.config,
-                    configId: initialData?.id // Send configId if editing existing config
-                })
-            });
-            const result = await res.json();
-
-            toast.dismiss(toastId);
-
-            if (result.success) {
-                toast.success(result.message || "Connection successful");
-                if (result.version) {
-                    setDetectedVersion(result.version);
-                }
-            } else {
-                toast.error(result.message || "Connection failed");
-            }
-        } catch (e) {
-            toast.dismiss(toastId);
-            toast.error("Failed to test connection");
         }
     };
 
@@ -537,238 +433,20 @@ export function AdapterForm({ type, adapters, onSuccess, initialData }: { type: 
 
             const shape = (selectedAdapter.configSchema as any).shape[key];
 
-            // Helper to unwrap Zod wrappers (default, optional, etc.)
-            let unwrappedShape = shape;
-            while (
-               unwrappedShape instanceof z.ZodOptional ||
-               unwrappedShape instanceof z.ZodNullable ||
-               unwrappedShape instanceof z.ZodDefault ||
-               unwrappedShape._def?.typeName === "ZodDefault" ||
-               unwrappedShape._def?.typeName === "ZodOptional"
-            ) {
-                unwrappedShape = unwrappedShape._def.innerType;
-            }
-
-            let label = key.charAt(0).toUpperCase() + key.slice(1);
-            // Fix CamelCase to Space Case
-            label = label.replace(/([A-Z])/g, ' $1').trim();
-            // Specific fix for SSL
-            if (key === 'disableSsl') label = "Disable SSL";
-            if (key === 'uri') label = "URI";
-
-            const isBoolean = unwrappedShape instanceof z.ZodBoolean || unwrappedShape._def?.typeName === "ZodBoolean";
-            const isEnum = unwrappedShape instanceof z.ZodEnum || unwrappedShape._def?.typeName === "ZodEnum";
-            const isPassword = key.toLowerCase().includes("password") || key.toLowerCase().includes("secret");
-            const isTextArea = key.toLowerCase().includes("privatekey") || key.toLowerCase().includes("certificate") || key.toLowerCase().includes("options");
-            const description = shape.description;
-            const isDatabaseField = key === 'database' && type === 'database';
-
-            const PLACEHOLDERS: Record<string, string> = {
-               "email.from": "\"Backup Service\" <backup@example.com>",
-               "email.host": "smtp.example.com",
-               "email.user": "user@example.com",
-               "from": "name@example.com",
-               "to": "admin@example.com",
-               "host": "localhost",
-               // DB Ports
-               "mysql.port": "3306",
-               "postgres.port": "5432",
-               "mongodb.port": "27017",
-               "email.port": "587",
-               "mongodb.uri": "mongodb://user:password@localhost:27017/db?authSource=admin",
-               // Options Examples
-               "mysql.options": "--single-transaction --quick",
-               "postgres.options": "--clean --if-exists",
-               "mongodb.options": "--gzip --oplog",
-
-               // S3 Placeholders
-               "bucket": "my-backup-bucket",
-               "pathPrefix": "backups/prod",
-               "accessKeyId": "AKIA...",
-               "secretAccessKey": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-
-               // AWS Specific
-               "s3-aws.region": "us-east-1",
-
-               // S3 Generic
-               "s3-generic.endpoint": "https://s3.custom-provider.com",
-               "s3-generic.region": "us-east-1",
-
-               // R2 Specific
-               "s3-r2.accountId": "32c49e7943c49e7943c49e7943c49e79",
-
-               // Hetzner Specific (Enum default handles region, but just in case)
-               "s3-hetzner.pathPrefix": "server1/mysql",
-
-               // SFTP
-               "sftp.host": "sftp.example.com",
-               "sftp.port": "22",
-               "sftp.username": "backup-user",
-               "sftp.password": "secure-password",
-               "sftp.privateKey": "-----BEGIN RSA PRIVATE KEY-----\n\n\n-----END RSA PRIVATE KEY-----",
-               "sftp.pathPrefix": "/home/backup/uploads",
-            };
-            const placeholder = PLACEHOLDERS[`${selectedAdapter.id}.${key}`] || PLACEHOLDERS[key];
-
             return (
-                <FormField
-                   key={key}
-                   control={form.control}
-                   name={`config.${key}`}
-                   render={({ field }) => (
-                       <FormItem className={isBoolean ? "flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm" : ""}>
-                           {isBoolean ? (
-                               <div className="space-y-0.5">
-                                   <FormLabel>{label}</FormLabel>
-                                   {description && <FormDescription>{description}</FormDescription>}
-                               </div>
-                           ) : (
-                               <div className="flex items-center gap-1.5">
-                                   <FormLabel>{label}</FormLabel>
-                                   {description && (
-                                       <TooltipProvider>
-                                           <Tooltip delayDuration={300}>
-                                               <TooltipTrigger asChild>
-                                                   <Info className="h-3.5 w-3.5 text-muted-foreground/70 hover:text-foreground transition-colors cursor-help" />
-                                               </TooltipTrigger>
-                                               <TooltipContent side="right">
-                                                   <p className="max-w-[300px] text-xs">{description}</p>
-                                               </TooltipContent>
-                                           </Tooltip>
-                                       </TooltipProvider>
-                                   )}
-                               </div>
-                           )}
-                           <FormControl>
-                               {isBoolean ? (
-                                   <Switch
-                                       checked={field.value}
-                                       onCheckedChange={field.onChange}
-                                   />
-                               ) : isDatabaseField ? (
-                                   <div className="flex gap-2">
-                                       <Popover open={isDbListOpen} onOpenChange={setIsDbListOpen}>
-                                           <PopoverTrigger asChild>
-                                               <Button
-                                                   variant="outline"
-                                                   role="combobox"
-                                                   className="flex-1 justify-between h-auto min-h-[40px]"
-                                               >
-                                                   {field.value && (Array.isArray(field.value) ? field.value.length > 0 : field.value) ? (
-                                                        <div className="flex flex-wrap gap-1">
-                                                           {Array.isArray(field.value)
-                                                              ? field.value.map((db: string) => <Badge variant="secondary" key={db} className="mr-1">{db}</Badge>)
-                                                              : <Badge variant="secondary">{field.value}</Badge>
-                                                           }
-                                                        </div>
-                                                   ) : "Select databases..."}
-                                                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                               </Button>
-                                           </PopoverTrigger>
-                                           <PopoverContent className="w-[400px] p-0" align="start">
-                                               <Command>
-                                                   <CommandInput placeholder="Search databases..." />
-                                                   <CommandList>
-                                                       <CommandEmpty>
-                                                           {isLoadingDbs ? (
-                                                                <div className="flex items-center justify-center p-4">
-                                                                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                                                    Loading...
-                                                                </div>
-                                                           ) : "No database found or not loaded."}
-                                                       </CommandEmpty>
-                                                       <CommandGroup>
-                                                           {availableDatabases.map((db) => (
-                                                               <CommandItem
-                                                                   value={db}
-                                                                   key={db}
-                                                                   onSelect={(currentValue) => {
-                                                                       const current = Array.isArray(field.value) ? field.value : (field.value ? [field.value] : []);
-                                                                       const isSelected = current.includes(currentValue);
-                                                                       let newValue;
-                                                                       if (isSelected) {
-                                                                           newValue = current.filter((v: string) => v !== currentValue);
-                                                                       } else {
-                                                                           newValue = [...current, currentValue];
-                                                                       }
-                                                                       field.onChange(newValue);
-                                                                   }}
-                                                               >
-                                                                   <Check
-                                                                       className={cn(
-                                                                           "mr-2 h-4 w-4",
-                                                                           (Array.isArray(field.value) ? field.value.includes(db) : field.value === db)
-                                                                               ? "opacity-100"
-                                                                               : "opacity-0"
-                                                                       )}
-                                                                   />
-                                                                   {db}
-                                                               </CommandItem>
-                                                           ))}
-                                                       </CommandGroup>
-                                                   </CommandList>
-                                               </Command>
-                                           </PopoverContent>
-                                       </Popover>
-                                       <Button
-                                           type="button"
-                                           variant="secondary"
-                                           onClick={() => fetchDatabases(form.getValues().config)}
-                                           disabled={isLoadingDbs}
-                                       >
-                                            {isLoadingDbs ? <Loader2 className="h-4 w-4 animate-spin" /> : "Load"}
-                                       </Button>
-                                   </div>
-                               ) : isEnum ? (
-                                    <Select
-                                       onValueChange={field.onChange}
-                                       defaultValue={field.value}
-                                       value={field.value}
-                                   >
-                                       <FormControl>
-                                           <SelectTrigger>
-                                               <SelectValue placeholder="Select..." />
-                                           </SelectTrigger>
-                                       </FormControl>
-                                       <SelectContent>
-                                           {((unwrappedShape as any).options || (unwrappedShape as any)._def?.values || []).map((val: string) => (
-                                               <SelectItem key={val} value={val} className="capitalize">
-                                                   {val === "none" ? "None (Insecure)" : val === "ssl" ? "SSL / TLS" : val === "starttls" ? "STARTTLS" : val}
-                                               </SelectItem>
-                                           ))}
-                                       </SelectContent>
-                                   </Select>
-                               ) : isTextArea ? (
-                                   <Textarea
-                                       {...field}
-                                       placeholder={placeholder}
-                                       value={field.value || ""}
-                                       className="font-mono text-xs min-h-[100px]"
-                                       onChange={(e) => field.onChange(e.target.value)}
-                                   />
-                               ) : (
-                                   <Input
-                                       type={isPassword ? "password" : "text"}
-                                       {...field}
-                                       placeholder={placeholder}
-                                       value={field.value || ""}
-
-                                       onChange={(e) => {
-                                           const val = e.target.value;
-                                           // Auto coercion for numbers if schema expects number
-                                           if (shape instanceof z.ZodNumber || shape._def?.typeName === "ZodNumber") {
-                                               field.onChange(Number(val));
-                                           } else {
-                                               field.onChange(val);
-                                           }
-                                       }}
-                                   />
-                               )}
-                           </FormControl>
-                           <FormMessage />
-                       </FormItem>
-                   )}
-               />
+                <SchemaField
+                    key={key}
+                    name={`config.${key}`}
+                    fieldKey={key}
+                    schemaShape={shape}
+                    adapterId={selectedAdapter.id}
+                    isDatabaseField={key === 'database' && type === 'database'}
+                    availableDatabases={availableDatabases}
+                    isLoadingDbs={isLoadingDbs}
+                    onLoadDbs={() => fetchDatabases(form.getValues().config)}
+                    isDbListOpen={isDbListOpen}
+                    setIsDbListOpen={setIsDbListOpen}
+                />
             );
         });
     }

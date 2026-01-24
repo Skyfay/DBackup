@@ -63,9 +63,9 @@ async function executeQueuedJob(executionId: string, jobId: string) {
     // We should probably load existing logs from DB if any?
     // Usually PENDING has no logs yet.
 
-    let currentProgress = 0;
-    let currentStage = "Starting";
-    let lastLogUpdate = 0;
+    const currentProgress = 0;
+    const currentStage = "Starting";
+    const lastLogUpdate = 0;
 
     // We need a flush function similar to runner.ts
     // Duplication here is unfortunate. Ideally runner.ts exports the sensitive logic.

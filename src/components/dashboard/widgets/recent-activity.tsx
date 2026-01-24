@@ -34,7 +34,7 @@ export async function RecentActivity() {
                             const duration = execution.endedAt ? execution.endedAt.getTime() - execution.startedAt.getTime() : 0;
 
                             // Try to get metadata for accurate display
-                            let meta = { jobName: execution.job?.name, sourceName: execution.job?.source?.name, sourceType: execution.job?.source?.type };
+                            const meta = { jobName: execution.job?.name, sourceName: execution.job?.source?.name, sourceType: execution.job?.source?.type };
                             if (execution.metadata) {
                                 try {
                                     const parsed = JSON.parse(execution.metadata);

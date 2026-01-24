@@ -71,7 +71,7 @@ export async function performExecution(executionId: string, jobId: string) {
     const initialExe = await prisma.execution.findUnique({ where: { id: executionId } });
 
     // Parse logs and normalize to LogEntry[]
-    let rawLogs: (string | LogEntry)[] = initialExe?.logs ? JSON.parse(initialExe.logs) : [];
+    const rawLogs: (string | LogEntry)[] = initialExe?.logs ? JSON.parse(initialExe.logs) : [];
     const logs: LogEntry[] = rawLogs.map(l => {
         if (typeof l === 'string') {
              const parts = l.split(": ");

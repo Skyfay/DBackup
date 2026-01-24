@@ -59,7 +59,7 @@ export async function stepRetention(ctx: RunnerContext) {
 
         // Filter out metadata files for the policy calculation
         // We only want to count "real" backups (artifacts)
-        let backupFiles = files.filter(f => !f.name.endsWith('.meta.json'));
+        const backupFiles = files.filter(f => !f.name.endsWith('.meta.json'));
 
         // Check for Locked files (metadata check)
         if (ctx.destAdapter.read) {

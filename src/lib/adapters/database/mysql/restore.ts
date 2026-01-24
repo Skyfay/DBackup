@@ -110,7 +110,7 @@ export async function restore(config: any, sourcePath: string, onLog?: (msg: str
 
         const fileStream = createReadStream(sourcePath, { highWaterMark: 64 * 1024 });
 
-        let currentTargetName: string | null = null;
+        const currentTargetName: string | null = null;
         let skipCurrentSection = false;
         let buffer = '';
 
@@ -127,7 +127,7 @@ export async function restore(config: any, sourcePath: string, onLog?: (msg: str
                     return;
                 }
 
-                let data = buffer + chunk.toString();
+                const data = buffer + chunk.toString();
                 const lines = data.split('\n');
                 buffer = lines.pop() || '';
 

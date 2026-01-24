@@ -91,7 +91,20 @@ export function FacetedFilter({
           <CommandList>
             <CommandEmpty>No results found.</CommandEmpty>
             <CommandGroup>
-              {options.map((option) => {
+              {options
+                .sort((a, b) => {
+                  const aSelected = selectedValues.has(a.value);
+                  const bSelected = selectedValues.has(b.value);
+                  if (aSelected && !bSelected) return -1;
+                  if (!aSelected && bSelected) return 1;
+
+                  const countA = a.count || 0;
+                  const countB = b.count || 0;
+
+                  if (countA !== countB) return countB - countA;
+                  return a.label.localeCompare(b.label);
+                })
+                .map((option) => {
                 const isSelected = selectedValues.has(option.value)
                 return (
                   <CommandItem
@@ -107,6 +120,7 @@ export function FacetedFilter({
                             onChange(option.value);
                         }
                     }}
+                    className={!option.count && !isSelected ? "opacity-50 grayscale" : ""}
                   >
                     <div
                       className={cn(
@@ -122,7 +136,7 @@ export function FacetedFilter({
                       <option.icon className="mr-2 h-4 w-4 text-muted-foreground" />
                     )}
                     <span>{option.label}</span>
-                    {option.count !== undefined && (
+                    {!!option.count && (
                       <span className="ml-auto flex h-4 w-4 items-center justify-center font-mono text-xs">
                         {option.count}
                       </span>

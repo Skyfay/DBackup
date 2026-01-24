@@ -97,11 +97,11 @@ Beim Klick auf den Indikator öffnet sich ein Dialog/Popover:
 - [x] `SystemTasksSettings`: Default Config für den neuen Task hinzufügen.
 
 ### Adapter Layer
-- [ ] Sicherstellen, dass alle `DatabaseAdapter` und `StorageAdapter` eine robuste `test()` Methode haben, die Timeouts schnell erkennt.
-- [ ] (Optional) Interface um `ping()` Methode erweitern, falls `test()` zu heavy ist.
+- [x] Sicherstellen, dass alle `DatabaseAdapter` und `StorageAdapter` eine robuste `test()` Methode haben, die Timeouts schnell erkennt.
+- [x] (Optional) Interface um `ping()` Methode erweitern, falls `test()` zu heavy ist.
 
 ### API Routes
-- [ ] GET `/api/adapters/[id]/health-history`: Endpunkt für die Historien-Daten des Grids.
+- [x] GET `/api/adapters/[id]/health-history`: Endpunkt für die Historien-Daten des Grids.
 
 ### Frontend (UI/UX)
 - [ ] `HealthStatusBadge.tsx` Komponente erstellen (der rot/grün/orange Punkt).

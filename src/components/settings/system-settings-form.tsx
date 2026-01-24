@@ -3,7 +3,6 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import * as z from "zod"
-import { Button } from "@/components/ui/button"
 import {
     Form,
     FormControl,
@@ -15,9 +14,8 @@ import {
 } from "@/components/ui/form"
 import { toast } from "sonner"
 import { updateSystemSettings } from "@/app/actions/settings"
-import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Loader2, Shield, Cpu } from "lucide-react"
+import { Shield, Cpu } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 
@@ -34,8 +32,6 @@ interface SystemSettingsFormProps {
 }
 
 export function SystemSettingsForm({ initialMaxConcurrentJobs, initialDisablePasskeyLogin, initialAuditLogRetentionDays = 90 }: SystemSettingsFormProps) {
-    const [isPending, setIsPending] = useState(false)
-
     const form = useForm<z.infer<typeof formSchema>>({
         resolver: zodResolver(formSchema) as any,
         defaultValues: {
@@ -120,7 +116,7 @@ export function SystemSettingsForm({ initialMaxConcurrentJobs, initialDisablePas
                                     <FormLabel>Audit Log Retention</FormLabel>
                                     <FormDescription>
                                         Automatically delete audit logs older than the specified period.
-                                        This runs daily as part of the "Clean Old Logs" system task.
+                                        This runs daily as part of the &quot;Clean Old Logs&quot; system task.
                                     </FormDescription>
                                     <Select
                                         onValueChange={(val) => handleAutoSave("auditLogRetentionDays", Number(val))}
@@ -163,7 +159,7 @@ export function SystemSettingsForm({ initialMaxConcurrentJobs, initialDisablePas
                             render={({ field }) => (
                                 <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
                                     <div className="space-y-0.5">
-                                        <FormLabel className="text-base">Disable "Sign in with Passkey"</FormLabel>
+                                        <FormLabel className="text-base">Disable &quot;Sign in with Passkey&quot;</FormLabel>
                                         <FormDescription>
                                             Hide the passkey login button on the login screen. Does not disable passkey 2FA.
                                         </FormDescription>

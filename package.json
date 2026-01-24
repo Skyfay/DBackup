@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "type-check": "tsc --noEmit",
+    "type": "tsc --noEmit",
     "test": "vitest",
     "test:integration:run": "vitest run -c vitest.integration.config.ts",
     "test:integration": "./scripts/run-integration-tests.sh",

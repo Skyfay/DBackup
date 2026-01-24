@@ -91,10 +91,13 @@ const SENSITIVE_KEYS = [
   'token',
   'secret',
   'secretKey',
+  'secretAccessKey', // AWS/S3
   'accessKey',
+  'accessKeyId', // AWS/S3
   'apiKey',
   'webhookUrl',
   'uri', // MongoDB Connection String
+  'passphrase', // SSH Key Passphrase
 ];
 
 /**

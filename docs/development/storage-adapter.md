@@ -51,6 +51,7 @@ It must implement the `StorageAdapter` interface from `@/lib/core/interfaces`.
 *   `list(config, remotePath)`: Lists files (for the storage explorer).
 *   `delete(config, remotePath)`: Deletes a file (for retention policy).
 *   `test(config)`: Verifies connectivity.
+*   `read(config, remotePath)`: (Optional but Recommended) Reads file content (e.g. `.meta.json`) as string.
 
 ### Implementation Template
 
@@ -65,30 +66,27 @@ export const S3StorageAdapter: StorageAdapter = {
     name: "S3 Compatible", // Display Name
     configSchema: S3Schema,
 
-    async upload(config: any, localPath: string, remotePath: string, onProgress) {
-        // 1. Create Read Stream
-        const stream = createReadStream(localPath);
-
-        // 2. Upload via SDK (Example with AWS SDK)
-        // const upload = new Upload({ body: stream, ... });
-        // upload.on("httpUploadProgress", p => onProgress(percentage));
-
-        return true;
-    },
-
-    async list(config: any, dir: string): Promise<FileInfo[]> {
-        // Return array of files
-        return [{
-            name: "backup-2024.sql.gz",
-            path: "backups/backup-2024.sql.gz",
-            size: 1024000,
-            modTime: new Date()
-        }];
-    },
-
-    // ... implement download, delete, test
+    // ... implementation
 };
 ```
+
+---
+
+## Security & Encryption
+
+Sensitive configuration fields (passwords, secret keys, tokens) are **automatically encrypted** at rest in the database.
+
+**Requirement**:
+You must name your schema fields using one of the recognized sensitive keywords found in `src/lib/crypto.ts`.
+
+Common recognized keys:
+*   `password`
+*   `secret` / `secretKey` / `secretAccessKey`
+*   `token` / `apiKey`
+*   `accessKey` / `accessKeyId`
+*   `passphrase`
+
+If you use a different name (e.g., `my_custom_code`), it will **NOT** be encrypted!
 
 ---
 

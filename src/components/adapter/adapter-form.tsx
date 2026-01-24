@@ -13,15 +13,12 @@ import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
-import { Badge } from "@/components/ui/badge";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { AdapterDefinition } from "@/lib/adapters/definitions";
 import { AdapterConfig } from "./types";
-import { STORAGE_CONFIG_KEYS, STORAGE_CONNECTION_KEYS } from "./form-constants";
-import { SchemaField } from "./schema-field";
 import { useAdapterConnection } from "./use-adapter-connection";
+import { DatabaseFormContent, GenericFormContent, StorageFormContent } from "./form-sections";
 
 export function AdapterForm({ type, adapters, onSuccess, initialData }: { type: string, adapters: AdapterDefinition[], onSuccess: () => void, initialData?: AdapterConfig }) {
     const [selectedAdapterId, setSelectedAdapterId] = useState<string>(initialData?.adapterId || "");
@@ -83,7 +80,7 @@ export function AdapterForm({ type, adapters, onSuccess, initialData }: { type: 
             const method = initialData ? 'PUT' : 'POST';
 
             const payload = {
-                ...data,
+                ...data, // name, adapterId
                 config: data.config,
                 type: type // ensure type is sent
             };
@@ -135,13 +132,6 @@ export function AdapterForm({ type, adapters, onSuccess, initialData }: { type: 
             await saveConfig(data);
         }
     };
-
-    // Helper to check if adapter has specific fields
-    function hasFields(keys: string[]) {
-         if (!selectedAdapter) return false;
-         const shape = (selectedAdapter.configSchema as any).shape;
-         return keys.some(key => key in shape);
-    }
 
     return (
         <>
@@ -228,60 +218,23 @@ export function AdapterForm({ type, adapters, onSuccess, initialData }: { type: 
                 </div>
 
                 {selectedAdapter && type === 'database' && (
-                    <Tabs defaultValue="connection" className="w-full">
-                        <TabsList className="grid w-full grid-cols-2">
-                            <TabsTrigger value="connection">Connection</TabsTrigger>
-                            <TabsTrigger value="configuration">Configuration</TabsTrigger>
-                        </TabsList>
-
-                        {/* TAB 1: CONNECTION */}
-                        <TabsContent value="connection" className="space-y-4 pt-4">
-                            {renderDatabaseConnectionFields()}
-                        </TabsContent>
-
-                        {/* TAB 2: CONFIGURATION */}
-                        <TabsContent value="configuration" className="space-y-4 pt-4">
-                            {renderDatabaseConfigurationFields()}
-                        </TabsContent>
-                    </Tabs>
+                    <DatabaseFormContent
+                        adapter={selectedAdapter}
+                        detectedVersion={detectedVersion}
+                        availableDatabases={availableDatabases}
+                        isLoadingDbs={isLoadingDbs}
+                        onLoadDbs={() => fetchDatabases(form.getValues().config)}
+                        isDbListOpen={isDbListOpen}
+                        setIsDbListOpen={setIsDbListOpen}
+                    />
                 )}
 
                 {selectedAdapter && type === 'storage' && (
-                    <Tabs defaultValue="connection" className="w-full">
-                        <TabsList className={cn("grid w-full", hasFields(STORAGE_CONFIG_KEYS) ? "grid-cols-2" : "grid-cols-1")}>
-                            <TabsTrigger value="connection">Connection</TabsTrigger>
-                            {hasFields(STORAGE_CONFIG_KEYS) && (
-                                <TabsTrigger value="configuration">Configuration</TabsTrigger>
-                            )}
-                        </TabsList>
-
-                        {/* TAB 1: CONNECTION */}
-                        <TabsContent value="connection" className="space-y-4 pt-4">
-                            {renderStorageConnectionFields()}
-                        </TabsContent>
-
-                        {/* TAB 2: CONFIGURATION */}
-                        {hasFields(STORAGE_CONFIG_KEYS) && (
-                            <TabsContent value="configuration" className="space-y-4 pt-4">
-                                {renderStorageConfigurationFields()}
-                            </TabsContent>
-                        )}
-                    </Tabs>
+                    <StorageFormContent adapter={selectedAdapter} />
                 )}
 
                 {selectedAdapter && type !== 'database' && type !== 'storage' && (
-                    <div className="space-y-4 border p-4 rounded-md bg-muted/30">
-                        <div className="flex items-center justify-between">
-                             <h4 className="text-sm font-medium">Configuration</h4>
-                             {detectedVersion && (
-                                <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/20">
-                                    <Check className="w-3 h-3 mr-1" />
-                                    Detected: {detectedVersion}
-                                </Badge>
-                             )}
-                        </div>
-                         {renderOtherFields()}
-                    </div>
+                    <GenericFormContent adapter={selectedAdapter} detectedVersion={detectedVersion} />
                 )}
 
                 {/* Dialog Footer Actions */}
@@ -335,120 +288,5 @@ export function AdapterForm({ type, adapters, onSuccess, initialData }: { type: 
         </AlertDialog>
         </>
     );
-
-    // Helper Functions for Rendering Fields
-    function renderDatabaseConnectionFields() {
-        if (!selectedAdapter) return null;
-
-        const connectionFields = ['uri', 'host', 'port', 'user', 'password'];
-        return (
-            <>
-                {detectedVersion && (
-                    <div className="mb-4">
-                        <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/20">
-                            <Check className="w-3 h-3 mr-1" />
-                            Detected: {detectedVersion}
-                        </Badge>
-                    </div>
-                )}
-                {renderFields(connectionFields)}
-            </>
-        );
-    }
-
-    function renderDatabaseConfigurationFields() {
-        if (!selectedAdapter) return null;
-
-        const configFields = ['database', 'authenticationDatabase', 'options', 'disableSsl'];
-        return (
-            <>
-                {detectedVersion && (
-                    <div className="mb-4">
-                        <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/20">
-                            <Check className="w-3 h-3 mr-1" />
-                            Detected: {detectedVersion}
-                        </Badge>
-                    </div>
-                )}
-                {renderFields(configFields)}
-            </>
-        );
-    }
-    function renderStorageConnectionFields() {
-        if (!selectedAdapter) return null;
-
-        // Custom Layout for SFTP
-        if (selectedAdapter.id === 'sftp') {
-            return (
-                <div className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <div className="md:col-span-3">
-                             {renderFields(['host'])}
-                        </div>
-                        <div className="md:col-span-1">
-                             {renderFields(['port'])}
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {renderFields(['username'])}
-                        {renderFields(['password'])}
-                    </div>
-
-                    {renderFields(['privateKey', 'passphrase'])}
-                </div>
-            );
-        }
-
-        // Generic Layout for others
-        return (
-            <>
-                 {renderFields(STORAGE_CONNECTION_KEYS)}
-            </>
-        );
-    }
-
-    function renderStorageConfigurationFields() {
-        if (!selectedAdapter) return null;
-
-        return (
-            <>
-                {renderFields(STORAGE_CONFIG_KEYS)}
-            </>
-        );
-    }
-
-    function renderOtherFields() {
-        if (!selectedAdapter) return null;
-
-        return renderFields(Object.keys((selectedAdapter.configSchema as any).shape));
-    }
-
-    function renderFields(fieldKeys: string[]) {
-        if (!selectedAdapter) return null;
-
-        return fieldKeys.map((key) => {
-            // Skip if field doesn't exist in schema
-            if (!((selectedAdapter.configSchema as any).shape[key])) return null;
-
-            const shape = (selectedAdapter.configSchema as any).shape[key];
-
-            return (
-                <SchemaField
-                    key={key}
-                    name={`config.${key}`}
-                    fieldKey={key}
-                    schemaShape={shape}
-                    adapterId={selectedAdapter.id}
-                    isDatabaseField={key === 'database' && type === 'database'}
-                    availableDatabases={availableDatabases}
-                    isLoadingDbs={isLoadingDbs}
-                    onLoadDbs={() => fetchDatabases(form.getValues().config)}
-                    isDbListOpen={isDbListOpen}
-                    setIsDbListOpen={setIsDbListOpen}
-                />
-            );
-        });
-    }
 }
 

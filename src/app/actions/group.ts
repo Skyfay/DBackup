@@ -3,8 +3,10 @@
 import prisma from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { checkPermission } from "@/lib/access-control";
+import { checkPermission, getCurrentUserWithGroup } from "@/lib/access-control";
 import { PERMISSIONS } from "@/lib/permissions";
+import { auditService } from "@/services/audit-service";
+import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 
 const groupSchema = z.object({
     name: z.string().min(1, "Name is required"),
@@ -36,11 +38,12 @@ export async function getGroups() {
 
 export async function createGroup(data: GroupFormValues) {
     await checkPermission(PERMISSIONS.GROUPS.WRITE);
+    const currentUser = await getCurrentUserWithGroup();
 
     try {
         const validated = groupSchema.parse(data);
 
-        await prisma.group.create({
+        const newGroup = await prisma.group.create({
             data: {
                 name: validated.name,
                 permissions: JSON.stringify(validated.permissions),
@@ -48,6 +51,17 @@ export async function createGroup(data: GroupFormValues) {
         });
 
         revalidatePath("/dashboard/users");
+
+        if (currentUser) {
+            await auditService.log(
+                currentUser.id,
+                AUDIT_ACTIONS.CREATE,
+                AUDIT_RESOURCES.GROUP,
+                validated,
+                newGroup.id
+            );
+        }
+
         return { success: true };
     } catch (error) {
         console.error("Failed to create group:", error);
@@ -57,6 +71,7 @@ export async function createGroup(data: GroupFormValues) {
 
 export async function updateGroup(id: string, data: GroupFormValues) {
     await checkPermission(PERMISSIONS.GROUPS.WRITE);
+    const currentUser = await getCurrentUserWithGroup();
 
     try {
         const validated = groupSchema.parse(data);
@@ -79,6 +94,17 @@ export async function updateGroup(id: string, data: GroupFormValues) {
         });
 
         revalidatePath("/dashboard/users");
+
+        if (currentUser) {
+            await auditService.log(
+                currentUser.id,
+                AUDIT_ACTIONS.UPDATE,
+                AUDIT_RESOURCES.GROUP,
+                validated,
+                id
+            );
+        }
+
         return { success: true };
     } catch (error) {
         console.error("Failed to update group:", error);
@@ -88,6 +114,7 @@ export async function updateGroup(id: string, data: GroupFormValues) {
 
 export async function deleteGroup(id: string) {
     await checkPermission(PERMISSIONS.GROUPS.WRITE);
+    const currentUser = await getCurrentUserWithGroup();
 
     try {
         const group = await prisma.group.findUnique({
@@ -103,6 +130,17 @@ export async function deleteGroup(id: string) {
         });
 
         revalidatePath("/dashboard/users");
+
+        if (currentUser) {
+            await auditService.log(
+                currentUser.id,
+                AUDIT_ACTIONS.DELETE,
+                AUDIT_RESOURCES.GROUP,
+                { name: group?.name },
+                id
+            );
+        }
+
         return { success: true };
     } catch (error) {
         console.error("Failed to delete group:", error);

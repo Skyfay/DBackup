@@ -3,8 +3,10 @@ import prisma from "@/lib/prisma";
 import { encryptConfig, decryptConfig } from "@/lib/crypto";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
-import { checkPermission } from "@/lib/access-control";
+import { checkPermission, getCurrentUserWithGroup } from "@/lib/access-control";
 import { PERMISSIONS } from "@/lib/permissions";
+import { auditService } from "@/services/audit-service";
+import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 
 export async function GET(req: NextRequest) {
     const session = await auth.api.getSession({
@@ -122,6 +124,16 @@ export async function POST(req: NextRequest) {
                 config: configString,
             },
         });
+
+        if (session.user) {
+            await auditService.log(
+                session.user.id,
+                AUDIT_ACTIONS.CREATE,
+                AUDIT_RESOURCES.ADAPTER,
+                { name, type, adapterId },
+                newAdapter.id
+            );
+        }
 
         return NextResponse.json(newAdapter, { status: 201 });
     } catch (error: any) {

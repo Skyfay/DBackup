@@ -3,6 +3,8 @@ import prisma from "@/lib/prisma";
 import { encryptConfig } from "@/lib/crypto";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
+import { auditService } from "@/services/audit-service";
+import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 
 export async function DELETE(
     req: NextRequest,
@@ -40,9 +42,20 @@ export async function DELETE(
         // or might throw depending on underlying DB constraints.
         // But let's rely on Prisma catch for other cases or strict FKs.
 
-        await prisma.adapterConfig.delete({
+        const deletedAdapter = await prisma.adapterConfig.delete({
             where: { id: params.id },
         });
+
+        if (session.user) {
+            await auditService.log(
+                session.user.id,
+                AUDIT_ACTIONS.DELETE,
+                AUDIT_RESOURCES.ADAPTER,
+                { name: deletedAdapter.name },
+                params.id
+            );
+        }
+
         return NextResponse.json({ success: true });
     } catch (error: any) {
         console.error("Delete Adapter Error:", error);
@@ -81,6 +94,17 @@ export async function PUT(
                 config: configString
             }
         });
+
+        if (session.user) {
+            await auditService.log(
+                session.user.id,
+                AUDIT_ACTIONS.UPDATE,
+                AUDIT_RESOURCES.ADAPTER,
+                { name },
+                updatedAdapter.id
+            );
+        }
+
         return NextResponse.json(updatedAdapter);
     } catch (_error) {
         return NextResponse.json({ error: "Failed to update adapter" }, { status: 500 });

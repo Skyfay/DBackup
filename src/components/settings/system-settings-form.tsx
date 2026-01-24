@@ -42,25 +42,30 @@ export function SystemSettingsForm({ initialMaxConcurrentJobs, initialDisablePas
         },
     })
 
-    async function onSubmit(values: z.infer<typeof formSchema>) {
-        setIsPending(true)
-        try {
-            const result = await updateSystemSettings(values)
-            if (result.success) {
-                toast.success("Settings updated successfully")
-            } else {
-                toast.error(result.error || "Failed to update settings")
-            }
-        } catch {
-            toast.error("Something went wrong")
-        } finally {
-            setIsPending(false)
-        }
-    }
+    const handleAutoSave = async (field: keyof z.infer<typeof formSchema>, value: any) => {
+        // Update local state immediately
+        form.setValue(field, value);
+
+        // Prepare full data object for server action
+        const currentValues = form.getValues();
+        const dataToSave = { ...currentValues, [field]: value };
+
+        toast.promise(updateSystemSettings(dataToSave), {
+            loading: 'Saving settings...',
+            success: (result) => {
+                if (result.success) {
+                    return "Settings saved";
+                } else {
+                    throw new Error(result.error);
+                }
+            },
+            error: (err) => `Failed to save: ${err.message || 'Unknown error'}`
+        });
+    };
 
     return (
         <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+            <div className="space-y-6">
                 <Card>
                     <CardHeader>
                         <CardTitle>Job Execution</CardTitle>
@@ -76,7 +81,7 @@ export function SystemSettingsForm({ initialMaxConcurrentJobs, initialDisablePas
                                 <FormItem>
                                     <FormLabel>Max Concurrent Jobs</FormLabel>
                                     <Select
-                                        onValueChange={field.onChange}
+                                        onValueChange={(val) => handleAutoSave("maxConcurrentJobs", Number(val))}
                                         defaultValue={String(field.value)}
                                     >
                                         <FormControl>
@@ -128,7 +133,7 @@ export function SystemSettingsForm({ initialMaxConcurrentJobs, initialDisablePas
                                     <FormControl>
                                         <Switch
                                             checked={field.value}
-                                            onCheckedChange={field.onChange}
+                                            onCheckedChange={(val) => handleAutoSave("disablePasskeyLogin", val)}
                                         />
                                     </FormControl>
                                 </FormItem>
@@ -136,14 +141,7 @@ export function SystemSettingsForm({ initialMaxConcurrentJobs, initialDisablePas
                         />
                     </CardContent>
                 </Card>
-
-                <div className="flex justify-end">
-                    <Button type="submit" disabled={isPending}>
-                        {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        Save Changes
-                    </Button>
-                </div>
-            </form>
+            </div>
         </Form>
     )
 }

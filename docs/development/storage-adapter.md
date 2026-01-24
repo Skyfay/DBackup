@@ -50,8 +50,32 @@ It must implement the `StorageAdapter` interface from `@/lib/core/interfaces`.
 *   `download(config, remotePath, localPath)`: Downloads a file (for restore).
 *   `list(config, remotePath)`: Lists files (for the storage explorer).
 *   `delete(config, remotePath)`: Deletes a file (for retention policy).
-*   `test(config)`: Verifies connectivity.
+*   `test(config)`: Verifies connectivity AND permissions. **Must** attempt to write and then delete a temporary file to ensure the configuration allows backups and retention policies to work.
 *   `read(config, remotePath)`: (Optional but Recommended) Reads file content (e.g. `.meta.json`) as string.
+
+### Test Implementation Pattern
+
+The `test()` function should not just ping the server. It must prove that we can **write** (for backups) and **delete** (for retention policies).
+
+```typescript
+async test(config: MyConfig): Promise<{ success: boolean; message: string }> {
+    const testFile = `.connection-test-${Date.now()}`;
+    // Construct path with user-defined prefix if applicable
+    const targetPath = config.pathPrefix ? path.join(config.pathPrefix, testFile) : testFile;
+
+    try {
+        // 1. Test Write Access
+        await myClient.write(targetPath, "Connection Test");
+
+        // 2. Test Delete Access
+        await myClient.delete(targetPath);
+
+        return { success: true, message: "Connection successful (Write/Delete verified)" };
+    } catch (error: any) {
+        return { success: false, message: error.message };
+    }
+}
+```
 
 ### Implementation Template
 

@@ -28,7 +28,7 @@ export async function prepareRestore(config: any, databases: string[]): Promise<
         const dialect = getDialect(config.type === 'mariadb' ? 'mariadb' : 'mysql', config.detectedVersion);
 
         // Use dialect for connection args (auth flags)
-        const _dialectArgs = dialect.getConnectionArgs({ ...config, user, disableSsl: config.disableSsl });
+        const dialectArgs = dialect.getConnectionArgs({ ...config, user, disableSsl: config.disableSsl });
 
         // We can't easily replace the whole array without changing logic of ensureDatabase calling convention
         // But wait, ensureDatabase is imported. We can't change it here.

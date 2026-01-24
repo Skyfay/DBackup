@@ -3,6 +3,8 @@ import { LogLevel, LogType } from "@/lib/core/logs";
 import { getDialect } from "./dialects";
 import { spawn } from "child_process";
 import fs from "fs/promises";
+import { createWriteStream } from "fs";
+import { getPostgresBinary } from "./version-utils";
 
 export async function dump(config: any, destinationPath: string, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void, _onProgress?: (percentage: number) => void): Promise<BackupResult> {
     const startedAt = new Date();

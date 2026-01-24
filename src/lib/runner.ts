@@ -52,20 +52,21 @@ export async function performExecution(executionId: string, jobId: string) {
     console.log(`[Runner] Starting execution ${executionId}`);
 
     // 1. Mark as RUNNING
-    await prisma.execution.update({
+    const initialExe = await prisma.execution.update({
         where: { id: executionId },
         data: {
             status: "Running",
             startedAt: new Date(), // Reset start time to actual run time
-        }
+        },
+        include: { job: true }
     });
 
-    let _currentProgress = 0;
-    let _currentStage = "Initializing";
-    let _lastLogUpdate = 0;
+    let currentProgress = 0;
+    let currentStage = "Initializing";
+    let lastLogUpdate = 0;
 
     // Declare ctx early
-    const ctx = {
+    let ctx = {
         execution: initialExe!,
         job: initialExe!.job!,
         log: (msg: string, level: LogLevel = 'info', type: LogType = 'general', details?: string) => {
@@ -75,14 +76,14 @@ export async function performExecution(executionId: string, jobId: string) {
                  type,
                  message: msg,
                  details,
-                 stage: _currentStage
+                 stage: currentStage
              };
              logs.push(entry);
-             _lastLogUpdate = Date.now();
+             lastLogUpdate = Date.now();
         },
         updateProgress: async (p: number, s?: string) => {
-            if (s) _currentStage = s;
-            _currentProgress = p;
+            if (s) currentStage = s;
+            currentProgress = p;
         }
     } as unknown as RunnerContext;
 

@@ -3,6 +3,7 @@ import { LogLevel, LogType } from "@/lib/core/logs";
 import { getDialect } from "./dialects";
 import fs from "fs/promises";
 import { spawn } from "child_process";
+import { createWriteStream } from "fs";
 
 export async function dump(config: any, destinationPath: string, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void, _onProgress?: (percentage: number) => void): Promise<BackupResult> {
     const startedAt = new Date();
@@ -47,7 +48,7 @@ export async function dump(config: any, destinationPath: string, onLog?: (msg: s
                 else reject(new Error(`mysqldump exited with code ${code}`));
             });
             dumpProcess.on('error', (err) => reject(err));
-            writeStream.on('error', (err) => reject(err));
+            writeStream.on('error', (err: any) => reject(err));
         });
 
         // Verify dump file size

@@ -80,6 +80,8 @@ export function SystemTasksSettings() {
                 // Revert
                 fetchTasks();
                 toast.error("Failed to update setting");
+            } else {
+                toast.success("Startup setting updated");
             }
         } catch {
              fetchTasks();

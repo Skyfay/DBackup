@@ -6,6 +6,7 @@ import { decryptConfig } from "@/lib/crypto";
 import { updateService } from "./update-service";
 import { healthCheckService } from "./healthcheck-service";
 import { auditService } from "./audit-service";
+import { PERMISSIONS } from "@/lib/permissions";
 
 // Ensure adapters are registered for worker context
 registerAdapters();
@@ -14,7 +15,8 @@ export const SYSTEM_TASKS = {
     UPDATE_DB_VERSIONS: "system.update_db_versions",
     HEALTH_CHECK: "system.health_check",
     CLEAN_OLD_LOGS: "system.clean_audit_logs",
-    CHECK_FOR_UPDATES: "system.check_for_updates"
+    CHECK_FOR_UPDATES: "system.check_for_updates",
+    SYNC_PERMISSIONS: "system.sync_permissions"
 };
 
 export const DEFAULT_TASK_CONFIG = {
@@ -23,6 +25,12 @@ export const DEFAULT_TASK_CONFIG = {
         runOnStartup: true,
         label: "Update Database Versions",
         description: "Checks connectivity and fetches version information from all configured database sources."
+    },
+    [SYSTEM_TASKS.SYNC_PERMISSIONS]: {
+        interval: "0 0 * * *", // Daily at midnight
+        runOnStartup: true,
+        label: "Sync SuperAdmin Permissions",
+        description: "Ensures the SuperAdmin group always has all available permissions."
     },
     [SYSTEM_TASKS.HEALTH_CHECK]: {
         interval: "*/1 * * * *", // Every minute
@@ -95,6 +103,9 @@ export class SystemTaskService {
                 break;
             case SYSTEM_TASKS.CLEAN_OLD_LOGS:
                 await this.runCleanOldLogs();
+                break;
+            case SYSTEM_TASKS.SYNC_PERMISSIONS:
+                await this.runSyncPermissions();
                 break;
             default:
             case SYSTEM_TASKS.CHECK_FOR_UPDATES:
@@ -206,6 +217,31 @@ export class SystemTaskService {
             } catch (e: any) {
                 console.error(`[SystemTask] Failed check for ${source.name}:`, e);
             }
+        }
+    }
+
+    private async runSyncPermissions() {
+        try {
+            console.log("[SystemTask] Syncing permissions for SuperAdmin group...");
+
+            // Flatten all permissions from the source of truth
+            const allPerms = Object.values(PERMISSIONS).flatMap(group => Object.values(group));
+
+            // Update SuperAdmin group(s)
+            // Using updateMany to handle case if multiple groups somehow have this name (though name is unique in schema)
+            const result = await prisma.group.updateMany({
+                where: { name: "SuperAdmin" },
+                data: { permissions: JSON.stringify(allPerms) }
+            });
+
+            if (result.count > 0) {
+                console.log(`[SystemTask] Successfully updated permissions for ${result.count} SuperAdmin group(s).`);
+            } else {
+                console.log("[SystemTask] No 'SuperAdmin' group found. Skipping permission sync.");
+            }
+
+        } catch (error: any) {
+            console.error(`[SystemTask] Failed to sync permissions: ${error.message}`);
         }
     }
 }

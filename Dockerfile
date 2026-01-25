@@ -6,7 +6,14 @@ FROM node:20-alpine AS base
 # postgresql-client -> pg_dump (latest version, currently 18)
 # mongodb-tools -> mongodump
 # Strategic PostgreSQL versions: 14, 16, 18 (covers 12-18 via backward compatibility)
-RUN apk add --no-cache \
+# PostgreSQL Versions Strategy:
+# - pg_dump 14 (from Alpine 3.17 repo) -> handles PG 12, 13, 14
+# - pg_dump 16 (from Alpine 3.23 repo) -> handles PG 15, 16
+# - pg_dump 18 (latest, from Alpine 3.23) -> handles PG 17, 18
+
+RUN echo 'http://dl-cdn.alpinelinux.org/alpine/v3.17/main' >> /etc/apk/repositories && \
+    apk update && \
+    apk add --no-cache \
     mysql-client \
     postgresql-client \
     postgresql14-client \
@@ -17,7 +24,7 @@ RUN apk add --no-cache \
     su-exec
 
 # Create symlinks for strategic PostgreSQL binaries
-# Alpine provides postgresql14-client, postgresql16-client
+# Alpine provides postgresql14-client (v3.17), postgresql16-client (v3.23)
 # postgresql-client provides latest (18)
 RUN mkdir -p /opt/pg14/bin /opt/pg16/bin /opt/pg18/bin && \
     ln -sf /usr/libexec/postgresql14/pg_dump /opt/pg14/bin/pg_dump && \
@@ -29,12 +36,6 @@ RUN mkdir -p /opt/pg14/bin /opt/pg16/bin /opt/pg18/bin && \
     ln -sf /usr/bin/pg_dump /opt/pg18/bin/pg_dump && \
     ln -sf /usr/bin/pg_restore /opt/pg18/bin/pg_restore && \
     ln -sf /usr/bin/psql /opt/pg18/bin/psql || true
-
-# Note: Strategic version coverage:
-# - PG 14 handles servers 12, 13, 14
-# - PG 16 handles servers 15, 16
-# - PG 18 handles servers 17, 18
-# Fallback logic in version-utils.ts handles non-exact matches
 
 # 1. Install Dependencies
 FROM base AS deps

@@ -46,4 +46,5 @@ pnpm-debug.log*
 # Docs & Tests
 docs
 tests
+scripts
 coverage

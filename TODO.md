@@ -39,9 +39,9 @@
     - [x] Decompression in Restore
     - [x] Progress Tracking for Compression/Encryption
 ## �📦 Deployment & Maintenance
-- [ ] **Containerization**
-    - [ ] Dockerfile optimization
-    - [ ] docker-compose setup
+- [X] **Containerization**
+    - [X] Dockerfile optimization
+    - [X] docker-compose setup
 - [ ] **Meta-Backup**
     - [ ] Export/Import App Configuration- [ ] **Version Management**
     - [ ] Display current version in Settings/Footer
@@ -93,7 +93,7 @@
 - [x] **Destinations Management**
     - [x] List all destinations
     - [x] Create/Edit destination configuration
-    - [ ] Test connection
+    - [X] Test connection
 - [x] **Notifications Management** (Added)
 - [x] **Jobs Management**
     - [x] List all backup jobs
@@ -115,7 +115,6 @@
 - [x] **History & Logs**
     - [x] List past executions
     - [x] View detailed logs per execution
-    - [ ] Download backup artifact (if local/accessible)
 - [x] **Storage Explorer & Restore**
     - [x] List backups per Destination
     - [x] Metadata / Sidecar file support
@@ -150,7 +149,10 @@
 - [ ] **User Management**
     - [x] Login page
     - [x] Setup Better-Auth (Clean implementation)
-    - [ ] Auth via OIDC
+    - [X] Auth via OIDC
+        - [X] Generic Adapter
+        - [X] Authentik Adapter
+        - [X] PocketID Adapter
     - [X] TOTP for 2FA
     - [X] Passkey only or 2FA
     - [X] Multi-User Setup
@@ -162,19 +164,19 @@
     - [x] **Access Control**: Implement permission guards (Server Actions & Components).
     - [x] Administrator manage other user (eg. reset 2FA)
     - [ ] **UX & Refinement**:
-        - [ ] Show 2FA Status (Active/Inactive) in User Table
+        - [X] Show 2FA Status (Active/Inactive) in User Table
         - [ ] Invite Flow (Email link) or Force Password Change on first login (with SMTP combined)
         - [ ] "Self-Service" Concept (Allow users to edit own profile regardless of strict permissions)
-- [ ] **Audit & Compliance**
-    - [ ] **Audit Logs**: Track sensitive user actions (Login, Create/Delete User, Change Permissions)
-- [ ] **Data Security**
-    - [ ] Backup Encryption (Encrypt resulting artifacts)
+- [X] **Audit & Compliance**
+    - [X] **Audit Logs**: Track sensitive user actions (Login, Create/Delete User, Change Permissions)
+- [X] **Data Security**
+    - [X] Backup Encryption (Encrypt resulting artifacts)
     - [X] Credential Encryption (Encrypt DB passwords in database at rest via AES)
 
 ## 📡 Live Monitoring & Testing
-- [ ] **Live Backup Progress**
-    - [ ] Real-time file size updates during "Dump" phase
-    - [ ] UI Polling/Socket to show progress bar to user
+- [X] **Live Backup Progress**
+    - [X] Real-time file size updates during "Dump" phase
+    - [X] UI Polling/Socket to show progress bar to user
 - [ ] **Stress Testing**
     - [ ] Script to generate 1GB+ Dummy Data (Postgres/MySQL)
 

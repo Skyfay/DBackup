@@ -49,7 +49,7 @@ export const MongoDBSchema = z.object({
 
 export const SQLiteSchema = z.object({
     mode: z.enum(["local", "ssh"]).default("local").describe("Connection Mode"),
-    
+
     // Common
     path: z.string().min(1, "Database path is required").describe("Absolute path to .sqlite file"),
     sqliteBinaryPath: z.string().default("sqlite3").optional().describe("Path to sqlite3 binary (default: sqlite3)"),

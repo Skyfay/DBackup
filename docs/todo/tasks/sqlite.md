@@ -70,27 +70,26 @@ Nutzt `ssh2` Client für Command execution.
 - [x] **Interface**: Erstelle `src/lib/adapters/database/sqlite.ts`.
 
 ### Phase 2: Implementation (Core)
-- [ ] **Schema Definition**: Zod Schema wie oben definiert implementieren.
-- [ ] **Helper**: Klasse oder Funktionen für SSH Connection Management abstrahieren (vielleicht shared mit SFTP Storage?).
-    - *Hinweis*: `ssh2-sftp-client` wrappt `ssh2`. Wir können eventuell den internen Client nutzen oder sauber getrennt implementieren.
-- [ ] **Test-Methode (`test`)**:
+- [x] **Schema Definition**: Zod Schema wie oben definiert implementieren.
+- [x] **Helper**: Klasse oder Funktionen für SSH Connection Management abstrahieren.
+- [x] **Test-Methode (`test`)**:
     - Implementierung für Local (fs access).
     - Implementierung für SSH (Verbindungstest + File check).
-- [ ] **GetDatabases (`getDatabases`)**:
+- [x] **GetDatabases (`getDatabases`)**:
     - Für SQLite nicht wirklich relevant, da 1 File = 1 DB.
     - Rückgabe: Einfach den Dateinamen (z.B. `["app.db"]`).
 
 ### Phase 3: Dump & Restore
-- [ ] **Dump (Local)**:
+- [x] **Dump (Local)**:
     - Nutzung von `spawn`.
     - Error Handling (stderr parsing).
-- [ ] **Dump (SSH)**:
+- [x] **Dump (SSH)**:
     - SSH `exec` Stream handling.
     - Stream Backpressure beachten.
-- [ ] **Restore (Local)**:
+- [x] **Restore (Local)**:
     - Sicherheitskopie der Zieldatei erstellen.
     - `sqlite3` mit Input-Stream füttern.
-- [ ] **Restore (SSH)**:
+- [x] **Restore (SSH)**:
     - Remote Sicherheitskopie.
     - Datenstrom über SSH senden.
 

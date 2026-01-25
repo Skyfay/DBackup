@@ -18,21 +18,25 @@ export const SYSTEM_TASKS = {
 export const DEFAULT_TASK_CONFIG = {
     [SYSTEM_TASKS.UPDATE_DB_VERSIONS]: {
         interval: "0 * * * *", // Every hour
+        runOnStartup: true,
         label: "Update Database Versions",
         description: "Checks connectivity and fetches version information from all configured database sources."
     },
     [SYSTEM_TASKS.HEALTH_CHECK]: {
         interval: "*/1 * * * *", // Every minute
+        runOnStartup: false,
         label: "Health Check & Connectivity",
         description: "Periodically pings all configured database and storage adapters to track availability and latency."
     },
     [SYSTEM_TASKS.CLEAN_OLD_LOGS]: {
         interval: "0 0 * * *", // Daily at midnight
+        runOnStartup: true,
         label: "Clean Old Logs",
         description: "Removes audit logs older than the configured retention period (default: 90 days) to prevent disk filling."
     },
     [SYSTEM_TASKS.CHECK_FOR_UPDATES]: {
         interval: "0 0 * * *", // Daily at midnight
+        runOnStartup: true,
         label: "Check for Updates",
         description: "Checks if a new version of the application is available in the GitLab Container Registry."
     }
@@ -49,7 +53,14 @@ export class SystemTaskService {
     async getTaskRunOnStartup(taskId: string): Promise<boolean> {
         const key = `task.${taskId}.runOnStartup`;
         const setting = await prisma.systemSetting.findUnique({ where: { key } });
-        return setting?.value === 'true';
+
+        if (setting) {
+            return setting.value === 'true';
+        }
+
+        // Return default if not set in DB
+        // @ts-expect-error - runOnStartup is added to default config but inferred type might lag
+        return DEFAULT_TASK_CONFIG[taskId as keyof typeof DEFAULT_TASK_CONFIG]?.runOnStartup ?? false;
     }
 
     async setTaskRunOnStartup(taskId: string, enabled: boolean) {

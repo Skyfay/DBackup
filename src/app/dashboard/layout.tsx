@@ -3,7 +3,7 @@ import { Header } from "@/components/layout/header"
 import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
 import { redirect } from "next/navigation"
-import { getUserPermissions } from "@/lib/access-control"
+import { getUserPermissions, getCurrentUserWithGroup } from "@/lib/access-control"
 import { updateService } from "@/services/update-service"
 
 export default async function DashboardLayout({
@@ -25,6 +25,8 @@ export default async function DashboardLayout({
     }
 
     const permissions = await getUserPermissions();
+    const userWithGroup = await getCurrentUserWithGroup();
+    const isSuperAdmin = userWithGroup?.group?.name === "SuperAdmin";
 
     // Check for updates (non-blocking, or parallel if we wanted, but here simple await is fine as it's cached)
     // Actually, to avoid slowing down dashboard load, we might want to wrap in Suspense or just let it block a bit.
@@ -33,7 +35,13 @@ export default async function DashboardLayout({
 
     return (
         <div className="flex min-h-screen">
-            <Sidebar permissions={permissions} updateAvailable={updateInfo.updateAvailable} />
+            <Sidebar
+                permissions={permissions}
+                isSuperAdmin={isSuperAdmin}
+                updateAvailable={updateInfo.updateAvailable}
+                currentVersion={updateInfo.currentVersion}
+                latestVersion={updateInfo.latestVersion}
+            />
             <div className="flex-1 flex flex-col min-h-screen">
                 <Header />
                 <main className="flex-1 overflow-y-auto bg-muted/10 p-6">

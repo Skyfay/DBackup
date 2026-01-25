@@ -33,8 +33,9 @@ export const updateService = {
 
       // 2. Fetch tags from GitLab Registry API
       // We use the public API since it's a public repository
+      // Increased per_page to 20 to catch stable versions if many dev tags exist
       const response = await fetch(
-        `https://gitlab.com/api/v4/projects/${GITLAB_PROJECT_ID}/registry/repositories/${REGISTRY_ID}/tags?per_page=5&order_by=updated_at&sort=desc`,
+        `https://gitlab.com/api/v4/projects/${GITLAB_PROJECT_ID}/registry/repositories/${REGISTRY_ID}/tags?per_page=20&order_by=updated_at&sort=desc`,
         { next: { revalidate: 3600 } } // Cache for 1 hour
       );
 
@@ -52,37 +53,47 @@ export const updateService = {
         };
       }
 
-      // 3. Find latest semantic version (ignore "dev" or "latest" if we want strict semver,
-      // but here we see "v0.1.3-dev". Let's try to parse the highest version number)
+// 3. Find latest relevant version
 
-      // Filter for tags that look like versions (vX.Y.Z)
-      const versionTags = tags
-        .map(t => t.name)
-        .filter(name => /^v?\d+\.\d+\.\d+/.test(name));
-
-      if (versionTags.length === 0) {
-          return {
-              updateAvailable: false,
-              latestVersion: currentVersion,
-              currentVersion,
-          };
+      // Parse current version
+      const current = parseVersion(currentVersion);
+      if (!current) {
+          console.error(`Invalid current version in package.json: ${currentVersion}`);
+          return { updateAvailable: false, latestVersion: currentVersion, currentVersion };
       }
 
-      // Simple version comparison (taking the first one since we sorted by updated_at desc?
-      // GitLab API sort is by updated_at, so the first one IS the latest pushed tag)
-      // Ideally we should sort by semver, but for now assuming most recently updated tag is the target.
-      // However, "dev" tag might be updated frequently. We want the latest VERSIONED tag.
+      const currentStability = getStability(current.prerelease);
 
-      const latestTag = versionTags[0];
+      // Filter and parse tags
+      const validTags = tags
+        .map(t => t.name)
+        .map(name => ({ name, version: parseVersion(name) }))
+        .filter(item => item.version !== null) as { name: string, version: ParsedVersion }[];
 
-      // Clean up "v" prefix for comparison
-      const cleanLatest = latestTag.replace(/^v/, '').split('-')[0]; // "0.1.3" from "v0.1.3-dev"
-      const cleanCurrent = currentVersion.split('-')[0]; // "0.1.0"
+      // Filter by stability channel
+      // Rules:
+      // - Stable user (3) -> Only updates to Stable (3)
+      // - Beta user (2) -> Updates to Beta (2) or Stable (3)
+      // - Dev user (1) -> Updates to Dev (1), Beta (2), or Stable (3)
+      const relevantTags = validTags.filter(item => {
+          const tagStability = getStability(item.version.prerelease);
+          return tagStability >= currentStability;
+      });
 
-      if (compareVersions(cleanLatest, cleanCurrent) > 0) {
+      if (relevantTags.length === 0) {
+          return { updateAvailable: false, latestVersion: currentVersion, currentVersion };
+      }
+
+      // Sort by SemVer descending
+      relevantTags.sort((a, b) => compareSemver(b.version, a.version));
+
+      const latest = relevantTags[0];
+
+      // Compare latest relevant vs current
+      if (compareSemver(latest.version, current) > 0) {
         return {
           updateAvailable: true,
-          latestVersion: latestTag,
+          latestVersion: latest.name,
           currentVersion,
         };
       }
@@ -105,18 +116,55 @@ export const updateService = {
   },
 };
 
-// Returns 1 if v1 > v2, -1 if v1 < v2, 0 if equal
-function compareVersions(v1: string, v2: string): number {
-  const parts1 = v1.split('.').map(Number);
-  const parts2 = v2.split('.').map(Number);
+interface ParsedVersion {
+    major: number;
+    minor: number;
+    patch: number;
+    prerelease: string | null; // e.g., "dev", "beta", "rc", or null for stable
+}
 
-  for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
-    const val1 = parts1[i] || 0;
-    const val2 = parts2[i] || 0;
+function parseVersion(v: string): ParsedVersion | null {
+    const match = v.match(/^v?(\d+)\.(\d+)\.(\d+)(?:-(.+))?$/);
+    if (!match) return null;
+    return {
+        major: parseInt(match[1]),
+        minor: parseInt(match[2]),
+        patch: parseInt(match[3]),
+        prerelease: match[4] || null,
+    };
+}
 
-    if (val1 > val2) return 1;
-    if (val1 < val2) return -1;
-  }
+function getStability(prerelease: string | null): number {
+    if (prerelease === null) return 3; // Stable
+    if (prerelease.includes('beta')) return 2; // Beta
+    if (prerelease.includes('dev')) return 1; // Dev
+    return 0; // Other/Unknown (lower than dev)
+}
 
-  return 0;
+function compareSemver(v1: ParsedVersion, v2: ParsedVersion): number {
+    // 1. Compare Major, Minor, Patch
+    if (v1.major !== v2.major) return v1.major - v2.major;
+    if (v1.minor !== v2.minor) return v1.minor - v2.minor;
+    if (v1.patch !== v2.patch) return v1.patch - v2.patch;
+
+    // 2. Compare Pre-release
+    // Stability precedence: Stable (null) > Beta > Dev
+    // If one is stable and other is prerelease
+    if (v1.prerelease === null && v2.prerelease !== null) return 1;
+    if (v1.prerelease !== null && v2.prerelease === null) return -1;
+
+    // If both are stable (null), they are equal
+    if (v1.prerelease === null && v2.prerelease === null) return 0;
+
+    // Both are prereleases. Compare strings/priority explicitly
+    const s1 = getStability(v1.prerelease);
+    const s2 = getStability(v2.prerelease);
+
+    if (s1 !== s2) return s1 - s2;
+
+    // If stability level is same (e.g. both 'dev'), compare lexicographically
+    // or by checking for trailing numbers (dev1 vs dev2)
+    // Simple string compare as fallback
+    // @ts-expect-error - we know they are not null here because of previous checks
+    return v1.prerelease!.localeCompare(v2.prerelease!);
 }

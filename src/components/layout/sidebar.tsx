@@ -41,7 +41,15 @@ const sidebarItems = [
     { icon: Settings, label: "Settings", href: "/dashboard/settings", permission: PERMISSIONS.SETTINGS.READ },
 ]
 
-export function Sidebar({ permissions = [], updateAvailable = false }: { permissions?: string[], updateAvailable?: boolean }) {
+interface SidebarProps {
+    permissions?: string[];
+    isSuperAdmin?: boolean;
+    updateAvailable?: boolean;
+    currentVersion?: string;
+    latestVersion?: string;
+}
+
+export function Sidebar({ permissions = [], isSuperAdmin = false, updateAvailable = false, currentVersion, latestVersion }: SidebarProps) {
     const pathname = usePathname()
     const { data: session, isPending } = useSession()
     const router = useRouter()
@@ -101,6 +109,20 @@ export function Sidebar({ permissions = [], updateAvailable = false }: { permiss
                     )
                 })}
             </nav>
+            {currentVersion && (
+                <div className="px-6 pb-2 text-xs text-muted-foreground/50 select-none flex items-center justify-center gap-2">
+                    <span>v{currentVersion}</span>
+                    {updateAvailable && (
+                         <button
+                            onClick={() => window.open('https://gitlab.com/Skyfay/database-backup-manager/-/releases', '_blank')}
+                            className="text-orange-500 font-medium flex items-center gap-1 animate-pulse hover:text-orange-400 cursor-pointer bg-transparent border-0 p-0"
+                        >
+                            <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />
+                            Update available
+                         </button>
+                    )}
+                </div>
+            )}
             <div className="p-4 border-t">
                 {isPending ? (
                      <div className="flex items-center gap-3 rounded-lg border p-3 shadow-sm bg-muted/50">
@@ -119,10 +141,10 @@ export function Sidebar({ permissions = [], updateAvailable = false }: { permiss
                                         <AvatarImage src={session.user.image || ""} alt={session.user.name} />
                                         <AvatarFallback className="rounded-lg">{getInitials(session.user.name)}</AvatarFallback>
                                     </Avatar>
-                                    {updateAvailable && (
+                                    {updateAvailable && isSuperAdmin && (
                                         <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
-                                            <span className="relative inline-flex rounded-full h-3 w-3 bg-sky-500"></span>
+                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                                            <span className="relative inline-flex rounded-full h-3 w-3 bg-orange-500"></span>
                                         </span>
                                     )}
                                 </div>
@@ -146,8 +168,8 @@ export function Sidebar({ permissions = [], updateAvailable = false }: { permiss
                                             <AvatarImage src={session.user.image || ""} alt={session.user.name} />
                                             <AvatarFallback className="rounded-lg">{getInitials(session.user.name)}</AvatarFallback>
                                         </Avatar>
-                                        {updateAvailable && (
-                                            <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-sky-500 border-2 border-background" />
+                                        {updateAvailable && isSuperAdmin && (
+                                            <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-orange-500 border-2 border-background" />
                                         )}
                                     </div>
                                     <div className="grid flex-1 text-left text-sm leading-tight">
@@ -158,12 +180,11 @@ export function Sidebar({ permissions = [], updateAvailable = false }: { permiss
                             </DropdownMenuLabel>
                             <DropdownMenuSeparator />
                              <DropdownMenuGroup>
-                                {updateAvailable && (
-                                    <DropdownMenuItem className="text-sky-600 focus:text-sky-600 font-medium" onClick={() => window.open('https://gitlab.com/Skyfay/database-backup-manager/-/releases', '_blank')}>
+                                {updateAvailable && isSuperAdmin && (
+                                    <DropdownMenuItem className="text-orange-600 focus:text-orange-600 font-medium" onClick={() => window.open('https://gitlab.com/Skyfay/database-backup-manager/-/releases', '_blank')}>
                                         <div className="flex items-center w-full">
-                                            <Bell className="mr-2 h-4 w-4 fill-sky-200" />
-                                            <span>Update Available</span>
-                                            <span className="ml-auto flex h-2 w-2 rounded-full bg-sky-500" />
+                                            <Bell className="mr-2 h-4 w-4 text-orange-500" />
+                                            <span>Update available {latestVersion ? `(${latestVersion})` : ''}</span>
                                         </div>
                                     </DropdownMenuItem>
                                 )}

@@ -10,6 +10,7 @@ const settingsSchema = z.object({
     maxConcurrentJobs: z.coerce.number().min(1).max(10),
     disablePasskeyLogin: z.boolean().optional(),
     auditLogRetentionDays: z.coerce.number().min(1).max(365).optional(),
+    checkForUpdates: z.boolean().optional(),
 });
 
 export async function updateSystemSettings(data: z.infer<typeof settingsSchema>) {
@@ -44,6 +45,15 @@ export async function updateSystemSettings(data: z.infer<typeof settingsSchema>)
                 create: { key: "audit.retentionDays", value: String(result.data.auditLogRetentionDays) },
             });
         }
+
+        // Check for Updates Setting (default true)
+        if (result.data.checkForUpdates !== undefined) {
+            await prisma.systemSetting.upsert({
+               where: { key: "general.checkForUpdates" },
+               update: { value: String(result.data.checkForUpdates) },
+               create: { key: "general.checkForUpdates", value: String(result.data.checkForUpdates) },
+           });
+       }
 
         revalidatePath("/dashboard/settings");
         return { success: true };

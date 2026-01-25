@@ -43,7 +43,6 @@ export function FileBrowserDialog({
     // Initial load
     useEffect(() => {
         if (open) {
-            // eslint-disable-next-line react-hooks/exhaustive-deps
             fetchPath(currentPath);
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps

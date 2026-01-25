@@ -1,7 +1,7 @@
 import { BackupResult } from "@/lib/core/interfaces";
 import { LogLevel, LogType } from "@/lib/core/logs";
 import { getDialect } from "./dialects";
-import { getMysqlCommand, getMysqldumpCommand } from "./tools";
+import { getMysqldumpCommand } from "./tools";
 import fs from "fs/promises";
 import { spawn } from "child_process";
 import { createWriteStream } from "fs";

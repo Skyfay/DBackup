@@ -151,6 +151,8 @@ export function DatabaseFormContent({
 export function StorageFormContent({
     adapter,
 }: { adapter: AdapterDefinition }) {
+    const { watch } = useFormContext();
+    const authType = watch("config.authType");
     const hasConfigKeys = hasFields(adapter, STORAGE_CONFIG_KEYS);
 
     return (
@@ -174,12 +176,15 @@ export function StorageFormContent({
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <FieldList keys={['username']} adapter={adapter} />
-                            <FieldList keys={['password']} adapter={adapter} />
-                        </div>
+                        <FieldList keys={['username', 'authType']} adapter={adapter} />
 
-                        <FieldList keys={['privateKey', 'passphrase']} adapter={adapter} />
+                        {(!authType || authType === 'password') && (
+                             <FieldList keys={['password']} adapter={adapter} />
+                        )}
+
+                        {authType === 'privateKey' && (
+                             <FieldList keys={['privateKey', 'passphrase']} adapter={adapter} />
+                        )}
                     </div>
                 ) : (
                     <FieldList keys={STORAGE_CONNECTION_KEYS} adapter={adapter} />

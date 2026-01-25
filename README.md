@@ -1,7 +1,7 @@
 # Database Backup Manager
 
 > **⚠️ Work in Progress**: This project is currently under active development. There is no stable release available yet. Use at your own risk.
-> Check out [TODO.md](TODO.md) to see the roadmap and pending tasks.
+> Check out [TODO](docs/todo/features.md) to see the roadmap and pending tasks.
 
 > **Note**: This project is primarily developed on GitLab. This GitHub repository is a mirror.
 > **Main Repository**: [https://gitlab.com/Skyfay/database-backup-manager](https://gitlab.com/Skyfay/database-backup-manager)

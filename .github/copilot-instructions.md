@@ -10,7 +10,7 @@ Self-hosted web app for automating database backups (MySQL, PostgreSQL, MongoDB)
 ## Language & Commands
 - **Response**: German (Deutsch) | **Code/Comments**: English
 - **Package Manager**: Always use `pnpm` (e.g., `pnpm dev`, `pnpm add`, `pnpm test`)
-- **Check**: [TODO.md](TODO.md) for current project phase before starting
+- **Check**: [TODO.md](../docs/todo/features.md) for current project phase before starting
 
 ## Architecture (4 Layers)
 

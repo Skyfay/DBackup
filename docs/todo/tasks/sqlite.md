@@ -94,7 +94,7 @@ Nutzt `ssh2` Client für Command execution.
     - Datenstrom über SSH senden.
 
 ### Phase 4: UI Anpassungen
-- [ ] **Adapter Formular**: Das generische Formular sollte `z.discriminatedUnion` oder dynamische Sichtbarkeiten unterstützen (Wenn Mode=SSH, zeige Host/User fields).
+- [x] **Adapter Formular**: Das generische Formular sollte `z.discriminatedUnion` oder dynamische Sichtbarkeiten unterstützen (Wenn Mode=SSH, zeige Host/User fields).
     - *Check*: Unterstützt unser aktueller Formrenderer bedingte Felder? Falls nein, müssen wir entweder alle anzeigen (optional) oder den Renderer erweitern.
 
 ### Phase 5: Testing

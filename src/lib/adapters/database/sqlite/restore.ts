@@ -3,7 +3,7 @@ import { spawn } from "child_process";
 import fs from "fs";
 import { SshClient } from "./ssh-client";
 
-export const prepareRestore: DatabaseAdapter["prepareRestore"] = async (config, databases) => {
+export const prepareRestore: DatabaseAdapter["prepareRestore"] = async (_config, _databases) => {
      // No major prep needed for SQLite mostly, but could check write permissions here
 };
 
@@ -11,7 +11,7 @@ export const restore: DatabaseAdapter["restore"] = async (config, sourcePath, on
     const startedAt = new Date();
     const mode = config.mode || "local";
     const logs: string[] = [];
-    
+
     const log = (msg: string) => {
         logs.push(msg);
         if (onLog) onLog(msg);
@@ -21,14 +21,14 @@ export const restore: DatabaseAdapter["restore"] = async (config, sourcePath, on
         log(`Starting SQLite restore in ${mode} mode...`);
 
         if (mode === "local") {
-            return await restoreLocal(config, sourcePath, log).then(res => ({
+            return await restoreLocal(config, sourcePath, log, onProgress).then(res => ({
                 ...res,
                 startedAt,
                 completedAt: new Date(),
                 logs
             }));
         } else if (mode === "ssh") {
-            return await restoreSsh(config, sourcePath, log).then(res => ({
+            return await restoreSsh(config, sourcePath, log, onProgress).then(res => ({
                 ...res,
                 startedAt,
                 completedAt: new Date(),
@@ -50,7 +50,7 @@ export const restore: DatabaseAdapter["restore"] = async (config, sourcePath, on
     }
 };
 
-async function restoreLocal(config: any, sourcePath: string, log: (msg: string) => void): Promise<any> {
+async function restoreLocal(config: any, sourcePath: string, log: (msg: string) => void, onProgress?: (percent: number) => void): Promise<any> {
     const binaryPath = config.sqliteBinaryPath || "sqlite3";
     const dbPath = config.path;
 
@@ -62,7 +62,19 @@ async function restoreLocal(config: any, sourcePath: string, log: (msg: string) 
     }
 
     log(`Executing: ${binaryPath} "${dbPath}" < ${sourcePath}`);
+
+    // Setup generic read stream with progress
+    const totalSize = (await fs.promises.stat(sourcePath)).size;
+    let processed = 0;
     const readStream = fs.createReadStream(sourcePath);
+
+    if (onProgress) {
+        readStream.on('data', (chunk) => {
+            processed += chunk.length;
+            const percent = Math.round((processed / totalSize) * 100);
+            onProgress(percent);
+        });
+    }
 
     return new Promise((resolve, reject) => {
         const child = spawn(binaryPath, [dbPath]);
@@ -77,19 +89,7 @@ async function restoreLocal(config: any, sourcePath: string, log: (msg: string) 
         child.on("close", (code) => {
             if (code === 0) {
                 log("Restore completed successfully.");
-                resolve({ success: true });
-            } else {
-                reject(new Error(`SQLite restore process failed with code ${code}`));
-            }
-        });
-        
-        child.on("error", (err) => {
-            reject(err);
-        });
-    });
-}
-
-async function restoreSsh(config: any, sourcePath: string, log: (msg: string) => void): Promise<any> {
+                resolve({ success: true });, onProgress?: (percent: number) => void): Promise<any> {
     const client = new SshClient();
     const binaryPath = config.sqliteBinaryPath || "sqlite3";
     const dbPath = config.path;
@@ -101,6 +101,30 @@ async function restoreSsh(config: any, sourcePath: string, log: (msg: string) =>
     log("Creating remote backup of existing DB...");
     const backupCmd = `test -f "${dbPath}" && cp "${dbPath}" "${dbPath}.bak-$(date +%s)" || echo "No existing DB"`;
     await client.exec(backupCmd);
+
+    return new Promise(async (resolve, reject) => {
+        const command = `${binaryPath} "${dbPath}"`;
+        log(`Executing remote command: ${command}`);
+
+        client.execStream(command, async (err, stream) => {
+            if (err) {
+                client.end();
+                return reject(err);
+            }
+
+            // Setup generic read stream with progress
+             const totalSize = (await fs.promises.stat(sourcePath)).size;
+             let processed = 0;
+             const readStream = fs.createReadStream(sourcePath);
+
+             if (onProgress) {
+                 readStream.on('data', (chunk) => {
+                     processed += chunk.length;
+                     const percent = Math.round((processed / totalSize) * 100);
+                     onProgress(percent);
+                 });
+             }
+
 
     return new Promise((resolve, reject) => {
         const command = `${binaryPath} "${dbPath}"`;
@@ -119,7 +143,7 @@ async function restoreSsh(config: any, sourcePath: string, log: (msg: string) =>
                 log(`[Remote Stderr]: ${data.toString()}`);
             });
 
-            stream.on("close", (code: number, signal: any) => {
+            stream.on("close", (code: number, _signal: any) => {
                 client.end();
                 if (code === 0) {
                      log("Remote restore completed successfully.");

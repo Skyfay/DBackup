@@ -2,10 +2,10 @@ import { DatabaseAdapter } from "@/lib/core/interfaces";
 import fs from "fs/promises";
 import { constants } from "fs";
 import { exec } from "child_process";
-import { util } from "util";
+import { promisify } from "util";
 import { SshClient } from "./ssh-client";
 
-const execAsync = util.promisify(exec);
+const execAsync = promisify(exec);
 
 export const test: DatabaseAdapter["test"] = async (config) => {
     try {
@@ -16,19 +16,17 @@ export const test: DatabaseAdapter["test"] = async (config) => {
         if (mode === "local") {
             // 1. Check if sqlite3 binary exists locally
             try {
-                await execAsync(`${binaryPath} --version`);
-            } catch (e) {
-                return { success: false, message: `SQLite3 binary not found at '${binaryPath}'. Please install sqlite3 or check path.` };
-            }
+                const { stdout } = await execAsync(`${binaryPath} --version`);
+                // Parse version: "3.37.0 2021..." -> "3.37.0"
+                const version = stdout.split(' ')[0].trim();
 
-            // 2. Check if database file exists and is readable
-            try {
+                 // 2. Check if database file exists and is readable
                 await fs.access(dbPath, constants.R_OK);
-            } catch (e) {
-                return { success: false, message: `Database file at '${dbPath}' not found or not readable.` };
-            }
 
-            return { success: true, message: "Local SQLite connection successful." };
+                return { success: true, message: "Local SQLite connection successful.", version };
+            } catch (e: any) {
+                return { success: false, message: e.message || "Connection failed" };
+            }
 
         } else if (mode === "ssh") {
             const client = new SshClient();
@@ -41,11 +39,12 @@ export const test: DatabaseAdapter["test"] = async (config) => {
                      client.end();
                      return { success: false, message: `Remote SQLite3 binary check failed: ${binaryResult.stderr || "Command failed"}` };
                  }
+                 const version = binaryResult.stdout.split(' ')[0].trim();
 
                  // 2. Check if database file exists on remote (using stat)
                  // We use a simple test: sqlite3 [path] "SELECT 1;"
                  // Or just `test -f [path]`
-                 
+
                  const fileCheck = await client.exec(`test -f "${dbPath}" && echo "exists"`);
                  if (!fileCheck.stdout.includes("exists")) {
                     client.end();
@@ -53,7 +52,7 @@ export const test: DatabaseAdapter["test"] = async (config) => {
                  }
 
                  client.end();
-                 return { success: true, message: "Remote SSH SQLite connection successful." };
+                 return { success: true, message: "Remote SSH SQLite connection successful.", version };
 
             } catch (err: any) {
                 client.end();

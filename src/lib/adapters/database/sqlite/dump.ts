@@ -7,7 +7,7 @@ export const dump: DatabaseAdapter["dump"] = async (config, destinationPath, onL
     const startedAt = new Date();
     const mode = config.mode || "local";
     const logs: string[] = [];
-    
+
     const log = (msg: string) => {
         logs.push(msg);
         if (onLog) onLog(msg);
@@ -46,7 +46,7 @@ export const dump: DatabaseAdapter["dump"] = async (config, destinationPath, onL
     }
 };
 
-async function dumpLocal(config: any, destinationPath: string, log: (msg: string) => void, onProgress?: (percent: number) => void): Promise<any> {
+async function dumpLocal(config: any, destinationPath: string, log: (msg: string) => void, _onProgress?: (percent: number) => void): Promise<any> {
     const binaryPath = config.sqliteBinaryPath || "sqlite3";
     const dbPath = config.path;
     const writeStream = fs.createWriteStream(destinationPath);
@@ -73,14 +73,14 @@ async function dumpLocal(config: any, destinationPath: string, log: (msg: string
                 reject(new Error(`SQLite dump process failed with code ${code}`));
             }
         });
-        
+
         child.on("error", (err) => {
             reject(err);
         });
     });
 }
 
-async function dumpSsh(config: any, destinationPath: string, log: (msg: string) => void, onProgress?: (percent: number) => void): Promise<any> {
+async function dumpSsh(config: any, destinationPath: string, log: (msg: string) => void, _onProgress?: (percent: number) => void): Promise<any> {
     const client = new SshClient();
     const writeStream = fs.createWriteStream(destinationPath);
     const binaryPath = config.sqliteBinaryPath || "sqlite3";
@@ -105,7 +105,7 @@ async function dumpSsh(config: any, destinationPath: string, log: (msg: string) 
                 log(`[Remote Stderr]: ${data.toString()}`);
             });
 
-            stream.on("close", (code: number, signal: any) => {
+            stream.on("close", (code: number, _signal: any) => {
                 client.end();
                 if (code === 0) {
                      log("Remote dump completed successfully.");

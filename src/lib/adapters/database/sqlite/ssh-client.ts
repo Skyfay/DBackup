@@ -1,5 +1,4 @@
 import { Client, ConnectConfig } from "ssh2";
-import { LogLevel, LogType } from "@/lib/core/logs";
 
 export class SshClient {
     private client: Client;
@@ -49,7 +48,7 @@ export class SshClient {
                 let stderr = "";
 
                 stream
-                    .on("close", (code: number, signal: any) => {
+                    .on("close", (code: number, _signal: any) => {
                         resolve({ stdout, stderr, code });
                     })
                     .on("data", (data: any) => {

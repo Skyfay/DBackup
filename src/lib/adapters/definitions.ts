@@ -136,6 +136,7 @@ export const ADAPTER_DEFINITIONS: AdapterDefinition[] = [
     { id: "mariadb", type: "database", name: "MariaDB", configSchema: MariaDBSchema },
     { id: "postgres", type: "database", name: "PostgreSQL", configSchema: PostgresSchema },
     { id: "mongodb", type: "database", name: "MongoDB", configSchema: MongoDBSchema },
+    { id: "sqlite", type: "database", name: "SQLite", configSchema: SQLiteSchema },
 
     { id: "local-filesystem", type: "storage", name: "Local Filesystem", configSchema: LocalStorageSchema },
     { id: "s3-generic", type: "storage", name: "S3 Compatible (Generic)", configSchema: S3GenericSchema },

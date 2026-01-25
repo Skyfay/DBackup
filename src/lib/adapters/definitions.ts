@@ -47,6 +47,23 @@ export const MongoDBSchema = z.object({
     options: z.string().optional().describe("Additional mongodump options"),
 });
 
+export const SQLiteSchema = z.object({
+    mode: z.enum(["local", "ssh"]).default("local").describe("Connection Mode"),
+    
+    // Common
+    path: z.string().min(1, "Database path is required").describe("Absolute path to .sqlite file"),
+    sqliteBinaryPath: z.string().default("sqlite3").optional().describe("Path to sqlite3 binary (default: sqlite3)"),
+
+    // SSH Specific
+    host: z.string().optional().describe("SSH Host (Required for SSH mode)"),
+    port: z.coerce.number().default(22).optional(),
+    username: z.string().optional().describe("SSH Username"),
+    authType: z.enum(["password", "privateKey", "agent"]).default("password").optional().describe("Authentication Method"),
+    password: z.string().optional().describe("SSH Password"),
+    privateKey: z.string().optional().describe("SSH Private Key"),
+    passphrase: z.string().optional().describe("SSH Key Passphrase"),
+});
+
 export const LocalStorageSchema = z.object({
     basePath: z.string().min(1, "Base path is required").default("/backups").describe("Absolute path to store backups (e.g., /backups)"),
 });

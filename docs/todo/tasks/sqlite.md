@@ -66,8 +66,8 @@ Nutzt `ssh2` Client für Command execution.
 ## 4. Todo Liste (Schritt-für-Schritt)
 
 ### Phase 1: Vorbereitung
-- [ ] **Dependencies prüfen**: `pnpm add ssh2 @types/ssh2` installieren (da `ssh2-sftp-client` nur SFTP kann, wir brauchen Shell-Access).
-- [ ] **Interface**: Erstelle `src/lib/adapters/database/sqlite.ts`.
+- [x] **Dependencies prüfen**: `pnpm add ssh2 @types/ssh2` installieren (da `ssh2-sftp-client` nur SFTP kann, wir brauchen Shell-Access).
+- [x] **Interface**: Erstelle `src/lib/adapters/database/sqlite.ts`.
 
 ### Phase 2: Implementation (Core)
 - [ ] **Schema Definition**: Zod Schema wie oben definiert implementieren.

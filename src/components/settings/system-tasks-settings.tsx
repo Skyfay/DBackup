@@ -127,7 +127,7 @@ export function SystemTasksSettings() {
                                 <div className="flex items-center space-x-2">
                                     <span className="text-sm font-mono text-muted-foreground">Cron:</span>
                                     <Input
-                                        className="w-[150px] font-mono"
+                                        className="w-37.5 font-mono"
                                         value={editing[task.id] !== undefined ? editing[task.id] : task.schedule}
                                         onChange={(e) => setEditing({...editing, [task.id]: e.target.value})}
                                     />
@@ -135,6 +135,12 @@ export function SystemTasksSettings() {
                                 {editing[task.id] && (
                                      <Button size="sm" onClick={() => handleSave(task.id)}>Save</Button>
                                 )}
+
+                                <div className="flex items-center border-l pl-4 mx-2">
+                                    <Button size="sm" variant="outline" onClick={() => handleRun(task.id)}>
+                                        <Play className="h-4 w-4 mr-1" /> Run Now
+                                    </Button>
+                                </div>
 
                                 <div className="flex items-center space-x-2 border-l pl-4 mx-2">
                                      <Switch
@@ -144,10 +150,6 @@ export function SystemTasksSettings() {
                                      />
                                      <Label htmlFor={`startup-${task.id}`} className="text-xs">Run on start</Label>
                                 </div>
-
-                                <Button size="sm" variant="outline" onClick={() => handleRun(task.id)}>
-                                    <Play className="h-4 w-4 mr-1" /> Run Now
-                                </Button>
                             </div>
                         </div>
                     ))}

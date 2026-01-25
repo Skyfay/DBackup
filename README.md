@@ -12,7 +12,7 @@ A robust, self-hosted solution for automating database backups. Manage sources, 
 
 ## 🚀 Features
 
-- **Multi-Database Support**: Backup **MySQL**, **PostgreSQL**, and **MongoDB**. (Local SQLite & MSSQL coming soon)
+- **Multi-Database Support**: Backup **MySQL**, **PostgreSQL**, **MongoDB** and **SQLite** (Local & via SSH). (MSSQL coming soon)
 - **Bank-Grade Security**:
   - **Encryption Vault**: Secure your backups with **AES-256-GCM** encryption.
   - **Encryption Profiles**: Manage multiple keys and rotate secrets easily.
@@ -34,8 +34,56 @@ A robust, self-hosted solution for automating database backups. Manage sources, 
 | **MySQL** | 5.7, 8, 9 |
 | **MariaDB** | 10, 11 |
 | **MongoDB** | 4, 5, 6, 7, 8 |
+| **SQLite** | 3.x (Local & SSH) |
 
 > For detailed technical information about client versions and extensive compatibility notes, please refer to our [Supported Database Versions Documentation](docs/development/supported-database-versions.md).
+## 🐳 Deployment (Docker)
+
+You can easily deploy the application using Docker. The application is in beta, so there may be bugs!
+
+### Docker Compose (Recommended)
+
+View the latest [docker-compose.yml](docker-compose.yml) in the repository.
+
+```yaml
+services:
+  app:
+    image: registry.gitlab.com/skyfay/database-backup-manager:beta
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=file:/app/db/prod.db
+      - ENCRYPTION_KEY= # openssl rand -hex 32
+      - BETTER_AUTH_URL=http://localhost:3000
+      - BETTER_AUTH_SECRET= # openssl rand -base64 32
+    volumes:
+      # Persist local backups
+      - ./backups:/backups # use /backups as local adapter path in the application
+      # Persist SQLite DB in a dedicated folder
+      - ./app/db:/app/db
+      # Persist Uploads/Avatars
+      - ./app/storage:/app/storage
+```
+
+### Docker Run
+
+Alternatively, you can run the container directly using `docker run`:
+
+```bash
+docker run -d \
+  --name backup-manager \
+  --restart always \
+  -p 3000:3000 \
+  -e DATABASE_URL="file:/app/db/prod.db" \
+  -e ENCRYPTION_KEY="your-32-byte-hex-key" \
+  -e BETTER_AUTH_URL="http://localhost:3000" \
+  -e BETTER_AUTH_SECRET="your-base64-secret" \
+  -v "$(pwd)/backups:/backups" \
+  -v "$(pwd)/db-data:/app/db" \
+  -v "$(pwd)/storage:/app/storage" \
+  registry.gitlab.com/skyfay/database-backup-manager:beta
+```
 ## �🛠️ Tech Stack
 
 - **Framework**: [Next.js 16](https://nextjs.org) (App Router)

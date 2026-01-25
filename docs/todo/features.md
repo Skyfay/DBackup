@@ -55,6 +55,8 @@
         - [ ] DB Properties Preservation (Extract ENCODING, LC_COLLATE, TEMPLATE from CREATE DATABASE)
         - [ ] Post-Restore Validation (Optional: Compare row counts, verify integrity)
 - [x] **MongoDB Adapter** (`mongodump`)
+- [x] **SQLite Adapter** (Local & SSH)
+    - *Features*: Remote File Browser, "Clean Slate" Restore, Path Remapping
 
 ### Storage Destinations
 - [x] **Local Filesystem Adapter**

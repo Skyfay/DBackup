@@ -27,8 +27,12 @@ import {
     TooltipProvider,
     TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/button";
+import { FolderOpen } from "lucide-react";
 import { PLACEHOLDERS } from "./form-constants";
 import { DatabasePicker } from "./database-picker";
+import { FileBrowserDialog } from "@/components/system/file-browser-dialog";
+import { useState } from "react";
 
 interface SchemaFieldProps {
     name: string;
@@ -80,6 +84,12 @@ export function SchemaField({
     const description = (schemaShape as any).description;
 
     const placeholder = PLACEHOLDERS[`${adapterId}.${fieldKey}`] || PLACEHOLDERS[fieldKey];
+
+    const isPathField = fieldKey === 'path' || fieldKey === 'sqliteBinaryPath' || fieldKey === 'basePath';
+    const [isFileBrowserOpen, setIsFileBrowserOpen] = useState(false);
+
+    // Determine default selection type for file browser
+    const selectionType = fieldKey === 'basePath' ? 'directory' : 'all';
 
     return (
         <FormField
@@ -153,20 +163,43 @@ export function SchemaField({
                                 onChange={(e) => field.onChange(e.target.value)}
                             />
                         ) : (
-                             <Input
-                                type={isPassword ? "password" : "text"}
-                                {...field}
-                                placeholder={placeholder}
-                                value={field.value || ""}
-                                onChange={(e) => {
-                                    const val = e.target.value;
-                                    if (unwrappedShape instanceof z.ZodNumber || (unwrappedShape as any)._def?.typeName === "ZodNumber") {
-                                        field.onChange(Number(val));
-                                    } else {
-                                        field.onChange(val);
-                                    }
-                                }}
-                             />
+                             <div className="flex gap-2">
+                                <Input
+                                    type={isPassword ? "password" : "text"}
+                                    {...field}
+                                    placeholder={placeholder}
+                                    value={field.value || ""}
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        if (unwrappedShape instanceof z.ZodNumber || (unwrappedShape as any)._def?.typeName === "ZodNumber") {
+                                            field.onChange(Number(val));
+                                        } else {
+                                            field.onChange(val);
+                                        }
+                                    }}
+                                />
+                                {isPathField && (
+                                    <>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="icon"
+                                            onClick={() => setIsFileBrowserOpen(true)}
+                                            title="Browse Server Files"
+                                        >
+                                            <FolderOpen className="h-4 w-4" />
+                                        </Button>
+                                        <FileBrowserDialog
+                                            open={isFileBrowserOpen}
+                                            onOpenChange={setIsFileBrowserOpen}
+                                            onSelect={(path) => field.onChange(path)}
+                                            initialPath={field.value && field.value.startsWith('/') ? field.value : '/'}
+                                            selectionType={selectionType}
+                                            title={`Select ${label}`}
+                                        />
+                                    </>
+                                )}
+                             </div>
                         )}
                    </FormControl>
                    <FormMessage />

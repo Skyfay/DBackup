@@ -165,6 +165,5 @@ function compareSemver(v1: ParsedVersion, v2: ParsedVersion): number {
     // If stability level is same (e.g. both 'dev'), compare lexicographically
     // or by checking for trailing numbers (dev1 vs dev2)
     // Simple string compare as fallback
-    // @ts-expect-error - we know they are not null here because of previous checks
     return v1.prerelease!.localeCompare(v2.prerelease!);
 }

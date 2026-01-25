@@ -19,7 +19,6 @@ export async function GET(_req: NextRequest) {
     for (const [_key, taskId] of Object.entries(SYSTEM_TASKS)) {
         const schedule = await systemTaskService.getTaskConfig(taskId);
         const runOnStartup = await systemTaskService.getTaskRunOnStartup(taskId);
-        // @ts-expect-error - Dictionary access
         const config = DEFAULT_TASK_CONFIG[taskId];
 
         if (!config) continue;

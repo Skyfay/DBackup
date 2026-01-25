@@ -4,6 +4,8 @@ import { registerAdapters } from "@/lib/adapters";
 import { DatabaseAdapter } from "@/lib/core/interfaces";
 import { decryptConfig } from "@/lib/crypto";
 import { updateService } from "./update-service";
+import { healthCheckService } from "./healthcheck-service";
+import { auditService } from "./audit-service";
 
 // Ensure adapters are registered for worker context
 registerAdapters();
@@ -59,7 +61,6 @@ export class SystemTaskService {
         }
 
         // Return default if not set in DB
-        // @ts-expect-error - runOnStartup is added to default config but inferred type might lag
         return DEFAULT_TASK_CONFIG[taskId as keyof typeof DEFAULT_TASK_CONFIG]?.runOnStartup ?? false;
     }
 

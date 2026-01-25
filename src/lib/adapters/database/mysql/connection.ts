@@ -1,5 +1,6 @@
 import { execFile } from "child_process";
 import util from "util";
+import { getMysqlCommand, getMysqladminCommand } from "./tools";
 
 export const execFileAsync = util.promisify(execFile);
 
@@ -12,11 +13,11 @@ export async function ensureDatabase(config: any, dbName: string, user: string, 
     if (pass) env.MYSQL_PWD = pass;
 
     try {
-       await execFileAsync('mysql', [...args, '-e', `CREATE DATABASE IF NOT EXISTS \`${dbName}\``], { env });
+       await execFileAsync(getMysqlCommand(), [...args, '-e', `CREATE DATABASE IF NOT EXISTS \`${dbName}\``], { env });
        logs.push(`Database '${dbName}' ensured.`);
        if (privileged) {
             const grantQuery = `GRANT ALL PRIVILEGES ON \`${dbName}\`.* TO '${config.user}'@'%'; GRANT ALL PRIVILEGES ON \`${dbName}\`.* TO '${config.user}'@'localhost'; FLUSH PRIVILEGES;`;
-            await execFileAsync('mysql', [...args, '-e', grantQuery], { env });
+            await execFileAsync(getMysqlCommand(), [...args, '-e', grantQuery], { env });
             logs.push(`Permissions granted for '${dbName}'.`);
        }
     } catch(e: any) {
@@ -40,7 +41,7 @@ export async function test(config: any): Promise<{ success: boolean; message: st
             pingArgs.push('--skip-ssl');
         }
 
-        await execFileAsync('mysqladmin', pingArgs, { env });
+        await execFileAsync(getMysqladminCommand(), pingArgs, { env });
 
         // 2. Version Check (if ping successful)
         const versionArgs = ['-h', config.host, '-P', String(config.port), '-u', config.user, '--protocol=tcp', '-N', '-s', '-e', 'SELECT VERSION()'];
@@ -49,7 +50,7 @@ export async function test(config: any): Promise<{ success: boolean; message: st
             versionArgs.push('--skip-ssl');
         }
 
-        const { stdout } = await execFileAsync('mysql', versionArgs, { env });
+        const { stdout } = await execFileAsync(getMysqlCommand(), versionArgs, { env });
         const rawVersion = stdout.trim();
 
         // Extract version number only (e.g. "11.4.9-MariaDB-ubu2404" → "11.4.9" or "8.0.44" → "8.0.44")
@@ -76,7 +77,7 @@ export async function getDatabases(config: any): Promise<string[]> {
 
     args.push('-e', 'SHOW DATABASES', '--skip-column-names');
 
-    const { stdout } = await execFileAsync('mysql', args, { env });
+    const { stdout } = await execFileAsync(getMysqlCommand(), args, { env });
     const sysDbs = ['information_schema', 'mysql', 'performance_schema', 'sys'];
     return stdout.split('\n').map(s => s.trim()).filter(s => s && !sysDbs.includes(s));
 }

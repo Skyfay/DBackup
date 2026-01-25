@@ -1,6 +1,7 @@
 import { BackupResult } from "@/lib/core/interfaces";
 import { LogLevel, LogType } from "@/lib/core/logs";
 import { getDialect } from "./dialects";
+import { getMysqlCommand, getMysqldumpCommand } from "./tools";
 import fs from "fs/promises";
 import { spawn } from "child_process";
 import { createWriteStream } from "fs";
@@ -29,23 +30,26 @@ export async function dump(config: any, destinationPath: string, onLog?: (msg: s
             env.MYSQL_PWD = config.password;
         }
 
-        const safeCmd = `mysqldump ${args.join(' ').replace(config.password || '___NONE___', '******')}`;
+        const safeCmd = `${getMysqldumpCommand()} ${args.join(' ').replace(config.password || '___NONE___', '******')}`;
         log(`Running database dump`, 'info', 'command', safeCmd);
 
         // Use spawn for streaming output (Best Practice from Guide)
-        const dumpProcess = spawn('mysqldump', args, { env });
+        const dumpProcess = spawn(getMysqldumpCommand(), args, { env });
         const writeStream = createWriteStream(destinationPath);
 
         dumpProcess.stdout.pipe(writeStream);
 
         dumpProcess.stderr.on('data', (data) => {
-            log(data.toString().trim());
+            const msg = data.toString().trim();
+            // Filter benign warnings from MariaDB tools on Alpine
+            if (msg.includes("Using a password") || msg.includes("Deprecated program name")) return;
+            log(msg);
         });
 
         await new Promise<void>((resolve, reject) => {
             dumpProcess.on('close', (code) => {
                 if (code === 0) resolve();
-                else reject(new Error(`mysqldump exited with code ${code}`));
+                else reject(new Error(`${getMysqldumpCommand()} exited with code ${code}`));
             });
             dumpProcess.on('error', (err) => reject(err));
             writeStream.on('error', (err: any) => reject(err));

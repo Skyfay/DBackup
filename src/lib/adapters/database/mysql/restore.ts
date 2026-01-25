@@ -2,6 +2,7 @@ import { BackupResult } from "@/lib/core/interfaces";
 import { LogLevel, LogType } from "@/lib/core/logs";
 import { execFileAsync, ensureDatabase } from "./connection";
 import { getDialect } from "./dialects";
+import { getMysqlCommand } from "./tools";
 import { spawn } from "child_process";
 import { createReadStream } from "fs";
 import { Transform } from "stream";
@@ -38,7 +39,7 @@ export async function prepareRestore(config: any, databases: string[]): Promise<
         if (pass) env.MYSQL_PWD = pass;
 
         try {
-            await execFileAsync('mysql', [...dialectArgs, '-e', `CREATE DATABASE IF NOT EXISTS \`${dbName}\``], { env });
+            await execFileAsync(getMysqlCommand(), [...dialectArgs, '-e', `CREATE DATABASE IF NOT EXISTS \`${dbName}\``], { env });
         } catch (e: any) {
             if (e.message && (e.message.includes("Access denied") || e.message.includes("ERROR 1044"))) {
                 throw new Error(`Access denied for user '${user}' to database '${dbName}'. User permissions?`);
@@ -106,7 +107,7 @@ export async function restore(config: any, sourcePath: string, onLog?: (msg: str
         const env = { ...process.env };
         if(config.password) env.MYSQL_PWD = config.password;
 
-        const mysqlProc = spawn('mysql', args, { stdio: ['pipe', 'pipe', 'pipe'], env });
+        const mysqlProc = spawn(getMysqlCommand(), args, { stdio: ['pipe', 'pipe', 'pipe'], env });
 
         const fileStream = createReadStream(sourcePath, { highWaterMark: 64 * 1024 });
 
@@ -194,8 +195,11 @@ export async function restore(config: any, sourcePath: string, onLog?: (msg: str
         fileStream.pipe(transformStream).pipe(mysqlProc.stdin);
 
         await waitForProcess(mysqlProc, 'mysql', (d) => {
-                const msg = d.toString();
-                if (!msg.includes("Using a password")) log(`MySQL: ${msg}`);
+                const msg = d.toString().trim();
+                // Filter benign warnings from MariaDB tools on Alpine
+                if (msg.includes("Using a password") || msg.includes("Deprecated program name")) return;
+
+                log(`MySQL: ${msg}`);
         });
 
         return { success: true, logs, startedAt, completedAt: new Date() };

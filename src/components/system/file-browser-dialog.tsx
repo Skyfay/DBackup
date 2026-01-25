@@ -22,6 +22,7 @@ interface FileBrowserDialogProps {
     initialPath?: string;
     selectionType?: "file" | "directory" | "all";
     title?: string;
+    remoteConfig?: any; // If provided, uses remote API
 }
 
 export function FileBrowserDialog({
@@ -30,7 +31,8 @@ export function FileBrowserDialog({
     onSelect,
     initialPath = "/",
     selectionType = "all",
-    title = "Select File or Directory"
+    title = "Select File or Directory",
+    remoteConfig
 }: FileBrowserDialogProps) {
     const [currentPath, setCurrentPath] = useState(initialPath);
     const [parentPath, setParentPath] = useState<string | null>(null);
@@ -44,13 +46,24 @@ export function FileBrowserDialog({
             // eslint-disable-next-line react-hooks/exhaustive-deps
             fetchPath(currentPath);
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open]);
 
     const fetchPath = async (path: string) => {
         setLoading(true);
         try {
-            const params = new URLSearchParams({ path });
-            const res = await fetch(`/api/system/filesystem?${params.toString()}`);
+            let res;
+            if (remoteConfig) {
+                 res = await fetch(`/api/system/filesystem/remote`, {
+                     method: 'POST',
+                     headers: { 'Content-Type': 'application/json' },
+                     body: JSON.stringify({ config: remoteConfig, path })
+                 });
+            } else {
+                 const params = new URLSearchParams({ path });
+                 res = await fetch(`/api/system/filesystem?${params.toString()}`);
+            }
+
             const json = await res.json();
 
             if (json.success) {

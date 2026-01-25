@@ -88,6 +88,17 @@ export function SchemaField({
     const isPathField = fieldKey === 'path' || fieldKey === 'sqliteBinaryPath' || fieldKey === 'basePath';
     const [isFileBrowserOpen, setIsFileBrowserOpen] = useState(false);
 
+    // Get current form values for checking remote mode
+    const { watch } = useFormContext();
+    const currentMode = watch("config.mode");
+
+    // Prepare remote config if needed
+    let remoteConfig = null;
+    if (adapterId === "sqlite" && currentMode === "ssh") {
+        remoteConfig = watch("config");
+    }
+    // Future: Add SFTP check here if consistent pattern used
+
     // Determine default selection type for file browser
     const selectionType = fieldKey === 'basePath' ? 'directory' : 'all';
 
@@ -195,7 +206,8 @@ export function SchemaField({
                                             onSelect={(path) => field.onChange(path)}
                                             initialPath={field.value && field.value.startsWith('/') ? field.value : '/'}
                                             selectionType={selectionType}
-                                            title={`Select ${label}`}
+                                            title={remoteConfig ? `Select Remote ${label}` : `Select Local ${label}`}
+                                            remoteConfig={remoteConfig}
                                         />
                                     </>
                                 )}

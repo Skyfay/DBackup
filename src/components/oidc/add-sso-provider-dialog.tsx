@@ -21,6 +21,7 @@ import { OIDCAdapter } from "@/lib/core/oidc-adapter";
 import { PlusCircle, ShieldCheck, Box, Settings2, Globe, Key } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export function AddSsoProviderDialog() {
     const [open, setOpen] = useState(false);
@@ -163,89 +164,103 @@ export function AddSsoProviderDialog() {
 
                 {step === 2 && selectedAdapter && (
                     <form onSubmit={handleSubmit} className="space-y-6 py-4">
-                        <div className="grid grid-cols-2 gap-4">
-                             <div className="space-y-2">
-                                <Label htmlFor="name">Display Name</Label>
-                                <Input
-                                    id="name"
-                                    value={name}
-                                    onChange={(e) => setName(e.target.value)}
-                                    placeholder="Company Login"
-                                    required
-                                    disabled={isLoading}
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="providerId">Provider ID (Internal)</Label>
-                                <Input
-                                    id="providerId"
-                                    value={providerId}
-                                    onChange={(e) => setProviderId(e.target.value)}
-                                    placeholder="authentik-prod"
-                                    required
-                                    disabled={isLoading}
-                                    pattern="^[a-z0-9\-_]+$"
-                                    title="Only lowercase letters, numbers, dashes and underscores"
-                                />
-                            </div>
-                        </div>
+                        <Tabs defaultValue="general" className="w-full">
+                            <TabsList className="grid w-full grid-cols-3">
+                                <TabsTrigger value="general">General</TabsTrigger>
+                                <TabsTrigger value="auth">Credentials</TabsTrigger>
+                                <TabsTrigger value="provider">Provider</TabsTrigger>
+                            </TabsList>
 
-                        <div className="space-y-2">
-                            <Label htmlFor="domain">Domain (Optional)</Label>
-                            <Input
-                                id="domain"
-                                value={domain}
-                                onChange={(e) => setDomain(e.target.value)}
-                                placeholder="example.com"
-                                disabled={isLoading}
-                            />
-                            <p className="text-xs text-muted-foreground">
-                                Users with email addresses matching this domain will be redirected to this provider.
-                            </p>
-                        </div>
+                            {/* TAB 1: GENERAL SETTINGS */}
+                            <TabsContent value="general" className="space-y-4 pt-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                     <div className="space-y-2">
+                                        <Label htmlFor="name">Display Name</Label>
+                                        <Input
+                                            id="name"
+                                            value={name}
+                                            onChange={(e) => setName(e.target.value)}
+                                            placeholder="Company Login"
+                                            required
+                                            disabled={isLoading}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="providerId">Provider ID (Internal)</Label>
+                                        <Input
+                                            id="providerId"
+                                            value={providerId}
+                                            onChange={(e) => setProviderId(e.target.value)}
+                                            placeholder="authentik-prod"
+                                            required
+                                            disabled={isLoading}
+                                            pattern="^[a-z0-9\-_]+$"
+                                            title="Only lowercase letters, numbers, dashes and underscores"
+                                        />
+                                    </div>
+                                </div>
 
-                         <div className="grid grid-cols-2 gap-4">
-                             <div className="space-y-2">
-                                <Label htmlFor="clientId">Client ID</Label>
-                                <Input
-                                    id="clientId"
-                                    value={clientId}
-                                    onChange={(e) => setClientId(e.target.value)}
-                                    required
+                                <div className="space-y-2">
+                                    <Label htmlFor="domain">Domain (Optional)</Label>
+                                    <Input
+                                        id="domain"
+                                        value={domain}
+                                        onChange={(e) => setDomain(e.target.value)}
+                                        placeholder="example.com"
+                                        disabled={isLoading}
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                        Users with email addresses matching this domain will be redirected to this provider.
+                                    </p>
+                                </div>
+
+                                <div className="flex items-center space-x-2 border-t pt-4 mt-4">
+                                    <Switch id="provisioning" checked={allowProvisioning} onCheckedChange={setAllowProvisioning} disabled={isLoading} />
+                                    <div className="grid gap-1.5 leading-none">
+                                        <Label htmlFor="provisioning">Auto-Provisioning</Label>
+                                        <p className="text-sm text-muted-foreground p-0 m-0">
+                                            Automatically create new users when they log in for the first time.
+                                        </p>
+                                    </div>
+                                </div>
+                            </TabsContent>
+
+                            {/* TAB 2: CREDENTIALS */}
+                            <TabsContent value="auth" className="space-y-4 pt-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="clientId">Client ID</Label>
+                                    <Input
+                                        id="clientId"
+                                        value={clientId}
+                                        onChange={(e) => setClientId(e.target.value)}
+                                        required
+                                        disabled={isLoading}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="clientSecret">Client Secret</Label>
+                                    <Input
+                                        id="clientSecret"
+                                        type="password"
+                                        value={clientSecret}
+                                        onChange={(e) => setClientSecret(e.target.value)}
+                                        required
+                                        disabled={isLoading}
+                                    />
+                                </div>
+                            </TabsContent>
+
+                            {/* TAB 3: PROVIDER CONFIG */}
+                            <TabsContent value="provider" className="space-y-4 pt-4">
+                                <DynamicOidcForm
+                                    inputs={selectedAdapter.inputs}
+                                    value={adapterConfig}
+                                    onChange={(key, val) => setAdapterConfig(prev => ({ ...prev, [key]: val }))}
                                     disabled={isLoading}
                                 />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="clientSecret">Client Secret</Label>
-                                <Input
-                                    id="clientSecret"
-                                    type="password"
-                                    value={clientSecret}
-                                    onChange={(e) => setClientSecret(e.target.value)}
-                                    required
-                                    disabled={isLoading}
-                                />
-                            </div>
-                        </div>
+                            </TabsContent>
+                        </Tabs>
 
-                        <div className="border-t pt-4">
-                            <h4 className="text-sm font-medium mb-4 text-muted-foreground uppercase tracking-wider">Provider Configuration</h4>
-                            <DynamicOidcForm
-                                inputs={selectedAdapter.inputs}
-                                value={adapterConfig}
-                                onChange={(key, val) => setAdapterConfig(prev => ({ ...prev, [key]: val }))}
-                                disabled={isLoading}
-                            />
-                        </div>
-                         <div className="flex items-center space-x-2 border-t pt-4">
-                            <Switch id="provisioning" checked={allowProvisioning} onCheckedChange={setAllowProvisioning} disabled={isLoading} />
-                            <div className="grid gap-1.5 leading-none">
-                                <Label htmlFor="provisioning">Auto-Provisioning</Label>
-                                <p className="text-sm text-muted-foreground">
-                                    Automatically create new users when they log in for the first time.
-                                </p>
-                            </div>
-                        </div>
                         <DialogFooter className="gap-2">
                             <Button type="button" variant="outline" onClick={() => setStep(1)} disabled={isLoading}>Back</Button>
                             <Button type="submit" disabled={isLoading}>

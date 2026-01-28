@@ -33,7 +33,7 @@ const formSchema = z.object({
 
 interface LoginFormProps {
     allowSignUp?: boolean;
-    ssoProviders?: { id: string; name: string; type: string; providerId: string; adapterId: string; allowProvisioning: boolean }[];
+    ssoProviders?: { id: string; name: string; type: string; providerId: string; adapterId: string; domain: string | null; allowProvisioning: boolean }[];
     errorCode?: string;
     disablePasskeyLogin?: boolean;
 }
@@ -61,6 +61,7 @@ const ERROR_MESSAGES: Record<string, { title: string; description: string }> = {
 export function LoginForm({ allowSignUp = true, ssoProviders = [], errorCode, disablePasskeyLogin = false }: LoginFormProps) {
   const router = useRouter()
   const [isLogin, setIsLogin] = useState(true)
+  const [isEmailStep, setIsEmailStep] = useState(true) // New state for 2-step login
   const [loading, setLoading] = useState(false)
   const [twoFactorStep, setTwoFactorStep] = useState(false)
   const [totpCode, setTotpCode] = useState("")
@@ -169,6 +170,29 @@ export function LoginForm({ allowSignUp = true, ssoProviders = [], errorCode, di
           toast.error("An error occurred")
           setLoading(false)
       }
+  }
+
+
+  const handleEmailNext = async (e: React.MouseEvent) => {
+    e.preventDefault(); // Prevent form submission
+    const valid = await form.trigger("email")
+    if (!valid) return
+
+    const email = form.getValues("email")
+    const domain = email.split("@")[1]
+
+    if (!domain) {
+        setIsEmailStep(false);
+        return;
+    }
+
+    const matchedProvider = ssoProviders.find(p => p.domain && p.domain.toLowerCase() === domain.toLowerCase())
+
+    if (matchedProvider) {
+      await handleSsoLogin(matchedProvider.providerId, matchedProvider.allowProvisioning)
+    } else {
+      setIsEmailStep(false)
+    }
   }
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
@@ -359,29 +383,65 @@ export function LoginForm({ allowSignUp = true, ssoProviders = [], errorCode, di
                 <FormItem>
                   <FormLabel>Email</FormLabel>
                   <FormControl>
-                    <Input placeholder="m@example.com" {...field} />
+                    <Input 
+                        placeholder="m@example.com" 
+                        {...field} 
+                        disabled={isLogin && !isEmailStep}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter" && isLogin && isEmailStep) {
+                                e.preventDefault();
+                                handleEmailNext(e as any);
+                            }
+                        }}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
+            {(!isLogin || !isEmailStep) && (
             <FormField
               control={form.control}
               name="password"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Password</FormLabel>
+                  <div className="flex items-center justify-between">
+                    <FormLabel>Password</FormLabel>
+                    {isLogin && (
+                         <Button
+                            variant="link"
+                            className="px-0 h-auto text-xs font-normal text-muted-foreground"
+                            onClick={() => setIsEmailStep(true)}
+                            type="button"
+                         >
+                            Change email
+                         </Button>
+                    )}
+                  </div>
                   <FormControl>
-                    <Input type="password" placeholder="••••••••" {...field} />
+                    <Input type="password" placeholder="••••••••" {...field} autoFocus />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isLogin ? "Sign In" : "Sign Up"}
-            </Button>
+            )}
+            {isLogin && isEmailStep ? (
+                <Button 
+                    type="button" 
+                    className="w-full" 
+                    disabled={loading}
+                    onClick={handleEmailNext}
+                >
+                    {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Next
+                </Button>
+            ) : (
+                <Button type="submit" className="w-full" disabled={loading}>
+                    {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {isLogin ? "Sign In" : "Sign Up"}
+                </Button>
+            )}
           </form>
         </Form>
         {isLogin && (
@@ -440,7 +500,10 @@ export function LoginForm({ allowSignUp = true, ssoProviders = [], errorCode, di
       <CardFooter className="flex justify-center">
         <Button
             variant="link"
-            onClick={() => setIsLogin(!isLogin)}
+            onClick={() => {
+                setIsLogin(!isLogin)
+                setIsEmailStep(true)
+            }}
             className="text-sm text-muted-foreground"
         >
             {isLogin ? "Don't have an account? Sign up" : "Already have an account? Login"}

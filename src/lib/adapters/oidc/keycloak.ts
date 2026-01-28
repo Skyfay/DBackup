@@ -52,20 +52,12 @@ export const KeycloakAdapter: OIDCAdapter = {
       }
       const data = await response.json();
 
-      // Force HTTPS if discovery URL is HTTPS (fixes Keycloak behind Cloudflare/Reverse Proxy issues)
-      const forceHttps = (url: string) => {
-        if (discoveryUrl.startsWith("https://") && url.startsWith("http://")) {
-            return url.replace("http://", "https://");
-        }
-        return url;
-      };
-
       return {
         issuer: data.issuer,
-        authorizationEndpoint: forceHttps(data.authorization_endpoint),
-        tokenEndpoint: forceHttps(data.token_endpoint),
-        userInfoEndpoint: forceHttps(data.userinfo_endpoint),
-        jwksEndpoint: forceHttps(data.jwks_uri),
+        authorizationEndpoint: data.authorization_endpoint,
+        tokenEndpoint: data.token_endpoint,
+        userInfoEndpoint: data.userinfo_endpoint,
+        jwksEndpoint: data.jwks_uri,
         discoveryEndpoint: discoveryUrl
       };
     } catch (error) {

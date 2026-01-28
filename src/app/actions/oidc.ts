@@ -64,6 +64,27 @@ export async function createSsoProvider(input: z.infer<typeof createProviderSche
     let endpoints;
     try {
         endpoints = await adapter.getEndpoints(adapterConfig);
+
+        // Validation: Detect Mixed Content (HTTPS Discovery -> HTTP Endpoints)
+        // This usually indicates a misconfigured Reverse Proxy (missing X-Forwarded-Proto)
+        if (endpoints.discoveryEndpoint?.startsWith("https://")) {
+            const insecureEndpoints = [
+                { name: "Authorization", url: endpoints.authorizationEndpoint },
+                { name: "Token", url: endpoints.tokenEndpoint }
+            ].filter(e => e.url.startsWith("http://"));
+
+            if (insecureEndpoints.length > 0) {
+                 const details = insecureEndpoints.map(e => `${e.name} (${e.url})`).join(", ");
+                 return {
+                    success: false,
+                    error: "Security Mismatch Detected",
+                    details: {
+                        _errors: [`The OIDC provider is accessed via HTTPS, but returned insecure HTTP endpoints: ${details}. This indicates a reverse proxy misconfiguration (missing headers like X-Forwarded-Proto) on the provider side. Please fix the provider configuration.`]
+                    }
+                };
+            }
+        }
+
     } catch (e: any) {
         return { success: false, error: `Endpoint discovery failed: ${e.message}` };
     }

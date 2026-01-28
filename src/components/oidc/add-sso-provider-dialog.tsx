@@ -73,11 +73,21 @@ export function AddSsoProviderDialog() {
                 setOpen(false);
                 resetForm();
             } else {
-                 if (res.error && typeof res.error === 'object' && 'details' in res.error) {
-                     // Zod error from backend adapter config validation
+                 const response = res as any;
+                 
+                 // Case 1: Error with explicit details array (e.g. "Security Mismatch")
+                 if (response.details && response.details._errors?.length > 0) {
+                    toast.error(typeof res.error === 'string' ? res.error : "Validation Error", {
+                        description: response.details._errors[0],
+                        duration: 15000 // Long duration for reading security warnings
+                    });
+                 } 
+                 // Case 2: Zod Error Object directly in res.error
+                 else if (res.error && typeof res.error === 'object') {
                      toast.error("Invalid Configuration: Check inputs");
-                     // You could map these errors to fields if you want to be fancy
-                 } else {
+                 } 
+                 // Case 3: Simple String Error
+                 else {
                     toast.error(typeof res.error === 'string' ? res.error : "Failed to create provider");
                  }
             }

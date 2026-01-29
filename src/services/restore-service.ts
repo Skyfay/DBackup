@@ -305,12 +305,15 @@ export class RestoreService {
 
             // --- DECRYPTION EXECUTION ---
             if (isEncrypted && encryptionMeta) {
+                updateProgress(0, "Decrypting"); // Set stage to Decrypting immediately
+
                 let masterKey: Buffer;
 
                 try {
                     masterKey = await getProfileMasterKey(encryptionMeta.profileId);
                 } catch (keyError) {
-                    log(`Profile ${encryptionMeta.profileId} not found. Attempting auto-discovery via other profiles...`, 'warning');
+                    log(`Profile ${encryptionMeta.profileId} not found. Attempting Smart Recovery...`, 'warning');
+
 
                     const allProfiles = await getEncryptionProfiles();
                     let foundKey: Buffer | null = null;
@@ -387,7 +390,7 @@ export class RestoreService {
                     }
 
                     if (foundKey) {
-                        log(`Smart Recovery: Found matching key in profile '${matchProfileName}'.`, 'success');
+                        log(`Smart Recovery Successful: Matched key from profile '${matchProfileName}'.`, 'success');
                         masterKey = foundKey;
                     } else {
                         throw new Error(`Profile ${encryptionMeta.profileId} missing, and no other profile could decrypt this file.`);
@@ -395,8 +398,9 @@ export class RestoreService {
                 }
 
                 try {
-                    updateProgress(0, "Decrypting");
-                    log(`Decrypting backup (Profile: ${encryptionMeta.profileId})...`, 'info');
+                    // Update progress usually resets logs or status, but we are already in Decrypting.
+                    // We just log that we are proceeding.
+                    log(`Starting decryption process...`, 'info');
 
                     // If we found a fallback key, log it again just to be sure
                     const iv = Buffer.from(encryptionMeta.iv, 'hex');

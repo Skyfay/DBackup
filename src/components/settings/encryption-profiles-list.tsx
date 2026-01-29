@@ -407,9 +407,9 @@ export function EncryptionProfilesList() {
                             <div className="ml-2">
                                 <AlertTitle>Disaster Recovery Note</AlertTitle>
                                 <AlertDescription className="text-xs mt-1">
-                                    Importing a key creates a <strong>new Profile ID</strong>. Existing backups are linked to the old ID.
-                                    <br />
-                                    You will be able to decrypt files, but you may need to select this profile manually during restore if the system cannot find the original profile ID.
+                                    <p>
+                                        Importing a key creates a <span className="font-bold">new Profile ID</span>. Existing backups are linked to the old ID. The system&apos;s <span className="font-bold">Smart Recovery</span> will automatically detect and use this key during restore if the original profile is missing, so no manual action is required.
+                                    </p>
                                 </AlertDescription>
                             </div>
                         </Alert>

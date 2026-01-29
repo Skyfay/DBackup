@@ -8,9 +8,9 @@ import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { toast } from "sonner"
-import { Loader2, Lock, Plus, Trash2, AlertTriangle, ShieldCheck, Download, Copy, Eye } from "lucide-react"
+import { Loader2, Lock, Plus, Trash2, AlertTriangle, ShieldCheck, Download, Copy, Eye, Import } from "lucide-react"
 import { EncryptionProfile } from "@prisma/client"
-import { createEncryptionProfile, deleteEncryptionProfile, getEncryptionProfiles, revealMasterKey } from "@/app/actions/encryption"
+import { createEncryptionProfile, importEncryptionProfile, deleteEncryptionProfile, getEncryptionProfiles, revealMasterKey } from "@/app/actions/encryption"
 import { DateDisplay } from "@/components/utils/date-display"
 import { DataTable } from "@/components/ui/data-table"
 import { ColumnDef } from "@tanstack/react-table"
@@ -24,6 +24,10 @@ export function EncryptionProfilesList() {
     const [newName, setNewName] = useState("")
     const [newDesc, setNewDesc] = useState("")
     const [isCreating, setIsCreating] = useState(false)
+
+    // Import Dialog State
+    const [isImportOpen, setIsImportOpen] = useState(false)
+    const [importKey, setImportKey] = useState("")
 
     // Delete Dialog State
     const [profileToDelete, setProfileToDelete] = useState<EncryptionProfile | null>(null)
@@ -63,6 +67,31 @@ export function EncryptionProfilesList() {
             fetchProfiles()
         } else {
             toast.error(res.error || "Failed to create profile")
+        }
+    }
+
+    const handleImport = async () => {
+        if (!newName || !importKey) return;
+
+        // Basic client validation
+        if (importKey.length !== 64) {
+             toast.error("Invalid key length. Must be exactly 64 characters (Hex).");
+             return;
+        }
+
+        setIsCreating(true)
+        const res = await importEncryptionProfile(newName, importKey, newDesc)
+        setIsCreating(false)
+
+        if (res.success) {
+            toast.success("Encryption profile imported successfully")
+            setIsImportOpen(false)
+            setNewName("")
+            setNewDesc("")
+            setImportKey("")
+            fetchProfiles()
+        } else {
+            toast.error(res.error || "Failed to import profile")
         }
     }
 
@@ -181,50 +210,59 @@ export function EncryptionProfilesList() {
                             Create encryption keys (profiles) to protect your backups. Keys are managed securely by the system.
                         </CardDescription>
                     </div>
-                    <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-                        <DialogTrigger asChild>
-                            <Button size="sm">
-                                <Plus className="mr-2 h-4 w-4" />
-                                Create Key
-                            </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                            <DialogHeader>
-                                <DialogTitle>Create Encryption Profile</DialogTitle>
-                                <DialogDescription>
-                                    This will generate a secure 256-bit key stored internally. You can simply select this profile in your Backup Jobs.
-                                </DialogDescription>
-                            </DialogHeader>
-                            <div className="grid gap-4 py-4">
-                                <div className="grid grid-cols-4 items-center gap-4">
-                                    <Label htmlFor="name" className="text-right">Name</Label>
-                                    <Input
-                                        id="name"
-                                        value={newName}
-                                        onChange={(e) => setNewName(e.target.value)}
-                                        className="col-span-3"
-                                        placeholder="e.g., Offsite S3 Key"
-                                    />
-                                </div>
-                                <div className="grid grid-cols-4 items-center gap-4">
-                                    <Label htmlFor="desc" className="text-right">Description</Label>
-                                    <Input
-                                        id="desc"
-                                        value={newDesc}
-                                        onChange={(e) => setNewDesc(e.target.value)}
-                                        className="col-span-3"
-                                        placeholder="Optional"
-                                    />
-                                </div>
-                            </div>
-                            <DialogFooter>
-                                <Button onClick={handleCreate} disabled={isCreating || !newName}>
-                                    {isCreating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                    Generate Key
+                    <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={() => {
+                            setNewName(""); setNewDesc(""); setImportKey("");
+                            setIsImportOpen(true);
+                        }}>
+                            <Import className="mr-2 h-4 w-4" />
+                            Import Key
+                        </Button>
+                        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+                            <DialogTrigger asChild>
+                                <Button size="sm" onClick={() => { setNewName(""); setNewDesc(""); }}>
+                                    <Plus className="mr-2 h-4 w-4" />
+                                    Create Key
                                 </Button>
-                            </DialogFooter>
-                        </DialogContent>
-                    </Dialog>
+                            </DialogTrigger>
+                            <DialogContent>
+                                <DialogHeader>
+                                    <DialogTitle>Create Encryption Profile</DialogTitle>
+                                    <DialogDescription>
+                                        This will generate a secure 256-bit key stored internally. You can simply select this profile in your Backup Jobs.
+                                    </DialogDescription>
+                                </DialogHeader>
+                                <div className="grid gap-4 py-4">
+                                    <div className="grid grid-cols-4 items-center gap-4">
+                                        <Label htmlFor="name" className="text-right">Name</Label>
+                                        <Input
+                                            id="name"
+                                            value={newName}
+                                            onChange={(e) => setNewName(e.target.value)}
+                                            className="col-span-3"
+                                            placeholder="e.g., Offsite S3 Key"
+                                        />
+                                    </div>
+                                    <div className="grid grid-cols-4 items-center gap-4">
+                                        <Label htmlFor="desc" className="text-right">Description</Label>
+                                        <Input
+                                            id="desc"
+                                            value={newDesc}
+                                            onChange={(e) => setNewDesc(e.target.value)}
+                                            className="col-span-3"
+                                            placeholder="Optional"
+                                        />
+                                    </div>
+                                </div>
+                                <DialogFooter>
+                                    <Button onClick={handleCreate} disabled={isCreating || !newName}>
+                                        {isCreating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                        Generate Key
+                                    </Button>
+                                </DialogFooter>
+                            </DialogContent>
+                        </Dialog>
+                    </div>
                 </div>
             </CardHeader>
             <CardContent>
@@ -250,13 +288,15 @@ export function EncryptionProfilesList() {
                             <AlertTriangle className="h-5 w-5" />
                             Danger: Delete Encryption Key
                         </DialogTitle>
-                        <DialogDescription className="space-y-3 pt-2">
-                            <p>
-                                Are you sure you want to delete the profile <strong>{profileToDelete?.name}</strong>?
-                            </p>
-                            <p className="font-bold text-destructive">
-                                WARNING: Any existing backups encrypted with this key will become PERMANENTLY UNREADABLE. There is no way to recover them.
-                            </p>
+                        <DialogDescription className="space-y-3 pt-2" asChild>
+                            <div>
+                                <p>
+                                    Are you sure you want to delete the profile <strong>{profileToDelete?.name}</strong>?
+                                </p>
+                                <p className="font-bold text-destructive">
+                                    WARNING: Any existing backups encrypted with this key will become PERMANENTLY UNREADABLE. There is no way to recover them.
+                                </p>
+                            </div>
                         </DialogDescription>
                     </DialogHeader>
                     <DialogFooter>
@@ -347,6 +387,70 @@ export function EncryptionProfilesList() {
                             onClick={() => setRevealedKey(null)}
                         >
                             Close
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Import Dialog */}
+            <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Import Master Key</DialogTitle>
+                        <DialogDescription>
+                            Import an existing 256-bit key (Hex format) for disaster recovery.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                        <Alert className="bg-amber-500/10 text-amber-600 border-amber-500/20 px-4 py-3">
+                            <AlertTriangle className="h-4 w-4" />
+                            <div className="ml-2">
+                                <AlertTitle>Disaster Recovery Note</AlertTitle>
+                                <AlertDescription className="text-xs mt-1">
+                                    Importing a key creates a <strong>new Profile ID</strong>. Existing backups are linked to the old ID.
+                                    <br />
+                                    You will be able to decrypt files, but you may need to select this profile manually during restore if the system cannot find the original profile ID.
+                                </AlertDescription>
+                            </div>
+                        </Alert>
+
+                        <div className="grid gap-2">
+                            <Label htmlFor="import-name">Profile Name</Label>
+                            <Input
+                                id="import-name"
+                                value={newName}
+                                onChange={(e) => setNewName(e.target.value)}
+                                placeholder="e.g. Restored Offsite Key"
+                            />
+                        </div>
+                        <div className="grid gap-2">
+                            <Label htmlFor="import-key">Master Key (Hex)</Label>
+                            <Input
+                                id="import-key"
+                                value={importKey}
+                                onChange={(e) => setImportKey(e.target.value)}
+                                placeholder="e.g. 8a2f..."
+                                className="font-mono text-xs"
+                            />
+                            <p className="text-[10px] text-muted-foreground text-right">
+                                {importKey.length}/64 characters
+                            </p>
+                        </div>
+                        <div className="grid gap-2">
+                            <Label htmlFor="import-desc">Description (Optional)</Label>
+                            <Input
+                                id="import-desc"
+                                value={newDesc}
+                                onChange={(e) => setNewDesc(e.target.value)}
+                                placeholder="Restored from backup..."
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setIsImportOpen(false)}>Cancel</Button>
+                        <Button onClick={handleImport} disabled={!newName || !importKey || isCreating}>
+                            {isCreating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Import Key
                         </Button>
                     </DialogFooter>
                 </DialogContent>

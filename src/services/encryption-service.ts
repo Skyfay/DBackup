@@ -25,6 +25,32 @@ export async function createEncryptionProfile(name: string, description?: string
 }
 
 /**
+ * Imports an existing encryption key.
+ * Validates the hex format (32 bytes = 64 chars) before storing.
+ */
+export async function importEncryptionProfile(name: string, keyHex: string, description?: string) {
+  // 1. Validate Format
+  const cleanKey = keyHex.trim();
+  if (!/^[0-9a-fA-F]{64}$/.test(cleanKey)) {
+    throw new Error("Invalid key format. Must be a 32-byte Hex string (64 characters).");
+  }
+
+  // 2. Encrypt with system key
+  const encryptedMasterKey = encrypt(cleanKey);
+
+  // 3. Store
+  const profile = await prisma.encryptionProfile.create({
+    data: {
+      name,
+      description,
+      secretKey: encryptedMasterKey,
+    },
+  });
+
+  return profile;
+}
+
+/**
  * Returns all encryption profiles.
  */
 export async function getEncryptionProfiles() {

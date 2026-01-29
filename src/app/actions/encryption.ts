@@ -103,6 +103,40 @@ export async function createEncryptionProfile(name: string, description?: string
 }
 
 /**
+ * Imports an existing encryption profile from a master key.
+ * Requires VAULT:WRITE or SETTINGS:WRITE permission.
+ */
+export async function importEncryptionProfile(name: string, keyHex: string, description?: string) {
+    const headersList = await headers();
+    const session = await auth.api.getSession({ headers: headersList });
+    if (!session) return { success: false, error: "Unauthorized" };
+
+    const permissions = await getUserPermissions();
+    if (!permissions.includes(PERMISSIONS.VAULT.WRITE) && !permissions.includes(PERMISSIONS.SETTINGS.WRITE)) {
+        return { success: false, error: "Insufficient permissions" };
+    }
+
+    try {
+        const profile = await encryptionService.importEncryptionProfile(name, keyHex, description);
+        if (session.user) {
+            await auditService.log(
+                session.user.id,
+                AUDIT_ACTIONS.CREATE,
+                AUDIT_RESOURCES.SYSTEM,
+                { type: "EncryptionProfile", name, method: "Import" },
+                profile.id
+            );
+        }
+        revalidatePath("/dashboard/vault");
+        revalidatePath("/dashboard/settings");
+        revalidatePath("/dashboard/jobs");
+        return { success: true, data: profile };
+    } catch (e: any) {
+        return { success: false, error: e.message };
+    }
+}
+
+/**
  * Deletes an encryption profile.
  * Requires VAULT:WRITE or SETTINGS:WRITE permission.
  */

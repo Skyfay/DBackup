@@ -9,7 +9,7 @@ import os from "os";
 import fs from "fs";
 import { pipeline } from "stream/promises";
 import { createReadStream, createWriteStream } from "fs";
-import { getProfileMasterKey } from "@/services/encryption-service";
+import { getProfileMasterKey, getEncryptionProfiles } from "@/services/encryption-service";
 import { createDecryptionStream } from "@/lib/crypto-stream";
 import { getDecompressionStream, CompressionType } from "@/lib/compression";
 import { LogEntry, LogLevel, LogType } from "@/lib/core/logs";
@@ -305,11 +305,100 @@ export class RestoreService {
 
             // --- DECRYPTION EXECUTION ---
             if (isEncrypted && encryptionMeta) {
+                let masterKey: Buffer;
+
+                try {
+                    masterKey = await getProfileMasterKey(encryptionMeta.profileId);
+                } catch (keyError) {
+                    log(`Profile ${encryptionMeta.profileId} not found. Attempting auto-discovery via other profiles...`, 'warning');
+
+                    const allProfiles = await getEncryptionProfiles();
+                    let foundKey: Buffer | null = null;
+                    let matchProfileName = "";
+
+                    // Helper to check if a key candidate produces valid output
+                    const checkKeyCandidate = async (candidateKey: Buffer): Promise<boolean> => {
+                        return new Promise((resolve) => {
+                            const iv = Buffer.from(encryptionMeta!.iv, 'hex');
+                            const authTag = Buffer.from(encryptionMeta!.authTag, 'hex');
+
+                            try {
+                                const decipher = createDecryptionStream(candidateKey, iv, authTag);
+                                const input = createReadStream(tempFile!, { start: 0, end: 1024 }); // Check first 1KB
+
+                                let isValid = true; // Assume valid unless proven otherwise
+
+                                // Pipe to heuristic check
+                                if (compressionMeta && compressionMeta !== 'NONE') {
+                                    // With compression: Decrypt -> Decompress -> Error?
+                                    const decompressor = getDecompressionStream(compressionMeta);
+                                    if (!decompressor) return resolve(false);
+
+                                    decipher.on('error', () => { isValid = false; resolve(false); });
+                                    decompressor.on('error', () => { isValid = false; resolve(false); });
+
+                                    // If we get 'data' from decompressor, it means header was valid!
+                                    decompressor.on('data', () => {
+                                        // Once we got some data without crashing, it's a strong positive
+                                        resolve(true);
+                                        input.destroy(); // Stop reading
+                                    });
+
+                                    input.pipe(decipher).pipe(decompressor);
+                                } else {
+                                    // No compression: Decrypt -> Check for text/magic bytes
+                                    decipher.on('error', () => { isValid = false; resolve(false); });
+                                    decipher.on('data', (chunk: Buffer) => {
+                                        // Simple heuristic: If SQL/Text, should be mostly printable ASCII/UTF8
+                                        // If random noise, we get lots of control chars
+                                        const printable = chunk.toString('utf8').replace(/[^\x20-\x7E]/g, '').length;
+                                        const ratio = printable / chunk.length;
+                                        if (ratio > 0.7) { // 70% printable
+                                            resolve(true);
+                                        } else {
+                                            resolve(false);
+                                        }
+                                        input.destroy();
+                                    });
+                                    input.pipe(decipher);
+                                }
+
+                                // Handling stream end without data (empty file?)
+                                input.on('end', () => {
+                                    if (isValid) resolve(true); // Should have resolved in 'data' usually
+                                });
+
+                            } catch (e) {
+                                resolve(false);
+                            }
+                        });
+                    };
+
+                    for (const profile of allProfiles) {
+                        try {
+                            const candidateKey = await getProfileMasterKey(profile.id);
+                            const isMatch = await checkKeyCandidate(candidateKey);
+                            if (isMatch) {
+                                foundKey = candidateKey;
+                                matchProfileName = profile.name;
+                                break;
+                            }
+                        } catch (e) { /* ignore */ }
+                    }
+
+                    if (foundKey) {
+                        log(`Smart Recovery: Found matching key in profile '${matchProfileName}'.`, 'success');
+                        masterKey = foundKey;
+                    } else {
+                        throw new Error(`Profile ${encryptionMeta.profileId} missing, and no other profile could decrypt this file.`);
+                    }
+                }
+
                 try {
                     updateProgress(0, "Decrypting");
                     log(`Decrypting backup (Profile: ${encryptionMeta.profileId})...`, 'info');
 
-                    const masterKey = await getProfileMasterKey(encryptionMeta.profileId);
+                    // If we found a fallback key, log it again just to be sure
                     const iv = Buffer.from(encryptionMeta.iv, 'hex');
                     const authTag = Buffer.from(encryptionMeta.authTag, 'hex');
 

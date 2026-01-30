@@ -71,12 +71,14 @@ export class StorageService {
         return metadata.locked;
     }
 
+
     /**
      * Lists files from a specific storage adapter configuration.
      * @param adapterConfigId The ID of the AdapterConfig in the database.
      * @param subPath Optional subpath to list.
+     * @param typeFilter Optional filter for source type (e.g. "SYSTEM")
      */
-    async listFiles(adapterConfigId: string, subPath: string = ""): Promise<FileInfo[]> {
+    async listFiles(adapterConfigId: string, subPath: string = "", typeFilter?: string): Promise<FileInfo[]> {
         const adapterConfig = await prisma.adapterConfig.findUnique({
             where: { id: adapterConfigId }
         });
@@ -108,7 +110,7 @@ export class StorageService {
     /**
      * Lists files and enriches them with metadata from sidecars and database history.
      */
-    async listFilesWithMetadata(adapterConfigId: string): Promise<RichFileInfo[]> {
+    async listFilesWithMetadata(adapterConfigId: string, typeFilter?: string): Promise<RichFileInfo[]> {
         const adapterConfig = await prisma.adapterConfig.findUnique({
             where: { id: adapterConfigId }
         });
@@ -133,6 +135,8 @@ export class StorageService {
             throw new Error(`Failed to decrypt configuration for ${adapterConfigId}: ${(e as Error).message}`);
         }
 
+        // TODO: Pass typeFilter to adapter.list if adapters supported optimized filtering.
+        // For now, we fetch all and filter in memory.
         const allFiles = await adapter.list(config, "");
 
         // Filter Backups vs Metadata
@@ -195,7 +199,7 @@ export class StorageService {
             }
         });
 
-        return backups.map(file => {
+        const results = backups.map(file => {
              // 1. Check Sidecar Metadata (Primary Source of Truth)
              const sidecar = metadataMap.get(file.name);
              let isEncrypted = file.name.endsWith('.enc');
@@ -203,8 +207,19 @@ export class StorageService {
              let compression: string | undefined = undefined;
 
              if (sidecar) {
-                 const count = typeof sidecar.databases === 'object' ? (sidecar.databases as any).count : (typeof sidecar.databases === 'number' ? sidecar.databases : 0);
-                 const label = count === 0 ? "Unknown" : (count === 1 ? "Single DB" : `${count} DBs`);
+                 // Database Count from Metadata
+                 let count = 0;
+                 let label = "Unknown";
+
+                 // Handle Config Backups
+                 if (sidecar.sourceType === "SYSTEM") {
+                     count = 1; // It's one config
+                     label = "System Config";
+                 } else {
+                     count = typeof sidecar.databases === 'object' ? (sidecar.databases as any).count : (typeof sidecar.databases === 'number' ? sidecar.databases : 0);
+                     label = count === 0 ? "Unknown" : (count === 1 ? "Single DB" : `${count} DBs`);
+                 }
+
 
                  if (sidecar.encryption?.enabled) isEncrypted = true;
                  encryptionProfileId = sidecar.encryption?.profileId;
@@ -212,8 +227,8 @@ export class StorageService {
 
                  return {
                      ...file,
-                     jobName: sidecar.jobName,
-                     sourceName: sidecar.sourceName,
+                     jobName: sidecar.jobName || (sidecar.sourceType === "SYSTEM" ? "Config Backup" : undefined),
+                     sourceName: sidecar.sourceName || (sidecar.sourceType === "SYSTEM" ? "System" : undefined),
                      sourceType: sidecar.sourceType,
                      engineVersion: sidecar.engineVersion,
                      dbInfo: { count, label },
@@ -294,6 +309,17 @@ export class StorageService {
                  compression
              };
         });
+
+        if (typeFilter) {
+            if (typeFilter === "SYSTEM") {
+                return results.filter(f => (f as any).sourceType === "SYSTEM");
+            }
+             if (typeFilter === "BACKUP") {
+                return results.filter(f => (f as any).sourceType !== "SYSTEM");
+            }
+        }
+
+        return results;
     }
 
     /**

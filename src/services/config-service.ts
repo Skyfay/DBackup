@@ -156,28 +156,27 @@ export class ConfigService {
       }
 
       // 4. Restore Jobs
-      for (const job of data.jobs) {
+      for (const jobItem of data.jobs) {
+        const job = { ...jobItem };
+
         // We need to ensure foreign keys exist.
         // Adapters are restored first. EncryptionProfile might be missing if skipped above.
-        // If EncryptionProfile is missing, we might need to set it to null or fail.
-        // For now, let's assume if it has a profileId that doesn't exist, this might fail.
 
-        // We can check if profile exists
         if (job.encryptionProfileId) {
             const profileExists = await tx.encryptionProfile.findUnique({ where: { id: job.encryptionProfileId }});
             if (!profileExists) {
-                 // Fallback: Remove encryption profile data from job to allow restore
-                //  job.encryptionProfileId = null; // Can't assign to readonly param
-                 // Warning handled by just not including it in the upsert data if we wanted to be safe
-                 // But strictly, we should probably fail or warn.
-                 // Let's trust the user has the profile or we skip the job encryption ref.
+                 console.warn(`Removing invalid Encryption Profile ID ${job.encryptionProfileId} from Job ${job.name}`);
+                 job.encryptionProfileId = null;
             }
         }
 
+        // Also check if storage/source adapters exist?
+        // They should have been restored in step 2.
+
         await tx.job.upsert({
           where: { id: job.id },
-          create: job,
-          update: job,
+          create: job as any,
+          update: job as any,
         });
       }
 

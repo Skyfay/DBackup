@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/form"
 import { toast } from "sonner"
 import { updateConfigBackupSettings } from "@/app/actions/config-backup-settings"
+import { exportConfigAction, importConfigAction } from "@/app/actions/config-management"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Save, Download, Upload, ShieldCheck, Database, FileCog } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -68,6 +69,62 @@ export function ConfigBackupSettings({ initialSettings, storageAdapters, encrypt
 
     const includeSecrets = form.watch("includeSecrets");
     const profileId = form.watch("profileId");
+
+    const handleExport = async (e: React.MouseEvent) => {
+        e.preventDefault();
+        const withSecrets = form.getValues("includeSecrets");
+
+        toast.promise(async () => {
+             const result = await exportConfigAction(withSecrets);
+             if (!result.success || !result.data) throw new Error(result.error);
+             return result.data;
+        }, {
+            loading: 'Exporting configuration...',
+            success: (data) => {
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `backup-manager-config-${new Date().toISOString()}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                return "Configuration exported successfully";
+            },
+            error: (err) => `Export failed: ${err.message}`
+        });
+    };
+
+    const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        toast.promise(async () => {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = async (ev) => {
+                    try {
+                        const data = JSON.parse(ev.target?.result as string);
+                        const result = await importConfigAction(data);
+                        if (result.success) resolve("Configuration imported");
+                        else reject(new Error(result.error));
+                    } catch (err) {
+                        reject(new Error("Invalid JSON file"));
+                    }
+                };
+                reader.onerror = () => reject(new Error("Failed to read file"));
+                reader.readAsText(file);
+            });
+        }, {
+            loading: 'Importing configuration...',
+            success: 'Configuration imported successfully',
+            error: (err) => `Import failed: ${err.message}`
+        });
+
+        // Reset input
+        e.target.value = "";
+    };
 
     return (
         <Form {...form}>
@@ -252,17 +309,27 @@ export function ConfigBackupSettings({ initialSettings, storageAdapters, encrypt
                         <Database className="h-5 w-5 text-muted-foreground" />
                         <CardTitle>Manual Actions</CardTitle>
                     </div>
+                    <CardDescription>Export current configuration to a JSON file or import a configuration backup.</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <div className="flex gap-4">
-                        <Button variant="outline" size="sm" onClick={() => toast.info("Manual Export coming soon (Phase 5)")}>
+                        <Button variant="outline" size="sm" onClick={handleExport}>
                             <Download className="w-4 h-4 mr-2" />
                             Export Configuration Now
                         </Button>
-                         <Button variant="outline" size="sm" onClick={() => toast.info("Manual Import coming soon (Phase 5)")}>
-                            <Upload className="w-4 h-4 mr-2" />
-                            Import Configuration...
-                        </Button>
+                         <div className="relative">
+                            <Button variant="outline" size="sm" onClick={() => document.getElementById("import-config-file")?.click()}>
+                                <Upload className="w-4 h-4 mr-2" />
+                                Import Configuration...
+                            </Button>
+                            <input
+                                id="import-config-file"
+                                type="file"
+                                accept=".json"
+                                className="hidden"
+                                onChange={handleImport}
+                            />
+                        </div>
                     </div>
                 </CardContent>
             </Card>

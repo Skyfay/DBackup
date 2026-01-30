@@ -22,8 +22,11 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
         await checkPermission(PERMISSIONS.STORAGE.READ);
 
         const params = await props.params;
+        const url = new URL(req.url);
+        const typeFilter = url.searchParams.get("typeFilter") || undefined;
+
         // Delegate logic to Service
-        const enrichedFiles = await storageService.listFilesWithMetadata(params.id);
+        const enrichedFiles = await storageService.listFilesWithMetadata(params.id, "", typeFilter);
 
         return NextResponse.json(enrichedFiles);
 

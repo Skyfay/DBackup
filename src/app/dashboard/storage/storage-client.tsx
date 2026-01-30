@@ -52,6 +52,9 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
     const [selectedDestination, setSelectedDestination] = useState<string>("");
     const [open, setOpen] = useState(false);
 
+    // Filter State
+    const [showSystemConfigs, setShowSystemConfigs] = useState(false);
+
     const [files, setFiles] = useState<FileInfo[]>([]);
     const [loading, setLoading] = useState(false);
 
@@ -68,11 +71,11 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
 
     useEffect(() => {
         if (selectedDestination) {
-            fetchFiles(selectedDestination);
+            fetchFiles(selectedDestination, showSystemConfigs);
         } else {
             setFiles([]);
         }
-    }, [selectedDestination]);
+    }, [selectedDestination, showSystemConfigs]);
 
     const fetchAdapters = async () => {
         try {
@@ -87,10 +90,11 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
         }
     };
 
-    const fetchFiles = async (destId: string) => {
+    const fetchFiles = async (destId: string, showSystem: boolean) => {
         setLoading(true);
         try {
-            const res = await fetch(`/api/storage/${destId}/files`);
+            const typeFilter = showSystem ? "SYSTEM" : "BACKUP";
+            const res = await fetch(`/api/storage/${destId}/files?typeFilter=${typeFilter}`);
             if (res.ok) {
                 setFiles(await res.json());
             } else {
@@ -203,6 +207,9 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
         ];
     }, [files]);
 
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+
     return (
         <div className="space-y-6">
             <div>
@@ -210,7 +217,7 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
                 <p className="text-muted-foreground">Browse, download, and restore backup files from your destinations.</p>
             </div>
 
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-4 justify-between">
                 <div className="w-[300px]">
                     <Popover open={open} onOpenChange={setOpen}>
                         <PopoverTrigger asChild>
@@ -255,6 +262,15 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
                             </Command>
                         </PopoverContent>
                     </Popover>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                    <Switch
+                        id="show-system-configs"
+                        checked={showSystemConfigs}
+                        onCheckedChange={setShowSystemConfigs}
+                    />
+                    <Label htmlFor="show-system-configs">Show System Configs</Label>
                 </div>
             </div>
 

@@ -151,9 +151,9 @@ Therefore, in the export file, they are **Plaintext JSON**, but the **File itsel
     - [x] Create Zod schema for Config Backup Settings
     - [x] Update Settings UI (`src/app/dashboard/settings/page.tsx`) to include "Config" tab
 
-- [ ] **Phase 3: Pipeline & Scheduler**
-    - [ ] Create `ConfigBackupRunner` (Simplified runner for JSON -> Gzip -> Encrypt -> Storage)
-    - [ ] Register new Cron Task for `config_backup_schedule`
+- [x] **Phase 3: Pipeline & Scheduler**
+    - [x] Create `ConfigBackupRunner` (Simplified runner for JSON -> Gzip -> Encrypt -> Storage)
+    - [x] Register new Cron Task for `config_backup_schedule`
 
 - [ ] **Phase 4: Storage Explorer Integration**
     - [ ] Update `StorageService` to filter/identify config backups

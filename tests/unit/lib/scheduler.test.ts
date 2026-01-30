@@ -22,6 +22,8 @@ vi.mock('@/lib/runner', () => ({
 vi.mock('@/services/system-task-service', () => ({
     systemTaskService: {
         getTaskConfig: vi.fn(),
+        getTaskEnabled: vi.fn(),
+        getTaskRunOnStartup: vi.fn(),
         runTask: vi.fn().mockResolvedValue(undefined),
     },
     SYSTEM_TASKS: {
@@ -53,9 +55,16 @@ describe('BackupScheduler', () => {
         prisma.job.findMany.mockResolvedValue([]);
         // @ts-expect-error -- Mock setup
         systemTaskService.getTaskConfig.mockResolvedValue(null);
+        // @ts-expect-error -- Mock setup
+        systemTaskService.getTaskEnabled.mockResolvedValue(false);
+        // @ts-expect-error -- Mock setup
+        systemTaskService.getTaskRunOnStartup.mockResolvedValue(false);
     });
 
     it('should initialize and refresh jobs', async () => {
+        // @ts-expect-error -- Mock setup
+        systemTaskService.getTaskEnabled.mockResolvedValue(true);
+
         await scheduler.init();
         expect(prisma.job.findMany).toHaveBeenCalledWith({ where: { enabled: true } });
         expect(systemTaskService.getTaskConfig).toHaveBeenCalled();
@@ -125,6 +134,8 @@ describe('BackupScheduler', () => {
     it('should schedule system tasks if configured', async () => {
         // @ts-expect-error -- Mock setup
         systemTaskService.getTaskConfig.mockResolvedValue('0 2 * * *'); // Daily at 2am
+        // @ts-expect-error -- Mock setup
+        systemTaskService.getTaskEnabled.mockResolvedValue(true);
 
         await scheduler.refresh();
 

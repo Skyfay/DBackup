@@ -24,6 +24,7 @@ A robust, self-hosted solution for automating database backups. Manage sources, 
 - **Granular Access Control**: Define custom user groups with precise permissions for every resource and action (RBAC).
 - **Notifications**: Get alerts via **Discord** or **Email** when backups succeed or fail.
 - **Restore & Management**: Browse backup history, view logs, and restore databases directly from the UI.
+- **System Self-Backup**: Automated backup of the application's configuration (Jobs, Users, Credentials) to ensure complete disaster recovery.
 - **Health Check**: Health check for databases and storage destinations.
 - **Modern Dashboard**: Built with Next.js 16, Shadcn UI, and Tailwind CSS.
 ## 🗄️ Supported Databases
@@ -234,7 +235,16 @@ git commit -m "chore: add db migration for feature xyz"
 
 ### Security Settings
 ![Security](docs/images/security.png)
+## 🤖 AI Development Transparency
 
+This project is developed with the assistance of advanced AI coding agents. While AI is used to accelerate development and generate code structures, we adhere to strict engineering standards to ensure quality and security:
+
+- **Human Review**: All AI-generated code undergoes manual review to verify logic, maintainability, and architectural alignment.
+- **Security-First Approach**: We implement rigorous access controls (RBAC), encryption standards (AES-256-GCM), and security audits.
+- **Testing Culture**: The reliability of the code is backed by a comprehensive suite of unit and integration tests (Vitest).
+- **Modern Practices**: We follow current best practices for the generic tech stack (Next.js, TypeScript, Docker) to avoid "hallucinated" or deprecated patterns.
+
+Users can rely on this software being built with a focus on stability and security, leveraging AI as a productivity tool rather than a replacement for engineering oversight.
 ## �📝 License
 
 [GNU GENERAL PUBLIC LICENSE](LICENSE)

@@ -100,6 +100,31 @@ const SENSITIVE_KEYS = [
   'privateKey', // SSH Private Key
 ];
 
+
+/**
+ * Recursively strips sensitive fields from an object (sets them to empty string).
+ */
+export function stripSecrets(config: any): any {
+  if (!config || typeof config !== 'object') {
+    return config;
+  }
+
+  // Clone to avoid mutation
+  const result = Array.isArray(config) ? [...config] : { ...config };
+
+  for (const key of Object.keys(result)) {
+    const value = result[key];
+
+    if (typeof value === 'object' && value !== null) {
+      result[key] = stripSecrets(value);
+    } else if (typeof value === 'string' && SENSITIVE_KEYS.includes(key)) {
+      result[key] = "";
+    }
+  }
+
+  return result;
+}
+
 /**
  * Recursively encrypts sensitive fields in an object.
  */

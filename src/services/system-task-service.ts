@@ -16,7 +16,8 @@ export const SYSTEM_TASKS = {
     HEALTH_CHECK: "system.health_check",
     CLEAN_OLD_LOGS: "system.clean_audit_logs",
     CHECK_FOR_UPDATES: "system.check_for_updates",
-    SYNC_PERMISSIONS: "system.sync_permissions"
+    SYNC_PERMISSIONS: "system.sync_permissions",
+    CONFIG_BACKUP: "system.config_backup"
 };
 
 export const DEFAULT_TASK_CONFIG = {
@@ -49,6 +50,12 @@ export const DEFAULT_TASK_CONFIG = {
         runOnStartup: true,
         label: "Check for Updates",
         description: "Checks if a new version of the application is available in the GitLab Container Registry."
+    },
+    [SYSTEM_TASKS.CONFIG_BACKUP]: {
+        interval: "0 3 * * *", // 3 AM
+        runOnStartup: false,
+        label: "Automated Configuration Backup",
+        description: "Backs up the internal system configuration (Settings, Adapters, Jobs, Users) to the configured storage."
     }
 };
 
@@ -107,10 +114,16 @@ export class SystemTaskService {
             case SYSTEM_TASKS.SYNC_PERMISSIONS:
                 await this.runSyncPermissions();
                 break;
-            default:
             case SYSTEM_TASKS.CHECK_FOR_UPDATES:
                 await this.runCheckForUpdates();
                 break;
+            case SYSTEM_TASKS.CONFIG_BACKUP: {
+                // Dynamic import to avoid circular dep if config-runner imports something that imports this.
+                const { runConfigBackup } = await import("@/lib/runner/config-runner");
+                await runConfigBackup();
+                break;
+            }
+            default:
                 console.warn(`[SystemTask] Unknown task: ${taskId}`);
         }
     }

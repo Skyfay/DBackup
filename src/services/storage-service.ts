@@ -428,10 +428,29 @@ export class StorageService {
                      }
                 }
 
-                if (meta && meta.encryption && meta.encryption.enabled) {
-                    const masterKey = await getProfileMasterKey(meta.encryption.profileId);
-                    const iv = Buffer.from(meta.encryption.iv, 'hex');
-                    const authTag = Buffer.from(meta.encryption.authTag, 'hex');
+                // Determine Encryption Params (Support both Standard Object and Flat Config Backup formats)
+                let encryptionParams: { profileId: string, iv: string, authTag: string } | null = null;
+
+                if (meta && meta.encryption && typeof meta.encryption === 'object' && meta.encryption.enabled) {
+                    // Standard Format
+                    encryptionParams = {
+                        profileId: meta.encryption.profileId,
+                        iv: meta.encryption.iv,
+                        authTag: meta.encryption.authTag
+                    };
+                } else if (meta && meta.encryptionProfileId && meta.iv && meta.authTag) {
+                    // Legacy / Config Backup Flat Format
+                     encryptionParams = {
+                        profileId: meta.encryptionProfileId,
+                        iv: meta.iv,
+                        authTag: meta.authTag
+                    };
+                }
+
+                if (encryptionParams) {
+                    const masterKey = await getProfileMasterKey(encryptionParams.profileId);
+                    const iv = Buffer.from(encryptionParams.iv, 'hex');
+                    const authTag = Buffer.from(encryptionParams.authTag, 'hex');
 
                     const decryptStream = createDecryptionStream(masterKey, iv, authTag);
                     const decryptedPath = localDestination + ".dec";

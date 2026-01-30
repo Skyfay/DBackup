@@ -466,14 +466,26 @@ export class ConfigService {
 
           let currentStream: Readable = createReadStream(downloadPath);
 
+          // Normalize Metadata for Logic
+          const metaEncryption = meta?.encryption && typeof meta.encryption === 'object' ? meta.encryption : null;
+
+          const isEncrypted = filePath.endsWith(".enc") ||
+                              (metaEncryption && metaEncryption.enabled) ||
+                              (meta && meta.iv);
+
           // Decryption
-          if (filePath.endsWith(".enc") || (meta && meta.iv && meta.authTag)) {
+          if (isEncrypted) {
               log("File detected as encrypted. Preparing decryption...");
 
               if (!decryptionProfileId) {
                   // Try to find profile ID from meta
-                  if (meta && meta.encryptionProfileId) {
+                  if (metaEncryption?.profileId) {
+                       decryptionProfileId = metaEncryption.profileId;
+                  } else if (meta?.encryptionProfileId) {
                        decryptionProfileId = meta.encryptionProfileId;
+                  }
+
+                  if (decryptionProfileId) {
                        log(`Using Encryption Profile ID from metadata: ${decryptionProfileId}`);
                   } else {
                        throw new Error("File is encrypted but no Encryption Profile provided and metadata is missing encryptionProfileId.");
@@ -554,14 +566,23 @@ export class ConfigService {
                   }
 
                   // If we have meta, use it. If not, we can't reliably decrypt GCM without IV/AuthTag
-                  // The runner stores IV/AuthTag in .meta.json. It is NOT prepended to the file in our specific implementation (src/lib/runner/config-runner.ts check needed?)
-                  // config-runner writes sidecar. So we MUST have the sidecar content.
-                  if (!meta || !meta.iv || !meta.authTag) {
+                  // The runner stores IV/AuthTag in .meta.json.
+
+                  // Support both Flat (Old) and Nested (New) formats
+                  let ivHex = meta?.iv;
+                  let authTagHex = meta?.authTag;
+
+                  if (meta?.encryption && typeof meta.encryption === 'object') {
+                      if (meta.encryption.iv) ivHex = meta.encryption.iv;
+                      if (meta.encryption.authTag) authTagHex = meta.encryption.authTag;
+                  }
+
+                  if (!ivHex || !authTagHex) {
                       throw new Error("Missing encryption metadata (IV/AuthTag). Cannot decrypt.");
                   }
 
-                  const iv = Buffer.from(meta.iv, 'hex');
-                  const authTag = Buffer.from(meta.authTag, 'hex');
+                  const iv = Buffer.from(ivHex, 'hex');
+                  const authTag = Buffer.from(authTagHex, 'hex');
 
                   const decipher = createDecryptionStream(key, iv, authTag);
                   currentStream = currentStream.pipe(decipher);

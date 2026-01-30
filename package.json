@@ -1,6 +1,6 @@
 {
   "name": "database-backup-manager",
-  "version": "0.8.1-beta",
+  "version": "0.8.3-beta",
   "private": true,
   "scripts": {
     "dev": "next dev",

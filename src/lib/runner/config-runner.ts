@@ -153,10 +153,16 @@ export async function runConfigBackup() {
         originalName: `config_backup_${timestamp}.json`,
         size: fileStats.size,
         compression: "GZIP",
-        encryption: encryptionKey ? "AES-256-GCM" : "NONE",
+        // Standard Structure
+        encryption: encryptionKey ? {
+            enabled: true,
+            profileId: profileId?.value,
+            algorithm: 'aes-256-gcm',
+            iv: ivHex,
+            authTag: authTagHex
+        } : undefined,
+        // Legacy fields for backward compat or older services reading this if needed (optional)
         encryptionProfileId: profileId?.value || null,
-        iv: ivHex,
-        authTag: authTagHex,
         sourceType: "SYSTEM",
         createdAt: new Date().toISOString()
     };

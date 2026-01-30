@@ -14,9 +14,9 @@ import {
 } from "@/components/ui/form"
 import { toast } from "sonner"
 import { updateConfigBackupSettings } from "@/app/actions/config-backup-settings"
-import { triggerManualConfigBackupAction, uploadAndRestoreConfigAction } from "@/app/actions/config-management"
+import { uploadAndRestoreConfigAction } from "@/app/actions/config-management"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
-import { Save, Upload, ShieldCheck, Database, FileCog, Play, LockKeyhole } from "lucide-react"
+import { Save, Upload, ShieldCheck, Database, FileCog, LockKeyhole } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Button } from "@/components/ui/button"
@@ -104,17 +104,6 @@ export function ConfigBackupSettings({ initialSettings, storageAdapters, encrypt
              error: (err) => `Restore Failed: ${err.message}`
         });
     }
-
-    const handleRunNow = async () => {
-        toast.promise(triggerManualConfigBackupAction(), {
-            loading: "Running automated configuration backup...",
-            success: (data) => {
-                if(!data.success) throw new Error(data.error);
-                return "Backup executed successfully on the server."
-            },
-            error: (err) => `Execution Failed: ${err.message}`
-        })
-    };
 
     return (
         <Form {...form}>
@@ -292,24 +281,13 @@ export function ConfigBackupSettings({ initialSettings, storageAdapters, encrypt
                         <CardTitle>Manual Operations</CardTitle>
                     </div>
                     <CardDescription>
-                        Trigger automated backups manually or use the Offline Restore for disaster recovery.
+                        Perform a disaster recovery restore using an existing backup file.
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
                     <div className="flex flex-col gap-6">
 
-                        <div className="flex flex-col gap-2">
-                            <h4 className="text-sm font-medium">Trigger Automated Backup</h4>
-                            <p className="text-sm text-muted-foreground mb-2">
-                                Executes the full backup pipeline immediately to the configured storage.
-                            </p>
-                            <Button variant="secondary" size="sm" onClick={handleRunNow} className="w-full md:w-auto self-start">
-                                <Play className="w-4 h-4 mr-2" />
-                                Run Pipeline Now
-                            </Button>
-                        </div>
-
-                         <div className="border-t pt-4">
+                         <div className="">
                             <h4 className="text-sm font-medium mb-2">Disaster Recovery (Offline Restore)</h4>
                             <p className="text-sm text-muted-foreground mb-4">
                                 If you are starting fresh, you can upload a config backup file manually from your local device.

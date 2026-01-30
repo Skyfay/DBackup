@@ -41,7 +41,7 @@ The export (`AppConfigurationBackup`) covers the following areas:
 
 ### 3.1 Export Process (Pipeline)
 
-Export can be triggered manually via UI or automatically by schedule.
+Export is performed **automatically by schedule** or manually triggered via **System Tasks** (`config.backup`).
 
 1.  **Data Fetching**: `ConfigService` loads all data from the Prisma database.
 2.  **Decryption (Pre-Flight)**:
@@ -53,13 +53,14 @@ Export can be triggered manually via UI or automatically by schedule.
     *   **Encryption**: If `includeSecrets = true` (or profile selected), the stream is encrypted with the selected Encryption Profile.
     *   **Upload**: Upload to target storage (filename pattern `config_backup_{TIMESTAMP}.json[.gz][.enc]`).
 
-### 3.2 Import Process
+### 3.2 Import Process (Offline Restore)
 
-Import overwrites the current configuration (Recommended "Clean Slate" approach).
+For simple file-based restoration (Disaster Recovery) where no storage connection is yet available.
 
-1.  **Upload/Selection**: User uploads the backup file.
-2.  **Decryption (Pipeline-Reverse)**:
-    *   If encrypted, the user must provide the matching Encryption Profile (and password/key if needed).
+1.  **Upload**: User uploads the backup file (JSON, GZ, or ENC). If encrypted, the `.meta.json` sidecar file must also be uploaded.
+2.  **Parsing & Decryption**:
+    *   The system parses the metadata to find the Encryption Profile ID, IV, and AuthTag.
+    *   It uses the local Encryption Profiles (which must be restored or created first) to unlock the file.
 3.  **Deserialization**: JSON is parsed.
 4.  **Data Adoption (`OVERWRITE` Strategy)**:
     *   Existing entries with same IDs are updated.
@@ -74,18 +75,18 @@ Controls are located under `Settings` -> `System Config`.
 *   **Automated Backup**: Enable/Disable.
 *   **Destination Storage**: Select Storage Adapter.
 *   **Encryption**: Encryption Profile (Mandatory for "Include Secrets").
-*   **Schedule**: Cron Expression (Default: Daily 03:00).
+*   **Schedule**: Managed in System Tasks (`system.config_backup`).
 *   **Retention**: Number of config backups to keep.
 
 ### Manual Actions
-*   **Export Now**: Download configuration directly in browser (respects "Include Secrets" setting).
-*   **Run Automated Backup**: Starts pipeline in background and uploads to storage.
-*   **Import Config**: Starts the restoration dialog.
+*   **Offline Restore**: Start the disaster recovery dialog to upload and restore a backup file manually.
+*   **Trigger Backup**: To run a backup immediately, use the "Run Now" button in the **System Tasks** view.
 
 ## 5. Implementation Details
 
-*   **Service**: `src/services/config-service.ts` (Validation, mapping logic)
+*   **Service**: `src/services/config-service.ts` (Validation, mapping logic, streaming parser)
 *   **Runner**: `src/lib/runner/config-runner.ts` (Pipeline orchestration)
 *   **Types**: `src/lib/types/config-backup.ts` (TypeScript Interfaces)
 *   **Actions**: `src/app/actions/config-management.ts` (Server Actions for UI)
+
 

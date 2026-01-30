@@ -352,5 +352,85 @@ describe('ConfigService Lifecycle (Complex)', () => {
              const fullProvider = fullBackup.ssoProviders.find(p => p.id === 'sso-1');
              expect(fullProvider!.clientSecret).toBe("GoogleSecret");
         });
+
+        it('should NOT overwrite existing Encryption Profile keys (Security Stability)', async () => {
+             // This ensures that if we import a backup that contains a definition for "Profile A",
+             // but "Profile A" already exists on the system with a different key, we do NOT overwrite the key.
+             // Overwriting the key would render all existing backups on the disk useless.
+
+             // 1. Existing System State
+             mockDb.profiles.set('p-critical', {
+                 id: 'p-critical',
+                 name: 'System Profile',
+                 secretKey: 'ENC_SYSTEM_KEY_111' // The valid key for current files
+             });
+
+             // 2. Backup State (Older version or from another server)
+             const backup: any = {
+                 metadata: { version: '1.0.0' },
+                 encryptionProfiles: [{
+                     id: 'p-critical',
+                     name: 'Old Name',
+                     description: 'New Desc',
+                     secretKey: 'PLAIN_KEY_222' // Different key
+                 }],
+                 settings: [], adapters: [], jobs: [], users: [], groups: [], ssoProviders: [],
+                 options: { profiles: true }
+             };
+
+             // 3. Import
+             await service.import(backup, 'OVERWRITE');
+
+             // 4. Verify
+             const profile = mockDb.profiles.get('p-critical');
+             expect(profile.name).toBe('Old Name'); // Updates non-sensitive fields
+             expect(profile.description).toBe('New Desc'); // Updates non-sensitive fields
+             expect(profile.secretKey).toBe('ENC_SYSTEM_KEY_111'); // KEY MUST REMAIN UNCHANGED
+        });
+
+        it('should handle invalid/corrupt JSON in Adapter Config gracefully', async () => {
+             // 1. Backup with corrupt JSON string
+             const backup: any = {
+                 metadata: { version: '1.0.0' },
+                 adapters: [{
+                     id: 'bad-adapter',
+                     name: 'Bad',
+                     type: 'mysql',
+                     config: '{ "host": "localhost", "port": ... BROKEN JSON ... }'
+                 }],
+                 settings: [], jobs: [], users: [], groups: [], ssoProviders: [], encryptionProfiles: []
+             };
+
+             // 2. Import should NOT throw
+             await service.import(backup, 'OVERWRITE');
+
+             // 3. Verify it was created (empty config or raw)
+             const adapter = mockDb.adapters.get('bad-adapter');
+             expect(adapter).toBeDefined();
+             // The service tries to parse, fails, then upserts the raw object?
+             // Looking at code:
+             // try { configObj = JSON.parse(adapter.config) } catch {}
+             // configObj = encryptConfig(configObj); -> if configObj was {}, it remains {}
+             // JSON.stringify({}) -> "{}"
+             expect(adapter.config).toBe("{}");
+        });
+
+        it('should confirm OVERWRITE strategy actually updates values', async () => {
+             // 1. Existing Setting
+             mockDb.settings.set('site.url', { key: 'site.url', value: 'http://old.com' });
+
+             // 2. Backup with new value
+             const backup: any = {
+                 metadata: { version: '1.0.0' },
+                 settings: [{ key: 'site.url', value: 'http://new.com' }],
+                 adapters: [], jobs: [], users: [], groups: [], ssoProviders: [], encryptionProfiles: []
+             };
+
+             // 3. Import
+             await service.import(backup, 'OVERWRITE');
+
+             // 4. Verify Update
+             expect(mockDb.settings.get('site.url').value).toBe('http://new.com');
+        });
     });
 });

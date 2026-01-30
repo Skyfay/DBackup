@@ -15,14 +15,13 @@ import {
 import { toast } from "sonner"
 import { updateConfigBackupSettings } from "@/app/actions/config-backup-settings"
 import { uploadAndRestoreConfigAction } from "@/app/actions/config-management"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
-import { Save, Upload, ShieldCheck, Database, FileCog, LockKeyhole } from "lucide-react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Upload, ShieldCheck, Database, FileCog, LockKeyhole } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import Link from "next/link"
 import {
   Dialog,
   DialogContent,
@@ -71,18 +70,30 @@ export function ConfigBackupSettings({ initialSettings, storageAdapters, encrypt
         },
     })
 
-    const onSubmit = async (values: z.infer<typeof formSchema>) => {
+    const handleAutoSave = async (field: keyof z.infer<typeof formSchema>, value: any) => {
+        // Update local form state
+        form.setValue(field, value);
+
+        // Get full current values, merged with the new change
+        const currentValues = form.getValues();
+        const updatedValues = { ...currentValues, [field]: value };
+
         const submission = {
-            ...values,
-            profileId: values.profileId === "NO_ENCRYPTION" ? "" : values.profileId
+            ...updatedValues,
+            profileId: updatedValues.profileId === "NO_ENCRYPTION" ? "" : updatedValues.profileId
         };
-        const result = await updateConfigBackupSettings(submission);
-        if (result.success) {
-            toast.success("Configuration backup settings updated");
-        } else {
-            toast.error(result.error || "Failed to update settings");
-        }
-    }
+
+        // Optimistic UI updates are handled by react-hook-form local state
+        // We just fire the save request
+        toast.promise(updateConfigBackupSettings(submission), {
+            loading: 'Saving settings...',
+            success: (res) => {
+                if(res.success) return "Settings saved";
+                throw new Error(res.error);
+            },
+            error: (err) => `Failed to save: ${err.message}`
+        });
+    };
 
     const includeSecrets = form.watch("includeSecrets");
     const profileId = form.watch("profileId");
@@ -107,7 +118,7 @@ export function ConfigBackupSettings({ initialSettings, storageAdapters, encrypt
 
     return (
         <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+            <div className="space-y-6">
                 <Card>
                     <CardHeader>
                         <div className="flex items-center gap-2">
@@ -134,7 +145,7 @@ export function ConfigBackupSettings({ initialSettings, storageAdapters, encrypt
                                     <FormControl>
                                         <Switch
                                             checked={field.value}
-                                            onCheckedChange={field.onChange}
+                                            onCheckedChange={(val) => handleAutoSave("enabled", val)}
                                         />
                                     </FormControl>
                                 </FormItem>
@@ -148,7 +159,10 @@ export function ConfigBackupSettings({ initialSettings, storageAdapters, encrypt
                                 render={({ field }) => (
                                     <FormItem>
                                         <FormLabel>Destination Storage</FormLabel>
-                                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                        <Select
+                                            onValueChange={(val) => handleAutoSave("storageId", val)}
+                                            defaultValue={field.value}
+                                        >
                                             <FormControl>
                                                 <SelectTrigger>
                                                     <SelectValue placeholder="Select storage" />
@@ -170,9 +184,9 @@ export function ConfigBackupSettings({ initialSettings, storageAdapters, encrypt
                             <div className="space-y-2">
                                 <FormLabel>Schedule</FormLabel>
                                 <div className="text-sm text-muted-foreground p-3 border rounded-md bg-muted/50">
-                                    Managed in <Link href="/dashboard/settings?tab=tasks" className="text-primary underline hover:text-primary/80">System Tasks</Link>.
+                                    Managed in <b>System Tasks</b>.
                                     <br/>
-                                    Task: <code>system.config_backup</code>
+                                    Look for: <b>Automated Configuration Backup</b>
                                 </div>
                             </div>
                         </div>
@@ -184,7 +198,10 @@ export function ConfigBackupSettings({ initialSettings, storageAdapters, encrypt
                                 render={({ field }) => (
                                     <FormItem>
                                         <FormLabel>Encryption Profile (Vault)</FormLabel>
-                                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                        <Select
+                                            onValueChange={(val) => handleAutoSave("profileId", val)}
+                                            defaultValue={field.value}
+                                        >
                                             <FormControl>
                                                 <SelectTrigger>
                                                     <SelectValue placeholder="Select encryption profile" />
@@ -219,7 +236,13 @@ export function ConfigBackupSettings({ initialSettings, storageAdapters, encrypt
                                     <FormItem>
                                         <FormLabel>Retention Count</FormLabel>
                                         <FormControl>
-                                            <Input type="number" min={1} {...field} />
+                                            <Input
+                                                type="number"
+                                                min={1}
+                                                {...field}
+                                                onChange={field.onChange} // Keep local state update
+                                                onBlur={(e) => handleAutoSave("retention", Number(e.target.value))}
+                                            />
                                         </FormControl>
                                         <FormDescription>
                                             Number of backup files to keep. Older files will be deleted.
@@ -246,7 +269,7 @@ export function ConfigBackupSettings({ initialSettings, storageAdapters, encrypt
                                     <FormControl>
                                         <Switch
                                             checked={field.value}
-                                            onCheckedChange={field.onChange}
+                                            onCheckedChange={(val) => handleAutoSave("includeSecrets", val)}
                                         />
                                     </FormControl>
                                 </FormItem>
@@ -259,20 +282,13 @@ export function ConfigBackupSettings({ initialSettings, storageAdapters, encrypt
                                 <AlertTitle>Security Warning</AlertTitle>
                                 <AlertDescription>
                                     You have enabled &quot;Include Secrets&quot; but have not selected an Encryption Profile.
-                                    You cannot save this configuration until you select a Vault profile to encrypt the sensitive data.
+                                    Settings cannot be saved until you select a Vault profile to encrypt the sensitive data.
                                 </AlertDescription>
                             </Alert>
                         )}
 
                     </CardContent>
-                    <CardFooter>
-                        <Button type="submit" disabled={includeSecrets && (!profileId || profileId === "NO_ENCRYPTION")}>
-                            <Save className="w-4 h-4 mr-2" />
-                            Save Configuration
-                        </Button>
-                    </CardFooter>
                 </Card>
-            </form>
 
             <Card>
                  <CardHeader>
@@ -291,8 +307,13 @@ export function ConfigBackupSettings({ initialSettings, storageAdapters, encrypt
                             <h4 className="text-sm font-medium mb-2">Disaster Recovery (Offline Restore)</h4>
                             <p className="text-sm text-muted-foreground mb-4">
                                 If you are starting fresh, you can upload a config backup file manually from your local device.
+                                <br />
+                                <span className="text-xs opacity-75">
+                                    Note: For selective restoration (e.g. only restoring Settings or Users),
+                                    please use the <b>Storage Explorer</b> instead.
+                                </span>
                             </p>
-
+                            
                             <Dialog open={isRestoreOpen} onOpenChange={setIsRestoreOpen}>
                                 <DialogTrigger asChild>
                                     <Button variant="outline" size="sm" className="w-full md:w-auto">
@@ -345,6 +366,7 @@ export function ConfigBackupSettings({ initialSettings, storageAdapters, encrypt
                     </div>
                 </CardContent>
             </Card>
+           </div>
         </Form>
     )
 }

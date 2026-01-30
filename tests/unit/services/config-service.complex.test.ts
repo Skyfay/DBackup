@@ -163,7 +163,8 @@ describe('ConfigService Lifecycle (Complex)', () => {
 
             // Check Adapter
             const adapter = backup.adapters.find(a => a.id === 'adapter-1');
-            const conf = JSON.parse(adapter.config);
+            expect(adapter).toBeDefined();
+            const conf = JSON.parse(adapter!.config);
             expect(conf.password).toBe(""); // Stripped
 
             // Check Encryption Profile
@@ -173,9 +174,10 @@ describe('ConfigService Lifecycle (Complex)', () => {
 
             // Check User Accounts
             const user = backup.users.find(u => u.id === 'user-1');
-            expect(user.accounts).toHaveLength(1);
-            expect(user.accounts[0].password).toBeNull(); // Nulled
-            expect(user.accounts[0].accessToken).toBeNull(); // Nulled
+            expect(user).toBeDefined();
+            expect(user!.accounts).toHaveLength(1);
+            expect(user!.accounts[0].password).toBeNull(); // Nulled
+            expect(user!.accounts[0].accessToken).toBeNull(); // Nulled
         });
 
         it('should export secrets when includeSecrets=true', async () => {
@@ -183,7 +185,8 @@ describe('ConfigService Lifecycle (Complex)', () => {
 
             // Check Adapter
             const adapter = backup.adapters.find(a => a.id === 'adapter-1');
-            const conf = JSON.parse(adapter.config);
+            expect(adapter).toBeDefined();
+            const conf = JSON.parse(adapter!.config);
             expect(conf.password).toBe("super_secret"); // Decrypted!
 
             // Check Encryption Profile
@@ -192,8 +195,9 @@ describe('ConfigService Lifecycle (Complex)', () => {
 
             // Check User Accounts
             const user = backup.users.find(u => u.id === 'user-1');
-            expect(user.accounts[0].password).toBe("HASHED_PASSWORD_123"); // Preserved
-            expect(user.accounts[0].accessToken).toBe("ACCESS_TOKEN_XYZ"); // Preserved
+            expect(user).toBeDefined();
+            expect(user!.accounts[0].password).toBe("HASHED_PASSWORD_123"); // Preserved
+            expect(user!.accounts[0].accessToken).toBe("ACCESS_TOKEN_XYZ"); // Preserved
         });
     });
 
@@ -247,8 +251,8 @@ describe('ConfigService Lifecycle (Complex)', () => {
 
             // Logic check: userUpsert called with object NOT having accounts
             const userCall = userUpsertSpy.mock.calls[0][0]; // { where, create, update }
-            expect(userCall.create).not.toHaveProperty('accounts');
-            expect(userCall.update).not.toHaveProperty('accounts');
+            expect((userCall as any).create).not.toHaveProperty('accounts');
+            expect((userCall as any).update).not.toHaveProperty('accounts');
 
             // Logic check: account upsert called separately
             expect(accountUpsertSpy).toHaveBeenCalled();
@@ -296,7 +300,7 @@ describe('ConfigService Lifecycle (Complex)', () => {
              await service.import(backup, 'OVERWRITE', {
                  settings: true,
                  users: false, // SKIP USERS
-                 adapters: false, jobs: false, groups: false, sso: false, profiles: false
+                 adapters: false, jobs: false, sso: false, profiles: false
              });
 
              // 4. Verify System Setting was created
@@ -344,7 +348,7 @@ describe('ConfigService Lifecycle (Complex)', () => {
              const safeBackup = await service.export(false);
              const safeProvider = safeBackup.ssoProviders.find(p => p.id === 'sso-1');
              expect(safeProvider!.clientSecret).toBe("");
-             const safeOidc = JSON.parse(safeProvider!.oidcConfig);
+             const safeOidc = JSON.parse(safeProvider!.oidcConfig!);
              expect(safeOidc.clientSecret).toBe(""); // Should ideally be stripped too if logic exists
 
              // 3. Export WITH Secrets

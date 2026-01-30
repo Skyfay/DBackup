@@ -85,7 +85,6 @@ export class SystemTaskService {
         }
 
         // Return default if not set in DB
-        // @ts-expect-error - enabled might not be in generic TaskConfig type implicitly but we added it above
         return DEFAULT_TASK_CONFIG[taskId as keyof typeof DEFAULT_TASK_CONFIG]?.enabled ?? true;
     }
 

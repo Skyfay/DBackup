@@ -106,13 +106,11 @@ export class ConfigService {
                  console.error("Failed to decrypt profile key for export", p.id);
                  // eslint-disable-next-line @typescript-eslint/no-unused-vars
                  const { secretKey, ...rest } = p;
-                 // @ts-expect-error Types mismatch due to dynamic key exclusion
                  return rest;
              }
         } else {
              // eslint-disable-next-line @typescript-eslint/no-unused-vars
              const { secretKey, ...rest } = p;
-             // @ts-expect-error Types mismatch due to dynamic key exclusion
              return rest;
         }
     }));
@@ -260,7 +258,6 @@ export class ConfigService {
       // 6. Restore Users
         for (const user of data.users) {
             // Detach accounts to handle separately
-            // @ts-expect-error accounts might allow any
             const { accounts, ...userFields } = user;
 
             await tx.user.upsert({

@@ -1,4 +1,4 @@
-import { AdapterConfig, Job, SystemSetting, User, Group, SsoProvider, EncryptionProfile } from "@prisma/client";
+import { AdapterConfig, Job, SystemSetting, User, Group, SsoProvider, EncryptionProfile, Account } from "@prisma/client";
 
 export interface AppConfigurationBackup {
   metadata: {
@@ -10,7 +10,7 @@ export interface AppConfigurationBackup {
   settings: SystemSetting[];
   adapters: AdapterConfig[];
   jobs: Job[];
-  users: User[];
+  users: (User & { accounts: Account[] })[];
   groups: Group[];
   // Permissions are stored as JSON strings in the Group model in the current schema.
   // Ideally, if we had a Permission model it would be included,

@@ -313,7 +313,7 @@ export function ConfigBackupSettings({ initialSettings, storageAdapters, encrypt
                                     please use the <b>Storage Explorer</b> instead.
                                 </span>
                             </p>
-                            
+
                             <Dialog open={isRestoreOpen} onOpenChange={setIsRestoreOpen}>
                                 <DialogTrigger asChild>
                                     <Button variant="outline" size="sm" className="w-full md:w-auto">

@@ -212,7 +212,9 @@ export class StorageService {
                  let label = "Unknown";
 
                  // Handle Config Backups
-                 if (sidecar.sourceType === "SYSTEM") {
+                 const isConfigBackup = sidecar.sourceType === "SYSTEM" || file.name.startsWith("config_backup_");
+
+                 if (isConfigBackup) {
                      count = 1; // It's one config
                      label = "System Config";
                  } else {
@@ -227,9 +229,9 @@ export class StorageService {
 
                  return {
                      ...file,
-                     jobName: sidecar.jobName || (sidecar.sourceType === "SYSTEM" ? "Config Backup" : undefined),
-                     sourceName: sidecar.sourceName || (sidecar.sourceType === "SYSTEM" ? "System" : undefined),
-                     sourceType: sidecar.sourceType,
+                     jobName: sidecar.jobName || (isConfigBackup ? "Config Backup" : undefined),
+                     sourceName: sidecar.sourceName || (isConfigBackup ? "System" : undefined),
+                     sourceType: sidecar.sourceType || (isConfigBackup ? "SYSTEM" : undefined),
                      engineVersion: sidecar.engineVersion,
                      dbInfo: { count, label },
                      isEncrypted,
@@ -298,12 +300,14 @@ export class StorageService {
              }
 
              // 3. Regex Fallback
+             const isConfigBackup = potentialJobName === "config-backups" || potentialJobName === "config_backup" || file.name.startsWith("config_backup_");
+
              return {
                  ...file,
-                 jobName: potentialJobName || 'Unknown',
-                 sourceName: 'Unknown',
-                 sourceType: 'unknown',
-                 dbInfo,
+                 jobName: isConfigBackup ? "Config Backup" : (potentialJobName || 'Unknown'),
+                 sourceName: isConfigBackup ? "System" : 'Unknown',
+                 sourceType: isConfigBackup ? "SYSTEM" : 'unknown',
+                 dbInfo: isConfigBackup ? { count: 1, label: "System Config" } : dbInfo,
                  isEncrypted,
                  encryptionProfileId,
                  compression

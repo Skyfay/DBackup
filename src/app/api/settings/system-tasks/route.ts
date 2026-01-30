@@ -19,6 +19,7 @@ export async function GET(_req: NextRequest) {
     for (const [_key, taskId] of Object.entries(SYSTEM_TASKS)) {
         const schedule = await systemTaskService.getTaskConfig(taskId);
         const runOnStartup = await systemTaskService.getTaskRunOnStartup(taskId);
+        const enabled = await systemTaskService.getTaskEnabled(taskId);
         const config = DEFAULT_TASK_CONFIG[taskId];
 
         if (!config) continue;
@@ -27,6 +28,7 @@ export async function GET(_req: NextRequest) {
             id: taskId,
             schedule,
             runOnStartup,
+            enabled,
             label: config.label,
             description: config.description
         });
@@ -43,7 +45,7 @@ export async function POST(req: NextRequest) {
     await checkPermission(PERMISSIONS.SETTINGS.WRITE);
 
     const body = await req.json();
-    const { taskId, schedule, runOnStartup } = body;
+    const { taskId, schedule, runOnStartup, enabled } = body;
 
     if (!taskId) {
          return NextResponse.json({ error: "Missing taskId" }, { status: 400 });
@@ -57,6 +59,10 @@ export async function POST(req: NextRequest) {
         await systemTaskService.setTaskRunOnStartup(taskId, runOnStartup);
     }
 
+    if (enabled !== undefined) {
+        await systemTaskService.setTaskEnabled(taskId, enabled);
+    }
+
     // Refresh scheduler
     await scheduler.refresh();
 
@@ -65,7 +71,7 @@ export async function POST(req: NextRequest) {
             session.user.id,
             AUDIT_ACTIONS.UPDATE,
             AUDIT_RESOURCES.SYSTEM,
-            { task: taskId, schedule, runOnStartup },
+            { task: taskId, schedule, runOnStartup, enabled },
             taskId
         );
     }

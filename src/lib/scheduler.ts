@@ -48,6 +48,12 @@ export class BackupScheduler {
             // 2. System Tasks
             for (const taskId of Object.values(SYSTEM_TASKS)) {
                 try {
+                    const enabled = await systemTaskService.getTaskEnabled(taskId);
+                    if (!enabled) {
+                        console.log(`[Scheduler] System Task '${taskId}' is disabled.`);
+                        continue;
+                    }
+
                     const schedule = await systemTaskService.getTaskConfig(taskId);
                     if (schedule && cron.validate(schedule)) {
                         console.log(`[Scheduler] Scheduling system task '${taskId}' with '${schedule}'`);

@@ -13,6 +13,7 @@ interface SystemTask {
     id: string;
     schedule: string;
     runOnStartup: boolean;
+    enabled: boolean;
     label: string;
     description: string;
 }
@@ -61,6 +62,31 @@ export function SystemTasksSettings() {
             }
         } catch {
             toast.error("Error saving schedule");
+        }
+    };
+
+    const handleToggleEnabled = async (taskId: string, current: boolean) => {
+        try {
+            // Optimistic update
+            const newTasks = tasks.map(t => t.id === taskId ? { ...t, enabled: !current } : t);
+            setTasks(newTasks);
+
+            const res = await fetch("/api/settings/system-tasks", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ taskId, enabled: !current }),
+            });
+
+            if (!res.ok) {
+                // Revert
+                fetchTasks();
+                toast.error("Failed to update setting");
+            } else {
+                toast.success("Task status updated");
+            }
+        } catch {
+             fetchTasks();
+            toast.error("Error saving setting");
         }
     };
 
@@ -120,11 +146,23 @@ export function SystemTasksSettings() {
                     {!loading && tasks.map(task => (
                         <div key={task.id} className="flex items-center justify-between p-4 border rounded-lg">
                             <div className="space-y-1 flex-1">
-                                <h4 className="font-semibold">{task.label}</h4>
+                                <div className="flex items-center space-x-2">
+                                    <h4 className="font-semibold">{task.label}</h4>
+                                    {!task.enabled && <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded">Disabled</span>}
+                                </div>
                                 <p className="text-sm text-muted-foreground">{task.description}</p>
                             </div>
                             <div className="flex items-center space-x-4">
-                                <div className="flex items-center space-x-2">
+                                <div className="flex items-center space-x-2 border-r pr-4 mr-2">
+                                     <Switch
+                                        id={`enabled-${task.id}`}
+                                        checked={task.enabled}
+                                        onCheckedChange={() => handleToggleEnabled(task.id, task.enabled)}
+                                     />
+                                     <Label htmlFor={`enabled-${task.id}`} className="text-xs">Enabled</Label>
+                                </div>
+
+                                <div className={`flex items-center space-x-2 ${!task.enabled ? 'opacity-50 pointer-events-none' : ''}`}>
                                     <span className="text-sm font-mono text-muted-foreground">Cron:</span>
                                     <Input
                                         className="w-37.5 font-mono"

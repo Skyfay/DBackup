@@ -24,42 +24,91 @@ export const DEFAULT_TASK_CONFIG = {
     [SYSTEM_TASKS.UPDATE_DB_VERSIONS]: {
         interval: "0 * * * *", // Every hour
         runOnStartup: true,
+        enabled: true,
         label: "Update Database Versions",
         description: "Checks connectivity and fetches version information from all configured database sources."
     },
     [SYSTEM_TASKS.SYNC_PERMISSIONS]: {
         interval: "0 0 * * *", // Daily at midnight
         runOnStartup: true,
+        enabled: true,
         label: "Sync SuperAdmin Permissions",
         description: "Ensures the SuperAdmin group always has all available permissions."
     },
     [SYSTEM_TASKS.HEALTH_CHECK]: {
         interval: "*/1 * * * *", // Every minute
         runOnStartup: false,
+        enabled: true,
         label: "Health Check & Connectivity",
         description: "Periodically pings all configured database and storage adapters to track availability and latency."
     },
     [SYSTEM_TASKS.CLEAN_OLD_LOGS]: {
         interval: "0 0 * * *", // Daily at midnight
         runOnStartup: true,
+        enabled: true,
         label: "Clean Old Logs",
         description: "Removes audit logs older than the configured retention period (default: 90 days) to prevent disk filling."
     },
     [SYSTEM_TASKS.CHECK_FOR_UPDATES]: {
         interval: "0 0 * * *", // Daily at midnight
         runOnStartup: true,
+        enabled: true,
         label: "Check for Updates",
         description: "Checks if a new version of the application is available in the GitLab Container Registry."
     },
     [SYSTEM_TASKS.CONFIG_BACKUP]: {
         interval: "0 3 * * *", // 3 AM
         runOnStartup: false,
+        enabled: false, // Default disabled until user enables it
         label: "Automated Configuration Backup",
         description: "Backs up the internal system configuration (Settings, Adapters, Jobs, Users) to the configured storage."
     }
 };
 
 export class SystemTaskService {
+
+    async getTaskEnabled(taskId: string): Promise<boolean> {
+        // Special mapping for CONFIG_BACKUP to keep sync with Config Backup Settings page
+        if (taskId === SYSTEM_TASKS.CONFIG_BACKUP) {
+             const legacyKey = "config.backup.enabled";
+             const legacySetting = await prisma.systemSetting.findUnique({ where: { key: legacyKey } });
+             if (legacySetting) return legacySetting.value === 'true';
+             // Fallback to default config if not set
+             return DEFAULT_TASK_CONFIG[taskId].enabled;
+        }
+
+        const key = `task.${taskId}.enabled`;
+        const setting = await prisma.systemSetting.findUnique({ where: { key } });
+
+        if (setting) {
+            return setting.value === 'true';
+        }
+
+        // Return default if not set in DB
+        // @ts-expect-error - enabled might not be in generic TaskConfig type implicitly but we added it above
+        return DEFAULT_TASK_CONFIG[taskId as keyof typeof DEFAULT_TASK_CONFIG]?.enabled ?? true;
+    }
+
+    async setTaskEnabled(taskId: string, enabled: boolean) {
+        // Special mapping for CONFIG_BACKUP
+        if (taskId === SYSTEM_TASKS.CONFIG_BACKUP) {
+             const legacyKey = "config.backup.enabled";
+             await prisma.systemSetting.upsert({
+                where: { key: legacyKey },
+                update: { value: String(enabled) },
+                create: { key: legacyKey, value: String(enabled), description: "Enable Automated Configuration Backup" }
+            });
+            return;
+        }
+
+        const key = `task.${taskId}.enabled`;
+        const value = String(enabled);
+        await prisma.systemSetting.upsert({
+            where: { key },
+            update: { value },
+            create: { key, value, description: `Enabled status for ${taskId}` }
+        });
+    }
 
     async getTaskConfig(taskId: string) {
         // Special mapping: For CONFIG_BACKUP, we use the user-facing setting key if it exists

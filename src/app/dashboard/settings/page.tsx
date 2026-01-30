@@ -47,14 +47,11 @@ export default async function SettingsPage() {
 
     // Load Options for Config Backup
 
-    // Simple heuristic for now since I can't import registry easily in RSC without side effects sometimes.
-    // Actually, `src/lib/adapters/index.ts` is safe.
-    // But `type` in DB is the ID of adapter e.g. "mysql", "filesystem".
-    // I will fetch all and filter in JS for now to be safe, assuming < 100 adapters.
-    const allAdapters = await prisma.adapterConfig.findMany({ select: { id: true, name: true, type: true }});
-    // Hardcoded known storage types list for now.
-    const storageTypes = ["filesystem", "s3", "s3-aws", "s3-r2", "s3-hetzner", "sftp"];
-    const filteredStorageAdapters = allAdapters.filter(a => storageTypes.includes(a.type) || a.type.startsWith("s3"));
+    // Correct approach: Fetch where type is 'storage'
+    const filteredStorageAdapters = await prisma.adapterConfig.findMany({
+        where: { type: "storage" },
+        select: { id: true, name: true }
+    });
 
     const encryptionProfiles = await prisma.encryptionProfile.findMany({ select: { id: true, name: true }});
 

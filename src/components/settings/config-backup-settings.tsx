@@ -59,9 +59,9 @@ export function ConfigBackupSettings({ initialSettings, storageAdapters, encrypt
     })
 
     const onSubmit = async (values: z.infer<typeof formSchema>) => {
-        const submission = { 
-            ...values, 
-            profileId: values.profileId === "NO_ENCRYPTION" ? "" : values.profileId 
+        const submission = {
+            ...values,
+            profileId: values.profileId === "NO_ENCRYPTION" ? "" : values.profileId
         };
         const result = await updateConfigBackupSettings(submission);
         if (result.success) {

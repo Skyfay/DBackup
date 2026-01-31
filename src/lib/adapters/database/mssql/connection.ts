@@ -48,7 +48,7 @@ export async function test(config: any): Promise<{ success: boolean; message: st
 
         return {
             success: true,
-            message: `Connected to ${friendlyName}`,
+            message: `Connection successful (${friendlyName})`,
             version,
         };
     } catch (error: any) {
@@ -122,5 +122,53 @@ export async function executeQuery(config: any, query: string, database?: string
         if (pool) {
             await pool.close();
         }
+    }
+}
+
+/**
+ * Check if the SQL Server edition supports backup compression
+ * Supported in: Enterprise, Standard (SQL 2008 R2+), Business Intelligence, Developer
+ * NOT supported in: Express, Web
+ */
+export async function supportsCompression(config: any): Promise<boolean> {
+    try {
+        const result = await executeQuery(
+            config,
+            "SELECT SERVERPROPERTY('Edition') AS Edition, SERVERPROPERTY('EngineEdition') AS EngineEdition"
+        );
+
+        const edition = result.recordset[0]?.Edition || "";
+        const engineEdition = result.recordset[0]?.EngineEdition || 0;
+
+        // EngineEdition values:
+        // 1 = Express (no compression)
+        // 2 = Standard (compression supported)
+        // 3 = Enterprise (compression supported)
+        // 4 = Express (no compression)
+        // 5 = Azure SQL Database (depends on service tier)
+        // 6 = Azure Synapse Analytics
+        // 8 = Azure SQL Managed Instance (compression supported)
+        // 9 = Azure SQL Edge (no compression by default)
+
+        // Express editions don't support compression
+        if (edition.toLowerCase().includes("express")) {
+            return false;
+        }
+
+        // Web edition doesn't support compression
+        if (edition.toLowerCase().includes("web")) {
+            return false;
+        }
+
+        // Azure SQL Edge uses EngineEdition 9, limited compression support
+        if (engineEdition === 9) {
+            return false;
+        }
+
+        // All other editions (Enterprise, Standard, Developer) support compression
+        return engineEdition >= 2 && engineEdition <= 3 || engineEdition === 8;
+    } catch {
+        // If we can't determine, don't use compression to be safe
+        return false;
     }
 }

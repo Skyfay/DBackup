@@ -60,7 +60,9 @@ export async function restore(
 
     try {
         const dialect = getDialect(config.detectedVersion);
-        const backupPath = config.backupPath || "/var/opt/mssql/backup";
+        const serverBackupPath = config.backupPath || "/var/opt/mssql/backup";
+        // localBackupPath is where the host can access the backup files (e.g., Docker volume mount)
+        const localBackupPath = config.localBackupPath || serverBackupPath;
 
         // Determine target database(s) from config
         const dbMapping = config.databaseMapping as
@@ -87,11 +89,12 @@ export async function restore(
 
         // Copy backup file to server-accessible location
         const fileName = path.basename(sourcePath);
-        const serverBakPath = path.posix.join(backupPath, fileName);
+        const serverBakPath = path.posix.join(serverBackupPath, fileName);
+        const localBakPath = path.join(localBackupPath, fileName);
 
         log(`Copying backup file to server...`);
-        await copyFile(sourcePath, serverBakPath);
-        log(`Backup file staged at: ${serverBakPath}`);
+        await copyFile(sourcePath, localBakPath);
+        log(`Backup file staged at: ${serverBakPath} (local: ${localBakPath})`);
 
         // Get file list from backup to determine logical names
         const fileListQuery = `RESTORE FILELISTONLY FROM DISK = '${serverBakPath}'`;
@@ -140,8 +143,8 @@ export async function restore(
             }
         }
 
-        // Clean up staged backup file
-        await fs.unlink(serverBakPath).catch(() => {});
+        // Clean up staged backup file using the local path
+        await fs.unlink(localBakPath).catch(() => {});
 
         log(`Restore finished successfully`);
 

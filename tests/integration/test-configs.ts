@@ -71,6 +71,9 @@ export const testDatabases = [
         config: { type: 'mongodb', host: TEST_HOST, port: 27708, user: 'root', password: 'rootpassword', database: 'testdb' }
     },
     // --- Microsoft SQL Server ---
+    // MSSQL backups are created on the server filesystem, so we need both:
+    // - backupPath: Server path (inside container)
+    // - localBackupPath: Host path (where docker volume is mounted)
     {
         name: 'Test MSSQL 2019',
         config: {
@@ -82,7 +85,8 @@ export const testDatabases = [
             database: 'testdb',
             encrypt: true,
             trustServerCertificate: true,
-            backupPath: '/var/opt/mssql/backup'
+            backupPath: '/var/opt/mssql/backup',
+            localBackupPath: './backups/mssql'
         }
     },
     {
@@ -96,7 +100,8 @@ export const testDatabases = [
             database: 'testdb',
             encrypt: true,
             trustServerCertificate: true,
-            backupPath: '/var/opt/mssql/backup'
+            backupPath: '/var/opt/mssql/backup',
+            localBackupPath: './backups/mssql'
         }
     },
     {
@@ -110,7 +115,8 @@ export const testDatabases = [
             database: 'testdb',
             encrypt: true,
             trustServerCertificate: true,
-            backupPath: '/var/opt/mssql/backup'
+            backupPath: '/var/opt/mssql/backup',
+            localBackupPath: './backups/mssql'
         }
     }
 ];

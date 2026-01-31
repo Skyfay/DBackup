@@ -36,7 +36,7 @@ A robust, self-hosted solution for automating database backups. Manage sources, 
 | **MariaDB** | 10, 11 |
 | **MongoDB** | 4, 5, 6, 7, 8 |
 | **SQLite** | 3.x (Local & SSH) |
-| **SQL Server** | 2017, 2019, 2022, Azure SQL Edge |
+| **Microsoft SQL Server** | 2017, 2019, 2022, Azure SQL Edge |
 
 > For detailed technical information about client versions and extensive compatibility notes, please refer to our [Supported Database Versions Documentation](docs/development/supported-database-versions.md).
 ## 🐳 Deployment (Docker)

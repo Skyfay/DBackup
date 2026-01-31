@@ -93,7 +93,7 @@ Then open [http://localhost:3000](http://localhost:3000) and create your first a
 | **MariaDB** | 10.x, 11.x |
 | **MongoDB** | 4.x, 5.x, 6.x, 7.x, 8.x |
 | **SQLite** | 3.x (Local & SSH) |
-| **SQL Server** | 2017, 2019, 2022, Azure SQL Edge |
+| **Microsoft SQL Server** | 2017, 2019, 2022, Azure SQL Edge |
 
 ## Architecture at a Glance
 

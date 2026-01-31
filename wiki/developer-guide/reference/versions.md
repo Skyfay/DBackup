@@ -11,7 +11,7 @@ This document lists the database engines and versions supported by DBackup.
 | **MariaDB** | 10.x, 11.x | `mysqldump` | Native support |
 | **MongoDB** | 4.x, 5.x, 6.x, 7.x, 8.x | `mongodump` | Standard operations |
 | **SQLite** | 3.x | `sqlite3` | File-based |
-| **SQL Server** | 2017, 2019, 2022 | `mssql` npm | T-SQL commands |
+| **Microsoft SQL Server** | 2017, 2019, 2022 | `mssql` npm | T-SQL commands |
 
 ## Docker Container Tools
 
@@ -150,7 +150,7 @@ For SSH-based remote SQLite backups:
 - Target server must have `sqlite3` installed
 - SSH key authentication recommended
 
-## SQL Server
+## Microsoft SQL Server
 
 ### Supported Versions
 

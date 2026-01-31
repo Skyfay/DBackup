@@ -21,7 +21,8 @@ export default defineConfig({
         items: [
           { text: 'GitHub', link: 'https://github.com/Skyfay/dbackup' },
           { text: 'GitLab', link: 'https://gitlab.com/Skyfay/dbackup' },
-          { text: 'Changelog', link: '/changelog' }
+          { text: 'Changelog', link: '/changelog' },
+          { text: 'Roadmap', link: '/roadmap' }
         ]
       }
     ],

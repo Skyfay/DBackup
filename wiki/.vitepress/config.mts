@@ -5,6 +5,9 @@ export default defineConfig({
   title: "DBackup",
   description: "Self-hosted database backup automation with encryption, compression, and retention policies",
   lang: 'en-US',
+  ignoreDeadLinks: [
+    /localhost/
+  ],
   head: [
     ['link', { rel: 'icon', href: '/favicon.ico' }]
   ],
@@ -148,6 +151,7 @@ export default defineConfig({
           text: 'Reference',
           collapsed: true,
           items: [
+            { text: 'Environment Variables', link: '/developer-guide/reference/environment' },
             { text: 'Database Schema', link: '/developer-guide/reference/schema' },
             { text: 'Supported Versions', link: '/developer-guide/reference/versions' },
             { text: 'Testing Guide', link: '/developer-guide/reference/testing' }

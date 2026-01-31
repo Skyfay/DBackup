@@ -166,7 +166,7 @@
     - [x] **User Assignment**: Assign users to specific groups.
     - [x] **Access Control**: Implement permission guards (Server Actions & Components).
     - [x] Administrator manage other user (eg. reset 2FA)
-    - [ ] Let the user reset his own password.
+    - [x] Let the user reset his own password.
     - [ ] **UX & Refinement**:
         - [X] Show 2FA Status (Active/Inactive) in User Table
         - [ ] Invite Flow (Email link) or Force Password Change on first login (with SMTP combined)

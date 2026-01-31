@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Loader2, CheckCircle2, AlertCircle, Fingerprint, Plus, Trash2, Smartphone } from "lucide-react"
+import { Loader2, CheckCircle2, AlertCircle, Fingerprint, Plus, Trash2, Smartphone, KeyRound } from "lucide-react"
 import { QRCodeSVG } from "qrcode.react"
 import { toast } from "sonner"
 import { Switch } from "@/components/ui/switch"
@@ -22,7 +22,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { togglePasskeyTwoFactor as togglePasskeyAction } from "@/app/actions/user"
+import { togglePasskeyTwoFactor as togglePasskeyAction, updateOwnPassword } from "@/app/actions/user"
 import { User, Passkey } from "@prisma/client"
 import { formatTwoFactorCode } from "@/lib/utils"
 
@@ -30,9 +30,10 @@ interface SecurityFormProps {
     canUpdatePassword: boolean;
     canManage2FA: boolean;
     canManagePasskeys: boolean;
+    hasPassword: boolean;
 }
 
-export function SecurityForm({ canUpdatePassword: _canUpdatePassword, canManage2FA, canManagePasskeys }: SecurityFormProps) {
+export function SecurityForm({ canUpdatePassword, canManage2FA, canManagePasskeys, hasPassword }: SecurityFormProps) {
     const { data: session, refetch } = authClient.useSession()
     const [isPending, setIsPending] = useState(false)
     const [totpURI, setTotpURI] = useState<string | null>(null)
@@ -41,6 +42,12 @@ export function SecurityForm({ canUpdatePassword: _canUpdatePassword, canManage2
     const [showBackupCodes, setShowBackupCodes] = useState(false)
     const [password, setPassword] = useState("")
     const [isDisabling, setIsDisabling] = useState(false)
+
+    // Password State
+    const [currentPassword, setCurrentPassword] = useState("")
+    const [newPassword, setNewPassword] = useState("")
+    const [confirmPassword, setConfirmPassword] = useState("")
+    const [isChangingPassword, setIsChangingPassword] = useState(false)
 
     // Passkey State
     const [passkeys, setPasskeys] = useState<Passkey[]>([])
@@ -230,6 +237,116 @@ export function SecurityForm({ canUpdatePassword: _canUpdatePassword, canManage2
 
     return (
         <div className="space-y-6">
+            {hasPassword && (
+            <Card>
+                <CardHeader>
+                    <CardTitle>Change Password</CardTitle>
+                    <CardDescription>
+                        Update your password associated with this account.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="flex items-center justify-between">
+                         <div className="flex items-center gap-2">
+                             <div className="p-2 rounded-full bg-orange-100 text-orange-600">
+                                <KeyRound className="h-5 w-5" />
+                            </div>
+                            <div>
+                                <h3 className="font-medium">Password</h3>
+                                <p className="text-sm text-muted-foreground">
+                                    Secure your account with a strong password.
+                                </p>
+                            </div>
+                        </div>
+
+                        <Dialog open={isChangingPassword} onOpenChange={(open) => {
+                            if (!open) {
+                                setCurrentPassword("")
+                                setNewPassword("")
+                                setConfirmPassword("")
+                            }
+                            setIsChangingPassword(open)
+                        }}>
+                            <DialogTrigger asChild>
+                                <Button variant="outline" size="sm" disabled={!canUpdatePassword}>Change Password</Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                                <DialogHeader>
+                                    <DialogTitle>Change Password</DialogTitle>
+                                    <DialogDescription>
+                                        Enter your current password and a new one.
+                                    </DialogDescription>
+                                </DialogHeader>
+                                <div className="space-y-4 py-4">
+                                     <div className="space-y-2">
+                                        <Label htmlFor="current-password">Current Password</Label>
+                                        <Input
+                                            id="current-password"
+                                            type="password"
+                                            value={currentPassword}
+                                            onChange={(e) => setCurrentPassword(e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="new-password">New Password</Label>
+                                        <Input
+                                            id="new-password"
+                                            type="password"
+                                            value={newPassword}
+                                            onChange={(e) => setNewPassword(e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="confirm-password">Confirm New Password</Label>
+                                        <Input
+                                            id="confirm-password"
+                                            type="password"
+                                            value={confirmPassword}
+                                            onChange={(e) => setConfirmPassword(e.target.value)}
+                                        />
+                                    </div>
+                                </div>
+                                <DialogFooter>
+                                    <Button variant="outline" onClick={() => setIsChangingPassword(false)}>Cancel</Button>
+                                    <Button
+                                        onClick={async () => {
+                                            if (newPassword !== confirmPassword) {
+                                                toast.error("New passwords do not match")
+                                                return
+                                            }
+                                            if (newPassword.length < 8) {
+                                                toast.error("Password must be at least 8 characters")
+                                                return
+                                            }
+                                            setIsPending(true)
+                                            try {
+                                                const result = await updateOwnPassword(currentPassword, newPassword);
+                                                if (!result.success) {
+                                                    toast.error(result.error)
+                                                } else {
+                                                    toast.success("Password updated successfully")
+                                                    setIsChangingPassword(false)
+                                                }
+                                            } catch (error) {
+                                                console.error(error)
+                                                toast.error("Failed to update password")
+                                            } finally {
+                                                setIsPending(false)
+                                            }
+                                        }}
+                                        disabled={!currentPassword || !newPassword || !confirmPassword || isPending}
+                                    >
+                                        {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                        Update Password
+                                    </Button>
+                                </DialogFooter>
+                            </DialogContent>
+                        </Dialog>
+                    </div>
+                </CardContent>
+            </Card>
+            )}
+
             <Card>
                 <CardHeader>
                     <CardTitle>Two-Factor Authentication (TOTP)</CardTitle>

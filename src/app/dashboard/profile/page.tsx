@@ -1,4 +1,5 @@
 import { auth } from "@/lib/auth";
+import prisma from "@/lib/prisma";
 import { headers } from "next/headers";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AppearanceForm } from "@/components/settings/appearance-form";
@@ -24,6 +25,13 @@ export default async function ProfilePage() {
     const canUpdatePassword = permissions.includes(PERMISSIONS.PROFILE.UPDATE_PASSWORD);
     const canManage2FA = permissions.includes(PERMISSIONS.PROFILE.MANAGE_2FA);
     const canManagePasskeys = permissions.includes(PERMISSIONS.PROFILE.MANAGE_PASSKEYS);
+
+    const hasPassword = await prisma.account.findFirst({
+        where: {
+            userId: session.user.id,
+            providerId: "credential"
+        }
+    }).then(acc => !!acc);
 
     return (
         <div className="space-y-6">
@@ -62,6 +70,7 @@ export default async function ProfilePage() {
                         canUpdatePassword={canUpdatePassword}
                         canManage2FA={canManage2FA}
                         canManagePasskeys={canManagePasskeys}
+                        hasPassword={hasPassword}
                     />
                 </TabsContent>
             </Tabs>

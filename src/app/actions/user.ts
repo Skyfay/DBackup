@@ -122,6 +122,7 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import prisma from "@/lib/prisma";
 
+// @no-permission-required - Self-service: Users can always change their own password
 export async function updateOwnPassword(currentPassword: string, newPassword: string) {
     const currentUser = await getCurrentUserWithGroup();
     if (!currentUser) throw new Error("Unauthorized");

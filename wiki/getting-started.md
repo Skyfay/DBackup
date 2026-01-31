@@ -1,6 +1,6 @@
 # Getting Started
 
-Welcome to the Database Backup Manager. This guide will help you get the system up and running.
+Welcome to DBackup. This guide will help you get the system up and running.
 
 ## Prerequisites
 
@@ -9,7 +9,7 @@ Welcome to the Database Backup Manager. This guide will help you get the system 
 
 ## Installation with Docker
 
-The easiest way to run the Backup Manager is using Docker Compose.
+The easiest way to run DBackup is using Docker Compose.
 
 1. **Clone Repository**
    ```bash

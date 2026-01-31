@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Database Backup Manager",
+  title: "DBackup",
   description: "Manage your database backups easily.",
 };
 

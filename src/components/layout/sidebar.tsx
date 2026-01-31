@@ -79,7 +79,7 @@ export function Sidebar({ permissions = [], isSuperAdmin = false, updateAvailabl
     return (
         <div className="w-64 border-r bg-background h-screen flex flex-col hidden md:flex sticky top-0">
             <div className="h-16 flex items-center px-6 border-b">
-                <h1 className="text-xl font-bold tracking-tight">Backup Manager</h1>
+                <h1 className="text-xl font-bold tracking-tight">DBackup Dashboard</h1>
             </div>
             <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
                 {sidebarItems.map((item) => {

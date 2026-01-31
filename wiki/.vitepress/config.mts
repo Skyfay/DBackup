@@ -2,8 +2,8 @@ import { defineConfig } from 'vitepress'
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
-  title: "Database Backup Manager",
-  description: "Documentation and guides for Database Backup Manager",
+  title: "DBackup",
+  description: "Documentation and guides for DBackup",
   lang: 'en-US',
   themeConfig: {
     // https://vitepress.dev/reference/default-theme-config
@@ -36,7 +36,7 @@ export default defineConfig({
 
     footer: {
       message: 'Released under the MIT License.',
-      copyright: 'Copyright © 2026 Database Backup Manager'
+      copyright: 'Copyright © 2026 DBackup'
     }
   }
 })

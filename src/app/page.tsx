@@ -35,7 +35,7 @@ export default async function Home({ searchParams }: HomeProps) {
     return (
         <div className="flex min-h-screen flex-col items-center justify-center bg-muted/50">
              <div className="mb-8 font-bold text-2xl tracking-tight">
-                Database Backup Manager
+                DBackup
              </div>
             <LoginForm
                 allowSignUp={userCount === 0}

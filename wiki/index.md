@@ -1,6 +1,6 @@
-# Database Backup Manager
+# DBackup
 
-Welcome to the official Wiki of the Database Backup Manager.
+Welcome to the official Wiki of DBackup.
 
 A self-hosted web application for automating database backups (MySQL, PostgreSQL, MongoDB, SQLite) with encryption, compression, and flexible retention policies.
 

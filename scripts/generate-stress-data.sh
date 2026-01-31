@@ -48,7 +48,7 @@ echo ""
 populate_mysql() {
     local CONTAINER=$1
     local NAME=$2
-    local DB_NAME="stressdb"
+    local DB_NAME="testdb"
     local CLI_CMD=${3:-mysql}  # mysql or mariadb
 
     echo -e "\n${YELLOW}📊 Populating ${NAME}...${NC}"
@@ -124,7 +124,7 @@ EOF
 populate_postgres() {
     local CONTAINER=$1
     local NAME=$2
-    local DB_NAME="stressdb"
+    local DB_NAME="testdb"
 
     echo -e "\n${YELLOW}📊 Populating ${NAME}...${NC}"
 
@@ -175,7 +175,7 @@ EOF
 populate_mongodb() {
     local CONTAINER=$1
     local NAME=$2
-    local DB_NAME="stressdb"
+    local DB_NAME="testdb"
 
     echo -e "\n${YELLOW}📊 Populating ${NAME}...${NC}"
 
@@ -241,7 +241,7 @@ EOF
 populate_mssql() {
     local CONTAINER=$1
     local NAME=$2
-    local DB_NAME="stressdb"
+    local DB_NAME="testdb"
 
     echo -e "\n${YELLOW}📊 Populating ${NAME}...${NC}"
 
@@ -360,4 +360,4 @@ echo ""
 echo "You can now test backup/restore with large datasets:"
 echo "  1. Seed sources:  pnpm run test:seed"
 echo "  2. Open UI:       pnpm run dev"
-echo "  3. Select 'stressdb' database for backup jobs"
+echo "  3. Select 'testdb' database for backup jobs"

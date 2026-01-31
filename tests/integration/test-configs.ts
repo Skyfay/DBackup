@@ -1,7 +1,7 @@
 // Shared configuration for Integration Tests and Seeding
 const TEST_HOST = process.env.TEST_DB_HOST || 'localhost';
 
-// Available test databases: testdb (small), stressdb (large ~1.5GB via pnpm run test:stress:generate)
+// Test database: testdb (use pnpm run test:stress:generate to populate with ~1.5GB of data)
 export const testDatabases = [
     // --- MySQL ---
     {

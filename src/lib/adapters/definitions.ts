@@ -64,6 +64,18 @@ export const SQLiteSchema = z.object({
     passphrase: z.string().optional().describe("SSH Key Passphrase"),
 });
 
+export const MSSQLSchema = z.object({
+    host: z.string().default("localhost"),
+    port: z.coerce.number().default(1433),
+    user: z.string().min(1, "User is required"),
+    password: z.string().optional(),
+    database: z.union([z.string(), z.array(z.string())]).default(""),
+    encrypt: z.boolean().default(true).describe("Encrypt connection (required for Azure SQL)"),
+    trustServerCertificate: z.boolean().default(false).describe("Trust self-signed certificates (for development)"),
+    backupPath: z.string().default("/var/opt/mssql/backup").describe("Server-side path for .bak files"),
+    options: z.string().optional().describe("Additional backup options"),
+});
+
 export const LocalStorageSchema = z.object({
     basePath: z.string().min(1, "Base path is required").default("/backups").describe("Absolute path to store backups (e.g., /backups)"),
 });
@@ -138,6 +150,7 @@ export const ADAPTER_DEFINITIONS: AdapterDefinition[] = [
     { id: "postgres", type: "database", name: "PostgreSQL", configSchema: PostgresSchema },
     { id: "mongodb", type: "database", name: "MongoDB", configSchema: MongoDBSchema },
     { id: "sqlite", type: "database", name: "SQLite", configSchema: SQLiteSchema },
+    { id: "mssql", type: "database", name: "Microsoft SQL Server", configSchema: MSSQLSchema },
 
     { id: "local-filesystem", type: "storage", name: "Local Filesystem", configSchema: LocalStorageSchema },
     { id: "s3-generic", type: "storage", name: "S3 Compatible (Generic)", configSchema: S3GenericSchema },

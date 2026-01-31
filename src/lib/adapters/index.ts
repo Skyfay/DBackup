@@ -4,6 +4,7 @@ import { MariaDBAdapter } from "./database/mariadb";
 import { PostgresAdapter } from "./database/postgres";
 import { MongoDBAdapter } from "./database/mongodb";
 import { SQLiteAdapter } from "./database/sqlite";
+import { MSSQLAdapter } from "./database/mssql";
 import { LocalFileSystemAdapter } from "./storage/local";
 import { S3GenericAdapter, S3AWSAdapter, S3R2Adapter, S3HetznerAdapter } from "./storage/s3";
 import { SFTPStorageAdapter } from "./storage/sftp";
@@ -21,6 +22,7 @@ export function registerAdapters() {
     registry.register(PostgresAdapter);
     registry.register(MongoDBAdapter);
     registry.register(SQLiteAdapter);
+    registry.register(MSSQLAdapter);
 
     registry.register(LocalFileSystemAdapter);
     registry.register(S3GenericAdapter);

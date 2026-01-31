@@ -104,58 +104,67 @@ src/lib/adapters/database/mssql/
 
 ## ✅ Phasen-Roadmap
 
-### Phase 1: Foundation (Basis-Infrastruktur)
-- [ ] **1.1** Zod-Schema erstellen (`schema.ts`)
+### Phase 1: Foundation (Basis-Infrastruktur) ✅ DONE
+- [x] **1.1** Zod-Schema erstellen (`definitions.ts` - MSSQLSchema)
   - host, port (1433), user, password
   - database (single/multi)
   - encrypt (boolean, default: true für Azure)
   - trustServerCertificate (boolean, für Self-Signed)
   - backupPath (Server-seitiger Pfad für .bak Dateien)
-- [ ] **1.2** Adapter-Definition in `definitions.ts` hinzufügen
-- [ ] **1.3** Adapter in `src/lib/adapters/index.ts` registrieren
-- [ ] **1.4** Basis `index.ts` mit leeren Funktionsstubs
+- [x] **1.2** Adapter-Definition in `definitions.ts` hinzufügen
+- [x] **1.3** Adapter in `src/lib/adapters/index.ts` registrieren
+- [x] **1.4** Basis-Dateien erstellen:
+  - `index.ts` - Adapter-Export
+  - `connection.ts` - test(), getDatabases()
+  - `dump.ts` - Backup-Logik
+  - `restore.ts` - Restore-Logik
+  - `analyze.ts` - Dump-Analyse (Stub)
+  - `dialects/index.ts` - Dialect Factory
+  - `dialects/mssql-base.ts` - SQL Server 2019+
+  - `dialects/mssql-2017.ts` - SQL Server 2017
+- [x] **1.5** Dependencies installieren (`mssql`, `@types/mssql`)
 
 ### Phase 2: Connection & Version Detection
-- [ ] **2.1** `connection.ts` implementieren
+- [x] **2.1** `connection.ts` implementieren
   - `test()`: Verbindung via `mssql` npm-Package testen
   - Version auslesen: `SELECT @@VERSION`
   - Version normalisieren: `"Microsoft SQL Server 2022 (RTM)..."` → `"16.0.1000"` (Major.Minor.Build)
-- [ ] **2.2** `getDatabases()` implementieren
+- [x] **2.2** `getDatabases()` implementieren
   - Query: `SELECT name FROM sys.databases WHERE database_id > 4` (System-DBs ausschließen)
 - [ ] **2.3** Unit Tests für Connection
 
 ### Phase 3: Dialects
-- [ ] **3.1** `mssql-base.ts` (Base Dialect)
+- [x] **3.1** `mssql-base.ts` (Base Dialect)
   - `getBackupQuery(config, databases)`: T-SQL BACKUP-Statement generieren
   - `getRestoreQuery(config, backupPath, targetDb)`: T-SQL RESTORE-Statement
   - `getConnectionArgs(config)`: Für `sqlcmd` CLI (falls benötigt)
-- [ ] **3.2** `mssql-2017.ts` (Legacy Support, falls Unterschiede existieren)
-- [ ] **3.3** `index.ts` Dialect Factory
+- [x] **3.2** `mssql-2017.ts` (Legacy Support, falls Unterschiede existieren)
+- [x] **3.3** `index.ts` Dialect Factory
 - [ ] **3.4** Unit Tests für Dialects
 
 ### Phase 4: Backup (dump.ts)
-- [ ] **4.1** Backup-Logik implementieren
+- [x] **4.1** Backup-Logik implementieren
   - Verbindung zu MSSQL aufbauen (mssql npm)
   - T-SQL `BACKUP DATABASE` ausführen
   - Progress-Tracking via `STATS = 10` Option (alle 10% ein Log)
-- [ ] **4.2** Multi-Database Support
+- [x] **4.2** Multi-Database Support
   - Loop über alle ausgewählten DBs
   - Separate .bak Dateien oder kombiniertes Archiv
-- [ ] **4.3** Streaming/Download der .bak Datei
+- [x] **4.3** Streaming/Download der .bak Datei
   - **Option A**: SMB/CIFS Share mounten
   - **Option B**: SQL Server `OPENROWSET(BULK...)` + BCP
   - **Option C**: Backup-Pfad = gemountetes Volume (Docker)
-- [ ] **4.4** Error Handling & Empty-Check
+- [x] **4.4** Error Handling & Empty-Check
 - [ ] **4.5** Integration mit Compression/Encryption Pipeline
 
 ### Phase 5: Restore (restore.ts)
-- [ ] **5.1** Restore-Logik implementieren
+- [x] **5.1** Restore-Logik implementieren
   - .bak Datei auf Server hochladen (via gemountetes Volume)
   - T-SQL `RESTORE DATABASE` ausführen
-- [ ] **5.2** Database Mapping (Rename bei Restore)
+- [x] **5.2** Database Mapping (Rename bei Restore)
   - `WITH MOVE` Syntax für Dateiumbenennung
-- [ ] **5.3** Progress-Tracking
-- [ ] **5.4** prepareRestore() für Pre-Flight Checks
+- [x] **5.3** Progress-Tracking
+- [x] **5.4** prepareRestore() für Pre-Flight Checks
   - Ziel-DB existiert? Überschreiben erlaubt?
   - Versionskompatibilität prüfen
 

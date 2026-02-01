@@ -3,7 +3,7 @@
 All notable changes to DBackup are documented here.
 
 ## v0.9.2-beta - Branding & Documentation
-*In Development*
+*Released: February 1, 2026*
 
 This release focuses on improving the visual identity and accessibility of the project.
 

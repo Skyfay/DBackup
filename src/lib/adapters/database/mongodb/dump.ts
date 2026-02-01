@@ -5,8 +5,80 @@ import { spawn } from "child_process";
 import { createWriteStream } from "fs";
 import { waitForProcess } from "@/lib/adapters/process";
 import fs from "fs/promises";
+import path from "path";
+import {
+    createMultiDbTar,
+    createTempDir,
+    cleanupTempDir,
+} from "../common/tar-utils";
+import { TarFileEntry, TarManifest } from "../common/types";
 
-export async function dump(config: any, destinationPath: string, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void, _onProgress?: (percentage: number) => void): Promise<BackupResult> {
+/**
+ * Dump a single MongoDB database using mongodump --archive --gzip
+ */
+async function dumpSingleDatabase(
+    dbName: string,
+    outputPath: string,
+    config: any,
+    log: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void
+): Promise<void> {
+    const dialect = getDialect('mongodb', config.detectedVersion);
+
+    // Get base args but override to dump specific DB to file
+    const args: string[] = [];
+
+    if (config.uri) {
+        args.push(`--uri=${config.uri}`);
+    } else {
+        args.push('--host', config.host);
+        args.push('--port', String(config.port));
+
+        if (config.user && config.password) {
+            args.push('--username', config.user);
+            args.push('--password', config.password);
+            args.push('--authenticationDatabase', config.authenticationDatabase || 'admin');
+        }
+    }
+
+    args.push('--db', dbName);
+    args.push(`--archive=${outputPath}`);
+    args.push('--gzip');
+
+    // Add custom options
+    if (config.options) {
+        const parts = config.options.match(/[^\s"']+|"([^"]*)"|'([^']*)'/g) || [];
+        for (const part of parts) {
+            if (part.startsWith('"') && part.endsWith('"')) args.push(part.slice(1, -1));
+            else if (part.startsWith("'") && part.endsWith("'")) args.push(part.slice(1, -1));
+            else args.push(part);
+        }
+    }
+
+    // Mask password in logs
+    const logArgs = args.map(arg => {
+        if (arg.startsWith('--password')) return '--password=******';
+        if (arg.startsWith('mongodb')) return 'mongodb://...';
+        return arg;
+    });
+
+    log(`Dumping database: ${dbName}`, 'info', 'command', `mongodump ${logArgs.join(' ')}`);
+
+    const dumpProcess = spawn('mongodump', args);
+
+    dumpProcess.stderr.on('data', (data) => {
+        const msg = data.toString().trim();
+        if (msg) log(msg, 'info');
+    });
+
+    await waitForProcess(dumpProcess, 'mongodump');
+}
+
+export async function dump(
+    config: any,
+    destinationPath: string,
+    onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void,
+    _onProgress?: (percentage: number) => void
+): Promise<BackupResult> {
     const startedAt = new Date();
     const logs: string[] = [];
 
@@ -15,9 +87,11 @@ export async function dump(config: any, destinationPath: string, onLog?: (msg: s
         if (onLog) onLog(msg, level, type, details);
     };
 
+    let tempDir: string | null = null;
+
     try {
         // Prepare DB list
-         let dbs: string[] = [];
+        let dbs: string[] = [];
         if (Array.isArray(config.database)) {
             dbs = config.database;
         } else if (typeof config.database === 'string') {
@@ -27,38 +101,64 @@ export async function dump(config: any, destinationPath: string, onLog?: (msg: s
 
         const dialect = getDialect('mongodb', config.detectedVersion);
 
-        // Mongo dump logic with Dialect integration
-        // Note: Dialect handles --archive flag which streams to stdout if no path given.
+        // Case 1: Single Database or ALL - Direct archive dump
+        if (dbs.length <= 1) {
+            const args = dialect.getDumpArgs(config, dbs);
 
-        const targetDbs = (dbs.length > 0) ? [dbs[0]] : [];
-        if (dbs.length > 1) {
-             log(`Warning: Multiple databases selected but mongodump archive only supports one or all. Dumping '${dbs[0]}' only.`);
+            // Mask password in logs
+            const logArgs = args.map(arg => {
+                if (arg.startsWith('--password')) return '--password=******';
+                if (arg.startsWith('mongodb')) return 'mongodb://...';
+                return arg;
+            });
+
+            log(`Running mongo dump`, 'info', 'command', `mongodump ${logArgs.join(' ')}`);
+
+            const dumpProcess = spawn('mongodump', args);
+            const writeStream = createWriteStream(destinationPath);
+
+            dumpProcess.stdout.pipe(writeStream);
+
+            dumpProcess.stderr.on('data', (data) => {
+                log(data.toString().trim());
+            });
+
+            await waitForProcess(dumpProcess, 'mongodump');
         }
+        // Case 2: Multiple Databases - TAR archive with individual mongodump per DB
+        else {
+            log(`Dumping ${dbs.length} databases using TAR archive: ${dbs.join(', ')}`, 'info');
 
-        const args = dialect.getDumpArgs(config, targetDbs);
+            tempDir = await createTempDir('mongo-multidb-');
+            log(`Created temp directory: ${tempDir}`, 'info');
 
-        // Mask password in logs
-        // Note: Dialect returns args array. We log it safely.
-        // Simple masking for standard args. URI masking is harder but Dialect should handle it?
-        // Or we just do generic masking.
-        const logArgs = args.map(arg => {
-            if(arg.startsWith('--password')) return '--password=******';
-            if(arg.startsWith('mongodb')) return 'mongodb://...'; // simple mask
-            return arg;
-        });
+            const tarFiles: TarFileEntry[] = [];
 
-        log(`Running mongo dump`, 'info', 'command', `mongodump ${logArgs.join(' ')}`);
+            for (const dbName of dbs) {
+                const dumpFilename = `${dbName}.archive`;
+                const dumpPath = path.join(tempDir, dumpFilename);
 
-        const dumpProcess = spawn('mongodump', args);
-        const writeStream = createWriteStream(destinationPath);
+                await dumpSingleDatabase(dbName, dumpPath, config, log);
+                log(`Database ${dbName} dumped successfully`, 'success');
 
-        dumpProcess.stdout.pipe(writeStream);
+                tarFiles.push({
+                    name: dumpFilename,
+                    path: dumpPath,
+                    dbName,
+                    format: 'archive',
+                });
+            }
 
-        dumpProcess.stderr.on('data', (data) => {
-            log(data.toString().trim());
-        });
+            // Create TAR archive with manifest
+            log(`Creating TAR archive with ${tarFiles.length} databases...`, 'info');
+            const manifest: TarManifest = await createMultiDbTar(tarFiles, destinationPath, {
+                sourceType: 'mongodb',
+                engineVersion: config.detectedVersion || 'unknown',
+            });
 
-        await waitForProcess(dumpProcess, 'mongodump');
+            log(`Multi-database TAR archive created successfully`, 'success');
+            log(`Manifest: ${manifest.databases.length} databases, ${manifest.totalSize} bytes`, 'info');
+        }
 
         // Verify
         const stats = await fs.stat(destinationPath);
@@ -76,7 +176,7 @@ export async function dump(config: any, destinationPath: string, onLog?: (msg: s
         };
 
     } catch (error: any) {
-        log(`Dump failed: ${error.message}`);
+        log(`Dump failed: ${error.message}`, 'error');
         return {
             success: false,
             logs,
@@ -84,5 +184,9 @@ export async function dump(config: any, destinationPath: string, onLog?: (msg: s
             startedAt,
             completedAt: new Date(),
         };
+    } finally {
+        if (tempDir) {
+            await cleanupTempDir(tempDir);
+        }
     }
 }

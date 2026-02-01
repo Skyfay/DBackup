@@ -1,6 +1,6 @@
 # Multi-DB Backup Refactoring: TAR-Archiv Konzept
 
-> **Status:** In Bearbeitung (Phase 3 abgeschlossen)
+> **Status:** In Bearbeitung (Phase 4 abgeschlossen)
 > **Erstellt:** 2026-02-01
 > **Ziel:** Einheitliches TAR-basiertes Multi-DB Backup/Restore für alle Datenbank-Adapter
 
@@ -74,7 +74,7 @@ interface TarManifest {
 | **Phase 1** | Shared Utilities & Interfaces | 0.5 Tage | ✅ Abgeschlossen |
 | **Phase 2** | MySQL/MariaDB Adapter | 0.5 Tage | ✅ Abgeschlossen |
 | **Phase 3** | PostgreSQL Adapter | 0.5 Tage | ✅ Abgeschlossen |
-| **Phase 4** | MongoDB Adapter | 0.5 Tage | ⏳ Ausstehend |
+| **Phase 4** | MongoDB Adapter | 0.5 Tage | ✅ Abgeschlossen |
 | **Phase 5** | Integration & Testing | 1 Tag | ⏳ Ausstehend |
 | **Phase 6** | Code Cleanup | 0.5 Tage | ⏳ Ausstehend |
 | **Phase 7** | Dokumentation | 0.5 Tage | ⏳ Ausstehend |
@@ -377,10 +377,11 @@ if (await isMultiDbTar(sourcePath)) {
 
 ### TODOs Phase 4
 
-- [ ] `dump.ts` - Multi-DB mit separatem `mongodump` pro DB
-- [ ] `dump.ts` - Warning entfernen (jetzt supported!)
-- [ ] `restore.ts` - TAR-basiertes Multi-DB Restore
-- [ ] `restore.ts` - `--nsFrom/--nsTo` für DB-Renaming
+- [x] `dump.ts` - Multi-DB mit separatem `mongodump` pro DB (82 → 192 LOC)
+- [x] `dump.ts` - Warning entfernen (jetzt supported!)
+- [x] `restore.ts` - TAR-basiertes Multi-DB Restore (98 → 256 LOC)
+- [x] `restore.ts` - `--nsFrom/--nsTo` für DB-Renaming
+- [x] `analyze.ts` - Neue Datei für TAR-Manifest Analyse (23 LOC)
 - [ ] Integration Tests für MongoDB Multi-DB
 
 ---

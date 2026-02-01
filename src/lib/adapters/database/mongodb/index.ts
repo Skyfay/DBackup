@@ -3,6 +3,7 @@ import { MongoDBSchema } from "@/lib/adapters/definitions";
 import { dump } from "./dump";
 import { restore, prepareRestore } from "./restore";
 import { test, getDatabases } from "./connection";
+import { analyzeDump } from "./analyze";
 
 export const MongoDBAdapter: DatabaseAdapter = {
     id: "mongodb",
@@ -13,5 +14,6 @@ export const MongoDBAdapter: DatabaseAdapter = {
     restore,
     prepareRestore,
     test,
-    getDatabases
+    getDatabases,
+    analyzeDump
 };

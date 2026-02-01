@@ -7,6 +7,20 @@ All notable changes to DBackup are documented here.
 
 This release introduces a unified TAR-based backup format for multi-database backups across all database adapters. This brings consistency, reliability, and new features like selective restore.
 
+### ⚠️ BREAKING CHANGE: Multi-DB Backup Format Changed
+
+The backup format for **multi-database backups** has fundamentally changed from inline SQL/dump streams to TAR archives.
+
+- **Affected**: Multi-DB backups created with MySQL, PostgreSQL, or MongoDB in versions prior to v0.9.1
+- **Not Affected**: Single-database backups remain compatible
+- **Action Required**: Old multi-DB backups cannot be restored with v0.9.1+. Keep a copy of v0.9.0 if you need to restore legacy backups, or re-create backups after upgrading
+
+**Why this change?**
+- Enables selective restore (choose specific databases)
+- Enables database renaming during restore
+- Consistent format across all database types
+- Eliminates complex stream parsing that was error-prone
+
 ### ✨ New Features
 
 #### 📦 Unified TAR Multi-DB Format

@@ -555,7 +555,7 @@ export class RestoreService {
                 dbConf.privilegedAuth = privilegedAuth;
             }
 
-            const restoreResult = await sourceAdapter.restore(dbConf, tempFile, (msg, level?: LogLevel) => {
+            const restoreResult = await sourceAdapter.restore(dbConf, tempFile, (msg, level?: LogLevel, type?: LogType, details?: string) => {
                 // Use provided level, or determine based on msg content
                 let finalLevel: LogLevel = level || 'info';
 
@@ -570,7 +570,7 @@ export class RestoreService {
                     else if (lower.includes('warn')) finalLevel = 'warning';
                 }
 
-                log(msg, finalLevel);
+                log(msg, finalLevel, type, details);
             }, (p) => {
                 updateProgress(p, "Restoring Database");
             });

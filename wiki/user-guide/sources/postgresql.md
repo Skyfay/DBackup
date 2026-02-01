@@ -96,6 +96,29 @@ The backup creates a `.sql` file containing:
 --schema=public --schema=app
 ```
 
+## Multi-Database Backups
+
+When backing up multiple databases, DBackup creates a **TAR archive** containing individual `pg_dump -Fc` (custom format) dumps:
+
+```
+backup.tar
+├── manifest.json    # Metadata about contained databases
+├── database1.dump   # PostgreSQL custom format (compressed)
+├── database2.dump
+└── ...
+```
+
+### Benefits
+
+- **Custom Format**: Each database uses PostgreSQL's efficient custom format with built-in compression
+- **Selective Restore**: Choose which databases to restore
+- **Database Renaming**: Restore to different names
+- **Parallel-Ready**: Individual dumps enable future parallel restore support
+
+::: warning Breaking Change (v0.9.1)
+Multi-DB backups created before v0.9.1 used `pg_dumpall` and cannot be restored with newer versions.
+:::
+
 ## Connection Security
 
 ### SSL Connection

@@ -167,6 +167,29 @@ To restore a MySQL backup:
 
 The restore uses `mysql` client with the SQL dump file.
 
+## Multi-Database Backups
+
+When backing up multiple databases, DBackup creates a **TAR archive** containing:
+
+```
+backup.tar
+├── manifest.json    # Metadata about contained databases
+├── database1.sql    # Individual dump per database
+├── database2.sql
+└── ...
+```
+
+### Selective Restore
+
+From a multi-DB backup, you can:
+- **Select specific databases** to restore
+- **Rename databases** during restore (e.g., `production` → `staging`)
+- **Skip databases** you don't need
+
+::: warning Breaking Change (v0.9.1)
+Multi-DB backups created before v0.9.1 use a different format and cannot be restored with newer versions.
+:::
+
 ## Best Practices
 
 1. **Test backups regularly** by performing test restores

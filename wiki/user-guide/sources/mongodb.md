@@ -99,6 +99,28 @@ dump/
 
 This is archived and optionally compressed.
 
+## Multi-Database Backups
+
+When backing up multiple databases, DBackup creates a **TAR archive** containing individual `mongodump --archive` files:
+
+```
+backup.tar
+├── manifest.json      # Metadata about contained databases
+├── database1.archive  # Individual mongodump archive per database
+├── database2.archive
+└── ...
+```
+
+### Features
+
+- **Selective Restore**: Choose which databases to restore from a multi-DB backup
+- **Database Renaming**: Uses `--nsFrom/--nsTo` to restore to different database names
+- **True Multi-DB**: Unlike previous versions, you can now backup any combination of databases (not just "all or one")
+
+::: warning Breaking Change (v0.9.1)
+Multi-DB backups created before v0.9.1 cannot be restored with newer versions.
+:::
+
 ## Additional Options Examples
 
 ```bash

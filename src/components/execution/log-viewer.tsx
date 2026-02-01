@@ -237,7 +237,7 @@ function LogItem({ entry }: { entry: LogEntry }) {
     <div className="group relative pl-2 hover:bg-accent/50 rounded px-2 transition-colors">
       <div className="flex items-start gap-3 py-1">
         {/* Timestamp */}
-        <div className="shrink-0 text-xs text-muted-foreground w-[80px] pt-0.5 font-mono">
+        <div className="shrink-0 text-xs text-muted-foreground w-20 pt-0.5 font-mono">
            <DateDisplay date={entry.timestamp} format="pp" />
         </div>
 

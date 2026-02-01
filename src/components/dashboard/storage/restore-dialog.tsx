@@ -406,7 +406,7 @@ export function RestoreDialog({ file, open, onOpenChange, destinationId, sources
                                         <TableHeader className="bg-muted/50">
                                             <TableRow className="hover:bg-transparent border-b text-xs uppercase tracking-wider">
                                                 <TableHead colSpan={2}>Source DB</TableHead>
-                                                <TableHead className="w-[30px]"></TableHead>
+                                                <TableHead className="w-7.5"></TableHead>
                                                 <TableHead>Target DB Name</TableHead>
                                             </TableRow>
                                         </TableHeader>
@@ -494,7 +494,7 @@ export function RestoreDialog({ file, open, onOpenChange, destinationId, sources
                                  <AlertTriangle className="h-4 w-4" />
                                  Restore Failed
                              </div>
-                             <div className="text-xs font-mono bg-background/50 p-2 rounded border overflow-x-auto max-h-[150px]">
+                             <div className="text-xs font-mono bg-background/50 p-2 rounded border overflow-x-auto max-h-37.5">
                                 {restoreLogs?.map((l: string, i: number) => (
                                     <div key={i}>{l}</div>
                                 ))}

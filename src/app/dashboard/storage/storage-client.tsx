@@ -225,7 +225,7 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
             </div>
 
             <div className="flex items-center space-x-4 justify-between">
-                <div className="w-[300px]">
+                <div className="w-75">
                     <Popover open={open} onOpenChange={setOpen}>
                         <PopoverTrigger asChild>
                             <Button
@@ -240,7 +240,7 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
                                 <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                             </Button>
                         </PopoverTrigger>
-                        <PopoverContent className="w-[300px] p-0">
+                        <PopoverContent className="w-75 p-0">
                             <Command>
                                 <CommandInput placeholder="Search destination..." />
                                 <CommandList>

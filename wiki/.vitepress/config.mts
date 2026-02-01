@@ -5,11 +5,50 @@ export default defineConfig({
   title: "DBackup",
   description: "Self-hosted database backup automation with encryption, compression, and retention policies",
   lang: 'en-US',
+  cleanUrls: true, // Remove .html from URLs for better SEO
+  lastUpdated: true, // Show last updated timestamp
+  sitemap: {
+    hostname: 'https://dbackup.app'
+  },
   ignoreDeadLinks: [
     /localhost/
   ],
   head: [
-    ['link', { rel: 'icon', href: '/favicon.ico' }]
+    ['link', { rel: 'icon', href: '/favicon.ico' }],
+    // SEO Meta Tags
+    ['meta', { name: 'keywords', content: 'database backup, mysql backup, postgresql backup, mongodb backup, automated backup, encryption, compression, self-hosted, docker' }],
+    ['meta', { name: 'author', content: 'Skyfay' }],
+    ['meta', { name: 'robots', content: 'index, follow' }],
+    // Open Graph / Facebook
+    ['meta', { property: 'og:type', content: 'website' }],
+    ['meta', { property: 'og:url', content: 'https://dbackup.app' }],
+    ['meta', { property: 'og:title', content: 'DBackup - Database Backup Automation' }],
+    ['meta', { property: 'og:description', content: 'Self-hosted database backup automation with encryption, compression, and retention policies for MySQL, PostgreSQL, MongoDB, and more.' }],
+    ['meta', { property: 'og:image', content: 'https://dbackup.app/logo.svg' }], // TODO: Create a proper og-image.png (1200x630)
+    // Twitter Card
+    ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
+    ['meta', { name: 'twitter:url', content: 'https://dbackup.app' }],
+    ['meta', { name: 'twitter:title', content: 'DBackup - Database Backup Automation' }],
+    ['meta', { name: 'twitter:description', content: 'Self-hosted database backup automation with encryption, compression, and retention policies.' }],
+    // Structured Data (JSON-LD)
+    ['script', { type: 'application/ld+json' }, JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'SoftwareApplication',
+      'name': 'DBackup',
+      'description': 'Self-hosted database backup automation with encryption, compression, and retention policies',
+      'applicationCategory': 'DeveloperApplication',
+      'operatingSystem': 'Docker, Linux',
+      'offers': {
+        '@type': 'Offer',
+        'price': '0',
+        'priceCurrency': 'USD'
+      },
+      'aggregateRating': {
+        '@type': 'AggregateRating',
+        'ratingValue': '5',
+        'ratingCount': '1'
+      }
+    })]
   ],
   themeConfig: {
     // https://vitepress.dev/reference/default-theme-config

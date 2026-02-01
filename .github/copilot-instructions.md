@@ -54,6 +54,13 @@ Step-based execution (Queue Manager → Runner → Steps):
 ```
 Context flows through `RunnerContext` (see `src/lib/runner/types.ts`).
 
+### Multi-DB TAR Format
+All database adapters use a unified TAR archive for multi-database backups:
+- **Utilities**: `src/lib/adapters/database/common/tar-utils.ts`
+- **Types**: `src/lib/adapters/database/common/types.ts` (TarManifest, DatabaseEntry)
+- Single-DB backups remain direct dump files (no TAR wrapper)
+- TAR contains `manifest.json` + individual dump files per database
+
 ## Security (RBAC)
 
 **Mandatory** permission check at top of every Server Action/API Route:

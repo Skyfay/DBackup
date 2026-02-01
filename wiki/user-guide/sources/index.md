@@ -11,7 +11,7 @@ DBackup supports a wide variety of database engines. This section provides an ov
 | [PostgreSQL](/user-guide/sources/postgresql) | 12 - 18 | `pg_dump` |
 | [MongoDB](/user-guide/sources/mongodb) | 4.x - 8.x | `mongodump` |
 | [SQLite](/user-guide/sources/sqlite) | 3.x | `.dump` command |
-| [SQL Server](/user-guide/sources/mssql) | 2017, 2019, 2022 | `BACKUP DATABASE` |
+| [MSSQL](/user-guide/sources/mssql) | 2017, 2019, 2022 | `BACKUP DATABASE` |
 
 ## Adding a Source
 

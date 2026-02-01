@@ -343,6 +343,82 @@ async getVersion(config): Promise<string> {
 4. **Add tests** in `tests/integration/adapters/`
 5. **Add container** to `docker-compose.test.yml` if needed
 
+## Multi-Database TAR Format
+
+When backing up multiple databases, all adapters use a unified TAR archive format:
+
+### TAR Archive Structure
+
+```
+backup.tar
+├── manifest.json        # Metadata about contained databases
+├── database1.sql        # MySQL: SQL dump
+├── database2.sql
+├── database1.dump       # PostgreSQL: Custom format
+├── database1.archive    # MongoDB: Archive format
+└── ...
+```
+
+### Manifest Format
+
+```typescript
+interface TarManifest {
+  version: 1;
+  createdAt: string;        // ISO 8601 timestamp
+  sourceType: string;       // 'mysql' | 'postgres' | 'mongodb' | 'mssql'
+  engineVersion?: string;   // e.g., '8.0.35'
+  totalSize: number;        // Total bytes of all dumps
+  databases: DatabaseEntry[];
+}
+
+interface DatabaseEntry {
+  name: string;             // Original database name
+  filename: string;         // File in archive (e.g., 'mydb.sql')
+  size: number;             // Size in bytes
+  format?: string;          // 'sql' | 'custom' | 'archive' | 'bak'
+}
+```
+
+### Using TAR Utilities
+
+```typescript
+import {
+  createMultiDbTar,
+  extractMultiDbTar,
+  isMultiDbTar,
+  readTarManifest,
+  shouldRestoreDatabase,
+  getTargetDatabaseName,
+} from "../common/tar-utils";
+
+// Check if backup is Multi-DB TAR
+const isTar = await isMultiDbTar(sourcePath);
+
+// Extract and restore
+if (isTar) {
+  const { manifest, files } = await extractMultiDbTar(sourcePath, tempDir);
+
+  for (const dbEntry of manifest.databases) {
+    if (!shouldRestoreDatabase(dbEntry.name, mapping)) continue;
+
+    const targetDb = getTargetDatabaseName(dbEntry.name, mapping);
+    await restoreSingleDatabase(path.join(tempDir, dbEntry.filename), targetDb);
+  }
+}
+```
+
+### Selective Restore
+
+Users can select which databases to restore and rename them:
+
+```typescript
+const mapping = [
+  { originalName: 'production', targetName: 'staging_copy', selected: true },
+  { originalName: 'users', targetName: 'users_test', selected: true },
+  { originalName: 'logs', targetName: 'logs', selected: false }, // Skip
+];
+```
+
 ## Related Documentation
 
 - [Adapter System](/developer-guide/core/adapters)

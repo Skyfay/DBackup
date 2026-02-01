@@ -8,7 +8,7 @@ DBackup is a self-hosted web application for automating database backups. It sup
 
 ## Key Features
 
-- **Multi-Database Support**: MySQL, MariaDB, PostgreSQL, MongoDB, SQLite, SQL Server
+- **Multi-Database Support**: MySQL, MariaDB, PostgreSQL, MongoDB, SQLite, Microsoft SQL Server
 - **Flexible Storage**: Local filesystem, S3-compatible storage, SFTP
 - **Security**: AES-256-GCM encryption, credential encryption at rest
 - **Automation**: Cron-based scheduling with smart retention policies

@@ -193,7 +193,7 @@ DBackup uses a "Dialect" pattern to handle version-specific behavior.
 | :--- | :--- | :--- |
 | `postgres:default` | All versions | Standard `pg_dump` |
 
-### SQL Server Dialects
+### MSSQL Dialects
 
 | Dialect | Target | Notes |
 | :--- | :--- | :--- |

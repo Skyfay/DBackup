@@ -2,6 +2,40 @@
 
 All notable changes to DBackup are documented here.
 
+## v0.9.1-beta - Unified Multi-DB TAR Architecture
+*Released: February 1, 2026*
+
+This release introduces a unified TAR-based backup format for multi-database backups across all database adapters. This brings consistency, reliability, and new features like selective restore.
+
+### ✨ New Features
+
+#### 📦 Unified TAR Multi-DB Format
+- **Consistent Architecture**: All database adapters (MySQL, PostgreSQL, MongoDB, MSSQL) now use the same TAR archive format for multi-database backups
+- **Manifest File**: Each TAR archive includes a `manifest.json` with metadata about contained databases, sizes, and formats
+- **Selective Restore**: Choose which databases to restore from a multi-DB backup
+- **Database Renaming**: Restore databases to different names (e.g., `production` → `staging_copy`)
+
+#### 🐘 PostgreSQL Improvements
+- **Custom Format**: Multi-DB backups now use `pg_dump -Fc` (custom format) per database instead of `pg_dumpall`
+- **Parallel-Ready**: Individual database dumps enable future parallel backup support
+- **Smaller Backups**: Custom format includes built-in compression
+
+#### 🍃 MongoDB Multi-DB
+- **True Multi-DB Support**: MongoDB adapter now supports backing up multiple selected databases (previously only "all or one")
+- **Database Renaming**: Uses `--nsFrom/--nsTo` for restoring to different database names
+
+### 🔧 Improvements
+- **Code Reduction**: PostgreSQL restore logic reduced by 53% (592 → 279 LOC) by removing complex Transform streams
+- **Shared Utilities**: New `tar-utils.ts` with 18 unit tests for TAR operations
+- **Cleaner Adapters**: Removed legacy multi-DB parsing code from all adapters
+
+### 📚 Documentation
+- **Developer Guide**: Updated database adapter documentation with TAR format details
+- **User Guide**: Added Multi-DB restore workflow documentation
+- **Naming Consistency**: Standardized "Microsoft SQL Server" / "MSSQL" naming throughout docs
+
+---
+
 ## v0.9.0-beta - Microsoft SQL Server & Self-Service Security
 *Released: January 31, 2026*
 

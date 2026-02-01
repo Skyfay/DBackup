@@ -16,7 +16,7 @@ DBackup can restore backups directly to database servers. The restore process:
 
 ### From Storage Explorer
 
-1. Go to **Storage** in sidebar
+1. Go to **Storage Explorer** in sidebar
 2. Find the backup to restore
 3. Click **Restore** button
 4. Configure restore options
@@ -136,7 +136,7 @@ mongorestore --uri "mongodb://..." --archive=backup.archive
 - Or restores via `.read` command
 - Path remapping supported
 
-### SQL Server
+### Microsoft SQL Server
 
 ```sql
 RESTORE DATABASE [dbname] FROM DISK = '/path/backup.bak'
@@ -209,12 +209,26 @@ Move database between servers:
 2. Configure connection
 3. Restore creates database
 
-### Partial Restore (Advanced)
+### Multi-Database Restore
 
-For selective restore:
-1. Download backup manually
-2. Extract needed data
-3. Import using database tools
+When restoring a backup containing multiple databases:
+
+1. **Automatic Detection**: DBackup detects Multi-DB TAR archives
+2. **Database Selection**: Choose which databases to restore
+3. **Rename Support**: Map databases to different names
+4. **Progress Tracking**: Per-database progress indication
+
+```
+Multi-DB Backup Contents:
+┌─────────────────────────────────────────┐
+│ ☑ production    →  staging_copy         │
+│ ☑ users         →  users_test           │
+│ ☐ logs          →  (skip)               │
+│ ☑ config        →  config               │
+└─────────────────────────────────────────┘
+```
+
+Each selected database is restored individually, allowing granular control over what gets restored and where.
 
 ## Troubleshooting
 

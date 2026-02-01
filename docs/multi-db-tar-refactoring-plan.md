@@ -545,9 +545,11 @@ if (await isMultiDbTar(sourcePath)) {
 
 ### TODOs Phase 7
 
-- [ ] `wiki/developer-guide/adapters/database.md` aktualisieren
-- [ ] `wiki/user-guide/features/restore.md` aktualisieren
-- [ ] `wiki/developer-guide/core/backup-formats.md` erstellen
+- [x] `wiki/developer-guide/adapters/database.md` aktualisieren (Multi-DB TAR Format Sektion)
+- [x] `wiki/user-guide/features/restore.md` aktualisieren (Multi-DB Restore Sektion)
+- [x] "SQL Server" → "Microsoft SQL Server" / "MSSQL" Konsistenz
+- [x] "Navigate to Storage" → "Navigate to Storage Explorer" Sidebar Fix
+- [ ] `wiki/developer-guide/core/backup-formats.md` erstellen (optional)
 - [ ] `wiki/changelog.md` Entry hinzufügen
 - [ ] README.md aktualisieren (falls Feature erwähnt)
 - [ ] `.github/copilot-instructions.md` aktualisieren
@@ -607,12 +609,12 @@ tests/integration/
 | Phase | Status | Notizen |
 |-------|--------|---------|
 | Phase 1: Shared Utilities | ✅ Abgeschlossen | 18 Unit Tests bestanden |
-| Phase 2: MySQL Adapter | ✅ Abgeschlossen | Code -40% reduziert |
-| Phase 3: PostgreSQL Adapter | ⬜ Nicht gestartet | |
-| Phase 4: MongoDB Adapter | ⬜ Nicht gestartet | |
-| Phase 5: Integration & Testing | ⬜ Nicht gestartet | |
-| Phase 6: Code Cleanup | ⬜ Nicht gestartet | |
-| Phase 7: Dokumentation | ⬜ Nicht gestartet | |
+| Phase 2: MySQL Adapter | ✅ Abgeschlossen | TAR Multi-DB Support |
+| Phase 3: PostgreSQL Adapter | ✅ Abgeschlossen | pg_dump -Fc per DB, -53% restore.ts |
+| Phase 4: MongoDB Adapter | ✅ Abgeschlossen | Echtes Multi-DB Support |
+| Phase 5: Integration & Testing | ✅ Abgeschlossen | Metadata + Runner Pipeline |
+| Phase 6: Code Cleanup | ✅ Abgeschlossen | ESLint Fixes, Legacy bereits entfernt |
+| Phase 7: Dokumentation | ✅ Abgeschlossen | Developer + User Guide aktualisiert |
 
 ---
 

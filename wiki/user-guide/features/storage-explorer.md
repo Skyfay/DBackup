@@ -15,7 +15,7 @@ The Storage Explorer provides a file browser interface for all your backup desti
 
 ## Accessing Storage Explorer
 
-1. Navigate to **Storage** in the sidebar
+1. Navigate to **Storage Explorer** in the sidebar
 2. Select a destination from the dropdown
 3. Browse folders and files
 

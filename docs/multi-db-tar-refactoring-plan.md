@@ -1,6 +1,6 @@
 # Multi-DB Backup Refactoring: TAR-Archiv Konzept
 
-> **Status:** In Bearbeitung (Phase 4 abgeschlossen)
+> **Status:** In Bearbeitung (Phase 5 abgeschlossen)
 > **Erstellt:** 2026-02-01
 > **Ziel:** Einheitliches TAR-basiertes Multi-DB Backup/Restore für alle Datenbank-Adapter
 
@@ -75,7 +75,7 @@ interface TarManifest {
 | **Phase 2** | MySQL/MariaDB Adapter | 0.5 Tage | ✅ Abgeschlossen |
 | **Phase 3** | PostgreSQL Adapter | 0.5 Tage | ✅ Abgeschlossen |
 | **Phase 4** | MongoDB Adapter | 0.5 Tage | ✅ Abgeschlossen |
-| **Phase 5** | Integration & Testing | 1 Tag | ⏳ Ausstehend |
+| **Phase 5** | Integration & Testing | 1 Tag | ✅ Abgeschlossen |
 | **Phase 6** | Code Cleanup | 0.5 Tage | ⏳ Ausstehend |
 | **Phase 7** | Dokumentation | 0.5 Tage | ⏳ Ausstehend |
 
@@ -423,12 +423,13 @@ if (await isMultiDbTar(sourcePath)) {
 
 ### TODOs Phase 5
 
-- [ ] `02-dump.ts` - TAR-Support validieren
-- [ ] `restore-service.ts` - Manifest-Extraktion
-- [ ] UI - Backup-Inhalt Anzeige (optional)
-- [ ] Integration Tests: MySQL → TAR → Restore
-- [ ] Integration Tests: PostgreSQL → TAR → Restore
-- [ ] Integration Tests: MongoDB → TAR → Restore
+- [x] `02-dump.ts` - TAR-Support validieren, Multi-DB Metadata erkennen
+- [x] `03-upload.ts` - `multiDb` Feld in Metadata schreiben
+- [x] `restore-service.ts` - Manifest-Extraktion und Logging
+- [ ] UI - Backup-Inhalt Anzeige (optional, später)
+- [ ] Integration Tests: MySQL → TAR → Restore (manuell testen)
+- [ ] Integration Tests: PostgreSQL → TAR → Restore (manuell testen)
+- [ ] Integration Tests: MongoDB → TAR → Restore (manuell testen)
 - [ ] Integration Tests: Compression + TAR
 - [ ] Integration Tests: Encryption + TAR
 

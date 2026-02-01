@@ -13,6 +13,7 @@ import { getProfileMasterKey, getEncryptionProfiles } from "@/services/encryptio
 import { createDecryptionStream } from "@/lib/crypto-stream";
 import { getDecompressionStream, CompressionType } from "@/lib/compression";
 import { LogEntry, LogLevel, LogType } from "@/lib/core/logs";
+import { isMultiDbTar, readTarManifest } from "@/lib/adapters/database/common/tar-utils";
 
 // Ensure adapters are loaded
 registerAdapters();
@@ -484,6 +485,24 @@ export class RestoreService {
                 }
             }
             // --- END DECOMPRESSION EXECUTION ---
+
+            // --- MULTI-DB TAR DETECTION ---
+            // Check if the backup is a Multi-DB TAR archive and log contained databases
+            try {
+                if (await isMultiDbTar(tempFile)) {
+                    const manifest = await readTarManifest(tempFile);
+                    if (manifest) {
+                        log(`Multi-DB TAR archive detected: ${manifest.databases.length} databases`, 'info');
+                        manifest.databases.forEach(db => {
+                            log(`  - ${db.name} (${db.format}, ${db.size} bytes)`, 'info');
+                        });
+                    }
+                }
+            } catch (e: any) {
+                // Non-fatal: just informational
+                log(`Note: Could not check for Multi-DB TAR format: ${e.message}`, 'info');
+            }
+            // --- END MULTI-DB TAR DETECTION ---
 
             // 4. Restore
             updateProgress(0, "Restoring Database");

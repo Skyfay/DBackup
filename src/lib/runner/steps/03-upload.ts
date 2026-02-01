@@ -148,7 +148,9 @@ export async function stepUpload(ctx: RunnerContext) {
             timestamp: new Date().toISOString(),
             originalFileName: path.basename(ctx.tempFile),
             compression: compressionMeta,
-            encryption: encryptionMeta
+            encryption: encryptionMeta,
+            // Add Multi-DB TAR metadata if present
+            multiDb: ctx.metadata?.multiDb
         };
 
         const metaPath = ctx.tempFile + ".meta.json";

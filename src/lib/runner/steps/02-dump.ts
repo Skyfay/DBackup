@@ -3,6 +3,7 @@ import { decryptConfig } from "@/lib/crypto";
 import path from "path";
 import os from "os";
 import fs from "fs/promises";
+import { isMultiDbTar, readTarManifest } from "@/lib/adapters/database/common/tar-utils";
 
 export async function stepExecuteDump(ctx: RunnerContext) {
     if (!ctx.job || !ctx.sourceAdapter) throw new Error("Context not initialized");
@@ -144,4 +145,24 @@ export async function stepExecuteDump(ctx: RunnerContext) {
 
     ctx.dumpSize = dumpResult.size || 0;
     ctx.log(`Dump successful. Size: ${dumpResult.size} bytes`);
+
+    // Check if the dump is a Multi-DB TAR archive and update metadata
+    try {
+        const dumpPath = ctx.tempFile;
+        if (await isMultiDbTar(dumpPath)) {
+            const manifest = await readTarManifest(dumpPath);
+            if (manifest) {
+                ctx.metadata = {
+                    ...ctx.metadata,
+                    multiDb: {
+                        format: 'tar',
+                        databases: manifest.databases.map(db => db.name)
+                    }
+                };
+                ctx.log(`Multi-DB TAR archive detected: ${manifest.databases.length} databases`);
+            }
+        }
+    } catch (e: any) {
+        ctx.log(`Warning: Could not check for Multi-DB TAR format: ${e.message}`);
+    }
 }

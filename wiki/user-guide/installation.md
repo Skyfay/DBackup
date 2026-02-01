@@ -11,6 +11,12 @@ Docker Compose is the recommended way to run DBackup in production.
 - Docker Engine 20.10+
 - Docker Compose v2+
 
+::: tip Multi-Architecture Support
+DBackup images are available for **AMD64** (x86_64) and **ARM64** (aarch64) architectures.
+
+Supports: Intel/AMD servers, Raspberry Pi 4+, Apple Silicon (M1/M2/M3), AWS Graviton
+:::
+
 ### Basic Setup
 
 Create a `docker-compose.yml` file:

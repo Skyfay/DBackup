@@ -19,7 +19,7 @@
 ## ✨ Features
 
 - **Multi-Database Support** — MySQL, PostgreSQL, MongoDB, SQLite, Microsoft SQL Server
-- **Bank-Grade Security** — AES-256-GCM encryption with key rotation and offline recovery kits
+- **Enterprise-Grade Security** — AES-256-GCM encryption with key rotation and offline recovery kits
 - **Flexible Storage** — Local filesystem, S3-compatible (AWS, MinIO, R2), SFTP
 - **Smart Retention** — Grandfather-Father-Son rotation policies
 - **Live Monitoring** — Real-time progress tracking with detailed logs
@@ -27,6 +27,8 @@
 - **Notifications** — Discord and Email alerts on backup success/failure
 
 ## 🚀 Quick Start
+
+**Supported Platforms**: AMD64 (x86_64) • ARM64 (aarch64)
 
 ```yaml
 # docker-compose.yml

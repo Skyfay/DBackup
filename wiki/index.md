@@ -18,7 +18,7 @@ features:
     title: Multi-Database Support
     details: Backup MySQL, MariaDB, PostgreSQL, MongoDB, SQLite, and Microsoft SQL Server with a unified interface.
   - icon: 🔒
-    title: Bank-Grade Security
+    title: Enterprise-Grade Security
     details: AES-256-GCM encryption for backups with Encryption Vault, key rotation, and offline Recovery Kits.
   - icon: 📦
     title: Smart Compression

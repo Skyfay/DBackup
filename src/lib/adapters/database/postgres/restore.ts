@@ -252,7 +252,6 @@ export async function restore(
 
             await prepareRestore(usageConfig, [targetDb]);
             await restoreSingleDatabase(sourcePath, targetDb, usageConfig, env, log);
-            log('Restore completed successfully', 'success');
         }
 
         return {

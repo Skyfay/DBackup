@@ -552,14 +552,22 @@ export class RestoreService {
                 dbConf.privilegedAuth = privilegedAuth;
             }
 
-            const restoreResult = await sourceAdapter.restore(dbConf, tempFile, (msg) => {
-                // Determine level based on msg content
-                let level: LogLevel = 'info';
-                const lower = msg.toLowerCase();
-                if (lower.includes('error') || lower.includes('fail') || lower.includes('fatal')) level = 'error';
-                else if (lower.includes('warn')) level = 'warning';
+            const restoreResult = await sourceAdapter.restore(dbConf, tempFile, (msg, level?: LogLevel) => {
+                // Use provided level, or determine based on msg content
+                let finalLevel: LogLevel = level || 'info';
 
-                log(msg, level);
+                // Only auto-detect level if not explicitly provided
+                if (!level) {
+                    const lower = msg.toLowerCase();
+                    // Check for actual errors, not just presence of error-related words
+                    // "0 failures" or "0 document(s) failed" are success messages
+                    const hasActualError = (lower.includes('error') && !lower.includes('0 error')) ||
+                                          (lower.includes('fail') && !lower.match(/0\s+(document|failure|failed)/));
+                    if (hasActualError || lower.includes('fatal')) finalLevel = 'error';
+                    else if (lower.includes('warn')) finalLevel = 'warning';
+                }
+
+                log(msg, finalLevel);
             }, (p) => {
                 updateProgress(p, "Restoring Database");
             });

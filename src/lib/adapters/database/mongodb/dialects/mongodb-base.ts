@@ -77,6 +77,7 @@ export class MongoDBBaseDialect implements DatabaseDialect {
 
         args.push('--archive'); // We expect input from stdin as archive
         args.push('--gzip');
+        args.push('--drop'); // Drop collections before restoring to avoid duplicate key errors
 
         // For restore, we can remap using --nsInclude or --nsFrom/--nsTo in recent mongo versions.
         // Or if simple restore, --db?

@@ -88,6 +88,7 @@ async function restoreSingleDatabase(
         args.push(`--archive=${sourcePath}`);
     }
     args.push('--gzip');
+    args.push('--drop'); // Drop collections before restoring (like MySQL --clean)
 
     // Handle database renaming with nsFrom/nsTo
     if (sourceDb && targetDb && sourceDb !== targetDb) {
@@ -219,7 +220,11 @@ export async function restore(
             readStream.pipe(restoreProcess.stdin);
 
             restoreProcess.stderr.on('data', (data) => {
-                log(`[mongorestore] ${data.toString()}`);
+                const msg = data.toString().trim();
+                if (msg) {
+                    // mongorestore writes progress to stderr - log as info, not error
+                    log(`[mongorestore] ${msg}`, 'info');
+                }
             });
 
             // Handle stream errors
@@ -229,7 +234,6 @@ export async function restore(
             });
 
             await waitForProcess(restoreProcess, 'mongorestore');
-            log('Restore completed successfully', 'success');
         }
 
         return {

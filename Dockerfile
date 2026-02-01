@@ -55,6 +55,7 @@ COPY . .
 
 # Environment variables for build
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 
 # Generate Prisma Client and build Next.js app
 RUN npx prisma generate

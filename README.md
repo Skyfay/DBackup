@@ -65,6 +65,7 @@ Whether you're running a single MySQL database or managing multiple PostgreSQL, 
 services:
   dbackup:
     image: skyfay/dbackup:beta
+    container_name: dbackup
     restart: always
     ports:
       - "3000:3000"

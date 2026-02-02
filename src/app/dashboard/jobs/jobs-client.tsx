@@ -25,6 +25,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable } from "@/components/ui/data-table";
 import { ColumnDef } from "@tanstack/react-table";
 import { useMemo } from "react";
+import { useUserPreferences } from "@/hooks/use-user-preferences";
 
 // Extended Job type for display (includes related entity names)
 interface Job extends JobData {
@@ -51,6 +52,7 @@ export function JobsClient({ canManage, canExecute }: JobsClientProps) {
     const [editingJob, setEditingJob] = useState<JobData | null>(null);
     const [deletingId, setDeletingId] = useState<string | null>(null);
     const router = useRouter();
+    const { autoRedirectOnJobStart } = useUserPreferences();
 
     const fetchJobs = async () => {
         try {
@@ -117,14 +119,14 @@ export function JobsClient({ canManage, canExecute }: JobsClientProps) {
             const data = await res.json();
             if (data.success) {
                 toast.success("Job started successfully");
-                if (data.executionId) {
+                if (data.executionId && autoRedirectOnJobStart) {
                     router.push(`/dashboard/history?executionId=${data.executionId}`);
                 }
             } else {
                 toast.error(`Job failed: ${data.error}`);
             }
         } catch { toast.error("Execution request failed"); }
-    }, [router]);
+    }, [router, autoRedirectOnJobStart]);
 
     const columns = useMemo<ColumnDef<Job>[]>(() => [
         {

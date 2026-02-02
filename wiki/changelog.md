@@ -25,11 +25,10 @@ Since Redis cannot restore RDB files remotely, we've built a dedicated step-by-s
 - **Platform-Specific**: Separate instructions for Systemd (Linux) and Docker deployments
 - **Progress Tracking**: Visual step completion indicators
 
-::: warning Redis Restore Limitations
+#### ⚠️ warning Redis Restore Limitations
 - **Restore requires server access**: Redis RDB restore cannot be performed remotely. The backup file must be copied to the server's data directory and Redis must be restarted
 - **Full server backup only**: RDB snapshots contain all databases (0-15), not individual databases
 - **Cluster mode not yet supported**: Only standalone and Sentinel modes are available
-:::
 
 #### 📁 Smart Backup File Extensions
 Backup files now use appropriate extensions based on the database type:
@@ -49,6 +48,12 @@ Backup files now use appropriate extensions based on the database type:
 - **No Auth Required**: Links work with wget/curl without session cookies
 - **5-Minute Expiry**: Tokens automatically expire for security
 - **Audit Trail**: Token generation is tied to authenticated users
+
+#### ⚙️ User Preferences
+- **New Preferences Tab**: Added a dedicated "Preferences" tab in the user profile settings
+- **Auto-Redirect Setting**: Users can now disable automatic redirection to History page when starting backup/restore jobs
+- **Instant Save**: Preference toggles save immediately without requiring a save button
+- **Default Enabled**: Auto-redirect is enabled by default for new users
 
 #### 🐳 Docker Deployment Enhancements
 - **Docker Hub**: Images are now available on Docker Hub at [`skyfay/dbackup`](https://hub.docker.com/r/skyfay/dbackup) in addition to GitLab Registry. Docker Hub is now the default in all documentation
@@ -79,6 +84,10 @@ Backup files now use appropriate extensions based on the database type:
 - New `public-download` API endpoint for token-based downloads
 - New `RedisRestoreWizard` component with step-by-step guidance
 - Centralized temp directory handling in `src/lib/temp-dir.ts`
+- New `autoRedirectOnJobStart` field in User model for redirect preference
+- New `/api/user/preferences` endpoint for fetching user preferences
+- New `useUserPreferences` hook for client-side preference access
+- Auto-save preference toggles in profile settings (no save button needed)
 - Updated all files using `os.tmpdir()` to use the new `getTempDir()` utility
 - Auth client `baseURL` changed to empty string for proper origin detection
 - Integration tests now skip adapters with missing CLI tools automatically

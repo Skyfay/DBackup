@@ -221,3 +221,53 @@ export async function updateUser(userId: string, data: { name?: string; email?: 
         return { success: false, error: error.message || "Failed to update user" };
     }
 }
+
+export async function updateUserPreferences(userId: string, data: { autoRedirectOnJobStart?: boolean }) {
+    const currentUser = await getCurrentUserWithGroup();
+    if (!currentUser) throw new Error("Unauthorized");
+
+    // Allow user to edit their own preferences only
+    if (currentUser.id !== userId) {
+        throw new Error("You can only update your own preferences");
+    }
+
+    try {
+        await prisma.user.update({
+            where: { id: userId },
+            data: {
+                autoRedirectOnJobStart: data.autoRedirectOnJobStart,
+            },
+        });
+
+        revalidatePath("/dashboard/profile");
+
+        await auditService.log(
+            currentUser.id,
+            AUDIT_ACTIONS.UPDATE,
+            AUDIT_RESOURCES.USER,
+            { preferences: data },
+            userId
+        );
+
+        return { success: true };
+    } catch (error: any) {
+        console.error(error);
+        return { success: false, error: error.message || "Failed to update preferences" };
+    }
+}
+
+export async function getUserPreference(key: 'autoRedirectOnJobStart'): Promise<boolean> {
+    const currentUser = await getCurrentUserWithGroup();
+    if (!currentUser) return true; // Default to true if not logged in
+
+    const user = await prisma.user.findUnique({
+        where: { id: currentUser.id },
+        select: { autoRedirectOnJobStart: true },
+    });
+
+    if (key === 'autoRedirectOnJobStart') {
+        return user?.autoRedirectOnJobStart ?? true;
+    }
+
+    return true;
+}

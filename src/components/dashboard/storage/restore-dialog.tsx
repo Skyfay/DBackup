@@ -28,6 +28,7 @@ import { DateDisplay } from "@/components/utils/date-display";
 import { restoreFromStorageAction } from "@/app/actions/config-management";
 import { RestoreOptions } from "@/lib/types/config-backup";
 import { RedisRestoreWizard } from "./redis-restore-wizard";
+import { useUserPreferences } from "@/hooks/use-user-preferences";
 
 interface AdapterConfig {
     id: string;
@@ -70,6 +71,7 @@ export function RestoreDialog({ file, open, onOpenChange, destinationId, sources
 
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const router = useRouter();
+    const { autoRedirectOnJobStart } = useUserPreferences();
 
     const isSystemConfig = file?.sourceType === 'SYSTEM';
 
@@ -91,7 +93,9 @@ export function RestoreDialog({ file, open, onOpenChange, destinationId, sources
                 toast.success("System restore started in background");
                 onSuccess();
                 onOpenChange(false);
-                router.push(`/dashboard/history?executionId=${res.executionId}&autoOpen=true`);
+                if (autoRedirectOnJobStart) {
+                    router.push(`/dashboard/history?executionId=${res.executionId}&autoOpen=true`);
+                }
             } else {
                 toast.error(res.error || "Failed to start restore");
             }
@@ -205,8 +209,10 @@ export function RestoreDialog({ file, open, onOpenChange, destinationId, sources
                 toast.success("Restore started in background");
                 onSuccess();
                 onOpenChange(false);
-                // Redirect to history to show progress
-                router.push(`/dashboard/history?executionId=${data.executionId}&autoOpen=true`);
+                // Redirect to history to show progress (if preference enabled)
+                if (autoRedirectOnJobStart) {
+                    router.push(`/dashboard/history?executionId=${data.executionId}&autoOpen=true`);
+                }
             } else {
                 toast.error("Restore request failed");
                 const logs = data.logs || [];

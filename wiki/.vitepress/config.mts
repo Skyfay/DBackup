@@ -146,7 +146,8 @@ export default defineConfig({
             { text: 'Storage Explorer', link: '/user-guide/features/storage-explorer' },
             { text: 'Restore', link: '/user-guide/features/restore' },
             { text: 'Notifications', link: '/user-guide/features/notifications' },
-            { text: 'System Backup', link: '/user-guide/features/system-backup' }
+            { text: 'System Backup', link: '/user-guide/features/system-backup' },
+            { text: 'Profile & Settings', link: '/user-guide/features/profile-settings' }
           ]
         },
         {

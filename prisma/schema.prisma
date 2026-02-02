@@ -81,6 +81,7 @@ model User {
   timezone         String     @default("UTC")
   dateFormat       String     @default("P")
   timeFormat       String     @default("p")
+  autoRedirectOnJobStart Boolean @default(true)
   createdAt        DateTime
   updatedAt        DateTime
   twoFactorEnabled Boolean?

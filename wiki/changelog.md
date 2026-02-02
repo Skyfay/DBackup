@@ -2,6 +2,39 @@
 
 All notable changes to DBackup are documented here.
 
+## v0.9.3-beta - Docker Deployment & Auth Improvements
+*Released: February 2, 2026*
+
+This release focuses on improving the Docker deployment experience and fixing authentication issues with custom port mappings.
+
+### ✨ New Features
+
+#### 🐳 Docker Deployment Enhancements
+- **DATABASE_URL Default**: The Dockerfile now includes a sensible default (`file:/app/db/dbackup.db`), eliminating the need to configure this variable for standard deployments
+- **TZ Variable**: Added timezone support via `TZ` environment variable (defaults to `UTC`)
+- **TMPDIR Support**: New centralized `getTempDir()` utility respects the `TMPDIR` environment variable for custom temp directories (useful for tmpfs mounts)
+
+#### 🔐 Authentication Improvements
+- **Port Mapping Fix**: Fixed authentication issues when using Docker port mappings like `3001:3000`. The auth client now correctly uses the browser's current origin instead of a hardcoded URL
+- **TRUSTED_ORIGINS**: New environment variable to allow multiple access URLs (e.g., both IP and domain). Accepts comma-separated list of additional trusted origins
+- **Removed NEXT_PUBLIC_APP_URL**: This variable was removed as Next.js public variables are build-time only and don't work at runtime in Docker
+
+### 📚 Documentation
+- **Consolidated Installation Docs**: Docker Compose and Docker Run commands are now in a single location ([installation.md](/user-guide/installation)) with a tab switcher, eliminating duplication across pages
+- **Environment Variables Audit**: Cleaned up documentation to only include actually implemented variables. Removed references to non-existent SMTP_*, LOG_*, and other placeholder variables
+- **Improved Quick Start**: Streamlined the landing page and getting started guide to focus on concepts, with clear links to the installation guide for commands
+
+#### 📅 Wiki Date Timestamps
+- **Git History Fix**: VitePress build now fetches full git history on Cloudflare Pages, ensuring "Last updated" timestamps reflect actual commit dates instead of build time
+- **European Date Format**: Changed date display format to DD/MM/YYYY for better international compatibility
+
+### 🔧 Technical Changes
+- Centralized temp directory handling in `src/lib/temp-dir.ts`
+- Updated all files using `os.tmpdir()` to use the new `getTempDir()` utility
+- Auth client `baseURL` changed to empty string for proper origin detection
+
+---
+
 ## v0.9.2-beta - Branding & Documentation
 *Released: February 1, 2026*
 

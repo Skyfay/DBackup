@@ -88,9 +88,9 @@ Then open [http://localhost:3000](http://localhost:3000) and create your first a
 | **MySQL** | 5.7, 8.x, 9.x |
 | **MariaDB** | 10.x, 11.x |
 | **MongoDB** | 4.x, 5.x, 6.x, 7.x, 8.x |
+| **Redis** | 6.x, 7.x, 8.x |
 | **SQLite** | 3.x (Local & SSH) |
 | **Microsoft SQL Server** | 2017, 2019, 2022, Azure SQL Edge |
-| **Redis** | 6.x, 7.x, 8.x |
 
 ## Architecture at a Glance
 

@@ -95,6 +95,7 @@ Open [http://localhost:3000](http://localhost:3000) and create your admin accoun
 | MySQL | 5.7, 8, 9 |
 | MariaDB | 10, 11 |
 | MongoDB | 4 – 8 |
+| Redis | 6.x, 7.x, 8.x |
 | SQLite | 3.x (Local & SSH) |
 | Microsoft SQL Server | 2017, 2019, 2022 |
 

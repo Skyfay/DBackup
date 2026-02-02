@@ -104,9 +104,9 @@ export default defineConfig({
             { text: 'MySQL / MariaDB', link: '/user-guide/sources/mysql' },
             { text: 'PostgreSQL', link: '/user-guide/sources/postgresql' },
             { text: 'MongoDB', link: '/user-guide/sources/mongodb' },
+            { text: 'Redis', link: '/user-guide/sources/redis' },
             { text: 'SQLite', link: '/user-guide/sources/sqlite' },
-            { text: 'Microsoft SQL Server', link: '/user-guide/sources/mssql' },
-            { text: 'Redis', link: '/user-guide/sources/redis' }
+            { text: 'Microsoft SQL Server', link: '/user-guide/sources/mssql' }
           ]
         },
         {
@@ -153,7 +153,7 @@ export default defineConfig({
         },
         {
           text: 'Administration',
-          collapsed: true,
+          collapsed: false,
           items: [
             { text: 'User Management', link: '/user-guide/admin/users' },
             { text: 'Groups & Permissions', link: '/user-guide/admin/permissions' },

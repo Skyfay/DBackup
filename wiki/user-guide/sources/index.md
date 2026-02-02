@@ -10,9 +10,9 @@ DBackup supports a wide variety of database engines. This section provides an ov
 | [MariaDB](/user-guide/sources/mysql) | 10.x, 11.x | `mariadb-dump` |
 | [PostgreSQL](/user-guide/sources/postgresql) | 12 - 18 | `pg_dump` |
 | [MongoDB](/user-guide/sources/mongodb) | 4.x - 8.x | `mongodump` |
+| [Redis](/user-guide/sources/redis) | 6.x, 7.x, 8.x | `redis-cli --rdb` |
 | [SQLite](/user-guide/sources/sqlite) | 3.x | `.dump` command |
 | [MSSQL](/user-guide/sources/mssql) | 2017, 2019, 2022 | `BACKUP DATABASE` |
-| [Redis](/user-guide/sources/redis) | 6.x, 7.x, 8.x | `redis-cli --rdb` |
 
 ## Adding a Source
 
@@ -122,5 +122,6 @@ Choose your database type for detailed configuration:
 - [MySQL / MariaDB](/user-guide/sources/mysql)
 - [PostgreSQL](/user-guide/sources/postgresql)
 - [MongoDB](/user-guide/sources/mongodb)
+- [Redis](/user-guide/sources/redis)
 - [SQLite](/user-guide/sources/sqlite)
 - [Microsoft SQL Server](/user-guide/sources/mssql)

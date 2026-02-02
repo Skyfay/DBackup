@@ -614,8 +614,9 @@ redis-cli -h <host> -p <port> -a <password> --rdb backup.rdb
 
 ### Phase 4: Documentation ✅ DONE
 - [x] wiki/developer-guide/adapters/database.md - Redis section added
-- [x] Changelog entry - v0.9.4-beta
+- [x] Changelog entry - v0.9.3-beta
 
-### Phase 5: UI
-- [ ] Redis icon
-- [ ] Database number selector UI
+### Phase 5: UI ✅ DONE
+- [x] Redis icon - Added to `getAdapterIcon()` in utils.ts
+- [x] Adapter summary - Shows `host:port (DB X)` format
+- [x] Database number field - Automatically handled by schema (number input 0-15)

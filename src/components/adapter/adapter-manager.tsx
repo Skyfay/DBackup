@@ -84,6 +84,8 @@ export function AdapterManager({ type, title, description, canManage = true }: A
                 case 'postgres':
                 case 'mongodb':
                     return <span className="text-muted-foreground">{config.user}@{config.host}:{config.port}</span>;
+                case 'redis':
+                    return <span className="text-muted-foreground">{config.host}:{config.port} (DB {config.database ?? 0})</span>;
                 case 'local-filesystem':
                     return <span className="font-mono text-xs">{config.basePath}</span>;
                 case 'discord':

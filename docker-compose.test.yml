@@ -359,13 +359,26 @@ services:
       timeout: 5s
       retries: 5
 
-  # Redis 7 (Current Stable)
+  # Redis 7 (Previous Stable)
   redis-7:
     image: redis:7-alpine
     container_name: dbm-test-redis-7
     command: redis-server --requirepass testpassword
     ports:
       - "63797:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "testpassword", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis 8 (Current Stable)
+  redis-8:
+    image: redis:8-alpine
+    container_name: dbm-test-redis-8
+    command: redis-server --requirepass testpassword
+    ports:
+      - "63798:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "testpassword", "ping"]
       interval: 5s

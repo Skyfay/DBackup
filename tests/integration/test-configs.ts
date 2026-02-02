@@ -139,6 +139,16 @@ export const testDatabases = [
             password: 'testpassword',
             database: 0
         }
+    },
+    {
+        name: 'Test Redis 8',
+        config: {
+            type: 'redis',
+            host: TEST_HOST,
+            port: 63798,
+            password: 'testpassword',
+            database: 0
+        }
     }
 ];
 

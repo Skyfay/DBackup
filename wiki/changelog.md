@@ -45,7 +45,7 @@ This release adds Redis as a new supported database type and improves the Docker
 ### 🔧 Technical Changes
 - Added `redis` package to Docker image for `redis-cli`
 - New adapter at `src/lib/adapters/database/redis/`
-- Test containers for Redis 6 and Redis 7 in `docker-compose.test.yml`
+- Test containers for Redis 6, 7 and 8 in `docker-compose.test.yml`
 - Centralized temp directory handling in `src/lib/temp-dir.ts`
 - Updated all files using `os.tmpdir()` to use the new `getTempDir()` utility
 - Auth client `baseURL` changed to empty string for proper origin detection

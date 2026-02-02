@@ -6,7 +6,7 @@ export default defineConfig({
   description: "Self-hosted database backup automation with encryption, compression, and retention policies",
   lang: 'en-US',
   cleanUrls: true, // Remove .html from URLs for better SEO
-  lastUpdated: true, // Show last updated timestamp
+  lastUpdated: true, // Show last updated timestamp (uses git commit timestamps)
   sitemap: {
     hostname: 'https://dbackup.app'
   },
@@ -59,6 +59,16 @@ export default defineConfig({
   themeConfig: {
     // https://vitepress.dev/reference/default-theme-config
     logo: '/logo.svg',
+
+    // Format last updated date in European format (DD.MM.YYYY HH:MM)
+    // Uses de-CH locale for date formatting while site remains en-US
+    lastUpdated: {
+      text: 'Last updated',
+      formatOptions: {
+        dateStyle: 'short',
+        timeStyle: 'short'
+      }
+    },
 
     nav: [
       { text: 'Home', link: '/' },

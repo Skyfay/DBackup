@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "vitepress dev",
-    "build": "vitepress build",
+    "build": "git fetch --unshallow 2>/dev/null || true && vitepress build",
+    "build:local": "vitepress build",
     "preview": "vitepress preview"
   },
   "devDependencies": {

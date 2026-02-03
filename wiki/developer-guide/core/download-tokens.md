@@ -339,4 +339,4 @@ const handleGenerateLink = (file: FileInfo) => {
 
 - [Storage Explorer](/user-guide/features/storage-explorer) - User documentation
 - [Redis Restore Wizard](/developer-guide/adapters/database#redis-restore-wizard) - Redis-specific implementation
-- [Encryption](/developer-guide/core/encryption) - Backup encryption system
+- [Encryption](/developer-guide/advanced/encryption) - Backup encryption system

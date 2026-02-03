@@ -207,7 +207,7 @@ export default defineConfig({
         },
         {
           text: 'Reference',
-          collapsed: true,
+          collapsed: false,
           items: [
             { text: 'Environment Variables', link: '/developer-guide/reference/environment' },
             { text: 'Database Schema', link: '/developer-guide/reference/schema' },

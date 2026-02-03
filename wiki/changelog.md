@@ -3,7 +3,7 @@
 All notable changes to DBackup are documented here.
 
 ## v0.9.4-beta - Universal Download Links
-*Released: In Progress*
+*Release: In Progress*
 
 This release extends the token-based download link feature (introduced for Redis restore) to all backup downloads in Storage Explorer.
 
@@ -26,7 +26,12 @@ The temporary download link feature is now available for all backup files:
 - Added comprehensive developer documentation for Download Tokens system
 - Updated Storage Explorer user guide with wget/curl download section
 
----
+### 🧹 Code Cleanup
+Removed legacy code that became obsolete after the v0.9.1 TAR architecture migration:
+- **PostgreSQL Dialects**: Removed unused `pg_dumpall` branch from `getDumpArgs()` and simplified `getRestoreArgs()` to stub (restore uses `pg_restore` directly)
+- **MySQL Dialects**: Removed unused multi-database branch (`--databases ...`) and `--all-databases` fallback from `getDumpArgs()`
+- **MongoDB Dialects**: Simplified `getRestoreArgs()` to stub (restore builds args directly in `restore.ts`)
+- **Roadmap**: Moved "PostgreSQL Restore Improvements" to completed (handled by TAR architecture)
 
 ## v0.9.3-beta - Redis Support, Restore UX & Smart File Extensions
 *Released: February 2, 2026*

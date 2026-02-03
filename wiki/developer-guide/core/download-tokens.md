@@ -60,10 +60,9 @@ interface DownloadToken {
 ### Consumption
 
 ```typescript
-import { consumeDownloadToken } from "@/lib/download-tokens";
+import { consumeDownloadToken, markTokenUsed } from "@/lib/download-tokens";
 
-// Returns token data if valid, null otherwise
-// Automatically marks token as used
+// Step 1: Validate token (does NOT mark as used yet)
 const data = consumeDownloadToken(token);
 
 if (!data) {
@@ -71,8 +70,19 @@ if (!data) {
     return error;
 }
 
-// Use data.storageId, data.file, data.decrypt
+// Step 2: Perform the download operation
+const result = await downloadFile(data.storageId, data.file, data.decrypt);
+
+if (!result.success) {
+    // Download failed - token is NOT consumed, can be retried
+    return error;
+}
+
+// Step 3: Mark token as used ONLY after successful download
+markTokenUsed(token);
 ```
+
+**Important:** The two-step process (`consumeDownloadToken` + `markTokenUsed`) ensures that tokens are only invalidated after a successful operation. If the download fails, the user can retry with the same token.
 
 ## API Endpoints
 
@@ -132,6 +142,21 @@ Tokens are stored in-memory (`Map<string, DownloadToken>`), which means:
 - ✅ Fast lookups
 - ✅ No database overhead
 - ⚠️ Tokens lost on server restart (acceptable for 5-min TTL)
+
+**Development Note:** The store uses `globalThis` to persist across Next.js hot reloads:
+
+```typescript
+// Survives hot module replacement in development
+const globalForTokens = globalThis as unknown as {
+    downloadTokenStore: Map<string, DownloadToken> | undefined;
+};
+
+if (!globalForTokens.downloadTokenStore) {
+    globalForTokens.downloadTokenStore = new Map();
+}
+
+const tokenStore = globalForTokens.downloadTokenStore;
+```
 
 ### Automatic Cleanup
 
@@ -251,6 +276,64 @@ const CLEANUP_INTERVAL_MS = 60 * 1000;
 2. **Generate links just before use** - minimize expiration risk
 3. **Don't share links** - they're single-use for security
 4. **Handle failures gracefully** - regenerate if download fails
+5. **Use `-f` flag with curl** to fail on HTTP errors: `curl -f -o file.sql "..."`
+
+## Adding to Other Components
+
+To add download link generation to another part of the app:
+
+### 1. Add State and Handler
+
+```tsx
+import { DownloadLinkModal } from "@/components/dashboard/storage/download-link-modal";
+
+// State
+const [downloadLinkFile, setDownloadLinkFile] = useState<FileInfo | null>(null);
+
+// Handler
+const handleGenerateLink = (file: FileInfo) => {
+    setDownloadLinkFile(file);
+};
+```
+
+### 2. Add Modal to JSX
+
+```tsx
+{downloadLinkFile && (
+    <DownloadLinkModal
+        open={!!downloadLinkFile}
+        onOpenChange={(o) => { if (!o) setDownloadLinkFile(null); }}
+        storageId={selectedStorageId}
+        file={{
+            name: downloadLinkFile.name,
+            path: downloadLinkFile.path,
+            size: downloadLinkFile.size,
+            isEncrypted: downloadLinkFile.isEncrypted,
+        }}
+    />
+)}
+```
+
+### 3. Add Trigger Button
+
+```tsx
+<DropdownMenuItem onClick={() => handleGenerateLink(file)}>
+    <Terminal className="mr-2 h-4 w-4" />
+    <span>wget / curl Link</span>
+</DropdownMenuItem>
+```
+
+### Required Props
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `open` | `boolean` | Controls modal visibility |
+| `onOpenChange` | `(open: boolean) => void` | Called when modal should close |
+| `storageId` | `string` | Storage adapter config ID |
+| `file.name` | `string` | Display filename |
+| `file.path` | `string` | Full path within storage |
+| `file.size` | `number` | File size in bytes |
+| `file.isEncrypted` | `boolean` | Shows format selection if true |
 
 ## Related
 

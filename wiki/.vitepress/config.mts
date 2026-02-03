@@ -178,6 +178,7 @@ export default defineConfig({
             { text: 'Adapter System', link: '/developer-guide/core/adapters' },
             { text: 'Runner Pipeline', link: '/developer-guide/core/runner' },
             { text: 'Logging System', link: '/developer-guide/core/logging' },
+            { text: 'Download Tokens', link: '/developer-guide/core/download-tokens' },
             { text: 'Update Service', link: '/developer-guide/core/updates' }
           ]
         },

@@ -48,7 +48,7 @@ Whether you're running a single MySQL database or managing multiple PostgreSQL, 
 
 ## ✨ Features
 
-- **Multi-Database Support** — MySQL, PostgreSQL, MongoDB, SQLite, Microsoft SQL Server, Redis
+- **Multi-Database Support** — MySQL, PostgreSQL, MongoDB, Redis, SQLite, Microsoft SQL Server
 - **Enterprise-Grade Security** — AES-256-GCM encryption with key rotation and offline recovery kits
 - **Flexible Storage** — Local filesystem, S3-compatible (AWS, MinIO, R2), SFTP
 - **Smart Retention** — Grandfather-Father-Son rotation policies

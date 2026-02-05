@@ -92,11 +92,3 @@ export function DemoBanner({
     </div>
   );
 }
-
-/**
- * Server-side check if demo mode is enabled.
- * Use this in Server Components to conditionally render the banner.
- */
-export function isDemoModeEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_DEMO_MODE === "true";
-}

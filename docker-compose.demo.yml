@@ -20,15 +20,15 @@ services:
   # Main Application
   # ==========================================
   dbackup:
-    image: skyfay/dbackup:beta
+    image: dbm:latest
     container_name: dbackup-demo
     restart: always
     ports:
       - "3000:3000"
     environment:
       # Required secrets (generate new ones for production!)
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2}
-      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-demo-secret-change-in-production-abc123}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-09620f6de159004102697c34f050d7645e166b5b67505bab1c74f5c8e2ce696c}
+      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-HxKboGLlSfd4Hfe+XyWpDF3c+dJRbE7tNho4TfT1jUg=}
       - BETTER_AUTH_URL=${BETTER_AUTH_URL:-http://localhost:3000}
 
       # Demo Mode Configuration
@@ -68,6 +68,7 @@ services:
     image: mysql:8.0
     container_name: dbackup-demo-mysql
     restart: always
+    command: --default-authentication-plugin=mysql_native_password
     environment:
       MYSQL_ROOT_PASSWORD: demorootpassword
       MYSQL_DATABASE: demo_app

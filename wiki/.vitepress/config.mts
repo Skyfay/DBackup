@@ -202,7 +202,8 @@ export default defineConfig({
             { text: 'Encryption Pipeline', link: '/developer-guide/advanced/encryption' },
             { text: 'Retention System', link: '/developer-guide/advanced/retention' },
             { text: 'Healthcheck System', link: '/developer-guide/advanced/healthcheck' },
-            { text: 'Config Backup (Meta)', link: '/developer-guide/advanced/config-backup' }
+            { text: 'Config Backup (Meta)', link: '/developer-guide/advanced/config-backup' },
+            { text: 'Demo Mode', link: '/developer-guide/demo-mode' }
           ]
         },
         {

@@ -88,7 +88,7 @@ dependencies:
     version: 0.5.16
   better-auth:
     specifier: ^1.4.17
-    version: 1.4.17(@prisma/client@5.22.0)(better-sqlite3@12.6.0)(drizzle-orm@0.41.0)(next@16.1.1)(pg@8.16.3)(prisma@5.22.0)(react-dom@19.2.3)(react@19.2.3)(vitest@4.0.17)
+    version: 1.4.17(@prisma/client@5.22.0)(better-sqlite3@12.6.0)(drizzle-orm@0.41.0)(mongodb@6.21.0)(next@16.1.1)(pg@8.16.3)(prisma@5.22.0)(react-dom@19.2.3)(react@19.2.3)(vitest@4.0.17)
   class-variance-authority:
     specifier: ^0.7.1
     version: 0.7.1
@@ -107,6 +107,9 @@ dependencies:
   lucide-react:
     specifier: ^0.562.0
     version: 0.562.0(react@19.2.3)
+  mongodb:
+    specifier: ^6.15.0
+    version: 6.21.0
   mssql:
     specifier: ^12.2.0
     version: 12.2.0
@@ -162,7 +165,7 @@ dependencies:
 devDependencies:
   '@better-auth/cli':
     specifier: ^1.4.17
-    version: 1.4.17(@better-fetch/fetch@1.1.21)(better-call@1.1.8)(jose@6.1.3)(kysely@0.28.9)(nanostores@1.1.0)(next@16.1.1)(prisma@5.22.0)(react-dom@19.2.3)(react@19.2.3)(vitest@4.0.17)
+    version: 1.4.17(@better-fetch/fetch@1.1.21)(better-call@1.1.8)(jose@6.1.3)(kysely@0.28.9)(mongodb@6.21.0)(nanostores@1.1.0)(next@16.1.1)(prisma@5.22.0)(react-dom@19.2.3)(react@19.2.3)(vitest@4.0.17)
   '@tailwindcss/postcss':
     specifier: ^4
     version: 4.1.18
@@ -2022,7 +2025,7 @@ packages:
       '@babel/helper-validator-identifier': 7.28.5
     dev: true
 
-  /@better-auth/cli@1.4.17(@better-fetch/fetch@1.1.21)(better-call@1.1.8)(jose@6.1.3)(kysely@0.28.9)(nanostores@1.1.0)(next@16.1.1)(prisma@5.22.0)(react-dom@19.2.3)(react@19.2.3)(vitest@4.0.17):
+  /@better-auth/cli@1.4.17(@better-fetch/fetch@1.1.21)(better-call@1.1.8)(jose@6.1.3)(kysely@0.28.9)(mongodb@6.21.0)(nanostores@1.1.0)(next@16.1.1)(prisma@5.22.0)(react-dom@19.2.3)(react@19.2.3)(vitest@4.0.17):
     resolution: {integrity: sha512-GT0epRZCRAxwDnDNVsAVXx2W4PNjBfm8NwrtjxfYKRHsnrCHkT0N/cZyKCYG1sReN/wlsyYk8bJ6f1N1P4VT8w==}
     hasBin: true
     dependencies:
@@ -2036,7 +2039,7 @@ packages:
       '@mrleebo/prisma-ast': 0.13.1
       '@prisma/client': 5.22.0(prisma@5.22.0)
       '@types/pg': 8.16.0
-      better-auth: 1.4.17(@prisma/client@5.22.0)(better-sqlite3@12.6.0)(drizzle-orm@0.41.0)(next@16.1.1)(pg@8.16.3)(prisma@5.22.0)(react-dom@19.2.3)(react@19.2.3)(vitest@4.0.17)
+      better-auth: 1.4.17(@prisma/client@5.22.0)(better-sqlite3@12.6.0)(drizzle-orm@0.41.0)(mongodb@6.21.0)(next@16.1.1)(pg@8.16.3)(prisma@5.22.0)(react-dom@19.2.3)(react@19.2.3)(vitest@4.0.17)
       better-sqlite3: 12.6.0
       c12: 3.3.3
       chalk: 5.6.2
@@ -2131,7 +2134,7 @@ packages:
       '@better-fetch/fetch': 1.1.21
       '@simplewebauthn/browser': 13.2.2
       '@simplewebauthn/server': 13.2.2
-      better-auth: 1.4.17(@prisma/client@5.22.0)(better-sqlite3@12.6.0)(drizzle-orm@0.41.0)(next@16.1.1)(pg@8.16.3)(prisma@5.22.0)(react-dom@19.2.3)(react@19.2.3)(vitest@4.0.17)
+      better-auth: 1.4.17(@prisma/client@5.22.0)(better-sqlite3@12.6.0)(drizzle-orm@0.41.0)(mongodb@6.21.0)(next@16.1.1)(pg@8.16.3)(prisma@5.22.0)(react-dom@19.2.3)(react@19.2.3)(vitest@4.0.17)
       better-call: 1.1.8(zod@4.3.5)
       nanostores: 1.1.0
       zod: 4.3.5
@@ -2145,7 +2148,7 @@ packages:
     dependencies:
       '@better-auth/utils': 0.3.0
       '@better-fetch/fetch': 1.1.21
-      better-auth: 1.4.17(@prisma/client@5.22.0)(better-sqlite3@12.6.0)(drizzle-orm@0.41.0)(next@16.1.1)(pg@8.16.3)(prisma@5.22.0)(react-dom@19.2.3)(react@19.2.3)(vitest@4.0.17)
+      better-auth: 1.4.17(@prisma/client@5.22.0)(better-sqlite3@12.6.0)(drizzle-orm@0.41.0)(mongodb@6.21.0)(next@16.1.1)(pg@8.16.3)(prisma@5.22.0)(react-dom@19.2.3)(react@19.2.3)(vitest@4.0.17)
       fast-xml-parser: 5.2.5
       jose: 6.1.3
       samlify: 2.10.2
@@ -2813,6 +2816,11 @@ packages:
   /@levischuck/tiny-cbor@0.2.11:
     resolution: {integrity: sha512-llBRm4dT4Z89aRsm6u2oEZ8tfwL/2l6BwpZ7JcyieouniDECM5AqNgr/y08zalEIvW3RSK4upYyybDcmjXqAow==}
     dev: false
+
+  /@mongodb-js/saslprep@1.4.5:
+    resolution: {integrity: sha512-k64Lbyb7ycCSXHSLzxVdb2xsKGPMvYZfCICXvDsI8Z65CeWQzTEKS4YmGbnqw+U9RBvLPTsB6UCmwkgsDTGWIw==}
+    dependencies:
+      sparse-bitfield: 3.0.3
 
   /@mrleebo/prisma-ast@0.13.1:
     resolution: {integrity: sha512-XyroGQXcHrZdvmrGJvsA9KNeOOgGMg1Vg9OlheUsBOSKznLMDl+YChxbkboRHvtFYJEMRYmlV3uoo/njCw05iw==}
@@ -5386,6 +5394,14 @@ packages:
       '@types/node': 20.19.28
     dev: true
 
+  /@types/webidl-conversions@7.0.3:
+    resolution: {integrity: sha512-CiJJvcRtIgzadHCYXw7dqEnMNRjhGZlYK05Mj9OyktqV8uVT8fD2BFOB7S1uwBE3Kj2Z+4UyPmFw/Ixgw/LAlA==}
+
+  /@types/whatwg-url@11.0.5:
+    resolution: {integrity: sha512-coYR071JRaHa+xoEvvYqvnIHaVqaYrLPbsufM9BF63HkwI5Lgmy2QR8Q5K/lYDYo5AK82wOvSOS0UsLTpTG7uQ==}
+    dependencies:
+      '@types/webidl-conversions': 7.0.3
+
   /@typescript-eslint/eslint-plugin@8.52.0(@typescript-eslint/parser@8.52.0)(eslint@9.39.2)(typescript@5.9.3):
     resolution: {integrity: sha512-okqtOgqu2qmZJ5iN4TWlgfF171dZmx2FzdOv2K/ixL2LZWDStL8+JgQerI2sa8eAEfoydG9+0V96m7V+P8yE1Q==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
@@ -5999,7 +6015,7 @@ packages:
       tweetnacl: 0.14.5
     dev: false
 
-  /better-auth@1.4.17(@prisma/client@5.22.0)(better-sqlite3@12.6.0)(drizzle-orm@0.41.0)(next@16.1.1)(pg@8.16.3)(prisma@5.22.0)(react-dom@19.2.3)(react@19.2.3)(vitest@4.0.17):
+  /better-auth@1.4.17(@prisma/client@5.22.0)(better-sqlite3@12.6.0)(drizzle-orm@0.41.0)(mongodb@6.21.0)(next@16.1.1)(pg@8.16.3)(prisma@5.22.0)(react-dom@19.2.3)(react@19.2.3)(vitest@4.0.17):
     resolution: {integrity: sha512-VmHGQyKsEahkEs37qguROKg/6ypYpNF13D7v/lkbO7w7Aivz0Bv2h+VyUkH4NzrGY0QBKXi1577mGhDCVwp0ew==}
     peerDependencies:
       '@lynx-js/react': '*'
@@ -6074,6 +6090,7 @@ packages:
       drizzle-orm: 0.41.0(@prisma/client@5.22.0)(@types/pg@8.16.0)(better-sqlite3@12.6.0)(kysely@0.28.9)(pg@8.16.3)(prisma@5.22.0)
       jose: 6.1.3
       kysely: 0.28.9
+      mongodb: 6.21.0
       nanostores: 1.1.0
       next: 16.1.1(@babel/core@7.28.5)(react-dom@19.2.3)(react@19.2.3)
       pg: 8.16.3
@@ -6163,6 +6180,10 @@ packages:
       electron-to-chromium: 1.5.267
       node-releases: 2.0.27
       update-browserslist-db: 1.2.3(browserslist@4.28.1)
+
+  /bson@6.10.4:
+    resolution: {integrity: sha512-WIsKqkSC0ABoBJuT1LEX+2HEvNmNKKgnTAyd0fL8qzK4SH2i9NXg+t08YtdZp/V9IZ33cxe3iV4yM0qg8lMQng==}
+    engines: {node: '>=16.20.1'}
 
   /buffer-equal-constant-time@1.0.1:
     resolution: {integrity: sha512-zRpUiDwd/xk6ADqPMATG8vc9VPrkck7T07OIx0gnjmJAnHnTVXNQG3vfvWNuiZIkwu9KrKdA1iJKfsfTVxE6NA==}
@@ -8155,6 +8176,9 @@ packages:
   /mdn-data@2.12.2:
     resolution: {integrity: sha512-IEn+pegP1aManZuckezWCO+XZQDplx1366JoVhTpMpBB1sPey/SbveZQUosKiKiGYjg1wH4pMlNgXbCiYgihQA==}
 
+  /memory-pager@1.5.0:
+    resolution: {integrity: sha512-ZS4Bp4r/Zoeq6+NLJpP+0Zzm0pR8whtGPf1XExKLJBAczGMnSi3It14OiNCStjQjM6NU1okjQGSxgEZN8eBYKg==}
+
   /merge2@1.4.1:
     resolution: {integrity: sha512-8q7VEgMJW4J8tcfVPy8g09NcQwZdbwFEqhe/WZkoIzjn/3TGDwtOCYtXGxA3O8tPzpczCCDgv+P2P5y00ZJOOg==}
     engines: {node: '>= 8'}
@@ -8190,6 +8214,43 @@ packages:
 
   /mkdirp-classic@0.5.3:
     resolution: {integrity: sha512-gKLcREMhtuZRwRAfqP3RFW+TK4JqApVBtOIftVgjuABpAtpxhPGaDcfvbhNvD0B8iD1oUr/txX35NjcaY6Ns/A==}
+
+  /mongodb-connection-string-url@3.0.2:
+    resolution: {integrity: sha512-rMO7CGo/9BFwyZABcKAWL8UJwH/Kc2x0g72uhDWzG48URRax5TCIcJ7Rc3RZqffZzO/Gwff/jyKwCU9TN8gehA==}
+    dependencies:
+      '@types/whatwg-url': 11.0.5
+      whatwg-url: 14.2.0
+
+  /mongodb@6.21.0:
+    resolution: {integrity: sha512-URyb/VXMjJ4da46OeSXg+puO39XH9DeQpWCslifrRn9JWugy0D+DvvBvkm2WxmHe61O/H19JM66p1z7RHVkZ6A==}
+    engines: {node: '>=16.20.1'}
+    peerDependencies:
+      '@aws-sdk/credential-providers': ^3.188.0
+      '@mongodb-js/zstd': ^1.1.0 || ^2.0.0
+      gcp-metadata: ^5.2.0
+      kerberos: ^2.0.1
+      mongodb-client-encryption: '>=6.0.0 <7'
+      snappy: ^7.3.2
+      socks: ^2.7.1
+    peerDependenciesMeta:
+      '@aws-sdk/credential-providers':
+        optional: true
+      '@mongodb-js/zstd':
+        optional: true
+      gcp-metadata:
+        optional: true
+      kerberos:
+        optional: true
+      mongodb-client-encryption:
+        optional: true
+      snappy:
+        optional: true
+      socks:
+        optional: true
+    dependencies:
+      '@mongodb-js/saslprep': 1.4.5
+      bson: 6.10.4
+      mongodb-connection-string-url: 3.0.2
 
   /ms@2.1.3:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
@@ -9175,6 +9236,11 @@ packages:
     resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
     engines: {node: '>=0.10.0'}
 
+  /sparse-bitfield@3.0.3:
+    resolution: {integrity: sha512-kvzhi7vqKTfkh0PZU+2D2PIllw2ymqJKujUcyPMd9Y75Nv4nPbGJZXNhxsgdQab2BmlDct1YnfQCguEvHr7VsQ==}
+    dependencies:
+      memory-pager: 1.5.0
+
   /split2@4.2.0:
     resolution: {integrity: sha512-UcjcJOWknrNkF6PLX83qcHM6KHgVKNkV62Y8a5uYDVv9ydGQVwAHMKqHdJje1VTWpljG0WYpCDhrCdAOYH4TWg==}
     engines: {node: '>= 10.x'}
@@ -9475,6 +9541,12 @@ packages:
     engines: {node: '>=16'}
     dependencies:
       tldts: 7.0.19
+
+  /tr46@5.1.1:
+    resolution: {integrity: sha512-hdF5ZgjTqgAntKkklYw0R03MG2x/bSzTtkxmIRw/sTNV8YXsCJ1tfLAX23lhxhHJlEf3CRCOCGGWw3vI3GaSPw==}
+    engines: {node: '>=18'}
+    dependencies:
+      punycode: 2.3.1
 
   /tr46@6.0.0:
     resolution: {integrity: sha512-bLVMLPtstlZ4iMQHpFHTR7GAGj2jxi8Dg0s2h2MafAE4uSWF98FC/3MomU51iQAMf8/qDUbKWf5GxuvvVcXEhw==}
@@ -9885,6 +9957,10 @@ packages:
     dependencies:
       xml-name-validator: 5.0.0
 
+  /webidl-conversions@7.0.0:
+    resolution: {integrity: sha512-VwddBukDzu71offAQR975unBIGqfKZpM+8ZX6ySk8nYhVoo5CYaZyzt3YBvYtRtO+aoGlqxPg/B87NGVZ/fu6g==}
+    engines: {node: '>=12'}
+
   /webidl-conversions@8.0.1:
     resolution: {integrity: sha512-BMhLD/Sw+GbJC21C/UgyaZX41nPt8bUTg+jWyDeg7e7YN4xOM05YPSIXceACnXVtqyEw/LMClUQMtMZ+PGGpqQ==}
     engines: {node: '>=20'}
@@ -9892,6 +9968,13 @@ packages:
   /whatwg-mimetype@4.0.0:
     resolution: {integrity: sha512-QaKxh0eNIi2mE9p2vEdzfagOKHCcj1pJ56EEHGQOVxp8r9/iszLUUV7v89x9O1p/T+NlTM5W7jW6+cz4Fq1YVg==}
     engines: {node: '>=18'}
+
+  /whatwg-url@14.2.0:
+    resolution: {integrity: sha512-De72GdQZzNTUBBChsXueQUnPKDkg/5A5zp7pFDuQAj5UFoENpiACU0wlCvzpAGnTkj++ihpKwKyYewn/XNUbKw==}
+    engines: {node: '>=18'}
+    dependencies:
+      tr46: 5.1.1
+      webidl-conversions: 7.0.0
 
   /whatwg-url@15.1.0:
     resolution: {integrity: sha512-2ytDk0kiEj/yu90JOAp44PVPUkO9+jVhyf+SybKlRHSDlvOOZhdPIrr7xTH64l4WixO2cP+wQIcgujkGBPPz6g==}

@@ -122,6 +122,7 @@ docs: update API documentation
 - [Architecture](/developer-guide/architecture) - System design details
 - [Adapter System](/developer-guide/core/adapters) - How adapters work
 - [Runner Pipeline](/developer-guide/core/runner) - Backup execution flow
+- [Logging System](/developer-guide/core/logging) - System logger, custom errors, execution logs
 - [Download Tokens](/developer-guide/core/download-tokens) - Temporary download links for wget/curl
 - [Testing Guide](/developer-guide/reference/testing) - Writing tests
 

@@ -299,6 +299,40 @@ Request → Auth Check → Permission Check → Action
               └── Session ────┴── User → Group → Permissions[]
 ```
 
+## Logging & Error Handling
+
+DBackup uses a centralized logging system for consistent debugging and monitoring.
+
+### System Logger
+
+```typescript
+import { logger } from "@/lib/logger";
+
+const log = logger.child({ service: "MyService" });
+log.info("Operation started", { id: "123" });
+log.error("Operation failed", { id: "123" }, error);
+```
+
+### Custom Errors
+
+```typescript
+import { AdapterError, wrapError } from "@/lib/errors";
+
+try {
+  await riskyOperation();
+} catch (e) {
+  throw new AdapterError("mysql", "Connection failed");
+}
+```
+
+**Error Hierarchy:**
+- `DBackupError` (base)
+- `AdapterError`, `ConnectionError`, `ConfigurationError`
+- `BackupError`, `RestoreError`, `EncryptionError`
+- `PermissionError`, `AuthenticationError`
+
+See [Logging System](/developer-guide/core/logging) for full documentation.
+
 ## Key Design Decisions
 
 ### Why SQLite?
@@ -331,4 +365,5 @@ Request → Auth Check → Permission Check → Action
 - [Service Layer](/developer-guide/core/services)
 - [Adapter System](/developer-guide/core/adapters)
 - [Runner Pipeline](/developer-guide/core/runner)
+- [Logging System](/developer-guide/core/logging)
 - [Database Schema](/developer-guide/reference/schema)

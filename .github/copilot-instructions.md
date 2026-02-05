@@ -220,6 +220,45 @@ interface RestoreInput {
 - **Exports**: Named exports preferred
 - **Max file size**: ~300 lines, then split (e.g., Pipeline Pattern in `runner/steps/`)
 
+## Logging & Error Handling
+
+**IMPORTANT:** Never use `console.log`, `console.error`, or `console.warn` directly. Use the centralized logger instead.
+
+### System Logger (`src/lib/logger.ts`)
+```typescript
+import { logger } from "@/lib/logger";
+
+// Create a child logger with context
+const log = logger.child({ service: "MyService" });
+
+// Log levels: debug, info, warn, error
+log.info("Operation started", { jobId: "123" });
+log.error("Operation failed", { jobId: "123" }, wrapError(error));
+```
+
+### Custom Errors (`src/lib/errors.ts`)
+```typescript
+import { AdapterError, wrapError, getErrorMessage } from "@/lib/errors";
+
+// Throw specific errors
+throw new AdapterError("mysql", "Connection timeout");
+
+// Wrap unknown errors
+catch (e: unknown) {
+  log.error("Failed", {}, wrapError(e));
+  throw wrapError(e);
+}
+```
+
+**Error Classes:**
+- `DBackupError` (base), `AdapterError`, `ConnectionError`, `ConfigurationError`
+- `ServiceError`, `NotFoundError`, `ValidationError`
+- `PermissionError`, `AuthenticationError`
+- `BackupError`, `RestoreError`, `EncryptionError`, `QueueError`
+
+### Environment Variable
+- `LOG_LEVEL`: `debug` | `info` (default) | `warn` | `error`
+
 ## Quick Reference
 
 | Concern | Location |
@@ -231,3 +270,5 @@ interface RestoreInput {
 | Services | [src/services/](src/services/) |
 | Server Actions | [src/app/actions/](src/app/actions/) |
 | Scheduler (Cron) | [src/lib/scheduler.ts](src/lib/scheduler.ts) |
+| Logger | [src/lib/logger.ts](src/lib/logger.ts) |
+| Error Classes | [src/lib/errors.ts](src/lib/errors.ts) |

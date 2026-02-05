@@ -2,10 +2,10 @@
 
 All notable changes to DBackup are documented here.
 
-## v0.9.4-beta - Universal Download Links
+## v0.9.4-beta - Universal Download Links & Logging System
 *Release: In Progress*
 
-This release extends the token-based download link feature (introduced for Redis restore) to all backup downloads in Storage Explorer.
+This release extends the token-based download link feature (introduced for Redis restore) to all backup downloads in Storage Explorer. Additionally, it introduces a centralized logging and error handling system for better maintainability and debugging.
 
 ### ✨ New Features
 
@@ -22,9 +22,27 @@ The temporary download link feature is now available for all backup files:
 - Consistent download experience across all backup types
 - wget/curl option always available regardless of encryption status
 
+#### 📝 Centralized Logging System
+Introduced a unified logging infrastructure to replace scattered `console.log` calls:
+- **System Logger**: New `logger` utility (`src/lib/logger.ts`) with level-based logging (debug, info, warn, error)
+- **Child Loggers**: Context-aware logging with `logger.child({ service: "ServiceName" })` for better traceability
+- **Environment Control**: Configure log level via `LOG_LEVEL` environment variable
+- **Output Formats**: Human-readable colored output in development, JSON format in production
+- **Custom Error Classes**: New error hierarchy (`src/lib/errors.ts`) with specialized errors for adapters, services, encryption, etc.
+- **Error Utilities**: `wrapError()`, `getErrorMessage()`, `isDBackupError()` for consistent error handling
+
+#### 🛡️ Type-Safe Error Handling
+New custom error classes for better error categorization:
+- `DBackupError` (base class)
+- `AdapterError`, `ConnectionError`, `ConfigurationError`
+- `ServiceError`, `NotFoundError`, `ValidationError`
+- `PermissionError`, `AuthenticationError`
+- `BackupError`, `RestoreError`, `EncryptionError`, `QueueError`
+
 ### 📚 Documentation
 - Added comprehensive developer documentation for Download Tokens system
 - Updated Storage Explorer user guide with wget/curl download section
+- **New**: Added Logging System documentation in Developer Guide (System Logger, Custom Errors, Best Practices)
 
 ### 🧹 Code Cleanup
 Removed legacy code that became obsolete after the v0.9.1 TAR architecture migration:
@@ -32,6 +50,13 @@ Removed legacy code that became obsolete after the v0.9.1 TAR architecture migra
 - **MySQL Dialects**: Removed unused multi-database branch (`--databases ...`) and `--all-databases` fallback from `getDumpArgs()`
 - **MongoDB Dialects**: Simplified `getRestoreArgs()` to stub (restore builds args directly in `restore.ts`)
 - **Roadmap**: Moved "PostgreSQL Restore Improvements" to completed (handled by TAR architecture)
+
+### 🔧 Technical Changes
+- New `src/lib/logger.ts` - Centralized logging utility
+- New `src/lib/errors.ts` - Custom error class hierarchy
+- New `src/lib/types/service-result.ts` - Type-safe service return type
+- Migrated core services and adapters to use the new logging system
+- Added lint-guard tests to detect `console.*` usage in source files
 
 ## v0.9.3-beta - Redis Support, Restore UX & Smart File Extensions
 *Released: February 2, 2026*

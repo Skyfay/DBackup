@@ -21,6 +21,7 @@ Complete reference for all environment variables in DBackup.
 | `PORT` | Internal port the server listens on | `3000` |
 | `TZ` | Server timezone (for logs and cron scheduling) | `UTC` |
 | `TMPDIR` | Temporary directory for backup processing | `/tmp` |
+| `LOG_LEVEL` | Logging verbosity level | `info` |
 
 ### Notes
 
@@ -33,6 +34,11 @@ Complete reference for all environment variables in DBackup.
 - **DATABASE_URL** has a sensible default and typically doesn't need to be set
 - **TMPDIR** is useful for mounting larger storage for temporary backup files (e.g., NFS)
 - **TZ** only affects server-side logs. User-facing dates use the timezone from user profile settings
+- **LOG_LEVEL** controls logging verbosity:
+  - `debug` - All logs including detailed debugging information
+  - `info` - Normal operation logs (default, recommended for production)
+  - `warn` - Only warnings and errors
+  - `error` - Only errors
 
 ## Generating Secrets
 

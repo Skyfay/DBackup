@@ -1,12 +1,189 @@
 # Logging System
 
-The Database Backup Manager uses a structured logging system to ensure consistent tracking of executions (Backups, Restores) and to provide a rich UI experience.
+DBackup uses two distinct logging systems:
 
-## Core Concepts
+1. **System Logger** - For application-wide logging (errors, debug info, operations)
+2. **Execution Logs** - Structured logs for backup/restore job tracking (UI display)
+
+## System Logger
+
+::: info Added in v0.9.4-beta
+The centralized logging system was introduced to replace scattered `console.log` calls throughout the codebase.
+:::
+
+### Overview
+
+The system logger provides consistent, level-based logging across the entire application.
+
+**Location**: `src/lib/logger.ts`
+
+### Basic Usage
+
+```typescript
+import { logger } from "@/lib/logger";
+
+// Simple logging
+logger.info("Backup started");
+logger.debug("Processing file", { filename: "backup.sql" });
+logger.warn("Connection slow", { latency: 500 });
+logger.error("Operation failed", { operation: "upload" }, error);
+```
+
+### Child Loggers
+
+For component-specific logging, create a child logger with context:
+
+```typescript
+import { logger } from "@/lib/logger";
+
+const log = logger.child({ service: "BackupService" });
+
+// All logs will include { service: "BackupService" }
+log.info("Starting backup job", { jobId: "abc123" });
+// Output: { level: "info", service: "BackupService", jobId: "abc123", message: "Starting backup job" }
+```
+
+### Log Levels
+
+| Level | Usage | When to Use |
+|-------|-------|-------------|
+| `debug` | Detailed debugging info | Development, troubleshooting |
+| `info` | Normal operations | Important state changes |
+| `warn` | Non-critical issues | Degraded functionality |
+| `error` | Failures | Exceptions, failed operations |
+
+### Environment Configuration
+
+Control log output via the `LOG_LEVEL` environment variable:
+
+```bash
+# .env
+LOG_LEVEL=debug   # Show all logs (development)
+LOG_LEVEL=info    # Default (production)
+LOG_LEVEL=warn    # Only warnings and errors
+LOG_LEVEL=error   # Only errors
+```
+
+### Output Formats
+
+**Development** (colored, human-readable):
+```
+[2026-02-05T10:30:00.000Z] INFO  [BackupService] Starting backup job { jobId: "abc123" }
+```
+
+**Production** (JSON, machine-parseable):
+```json
+{"timestamp":"2026-02-05T10:30:00.000Z","level":"info","service":"BackupService","message":"Starting backup job","jobId":"abc123"}
+```
+
+### Error Handling Integration
+
+The logger integrates with the custom error system:
+
+```typescript
+import { logger } from "@/lib/logger";
+import { wrapError, AdapterError } from "@/lib/errors";
+
+const log = logger.child({ adapter: "mysql" });
+
+try {
+  await connectToDatabase();
+} catch (error) {
+  // wrapError() converts unknown errors to DBackupError
+  log.error("Connection failed", { host: config.host }, wrapError(error));
+  throw new AdapterError("mysql", "Failed to connect to database");
+}
+```
+
+### Best Practices
+
+::: tip Do
+- Use child loggers with context (service, adapter, step)
+- Include relevant metadata as the second parameter
+- Use appropriate log levels
+- Use `wrapError()` for error logging
+:::
+
+::: warning Don't
+- Don't use `console.log`, `console.error`, etc. directly
+- Don't log sensitive data (passwords, keys, tokens)
+- Don't log inside hot loops (performance impact)
+:::
+
+---
+
+## Custom Error Classes
+
+**Location**: `src/lib/errors.ts`
+
+DBackup provides a hierarchy of custom error classes for consistent error handling:
+
+### Error Hierarchy
+
+```
+DBackupError (base)
+├── AdapterError       - Database/storage adapter failures
+├── ConnectionError    - Network/connectivity issues
+├── ConfigurationError - Invalid config or settings
+├── ServiceError       - Business logic failures
+├── NotFoundError      - Resource not found
+├── ValidationError    - Input validation failures
+├── PermissionError    - RBAC authorization failures
+├── AuthenticationError - Login/session failures
+├── BackupError        - Backup operation failures
+├── RestoreError       - Restore operation failures
+├── EncryptionError    - Encryption/decryption failures
+└── QueueError         - Job queue failures
+```
+
+### Creating Custom Errors
+
+```typescript
+import { AdapterError, BackupError, wrapError } from "@/lib/errors";
+
+// Adapter-specific error
+throw new AdapterError("mysql", "Connection timeout after 30s");
+
+// Backup operation error
+throw new BackupError("Dump failed: insufficient permissions");
+
+// Wrapping unknown errors
+try {
+  await riskyOperation();
+} catch (e) {
+  throw wrapError(e); // Converts to DBackupError
+}
+```
+
+### Utility Functions
+
+```typescript
+import {
+  isDBackupError,
+  getErrorMessage,
+  getErrorCode,
+  withContext
+} from "@/lib/errors";
+
+// Type guard
+if (isDBackupError(error)) {
+  console.log(error.code); // e.g., "ADAPTER_ERROR"
+}
+
+// Safe message extraction
+const message = getErrorMessage(unknownError);
+
+// Add context to errors
+throw withContext(error, { jobId: "123", attempt: 2 });
+```
+
+---
+
+## Execution Logs (Job Tracking)
+
+For backup and restore operations, DBackup uses structured execution logs that are displayed in the UI.
 
 ### The LogEntry Structure
-
-Logs are structured JSON objects, not simple strings.
 
 **Location**: `src/lib/core/logs.ts`
 
@@ -43,7 +220,7 @@ export type LogType = 'general' | 'command';
 
 ## Usage in Services
 
-Services (like `BackupService` or `RestoreService`) manage execution logs.
+The runner pipeline uses execution logs for job tracking:
 
 ### Log Buffer Pattern
 

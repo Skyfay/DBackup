@@ -110,6 +110,7 @@ docker run -d \
 | `DATABASE_URL` | ❌ | SQLite path. Default: `file:/app/db/dbackup.db` |
 | `TZ` | ❌ | Server timezone for logs. Default: `UTC` |
 | `TMPDIR` | ❌ | Temp directory for large backups. Default: `/tmp` |
+| `LOG_LEVEL` | ❌ | Logging verbosity: `debug`, `info`, `warn`, `error`. Default: `info` |
 
 → **[Full Environment Reference](/developer-guide/reference/environment)** for advanced configuration.
 

@@ -52,8 +52,9 @@ export async function stepExecuteDump(ctx: RunnerContext) {
                         count = names.length;
                         label = `${names.length} DBs (fetched)`;
                     }
-                } catch (e: any) {
-                    ctx.log(`Warning: Could not fetch DB list for metadata: ${e.message}`);
+                } catch (e: unknown) {
+                    const message = e instanceof Error ? e.message : String(e);
+                    ctx.log(`Warning: Could not fetch DB list for metadata: ${message}`);
                 }
             }
         } else if (Array.isArray(dbVal)) {
@@ -166,7 +167,8 @@ export async function stepExecuteDump(ctx: RunnerContext) {
                 ctx.log(`Multi-DB TAR archive detected: ${manifest.databases.length} databases`);
             }
         }
-    } catch (e: any) {
-        ctx.log(`Warning: Could not check for Multi-DB TAR format: ${e.message}`);
+    } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
+        ctx.log(`Warning: Could not check for Multi-DB TAR format: ${message}`);
     }
 }

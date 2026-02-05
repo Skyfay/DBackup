@@ -93,8 +93,8 @@ export async function createSsoProvider(input: z.infer<typeof createProviderSche
             }
         }
 
-    } catch (e: any) {
-        return { success: false, error: `Endpoint discovery failed: ${e.message}` };
+    } catch (e: unknown) {
+        return { success: false, error: `Endpoint discovery failed: ${getErrorMessage(e)}` };
     }
 
     // 4. Create in DB
@@ -176,8 +176,8 @@ export async function updateSsoProvider(input: z.infer<typeof updateProviderSche
             }
         }
 
-    } catch (e: any) {
-        return { success: false, error: `Endpoint discovery failed: ${e.message}` };
+    } catch (e: unknown) {
+        return { success: false, error: `Endpoint discovery failed: ${getErrorMessage(e)}` };
     }
 
     // 4. Update in DB
@@ -214,8 +214,8 @@ export async function deleteSsoProvider(id: string) {
         await OidcProviderService.deleteProvider(id);
         revalidatePath("/admin/settings");
         return { success: true };
-    } catch (error: any) {
-        return { success: false, error: error.message };
+    } catch (error: unknown) {
+        return { success: false, error: getErrorMessage(error) };
     }
 }
 
@@ -225,7 +225,7 @@ export async function toggleSsoProvider(id: string, enabled: boolean) {
         await OidcProviderService.toggleProvider(id, enabled);
         revalidatePath("/admin/settings");
         return { success: true };
-    } catch (error: any) {
-        return { success: false, error: error.message };
+    } catch (error: unknown) {
+        return { success: false, error: getErrorMessage(error) };
     }
 }

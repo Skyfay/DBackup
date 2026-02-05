@@ -197,8 +197,9 @@ async function s3Test(internalConfig: S3InternalConfig): Promise<{ success: bool
         }));
 
         return { success: true, message: "Connection successful (Write/Delete verified)" };
-    } catch (error: any) {
-        return { success: false, message: error.message || "Connection failed" };
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        return { success: false, message: message || "Connection failed" };
     }
 }
 

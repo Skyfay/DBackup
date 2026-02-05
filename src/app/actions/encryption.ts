@@ -8,6 +8,7 @@ import * as encryptionService from "@/services/encryption-service";
 import { revalidatePath } from "next/cache";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
+import { getErrorMessage } from "@/lib/errors";
 
 /**
  * Returns all encryption profiles.
@@ -40,8 +41,8 @@ export async function getEncryptionProfiles() {
     try {
         const profiles = await encryptionService.getEncryptionProfiles();
         return { success: true, data: profiles };
-    } catch (e: any) {
-        return { success: false, error: e.message };
+    } catch (e: unknown) {
+        return { success: false, error: getErrorMessage(e) };
     }
 }
 
@@ -63,8 +64,8 @@ export async function revealMasterKey(id: string) {
     try {
         const key = await encryptionService.getDecryptedMasterKey(id);
         return { success: true, data: key };
-    } catch (e: any) {
-        return { success: false, error: e.message };
+    } catch (e: unknown) {
+        return { success: false, error: getErrorMessage(e) };
     }
 }
 
@@ -97,8 +98,8 @@ export async function createEncryptionProfile(name: string, description?: string
         revalidatePath("/dashboard/settings");
         revalidatePath("/dashboard/jobs"); // Revalidate jobs usually where dropdowns are
         return { success: true, data: profile };
-    } catch (e: any) {
-        return { success: false, error: e.message };
+    } catch (e: unknown) {
+        return { success: false, error: getErrorMessage(e) };
     }
 }
 
@@ -131,8 +132,8 @@ export async function importEncryptionProfile(name: string, keyHex: string, desc
         revalidatePath("/dashboard/settings");
         revalidatePath("/dashboard/jobs");
         return { success: true, data: profile };
-    } catch (e: any) {
-        return { success: false, error: e.message };
+    } catch (e: unknown) {
+        return { success: false, error: getErrorMessage(e) };
     }
 }
 
@@ -168,7 +169,7 @@ export async function deleteEncryptionProfile(id: string) {
         revalidatePath("/dashboard/settings");
         revalidatePath("/dashboard/jobs");
         return { success: true };
-    } catch (e: any) {
-        return { success: false, error: e.message };
+    } catch (e: unknown) {
+        return { success: false, error: getErrorMessage(e) };
     }
 }

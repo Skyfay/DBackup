@@ -98,9 +98,9 @@ export function EditUserDialogComponent({ user, groups, open, onOpenChange }: Ed
 
             toast.success("User updated successfully");
             onOpenChange(false);
-        } catch (error: any) {
-            console.error(error)
-            toast.error(error.message || "An error occurred")
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : "An error occurred";
+            toast.error(message);
         } finally {
             setLoading(false)
         }

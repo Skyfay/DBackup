@@ -368,7 +368,7 @@ export class StorageService {
             const metaPath = filePath + ".meta.json";
             await adapter.delete(config, metaPath);
         } catch (e) {
-            console.warn(`Failed to delete associated metadata file for ${filePath}`, e);
+            log.warn("Failed to delete associated metadata file", { filePath }, wrapError(e));
         }
 
         return mainDelete;
@@ -473,10 +473,10 @@ export class StorageService {
                 }
 
                 return { success: true, isZip: false };
-            } catch (e: any) {
-                console.error("Decryption during download failed:", e);
+            } catch (e: unknown) {
+                const message = e instanceof Error ? e.message : String(e);
                 // Return failed state so API returns 500
-                throw new Error("Decryption failed: " + e.message);
+                throw new Error("Decryption failed: " + message);
             }
        }
 
@@ -510,7 +510,7 @@ export class StorageService {
 
                        return { success: true, isZip: true };
                    } catch (zipError) {
-                       console.error("Zip creation failed:", zipError);
+                       log.error("Zip creation failed", { remotePath }, wrapError(zipError));
                        // Fallback: Return original file only
                        await fs.rename(tempMain, localDestination);
                        return { success: true, isZip: false };

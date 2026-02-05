@@ -83,8 +83,8 @@ export async function test(config: any): Promise<{ success: boolean; message: st
             version,
             edition,
         };
-    } catch (error: any) {
-        const message = error.message || "Connection failed";
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
 
         // Provide helpful error messages
         if (message.includes("ECONNREFUSED")) {

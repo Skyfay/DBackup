@@ -20,8 +20,9 @@ export async function ensureDatabase(config: any, dbName: string, user: string, 
             await execFileAsync(getMysqlCommand(), [...args, '-e', grantQuery], { env });
             logs.push(`Permissions granted for '${dbName}'.`);
        }
-    } catch(e: any) {
-        logs.push(`Warning ensures DB '${dbName}': ${e.message}`);
+    } catch(e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
+        logs.push(`Warning ensures DB '${dbName}': ${message}`);
     }
 }
 
@@ -58,8 +59,9 @@ export async function test(config: any): Promise<{ success: boolean; message: st
         const version = versionMatch ? versionMatch[1] : rawVersion;
 
         return { success: true, message: "Connection successful", version };
-    } catch (error: any) {
-        return { success: false, message: "Connection failed: " + (error.stderr || error.message) };
+    } catch (error: unknown) {
+        const err = error as { stderr?: string; message?: string };
+        return { success: false, message: "Connection failed: " + (err.stderr || err.message) };
     }
 }
 

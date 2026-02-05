@@ -64,8 +64,9 @@ export async function test(config: any): Promise<{ success: boolean; message: st
             message: "Connection successful",
             version
         };
-    } catch (error: any) {
-        const errorMsg = error.stderr || error.message || "Unknown error";
+    } catch (error: unknown) {
+        const err = error as { stderr?: string; message?: string };
+        const errorMsg = err.stderr || err.message || "Unknown error";
         return {
             success: false,
             message: `Connection failed: ${errorMsg}`

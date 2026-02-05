@@ -227,8 +227,9 @@ export class ConfigService {
         // @ts-expect-error Pipeline argument spread issues
         await pipeline(...streams);
         return JSON.parse(jsonString) as AppConfigurationBackup;
-      } catch (e: any) {
-          throw new Error(`Failed to process backup file: ${e.message}`);
+      } catch (e: unknown) {
+          const message = e instanceof Error ? e.message : String(e);
+          throw new Error(`Failed to process backup file: ${message}`);
       }
   }
 
@@ -657,8 +658,9 @@ export class ConfigService {
               await fs.unlink(downloadPath);
           } catch {}
 
-      } catch (err: any) {
-          log(`Restoration failed: ${err.message}`, "error");
+      } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          log(`Restoration failed: ${message}`, "error");
            await prisma.execution.update({
               where: { id: executionId },
               data: {

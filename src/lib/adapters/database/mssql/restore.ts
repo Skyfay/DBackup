@@ -35,12 +35,13 @@ export async function prepareRestore(config: any, databases: string[]): Promise<
                 // Database exists and is online - will be overwritten
             }
             // Database doesn't exist - will be created
-        } catch (error: any) {
-            if (error.message.includes("Invalid database name")) {
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (message.includes("Invalid database name")) {
                 throw error;
             }
             // Connection/permission errors
-            throw new Error(`Cannot prepare restore for '${dbName}': ${error.message}`);
+            throw new Error(`Cannot prepare restore for '${dbName}': ${message}`);
         }
     }
 }
@@ -170,8 +171,9 @@ export async function restore(
             try {
                 await executeQuery(config, restoreQuery);
                 log(`Restore completed for: ${targetDb.target}`);
-            } catch (error: any) {
-                log(`Restore failed for ${targetDb.target}: ${error.message}`, "error");
+            } catch (error: unknown) {
+                const message = error instanceof Error ? error.message : String(error);
+                log(`Restore failed for ${targetDb.target}: ${message}`, "error");
                 throw error;
             }
 
@@ -194,12 +196,13 @@ export async function restore(
             startedAt,
             completedAt: new Date(),
         };
-    } catch (error: any) {
-        log(`Error: ${error.message}`, "error");
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        log(`Error: ${message}`, "error");
         return {
             success: false,
             logs,
-            error: error.message,
+            error: message,
             startedAt,
             completedAt: new Date(),
         };

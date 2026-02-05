@@ -83,9 +83,9 @@ export function LoginForm({ allowSignUp = true, ssoProviders = [], errorCode, di
             if (res.error) {
                  toast.error(res.error.message || "SSO Login failed");
             }
-        } catch (e: any) {
-            console.error("SSO Exception:", e);
-            toast.error(e?.message || "SSO Login failed");
+        } catch (e: unknown) {
+            const message = e instanceof Error ? e.message : "SSO Login failed";
+            toast.error(message);
         } finally {
             setLoading(false);
         }
@@ -383,9 +383,9 @@ export function LoginForm({ allowSignUp = true, ssoProviders = [], errorCode, di
                 <FormItem>
                   <FormLabel>Email</FormLabel>
                   <FormControl>
-                    <Input 
-                        placeholder="m@example.com" 
-                        {...field} 
+                    <Input
+                        placeholder="m@example.com"
+                        {...field}
                         disabled={isLogin && !isEmailStep}
                         onKeyDown={(e) => {
                             if (e.key === "Enter" && isLogin && isEmailStep) {
@@ -427,9 +427,9 @@ export function LoginForm({ allowSignUp = true, ssoProviders = [], errorCode, di
             />
             )}
             {isLogin && isEmailStep ? (
-                <Button 
-                    type="button" 
-                    className="w-full" 
+                <Button
+                    type="button"
+                    className="w-full"
                     disabled={loading}
                     onClick={handleEmailNext}
                 >

@@ -71,8 +71,9 @@ export async function GET(req: NextRequest) {
         });
 
         return NextResponse.json(decryptedAdapters);
-    } catch (error: any) {
-        return NextResponse.json({ error: error.message || "Failed to fetch adapters" }, { status: 500 });
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : "Failed to fetch adapters";
+        return NextResponse.json({ error: message }, { status: 500 });
     }
 }
 

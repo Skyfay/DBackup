@@ -243,8 +243,9 @@ export const SFTPStorageAdapter: StorageAdapter = {
             await sftp.delete(destination);
 
             return { success: true, message: "Connection successful (Write/Delete verified)" };
-        } catch (error: any) {
-            return { success: false, message: `SFTP Connection failed: ${error.message}` };
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            return { success: false, message: `SFTP Connection failed: ${message}` };
         } finally {
             if (sftp) await sftp.end();
         }

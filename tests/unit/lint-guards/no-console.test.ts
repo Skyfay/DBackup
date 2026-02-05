@@ -20,6 +20,22 @@ const ALLOWED_FILES = [
   "src/instrumentation.ts", // Next.js instrumentation hook
 ];
 
+/**
+ * Checks if a file is a React Client Component.
+ * Client Components run in the browser where the server-side logger is not available.
+ * In these files, console.* is the appropriate choice for debugging.
+ */
+function isClientComponent(filePath: string): boolean {
+  try {
+    const content = fs.readFileSync(filePath, "utf-8");
+    // Check first 100 characters for "use client" directive
+    const firstChunk = content.slice(0, 100);
+    return firstChunk.includes('"use client"') || firstChunk.includes("'use client'");
+  } catch {
+    return false;
+  }
+}
+
 // Patterns to detect direct console usage
 const CONSOLE_PATTERNS = [
   { pattern: /console\.log\s*\(/g, name: "console.log" },
@@ -111,6 +127,12 @@ function findConsoleUsage(filePath: string): Violation[] {
     return [];
   }
 
+  // Skip Client Components - they run in the browser where server-side logger is unavailable
+  // console.* is the correct choice for browser-side debugging
+  if (isClientComponent(filePath)) {
+    return [];
+  }
+
   lines.forEach((line, index) => {
     // Skip comment lines
     if (isCommentLine(line)) {
@@ -180,22 +202,14 @@ describe("Logging Standards", () => {
     if (allViolations.length > 0) {
       const report = formatViolationReport(allViolations);
 
-      // SOFT FAIL: Log warning but don't fail test (during migration)
-      // After migration is complete, uncomment expect.fail() below
-      console.warn(
-        `\n⚠️  Found ${allViolations.length} direct console usage(s).\n` +
-          `   Use 'logger' from '@/lib/logger' instead.\n` +
-          `${report}`
+      // HARD FAIL: Enforce no direct console usage
+      expect.fail(
+        `Found ${allViolations.length} direct console usage(s). ` +
+        `Use 'logger' from '@/lib/logger' instead:\n${report}`
       );
-
-      // TODO: Uncomment after migration is complete to enforce strictly
-      // expect.fail(
-      //   `Found ${allViolations.length} direct console usage(s). ` +
-      //   `Use 'logger' from '@/lib/logger' instead:\n${report}`
-      // );
     }
 
-    // For now, just verify the test runs correctly
+    // Verify the test scanned files successfully
     expect(files.length).toBeGreaterThan(0);
   });
 
@@ -275,17 +289,12 @@ describe("Error Handling Standards", () => {
         .map((v) => `  ${v.file}:${v.line} → ${v.content}`)
         .join("\n");
 
-      // SOFT FAIL: Warning during migration
-      console.warn(
-        `\n⚠️  Found ${violations.length} 'catch (e: any)' pattern(s).\n` +
-          `   Use 'catch (error)' with wrapError() from '@/lib/errors' instead.\n\n` +
-          `${report}`
+      // HARD FAIL: Enforce proper error typing
+      expect.fail(
+        `Found ${violations.length} 'catch (e: any)' pattern(s).\n` +
+        `Use 'catch (e: unknown)' with wrapError() from '@/lib/errors' instead.\n\n` +
+        `${report}`
       );
-
-      // TODO: Uncomment after migration
-      // expect.fail(
-      //   `Found ${violations.length} 'catch (e: any)' pattern(s).`
-      // );
     }
 
     expect(files.length).toBeGreaterThan(0);

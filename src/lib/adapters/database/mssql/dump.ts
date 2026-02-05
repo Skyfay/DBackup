@@ -112,8 +112,9 @@ export async function dump(
                 try {
                     await copyFile(localSourcePath, destinationPath);
                     log(`Backup file copied to: ${destinationPath}`);
-                } catch (copyError: any) {
-                    log(`Warning: Could not copy backup file from ${localSourcePath}: ${copyError.message}`, "warning");
+                } catch (copyError: unknown) {
+                    const message = copyError instanceof Error ? copyError.message : String(copyError);
+                    log(`Warning: Could not copy backup file from ${localSourcePath}: ${message}`, "warning");
                     // Return the server path if local copy failed
                     return {
                         success: true,
@@ -196,12 +197,13 @@ export async function dump(
             // Always clean up temp .bak files (even on error/abort)
             await cleanupTempFiles();
         }
-    } catch (error: any) {
-        log(`Error: ${error.message}`, "error");
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        log(`Error: ${message}`, "error");
         return {
             success: false,
             logs,
-            error: error.message,
+            error: message,
             startedAt,
             completedAt: new Date(),
         };

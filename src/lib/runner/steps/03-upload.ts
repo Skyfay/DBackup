@@ -87,8 +87,9 @@ export async function stepUpload(ctx: RunnerContext) {
                 authTag: '' // Will be filled after stream
             };
 
-        } catch (error: any) {
-            throw new Error(`Encryption setup failed: ${error.message}`);
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            throw new Error(`Encryption setup failed: ${message}`);
         }
     }
 
@@ -118,8 +119,9 @@ export async function stepUpload(ctx: RunnerContext) {
                 encryptionMeta.authTag = getAuthTagCallback().toString('hex');
                 ctx.log("Encryption successful (AuthTag generated).");
             }
-        } catch (e: any) {
-            throw new Error(`Pipeline processing failed: ${e.message}`);
+        } catch (e: unknown) {
+            const message = e instanceof Error ? e.message : String(e);
+            throw new Error(`Pipeline processing failed: ${message}`);
         }
     }
 
@@ -174,8 +176,9 @@ export async function stepUpload(ctx: RunnerContext) {
         // Try to delete temp metadata file
         await fs.unlink(metaPath).catch(() => {});
 
-    } catch (e: any) {
-        ctx.log(`Warning: Failed to generate/upload metadata: ${e.message}`);
+    } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
+        ctx.log(`Warning: Failed to generate/upload metadata: ${message}`);
     }
 
     // Main Upload

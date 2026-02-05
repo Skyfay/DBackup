@@ -172,12 +172,13 @@ export async function dump(
             completedAt: new Date(),
         };
 
-    } catch (error: any) {
-        log(`Dump failed: ${error.message}`, 'error');
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        log(`Dump failed: ${message}`, 'error');
         return {
             success: false,
             logs,
-            error: error.message,
+            error: message,
             startedAt,
             completedAt: new Date(),
         };

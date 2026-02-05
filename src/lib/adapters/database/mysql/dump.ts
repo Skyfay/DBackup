@@ -151,12 +151,13 @@ export async function dump(config: any, destinationPath: string, onLog?: (msg: s
             await cleanupTempDir(tempDir);
         }
 
-    } catch (error: any) {
-        log(`Error: ${error.message}`, 'error');
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        log(`Error: ${message}`, 'error');
         return {
             success: false,
             logs,
-            error: error.message,
+            error: message,
             startedAt,
             completedAt: new Date(),
         };

@@ -46,8 +46,9 @@ export async function prepareRestore(config: any, databases: string[]): Promise<
         try {
             // We use mongosh for eval execution
             await execFileAsync('mongosh', [...args, '--eval', evalScript]);
-        } catch (e: any) {
-            const msg = e.stdout || e.stderr || e.message || "";
+        } catch (e: unknown) {
+            const err = e as { stdout?: string; stderr?: string; message?: string };
+            const msg = err.stdout || err.stderr || err.message || "";
             if (msg.includes("not authorized") || msg.includes("Authorization") || msg.includes("requires authentication") || msg.includes("command create requires")) {
                 throw new Error(`Access denied to database '${dbName}'. Permissions?`);
             }
@@ -294,12 +295,13 @@ export async function restore(
             completedAt: new Date(),
         };
 
-    } catch (error: any) {
-        log(`Restore failed: ${error.message}`, 'error');
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        log(`Restore failed: ${message}`, 'error');
         return {
             success: false,
             logs,
-            error: error.message,
+            error: message,
             startedAt,
             completedAt: new Date(),
         };

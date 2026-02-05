@@ -21,13 +21,16 @@ export const authService = {
         // unless better-auth magic hooks into Next.js headers() automatically.
       });
       return result;
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Better auth error handling
       let errorMessage = "Failed to create user";
-      if (error?.body?.message) {
-        errorMessage = error.body.message;
-      } else if (error?.message) {
-        errorMessage = error.message;
+      if (error && typeof error === 'object') {
+        const err = error as { body?: { message?: string }; message?: string };
+        if (err.body?.message) {
+          errorMessage = err.body.message;
+        } else if (err.message) {
+          errorMessage = err.message;
+        }
       }
       throw new Error(errorMessage);
     }

@@ -154,8 +154,8 @@ export async function restore(config: any, sourcePath: string, onLog?: (msg: str
 
         return { success: true, logs, startedAt, completedAt: new Date() };
 
-    } catch (error: any) {
-        const msg = error.message || "";
+    } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
         log(`Error: ${msg}`, 'error');
         return { success: false, logs, error: msg, startedAt, completedAt: new Date() };
     }

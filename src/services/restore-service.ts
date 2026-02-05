@@ -293,8 +293,9 @@ export class RestoreService {
 
                     await fs.promises.unlink(tempMetaPath).catch(() => {});
                 }
-            } catch (e: any) {
-                log(`Warning: Failed to check sidecar metadata: ${e.message}`, 'warning');
+            } catch (e: unknown) {
+                const message = e instanceof Error ? e.message : String(e);
+                log(`Warning: Failed to check sidecar metadata: ${message}`, 'warning');
 
                 // Fallback: Extension based detection
                 if (file.endsWith('.enc')) {
@@ -449,8 +450,9 @@ export class RestoreService {
                     // Switch to decrypted file for restore/decompression
                     tempFile = decryptedTempFile;
 
-                } catch (e: any) {
-                    throw new Error(`Decryption failed: ${e.message}`);
+                } catch (e: unknown) {
+                    const message = e instanceof Error ? e.message : String(e);
+                    throw new Error(`Decryption failed: ${message}`);
                 }
             }
             // --- END DECRYPTION EXECUTION ---
@@ -485,8 +487,9 @@ export class RestoreService {
                         // Switch file pointer
                         tempFile = unpackedFile;
                     }
-                } catch (e: any) {
-                    throw new Error(`Decompression failed: ${e.message}`);
+                } catch (e: unknown) {
+                    const message = e instanceof Error ? e.message : String(e);
+                    throw new Error(`Decompression failed: ${message}`);
                 }
             }
             // --- END DECOMPRESSION EXECUTION ---
@@ -503,9 +506,10 @@ export class RestoreService {
                         });
                     }
                 }
-            } catch (e: any) {
+            } catch (e: unknown) {
                 // Non-fatal: just informational
-                log(`Note: Could not check for Multi-DB TAR format: ${e.message}`, 'info');
+                const message = e instanceof Error ? e.message : String(e);
+                log(`Note: Could not check for Multi-DB TAR format: ${message}`, 'info');
             }
             // --- END MULTI-DB TAR DETECTION ---
 
@@ -532,8 +536,9 @@ export class RestoreService {
                     } else {
                         log('Could not detect target server version, using default binary', 'warning');
                     }
-                } catch (e: any) {
-                    log(`Version detection failed: ${e.message}`, 'warning');
+                } catch (e: unknown) {
+                    const message = e instanceof Error ? e.message : String(e);
+                    log(`Version detection failed: ${message}`, 'warning');
                 }
             }
 

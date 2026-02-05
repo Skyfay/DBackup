@@ -24,8 +24,9 @@ export const test: DatabaseAdapter["test"] = async (config) => {
                 await fs.access(dbPath, constants.R_OK);
 
                 return { success: true, message: "Local SQLite connection successful.", version };
-            } catch (e: any) {
-                return { success: false, message: e.message || "Connection failed" };
+            } catch (e: unknown) {
+                const message = e instanceof Error ? e.message : String(e);
+                return { success: false, message: message || "Connection failed" };
             }
 
         } else if (mode === "ssh") {
@@ -54,15 +55,17 @@ export const test: DatabaseAdapter["test"] = async (config) => {
                  client.end();
                  return { success: true, message: "Remote SSH SQLite connection successful.", version };
 
-            } catch (err: any) {
+            } catch (err: unknown) {
                 client.end();
-                return { success: false, message: `SSH Connection failed: ${err.message}` };
+                const message = err instanceof Error ? err.message : String(err);
+                return { success: false, message: `SSH Connection failed: ${message}` };
             }
         }
 
         return { success: false, message: "Invalid mode selected" };
-    } catch (error: any) {
-        return { success: false, message: error.message };
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        return { success: false, message };
     }
 };
 

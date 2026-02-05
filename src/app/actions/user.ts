@@ -31,8 +31,8 @@ export async function createUser(data: { name: string; email: string; password: 
         }
 
         return { success: true };
-    } catch (error: any) {
-        return { success: false, error: error.message };
+    } catch (error: unknown) {
+        return { success: false, error: getErrorMessage(error) };
     }
 }
 
@@ -98,8 +98,8 @@ export async function deleteUser(userId: string) {
         }
 
         return { success: true };
-    } catch (error: any) {
-        return { success: false, error: error.message || "Failed to delete user" };
+    } catch (error: unknown) {
+        return { success: false, error: getErrorMessage(error) || "Failed to delete user" };
     }
 }
 
@@ -152,7 +152,7 @@ export async function updateOwnPassword(currentPassword: string, newPassword: st
             },
             asResponse: true // Prevent actual sign-in side effects (cookies)
         });
-    } catch (_error: any) {
+    } catch (_error: unknown) {
         // better-auth throws on failed sign-in
         return { success: false, error: "Incorrect current password" };
     }

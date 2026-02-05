@@ -39,7 +39,7 @@ export async function getAuditFilterStats(
         await checkPermission(PERMISSIONS.AUDIT.READ); // Same permission
         const stats = await auditService.getFilterStats(filters);
         return { success: true, data: stats };
-    } catch (error: any) {
-        return { success: false, error: error.message };
+    } catch (error: unknown) {
+        return { success: false, error: getErrorMessage(error) };
     }
 }

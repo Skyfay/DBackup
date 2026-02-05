@@ -38,8 +38,9 @@ export async function test(config: any): Promise<{ success: boolean; message: st
         const version = stdout.trim();
 
         return { success: true, message: "Connection successful", version };
-    } catch (error: any) {
-            return { success: false, message: "Connection failed: " + (error.stderr || error.message) };
+    } catch (error: unknown) {
+            const err = error as { stderr?: string; message?: string };
+            return { success: false, message: "Connection failed: " + (err.stderr || err.message) };
     }
 }
 

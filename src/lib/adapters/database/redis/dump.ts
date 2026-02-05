@@ -85,12 +85,13 @@ export async function dump(
             startedAt,
             completedAt: new Date(),
         };
-    } catch (error: any) {
-        log(`Backup failed: ${error.message}`, "error");
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        log(`Backup failed: ${message}`, "error");
         return {
             success: false,
             logs,
-            error: error.message,
+            error: message,
             startedAt,
             completedAt: new Date(),
         };

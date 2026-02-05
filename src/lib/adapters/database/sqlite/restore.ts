@@ -38,11 +38,12 @@ export const restore: DatabaseAdapter["restore"] = async (config, sourcePath, on
             throw new Error(`Invalid mode: ${mode}`);
         }
 
-    } catch (error: any) {
-        log(`Error during restore: ${error.message}`);
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        log(`Error during restore: ${message}`);
         return {
             success: false,
-            error: error.message,
+            error: message,
             logs,
             startedAt,
             completedAt: new Date()

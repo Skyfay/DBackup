@@ -99,13 +99,15 @@ export async function stepRetention(ctx: RunnerContext) {
                         // Ignore error if metadata doesn't exist
                     });
                 }
-             } catch (delError: any) {
-                 ctx.log(`Retention Error deletion ${file.name}: ${delError.message}`);
+             } catch (delError: unknown) {
+                 const message = delError instanceof Error ? delError.message : String(delError);
+                 ctx.log(`Retention Error deletion ${file.name}: ${message}`);
              }
         }
 
-    } catch (error: any) {
-        ctx.log(`Retention Process Error: ${error.message}`);
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        ctx.log(`Retention Process Error: ${message}`);
         // We don't throw here to not fail the backup if retention fails
     }
 }

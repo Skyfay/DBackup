@@ -194,8 +194,9 @@ export const LocalFileSystemAdapter: StorageAdapter = {
             await fs.unlink(testFile);
 
             return { success: true, message: `Access to ${config.basePath} verified (Read/Write)` };
-        } catch (error: any) {
-             return { success: false, message: `Access failed: ${error.message}` };
+        } catch (error: unknown) {
+             const message = error instanceof Error ? error.message : String(error);
+             return { success: false, message: `Access failed: ${message}` };
         }
     }
 };

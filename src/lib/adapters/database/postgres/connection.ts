@@ -21,11 +21,14 @@ export async function test(config: any): Promise<{ success: boolean; message: st
             const version = versionMatch ? versionMatch[1] : rawVersion;
 
             return { success: true, message: "Connection successful", version };
-        } catch (error: any) {
+        } catch (error: unknown) {
             lastError = error;
         }
     }
-    return { success: false, message: "Connection failed: " + (lastError?.stderr || lastError?.message) };
+    const errMsg = lastError instanceof Error
+        ? (lastError as { stderr?: string }).stderr || lastError.message
+        : String(lastError);
+    return { success: false, message: "Connection failed: " + errMsg };
 }
 
 export async function getDatabases(config: any): Promise<string[]> {
@@ -41,7 +44,7 @@ export async function getDatabases(config: any): Promise<string[]> {
             const args = ['-h', config.host, '-p', String(config.port), '-U', config.user, '-d', db, '-t', '-A', '-c', 'SELECT datname FROM pg_database WHERE datistemplate = false;'];
             const { stdout } = await execFileAsync('psql', args, { env });
             return stdout.split('\n').map(s => s.trim()).filter(s => s);
-        } catch (error: any) {
+        } catch (error: unknown) {
             lastError = error;
         }
     }

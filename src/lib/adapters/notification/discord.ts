@@ -29,8 +29,9 @@ export const DiscordAdapter: NotificationAdapter = {
             } else {
                 return { success: false, message: `Discord returned ${response.status}: ${response.statusText}` };
             }
-        } catch (error: any) {
-            return { success: false, message: error.message || "Failed to connect to Discord" };
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            return { success: false, message: message || "Failed to connect to Discord" };
         }
     },
 

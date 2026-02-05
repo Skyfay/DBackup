@@ -5,6 +5,10 @@ import { headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { getUserPermissions, getCurrentUserWithGroup } from "@/lib/access-control"
 import { updateService } from "@/services/update-service"
+import { logger } from "@/lib/logger"
+import { wrapError } from "@/lib/errors"
+
+const log = logger.child({ component: "dashboard-layout" });
 
 export default async function DashboardLayout({
     children,
@@ -17,7 +21,7 @@ export default async function DashboardLayout({
             headers: await headers()
         })
     } catch (e) {
-        console.error("Dashboard session check failed", e);
+        log.error("Dashboard session check failed", {}, wrapError(e));
     }
 
     if (!session) {

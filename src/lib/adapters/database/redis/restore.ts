@@ -25,8 +25,9 @@ export async function prepareRestore(config: any, _databases: string[]): Promise
     // Test basic connectivity
     try {
         await execFileAsync("redis-cli", [...args, "PING"]);
-    } catch (error: any) {
-        throw new Error(`Cannot connect to Redis: ${error.message}`);
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`Cannot connect to Redis: ${message}`);
     }
 
     // Check if we have admin permissions (needed for potential FLUSHALL)
@@ -145,12 +146,13 @@ export async function restore(
             startedAt,
             completedAt: new Date(),
         };
-    } catch (error: any) {
-        log(`Restore preparation failed: ${error.message}`, "error");
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        log(`Restore preparation failed: ${message}`, "error");
         return {
             success: false,
             logs,
-            error: error.message,
+            error: message,
             startedAt,
             completedAt: new Date(),
         };

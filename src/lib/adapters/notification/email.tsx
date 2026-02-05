@@ -3,6 +3,10 @@ import { EmailSchema } from "@/lib/adapters/definitions";
 import nodemailer from "nodemailer";
 // import { formatBytes } from "@/lib/utils";
 import React from "react";
+import { logger } from "@/lib/logger";
+import { wrapError } from "@/lib/errors";
+
+const log = logger.child({ adapter: "email" });
 
 const createTransporter = (config: any) => {
     const secure = config.secure === "ssl";
@@ -34,8 +38,9 @@ export const EmailAdapter: NotificationAdapter = {
             const transporter = createTransporter(config);
             await transporter.verify();
             return { success: true, message: "SMTP connection verified successfully!" };
-        } catch (error: any) {
-            return { success: false, message: error.message || "Failed to verify SMTP connection" };
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            return { success: false, message: message || "Failed to verify SMTP connection" };
         }
     },
 
@@ -68,10 +73,10 @@ export const EmailAdapter: NotificationAdapter = {
                 html: html,
             });
 
-            console.log("Message sent: %s", info.messageId);
+            log.info("Email notification sent", { messageId: info.messageId });
             return true;
         } catch (error) {
-            console.error("Email notification error:", error);
+            log.error("Email notification failed", {}, wrapError(error));
             return false;
         }
     }

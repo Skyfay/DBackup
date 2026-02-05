@@ -38,8 +38,9 @@ export async function prepareRestore(config: any, databases: string[]): Promise<
             const safeDbName = `"${dbName.replace(/"/g, '""')}"`;
             await execFileAsync('psql', [...args, '-c', `CREATE DATABASE ${safeDbName}`], { env });
 
-        } catch (e: any) {
-            const msg = e.stderr || e.message || "";
+        } catch (e: unknown) {
+            const err = e as { stderr?: string; message?: string };
+            const msg = err.stderr || err.message || "";
             if (msg.includes("permission denied")) {
                 throw new Error(`Access denied for user '${user}' to create database '${dbName}'. User permissions?`);
             }
@@ -261,12 +262,13 @@ export async function restore(
             completedAt: new Date(),
         };
 
-    } catch (error: any) {
-        log(`Error: ${error.message}`, 'error');
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        log(`Error: ${message}`, 'error');
         return {
             success: false,
             logs,
-            error: error.message,
+            error: message,
             startedAt,
             completedAt: new Date(),
         };

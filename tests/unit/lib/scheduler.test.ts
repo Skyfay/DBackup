@@ -156,6 +156,7 @@ describe('BackupScheduler', () => {
         await scheduler.refresh();
 
         expect(cron.schedule).not.toHaveBeenCalled();
-        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to load jobs'), expect.any(Error));
+        // Logger outputs a single formatted string containing the message
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to load jobs'));
     });
 });

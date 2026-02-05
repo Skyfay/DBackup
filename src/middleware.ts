@@ -1,27 +1,67 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { authLimiter, apiLimiter, mutationLimiter } from "./lib/rate-limit";
+import { logger } from "./lib/logger";
+
+const log = logger.child({ module: "Middleware" });
+
+// Paths that should not be logged (to reduce noise)
+const SILENT_PATHS = [
+    "/api/health",
+    "/api/auth/get-session",
+];
+
+// Determine if request should be logged
+function shouldLogRequest(path: string): boolean {
+    // Skip silent paths
+    if (SILENT_PATHS.some(p => path.startsWith(p))) {
+        return false;
+    }
+    // Only log API requests (not page navigations)
+    return path.startsWith("/api/");
+}
+
+// Anonymize IP for privacy (keep first two octets for debugging)
+function anonymizeIp(ip: string): string {
+    if (ip === "127.0.0.1" || ip === "::1") return ip;
+    const parts = ip.split(".");
+    if (parts.length === 4) {
+        return `${parts[0]}.${parts[1]}.x.x`;
+    }
+    // IPv6 - just show prefix
+    return ip.split(":").slice(0, 2).join(":") + ":x";
+}
 
 export async function middleware(request: NextRequest) {
+    const startTime = Date.now();
     const ip = request.headers.get("x-forwarded-for") ?? "127.0.0.1";
     const path = request.nextUrl.pathname;
     const method = request.method;
+    const shouldLog = shouldLogRequest(path);
 
     // Rate Limiting Logic
+    let rateLimitType: string | null = null;
     try {
         if (path.startsWith("/api/auth/sign-in")) {
-             // Strict limit for login endpoints
+             rateLimitType = "auth";
              await authLimiter.consume(ip);
         } else if (path.startsWith("/api/")) {
-             // General API limit for reads
              if (method === 'GET' || method === 'HEAD') {
+                rateLimitType = "api";
                 await apiLimiter.consume(ip);
              } else {
-                // Stricter limit for mutations (POST, PUT, DELETE, PATCH)
+                rateLimitType = "mutation";
                 await mutationLimiter.consume(ip);
              }
         }
     } catch {
+        // Log rate limit violation
+        log.warn("Rate limit exceeded", {
+            ip: anonymizeIp(ip),
+            path,
+            method,
+            limiter: rateLimitType,
+        });
         return new NextResponse("Too Many Requests", { status: 429 });
     }
 
@@ -51,6 +91,17 @@ export async function middleware(request: NextRequest) {
         if (!sessionToken) {
             return NextResponse.redirect(new URL("/", request.url));
         }
+    }
+
+    // Log API requests (after processing, so we know the outcome)
+    if (shouldLog) {
+        const duration = Date.now() - startTime;
+        log.info("API request", {
+            method,
+            path,
+            duration: `${duration}ms`,
+            ip: anonymizeIp(ip),
+        });
     }
 
     return response;

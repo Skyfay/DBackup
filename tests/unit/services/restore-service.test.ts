@@ -342,6 +342,7 @@ describe('RestoreService', () => {
             .mockResolvedValueOnce(mockStorageConfig as any)
             .mockResolvedValueOnce(mockSourceConfig as any);
         prismaMock.execution.create.mockResolvedValue({ id: 'smart-rec-exec' } as any);
+        prismaMock.execution.update.mockResolvedValue({} as any);
 
         // --- SMART RECOVERY MOCKS ---
 

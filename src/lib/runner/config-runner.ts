@@ -45,12 +45,12 @@ export async function runConfigBackup() {
     // 2. Resolve Storage Adapter
     const storageConfig = await prisma.adapterConfig.findUnique({ where: { id: storageId.value } });
     if (!storageConfig) {
-        throw new ConfigurationError(`Storage adapter ${storageId.value} not found`);
+        throw new ConfigurationError("config-backup", `Storage adapter ${storageId.value} not found`);
     }
 
     const storageAdapter = registry.get(storageConfig.adapterId) as StorageAdapter;
     if (!storageAdapter) {
-        throw new ConfigurationError(`Adapter class ${storageConfig.adapterId} not registered`);
+        throw new ConfigurationError("config-backup", `Adapter class ${storageConfig.adapterId} not registered`);
     }
 
     // Decrypt adapter config before instantiation
@@ -78,17 +78,17 @@ export async function runConfigBackup() {
                 encryptionKey = Buffer.from(decryptedKeyHex, 'hex');
             } catch (e) {
                 log.error("Failed to decrypt profile key", {}, wrapError(e));
-                throw new EncryptionError("Failed to unlock encryption profile");
+                throw new EncryptionError("decrypt", "Failed to unlock encryption profile");
             }
 
         } else {
              log.warn("Encryption Profile not found", { profileId: profileId.value });
              if (includeSecrets?.value === 'true') {
-                 throw new ConfigurationError("Encryption Profile missing but secrets are included. Aborting backup for security.");
+                 throw new ConfigurationError("config-backup", "Encryption Profile missing but secrets are included. Aborting backup for security.");
              }
         }
     } else if (includeSecrets?.value === 'true') {
-        throw new ConfigurationError("Cannot include secrets without encryption profile.");
+        throw new ConfigurationError("config-backup", "Cannot include secrets without encryption profile.");
     }
 
     // 4. Generate JSON Data

@@ -35,7 +35,8 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
         return NextResponse.json(enrichedFiles);
 
     } catch (error: unknown) {
-        log.error("List files error", { storageId: params.id }, wrapError(error));
+        const resolvedParams = await props.params.catch(() => ({ id: "unknown" }));
+        log.error("List files error", { storageId: resolvedParams.id }, wrapError(error));
 
         // Handle specific service errors (like Not Found) with correct status mappings
         const errorMessage = getErrorMessage(error) || "An unknown error occurred";
@@ -79,7 +80,8 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ id: st
         return NextResponse.json({ success: true });
 
     } catch (error: unknown) {
-        log.error("Delete file error", { storageId: params.id }, wrapError(error));
+        const resolvedParams = await props.params.catch(() => ({ id: "unknown" }));
+        log.error("Delete file error", { storageId: resolvedParams.id }, wrapError(error));
          const errorMessage = getErrorMessage(error) || "An unknown error occurred";
 
          if (errorMessage.includes("not found")) {

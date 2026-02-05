@@ -8,7 +8,7 @@ import prisma from "@/lib/prisma";
 import { processQueue } from "@/lib/queue-manager";
 import { LogEntry, LogLevel, LogType } from "@/lib/core/logs";
 import { logger } from "@/lib/logger";
-import { BackupError, wrapError } from "@/lib/errors";
+import { wrapError } from "@/lib/errors";
 
 const log = logger.child({ module: "Runner" });
 

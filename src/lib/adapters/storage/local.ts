@@ -16,7 +16,7 @@ function resolveSafePath(basePath: string, relativePath: string): string {
     const resolvedTarget = path.resolve(resolvedBase, relativePath);
 
     if (!resolvedTarget.startsWith(resolvedBase)) {
-        throw new AdapterError("local-filesystem", `Access denied: Illegal path traversal detected. Base: ${resolvedBase}, Target: ${resolvedTarget}`);
+        throw new AdapterError("local-filesystem", "path-validation", `Access denied: Illegal path traversal detected. Base: ${resolvedBase}, Target: ${resolvedTarget}`);
     }
     return resolvedTarget;
 }

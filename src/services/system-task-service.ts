@@ -8,7 +8,7 @@ import { healthCheckService } from "./healthcheck-service";
 import { auditService } from "./audit-service";
 import { PERMISSIONS } from "@/lib/permissions";
 import { logger } from "@/lib/logger";
-import { wrapError, getErrorMessage } from "@/lib/errors";
+import { wrapError } from "@/lib/errors";
 
 const log = logger.child({ service: "SystemTaskService" });
 

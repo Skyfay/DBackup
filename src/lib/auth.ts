@@ -73,7 +73,7 @@ export async function loadTrustedProviders(): Promise<void> {
         trustedProvidersCache.splice(0, trustedProvidersCache.length);
         trustedProvidersCache.push(...providers.map(p => p.providerId));
         // Note: We use debug level here as this runs on every auth request
-    } catch (error) {
+    } catch (_error) {
         // Don't reassign, just clear - SSO will still work but without dynamic providers
         trustedProvidersCache.splice(0, trustedProvidersCache.length);
     }

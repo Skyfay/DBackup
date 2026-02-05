@@ -1,7 +1,7 @@
 import { execFile } from "child_process";
 import util from "util";
 import { logger } from "@/lib/logger";
-import { wrapError, getErrorMessage } from "@/lib/errors";
+import { wrapError } from "@/lib/errors";
 
 const execFileAsync = util.promisify(execFile);
 const log = logger.child({ adapter: "redis", module: "connection" });

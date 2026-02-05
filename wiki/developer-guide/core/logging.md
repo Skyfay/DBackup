@@ -112,6 +112,54 @@ try {
 
 ---
 
+## Middleware Logging
+
+The Next.js middleware automatically logs API requests and security events.
+
+**Location**: `src/middleware.ts`
+
+### API Request Logging
+
+All API requests (except silent paths) are logged with timing information:
+
+```
+INFO  API request {"module":"Middleware","method":"GET","path":"/api/jobs","duration":"12ms","ip":"127.0.0.1"}
+INFO  API request {"module":"Middleware","method":"POST","path":"/api/backup/run","duration":"45ms","ip":"192.168.x.x"}
+```
+
+**Silent Paths** (not logged to reduce noise):
+- `/api/health` - Health check endpoint (frequent polling)
+- `/api/auth/get-session` - Session validation (every request)
+
+### Rate Limit Event Logging
+
+When a client exceeds the rate limit, a warning is logged:
+
+```
+WARN  Rate limit exceeded {"module":"Middleware","ip":"192.168.x.x","path":"/api/jobs","method":"POST","limiter":"mutation"}
+```
+
+**Limiter Types:**
+| Limiter | Applies To | Limit |
+|---------|-----------|-------|
+| `auth` | `/api/auth/sign-in` | Strict (prevent brute force) |
+| `api` | GET/HEAD requests | Standard |
+| `mutation` | POST/PUT/DELETE/PATCH | Stricter |
+
+### IP Anonymization
+
+For privacy compliance (GDPR), IP addresses are anonymized in logs:
+
+| Original IP | Logged As |
+|-------------|-----------|
+| `192.168.1.100` | `192.168.x.x` |
+| `10.0.0.50` | `10.0.x.x` |
+| `127.0.0.1` | `127.0.0.1` (localhost unchanged) |
+| `::1` | `::1` (IPv6 localhost unchanged) |
+| `2001:db8::1` | `2001:db8:x` (IPv6 prefix only) |
+
+---
+
 ## Custom Error Classes
 
 **Location**: `src/lib/errors.ts`

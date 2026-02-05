@@ -31,6 +31,13 @@ Introduced a unified logging infrastructure to replace scattered `console.log` c
 - **Custom Error Classes**: New error hierarchy (`src/lib/errors.ts`) with specialized errors for adapters, services, encryption, etc.
 - **Error Utilities**: `wrapError()`, `getErrorMessage()`, `isDBackupError()` for consistent error handling
 
+#### 🌐 API Request & Security Logging
+Added comprehensive logging in the Next.js middleware:
+- **Request Logging**: All API requests are logged with method, path, duration, and anonymized IP
+- **Rate Limit Events**: Warnings logged when clients exceed rate limits (for security monitoring)
+- **IP Anonymization**: IPs are anonymized in logs for GDPR compliance (e.g., `192.168.x.x`)
+- **Silent Paths**: High-frequency endpoints (`/api/health`, `/api/auth/get-session`) excluded to reduce noise
+
 #### 🛡️ Type-Safe Error Handling
 New custom error classes for better error categorization:
 - `DBackupError` (base class)

@@ -9,6 +9,10 @@ import fs from "fs/promises";
 import path from "path";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
+import { logger } from "@/lib/logger";
+import { wrapError } from "@/lib/errors";
+
+const log = logger.child({ route: "vault/recovery-kit" });
 
 export async function GET(
     request: NextRequest,
@@ -61,8 +65,8 @@ export async function GET(
             const scriptPath = path.join(process.cwd(), "scripts", "decrypt_backup.js");
             const scriptContent = await fs.readFile(scriptPath, "utf8");
             zip.addFile("decrypt_backup.js", Buffer.from(scriptContent, "utf8"));
-        } catch (e) {
-            console.error("Failed to read decrypt_backup.js script:", e);
+        } catch (e: unknown) {
+            log.error("Failed to read decrypt_backup.js script", {}, wrapError(e));
             // Fallback: Add error note in readme
             zip.addFile("ERROR_MISSING_SCRIPT.txt", Buffer.from("Could not find scripts/decrypt_backup.js on server.", "utf8"));
         }
@@ -140,8 +144,8 @@ node decrypt_backup.js <file.enc> <hex_key>
             }
         });
 
-    } catch (error) {
-        console.error("Recovery Kit Gen Error:", error);
+    } catch (error: unknown) {
+        log.error("Recovery kit generation error", { profileId: id }, wrapError(error));
         return new NextResponse("Internal Server Error", { status: 500 });
     }
 }

@@ -4,6 +4,10 @@ import { headers } from "next/headers";
 import { checkPermission } from "@/lib/access-control";
 import { PERMISSIONS } from "@/lib/permissions";
 import { jobService } from "@/services/job-service";
+import { logger } from "@/lib/logger";
+import { wrapError } from "@/lib/errors";
+
+const log = logger.child({ route: "jobs" });
 
 export async function GET(_req: NextRequest) {
     const session = await auth.api.getSession({
@@ -58,8 +62,8 @@ export async function POST(req: NextRequest) {
         });
 
         return NextResponse.json(newJob, { status: 201 });
-    } catch (error) {
-        console.error("Create job error:", error);
+    } catch (error: unknown) {
+        log.error("Create job error", {}, wrapError(error));
         return NextResponse.json({ error: "Failed to create job" }, { status: 500 });
     }
 }

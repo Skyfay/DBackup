@@ -5,6 +5,10 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { checkPermission } from "@/lib/access-control";
 import { PERMISSIONS } from "@/lib/permissions";
+import { logger } from "@/lib/logger";
+import { wrapError, getErrorMessage } from "@/lib/errors";
+
+const log = logger.child({ route: "storage/files" });
 
 // Ensure adapters are registered in this route handler environment
 registerAdapters();
@@ -31,10 +35,10 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
         return NextResponse.json(enrichedFiles);
 
     } catch (error: unknown) {
-        console.error("List files error:", error);
+        log.error("List files error", { storageId: params.id }, wrapError(error));
 
         // Handle specific service errors (like Not Found) with correct status mappings
-        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
+        const errorMessage = getErrorMessage(error) || "An unknown error occurred";
         if (errorMessage.includes("not found")) {
             return NextResponse.json({ error: errorMessage }, { status: 404 });
         }
@@ -75,8 +79,8 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ id: st
         return NextResponse.json({ success: true });
 
     } catch (error: unknown) {
-        console.error("Delete file error:", error);
-         const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
+        log.error("Delete file error", { storageId: params.id }, wrapError(error));
+         const errorMessage = getErrorMessage(error) || "An unknown error occurred";
 
          if (errorMessage.includes("not found")) {
              return NextResponse.json({ error: errorMessage }, { status: 404 });

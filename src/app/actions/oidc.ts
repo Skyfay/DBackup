@@ -6,6 +6,10 @@ import { PERMISSIONS } from "@/lib/permissions";
 import { OidcProviderService } from "@/services/oidc-provider-service";
 import { getOIDCAdapter } from "@/services/oidc-registry";
 import { revalidatePath } from "next/cache";
+import { logger } from "@/lib/logger";
+import { wrapError, getErrorMessage } from "@/lib/errors";
+
+const log = logger.child({ action: "oidc" });
 
 // --- Schemas ---
 
@@ -117,9 +121,9 @@ export async function createSsoProvider(input: z.infer<typeof createProviderSche
 
         revalidatePath("/dashboard/users");
         return { success: true };
-    } catch (error: any) {
-        console.error("Failed to create SSO provider:", error);
-        return { success: false, error: error.message };
+    } catch (error: unknown) {
+        log.error("Failed to create SSO provider", {}, wrapError(error));
+        return { success: false, error: getErrorMessage(error) };
     }
 }
 
@@ -197,9 +201,9 @@ export async function updateSsoProvider(input: z.infer<typeof updateProviderSche
 
         revalidatePath("/dashboard/users");
         return { success: true };
-    } catch (error: any) {
-        console.error("Failed to update SSO provider:", error);
-        return { success: false, error: error.message };
+    } catch (error: unknown) {
+        log.error("Failed to update SSO provider", { providerId: id }, wrapError(error));
+        return { success: false, error: getErrorMessage(error) };
     }
 }
 

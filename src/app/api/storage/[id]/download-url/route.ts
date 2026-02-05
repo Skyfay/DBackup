@@ -4,6 +4,10 @@ import { headers } from "next/headers";
 import { checkPermission } from "@/lib/access-control";
 import { PERMISSIONS } from "@/lib/permissions";
 import { generateDownloadToken } from "@/lib/download-tokens";
+import { logger } from "@/lib/logger";
+import { wrapError } from "@/lib/errors";
+
+const log = logger.child({ route: "storage/download-url" });
 
 /**
  * Generate a download URL for a file
@@ -50,7 +54,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         });
 
     } catch (error: unknown) {
-        console.error("Generate download URL error:", error);
+        log.error("Generate download URL error", { storageId: params.id }, wrapError(error));
 
         if (error instanceof Error && error.message === "FORBIDDEN") {
             return NextResponse.json({ error: "Permission denied" }, { status: 403 });

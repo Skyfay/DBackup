@@ -8,7 +8,10 @@ import { runConfigBackup } from "@/lib/runner/config-runner";
 import { getTempDir } from "@/lib/temp-dir";
 import { promises as fs } from "fs";
 import path from "path";
+import { logger } from "@/lib/logger";
+import { wrapError, getErrorMessage } from "@/lib/errors";
 
+const log = logger.child({ action: "config-management" });
 const configService = new ConfigService();
 
 /**
@@ -21,9 +24,9 @@ export async function triggerManualConfigBackupAction() {
         // Actually, runConfigBackup is async.
         await runConfigBackup();
         return { success: true };
-    } catch (e: any) {
-        console.error("Manual Config Backup Failed", e);
-        return { success: false, error: e.message };
+    } catch (e: unknown) {
+        log.error("Manual config backup failed", {}, wrapError(e));
+        return { success: false, error: getErrorMessage(e) };
     }
 }
 
@@ -66,16 +69,16 @@ export async function uploadAndRestoreConfigAction(formData: FormData) {
         await configService.import(configData, strategy);
 
         return { success: true };
-    } catch (e: any) {
-        console.error("Offline Restore Failed:", e);
-        return { success: false, error: e.message || "Failed to restore configuration" };
+    } catch (e: unknown) {
+        log.error("Offline restore failed", {}, wrapError(e));
+        return { success: false, error: getErrorMessage(e) || "Failed to restore configuration" };
     } finally {
         // Cleanup
         try {
             if (await fs.stat(tempBackupPath).catch(() => false)) await fs.unlink(tempBackupPath);
             if (tempMetaPath && await fs.stat(tempMetaPath).catch(() => false)) await fs.unlink(tempMetaPath);
-        } catch (cleanupErr) {
-            console.warn("Temp cleanup failed", cleanupErr);
+        } catch (cleanupErr: unknown) {
+            log.warn("Temp cleanup failed", {}, wrapError(cleanupErr));
         }
     }
 }
@@ -95,8 +98,8 @@ export async function restoreFromStorageAction(
     try {
         const executionId = await configService.restoreFromStorage(storageConfigId, file, decryptionProfileId, options);
         return { success: true, executionId };
-    } catch (error) {
-        console.error("Restore from storage error:", error);
+    } catch (error: unknown) {
+        log.error("Restore from storage error", {}, wrapError(error));
         return {
             success: false,
             error: error instanceof Error ? error.message : "Failed to initiate restore"

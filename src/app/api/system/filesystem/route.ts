@@ -3,6 +3,10 @@ import fs from "fs/promises";
 import path from "path";
 import { checkPermission } from "@/lib/access-control";
 import { PERMISSIONS } from "@/lib/permissions";
+import { logger } from "@/lib/logger";
+import { wrapError } from "@/lib/errors";
+
+const log = logger.child({ route: "system/filesystem" });
 
 export async function GET(req: NextRequest) {
     try {
@@ -55,8 +59,8 @@ export async function GET(req: NextRequest) {
             }
         });
 
-    } catch (error) {
-        console.error("Filesystem API Error:", error);
+    } catch (error: unknown) {
+        log.error("Filesystem API error", {}, wrapError(error));
         return NextResponse.json({ success: false, error: "Failed to list directory" }, { status: 500 });
     }
 }

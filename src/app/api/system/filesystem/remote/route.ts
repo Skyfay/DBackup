@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { checkPermission } from "@/lib/access-control";
 import { PERMISSIONS } from "@/lib/permissions";
 import Client from "ssh2-sftp-client";
+import { logger } from "@/lib/logger";
+import { wrapError, getErrorMessage } from "@/lib/errors";
+
+const log = logger.child({ route: "filesystem/remote" });
 
 export async function POST(req: NextRequest) {
     try {
@@ -83,15 +87,15 @@ export async function POST(req: NextRequest) {
                 }
             });
 
-        } catch (sshError: any) {
-            console.error("SSH Browse Error:", sshError);
+        } catch (sshError: unknown) {
+            log.error("SSH browse error", {}, wrapError(sshError));
             // Try to close if open
             try { await sftp.end(); } catch {}
-            return NextResponse.json({ success: false, error: sshError.message || "SSH Connection failed" }, { status: 500 });
+            return NextResponse.json({ success: false, error: getErrorMessage(sshError) || "SSH Connection failed" }, { status: 500 });
         }
 
-    } catch (error) {
-        console.error("API Error:", error);
+    } catch (error: unknown) {
+        log.error("API error", {}, wrapError(error));
         return NextResponse.json({ success: false, error: "Internal Server Error" }, { status: 500 });
     }
 }

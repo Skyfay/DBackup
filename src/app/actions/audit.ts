@@ -3,6 +3,10 @@
 import { checkPermission } from "@/lib/access-control";
 import { PERMISSIONS } from "@/lib/permissions";
 import { auditService, AuditLogFilter } from "@/services/audit-service";
+import { logger } from "@/lib/logger";
+import { wrapError, getErrorMessage } from "@/lib/errors";
+
+const log = logger.child({ action: "audit" });
 
 export async function getAuditLogs(
   page: number = 1,
@@ -19,11 +23,11 @@ export async function getAuditLogs(
     });
 
     return { success: true, data: result };
-  } catch (error: any) {
-    console.error("Error fetching audit logs:", error);
+  } catch (error: unknown) {
+    log.error("Error fetching audit logs", {}, wrapError(error));
     return {
       success: false,
-      error: error.message || "Failed to fetch audit logs"
+      error: getErrorMessage(error) || "Failed to fetch audit logs"
     };
   }
 }

@@ -1,5 +1,9 @@
 import { execFileAsync } from "./connection";
 import { isMultiDbTar, readTarManifest } from "../common/tar-utils";
+import { logger } from "@/lib/logger";
+import { wrapError } from "@/lib/errors";
+
+const log = logger.child({ adapter: "mysql", module: "analyze" });
 
 export async function analyzeDump(sourcePath: string): Promise<string[]> {
     // Check if this is a Multi-DB TAR archive
@@ -45,10 +49,11 @@ export async function analyzeDump(sourcePath: string): Promise<string[]> {
                 dbs.add(currentMatch[1]);
             }
         }
-    } catch (e: any) {
+    } catch (e: unknown) {
+        const err = e as NodeJS.ErrnoException;
         // grep exit code 1 means no matches
-        if (e.code !== 1) {
-            console.error("Error analyzing MySQL dump:", e);
+        if ((err as any).code !== 1) {
+            log.error("Error analyzing MySQL dump", { sourcePath }, wrapError(e));
         }
     }
 

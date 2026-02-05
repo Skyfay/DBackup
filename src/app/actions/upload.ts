@@ -8,6 +8,10 @@ import path from "path";
 import prisma from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { checkPermission as _checkPermission, getUserPermissions } from "@/lib/access-control";
+import { logger } from "@/lib/logger";
+import { wrapError } from "@/lib/errors";
+
+const log = logger.child({ action: "upload" });
 
 // Helper function to check magic numbers (file signatures)
 async function validateImageSignature(file: File): Promise<boolean> {
@@ -57,8 +61,8 @@ async function deleteOldAvatar(userImage: string | null) {
              filepath = path.join(process.cwd(), "public", "uploads", "avatars", filename);
              await unlink(filepath);
         }
-    } catch (error) {
-        console.error("Failed to delete old avatar file:", error);
+    } catch (error: unknown) {
+        log.error("Failed to delete old avatar file", {}, wrapError(error));
         // Continue execution even if file deletion fails
     }
 }
@@ -176,8 +180,8 @@ export async function uploadAvatar(formData: FormData) {
         revalidatePath("/dashboard"); // For navbar/sidebar avatar
 
         return { success: true, url: publicUrl };
-    } catch (error) {
-        console.error("Upload error:", error);
+    } catch (error: unknown) {
+        log.error("Upload error", {}, wrapError(error));
         return { success: false, error: "Failed to save file" };
     }
 }
@@ -212,8 +216,8 @@ export async function removeAvatar() {
         revalidatePath("/dashboard");
 
         return { success: true };
-    } catch (error) {
-        console.error("Remove avatar error:", error);
+    } catch (error: unknown) {
+        log.error("Remove avatar error", {}, wrapError(error));
         return { success: false, error: "Failed to remove avatar" };
     }
 }

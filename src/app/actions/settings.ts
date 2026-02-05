@@ -5,6 +5,10 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { checkPermission } from "@/lib/access-control";
 import { PERMISSIONS } from "@/lib/permissions";
+import { logger } from "@/lib/logger";
+import { wrapError } from "@/lib/errors";
+
+const log = logger.child({ action: "settings" });
 
 const settingsSchema = z.object({
     maxConcurrentJobs: z.coerce.number().min(1).max(10),
@@ -57,8 +61,8 @@ export async function updateSystemSettings(data: z.infer<typeof settingsSchema>)
 
         revalidatePath("/dashboard/settings");
         return { success: true };
-    } catch (error) {
-        console.error("Failed to update system settings:", error);
+    } catch (error: unknown) {
+        log.error("Failed to update system settings", {}, wrapError(error));
         return { success: false, error: "Failed to update settings" };
     }
 }

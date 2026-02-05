@@ -7,6 +7,10 @@ import { checkPermission } from "@/lib/access-control";
 import { PERMISSIONS } from "@/lib/permissions";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
+import { logger } from "@/lib/logger";
+import { wrapError, getErrorMessage } from "@/lib/errors";
+
+const log = logger.child({ route: "adapters" });
 
 export async function GET(req: NextRequest) {
     const session = await auth.api.getSession({
@@ -60,8 +64,8 @@ export async function GET(req: NextRequest) {
                     ...adapter,
                     config: JSON.stringify(decryptedConfig)
                 };
-            } catch (e) {
-                console.error(`Failed to process config for adapter ${adapter.id}`, e);
+            } catch (e: unknown) {
+                log.error("Failed to process config for adapter", { adapterId: adapter.id }, wrapError(e));
                 return adapter; // Return as-is if error (fallback)
             }
         });
@@ -128,8 +132,8 @@ export async function POST(req: NextRequest) {
         }
 
         return NextResponse.json(newAdapter, { status: 201 });
-    } catch (error: any) {
-        console.error("Create error:", error);
-        return NextResponse.json({ error: error.message || "Failed to create adapter" }, { status: 500 });
+    } catch (error: unknown) {
+        log.error("Create adapter error", {}, wrapError(error));
+        return NextResponse.json({ error: getErrorMessage(error) || "Failed to create adapter" }, { status: 500 });
     }
 }

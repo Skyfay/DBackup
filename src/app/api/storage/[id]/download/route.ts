@@ -8,7 +8,10 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { checkPermission } from "@/lib/access-control";
 import { PERMISSIONS } from "@/lib/permissions";
+import { logger } from "@/lib/logger";
+import { wrapError, getErrorMessage } from "@/lib/errors";
 
+const log = logger.child({ route: "storage/download" });
 registerAdapters();
 
 export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
@@ -72,13 +75,13 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
             }
         });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         if (tempFile && fs.existsSync(tempFile)) {
              try { fs.unlinkSync(tempFile); } catch {}
         }
 
-        console.error("Download error:", error);
-         const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
+        log.error("Download error", { storageId: params.id }, wrapError(error));
+         const errorMessage = getErrorMessage(error) || "An unknown error occurred";
 
          if (errorMessage.includes("not found")) {
              return NextResponse.json({ error: errorMessage }, { status: 404 });

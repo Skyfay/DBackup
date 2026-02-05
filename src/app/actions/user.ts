@@ -7,6 +7,10 @@ import { userService } from "@/services/user-service";
 import { authService } from "@/services/auth-service";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
+import { logger } from "@/lib/logger";
+import { wrapError, getErrorMessage } from "@/lib/errors";
+
+const log = logger.child({ action: "user" });
 
 export async function createUser(data: { name: string; email: string; password: string }) {
     await checkPermission(PERMISSIONS.USERS.WRITE);
@@ -56,9 +60,9 @@ export async function updateUserGroup(userId: string, groupId: string | null) {
         }
 
         return { success: true };
-    } catch (error: any) {
-        console.error("Failed to update user group:", error);
-        return { success: false, error: error.message || "Failed to update user group" };
+    } catch (error: unknown) {
+        log.error("Failed to update user group", { userId }, wrapError(error));
+        return { success: false, error: getErrorMessage(error) || "Failed to update user group" };
     }
 }
 
@@ -68,9 +72,9 @@ export async function resetUserTwoFactor(userId: string) {
     try {
         await userService.resetTwoFactor(userId);
         return { success: true };
-    } catch (error: any) {
-        console.error("Failed to reset 2FA:", error);
-        return { success: false, error: error.message || "Failed to reset 2FA" };
+    } catch (error: unknown) {
+        log.error("Failed to reset 2FA", { userId }, wrapError(error));
+        return { success: false, error: getErrorMessage(error) || "Failed to reset 2FA" };
     }
 }
 
@@ -112,9 +116,9 @@ export async function togglePasskeyTwoFactor(userId: string, enabled: boolean) {
         await userService.togglePasskeyTwoFactor(userId, enabled);
         revalidatePath("/dashboard/settings");
         return { success: true };
-    } catch (error: any) {
-        console.error(error);
-        return { success: false, error: error.message || "Failed to update passkey settings" };
+    } catch (error: unknown) {
+        log.error("Failed to toggle passkey 2FA", { userId }, wrapError(error));
+        return { success: false, error: getErrorMessage(error) || "Failed to update passkey settings" };
     }
 }
 
@@ -187,9 +191,9 @@ export async function updateOwnPassword(currentPassword: string, newPassword: st
         );
 
         return { success: true };
-    } catch (error: any) {
-        console.error("Failed to update password:", error);
-        return { success: false, error: error.message || "Failed to update password" };
+    } catch (error: unknown) {
+        log.error("Failed to update password", { userId: currentUser.id }, wrapError(error));
+        return { success: false, error: getErrorMessage(error) || "Failed to update password" };
     }
 }
 
@@ -216,9 +220,9 @@ export async function updateUser(userId: string, data: { name?: string; email?: 
         );
 
         return { success: true };
-    } catch (error: any) {
-         console.error(error);
-        return { success: false, error: error.message || "Failed to update user" };
+    } catch (error: unknown) {
+         log.error("Failed to update user", { userId }, wrapError(error));
+        return { success: false, error: getErrorMessage(error) || "Failed to update user" };
     }
 }
 
@@ -255,9 +259,9 @@ export async function updateUserPreferences(userId: string, data: { autoRedirect
         );
 
         return { success: true };
-    } catch (error: any) {
-        console.error(error);
-        return { success: false, error: error.message || "Failed to update preferences" };
+    } catch (error: unknown) {
+        log.error("Failed to update preferences", { userId }, wrapError(error));
+        return { success: false, error: getErrorMessage(error) || "Failed to update preferences" };
     }
 }
 

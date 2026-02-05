@@ -7,6 +7,10 @@ import { checkPermission, getCurrentUserWithGroup } from "@/lib/access-control";
 import { PERMISSIONS } from "@/lib/permissions";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
+import { logger } from "@/lib/logger";
+import { wrapError } from "@/lib/errors";
+
+const log = logger.child({ action: "group" });
 
 const groupSchema = z.object({
     name: z.string().min(1, "Name is required"),
@@ -63,8 +67,8 @@ export async function createGroup(data: GroupFormValues) {
         }
 
         return { success: true };
-    } catch (error) {
-        console.error("Failed to create group:", error);
+    } catch (error: unknown) {
+        log.error("Failed to create group", {}, wrapError(error));
         return { success: false, error: "Failed to create group" };
     }
 }
@@ -106,8 +110,8 @@ export async function updateGroup(id: string, data: GroupFormValues) {
         }
 
         return { success: true };
-    } catch (error) {
-        console.error("Failed to update group:", error);
+    } catch (error: unknown) {
+        log.error("Failed to update group", { groupId: id }, wrapError(error));
         return { success: false, error: "Failed to update group" };
     }
 }
@@ -142,8 +146,8 @@ export async function deleteGroup(id: string) {
         }
 
         return { success: true };
-    } catch (error) {
-        console.error("Failed to delete group:", error);
+    } catch (error: unknown) {
+        log.error("Failed to delete group", { groupId: id }, wrapError(error));
         return { success: false, error: "Failed to delete group. Ensure no users are assigned to it." };
     }
 }

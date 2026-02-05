@@ -1,7 +1,10 @@
 import { execFile } from "child_process";
 import util from "util";
+import { logger } from "@/lib/logger";
+import { wrapError, getErrorMessage } from "@/lib/errors";
 
 const execFileAsync = util.promisify(execFile);
+const log = logger.child({ adapter: "redis", module: "connection" });
 
 /**
  * Build redis-cli connection arguments from config
@@ -96,8 +99,8 @@ export async function getDatabases(config: any): Promise<string[]> {
         }
 
         return databases;
-    } catch (error: any) {
-        console.error("Failed to get databases:", error.message);
+    } catch (error: unknown) {
+        log.error("Failed to get databases", {}, wrapError(error));
         // Return default 16 databases on error
         return Array.from({ length: 16 }, (_, i) => String(i));
     }

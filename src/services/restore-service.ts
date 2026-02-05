@@ -14,6 +14,10 @@ import { createDecryptionStream } from "@/lib/crypto-stream";
 import { getDecompressionStream, CompressionType } from "@/lib/compression";
 import { LogEntry, LogLevel, LogType } from "@/lib/core/logs";
 import { isMultiDbTar, readTarManifest } from "@/lib/adapters/database/common/tar-utils";
+import { logger } from "@/lib/logger";
+import { wrapError, getErrorMessage } from "@/lib/errors";
+
+const svcLog = logger.child({ service: "RestoreService" });
 
 // Ensure adapters are loaded
 registerAdapters();
@@ -110,12 +114,13 @@ export class RestoreService {
                             }
                         }
                     }
-                } catch (e: any) {
-                    if (e.message && (e.message.includes('not recommended') || e.message.includes('Incompatible') || e.message.includes('Azure SQL Edge'))) {
+                } catch (e: unknown) {
+                    const errMsg = getErrorMessage(e);
+                    if (errMsg.includes('not recommended') || errMsg.includes('Incompatible') || errMsg.includes('Azure SQL Edge')) {
                         throw e;
                     }
                     // Ignore metadata read errors (e.g. file missing) or other non-critical issues
-                    console.warn(`[RestoreService] Version check skipped: ${e.message}`);
+                    svcLog.warn("Version check skipped", {}, wrapError(e));
                 }
             }
         }
@@ -144,7 +149,7 @@ export class RestoreService {
 
         // Run in background (do not await)
         this.runRestoreProcess(executionId, input).catch(err => {
-            console.error(`Background restore failed for ${executionId}:`, err);
+            svcLog.error("Background restore failed", { executionId }, wrapError(err));
         });
 
         return { success: true, executionId, message: "Restore started" };
@@ -604,9 +609,9 @@ export class RestoreService {
                 });
             }
 
-        } catch (error: any) {
-            console.error("Restore service error:", error);
-            log(`Fatal Error: ${error.message}`, 'error');
+        } catch (error: unknown) {
+            svcLog.error("Restore service error", {}, wrapError(error));
+            log(`Fatal Error: ${getErrorMessage(error)}`, 'error');
             updateProgress(100, "Failed");
 
             await prisma.execution.update({

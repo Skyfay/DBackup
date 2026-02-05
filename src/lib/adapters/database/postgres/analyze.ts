@@ -1,5 +1,9 @@
 import { execFileAsync } from "./connection";
 import { isMultiDbTar, readTarManifest } from "../common/tar-utils";
+import { logger } from "@/lib/logger";
+import { wrapError } from "@/lib/errors";
+
+const log = logger.child({ adapter: "postgres", module: "analyze" });
 
 export async function analyzeDump(sourcePath: string): Promise<string[]> {
     // First check if this is a Multi-DB TAR archive
@@ -28,9 +32,10 @@ export async function analyzeDump(sourcePath: string): Promise<string[]> {
             const connectMatch = line.match(/^\\connect "?([^"\s]+)"?/i);
             if (connectMatch) dbs.add(connectMatch[1]);
         }
-    } catch (e: any) {
-        if (e.code !== 1) {
-            console.error("Error analyzing Postgres dump:", e);
+    } catch (e: unknown) {
+        const err = e as NodeJS.ErrnoException;
+        if (err.code !== 'ENOENT' && (err as any).code !== 1) {
+            log.error("Error analyzing Postgres dump", { sourcePath }, wrapError(e));
         }
     }
     return Array.from(dbs);

@@ -7,6 +7,10 @@ import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { checkPermission } from "@/lib/access-control";
 import { PERMISSIONS, Permission } from "@/lib/permissions";
+import { logger } from "@/lib/logger";
+import { wrapError, getErrorMessage } from "@/lib/errors";
+
+const log = logger.child({ route: "adapters/[id]" });
 
 // Helper to get write permission based on adapter type
 function getWritePermissionForType(type: string): Permission {
@@ -79,11 +83,11 @@ export async function DELETE(
         }
 
         return NextResponse.json({ success: true });
-    } catch (error: any) {
-        console.error("Delete Adapter Error:", error);
+    } catch (error: unknown) {
+        log.error("Delete adapter error", { adapterId: params.id }, wrapError(error));
         return NextResponse.json({
             success: false,
-            error: error.message || "Failed to delete adapter"
+            error: getErrorMessage(error) || "Failed to delete adapter"
         }, { status: 500 });
     }
 }

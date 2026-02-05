@@ -10,6 +10,10 @@ import { getTempDir } from "@/lib/temp-dir";
 import path from "path";
 import AdmZip from "adm-zip";
 import { registerAdapters } from "@/lib/adapters";
+import { logger } from "@/lib/logger";
+import { wrapError } from "@/lib/errors";
+
+const log = logger.child({ service: "StorageService" });
 
 // Fix: Ensure adapters are registered before service usage
 registerAdapters();
@@ -47,9 +51,10 @@ export class StorageService {
             const content = await adapter.read(config, metaPath);
             if (!content) throw new Error("Metadata file not found");
             metadata = JSON.parse(content);
-        } catch (e: any) {
-             console.error(`Toggle Lock Error: ${e.message}`, { metaPath, error: e });
-             throw new Error(`Could not read metadata for this backup: ${e.message}`);
+        } catch (e: unknown) {
+             log.error("Toggle lock error", { metaPath }, wrapError(e));
+             const message = e instanceof Error ? e.message : "Unknown error";
+             throw new Error(`Could not read metadata for this backup: ${message}`);
         }
 
         // 2. Toggle Lock

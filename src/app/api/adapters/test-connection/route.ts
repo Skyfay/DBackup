@@ -6,6 +6,10 @@ import { headers } from "next/headers";
 import prisma from "@/lib/prisma";
 import { checkPermission } from "@/lib/access-control";
 import { PERMISSIONS, Permission } from "@/lib/permissions";
+import { logger } from "@/lib/logger";
+import { wrapError } from "@/lib/errors";
+
+const log = logger.child({ route: "adapters/test-connection" });
 
 // Ensure adapters are registered
 registerAdapters();
@@ -77,8 +81,8 @@ export async function POST(req: NextRequest) {
                     where: { id: configId },
                     data: { metadata: JSON.stringify(newMeta) }
                 });
-            } catch (metaError) {
-                console.error('[TestConnection] Failed to update metadata:', metaError);
+            } catch (metaError: unknown) {
+                log.error("Failed to update metadata", { configId }, wrapError(metaError));
                 // Don't fail the entire request if metadata update fails
             }
         }

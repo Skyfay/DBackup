@@ -3,8 +3,10 @@ import { LogLevel, LogType } from "@/lib/core/logs";
 import { buildConnectionArgs } from "./connection";
 import { execFile } from "child_process";
 import util from "util";
+import { logger } from "@/lib/logger";
 
 const execFileAsync = util.promisify(execFile);
+const log = logger.child({ adapter: "redis", module: "restore" });
 
 /**
  * Prepare for Redis restore operation
@@ -39,7 +41,7 @@ export async function prepareRestore(config: any, _databases: string[]): Promise
 
             // This is a basic check - in production you'd want more thorough validation
             if (!aclList.includes("allcommands") && !aclList.includes("+flushall")) {
-                console.warn("Warning: User may not have FLUSHALL permission");
+                log.warn("User may not have FLUSHALL permission", { user });
             }
         }
     } catch {

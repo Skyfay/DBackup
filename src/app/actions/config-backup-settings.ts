@@ -5,6 +5,10 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { checkPermission } from "@/lib/access-control";
 import { PERMISSIONS } from "@/lib/permissions";
+import { logger } from "@/lib/logger";
+import { wrapError } from "@/lib/errors";
+
+const log = logger.child({ action: "config-backup-settings" });
 
 const configBackupSchema = z.object({
     enabled: z.boolean(),
@@ -67,8 +71,8 @@ export async function updateConfigBackupSettings(data: z.infer<typeof configBack
 
         revalidatePath("/dashboard/settings");
         return { success: true };
-    } catch (error) {
-        console.error("Failed to update config backup settings:", error);
+    } catch (error: unknown) {
+        log.error("Failed to update config backup settings", {}, wrapError(error));
         return { success: false, error: "Failed to update settings" };
     }
 }

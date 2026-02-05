@@ -5,7 +5,10 @@ import { consumeDownloadToken, markTokenUsed } from "@/lib/download-tokens";
 import path from "path";
 import os from "os";
 import fs from "fs";
+import { logger } from "@/lib/logger";
+import { wrapError } from "@/lib/errors";
 
+const log = logger.child({ route: "storage/public-download" });
 registerAdapters();
 
 /**
@@ -24,10 +27,10 @@ export async function GET(req: NextRequest) {
         const { searchParams } = new URL(req.url);
         const token = searchParams.get("token");
 
-        console.log(`[PublicDownload] Request received. Token: ${token?.substring(0, 16)}...`);
+        log.debug("Public download request received", { tokenPrefix: token?.substring(0, 16) });
 
         if (!token) {
-            console.log("[PublicDownload] Error: Missing token");
+            log.debug("Missing token in request");
             return NextResponse.json({ error: "Missing token" }, { status: 400 });
         }
 
@@ -35,13 +38,13 @@ export async function GET(req: NextRequest) {
         const tokenData = consumeDownloadToken(token);
 
         if (!tokenData) {
-            console.log("[PublicDownload] Error: Token invalid or expired");
+            log.debug("Token invalid or expired");
             return NextResponse.json({
                 error: "Invalid or expired token. Please generate a new download link."
             }, { status: 401 });
         }
 
-        console.log(`[PublicDownload] Token valid. StorageId: ${tokenData.storageId}, File: ${tokenData.file}, Decrypt: ${tokenData.decrypt}`);
+        log.debug("Token validated", { storageId: tokenData.storageId, file: tokenData.file, decrypt: tokenData.decrypt });
 
         const { storageId, file, decrypt } = tokenData;
 
@@ -65,7 +68,7 @@ export async function GET(req: NextRequest) {
 
         // Mark token as used ONLY after successful download
         markTokenUsed(token);
-        console.log(`[PublicDownload] Success! File size: ${fileBuffer.length} bytes. Token marked as used.`);
+        log.debug("Download successful, token marked as used", { fileSize: fileBuffer.length });
 
         // Determine filename
         let downloadFilename = path.basename(file);
@@ -89,7 +92,7 @@ export async function GET(req: NextRequest) {
             try { fs.unlinkSync(tempFile); } catch { /* ignore */ }
         }
 
-        console.error("Public download error:", error);
+        log.error("Public download error", {}, wrapError(error));
         return NextResponse.json({ error: "Download failed" }, { status: 500 });
     }
 }

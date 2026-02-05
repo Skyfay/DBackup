@@ -4,6 +4,10 @@ import { headers } from "next/headers";
 import { checkPermission } from "@/lib/access-control";
 import { PERMISSIONS } from "@/lib/permissions";
 import prisma from "@/lib/prisma";
+import { logger } from "@/lib/logger";
+import { wrapError } from "@/lib/errors";
+
+const log = logger.child({ route: "adapters/health-history" });
 
 // Helper type for date range params
 export async function GET(
@@ -70,8 +74,8 @@ export async function GET(
             }
         });
 
-    } catch (e: any) {
-        console.error(`Failed to fetch health history for ${id}:`, e);
+    } catch (e: unknown) {
+        log.error("Failed to fetch health history", { adapterId: id }, wrapError(e));
         return NextResponse.json({ error: "Failed to fetch health data" }, { status: 500 });
     }
 }

@@ -12,6 +12,10 @@ import path from "path";
 import { Readable, Transform } from "stream";
 import { getProfileMasterKey, getEncryptionProfiles } from "@/services/encryption-service";
 import { pipeline } from "stream/promises";
+import { logger } from "@/lib/logger";
+import { wrapError } from "@/lib/errors";
+
+const svcLog = logger.child({ service: "ConfigService" });
 
 export class ConfigService {
   /**
@@ -32,8 +36,8 @@ export class ConfigService {
       let configObj: any = {};
       try {
         configObj = JSON.parse(adapter.config);
-      } catch (e) {
-        console.warn(`Failed to parse config for adapter ${adapter.id}`, e);
+      } catch (e: unknown) {
+        svcLog.warn("Failed to parse config for adapter", { adapterId: adapter.id }, wrapError(e));
       }
 
       // 1. Decrypt to get plaintext
@@ -103,8 +107,8 @@ export class ConfigService {
                 const plainKey = decrypt(p.secretKey);
                 // Return it so it ends up in the JSON
                 return { ...p, secretKey: plainKey };
-             } catch {
-                 console.error("Failed to decrypt profile key for export", p.id);
+             } catch (e: unknown) {
+                 svcLog.error("Failed to decrypt profile key for export", { profileId: p.id }, wrapError(e));
                  // eslint-disable-next-line @typescript-eslint/no-unused-vars
                  const { secretKey, ...rest } = p;
                  return rest;
@@ -169,8 +173,8 @@ export class ConfigService {
               }
 
               if (meta.compression === 'GZIP') isCompressed = true;
-          } catch (e) {
-              console.warn("Failed to parse metadata file", e);
+          } catch (e: unknown) {
+              svcLog.warn("Failed to parse metadata file", {}, wrapError(e));
           }
       } else {
           // Fallback: Guess by extension
@@ -255,7 +259,7 @@ export class ConfigService {
     };
 
     // TODO: Add version compatibility check here if needed in future
-    console.log(`Restoring configuration from version ${data.metadata.version}`);
+    svcLog.info("Restoring configuration", { version: data.metadata.version });
 
     await prisma.$transaction(async (tx) => {
       // 1. Restore Settings
@@ -316,7 +320,7 @@ export class ConfigService {
                         }
                     });
                 } else {
-                    console.warn(`Skipping Encryption Profile ${profile.name} (${profile.id}) - Secret Key missing in export`);
+                    svcLog.warn("Skipping encryption profile - secret key missing in export", { profileId: profile.id, name: profile.name });
                 }
             }
         }
@@ -332,7 +336,7 @@ export class ConfigService {
                 // If profiles were NOT restored, we must check if they exist in DB
                 const profileExists = await tx.encryptionProfile.findUnique({ where: { id: job.encryptionProfileId }});
                 if (!profileExists) {
-                    console.warn(`Removing invalid Encryption Profile ID ${job.encryptionProfileId} from Job ${job.name}`);
+                    svcLog.warn("Removing invalid encryption profile from job", { encryptionProfileId: job.encryptionProfileId, jobName: job.name });
                     job.encryptionProfileId = null;
                 }
             }
@@ -421,7 +425,7 @@ export class ConfigService {
 
     // 2. Start Background Process
     this.runRestorePipeline(execution.id, storageConfigId, file, decryptionProfileId, options)
-        .catch(err => console.error("Restore Pipeline Logic Error (uncaught):", err));
+        .catch(err => svcLog.error("Restore pipeline logic error (uncaught)", {}, wrapError(err)));
 
     return execution.id;
   }

@@ -4,6 +4,10 @@ import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import fs from "fs/promises";
 import { existsSync } from "fs";
+import { logger } from "@/lib/logger";
+import { wrapError } from "@/lib/errors";
+
+const log = logger.child({ route: "avatar" });
 
 export async function GET(
     request: NextRequest,
@@ -56,8 +60,8 @@ export async function GET(
                 "X-Content-Type-Options": "nosniff",
             },
         });
-    } catch (error) {
-        console.error("Error reading avatar:", error);
+    } catch (error: unknown) {
+        log.error("Error reading avatar", { filename: safeFilename }, wrapError(error));
         return new NextResponse("Internal Server Error", { status: 500 });
     }
 }

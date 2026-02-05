@@ -1,7 +1,9 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { logger } from "@/lib/logger";
 
 const execFileAsync = promisify(execFile);
+const log = logger.child({ adapter: "postgres", module: "version-utils" });
 
 /**
  * Finds the correct PostgreSQL binary path for a specific major version.
@@ -81,7 +83,7 @@ export async function getPostgresBinary(tool: 'pg_dump' | 'pg_restore' | 'psql',
                 // Verify the version matches
                 if (stdout.includes(`${version}.`)) {
                     if (version !== majorVersion) {
-                        console.log(`[PostgreSQL] Using pg_dump ${version} for PostgreSQL ${majorVersion} server (backward compatible)`);
+                        log.info("Using backward compatible pg_dump version", { toolVersion: version, serverVersion: majorVersion });
                     }
                     return candidatePath;
                 }
@@ -103,7 +105,7 @@ export async function getPostgresBinary(tool: 'pg_dump' | 'pg_restore' | 'psql',
     for (const genericPath of genericPaths) {
         try {
             await execFileAsync(genericPath, ['--version'], { timeout: 2000 });
-            console.warn(`[PostgreSQL] Could not find strategic version for ${majorVersion}, using system default: ${genericPath}`);
+            log.warn("Could not find strategic version, using system default", { targetVersion: majorVersion, path: genericPath });
             return genericPath;
         } catch {
             continue;
@@ -111,7 +113,7 @@ export async function getPostgresBinary(tool: 'pg_dump' | 'pg_restore' | 'psql',
     }
 
     // Last resort: use generic tool name from PATH
-    console.warn(`[PostgreSQL] Could not find ${tool} for version ${majorVersion}, using default from PATH`);
+    log.warn("Could not find tool for version, using default from PATH", { tool, targetVersion: majorVersion });
     return tool;
 }
 

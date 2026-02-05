@@ -6,6 +6,10 @@ import { headers } from "next/headers";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { getUserPermissions, checkPermission } from "@/lib/access-control";
 import { PERMISSIONS } from "@/lib/permissions";
+import { logger } from "@/lib/logger";
+import { wrapError } from "@/lib/errors";
+
+const log = logger.child({ action: "audit-log" });
 
 export async function logLoginSuccess() {
     try {
@@ -36,7 +40,7 @@ export async function logLoginSuccess() {
                 }
             );
         }
-    } catch (e) {
-        console.error("Failed to log login success", e);
+    } catch (e: unknown) {
+        log.error("Failed to log login success", {}, wrapError(e));
     }
 }

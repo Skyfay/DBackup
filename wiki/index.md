@@ -51,7 +51,9 @@ docker run -d --name dbackup -p 3000:3000 \
   -e ENCRYPTION_KEY="$(openssl rand -hex 32)" \
   -e BETTER_AUTH_SECRET="$(openssl rand -base64 32)" \
   -e BETTER_AUTH_URL="http://localhost:3000" \
-  -v "$(pwd)/db:/app/db" -v "$(pwd)/backups:/backups" \
+  -v "$(pwd)/db:/app/db" \
+  -v "$(pwd)/backups:/backups" \
+  -v "$(pwd)/storage:/app/storage" \
   skyfay/dbackup:beta
 ```
 

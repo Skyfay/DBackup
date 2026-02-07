@@ -3,43 +3,48 @@ import { ActivityChart } from "@/components/dashboard/widgets/activity-chart";
 import { JobStatusChart } from "@/components/dashboard/widgets/job-status-chart";
 import { StorageVolumeChart } from "@/components/dashboard/widgets/storage-volume-chart";
 import { LatestJobs } from "@/components/dashboard/widgets/latest-jobs";
+import { DashboardRefresh } from "@/components/dashboard/widgets/dashboard-refresh";
 import {
   getActivityData,
   getJobStatusDistribution,
   getStorageVolume,
   getLatestJobs,
+  hasRunningJobs,
 } from "@/services/dashboard-service";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  const [activityData, statusData, storageData, latestJobs] = await Promise.all([
+  const [activityData, statusData, storageData, latestJobs, isRunning] = await Promise.all([
     getActivityData(14),
     getJobStatusDistribution(),
     getStorageVolume(),
     getLatestJobs(8),
+    hasRunningJobs(),
   ]);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-3xl font-bold tracking-tight">Overview</h2>
-        <p className="text-muted-foreground">Welcome back. Here&apos;s what&apos;s happening with your backups today.</p>
-      </div>
-
-      <StatsCards />
-
-      <ActivityChart data={activityData} />
-
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-        <div className="col-span-full lg:col-span-4">
-          <LatestJobs data={latestJobs} />
+    <DashboardRefresh hasRunningJobs={isRunning}>
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">Overview</h2>
+          <p className="text-muted-foreground">Welcome back. Here&apos;s what&apos;s happening with your backups today.</p>
         </div>
-        <div className="col-span-full lg:col-span-3 space-y-4">
-          <JobStatusChart data={statusData} />
-          <StorageVolumeChart data={storageData} />
+
+        <StatsCards />
+
+        <ActivityChart data={activityData} />
+
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
+          <div className="col-span-full lg:col-span-4">
+            <LatestJobs data={latestJobs} />
+          </div>
+          <div className="col-span-full lg:col-span-3 space-y-4">
+            <JobStatusChart data={statusData} />
+            <StorageVolumeChart data={storageData} />
+          </div>
         </div>
       </div>
-    </div>
+    </DashboardRefresh>
   )
 }

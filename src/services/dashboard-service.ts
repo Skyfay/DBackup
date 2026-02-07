@@ -309,3 +309,14 @@ export async function getLatestJobs(limit: number = 7): Promise<LatestJobEntry[]
     };
   });
 }
+
+/**
+ * Checks if any executions are currently in Running or Pending status.
+ * Used to trigger auto-refresh polling on the dashboard.
+ */
+export async function hasRunningJobs(): Promise<boolean> {
+  const count = await prisma.execution.count({
+    where: { status: { in: ["Running", "Pending"] } },
+  });
+  return count > 0;
+}

@@ -1,10 +1,25 @@
 import { StatsCards } from "@/components/dashboard/widgets/stats-cards";
-import { RecentActivity } from "@/components/dashboard/widgets/recent-activity";
-import { StorageStatus } from "@/components/dashboard/widgets/storage-status";
+import { ActivityChart } from "@/components/dashboard/widgets/activity-chart";
+import { JobStatusChart } from "@/components/dashboard/widgets/job-status-chart";
+import { StorageVolumeChart } from "@/components/dashboard/widgets/storage-volume-chart";
+import { LatestJobs } from "@/components/dashboard/widgets/latest-jobs";
+import {
+  getActivityData,
+  getJobStatusDistribution,
+  getStorageVolume,
+  getLatestJobs,
+} from "@/services/dashboard-service";
 
 export const dynamic = "force-dynamic";
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const [activityData, statusData, storageData, latestJobs] = await Promise.all([
+    getActivityData(14),
+    getJobStatusDistribution(),
+    getStorageVolume(),
+    getLatestJobs(8),
+  ]);
+
   return (
     <div className="space-y-6">
       <div>
@@ -14,9 +29,16 @@ export default function DashboardPage() {
 
       <StatsCards />
 
+      <ActivityChart data={activityData} />
+
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-        <RecentActivity />
-        <StorageStatus />
+        <div className="col-span-full lg:col-span-4">
+          <LatestJobs data={latestJobs} />
+        </div>
+        <div className="col-span-full lg:col-span-3 space-y-4">
+          <JobStatusChart data={statusData} />
+          <StorageVolumeChart data={storageData} />
+        </div>
       </div>
     </div>
   )

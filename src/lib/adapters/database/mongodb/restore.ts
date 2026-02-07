@@ -2,7 +2,6 @@ import { BackupResult } from "@/lib/core/interfaces";
 import { LogLevel, LogType } from "@/lib/core/logs";
 import { MongoClient } from "mongodb";
 import { MongoDBConfig } from "@/lib/adapters/definitions";
-import { getDialect } from "./dialects";
 import { spawn } from "child_process";
 import { createReadStream } from "fs";
 import { waitForProcess } from "@/lib/adapters/process";

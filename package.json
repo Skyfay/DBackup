@@ -66,6 +66,7 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-hook-form": "^7.71.0",
+    "recharts": "2.15.4",
     "sonner": "^2.0.7",
     "ssh2": "^1.17.0",
     "ssh2-sftp-client": "^12.0.1",

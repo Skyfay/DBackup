@@ -7,7 +7,6 @@ import { LogLevel, LogType } from "./logs";
  * The interfaces use 'any' for compatibility with TypeScript's contravariant
  * function parameters, but implementations use their specific config types.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AdapterConfig = any;
 
 export interface AdapterConfigSchema {

@@ -1,6 +1,6 @@
 {
   "name": "dbackup",
-  "version": "0.9.4-beta",
+  "version": "0.9.5-beta",
   "private": true,
   "scripts": {
     "dev": "next dev",

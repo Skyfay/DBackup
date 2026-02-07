@@ -1,15 +1,9 @@
 "use client";
 
-import { Bar, BarChart, XAxis, YAxis } from "recharts";
-import {
-  ChartConfig,
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-} from "@/components/ui/chart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { StorageVolumeEntry } from "@/services/dashboard-service";
 import { formatBytes } from "@/lib/utils";
+import { HardDrive } from "lucide-react";
 
 interface StorageVolumeChartProps {
   data: StorageVolumeEntry[];
@@ -18,12 +12,12 @@ interface StorageVolumeChartProps {
 export function StorageVolumeChart({ data }: StorageVolumeChartProps) {
   if (data.length === 0) {
     return (
-      <Card>
+      <Card className="h-full">
         <CardHeader>
-          <CardTitle>Storage by Volume</CardTitle>
+          <CardTitle>Storage Usage</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex h-50 items-center justify-center text-sm text-muted-foreground">
+          <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
             No storage destinations configured.
           </div>
         </CardContent>
@@ -31,68 +25,47 @@ export function StorageVolumeChart({ data }: StorageVolumeChartProps) {
     );
   }
 
-  // Color palette for multiple storage destinations
-  const colors = [
-    "hsl(145, 78%, 45%)",
-    "hsl(225, 79%, 54%)",
-    "hsl(45, 93%, 58%)",
-    "hsl(280, 65%, 60%)",
-    "hsl(357, 78%, 54%)",
-  ];
-
-  const chartData = data.map((entry, index) => ({
-    name: entry.name,
-    size: entry.size,
-    count: entry.count,
-    fill: colors[index % colors.length],
-  }));
-
-  const dynamicConfig: ChartConfig = {
-    size: { label: "Size" },
-    ...Object.fromEntries(
-      chartData.map((entry) => [
-        entry.name,
-        { label: entry.name, color: entry.fill },
-      ])
-    ),
-  };
-
-  const chartHeight = Math.max(120, data.length * 50);
+  const totalSize = data.reduce((sum, entry) => sum + entry.size, 0);
+  const totalCount = data.reduce((sum, entry) => sum + entry.count, 0);
 
   return (
-    <Card>
+    <Card className="h-full">
       <CardHeader>
-        <CardTitle>Storage by Volume</CardTitle>
+        <CardTitle>Storage Usage</CardTitle>
       </CardHeader>
       <CardContent>
-        <ChartContainer config={dynamicConfig} className="w-full" style={{ height: chartHeight }}>
-          <BarChart data={chartData} layout="vertical" accessibilityLayer margin={{ left: 0, right: 16 }}>
-            <YAxis
-              dataKey="name"
-              type="category"
-              tickLine={false}
-              axisLine={false}
-              width={100}
-              fontSize={12}
-            />
-            <XAxis
-              type="number"
-              tickLine={false}
-              axisLine={false}
-              tickFormatter={(value) => formatBytes(value)}
-              fontSize={12}
-            />
-            <ChartTooltip
-              cursor={false}
-              content={
-                <ChartTooltipContent
-                  formatter={(value) => formatBytes(Number(value))}
-                />
-              }
-            />
-            <Bar dataKey="size" radius={[0, 4, 4, 0]} />
-          </BarChart>
-        </ChartContainer>
+        <div className="space-y-4">
+          {data.map((entry) => (
+            <div key={entry.name} className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-md border bg-muted">
+                  <HardDrive className="h-4 w-4 text-foreground" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-sm font-medium">{entry.name}</span>
+                  <span className="text-xs text-muted-foreground">{entry.count} backups</span>
+                </div>
+              </div>
+              <div className="text-sm font-bold font-mono">
+                {formatBytes(entry.size)}
+              </div>
+            </div>
+          ))}
+          {data.length > 1 && (
+            <>
+              <div className="border-t" />
+              <div className="flex items-center justify-between">
+                <div className="flex flex-col">
+                  <span className="text-sm font-medium">Total</span>
+                  <span className="text-xs text-muted-foreground">{totalCount} backups</span>
+                </div>
+                <div className="text-sm font-bold font-mono">
+                  {formatBytes(totalSize)}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </CardContent>
     </Card>
   );

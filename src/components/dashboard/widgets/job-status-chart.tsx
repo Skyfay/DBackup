@@ -56,13 +56,13 @@ export function JobStatusChart({ data }: JobStatusChartProps) {
 
   if (total === 0) {
     return (
-      <Card>
+      <Card className="h-full">
         <CardHeader>
           <CardTitle>Job Status</CardTitle>
           <CardDescription>Last 30 days</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex h-[200px] items-center justify-center text-sm text-muted-foreground">
+          <div className="flex h-50 items-center justify-center text-sm text-muted-foreground">
             No execution data available.
           </div>
         </CardContent>
@@ -74,13 +74,13 @@ export function JobStatusChart({ data }: JobStatusChartProps) {
   const successRate = total > 0 ? Math.round((successCount / total) * 100) : 0;
 
   return (
-    <Card>
+    <Card className="h-full">
       <CardHeader>
         <CardTitle>Job Status</CardTitle>
         <CardDescription>Last 30 days</CardDescription>
       </CardHeader>
       <CardContent>
-        <ChartContainer config={chartConfig} className="mx-auto aspect-square h-[200px]">
+        <ChartContainer config={chartConfig} className="mx-auto aspect-square max-h-48">
           <PieChart accessibilityLayer>
             <ChartTooltip
               cursor={false}
@@ -126,7 +126,7 @@ export function JobStatusChart({ data }: JobStatusChartProps) {
             </Pie>
             <ChartLegend
               content={<ChartLegendContent nameKey="status" />}
-              className="-translate-y-2 flex-wrap gap-2 [&>*]:basis-1/4 [&>*]:justify-center"
+              className="-translate-y-2 flex-wrap gap-2 *:basis-1/4 *:justify-center"
             />
           </PieChart>
         </ChartContainer>

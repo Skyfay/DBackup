@@ -28,7 +28,7 @@ export function LatestJobs({ data }: LatestJobsProps) {
   }, [data, typeFilter]);
 
   return (
-    <Card>
+    <Card className="h-full">
       <CardHeader className="flex flex-row items-center justify-between space-y-0">
         <CardTitle>Latest Jobs</CardTitle>
         <Select value={typeFilter} onValueChange={setTypeFilter}>

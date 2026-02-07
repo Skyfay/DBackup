@@ -13,7 +13,7 @@ const ALGORITHM = "sha256";
 export function calculateFileChecksum(filePath: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const hash = crypto.createHash(ALGORITHM);
-    const stream = fs.createReadStream(filePath);
+    const stream = fs.createReadStream(filePath, { highWaterMark: 1024 * 1024 }); // 1 MB buffer for large files
 
     stream.on("data", (chunk) => hash.update(chunk));
     stream.on("end", () => resolve(hash.digest("hex")));

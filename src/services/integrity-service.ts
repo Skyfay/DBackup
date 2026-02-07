@@ -9,6 +9,7 @@ import { logger } from "@/lib/logger";
 import { wrapError } from "@/lib/errors";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 
 const log = logger.child({ service: "IntegrityService" });
 
@@ -93,16 +94,32 @@ export class IntegrityService {
 
     const config = decryptConfig(JSON.parse(storageConfig.config));
 
-    // List all jobs that use this destination
-    const jobs = await prisma.job.findMany({
-      where: { destinationId: storageConfig.id },
-      select: { name: true },
-    });
+    // List all top-level folders in storage (not just active jobs).
+    // This ensures backups from deleted jobs are also verified.
+    let folders: string[] = [];
+    try {
+      const topLevel = await adapter.list(config, "");
+      folders = topLevel
+        .filter((f) => f.name && !f.name.endsWith(".meta.json"))
+        .map((f) => f.name);
+    } catch (e: unknown) {
+      log.warn(
+        "Could not list storage root, falling back to active jobs",
+        { destination: storageConfig.name },
+        wrapError(e)
+      );
+      // Fallback: use known job names
+      const jobs = await prisma.job.findMany({
+        where: { destinationId: storageConfig.id },
+        select: { name: true },
+      });
+      folders = jobs.map((j) => j.name);
+    }
 
-    for (const job of jobs) {
+    for (const folder of folders) {
       try {
-        // List files in job folder
-        const files = await adapter.list(config, job.name);
+        // List files in folder
+        const files = await adapter.list(config, folder);
 
         // Filter to only backup files (exclude .meta.json)
         const backupFiles = files.filter(
@@ -116,7 +133,7 @@ export class IntegrityService {
             await this.verifyFile(
               adapter,
               config,
-              `${job.name}/${file.name}`,
+              `${folder}/${file.name}`,
               storageConfig.name,
               result
             );
@@ -131,8 +148,8 @@ export class IntegrityService {
         }
       } catch (e: unknown) {
         log.warn(
-          "Failed to list files for job folder",
-          { jobName: job.name, destination: storageConfig.name },
+          "Failed to list files for folder",
+          { folder, destination: storageConfig.name },
           wrapError(e)
         );
       }
@@ -169,7 +186,7 @@ export class IntegrityService {
       // Try download-based approach
       const tempMetaPath = path.join(
         getTempDir(),
-        `integrity_meta_${Date.now()}.json`
+        `integrity_meta_${crypto.randomUUID()}.json`
       );
       try {
         const ok = await adapter.download(
@@ -197,7 +214,7 @@ export class IntegrityService {
     // 2. Download the backup file to temp
     const tempFilePath = path.join(
       getTempDir(),
-      `integrity_${Date.now()}_${fileName}`
+      `integrity_${crypto.randomUUID()}_${fileName}`
     );
 
     try {

@@ -82,7 +82,8 @@ export function LatestJobs({ data }: LatestJobsProps) {
                         {isRunning ? (
                           <span className="text-blue-500 animate-pulse">Live</span>
                         ) : (
-                          formatDistanceToNow(new Date(job.startedAt), { addSuffix: true })
+                          formatDistanceToNow(new Date(job.startedAt), { addSuffix: true, includeSeconds: true })
+                            .replace("less than ", "")
                         )}
                       </span>
                       <div className="w-3.5">

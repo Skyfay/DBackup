@@ -112,27 +112,34 @@ export const WebDAVStorageAdapter: StorageAdapter = {
                 ? path.posix.join("/", prefix, dir)
                 : (dir ? path.posix.join("/", dir) : "/");
 
-            const items = await client.getDirectoryContents(startDir, { deep: true }) as FileStat[];
-
             const files: FileInfo[] = [];
-            for (const item of items) {
-                if (item.type === "directory") continue;
+            const prefixPath = prefix ? path.posix.join("/", prefix) : "";
 
-                // Calculate relative path (strip prefix)
-                let relativePath = item.filename;
-                const prefixPath = prefix ? path.posix.join("/", prefix) : "";
-                if (prefixPath && relativePath.startsWith(prefixPath)) {
-                    relativePath = relativePath.substring(prefixPath.length);
+            // Recursive walk — avoids Depth:infinity PROPFIND which many servers reject
+            const walk = async (currentDir: string) => {
+                const items = await client.getDirectoryContents(currentDir) as FileStat[];
+
+                for (const item of items) {
+                    if (item.type === "directory") {
+                        await walk(item.filename);
+                    } else {
+                        let relativePath = item.filename;
+                        if (prefixPath && relativePath.startsWith(prefixPath)) {
+                            relativePath = relativePath.substring(prefixPath.length);
+                        }
+                        if (relativePath.startsWith("/")) relativePath = relativePath.substring(1);
+
+                        files.push({
+                            name: item.basename,
+                            path: relativePath,
+                            size: item.size,
+                            lastModified: new Date(item.lastmod),
+                        });
+                    }
                 }
-                if (relativePath.startsWith("/")) relativePath = relativePath.substring(1);
+            };
 
-                files.push({
-                    name: item.basename,
-                    path: relativePath,
-                    size: item.size,
-                    lastModified: new Date(item.lastmod),
-                });
-            }
+            await walk(startDir);
 
             return files;
         } catch (error: unknown) {

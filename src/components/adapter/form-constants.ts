@@ -2,12 +2,13 @@ export const STORAGE_CONNECTION_KEYS = [
     'host', 'port',
     'endpoint', 'region',
     'accountId', 'bucket', 'basePath',
+    'address', 'domain',
     'user', 'username',
     'password', 'accessKeyId', 'secretAccessKey',
     'privateKey', 'passphrase'
 ];
 
-export const STORAGE_CONFIG_KEYS = ['pathPrefix', 'storageClass', 'forcePathStyle', 'options'];
+export const STORAGE_CONFIG_KEYS = ['pathPrefix', 'storageClass', 'forcePathStyle', 'maxProtocol', 'options'];
 
 export const PLACEHOLDERS: Record<string, string> = {
     "email.from": "\"Backup Service\" <backup@example.com>",
@@ -57,4 +58,11 @@ export const PLACEHOLDERS: Record<string, string> = {
     "sftp.password": "secure-password",
     "sftp.privateKey": "-----BEGIN RSA PRIVATE KEY-----\n\n\n-----END RSA PRIVATE KEY-----",
     "sftp.pathPrefix": "/home/backup/uploads",
+
+    // SMB
+    "smb.address": "//fileserver/backups",
+    "smb.username": "backupuser",
+    "smb.password": "secure-password",
+    "smb.domain": "WORKGROUP",
+    "smb.pathPrefix": "server1/mysql",
 };

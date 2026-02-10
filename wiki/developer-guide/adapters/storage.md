@@ -12,6 +12,7 @@ Storage adapters handle file operations: upload, download, list, and delete.
 | Cloudflare R2 | `s3-r2` | Cloudflare R2 |
 | Hetzner | `s3-hetzner` | Hetzner Object Storage |
 | SFTP | `sftp` | SSH File Transfer |
+| SMB | `smb` | SMB/CIFS network shares |
 
 ## Interface
 

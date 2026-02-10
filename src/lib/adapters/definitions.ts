@@ -143,6 +143,15 @@ export const SFTPSchema = z.object({
     pathPrefix: z.string().optional().describe("Remote destination folder"),
 });
 
+export const SMBSchema = z.object({
+    address: z.string().min(1, "Share address is required (e.g. //server/share)"),
+    username: z.string().default("guest").describe("Username (default: guest)"),
+    password: z.string().optional().describe("Password"),
+    domain: z.string().optional().describe("Workgroup or domain name"),
+    maxProtocol: z.enum(["SMB3", "SMB2", "NT1"]).default("SMB3").describe("Maximum SMB protocol version"),
+    pathPrefix: z.string().optional().describe("Remote destination folder"),
+});
+
 export const DiscordSchema = z.object({
     webhookUrl: z.string().url("Valid Webhook URL is required"),
     username: z.string().optional().default("Backup Manager"),
@@ -180,6 +189,7 @@ export type S3AWSConfig = z.infer<typeof S3AWSSchema>;
 export type S3R2Config = z.infer<typeof S3R2Schema>;
 export type S3HetznerConfig = z.infer<typeof S3HetznerSchema>;
 export type SFTPConfig = z.infer<typeof SFTPSchema>;
+export type SMBConfig = z.infer<typeof SMBSchema>;
 
 // Notification Adapters
 export type DiscordConfig = z.infer<typeof DiscordSchema>;
@@ -187,7 +197,7 @@ export type EmailConfig = z.infer<typeof EmailSchema>;
 
 // Union types for adapter categories
 export type DatabaseConfig = MySQLConfig | MariaDBConfig | PostgresConfig | MongoDBConfig | SQLiteConfig | MSSQLConfig | RedisConfig;
-export type StorageConfig = LocalStorageConfig | S3GenericConfig | S3AWSConfig | S3R2Config | S3HetznerConfig | SFTPConfig;
+export type StorageConfig = LocalStorageConfig | S3GenericConfig | S3AWSConfig | S3R2Config | S3HetznerConfig | SFTPConfig | SMBConfig;
 export type NotificationConfig = DiscordConfig | EmailConfig;
 
 // Generic type alias for dialect base class (accepts any database config)
@@ -208,6 +218,7 @@ export const ADAPTER_DEFINITIONS: AdapterDefinition[] = [
     { id: "s3-r2", type: "storage", name: "Cloudflare R2", configSchema: S3R2Schema },
     { id: "s3-hetzner", type: "storage", name: "Hetzner Object Storage", configSchema: S3HetznerSchema },
     { id: "sftp", type: "storage", name: "SFTP (SSH)", configSchema: SFTPSchema },
+    { id: "smb", type: "storage", name: "SMB (Samba)", configSchema: SMBSchema },
 
     { id: "discord", type: "notification", name: "Discord Webhook", configSchema: DiscordSchema },
     { id: "email", type: "notification", name: "Email (SMTP)", configSchema: EmailSchema },

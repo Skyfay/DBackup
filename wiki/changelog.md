@@ -47,6 +47,14 @@ This release introduces a completely redesigned dashboard with interactive chart
 - **Live File Scanning**: Storage sizes are calculated from actual files via storage adapters (not just database records)
 - **Total Summary**: Aggregated total row shown when multiple storage destinations are configured
 
+#### 📂 SMB / Samba Storage Destination
+- **New Storage Adapter**: Store backups on SMB/CIFS network shares — Windows file servers, NAS devices (Synology, QNAP, TrueNAS), and Linux Samba servers
+- **Protocol Support**: Configurable SMB protocol version (SMB3, SMB2, NT1) with SMB3 as default for encryption support
+- **Domain Authentication**: Supports workgroup and Active Directory domain authentication
+- **Path Prefix**: Optional subdirectory on the share for organized backup storage
+- **Full Lifecycle**: Upload, download, list, delete, and read operations for complete backup management including retention policies
+- **Connection Testing**: Write/delete verification test ensures proper permissions before creating jobs
+
 ### 🐛 Bug Fixes
 - **Accurate Backup Sizes**: Fixed backup file size tracking to reflect the actual compressed and encrypted file size instead of the raw database dump size
 - **DateDisplay Crash**: Fixed a crash when using relative date formatting by switching to `formatDistanceToNow` from date-fns
@@ -56,6 +64,11 @@ This release introduces a completely redesigned dashboard with interactive chart
 - Removed outdated ESLint disable directive from core interfaces
 
 ### 🔧 Technical Changes
+- New `src/lib/adapters/storage/smb.ts` — SMB/CIFS storage adapter using `samba-client` npm package (wraps `smbclient` CLI)
+- Updated `src/lib/adapters/definitions.ts` — Added `SMBSchema`, `SMBConfig` type, and adapter definition
+- Updated `src/lib/adapters/index.ts` — Registered `SMBStorageAdapter`
+- Updated `Dockerfile` — Added `samba-client` Alpine package for `smbclient` CLI
+- Updated `scripts/setup-dev-macos.sh` — Added `brew install samba` for local development
 - New `src/lib/checksum.ts` — SHA-256 checksum utility with `calculateFileChecksum()`, `calculateChecksum()`, and `verifyFileChecksum()`
 - New `src/services/integrity-service.ts` — Periodic integrity check service for all backups across all storage destinations
 - New `tests/unit/lib/checksum.test.ts` — 12 unit tests covering checksum calculation, file hashing, and verification

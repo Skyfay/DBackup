@@ -12,6 +12,7 @@ DBackup supports multiple storage backends for your backups. Choose based on you
 | [Cloudflare R2](/user-guide/destinations/s3-r2) | Cloud | Zero egress fees |
 | [Hetzner Object Storage](/user-guide/destinations/s3-hetzner) | Cloud | EU data residency |
 | [SFTP](/user-guide/destinations/sftp) | Remote | Existing servers |
+| [SMB / Samba](/user-guide/destinations/smb) | Network | Windows shares, NAS |
 
 ## Choosing a Destination
 
@@ -94,6 +95,20 @@ DBackup supports multiple storage backends for your backups. Choose based on you
 
 **Best for:** Utilizing existing infrastructure.
 
+### SMB / Samba
+
+**Pros:**
+- Native Windows/Active Directory integration
+- Works with NAS devices out of the box
+- Domain authentication support
+
+**Cons:**
+- Requires `smbclient` on the host
+- Limited to network shares
+- Less secure than SSH-based transfers
+
+**Best for:** Windows environments, NAS devices, Active Directory networks.
+
 ## Adding a Destination
 
 1. Navigate to **Destinations** in the sidebar
@@ -146,6 +161,7 @@ All storage credentials (access keys, passwords) are encrypted at rest using you
 
 - **S3**: Uses HTTPS (TLS 1.2+)
 - **SFTP**: Uses SSH encryption
+- **SMB**: Uses SMB3 encryption (configurable protocol version)
 - **Local**: No network transfer
 
 ### Backup Encryption
@@ -181,3 +197,4 @@ Choose your storage destination:
 - [Cloudflare R2](/user-guide/destinations/s3-r2)
 - [Hetzner Object Storage](/user-guide/destinations/s3-hetzner)
 - [SFTP](/user-guide/destinations/sftp)
+- [SMB / Samba](/user-guide/destinations/smb)

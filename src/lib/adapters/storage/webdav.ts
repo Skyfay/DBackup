@@ -1,7 +1,7 @@
 import { StorageAdapter, FileInfo } from "@/lib/core/interfaces";
 import { WebDAVSchema } from "@/lib/adapters/definitions";
 import { createClient, WebDAVClient, FileStat } from "webdav";
-import { createReadStream, createWriteStream } from "fs";
+import { createWriteStream } from "fs";
 import fs from "fs/promises";
 import path from "path";
 import { pipeline } from "stream/promises";

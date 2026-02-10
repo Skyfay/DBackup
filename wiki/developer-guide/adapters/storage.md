@@ -386,53 +386,196 @@ createDownloadStream(config, remotePath): Readable {
 
 ## Adding a New Storage Adapter
 
-### Example: WebDAV Adapter
+Adding a storage adapter requires changes across multiple layers: backend adapter, schema/definitions, UI integration, and RBAC. Follow **every** step below to avoid missing integration points.
 
-1. **Install dependency**:
-   ```bash
-   pnpm add webdav
-   ```
+### Step-by-Step Checklist
 
-2. **Create schema** in `definitions.ts`:
-   ```typescript
-   export const WebDAVSchema = z.object({
-     url: z.string().url(),
-     username: z.string().min(1),
-     password: z.string().min(1),
-     basePath: z.string().default("/"),
-   });
-   ```
+#### 1. Install dependency
 
-3. **Create adapter** in `src/lib/adapters/storage/webdav.ts`:
-   ```typescript
-   import { createClient } from "webdav";
+```bash
+pnpm add webdav
+```
 
-   export const WebDAVAdapter: StorageAdapter = {
-     id: "webdav",
-     type: "storage",
-     name: "WebDAV",
-     configSchema: WebDAVSchema,
+#### 2. Create Zod schema + type in `src/lib/adapters/definitions.ts`
 
-     async upload(config, localPath, remotePath) {
-       const client = createClient(config.url, {
-         username: config.username,
-         password: config.password,
-       });
+```typescript
+export const WebDAVSchema = z.object({
+  url: z.string().url("Server URL is required"),
+  username: z.string().min(1, "Username is required"),
+  password: z.string().optional().describe("Password"),
+  pathPrefix: z.string().optional().describe("Remote destination folder"),
+});
 
-       const content = await readFile(localPath);
-       await client.putFileContents(
-         path.join(config.basePath, remotePath),
-         content
-       );
-     },
+export type WebDAVConfig = z.infer<typeof WebDAVSchema>;
+```
 
-     // ... implement other methods
-   };
-   ```
+Then update the `StorageConfig` union type and add an entry to the `ADAPTER_DEFINITIONS` array:
 
-4. **Register** in `src/lib/adapters/index.ts`
+```typescript
+export type StorageConfig = LocalStorageConfig | S3GenericConfig | ... | WebDAVConfig;
 
-5. **Test** with a real WebDAV server (e.g., Nextcloud)
+// In ADAPTER_DEFINITIONS:
+{ id: "webdav", type: "storage", name: "WebDAV", configSchema: WebDAVSchema },
+```
+
+#### 3. Create adapter in `src/lib/adapters/storage/webdav.ts`
+
+Implement the full `StorageAdapter` interface. All six methods are required:
+
+```typescript
+import { StorageAdapter, FileInfo } from "@/lib/core/interfaces";
+import { WebDAVSchema } from "@/lib/adapters/definitions";
+import { logger } from "@/lib/logger";
+import { wrapError } from "@/lib/errors";
+
+const log = logger.child({ adapter: "webdav" });
+
+export const WebDAVAdapter: StorageAdapter = {
+  id: "webdav",
+  type: "storage",
+  name: "WebDAV",
+  configSchema: WebDAVSchema,
+
+  async upload(config, localPath, remotePath, onProgress, onLog) { /* ... */ },
+  async download(config, remotePath, localPath, onProgress, onLog) { /* ... */ },
+  async read(config, remotePath) { /* ... */ },
+  async list(config, dir) { /* ... */ },
+  async delete(config, remotePath) { /* ... */ },
+  async test(config) { /* ... */ },
+};
+```
+
+::: tip read() method
+The `read()` method is used by the Storage Explorer to read `.meta.json` sidecar files. If not implemented, the system falls back to download → read → delete, which is slower.
+:::
+
+::: tip test() method
+The `test()` method is used for both manual connection tests and automatic health checks (online/offline status). It should perform a write + delete to verify full access.
+:::
+
+#### 4. Register adapter in `src/lib/adapters/index.ts`
+
+```typescript
+import { WebDAVAdapter } from "./storage/webdav";
+
+// Inside registerAdapters():
+registry.register(WebDAVAdapter);
+```
+
+#### 5. UI: Form field rendering (`src/components/adapter/form-constants.ts`)
+
+The adapter form renders fields dynamically from the Zod schema. Fields are split into two tabs based on these arrays:
+
+**Connection tab** — Add any new connection-related field keys your schema introduces:
+```typescript
+export const STORAGE_CONNECTION_KEYS = [
+    'host', 'port',
+    'endpoint', 'region',
+    'accountId', 'bucket', 'basePath',
+    'address', 'domain',             // ← SMB added these
+    'user', 'username',
+    'password', 'accessKeyId', 'secretAccessKey',
+    'privateKey', 'passphrase'
+];
+```
+
+**Configuration tab** — Add any new config-related field keys:
+```typescript
+export const STORAGE_CONFIG_KEYS = [
+    'pathPrefix', 'storageClass', 'forcePathStyle',
+    'maxProtocol',                    // ← SMB added this
+    'options'
+];
+```
+
+**Placeholders** — Add helpful placeholder values for your adapter's fields:
+```typescript
+export const PLACEHOLDERS: Record<string, string> = {
+    // WebDAV
+    "webdav.url": "https://nextcloud.example.com/remote.php/dav/files/user/",
+    "webdav.username": "backupuser",
+    "webdav.password": "secure-password",
+    "webdav.pathPrefix": "backups/server1",
+};
+```
+
+::: warning
+If your schema introduces field keys that are not in either `STORAGE_CONNECTION_KEYS` or `STORAGE_CONFIG_KEYS`, those fields will **not appear** in the form UI. This is the most common issue when adding a new adapter.
+:::
+
+#### 6. UI: Adapter icon (`src/components/adapter/utils.ts`)
+
+Add your adapter to the `getAdapterIcon()` function so it gets the correct Lucide icon:
+
+```typescript
+if (id.includes('webdav')) return Globe;
+```
+
+Available icons already imported: `Database`, `Folder`, `HardDrive`, `Network`, `MessageSquare`, `Mail`, `Disc`. Add a new import from `lucide-react` if needed.
+
+#### 7. UI: Details column (`src/components/adapter/adapter-manager.tsx`)
+
+Add a case to the `getSummary()` function to show a useful detail in the adapter table:
+
+```typescript
+case 'webdav':
+    return <span className="text-muted-foreground">{config.pathPrefix || config.url}</span>;
+```
+
+Always use the `text-muted-foreground` class for consistency.
+
+#### 8. RBAC: Permission regex (`src/app/api/adapters/`)
+
+Two API routes use regex to map adapter IDs to permission groups. Add your adapter ID to the storage regex in **both** files:
+
+- `src/app/api/adapters/test-connection/route.ts`
+- `src/app/api/adapters/access-check/route.ts`
+
+```typescript
+} else if (/local-filesystem|s3|sftp|smb|webdav|ftp/i.test(adapterId)) {
+    return PERMISSIONS.DESTINATIONS.READ;
+}
+```
+
+::: warning
+If your adapter ID is missing from this regex, the test-connection endpoint will skip RBAC permission checks for your adapter. Health checks may also behave unexpectedly.
+:::
+
+#### 9. Dockerfile (if CLI tools needed)
+
+If your adapter depends on a system CLI tool (like `smbclient` for SMB), add it to the `Dockerfile`:
+
+```dockerfile
+RUN apk add --no-cache \
+    # ... existing packages
+    your-package \
+```
+
+#### 10. macOS dev setup script (if CLI tools needed)
+
+Update `scripts/setup-dev-macos.sh` to install the CLI dependency:
+
+```bash
+echo "Installing YourTool..."
+brew install your-package
+```
+
+### Integration Checklist Summary
+
+| # | File | What to do |
+| :--- | :--- | :--- |
+| 1 | `package.json` | Install npm dependency |
+| 2 | `src/lib/adapters/definitions.ts` | Zod schema, config type, `StorageConfig` union, `ADAPTER_DEFINITIONS` |
+| 3 | `src/lib/adapters/storage/<name>.ts` | Full adapter implementation (6 methods) |
+| 4 | `src/lib/adapters/index.ts` | Import + `registry.register()` |
+| 5 | `src/components/adapter/form-constants.ts` | `STORAGE_CONNECTION_KEYS`, `STORAGE_CONFIG_KEYS`, `PLACEHOLDERS` |
+| 6 | `src/components/adapter/utils.ts` | `getAdapterIcon()` mapping |
+| 7 | `src/components/adapter/adapter-manager.tsx` | `getSummary()` case for details column |
+| 8 | `src/app/api/adapters/test-connection/route.ts` | Add ID to storage permission regex |
+| 9 | `src/app/api/adapters/access-check/route.ts` | Add ID to storage permission regex |
+| 10 | `Dockerfile` | System CLI tools (if needed) |
+| 11 | `scripts/setup-dev-macos.sh` | Local dev CLI setup (if needed) |
+| 12 | `wiki/` | User guide + developer guide + changelog |
 
 ## Related Documentation
 

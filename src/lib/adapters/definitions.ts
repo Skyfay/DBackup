@@ -152,6 +152,13 @@ export const SMBSchema = z.object({
     pathPrefix: z.string().optional().describe("Remote destination folder"),
 });
 
+export const WebDAVSchema = z.object({
+    url: z.string().url("WebDAV server URL is required (e.g. https://nextcloud.example.com/remote.php/dav/files/user/)"),
+    username: z.string().min(1, "Username is required"),
+    password: z.string().optional().describe("Password"),
+    pathPrefix: z.string().optional().describe("Remote destination folder"),
+});
+
 export const DiscordSchema = z.object({
     webhookUrl: z.string().url("Valid Webhook URL is required"),
     username: z.string().optional().default("Backup Manager"),
@@ -190,6 +197,7 @@ export type S3R2Config = z.infer<typeof S3R2Schema>;
 export type S3HetznerConfig = z.infer<typeof S3HetznerSchema>;
 export type SFTPConfig = z.infer<typeof SFTPSchema>;
 export type SMBConfig = z.infer<typeof SMBSchema>;
+export type WebDAVConfig = z.infer<typeof WebDAVSchema>;
 
 // Notification Adapters
 export type DiscordConfig = z.infer<typeof DiscordSchema>;
@@ -197,7 +205,7 @@ export type EmailConfig = z.infer<typeof EmailSchema>;
 
 // Union types for adapter categories
 export type DatabaseConfig = MySQLConfig | MariaDBConfig | PostgresConfig | MongoDBConfig | SQLiteConfig | MSSQLConfig | RedisConfig;
-export type StorageConfig = LocalStorageConfig | S3GenericConfig | S3AWSConfig | S3R2Config | S3HetznerConfig | SFTPConfig | SMBConfig;
+export type StorageConfig = LocalStorageConfig | S3GenericConfig | S3AWSConfig | S3R2Config | S3HetznerConfig | SFTPConfig | SMBConfig | WebDAVConfig;
 export type NotificationConfig = DiscordConfig | EmailConfig;
 
 // Generic type alias for dialect base class (accepts any database config)
@@ -219,6 +227,7 @@ export const ADAPTER_DEFINITIONS: AdapterDefinition[] = [
     { id: "s3-hetzner", type: "storage", name: "Hetzner Object Storage", configSchema: S3HetznerSchema },
     { id: "sftp", type: "storage", name: "SFTP (SSH)", configSchema: SFTPSchema },
     { id: "smb", type: "storage", name: "SMB (Samba)", configSchema: SMBSchema },
+    { id: "webdav", type: "storage", name: "WebDAV", configSchema: WebDAVSchema },
 
     { id: "discord", type: "notification", name: "Discord Webhook", configSchema: DiscordSchema },
     { id: "email", type: "notification", name: "Email (SMTP)", configSchema: EmailSchema },

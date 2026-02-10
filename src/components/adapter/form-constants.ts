@@ -2,7 +2,7 @@ export const STORAGE_CONNECTION_KEYS = [
     'host', 'port',
     'endpoint', 'region',
     'accountId', 'bucket', 'basePath',
-    'address', 'domain',
+    'address', 'domain', 'url',
     'user', 'username',
     'password', 'accessKeyId', 'secretAccessKey',
     'privateKey', 'passphrase'
@@ -65,4 +65,10 @@ export const PLACEHOLDERS: Record<string, string> = {
     "smb.password": "secure-password",
     "smb.domain": "WORKGROUP",
     "smb.pathPrefix": "server1/mysql",
+
+    // WebDAV
+    "webdav.url": "https://nextcloud.example.com/remote.php/dav/files/user/",
+    "webdav.username": "backupuser",
+    "webdav.password": "secure-password",
+    "webdav.pathPrefix": "backups/server1",
 };

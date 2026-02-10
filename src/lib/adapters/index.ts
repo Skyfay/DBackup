@@ -10,6 +10,7 @@ import { LocalFileSystemAdapter } from "./storage/local";
 import { S3GenericAdapter, S3AWSAdapter, S3R2Adapter, S3HetznerAdapter } from "./storage/s3";
 import { SFTPStorageAdapter } from "./storage/sftp";
 import { SMBStorageAdapter } from "./storage/smb";
+import { WebDAVStorageAdapter } from "./storage/webdav";
 import { DiscordAdapter } from "./notification/discord";
 import { EmailAdapter } from "./notification/email";
 import { logger } from "@/lib/logger";
@@ -37,6 +38,7 @@ export function registerAdapters() {
     registry.register(S3HetznerAdapter);
     registry.register(SFTPStorageAdapter);
     registry.register(SMBStorageAdapter);
+    registry.register(WebDAVStorageAdapter);
 
     registry.register(DiscordAdapter);
     registry.register(EmailAdapter);

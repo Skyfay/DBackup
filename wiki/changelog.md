@@ -63,6 +63,15 @@ This release introduces a completely redesigned dashboard with interactive chart
 - **Full Lifecycle**: Upload, download, list, delete, and read operations for complete backup management including retention policies
 - **Connection Testing**: Write/delete verification test ensures proper permissions before creating jobs
 
+#### 📡 FTP / FTPS Storage Destination
+- **New Storage Adapter**: Store backups on any FTP server with optional TLS encryption — shared hosting, legacy infrastructure, and classic file servers
+- **Explicit FTPS Support**: Optional TLS encryption (AUTH TLS on port 21) for secure file transfers — plain FTP available but not recommended for production
+- **Universal Compatibility**: Works with virtually any hosting provider without CLI dependencies — uses the `basic-ftp` npm package directly
+- **Anonymous & Authenticated Access**: Supports both anonymous FTP and username/password authentication
+- **Path Prefix**: Optional remote directory for organized backup storage
+- **Full Lifecycle**: Upload, download, list, delete, and read operations for complete backup management including retention policies
+- **Connection Testing**: Write/delete verification test ensures proper permissions before creating jobs
+
 ### 🐛 Bug Fixes
 - **Accurate Backup Sizes**: Fixed backup file size tracking to reflect the actual compressed and encrypted file size instead of the raw database dump size
 - **DateDisplay Crash**: Fixed a crash when using relative date formatting by switching to `formatDistanceToNow` from date-fns
@@ -74,8 +83,13 @@ This release introduces a completely redesigned dashboard with interactive chart
 ### 🔧 Technical Changes
 - New `src/lib/adapters/storage/webdav.ts` — WebDAV storage adapter using `webdav` npm package
 - New `src/lib/adapters/storage/smb.ts` — SMB/CIFS storage adapter using `samba-client` npm package (wraps `smbclient` CLI)
-- Updated `src/lib/adapters/definitions.ts` — Added `WebDAVSchema`, `WebDAVConfig`, `SMBSchema`, `SMBConfig` types, and adapter definitions
-- Updated `src/lib/adapters/index.ts` — Registered `WebDAVStorageAdapter` and `SMBStorageAdapter`
+- New `src/lib/adapters/storage/ftp.ts` — FTP/FTPS storage adapter using `basic-ftp` npm package
+- Updated `src/lib/adapters/definitions.ts` — Added `WebDAVSchema`, `WebDAVConfig`, `SMBSchema`, `SMBConfig`, `FTPSchema`, `FTPConfig` types, and adapter definitions
+- Updated `src/lib/adapters/index.ts` — Registered `WebDAVAdapter`, `SMBAdapter`, and `FTPAdapter` (renamed from `WebDAVStorageAdapter`, `SMBStorageAdapter`, `SFTPStorageAdapter` for consistency)
+- Updated `src/components/adapter/form-constants.ts` — Added form field mappings and placeholders for WebDAV, SMB, and FTP
+- Updated `src/components/adapter/utils.ts` — Added icon mappings for new storage adapters
+- Updated `src/components/adapter/adapter-manager.tsx` — Added summary display cases for WebDAV, SMB, and FTP
+- Updated `src/components/adapter/schema-field.tsx` — Added label override for `tls` field to display as "Encryption"
 - Updated `Dockerfile` — Added `samba-client` Alpine package for `smbclient` CLI
 - Updated `scripts/setup-dev-macos.sh` — Added `brew install samba` for local development
 - New `src/lib/checksum.ts` — SHA-256 checksum utility with `calculateFileChecksum()`, `calculateChecksum()`, and `verifyFileChecksum()`

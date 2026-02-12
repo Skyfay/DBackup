@@ -14,6 +14,7 @@ Storage adapters handle file operations: upload, download, list, and delete.
 | SFTP | `sftp` | SSH File Transfer |
 | SMB | `smb` | SMB/CIFS network shares |
 | WebDAV | `webdav` | WebDAV (Nextcloud, ownCloud, Apache, etc.) |
+| FTP / FTPS | `ftp` | FTP with optional TLS encryption |
 
 ## Interface
 

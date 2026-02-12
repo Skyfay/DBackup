@@ -25,7 +25,7 @@ features:
     details: Built-in GZIP and Brotli compression to minimize storage costs and transfer times.
   - icon: ☁️
     title: Flexible Storage
-    details: Store backups on Local Filesystem, Amazon S3, Cloudflare R2, Hetzner, MinIO, or any S3-compatible storage.
+    details: Store backups on Local Filesystem, WebDAV, SFTP, FTP/S, SMB/CIFS or any S3-compatible storage.
   - icon: 📅
     title: Automated Scheduling
     details: Cron-based job scheduling with GVS (Grandfather-Father-Son) retention policies for intelligent rotation.

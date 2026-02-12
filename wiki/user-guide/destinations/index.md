@@ -14,6 +14,7 @@ DBackup supports multiple storage backends for your backups. Choose based on you
 | [SFTP](/user-guide/destinations/sftp) | Remote | Existing servers |
 | [SMB / Samba](/user-guide/destinations/smb) | Network | Windows shares, NAS |
 | [WebDAV](/user-guide/destinations/webdav) | Network | Nextcloud, ownCloud, NAS |
+| [FTP / FTPS](/user-guide/destinations/ftp) | Remote | Classic FTP servers |
 
 ## Choosing a Destination
 
@@ -123,6 +124,20 @@ DBackup supports multiple storage backends for your backups. Choose based on you
 
 **Best for:** Nextcloud/ownCloud users, HTTP-accessible storage.
 
+### FTP / FTPS
+
+**Pros:**
+- Widely supported, works with almost any hosting provider
+- Optional TLS encryption (FTPS)
+- No CLI dependencies required
+
+**Cons:**
+- FTP without TLS is unencrypted
+- Passive mode can be tricky with firewalls
+- Legacy protocol
+
+**Best for:** Shared hosting, legacy infrastructure, simple file transfer needs.
+
 ## Adding a Destination
 
 1. Navigate to **Destinations** in the sidebar
@@ -177,6 +192,7 @@ All storage credentials (access keys, passwords) are encrypted at rest using you
 - **SFTP**: Uses SSH encryption
 - **SMB**: Uses SMB3 encryption (configurable protocol version)
 - **WebDAV**: Uses HTTPS (TLS 1.2+)
+- **FTP/FTPS**: Uses TLS when enabled
 - **Local**: No network transfer
 
 ### Backup Encryption
@@ -201,6 +217,7 @@ Destinations work with retention policies to automatically clean up old backups:
 - **Smart (GVS)**: Grandfather-Father-Son rotation
 
 See [Retention Policies](/user-guide/jobs/retention) for details.
+- [FTP / FTPS](/user-guide/destinations/ftp)
 
 ## Next Steps
 
@@ -214,3 +231,4 @@ Choose your storage destination:
 - [SFTP](/user-guide/destinations/sftp)
 - [SMB / Samba](/user-guide/destinations/smb)
 - [WebDAV](/user-guide/destinations/webdav)
+- [FTP / FTPS](/user-guide/destinations/ftp)

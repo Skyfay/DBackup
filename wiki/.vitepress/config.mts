@@ -121,7 +121,8 @@ export default defineConfig({
             { text: 'Hetzner Object Storage', link: '/user-guide/destinations/s3-hetzner' },
             { text: 'SFTP', link: '/user-guide/destinations/sftp' },
             { text: 'SMB / Samba', link: '/user-guide/destinations/smb' },
-            { text: 'WebDAV', link: '/user-guide/destinations/webdav' }
+            { text: 'WebDAV', link: '/user-guide/destinations/webdav' },
+            { text: 'FTP / FTPS', link: '/user-guide/destinations/ftp' }
           ]
         },
         {

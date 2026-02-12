@@ -32,7 +32,7 @@ const connectSFTP = async (config: SFTPConfig): Promise<Client> => {
     return sftp;
 };
 
-export const SFTPStorageAdapter: StorageAdapter = {
+export const SFTPAdapter: StorageAdapter = {
     id: "sftp",
     type: "storage",
     name: "SFTP (SSH)",

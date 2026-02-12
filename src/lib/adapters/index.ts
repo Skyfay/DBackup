@@ -8,9 +8,10 @@ import { MSSQLAdapter } from "./database/mssql";
 import { RedisAdapter } from "./database/redis";
 import { LocalFileSystemAdapter } from "./storage/local";
 import { S3GenericAdapter, S3AWSAdapter, S3R2Adapter, S3HetznerAdapter } from "./storage/s3";
-import { SFTPStorageAdapter } from "./storage/sftp";
-import { SMBStorageAdapter } from "./storage/smb";
-import { WebDAVStorageAdapter } from "./storage/webdav";
+import { SFTPAdapter } from "./storage/sftp";
+import { SMBAdapter } from "./storage/smb";
+import { WebDAVAdapter } from "./storage/webdav";
+import { FTPAdapter } from "./storage/ftp";
 import { DiscordAdapter } from "./notification/discord";
 import { EmailAdapter } from "./notification/email";
 import { logger } from "@/lib/logger";
@@ -36,9 +37,10 @@ export function registerAdapters() {
     registry.register(S3AWSAdapter);
     registry.register(S3R2Adapter);
     registry.register(S3HetznerAdapter);
-    registry.register(SFTPStorageAdapter);
-    registry.register(SMBStorageAdapter);
-    registry.register(WebDAVStorageAdapter);
+    registry.register(SFTPAdapter);
+    registry.register(SMBAdapter);
+    registry.register(WebDAVAdapter);
+    registry.register(FTPAdapter);
 
     registry.register(DiscordAdapter);
     registry.register(EmailAdapter);

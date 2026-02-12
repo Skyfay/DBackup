@@ -94,6 +94,8 @@ export function AdapterManager({ type, title, description, canManage = true }: A
                     return <span className="text-muted-foreground">{config.pathPrefix || `${config.host}:${config.port}`}</span>;
                 case 'webdav':
                     return <span className="text-muted-foreground">{config.pathPrefix || config.url}</span>;
+                case 'ftp':
+                    return <span className="text-muted-foreground">{config.pathPrefix || `${config.host}:${config.port}`}</span>;
                 case 'discord':
                     return <span className="text-muted-foreground">Webhook</span>;
                 case 'email':

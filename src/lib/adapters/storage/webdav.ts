@@ -41,7 +41,7 @@ async function ensureDir(client: WebDAVClient, remotePath: string): Promise<void
     }
 }
 
-export const WebDAVStorageAdapter: StorageAdapter = {
+export const WebDAVAdapter: StorageAdapter = {
     id: "webdav",
     type: "storage",
     name: "WebDAV",

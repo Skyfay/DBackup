@@ -57,7 +57,7 @@ async function ensureDir(client: SambaClient, remotePath: string): Promise<void>
     }
 }
 
-export const SMBStorageAdapter: StorageAdapter = {
+export const SMBAdapter: StorageAdapter = {
     id: "smb",
     type: "storage",
     name: "SMB (Samba)",

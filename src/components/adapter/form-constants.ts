@@ -8,7 +8,7 @@ export const STORAGE_CONNECTION_KEYS = [
     'privateKey', 'passphrase'
 ];
 
-export const STORAGE_CONFIG_KEYS = ['pathPrefix', 'storageClass', 'forcePathStyle', 'maxProtocol', 'options'];
+export const STORAGE_CONFIG_KEYS = ['pathPrefix', 'storageClass', 'forcePathStyle', 'maxProtocol', 'secure', 'options'];
 
 export const PLACEHOLDERS: Record<string, string> = {
     "email.from": "\"Backup Service\" <backup@example.com>",
@@ -71,4 +71,11 @@ export const PLACEHOLDERS: Record<string, string> = {
     "webdav.username": "backupuser",
     "webdav.password": "secure-password",
     "webdav.pathPrefix": "backups/server1",
+
+    // FTP
+    "ftp.host": "ftp.example.com",
+    "ftp.port": "21",
+    "ftp.username": "backup-user",
+    "ftp.password": "secure-password",
+    "ftp.pathPrefix": "/backups/server1",
 };

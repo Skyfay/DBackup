@@ -48,6 +48,7 @@
     "@radix-ui/react-tooltip": "^1.2.8",
     "@tanstack/react-table": "^8.21.3",
     "adm-zip": "^0.5.16",
+    "basic-ftp": "^5.1.0",
     "better-auth": "^1.4.17",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

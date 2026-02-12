@@ -8,7 +8,7 @@ export const STORAGE_CONNECTION_KEYS = [
     'privateKey', 'passphrase'
 ];
 
-export const STORAGE_CONFIG_KEYS = ['pathPrefix', 'storageClass', 'forcePathStyle', 'maxProtocol', 'secure', 'options'];
+export const STORAGE_CONFIG_KEYS = ['pathPrefix', 'storageClass', 'forcePathStyle', 'maxProtocol', 'tls', 'options'];
 
 export const PLACEHOLDERS: Record<string, string> = {
     "email.from": "\"Backup Service\" <backup@example.com>",

@@ -16,7 +16,7 @@ interface FTPConfig {
     port: number;
     username: string;
     password?: string;
-    secure: "none" | "implicit" | "explicit";
+    tls: boolean;
     pathPrefix?: string;
 }
 
@@ -27,22 +27,13 @@ async function connectFTP(config: FTPConfig): Promise<Client> {
     const client = new Client();
     client.ftp.verbose = false;
 
-    let secure: boolean | "implicit" = false;
-    const secureOptions = { rejectUnauthorized: false };
-
-    if (config.secure === "explicit") {
-        secure = true;
-    } else if (config.secure === "implicit") {
-        secure = "implicit";
-    }
-
     await client.access({
         host: config.host,
         port: config.port,
         user: config.username,
         password: config.password || "",
-        secure,
-        secureOptions,
+        secure: config.tls,
+        secureOptions: config.tls ? { rejectUnauthorized: false } : undefined,
     });
 
     return client;
@@ -71,7 +62,7 @@ async function ensureDir(client: Client, remotePath: string): Promise<void> {
 export const FTPAdapter: StorageAdapter = {
     id: "ftp",
     type: "storage",
-    name: "FTP",
+    name: "FTP / FTPS",
     configSchema: FTPSchema,
 
     async upload(config: FTPConfig, localPath: string, remotePath: string, onProgress?: (percent: number) => void, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void): Promise<boolean> {

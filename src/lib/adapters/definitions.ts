@@ -164,7 +164,7 @@ export const FTPSchema = z.object({
     port: z.coerce.number().default(21),
     username: z.string().default("anonymous").describe("Username (default: anonymous)"),
     password: z.string().optional().describe("Password"),
-    secure: z.enum(["none", "implicit", "explicit"]).default("none").describe("TLS Security Mode"),
+    tls: z.boolean().default(false).describe("Enable TLS/SSL (FTPS)"),
     pathPrefix: z.string().optional().describe("Remote destination folder"),
 });
 
@@ -238,7 +238,7 @@ export const ADAPTER_DEFINITIONS: AdapterDefinition[] = [
     { id: "sftp", type: "storage", name: "SFTP (SSH)", configSchema: SFTPSchema },
     { id: "smb", type: "storage", name: "SMB (Samba)", configSchema: SMBSchema },
     { id: "webdav", type: "storage", name: "WebDAV", configSchema: WebDAVSchema },
-    { id: "ftp", type: "storage", name: "FTP", configSchema: FTPSchema },
+    { id: "ftp", type: "storage", name: "FTP / FTPS", configSchema: FTPSchema },
 
     { id: "discord", type: "notification", name: "Discord Webhook", configSchema: DiscordSchema },
     { id: "email", type: "notification", name: "Email (SMTP)", configSchema: EmailSchema },

@@ -70,7 +70,6 @@ Guided first-run experience to configure your first backup:
 Allow users to edit their own profile regardless of strict RBAC permissions.
 
 ### Backup Verification & Integrity Checks
-- Automatic checksum verification after each backup
 - Periodic "test restore" as a scheduled task
 - Alert if backup size deviates significantly from previous runs (anomaly detection)
 
@@ -87,10 +86,6 @@ Allow users to edit their own profile regardless of strict RBAC permissions.
 - Visual overview of when backups ran (similar to GitHub contribution graph)
 - Color-coded status (success, failed, skipped)
 
-### Storage Usage Analytics
-- Graphical display of storage consumption per destination
-- Alerts when storage reaches configurable thresholds
-
 ### Backup Size Trend Analysis
 - Track backup sizes over time per job
 - Detect unusual growth patterns in databases
@@ -103,15 +98,6 @@ Allow users to edit their own profile regardless of strict RBAC permissions.
 
 
 ## 📦 Planned Storage Adapters
-
-### FTP / FTPS
-Store backups on FTP servers with optional TLS encryption.
-
-### WebDAV
-Support for Nextcloud, OwnCloud, and other WebDAV-compatible storage.
-
-### SMB / CIFS
-Windows network share support for enterprise environments.
 
 ### Rsync
 Efficient incremental backups using rsync protocol.
@@ -209,10 +195,10 @@ For a full list of completed features, see the [Changelog](/changelog).
 
 ### Highlights
 - ✅ PostgreSQL restore improvements (v0.9.1 - TAR architecture with per-DB custom format dumps)
-- ✅ Multi-database support (MySQL, PostgreSQL, MongoDB, SQLite, MSSQL)
+- ✅ Multi-database support (MySQL, PostgreSQL, MongoDB, SQLite, MSSQL, Redis)
 - ✅ AES-256-GCM backup encryption with Vault
 - ✅ GZIP and Brotli compression
-- ✅ S3, SFTP, and Local storage adapters
+- ✅ S3, SFTP, Local, WebDAV, SMB, and FTP/FTPS storage adapters
 - ✅ Discord and Email notifications
 - ✅ Cron-based scheduling with GVS retention
 - ✅ RBAC permission system
@@ -227,6 +213,10 @@ For a full list of completed features, see the [Changelog](/changelog).
 - ✅ Type-safe adapter configurations (v0.9.4)
 - ✅ Token-based public downloads (v0.9.3)
 - ✅ User preferences system (v0.9.3)
+- ✅ SHA-256 checksum verification with integrity check system (v0.9.5)
+- ✅ Interactive dashboard with charts and analytics (v0.9.5)
+- ✅ Smart type filters for sources, destinations, and notifications (v0.9.5)
+- ✅ Storage usage analytics and per-destination breakdown (v0.9.5)
 
 
 

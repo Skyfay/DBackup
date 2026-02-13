@@ -3,7 +3,7 @@
 All notable changes to DBackup are documented here.
 
 ## v0.9.5-beta - Dashboard Overhaul, Checksums & Visual Analytics
-*Release: In progress*
+*Released: February 13, 2026*
 
 This release introduces a completely redesigned dashboard with interactive charts, real-time statistics, and auto-refresh capabilities. It also adds SHA-256 checksum verification throughout the backup lifecycle for end-to-end data integrity. The dashboard now provides a comprehensive at-a-glance overview of backup health, job activity, and storage usage. Sources, Destinations, and Notifications pages now feature smart type filters for quick navigation.
 

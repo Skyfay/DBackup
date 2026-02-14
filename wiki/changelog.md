@@ -37,8 +37,6 @@ This release adds Rsync as a new storage destination, enabling efficient increme
 - Updated `Dockerfile` — Added `rsync`, `sshpass`, and `openssh-client` Alpine packages
 - Updated `scripts/setup-dev-macos.sh` — Added `brew install rsync` and `brew install hudochenkov/sshpass/sshpass`
 
----
-
 ## v0.9.5-beta - Dashboard Overhaul, Checksums & Visual Analytics
 *Released: February 13, 2026*
 

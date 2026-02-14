@@ -180,6 +180,13 @@ export const RsyncSchema = z.object({
     options: z.string().optional().describe("Additional rsync options"),
 });
 
+export const GoogleDriveSchema = z.object({
+    clientId: z.string().min(1, "Client ID is required").describe("OAuth Client ID (from Google Cloud Console)"),
+    clientSecret: z.string().min(1, "Client Secret is required").describe("OAuth Client Secret"),
+    refreshToken: z.string().optional().describe("OAuth Refresh Token (auto-filled after authorization)"),
+    folderId: z.string().optional().describe("Google Drive Folder ID (leave empty for root)"),
+});
+
 export const DiscordSchema = z.object({
     webhookUrl: z.string().url("Valid Webhook URL is required"),
     username: z.string().optional().default("Backup Manager"),
@@ -221,6 +228,7 @@ export type SMBConfig = z.infer<typeof SMBSchema>;
 export type WebDAVConfig = z.infer<typeof WebDAVSchema>;
 export type FTPConfig = z.infer<typeof FTPSchema>;
 export type RsyncConfig = z.infer<typeof RsyncSchema>;
+export type GoogleDriveConfig = z.infer<typeof GoogleDriveSchema>;
 
 // Notification Adapters
 export type DiscordConfig = z.infer<typeof DiscordSchema>;
@@ -228,7 +236,7 @@ export type EmailConfig = z.infer<typeof EmailSchema>;
 
 // Union types for adapter categories
 export type DatabaseConfig = MySQLConfig | MariaDBConfig | PostgresConfig | MongoDBConfig | SQLiteConfig | MSSQLConfig | RedisConfig;
-export type StorageConfig = LocalStorageConfig | S3GenericConfig | S3AWSConfig | S3R2Config | S3HetznerConfig | SFTPConfig | SMBConfig | WebDAVConfig | FTPConfig | RsyncConfig;
+export type StorageConfig = LocalStorageConfig | S3GenericConfig | S3AWSConfig | S3R2Config | S3HetznerConfig | SFTPConfig | SMBConfig | WebDAVConfig | FTPConfig | RsyncConfig | GoogleDriveConfig;
 export type NotificationConfig = DiscordConfig | EmailConfig;
 
 // Generic type alias for dialect base class (accepts any database config)
@@ -253,6 +261,7 @@ export const ADAPTER_DEFINITIONS: AdapterDefinition[] = [
     { id: "webdav", type: "storage", name: "WebDAV", configSchema: WebDAVSchema },
     { id: "ftp", type: "storage", name: "FTP / FTPS", configSchema: FTPSchema },
     { id: "rsync", type: "storage", name: "Rsync (SSH)", configSchema: RsyncSchema },
+    { id: "google-drive", type: "storage", name: "Google Drive", configSchema: GoogleDriveSchema },
 
     { id: "discord", type: "notification", name: "Discord Webhook", configSchema: DiscordSchema },
     { id: "email", type: "notification", name: "Email (SMTP)", configSchema: EmailSchema },

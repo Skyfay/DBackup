@@ -2,12 +2,21 @@
 
 All notable changes to DBackup are documented here.
 
-## v0.9.6-beta - Rsync Storage Destination
+## v0.9.6-beta - Rsync & Google Drive Storage Destinations
 *Release: In Progress*
 
-This release adds Rsync as a new storage destination, enabling efficient incremental file transfers over SSH.
+This release adds Rsync as a new storage destination for efficient incremental file transfers over SSH, and Google Drive as the first cloud provider with full OAuth 2.0 authorization flow.
 
 ### ✨ New Features
+
+#### ☁️ Google Drive Storage Destination
+- **New Cloud Adapter**: Store backups directly in Google Drive — the first cloud provider in DBackup with native OAuth 2.0 authentication
+- **OAuth 2.0 Flow**: One-click authorization in the UI — redirects to Google's consent screen, automatically stores refresh token (encrypted at rest)
+- **Automatic Token Refresh**: Uses refresh tokens with auto-renewal — no manual re-authorization required
+- **Folder Management**: Optional target folder ID or automatic root-level storage — creates subfolder hierarchies as needed
+- **Full Lifecycle**: Upload, download, list, delete, and read operations for complete backup management including retention policies
+- **Progress Tracking**: Real-time upload/download progress with resumable media uploads for large backup files
+- **Connection Testing**: Verifies OAuth tokens, Drive API access, and folder permissions before creating jobs
 
 #### 📡 Rsync (SSH) Storage Destination
 - **New Storage Adapter**: Store backups on any remote server using rsync over SSH — leverages rsync's delta-transfer algorithm for efficient incremental syncs
@@ -19,21 +28,31 @@ This release adds Rsync as a new storage destination, enabling efficient increme
 - **Connection Testing**: Write/delete verification test ensures proper permissions before creating jobs
 
 ### 🔒 Security
-- **No Plaintext Passwords**: Passwords are never passed as command-line arguments — uses `SSHPASS` environment variable exclusively
+- **OAuth Refresh Token Encryption**: Refresh tokens and client secrets are encrypted at rest using `ENCRYPTION_KEY` (added to `SENSITIVE_KEYS`)
+- **No Token Exposure**: Access tokens are never stored — generated on-the-fly from encrypted refresh tokens
+- **Scoped Access**: Uses `drive.file` scope — DBackup can only access files it created, not the user's entire Drive
+- **No Plaintext Passwords**: Rsync passwords are never passed as command-line arguments — uses `SSHPASS` environment variable exclusively
 - **Sanitized Error Messages**: All error output is sanitized to strip commands, credentials, and SSH warnings before displaying to users
 - **SSH Options Hardening**: Password auth disables public key authentication to prevent SSH agent interference (`PreferredAuthentications=password`, `PubkeyAuthentication=no`)
 
 ### 🔧 Technical Changes
+- New `src/lib/adapters/storage/google-drive.ts` — Google Drive storage adapter using `googleapis` npm package
+- New `src/app/api/adapters/google-drive/auth/route.ts` — OAuth authorization URL generation endpoint
+- New `src/app/api/adapters/google-drive/callback/route.ts` — OAuth callback handler with token exchange
+- New `src/components/adapter/google-drive-oauth-button.tsx` — OAuth authorization button with status indicator
+- New `src/components/adapter/oauth-toast-handler.tsx` — OAuth redirect toast notifications
 - New `src/lib/adapters/storage/rsync.ts` — Rsync storage adapter using `rsync` npm package (CLI wrapper)
 - New `src/types/rsync.d.ts` — TypeScript type declarations for the untyped `rsync` npm module
-- Updated `src/lib/adapters/definitions.ts` — Added `RsyncSchema`, `RsyncConfig` type, updated `StorageConfig` union and `ADAPTER_DEFINITIONS`
-- Updated `src/lib/adapters/index.ts` — Registered `RsyncAdapter`
-- Updated `src/components/adapter/form-constants.ts` — Added form field mappings and placeholders for Rsync
-- Updated `src/components/adapter/form-sections.tsx` — Conditional auth type field rendering (matching SFTP behavior)
-- Updated `src/components/adapter/utils.ts` — Added icon mapping for Rsync (Network icon)
-- Updated `src/components/adapter/adapter-manager.tsx` — Added summary display case for Rsync
-- Updated `src/app/api/adapters/test-connection/route.ts` — Added `rsync` to storage permission regex
-- Updated `src/app/api/adapters/access-check/route.ts` — Added `rsync` to storage permission regex
+- Updated `src/lib/adapters/definitions.ts` — Added `GoogleDriveSchema`, `GoogleDriveConfig` type, `RsyncSchema`, `RsyncConfig` type, updated `StorageConfig` union and `ADAPTER_DEFINITIONS`
+- Updated `src/lib/adapters/index.ts` — Registered `GoogleDriveAdapter` and `RsyncAdapter`
+- Updated `src/lib/crypto.ts` — Added `clientSecret` and `refreshToken` to `SENSITIVE_KEYS`
+- Updated `src/components/adapter/form-constants.ts` — Added form field mappings and placeholders for Google Drive and Rsync
+- Updated `src/components/adapter/form-sections.tsx` — Special rendering for Google Drive OAuth flow and Rsync auth type
+- Updated `src/components/adapter/utils.ts` — Added icon mappings for Google Drive (Cloud) and Rsync (Network)
+- Updated `src/components/adapter/adapter-manager.tsx` — Added summary display cases for Google Drive and Rsync
+- Updated `src/app/api/adapters/test-connection/route.ts` — Added `google-drive` and `rsync` to storage permission regex
+- Updated `src/app/api/adapters/access-check/route.ts` — Added `google-drive` and `rsync` to storage permission regex
+- Updated `src/app/dashboard/destinations/page.tsx` — Added OAuth toast handler for redirect notifications
 - Updated `Dockerfile` — Added `rsync`, `sshpass`, and `openssh-client` Alpine packages
 - Updated `scripts/setup-dev-macos.sh` — Added `brew install rsync` and `brew install hudochenkov/sshpass/sshpass`
 

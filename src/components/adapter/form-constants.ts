@@ -6,10 +6,11 @@ export const STORAGE_CONNECTION_KEYS = [
     'user', 'username',
     'password', 'accessKeyId', 'secretAccessKey',
     'authType',
-    'privateKey', 'passphrase'
+    'privateKey', 'passphrase',
+    'clientId', 'clientSecret',
 ];
 
-export const STORAGE_CONFIG_KEYS = ['pathPrefix', 'storageClass', 'forcePathStyle', 'maxProtocol', 'tls', 'options'];
+export const STORAGE_CONFIG_KEYS = ['pathPrefix', 'storageClass', 'forcePathStyle', 'maxProtocol', 'tls', 'options', 'folderId'];
 
 export const PLACEHOLDERS: Record<string, string> = {
     "email.from": "\"Backup Service\" <backup@example.com>",
@@ -88,4 +89,9 @@ export const PLACEHOLDERS: Record<string, string> = {
     "rsync.privateKey": "-----BEGIN RSA PRIVATE KEY-----\n\n\n-----END RSA PRIVATE KEY-----",
     "rsync.pathPrefix": "/backups/server1",
     "rsync.options": "--bwlimit=5000 --compress",
+
+    // Google Drive
+    "google-drive.clientId": "123456789-abc.apps.googleusercontent.com",
+    "google-drive.clientSecret": "GOCSPX-...",
+    "google-drive.folderId": "1AbCdEfGhIjKlMnOpQrStUvWxYz (optional)",
 };

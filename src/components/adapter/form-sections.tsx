@@ -11,6 +11,8 @@ import { Check } from "lucide-react";
 import { AdapterDefinition } from "@/lib/adapters/definitions";
 import { SchemaField } from "./schema-field";
 import { STORAGE_CONFIG_KEYS, STORAGE_CONNECTION_KEYS } from "./form-constants";
+import { GoogleDriveOAuthButton } from "./google-drive-oauth-button";
+import { AdapterConfig } from "./types";
 
 interface SectionProps {
     adapter: AdapterDefinition;
@@ -150,10 +152,32 @@ export function DatabaseFormContent({
 
 export function StorageFormContent({
     adapter,
-}: { adapter: AdapterDefinition }) {
+    initialData,
+}: { adapter: AdapterDefinition; initialData?: AdapterConfig }) {
     const { watch } = useFormContext();
     const authType = watch("config.authType");
     const hasConfigKeys = hasFields(adapter, STORAGE_CONFIG_KEYS);
+    const isGoogleDrive = adapter.id === 'google-drive';
+
+    // For Google Drive: filter out refreshToken from connection keys (auto-managed via OAuth)
+    const connectionKeys = isGoogleDrive
+        ? STORAGE_CONNECTION_KEYS.filter(k => k !== 'refreshToken')
+        : STORAGE_CONNECTION_KEYS;
+
+    // For Google Drive: filter out refreshToken from config keys too
+    const configKeys = isGoogleDrive
+        ? STORAGE_CONFIG_KEYS.filter(k => k !== 'refreshToken')
+        : STORAGE_CONFIG_KEYS;
+
+    // Check if the config has a refresh token (for existing/authorized adapters)
+    const hasRefreshToken = initialData ? (() => {
+        try {
+            const config = JSON.parse(initialData.config);
+            return !!config.refreshToken;
+        } catch {
+            return false;
+        }
+    })() : false;
 
     return (
         <Tabs defaultValue="connection" className="w-full">
@@ -186,14 +210,22 @@ export function StorageFormContent({
                              <FieldList keys={['privateKey', 'passphrase']} adapter={adapter} />
                         )}
                     </div>
+                ) : isGoogleDrive ? (
+                    <div className="space-y-4">
+                        <FieldList keys={['clientId', 'clientSecret']} adapter={adapter} />
+                        <GoogleDriveOAuthButton
+                            adapterId={initialData?.id}
+                            hasRefreshToken={hasRefreshToken}
+                        />
+                    </div>
                 ) : (
-                    <FieldList keys={STORAGE_CONNECTION_KEYS} adapter={adapter} />
+                    <FieldList keys={connectionKeys} adapter={adapter} />
                 )}
             </TabsContent>
 
             {hasConfigKeys && (
                 <TabsContent value="configuration" className="space-y-4 pt-4">
-                    <FieldList keys={STORAGE_CONFIG_KEYS} adapter={adapter} />
+                    <FieldList keys={configKeys} adapter={adapter} />
                 </TabsContent>
             )}
         </Tabs>

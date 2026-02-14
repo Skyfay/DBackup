@@ -99,6 +99,8 @@ const SENSITIVE_KEYS = [
   'uri', // MongoDB Connection String
   'passphrase', // SSH Key Passphrase
   'privateKey', // SSH Private Key
+  'clientSecret', // OAuth Client Secret (Google Drive, etc.)
+  'refreshToken', // OAuth Refresh Token
 ];
 
 

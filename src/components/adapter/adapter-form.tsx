@@ -246,7 +246,7 @@ export function AdapterForm({ type, adapters, onSuccess, initialData }: { type: 
                 )}
 
                 {selectedAdapter && type === 'storage' && (
-                    <StorageFormContent adapter={selectedAdapter} />
+                    <StorageFormContent adapter={selectedAdapter} initialData={initialData} />
                 )}
 
                 {selectedAdapter && type !== 'database' && type !== 'storage' && (

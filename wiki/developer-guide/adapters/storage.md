@@ -16,6 +16,7 @@ Storage adapters handle file operations: upload, download, list, and delete.
 | WebDAV | `webdav` | WebDAV (Nextcloud, ownCloud, Apache, etc.) |
 | FTP / FTPS | `ftp` | FTP with optional TLS encryption |
 | Rsync (SSH) | `rsync` | Rsync over SSH (delta transfers) |
+| Google Drive | `google-drive` | Google Drive via OAuth 2.0 |
 
 ## Interface
 

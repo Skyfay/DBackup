@@ -16,6 +16,7 @@ DBackup supports multiple storage backends for your backups. Choose based on you
 | [WebDAV](/user-guide/destinations/webdav) | Network | Nextcloud, ownCloud, NAS |
 | [FTP / FTPS](/user-guide/destinations/ftp) | Remote | Classic FTP servers |
 | [Rsync (SSH)](/user-guide/destinations/rsync) | Remote | Efficient delta transfers |
+| [Google Drive](/user-guide/destinations/google-drive) | Cloud | OAuth-based cloud storage |
 
 ## Choosing a Destination
 
@@ -139,6 +140,36 @@ DBackup supports multiple storage backends for your backups. Choose based on you
 
 **Best for:** Shared hosting, legacy infrastructure, simple file transfer needs.
 
+### Rsync (SSH)
+
+**Pros:**
+- Delta transfers — only changed blocks are sent
+- Encrypted transfer via SSH
+- Built-in compression
+- Works with any Linux/macOS server
+
+**Cons:**
+- Requires `rsync` and `sshpass` on the host
+- No Windows server support
+- SSH access required on remote
+
+**Best for:** Efficient recurring backups to Linux servers, bandwidth-limited environments.
+
+### Google Drive
+
+**Pros:**
+- 15 GB free storage
+- OAuth 2.0 — no API keys needed
+- Scoped access (`drive.file`) — can only access its own files
+- Automatic token refresh
+
+**Cons:**
+- Requires Google Cloud Console setup
+- Free tier shared with Gmail/Photos
+- API quotas apply
+
+**Best for:** Personal backups, small teams, cloud storage without additional costs.
+
 ## Adding a Destination
 
 1. Navigate to **Destinations** in the sidebar
@@ -195,6 +226,7 @@ All storage credentials (access keys, passwords) are encrypted at rest using you
 - **WebDAV**: Uses HTTPS (TLS 1.2+)
 - **FTP/FTPS**: Uses TLS when enabled
 - **Rsync**: Uses SSH encryption
+- **Google Drive**: Uses HTTPS (TLS 1.2+) + OAuth 2.0
 - **Local**: No network transfer
 
 ### Backup Encryption
@@ -235,3 +267,4 @@ Choose your storage destination:
 - [WebDAV](/user-guide/destinations/webdav)
 - [FTP / FTPS](/user-guide/destinations/ftp)
 - [Rsync (SSH)](/user-guide/destinations/rsync)
+- [Google Drive](/user-guide/destinations/google-drive)

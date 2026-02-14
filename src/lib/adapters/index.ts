@@ -13,6 +13,7 @@ import { SMBAdapter } from "./storage/smb";
 import { WebDAVAdapter } from "./storage/webdav";
 import { FTPAdapter } from "./storage/ftp";
 import { RsyncAdapter } from "./storage/rsync";
+import { GoogleDriveAdapter } from "./storage/google-drive";
 import { DiscordAdapter } from "./notification/discord";
 import { EmailAdapter } from "./notification/email";
 import { logger } from "@/lib/logger";
@@ -43,6 +44,7 @@ export function registerAdapters() {
     registry.register(WebDAVAdapter);
     registry.register(FTPAdapter);
     registry.register(RsyncAdapter);
+    registry.register(GoogleDriveAdapter);
 
     registry.register(DiscordAdapter);
     registry.register(EmailAdapter);

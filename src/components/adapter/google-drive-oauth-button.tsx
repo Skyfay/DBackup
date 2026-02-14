@@ -33,7 +33,7 @@ export function GoogleDriveOAuthButton({ adapterId, hasRefreshToken }: GoogleDri
 
     if (hasRefreshToken) {
         return (
-            <Alert className="border-green-500/30 bg-green-500/5">
+            <Alert className="border-green-500/30 bg-green-500/5 items-center [&>svg]:translate-y-0">
                 <CheckCircle2 className="h-4 w-4 text-green-600" />
                 <AlertDescription className="flex items-center justify-between">
                     <span className="text-green-600">Google Drive is authorized.</span>

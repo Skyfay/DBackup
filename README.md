@@ -50,7 +50,7 @@ Whether you're running a single MySQL database or managing multiple PostgreSQL, 
 
 - **Multi-Database Support** — MySQL, PostgreSQL, MongoDB, Redis, SQLite, Microsoft SQL Server
 - **Enterprise-Grade Security** — AES-256-GCM encryption with key rotation and offline recovery kits
-- **Flexible Storage** — Local filesystem, S3-compatible (AWS, MinIO, R2), SFTP, FTP/FTPS, Rsync
+- **Flexible Storage** — Local filesystem, S3-compatible (AWS, MinIO, R2), SFTP, FTP/FTPS, Rsync, Google Drive
 - **Smart Retention** — Grandfather-Father-Son rotation policies
 - **Live Monitoring** — Real-time progress tracking with detailed logs
 - **SSO & RBAC** — OpenID Connect support and granular permission system

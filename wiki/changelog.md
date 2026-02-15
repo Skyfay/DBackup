@@ -2,7 +2,7 @@
 
 All notable changes to DBackup are documented here.
 
-## v0.9.6-beta - Rsync, Google Drive, Dropbox & OneDrive Storage Destinations
+## v0.9.6-beta - Rsync, Google Drive, Dropbox & OneDrive Storage Destinations & New Notification System
 *Released: February 15, 2026*
 
 This release adds Rsync as a new storage destination for efficient incremental file transfers over SSH, and Google Drive, Dropbox, and Microsoft OneDrive as cloud providers with full OAuth 2.0 authorization flow.

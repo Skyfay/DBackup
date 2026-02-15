@@ -84,6 +84,8 @@ export function AdapterManager({ type, title, description, canManage = true }: A
             switch (adapterId) {
                 case 'mysql':
                 case 'postgres':
+                case 'mariadb':
+                case 'mssql':
                 case 'mongodb':
                     return <span className="text-muted-foreground">{config.user}@{config.host}:{config.port}</span>;
                 case 'redis':
@@ -103,6 +105,8 @@ export function AdapterManager({ type, title, description, canManage = true }: A
                 case 'google-drive':
                     return <span className="text-muted-foreground">{config.folderId ? `Folder: ${config.folderId.substring(0, 12)}...` : 'Root'}</span>;
                 case 'dropbox':
+                    return <span className="text-muted-foreground">{config.folderPath || '/ (Root)'}</span>;
+                case 'onedrive':
                     return <span className="text-muted-foreground">{config.folderPath || '/ (Root)'}</span>;
                 case 'discord':
                     return <span className="text-muted-foreground">Webhook</span>;

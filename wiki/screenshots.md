@@ -63,3 +63,9 @@ Two-factor authentication, passkeys, and connected SSO providers.
 Granular permissions for user groups (RBAC).
 
 ![Group Permissions](/group-permission.png)
+
+### Analytics
+
+Storage Analytics
+
+![Storage Analytics](/storage-analytics.png)

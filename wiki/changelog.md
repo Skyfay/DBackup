@@ -74,6 +74,7 @@ This release adds Rsync as a new storage destination for efficient incremental f
 
 ### 🐛 Bug Fixes
 - **Dashboard Layout**: Fixed Job Status chart stretching to match Storage Usage card height when many destinations are configured
+- **Adapter Details Column**: Fixed missing details display for OneDrive (`folderPath`), MariaDB, and MSSQL (`user@host:port`) in the Sources and Destinations tables
 
 ### 🔧 Technical Changes
 - New `src/lib/adapters/storage/google-drive.ts` — Google Drive storage adapter using `googleapis` npm package

@@ -19,6 +19,8 @@ import { GoogleDriveOAuthButton } from "./google-drive-oauth-button";
 import { GoogleDriveFolderBrowser } from "./google-drive-folder-browser";
 import { DropboxOAuthButton } from "./dropbox-oauth-button";
 import { DropboxFolderBrowser } from "./dropbox-folder-browser";
+import { OneDriveOAuthButton } from "./onedrive-oauth-button";
+import { OneDriveFolderBrowser } from "./onedrive-folder-browser";
 import { AdapterConfig } from "./types";
 
 interface SectionProps {
@@ -166,7 +168,8 @@ export function StorageFormContent({
     const hasConfigKeys = hasFields(adapter, STORAGE_CONFIG_KEYS);
     const isGoogleDrive = adapter.id === 'google-drive';
     const isDropbox = adapter.id === 'dropbox';
-    const isOAuthAdapter = isGoogleDrive || isDropbox;
+    const isOneDrive = adapter.id === 'onedrive';
+    const isOAuthAdapter = isGoogleDrive || isDropbox || isOneDrive;
 
     // For OAuth adapters: filter out refreshToken from connection keys (auto-managed via OAuth)
     const connectionKeys = isOAuthAdapter
@@ -238,6 +241,14 @@ export function StorageFormContent({
                             hasRefreshToken={hasRefreshToken}
                         />
                     </div>
+                ) : isOneDrive ? (
+                    <div className="space-y-4">
+                        <FieldList keys={['clientId', 'clientSecret']} adapter={adapter} />
+                        <OneDriveOAuthButton
+                            adapterId={initialData?.id}
+                            hasRefreshToken={hasRefreshToken}
+                        />
+                    </div>
                 ) : (
                     <FieldList keys={connectionKeys} adapter={adapter} />
                 )}
@@ -253,6 +264,12 @@ export function StorageFormContent({
                         />
                     ) : isDropbox ? (
                         <DropboxFolderField
+                            adapter={adapter}
+                            config={config}
+                            hasRefreshToken={hasRefreshToken}
+                        />
+                    ) : isOneDrive ? (
+                        <OneDriveFolderField
                             adapter={adapter}
                             config={config}
                             hasRefreshToken={hasRefreshToken}
@@ -412,6 +429,74 @@ function DropboxFolderField({
 
             {canBrowse && (
                 <DropboxFolderBrowser
+                    open={isBrowserOpen}
+                    onOpenChange={setIsBrowserOpen}
+                    onSelect={(selectedPath) => {
+                        setValue("config.folderPath", selectedPath);
+                    }}
+                    config={{
+                        clientId: config.clientId as string,
+                        clientSecret: config.clientSecret as string,
+                        refreshToken: refreshToken!,
+                    }}
+                    initialPath={folderPath || undefined}
+                />
+            )}
+        </div>
+    );
+}
+
+/**
+ * OneDrive folder picker field with browse button.
+ * Shows a text input for folderPath + a browse button that opens the folder browser.
+ */
+function OneDriveFolderField({
+    adapter: _adapter,
+    config,
+    hasRefreshToken,
+}: {
+    adapter: AdapterDefinition;
+    config: Record<string, unknown>;
+    hasRefreshToken: boolean;
+}) {
+    const { setValue, watch } = useFormContext();
+    const [isBrowserOpen, setIsBrowserOpen] = useState(false);
+    const folderPath = watch("config.folderPath") || "";
+
+    const refreshToken = config?.refreshToken as string | undefined;
+    const canBrowse = hasRefreshToken && !!refreshToken && !!config?.clientId && !!config?.clientSecret;
+
+    return (
+        <div className="space-y-4">
+            <div className="space-y-2">
+                <Label>Folder Path</Label>
+                <div className="flex gap-2">
+                    <Input
+                        value={folderPath}
+                        onChange={(e) => setValue("config.folderPath", e.target.value)}
+                        placeholder="Leave empty for root (e.g. /backups)"
+                        className="font-mono text-sm"
+                    />
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        onClick={() => setIsBrowserOpen(true)}
+                        disabled={!canBrowse}
+                        title={canBrowse ? "Browse OneDrive folders" : "Authorize OneDrive first to browse folders"}
+                    >
+                        <FolderOpen className="h-4 w-4" />
+                    </Button>
+                </div>
+                {!canBrowse && (
+                    <p className="text-xs text-muted-foreground">
+                        Authorize OneDrive first to use the folder browser.
+                    </p>
+                )}
+            </div>
+
+            {canBrowse && (
+                <OneDriveFolderBrowser
                     open={isBrowserOpen}
                     onOpenChange={setIsBrowserOpen}
                     onSelect={(selectedPath) => {

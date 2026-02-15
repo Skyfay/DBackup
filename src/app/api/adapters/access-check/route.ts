@@ -13,7 +13,7 @@ registerAdapters();
 function getPermissionForAdapter(adapterId: string): Permission | null {
     if (/mysql|postgres|mongo|mssql|sqlite/i.test(adapterId)) {
         return PERMISSIONS.SOURCES.READ;
-    } else if (/local-filesystem|s3|sftp|smb|ftp|webdav|rsync|google-drive|dropbox/i.test(adapterId)) {
+    } else if (/local-filesystem|s3|sftp|smb|ftp|webdav|rsync|google-drive|dropbox|onedrive/i.test(adapterId)) {
         return PERMISSIONS.DESTINATIONS.READ;
     } else if (/discord|email|smtp|slack/i.test(adapterId)) {
         return PERMISSIONS.NOTIFICATIONS.READ;

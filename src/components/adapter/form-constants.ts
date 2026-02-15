@@ -99,4 +99,9 @@ export const PLACEHOLDERS: Record<string, string> = {
     "dropbox.clientId": "your-app-key",
     "dropbox.clientSecret": "your-app-secret",
     "dropbox.folderPath": "/backups (optional)",
+
+    // OneDrive
+    "onedrive.clientId": "00000000-0000-0000-0000-000000000000",
+    "onedrive.clientSecret": "your-client-secret",
+    "onedrive.folderPath": "/backups (optional)",
 };

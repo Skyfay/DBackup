@@ -15,6 +15,7 @@ import { FTPAdapter } from "./storage/ftp";
 import { RsyncAdapter } from "./storage/rsync";
 import { GoogleDriveAdapter } from "./storage/google-drive";
 import { DropboxAdapter } from "./storage/dropbox";
+import { OneDriveAdapter } from "./storage/onedrive";
 import { DiscordAdapter } from "./notification/discord";
 import { EmailAdapter } from "./notification/email";
 import { logger } from "@/lib/logger";
@@ -47,6 +48,7 @@ export function registerAdapters() {
     registry.register(RsyncAdapter);
     registry.register(GoogleDriveAdapter);
     registry.register(DropboxAdapter);
+    registry.register(OneDriveAdapter);
 
     registry.register(DiscordAdapter);
     registry.register(EmailAdapter);

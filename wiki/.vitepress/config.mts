@@ -125,7 +125,8 @@ export default defineConfig({
             { text: 'FTP / FTPS', link: '/user-guide/destinations/ftp' },
             { text: 'Rsync (SSH)', link: '/user-guide/destinations/rsync' },
             { text: 'Google Drive', link: '/user-guide/destinations/google-drive' },
-            { text: 'Dropbox', link: '/user-guide/destinations/dropbox' }
+            { text: 'Dropbox', link: '/user-guide/destinations/dropbox' },
+            { text: 'Microsoft OneDrive', link: '/user-guide/destinations/onedrive' }
           ]
         },
         {

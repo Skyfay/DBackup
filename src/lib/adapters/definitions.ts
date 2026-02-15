@@ -194,6 +194,13 @@ export const DropboxSchema = z.object({
     folderPath: z.string().optional().describe("Dropbox folder path (e.g. /backups, leave empty for root)"),
 });
 
+export const OneDriveSchema = z.object({
+    clientId: z.string().min(1, "Application (Client) ID is required").describe("Azure App Registration Client ID"),
+    clientSecret: z.string().min(1, "Client Secret is required").describe("Azure App Registration Client Secret"),
+    refreshToken: z.string().optional().describe("OAuth Refresh Token (auto-filled after authorization)"),
+    folderPath: z.string().optional().describe("OneDrive folder path (e.g. /backups, leave empty for root)"),
+});
+
 export const DiscordSchema = z.object({
     webhookUrl: z.string().url("Valid Webhook URL is required"),
     username: z.string().optional().default("Backup Manager"),
@@ -237,6 +244,7 @@ export type FTPConfig = z.infer<typeof FTPSchema>;
 export type RsyncConfig = z.infer<typeof RsyncSchema>;
 export type GoogleDriveConfig = z.infer<typeof GoogleDriveSchema>;
 export type DropboxConfig = z.infer<typeof DropboxSchema>;
+export type OneDriveConfig = z.infer<typeof OneDriveSchema>;
 
 // Notification Adapters
 export type DiscordConfig = z.infer<typeof DiscordSchema>;
@@ -244,7 +252,7 @@ export type EmailConfig = z.infer<typeof EmailSchema>;
 
 // Union types for adapter categories
 export type DatabaseConfig = MySQLConfig | MariaDBConfig | PostgresConfig | MongoDBConfig | SQLiteConfig | MSSQLConfig | RedisConfig;
-export type StorageConfig = LocalStorageConfig | S3GenericConfig | S3AWSConfig | S3R2Config | S3HetznerConfig | SFTPConfig | SMBConfig | WebDAVConfig | FTPConfig | RsyncConfig | GoogleDriveConfig | DropboxConfig;
+export type StorageConfig = LocalStorageConfig | S3GenericConfig | S3AWSConfig | S3R2Config | S3HetznerConfig | SFTPConfig | SMBConfig | WebDAVConfig | FTPConfig | RsyncConfig | GoogleDriveConfig | DropboxConfig | OneDriveConfig;
 export type NotificationConfig = DiscordConfig | EmailConfig;
 
 // Generic type alias for dialect base class (accepts any database config)
@@ -271,6 +279,7 @@ export const ADAPTER_DEFINITIONS: AdapterDefinition[] = [
     { id: "rsync", type: "storage", name: "Rsync (SSH)", configSchema: RsyncSchema },
     { id: "google-drive", type: "storage", name: "Google Drive", configSchema: GoogleDriveSchema },
     { id: "dropbox", type: "storage", name: "Dropbox", configSchema: DropboxSchema },
+    { id: "onedrive", type: "storage", name: "Microsoft OneDrive", configSchema: OneDriveSchema },
 
     { id: "discord", type: "notification", name: "Discord Webhook", configSchema: DiscordSchema },
     { id: "email", type: "notification", name: "Email (SMTP)", configSchema: EmailSchema },

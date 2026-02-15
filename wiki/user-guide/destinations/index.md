@@ -18,6 +18,7 @@ DBackup supports multiple storage backends for your backups. Choose based on you
 | [Rsync (SSH)](/user-guide/destinations/rsync) | Remote | Efficient delta transfers |
 | [Google Drive](/user-guide/destinations/google-drive) | Cloud | OAuth-based cloud storage |
 | [Dropbox](/user-guide/destinations/dropbox) | Cloud | OAuth-based cloud storage |
+| [Microsoft OneDrive](/user-guide/destinations/onedrive) | Cloud | OAuth-based cloud storage |
 
 ## Choosing a Destination
 
@@ -187,6 +188,22 @@ DBackup supports multiple storage backends for your backups. Choose based on you
 
 **Best for:** Personal backups, simple cloud storage, Dropbox users.
 
+### Microsoft OneDrive
+
+**Pros:**
+- 5 GB free storage
+- OAuth 2.0 via Microsoft Identity Platform
+- Works with personal and organizational accounts
+- Automatic token refresh
+- Large file support (chunked upload sessions)
+
+**Cons:**
+- Azure App Registration required (one-time setup)
+- Client secrets expire (max 24 months)
+- Setup more involved than Google Drive or Dropbox
+
+**Best for:** Microsoft 365 users, organizational environments, Windows/Azure ecosystems.
+
 ## Adding a Destination
 
 1. Navigate to **Destinations** in the sidebar
@@ -245,6 +262,7 @@ All storage credentials (access keys, passwords) are encrypted at rest using you
 - **Rsync**: Uses SSH encryption
 - **Google Drive**: Uses HTTPS (TLS 1.2+) + OAuth 2.0
 - **Dropbox**: Uses HTTPS (TLS 1.2+) + OAuth 2.0
+- **OneDrive**: Uses HTTPS (TLS 1.2+) + OAuth 2.0 (Microsoft Graph API)
 - **Local**: No network transfer
 
 ### Backup Encryption
@@ -286,3 +304,5 @@ Choose your storage destination:
 - [FTP / FTPS](/user-guide/destinations/ftp)
 - [Rsync (SSH)](/user-guide/destinations/rsync)
 - [Google Drive](/user-guide/destinations/google-drive)
+- [Dropbox](/user-guide/destinations/dropbox)
+- [Microsoft OneDrive](/user-guide/destinations/onedrive)

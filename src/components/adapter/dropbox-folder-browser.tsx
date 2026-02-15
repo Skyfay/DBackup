@@ -45,7 +45,7 @@ export function DropboxFolderBrowser({
     initialPath,
 }: DropboxFolderBrowserProps) {
     const [currentPath, setCurrentPath] = useState(initialPath || "");
-    const [currentName, setCurrentName] = useState("Dropbox (Root)");
+    const [_currentName, setCurrentName] = useState("Dropbox (Root)");
     const [parentPath, setParentPath] = useState<string | null>(null);
     const [entries, setEntries] = useState<FolderEntry[]>([]);
     const [loading, setLoading] = useState(false);

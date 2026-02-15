@@ -2,10 +2,8 @@ import { StorageAdapter, FileInfo } from "@/lib/core/interfaces";
 import { DropboxSchema } from "@/lib/adapters/definitions";
 import { Dropbox } from "dropbox";
 import fs from "fs/promises";
-import { createReadStream, createWriteStream } from "fs";
+import { createReadStream } from "fs";
 import path from "path";
-import { pipeline } from "stream/promises";
-import { Readable } from "stream";
 import { LogLevel, LogType } from "@/lib/core/logs";
 import { logger } from "@/lib/logger";
 import { wrapError } from "@/lib/errors";
@@ -98,7 +96,7 @@ function buildDropboxPath(basePath: string | undefined, relativePath: string): s
  * Ensures all parent folders exist for a given path.
  * Dropbox auto-creates parent folders on upload, but for explicit folder creation.
  */
-async function ensureFolderExists(dbx: Dropbox, folderPath: string): Promise<void> {
+async function _ensureFolderExists(dbx: Dropbox, folderPath: string): Promise<void> {
     const dirPath = path.posix.dirname(folderPath);
     if (dirPath === "/" || dirPath === ".") return;
 

@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
         const currentPath = folderPath || "";
 
         // List only folders in the current location
-        let allEntries: Array<{ name: string; type: string; path: string }> = [];
+        const allEntries: Array<{ name: string; type: string; path: string }> = [];
         let hasMore = true;
         let cursor: string | undefined;
 

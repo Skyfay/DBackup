@@ -290,7 +290,7 @@ export function GenericFormContent({ adapter, detectedVersion }: { adapter: Adap
  * Shows a text input for folderId + a browse button that opens the folder browser.
  */
 function GoogleDriveFolderField({
-    adapter,
+    adapter: _adapter,
     config,
     hasRefreshToken,
 }: {
@@ -366,7 +366,7 @@ function GoogleDriveFolderField({
  * Shows a text input for folderPath + a browse button that opens the folder browser.
  */
 function DropboxFolderField({
-    adapter,
+    adapter: _adapter,
     config,
     hasRefreshToken,
 }: {

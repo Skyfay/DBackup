@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { Check, FolderOpen } from "lucide-react";
 import { AdapterDefinition } from "@/lib/adapters/definitions";
 import { SchemaField } from "./schema-field";
+import { EmailTagField } from "./email-tag-field";
 import { STORAGE_CONFIG_KEYS, STORAGE_CONNECTION_KEYS, NOTIFICATION_CONNECTION_KEYS, NOTIFICATION_CONFIG_KEYS } from "./form-constants";
 import { GoogleDriveOAuthButton } from "./google-drive-oauth-button";
 import { GoogleDriveFolderBrowser } from "./google-drive-folder-browser";
@@ -285,6 +286,11 @@ export function StorageFormContent({
 
 export function NotificationFormContent({ adapter }: { adapter: AdapterDefinition }) {
     const hasConfigKeys = hasFields(adapter, NOTIFICATION_CONFIG_KEYS);
+    const isEmail = adapter.id === "email";
+    // Filter out 'to' from config keys for email — rendered separately as TagInput
+    const configKeys = isEmail
+        ? NOTIFICATION_CONFIG_KEYS.filter((k) => k !== "to")
+        : NOTIFICATION_CONFIG_KEYS;
 
     return (
         <Tabs defaultValue="connection" className="w-full">
@@ -301,7 +307,8 @@ export function NotificationFormContent({ adapter }: { adapter: AdapterDefinitio
 
             {hasConfigKeys && (
                 <TabsContent value="configuration" className="space-y-4 pt-4">
-                    <FieldList keys={NOTIFICATION_CONFIG_KEYS} adapter={adapter} />
+                    <FieldList keys={configKeys} adapter={adapter} />
+                    {isEmail && <EmailTagField />}
                 </TabsContent>
             )}
         </Tabs>

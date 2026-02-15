@@ -214,7 +214,10 @@ export const EmailSchema = z.object({
     user: z.string().optional(),
     password: z.string().optional(),
     from: z.string().min(1, "From email is required"),
-    to: z.string().email("Valid To email is required"),
+    to: z.union([
+        z.string().email("Valid To email is required"),
+        z.array(z.string().email("Valid email required")).min(1, "At least one recipient is required"),
+    ]),
 });
 
 // =============================================================================

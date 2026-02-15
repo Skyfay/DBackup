@@ -20,6 +20,13 @@ This release adds Rsync as a new storage destination for efficient incremental f
 - **No Duplicate Notifications**: Backup success/failure events are intentionally excluded from system notifications (configured per-job only) to prevent double alerts
 - **Fire-and-Forget**: System notifications never block the calling operation — all errors are logged but never thrown
 
+#### 📧 Multi-Recipient Email Notifications
+- **Multiple Recipients**: Email notification channels now support multiple recipients — add as many email addresses as needed per channel
+- **Tag Input UI**: New chip/tag-style input field for the "To" field — type an email address and press Enter, Tab, comma, or Space to add it as a tag
+- **Remove Recipients**: Click the X button on any tag to remove a recipient
+- **Paste Support**: Paste comma- or semicolon-separated email lists and they are automatically split into individual tags
+- **Backward Compatible**: Existing single-email configurations continue to work without changes
+
 #### 🧹 Notification Table Cleanup
 - **Removed Status Column**: The health check status column ("Pending") is no longer shown for notification adapters, as connection health monitoring is not applicable to notification channels (Discord webhooks, SMTP)
 
@@ -112,6 +119,12 @@ This release adds Rsync as a new storage destination for efficient incremental f
 - Deleted `src/components/email/notification-template.tsx` — Legacy backup-only email template replaced by unified system template
 - Updated `wiki/user-guide/features/notifications.md` — Complete rewrite covering both per-job and system notifications
 - Updated `wiki/developer-guide/adapters/notification.md` — Complete rewrite with architecture overview, dispatch flow, and guides for adding new events/adapters
+- New `src/components/ui/tag-input.tsx` — Reusable tag/chip input component with Enter/Tab/comma/Space triggers, Backspace removal, paste support, and validation callback
+- New `src/components/adapter/email-tag-field.tsx` — Email-specific tag field wrapper for react-hook-form with string-to-array normalization
+- Updated `src/lib/adapters/definitions.ts` — `EmailSchema.to` changed from `z.string().email()` to `z.union([string, array])` for multi-recipient support
+- Updated `src/lib/adapters/notification/email.tsx` — `sendMail()` now joins array recipients to comma-separated string for nodemailer
+- Updated `src/components/adapter/form-sections.tsx` — `NotificationFormContent` renders `to` field as `EmailTagField` instead of generic text input
+- Updated `src/components/adapter/adapter-manager.tsx` — Email adapter summary truncates long recipient lists (e.g., "a@x.com, b@x.com +1")
 - New `src/lib/adapters/storage/google-drive.ts` — Google Drive storage adapter using `googleapis` npm package
 - New `src/app/api/adapters/google-drive/auth/route.ts` — OAuth authorization URL generation endpoint
 - New `src/app/api/adapters/google-drive/callback/route.ts` — OAuth callback handler with token exchange

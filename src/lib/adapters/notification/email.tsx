@@ -70,7 +70,7 @@ export const EmailAdapter: NotificationAdapter = {
 
             const info = await transporter.sendMail({
                 from: config.from,
-                to: config.to,
+                to: Array.isArray(config.to) ? config.to.join(", ") : config.to,
                 subject: subject,
                 text: message, // fallback
                 html: html,

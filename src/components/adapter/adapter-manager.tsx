@@ -110,8 +110,14 @@ export function AdapterManager({ type, title, description, canManage = true }: A
                     return <span className="text-muted-foreground">{config.folderPath || '/ (Root)'}</span>;
                 case 'discord':
                     return <span className="text-muted-foreground">Webhook</span>;
-                case 'email':
-                    return <span className="text-muted-foreground">{config.from} → {config.to}</span>;
+                case 'email': {
+                    const to = Array.isArray(config.to)
+                        ? config.to.length > 2
+                            ? `${config.to.slice(0, 2).join(", ")} +${config.to.length - 2}`
+                            : config.to.join(", ")
+                        : config.to;
+                    return <span className="text-muted-foreground">{config.from} → {to}</span>;
+                }
                 default:
                     // S3 variants (s3-aws, s3-generic, s3-r2, s3-hetzner, s3-minio)
                     if (adapterId.startsWith('s3')) {

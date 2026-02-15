@@ -2,10 +2,10 @@
 
 All notable changes to DBackup are documented here.
 
-## v0.9.6-beta - Rsync, Google Drive & Dropbox Storage Destinations
+## v0.9.6-beta - Rsync, Google Drive, Dropbox & OneDrive Storage Destinations
 *Release: In Progress*
 
-This release adds Rsync as a new storage destination for efficient incremental file transfers over SSH, and Google Drive and Dropbox as cloud providers with full OAuth 2.0 authorization flow.
+This release adds Rsync as a new storage destination for efficient incremental file transfers over SSH, and Google Drive, Dropbox, and Microsoft OneDrive as cloud providers with full OAuth 2.0 authorization flow.
 
 ### ✨ New Features
 
@@ -28,6 +28,17 @@ This release adds Rsync as a new storage destination for efficient incremental f
 - **Large File Support**: Chunked session uploads for files > 150 MB (up to 350 GB per file)
 - **Full Lifecycle**: Upload, download, list, delete, and read operations for complete backup management including retention policies
 - **Connection Testing**: Verifies OAuth tokens, account access, and write/delete permissions before creating jobs
+
+#### ☁️ Microsoft OneDrive Storage Destination
+- **New Cloud Adapter**: Store backups directly in Microsoft OneDrive via OAuth 2.0 using the Microsoft Graph API
+- **OAuth 2.0 Flow**: One-click authorization in the UI — redirects to Microsoft's consent screen, automatically stores refresh token (encrypted at rest)
+- **Personal & Organizational Accounts**: Works with both personal Microsoft accounts (Outlook, Hotmail) and Microsoft 365 / Azure AD organizational accounts
+- **Automatic Token Refresh**: Uses refresh tokens with auto-renewal — no manual re-authorization required
+- **Folder Path**: Optional target folder path (e.g., `/DBackup`) — creates subfolder hierarchies as needed
+- **Visual Folder Browser**: Browse and select target folders directly from OneDrive — navigable dialog with breadcrumbs
+- **Smart Upload Strategy**: Simple PUT for files ≤ 4 MB, chunked upload sessions with 10 MB chunks for larger files
+- **Full Lifecycle**: Upload, download, list, delete, and read operations for complete backup management including retention policies
+- **Connection Testing**: Verifies OAuth tokens, OneDrive access, folder permissions, and write/delete operations before creating jobs
 
 #### 📡 Rsync (SSH) Storage Destination
 - **New Storage Adapter**: Store backups on any remote server using rsync over SSH — leverages rsync's delta-transfer algorithm for efficient incremental syncs
@@ -98,6 +109,20 @@ This release adds Rsync as a new storage destination for efficient incremental f
 - Updated `src/components/adapter/adapter-manager.tsx` — Added summary display case for Dropbox
 - Updated `src/app/api/adapters/test-connection/route.ts` — Added `dropbox` to storage permission regex
 - Updated `src/app/api/adapters/access-check/route.ts` — Added `dropbox` to storage permission regex
+- New `src/lib/adapters/storage/onedrive.ts` — OneDrive storage adapter using `@microsoft/microsoft-graph-client` npm package with OAuth 2.0
+- New `src/app/api/adapters/onedrive/auth/route.ts` — Microsoft OAuth authorization URL generation endpoint
+- New `src/app/api/adapters/onedrive/callback/route.ts` — Microsoft OAuth callback handler with token exchange
+- New `src/components/adapter/onedrive-oauth-button.tsx` — OneDrive OAuth authorization button with status indicator
+- New `src/components/adapter/onedrive-folder-browser.tsx` — Visual folder browser dialog for OneDrive
+- New `src/app/api/system/filesystem/onedrive/route.ts` — OneDrive folder browsing API endpoint
+- Updated `src/lib/adapters/definitions.ts` — Added `OneDriveSchema`, `OneDriveConfig` type, updated `StorageConfig` union
+- Updated `src/lib/adapters/index.ts` — Registered `OneDriveAdapter`
+- Updated `src/components/adapter/form-sections.tsx` — Special rendering for OneDrive OAuth flow and folder browser
+- Updated `src/components/adapter/form-constants.ts` — Added form field mappings and placeholders for OneDrive
+- Updated `src/components/adapter/utils.ts` — Added icon mapping for OneDrive (Cloud)
+- Updated `src/app/api/adapters/test-connection/route.ts` — Added `onedrive` to storage permission regex
+- Updated `src/app/api/adapters/access-check/route.ts` — Added `onedrive` to storage permission regex
+- Updated `wiki/` — Added OneDrive user guide, updated developer guide, destinations index, sidebar navigation, and changelog
 - Updated `src/services/dashboard-service.ts` — Replaced live cloud API calls with DB-cached `getStorageVolume()`, added `refreshStorageStatsCache()`, `getStorageVolumeCacheAge()`, `saveStorageSnapshots()`, `getStorageHistory()`, and `cleanupOldSnapshots()`
 - Updated `src/services/system-task-service.ts` — Added `REFRESH_STORAGE_STATS` system task with hourly default schedule
 - Updated `src/lib/runner/steps/04-completion.ts` — Triggers non-blocking storage stats cache refresh after successful backups

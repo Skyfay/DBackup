@@ -87,25 +87,12 @@ Allow users to edit their own profile regardless of strict RBAC permissions.
 - Color-coded status (success, failed, skipped)
 
 ### Backup Size Trend Analysis
-- Track backup sizes over time per job
 - Detect unusual growth patterns in databases
 
 ### Prometheus Metrics Endpoint
 - Expose `/metrics` endpoint for Prometheus scraping
 - Metrics: backup count, duration, size, success rate, queue depth
 - Grafana dashboard template
-
-
-
-## 📦 Planned Storage Adapters
-
-### Rsync
-Efficient incremental backups using rsync protocol.
-
-### Cloud Providers (OAuth-based)
-- **Google Drive** - Personal and Google Workspace storage
-- **Dropbox** - Dropbox Business and personal accounts
-- **OneDrive** - Microsoft 365 and personal OneDrive
 
 
 

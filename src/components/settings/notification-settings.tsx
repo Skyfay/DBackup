@@ -489,7 +489,7 @@ export function NotificationSettings() {
                                 )
                               }
                             >
-                              <SelectTrigger className="h-7 w-[140px] text-xs">
+                              <SelectTrigger className="h-7 w-35 text-xs">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>

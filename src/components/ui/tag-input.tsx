@@ -127,7 +127,7 @@ export function TagInput({
                 }}
                 placeholder={tags.length === 0 ? placeholder : ""}
                 disabled={disabled}
-                className="flex-1 min-w-[120px] bg-transparent outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
+                className="flex-1 min-w-30 bg-transparent outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
             />
         </div>
     );

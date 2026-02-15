@@ -124,7 +124,7 @@ export function SchemaField({
                                            <Info className="h-3.5 w-3.5 text-muted-foreground/70 hover:text-foreground transition-colors cursor-help" />
                                        </TooltipTrigger>
                                        <TooltipContent side="right">
-                                           <p className="max-w-[300px] text-xs">{description}</p>
+                                           <p className="max-w-75 text-xs">{description}</p>
                                        </TooltipContent>
                                    </Tooltip>
                                </TooltipProvider>
@@ -171,7 +171,7 @@ export function SchemaField({
                                 {...field}
                                 placeholder={placeholder}
                                 value={field.value || ""}
-                                className="font-mono text-xs min-h-[100px]"
+                                className="font-mono text-xs min-h-25"
                                 onChange={(e) => field.onChange(e.target.value)}
                             />
                         ) : (

@@ -17,12 +17,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 
 import { AdapterManagerProps, AdapterConfig } from "./types";
 import { AdapterForm } from "./adapter-form";
+import { AdapterPicker } from "./adapter-picker";
 import { HealthStatusBadge } from "@/components/ui/health-status-badge";
 import { StorageHistoryModal } from "@/components/dashboard/widgets/storage-history-modal";
 
 export function AdapterManager({ type, title, description, canManage = true }: AdapterManagerProps) {
     const [configs, setConfigs] = useState<AdapterConfig[]>([]);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
+    const [isPickerOpen, setIsPickerOpen] = useState(false);
+    const [selectedAdapterForNew, setSelectedAdapterForNew] = useState<string | null>(null);
     const [availableAdapters, setAvailableAdapters] = useState<AdapterDefinition[]>([]);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -277,7 +280,7 @@ export function AdapterManager({ type, title, description, canManage = true }: A
                                 <CardDescription>Manage your {type} configurations.</CardDescription>
                             </div>
                             {canManage && (
-                                <Button onClick={() => { setEditingId(null); setIsDialogOpen(true); }}>
+                                <Button onClick={() => { setEditingId(null); setSelectedAdapterForNew(null); setIsPickerOpen(true); }}>
                                     <Plus className="mr-2 h-4 w-4" /> Add New
                                 </Button>
                             )}
@@ -295,6 +298,24 @@ export function AdapterManager({ type, title, description, canManage = true }: A
                 </Card>
             )}
 
+            {/* Step 1: Adapter Picker */}
+            <Dialog open={isPickerOpen} onOpenChange={setIsPickerOpen}>
+                <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle>{type === 'notification' ? "Select Notification Type" : (type === 'database' ? "Select Database Type" : (type === 'storage' ? "Select Destination Type" : "Select Type"))}</DialogTitle>
+                    </DialogHeader>
+                    <AdapterPicker
+                        adapters={availableAdapters}
+                        onSelect={(adapter) => {
+                            setSelectedAdapterForNew(adapter.id);
+                            setIsPickerOpen(false);
+                            setIsDialogOpen(true);
+                        }}
+                    />
+                </DialogContent>
+            </Dialog>
+
+            {/* Step 2: Adapter Form */}
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
                 <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
@@ -303,8 +324,8 @@ export function AdapterManager({ type, title, description, canManage = true }: A
                     {isDialogOpen && (
                         <AdapterForm
                             type={type}
-                            adapters={availableAdapters}
-                            onSuccess={() => { setIsDialogOpen(false); fetchConfigs(); }}
+                            adapters={selectedAdapterForNew ? availableAdapters.filter(a => a.id === selectedAdapterForNew) : availableAdapters}
+                            onSuccess={() => { setIsDialogOpen(false); setSelectedAdapterForNew(null); fetchConfigs(); }}
                             initialData={editingId ? configs.find(c => c.id === editingId) : undefined}
                         />
                     )}

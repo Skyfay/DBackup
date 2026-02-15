@@ -8,6 +8,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { ChevronsUpDown, Check, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -175,6 +176,22 @@ export function AdapterForm({ type, adapters, onSuccess, initialData }: { type: 
                     />
 
 <div className="flex w-full gap-4 items-start">
+                        {adapters.length === 1 ? (
+                            // Single adapter pre-selected (from picker) — show as read-only badge
+                            <FormField
+                                control={form.control}
+                                name="adapterId"
+                                render={() => (
+                                    <FormItem className={cn("flex flex-col", selectedAdapterId === 'sqlite' ? "w-1/2" : "w-full")}>
+                                        <FormLabel>Type</FormLabel>
+                                        <Badge variant="secondary" className="w-fit text-sm py-1.5 px-3">
+                                            {adapters[0].name}
+                                        </Badge>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                        ) : (
                         <FormField
                             control={form.control}
                             name="adapterId"
@@ -240,6 +257,7 @@ export function AdapterForm({ type, adapters, onSuccess, initialData }: { type: 
                                 </FormItem>
                             )}
                         />
+                        )}
                         {selectedAdapterId === 'sqlite' && selectedAdapter && (
                             <div className="w-1/2">
                                 <SchemaField

@@ -2,12 +2,20 @@
 
 All notable changes to DBackup are documented here.
 
-## v0.9.7-beta - Grouped Destination Selector & Documentation Updates
+## v0.9.7-beta - Adapter Picker, Grouped Selector & Documentation Updates
 *Release: In Progress*
 
-This release improves the destination type selector UX with categorized grouping and fixes mouse wheel scrolling in command list dropdowns.
+This release introduces a visual adapter picker for creating new sources, destinations, and notifications. The picker displays all available adapters as cards with icons, grouped by category with tabs for quick navigation.
 
 ### ✨ New Features
+
+#### 🎯 Visual Adapter Picker
+- **Two-Step Create Flow**: Clicking "Add New" now opens a visual picker dialog first, then transitions to the configuration form with the selected type pre-filled
+- **Card Grid Layout**: All available adapters are displayed as clickable cards with icons in a responsive 3–4 column grid
+- **Category Tabs**: Storage destinations are organized into tabs (All, Local, Cloud Storage (S3), Cloud Drives, Network) for quick filtering
+- **Flat Grid Fallback**: Database sources and notification channels (which have no groups) display as a simple flat grid without tabs
+- **Read-Only Type Badge**: After selecting an adapter in the picker, the form shows the type as a non-editable badge instead of a dropdown
+- **Edit Flow Unchanged**: Editing existing configurations still opens the form directly with the full type dropdown
 
 #### 🗂️ Grouped Destination Type Selector
 - **Categorized Adapter List**: The destination type dropdown now groups storage adapters into logical categories for better discoverability
@@ -25,8 +33,10 @@ This release improves the destination type selector UX with categorized grouping
 - **Reduced Duplication**: Shortened feature descriptions in the hero section and README features list to avoid repeating information already shown in the new tables
 
 ### 🔧 Technical Changes
+- New `src/components/adapter/adapter-picker.tsx` — Visual adapter picker component with card grid, category tabs, and icon display
+- Updated `src/components/adapter/adapter-manager.tsx` — Two-step create flow: picker dialog → form dialog. Picker opens on "Add New", passes selected adapter to form
+- Updated `src/components/adapter/adapter-form.tsx` — Shows read-only type badge when single adapter is pre-selected, retains combobox for edit/multi-adapter scenarios
 - Updated `src/lib/adapters/definitions.ts` — Added optional `group` field to `AdapterDefinition` type, assigned groups to all 13 storage adapters
-- Updated `src/components/adapter/adapter-form.tsx` — Adapter list is grouped via `useMemo`, rendered as multiple `CommandGroup` components with headings, popover width adapts based on presence of groups
 - Updated `src/components/ui/command.tsx` — Added `onWheel` handler to `CommandList` for manual scroll support, bypassing `cmdk`'s event interception
 - Updated `wiki/index.md` — Added "Supported Destinations" and "Supported Notifications" sections, shortened hero feature texts
 - Updated `README.md` — Added "Supported Destinations" and "Supported Notifications" sections, shortened feature bullet points

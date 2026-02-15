@@ -25,21 +25,9 @@ export const EVENT_DEFINITIONS: NotificationEventDefinition[] = [
     defaultEnabled: false,
   },
 
-  // ── Backup Events ────────────────────────────────────────────
-  {
-    id: NOTIFICATION_EVENTS.BACKUP_SUCCESS,
-    name: "Backup Successful",
-    description: "A backup job completed successfully.",
-    category: "backup",
-    defaultEnabled: true,
-  },
-  {
-    id: NOTIFICATION_EVENTS.BACKUP_FAILURE,
-    name: "Backup Failed",
-    description: "A backup job failed.",
-    category: "backup",
-    defaultEnabled: true,
-  },
+  // NOTE: Backup success/failure events are NOT listed here because they are
+  // configured per-job (Job → Notify tab). The templates in templates.ts are
+  // still used by the runner pipeline (04-completion) for per-job notifications.
 
   // ── Restore Events ───────────────────────────────────────────
   {

@@ -126,25 +126,6 @@ function buildTestData(eventType: string): any {
         timestamp: now,
       },
     },
-    backup_success: {
-      eventType: "backup_success",
-      data: {
-        jobName: "Test Backup Job",
-        sourceName: "MySQL Production",
-        duration: 12500,
-        size: 1048576,
-        timestamp: now,
-      },
-    },
-    backup_failure: {
-      eventType: "backup_failure",
-      data: {
-        jobName: "Test Backup Job",
-        sourceName: "MySQL Production",
-        error: "Connection refused (test)",
-        timestamp: now,
-      },
-    },
     restore_complete: {
       eventType: "restore_complete",
       data: {

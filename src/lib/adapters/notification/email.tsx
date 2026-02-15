@@ -1,7 +1,6 @@
 import { NotificationAdapter } from "@/lib/core/interfaces";
 import { EmailSchema } from "@/lib/adapters/definitions";
 import nodemailer from "nodemailer";
-// import { formatBytes } from "@/lib/utils";
 import React from "react";
 import { logger } from "@/lib/logger";
 import { wrapError } from "@/lib/errors";
@@ -51,41 +50,23 @@ export const EmailAdapter: NotificationAdapter = {
             // Verify connection configuration
             await transporter.verify();
 
-            let subject = "Database Backup Notification";
-            let html: string;
+            const subject = context?.title || "Database Backup Manager Notification";
 
             // Dynamic import to avoid build errors with server components in some contexts
             const { renderToStaticMarkup } = await import("react-dom/server");
+            const { SystemNotificationEmail } = await import(
+                "@/components/email/system-notification-template"
+            );
 
-            if (context?.eventType) {
-                // ── System notification (from SystemNotificationService) ───
-                subject = context.title || "System Notification";
-
-                const { SystemNotificationEmail } = await import(
-                    "@/components/email/system-notification-template"
-                );
-
-                html = renderToStaticMarkup(
-                    <SystemNotificationEmail
-                        title={context.title || "Notification"}
-                        message={message}
-                        fields={context.fields}
-                        color={context.color}
-                        success={context.success}
-                    />
-                );
-            } else {
-                // ── Legacy backup notification ─────────────────────────────
-                if (context) {
-                    subject = context.success ? "✅ Backup Successful" : "❌ Backup Failed";
-                }
-
-                const { NotificationEmail } = await import("@/components/email/notification-template");
-
-                html = renderToStaticMarkup(
-                    <NotificationEmail message={message} context={context} />
-                );
-            }
+            const html = renderToStaticMarkup(
+                <SystemNotificationEmail
+                    title={context?.title || "Notification"}
+                    message={message}
+                    fields={context?.fields}
+                    color={context?.color}
+                    success={context?.success ?? true}
+                />
+            );
 
             const info = await transporter.sendMail({
                 from: config.from,

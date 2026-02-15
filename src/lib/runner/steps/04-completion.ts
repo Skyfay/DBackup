@@ -6,6 +6,7 @@ import { NotificationAdapter } from "@/lib/core/interfaces";
 import { decryptConfig } from "@/lib/crypto";
 import { logger } from "@/lib/logger";
 import { wrapError } from "@/lib/errors";
+import { renderTemplate, NOTIFICATION_EVENTS } from "@/lib/notifications";
 
 const log = logger.child({ step: "04-completion" });
 
@@ -66,15 +67,31 @@ export async function stepFinalize(ctx: RunnerContext) {
 
                     if (notifyAdapter) {
                         const channelConfig = decryptConfig(JSON.parse(channel.config));
+                        const isSuccess = ctx.status === "Success";
 
-                        await notifyAdapter.send(channelConfig, `Backup Job '${ctx.job.name}' finished with status: ${ctx.status}`, {
-                             jobName: ctx.job.name,
-                             adapterName: ctx.job.source?.name,
-                             success: ctx.status === "Success",
-                             duration: new Date().getTime() - ctx.startedAt.getTime(),
-                             size: ctx.dumpSize || 0,
-                             status: ctx.status,
-                             logs: ctx.logs
+                        const payload = renderTemplate({
+                            eventType: isSuccess
+                                ? NOTIFICATION_EVENTS.BACKUP_SUCCESS
+                                : NOTIFICATION_EVENTS.BACKUP_FAILURE,
+                            data: {
+                                jobName: ctx.job.name,
+                                sourceName: ctx.job.source?.name,
+                                duration: new Date().getTime() - ctx.startedAt.getTime(),
+                                size: ctx.dumpSize ? Number(ctx.dumpSize) : undefined,
+                                error: !isSuccess ? ctx.logs.find(l => l.level === 'error')?.message : undefined,
+                                executionId: ctx.execution?.id,
+                                timestamp: new Date().toISOString(),
+                            },
+                        });
+
+                        await notifyAdapter.send(channelConfig, payload.message, {
+                            success: payload.success,
+                            eventType: isSuccess
+                                ? NOTIFICATION_EVENTS.BACKUP_SUCCESS
+                                : NOTIFICATION_EVENTS.BACKUP_FAILURE,
+                            title: payload.title,
+                            fields: payload.fields,
+                            color: payload.color,
                         });
                     }
                 } catch (e) {

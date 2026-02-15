@@ -1,6 +1,5 @@
 import { NotificationAdapter } from "@/lib/core/interfaces";
 import { DiscordSchema, DiscordConfig } from "@/lib/adapters/definitions";
-import { formatBytes } from "@/lib/utils";
 import { logger } from "@/lib/logger";
 import { wrapError } from "@/lib/errors";
 
@@ -44,52 +43,27 @@ export const DiscordAdapter: NotificationAdapter = {
             };
 
             if (context) {
-                // ── System notification (from SystemNotificationService) ───
-                if (context.eventType) {
-                    const color = context.color
-                        ? parseInt(context.color.replace("#", ""), 16)
-                        : context.success
-                          ? 0x00ff00
-                          : 0xff0000;
+                const color = context.color
+                    ? parseInt(context.color.replace("#", ""), 16)
+                    : context.success
+                      ? 0x00ff00
+                      : 0xff0000;
 
-                    const embed: any = {
-                        title: context.title || "Notification",
-                        description: message,
-                        color,
-                        timestamp: new Date().toISOString(),
-                        fields: (context.fields || []).map((f: any) => ({
-                            name: f.name,
-                            value: f.value,
-                            inline: f.inline ?? true,
-                        })),
-                    };
+                const embed: any = {
+                    title: context.title || "Notification",
+                    description: message,
+                    color,
+                    timestamp: new Date().toISOString(),
+                    fields: (context.fields || []).map((f: any) => ({
+                        name: f.name,
+                        value: f.value,
+                        inline: f.inline ?? true,
+                    })),
+                };
 
-                    payload.embeds = [embed];
-                    // Clear content so we don't duplicate the message
-                    payload.content = undefined;
-                } else {
-                    // ── Legacy backup notification ─────────────────────────
-                    const color = context.success ? 0x00ff00 : 0xff0000; // Green or Red
-                    const embed: any = {
-                        title: context.success ? "Backup Successful" : "Backup Failed",
-                        color: color,
-                        timestamp: new Date().toISOString(),
-                        fields: [
-                            { name: "Adapter", value: context.adapterName || "Unknown", inline: true },
-                            { name: "Duration", value: context.duration ? `${context.duration}ms` : "N/A", inline: true },
-                        ]
-                    };
-
-                    if (context.size !== undefined) {
-                        embed.fields.push({ name: "Size", value: formatBytes(context.size), inline: true });
-                    }
-
-                    if (context.error) {
-                        embed.description = `**Error:** ${context.error}`;
-                    }
-
-                    payload.embeds = [embed];
-                }
+                payload.embeds = [embed];
+                // Clear content so we don't duplicate the message
+                payload.content = undefined;
             }
 
             const response = await fetch(config.webhookUrl, {

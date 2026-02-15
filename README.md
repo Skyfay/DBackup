@@ -50,11 +50,11 @@ Whether you're running a single MySQL database or managing multiple PostgreSQL, 
 
 - **Multi-Database Support** — MySQL, PostgreSQL, MongoDB, Redis, SQLite, Microsoft SQL Server
 - **Enterprise-Grade Security** — AES-256-GCM encryption with key rotation and offline recovery kits
-- **Flexible Storage** — Local filesystem, S3-compatible (AWS, MinIO, R2), SFTP, FTP/FTPS, Rsync, Google Drive, OneDrive, Dropbox
+- **Flexible Storage** — 13+ built-in storage adapters including cloud, self-hosted, and network destinations
 - **Smart Retention** — Grandfather-Father-Son rotation policies
 - **Live Monitoring** — Real-time progress tracking with detailed logs
 - **SSO & RBAC** — OpenID Connect support and granular permission system
-- **Notifications** — Discord and Email alerts on backup success/failure
+- **Notifications** — Instant alerts on backup success/failure
 
 ## 🚀 Quick Start
 
@@ -98,6 +98,31 @@ Open [http://localhost:3000](http://localhost:3000) and create your admin accoun
 | Redis | 6.x, 7.x, 8.x |
 | SQLite | 3.x (Local & SSH) |
 | Microsoft SQL Server | 2017, 2019, 2022 |
+
+## ☁️ Supported Destinations
+
+| Destination | Details |
+| :--- | :--- |
+| Local Filesystem | Store backups directly on the server |
+| Amazon S3 | Native AWS S3 with storage class support (Standard, IA, Glacier, Deep Archive) |
+| S3 Compatible | Any S3-compatible storage (MinIO, Wasabi, etc.) |
+| Cloudflare R2 | Cloudflare R2 Object Storage |
+| Hetzner Object Storage | Hetzner S3 storage (fsn1, nbg1, hel1, ash) |
+| Google Drive | Google Drive via OAuth2 |
+| Dropbox | Dropbox via OAuth2 with chunked upload support |
+| Microsoft OneDrive | OneDrive via Microsoft Graph API / OAuth2 |
+| SFTP | SSH/SFTP with password, private key, or SSH agent auth |
+| FTP / FTPS | Classic FTP with optional TLS |
+| WebDAV | WebDAV servers (Nextcloud, ownCloud, etc.) |
+| SMB (Samba) | Windows/Samba network shares (SMB2, SMB3) |
+| Rsync | File transfer via rsync over SSH |
+
+## 🔔 Supported Notifications
+
+| Channel | Details |
+| :--- | :--- |
+| Discord | Webhook-based notifications with custom username & avatar |
+| Email (SMTP) | SMTP with SSL/STARTTLS support, multiple recipients |
 
 ## 📚 Documentation
 

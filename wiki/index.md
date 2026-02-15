@@ -16,7 +16,7 @@ hero:
 features:
   - icon: 🗄️
     title: Multi-Database Support
-    details: Backup MySQL, MariaDB, PostgreSQL, MongoDB, SQLite, and Microsoft SQL Server with a unified interface.
+    details: Backup MySQL, MariaDB, PostgreSQL, MongoDB, SQLite, Redis, and Microsoft SQL Server with a unified interface.
   - icon: 🔒
     title: Enterprise-Grade Security
     details: AES-256-GCM encryption for backups with Encryption Vault, key rotation, and offline Recovery Kits.
@@ -25,13 +25,13 @@ features:
     details: Built-in GZIP and Brotli compression to minimize storage costs and transfer times.
   - icon: ☁️
     title: Flexible Storage
-    details: Store backups on Local Filesystem, WebDAV, SFTP, FTP/S, SMB/CIFS, Rsync, Google Drive or any S3-compatible storage.
+    details: 13+ built-in storage adapters including cloud, self-hosted, and network destinations. See full list below.
   - icon: 📅
     title: Automated Scheduling
     details: Cron-based job scheduling with GVS (Grandfather-Father-Son) retention policies for intelligent rotation.
   - icon: 🔔
     title: Notifications
-    details: Get instant alerts via Discord or Email when backups complete or fail.
+    details: Get instant alerts when backups complete or fail. See supported channels below.
   - icon: 🔄
     title: One-Click Restore
     details: Browse backup history, download files, or restore databases directly from the web UI.
@@ -93,6 +93,31 @@ Then open [http://localhost:3000](http://localhost:3000) and create your first a
 | **Redis** | 6.x, 7.x, 8.x |
 | **SQLite** | 3.x (Local & SSH) |
 | **Microsoft SQL Server** | 2017, 2019, 2022, Azure SQL Edge |
+
+## Supported Destinations
+
+| Destination | Details |
+| :--- | :--- |
+| **Local Filesystem** | Store backups directly on the server |
+| **Amazon S3** | Native AWS S3 with storage class support (Standard, IA, Glacier, Deep Archive) |
+| **S3 Compatible** | Any S3-compatible storage (MinIO, Wasabi, etc.) |
+| **Cloudflare R2** | Cloudflare R2 Object Storage |
+| **Hetzner Object Storage** | Hetzner S3 storage (fsn1, nbg1, hel1, ash) |
+| **Google Drive** | Google Drive via OAuth2 |
+| **Dropbox** | Dropbox via OAuth2 with chunked upload support |
+| **Microsoft OneDrive** | OneDrive via Microsoft Graph API / OAuth2 |
+| **SFTP** | SSH/SFTP with password, private key, or SSH agent auth |
+| **FTP / FTPS** | Classic FTP with optional TLS |
+| **WebDAV** | WebDAV servers (Nextcloud, ownCloud, etc.) |
+| **SMB (Samba)** | Windows/Samba network shares (SMB2, SMB3) |
+| **Rsync** | File transfer via rsync over SSH |
+
+## Supported Notifications
+
+| Channel | Details |
+| :--- | :--- |
+| **Discord** | Webhook-based notifications with custom username & avatar |
+| **Email (SMTP)** | SMTP with SSL/STARTTLS support, multiple recipients |
 
 ## Architecture at a Glance
 

@@ -100,6 +100,8 @@ export function AdapterManager({ type, title, description, canManage = true }: A
                     return <span className="text-muted-foreground">{config.pathPrefix || `${config.host}:${config.port}`}</span>;
                 case 'google-drive':
                     return <span className="text-muted-foreground">{config.folderId ? `Folder: ${config.folderId.substring(0, 12)}...` : 'Root'}</span>;
+                case 'dropbox':
+                    return <span className="text-muted-foreground">{config.folderPath || '/ (Root)'}</span>;
                 case 'discord':
                     return <span className="text-muted-foreground">Webhook</span>;
                 case 'email':

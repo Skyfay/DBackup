@@ -17,6 +17,7 @@ DBackup supports multiple storage backends for your backups. Choose based on you
 | [FTP / FTPS](/user-guide/destinations/ftp) | Remote | Classic FTP servers |
 | [Rsync (SSH)](/user-guide/destinations/rsync) | Remote | Efficient delta transfers |
 | [Google Drive](/user-guide/destinations/google-drive) | Cloud | OAuth-based cloud storage |
+| [Dropbox](/user-guide/destinations/dropbox) | Cloud | OAuth-based cloud storage |
 
 ## Choosing a Destination
 
@@ -170,6 +171,22 @@ DBackup supports multiple storage backends for your backups. Choose based on you
 
 **Best for:** Personal backups, small teams, cloud storage without additional costs.
 
+### Dropbox
+
+**Pros:**
+- 2 GB free storage
+- OAuth 2.0 — no API keys needed
+- Simple Dropbox App Console setup
+- Automatic token refresh
+- Large file support (chunked uploads)
+
+**Cons:**
+- Small free tier (2 GB)
+- Requires Dropbox App Console setup
+- App folder mode limits access to app-owned folder
+
+**Best for:** Personal backups, simple cloud storage, Dropbox users.
+
 ## Adding a Destination
 
 1. Navigate to **Destinations** in the sidebar
@@ -227,6 +244,7 @@ All storage credentials (access keys, passwords) are encrypted at rest using you
 - **FTP/FTPS**: Uses TLS when enabled
 - **Rsync**: Uses SSH encryption
 - **Google Drive**: Uses HTTPS (TLS 1.2+) + OAuth 2.0
+- **Dropbox**: Uses HTTPS (TLS 1.2+) + OAuth 2.0
 - **Local**: No network transfer
 
 ### Backup Encryption

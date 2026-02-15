@@ -17,6 +17,8 @@ import { SchemaField } from "./schema-field";
 import { STORAGE_CONFIG_KEYS, STORAGE_CONNECTION_KEYS } from "./form-constants";
 import { GoogleDriveOAuthButton } from "./google-drive-oauth-button";
 import { GoogleDriveFolderBrowser } from "./google-drive-folder-browser";
+import { DropboxOAuthButton } from "./dropbox-oauth-button";
+import { DropboxFolderBrowser } from "./dropbox-folder-browser";
 import { AdapterConfig } from "./types";
 
 interface SectionProps {
@@ -163,14 +165,16 @@ export function StorageFormContent({
     const authType = watch("config.authType");
     const hasConfigKeys = hasFields(adapter, STORAGE_CONFIG_KEYS);
     const isGoogleDrive = adapter.id === 'google-drive';
+    const isDropbox = adapter.id === 'dropbox';
+    const isOAuthAdapter = isGoogleDrive || isDropbox;
 
-    // For Google Drive: filter out refreshToken from connection keys (auto-managed via OAuth)
-    const connectionKeys = isGoogleDrive
+    // For OAuth adapters: filter out refreshToken from connection keys (auto-managed via OAuth)
+    const connectionKeys = isOAuthAdapter
         ? STORAGE_CONNECTION_KEYS.filter(k => k !== 'refreshToken')
         : STORAGE_CONNECTION_KEYS;
 
-    // For Google Drive: filter out refreshToken from config keys too
-    const configKeys = isGoogleDrive
+    // For OAuth adapters: filter out refreshToken from config keys too
+    const configKeys = isOAuthAdapter
         ? STORAGE_CONFIG_KEYS.filter(k => k !== 'refreshToken')
         : STORAGE_CONFIG_KEYS;
 
@@ -226,6 +230,14 @@ export function StorageFormContent({
                             hasRefreshToken={hasRefreshToken}
                         />
                     </div>
+                ) : isDropbox ? (
+                    <div className="space-y-4">
+                        <FieldList keys={['clientId', 'clientSecret']} adapter={adapter} />
+                        <DropboxOAuthButton
+                            adapterId={initialData?.id}
+                            hasRefreshToken={hasRefreshToken}
+                        />
+                    </div>
                 ) : (
                     <FieldList keys={connectionKeys} adapter={adapter} />
                 )}
@@ -235,6 +247,12 @@ export function StorageFormContent({
                 <TabsContent value="configuration" className="space-y-4 pt-4">
                     {isGoogleDrive ? (
                         <GoogleDriveFolderField
+                            adapter={adapter}
+                            config={config}
+                            hasRefreshToken={hasRefreshToken}
+                        />
+                    ) : isDropbox ? (
+                        <DropboxFolderField
                             adapter={adapter}
                             config={config}
                             hasRefreshToken={hasRefreshToken}
@@ -337,6 +355,74 @@ function GoogleDriveFolderField({
                         refreshToken: refreshToken!,
                     }}
                     initialFolderId={folderId || undefined}
+                />
+            )}
+        </div>
+    );
+}
+
+/**
+ * Dropbox folder picker field with browse button.
+ * Shows a text input for folderPath + a browse button that opens the folder browser.
+ */
+function DropboxFolderField({
+    adapter,
+    config,
+    hasRefreshToken,
+}: {
+    adapter: AdapterDefinition;
+    config: Record<string, unknown>;
+    hasRefreshToken: boolean;
+}) {
+    const { setValue, watch } = useFormContext();
+    const [isBrowserOpen, setIsBrowserOpen] = useState(false);
+    const folderPath = watch("config.folderPath") || "";
+
+    const refreshToken = config?.refreshToken as string | undefined;
+    const canBrowse = hasRefreshToken && !!refreshToken && !!config?.clientId && !!config?.clientSecret;
+
+    return (
+        <div className="space-y-4">
+            <div className="space-y-2">
+                <Label>Folder Path</Label>
+                <div className="flex gap-2">
+                    <Input
+                        value={folderPath}
+                        onChange={(e) => setValue("config.folderPath", e.target.value)}
+                        placeholder="Leave empty for root (e.g. /backups)"
+                        className="font-mono text-sm"
+                    />
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        onClick={() => setIsBrowserOpen(true)}
+                        disabled={!canBrowse}
+                        title={canBrowse ? "Browse Dropbox folders" : "Authorize Dropbox first to browse folders"}
+                    >
+                        <FolderOpen className="h-4 w-4" />
+                    </Button>
+                </div>
+                {!canBrowse && (
+                    <p className="text-xs text-muted-foreground">
+                        Authorize Dropbox first to use the folder browser.
+                    </p>
+                )}
+            </div>
+
+            {canBrowse && (
+                <DropboxFolderBrowser
+                    open={isBrowserOpen}
+                    onOpenChange={setIsBrowserOpen}
+                    onSelect={(selectedPath) => {
+                        setValue("config.folderPath", selectedPath);
+                    }}
+                    config={{
+                        clientId: config.clientId as string,
+                        clientSecret: config.clientSecret as string,
+                        refreshToken: refreshToken!,
+                    }}
+                    initialPath={folderPath || undefined}
                 />
             )}
         </div>

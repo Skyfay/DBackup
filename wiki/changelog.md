@@ -2,10 +2,10 @@
 
 All notable changes to DBackup are documented here.
 
-## v0.9.6-beta - Rsync & Google Drive Storage Destinations
+## v0.9.6-beta - Rsync, Google Drive & Dropbox Storage Destinations
 *Release: In Progress*
 
-This release adds Rsync as a new storage destination for efficient incremental file transfers over SSH, and Google Drive as the first cloud provider with full OAuth 2.0 authorization flow.
+This release adds Rsync as a new storage destination for efficient incremental file transfers over SSH, and Google Drive and Dropbox as cloud providers with full OAuth 2.0 authorization flow.
 
 ### ✨ New Features
 
@@ -19,7 +19,17 @@ This release adds Rsync as a new storage destination for efficient incremental f
 - **Progress Tracking**: Real-time upload/download progress with resumable media uploads for large backup files
 - **Connection Testing**: Verifies OAuth tokens, Drive API access, and folder permissions before creating jobs
 
-#### 📡 Rsync (SSH) Storage Destination
+#### � Dropbox Storage Destination
+- **New Cloud Adapter**: Store backups directly in Dropbox with native OAuth 2.0 authentication
+- **OAuth 2.0 Flow**: One-click authorization in the UI — redirects to Dropbox's consent screen, automatically stores refresh token (encrypted at rest)
+- **Automatic Token Refresh**: Dropbox SDK handles token renewal automatically — no manual re-authorization required
+- **Folder Path**: Optional target folder path (e.g. `/backups`) — creates subfolder hierarchies as needed
+- **Visual Folder Browser**: Browse and select target folders directly from Dropbox — navigable dialog with breadcrumbs
+- **Large File Support**: Chunked session uploads for files > 150 MB (up to 350 GB per file)
+- **Full Lifecycle**: Upload, download, list, delete, and read operations for complete backup management including retention policies
+- **Connection Testing**: Verifies OAuth tokens, account access, and write/delete permissions before creating jobs
+
+#### �📡 Rsync (SSH) Storage Destination
 - **New Storage Adapter**: Store backups on any remote server using rsync over SSH — leverages rsync's delta-transfer algorithm for efficient incremental syncs
 - **Three Auth Methods**: Password (via `sshpass`), SSH Private Key (PEM format), and SSH Agent authentication — matching SFTP's auth options
 - **Delta Transfer**: Only changed blocks are transferred, significantly reducing bandwidth for recurring backups to the same destination
@@ -56,6 +66,20 @@ This release adds Rsync as a new storage destination for efficient incremental f
 - Updated `src/app/api/adapters/test-connection/route.ts` — Added `google-drive` and `rsync` to storage permission regex
 - Updated `src/app/api/adapters/access-check/route.ts` — Added `google-drive` and `rsync` to storage permission regex
 - Updated `src/app/dashboard/destinations/page.tsx` — Added OAuth toast handler for redirect notifications
+- New `src/lib/adapters/storage/dropbox.ts` — Dropbox storage adapter using `dropbox` npm package with OAuth 2.0
+- New `src/app/api/adapters/dropbox/auth/route.ts` — Dropbox OAuth authorization URL generation endpoint
+- New `src/app/api/adapters/dropbox/callback/route.ts` — Dropbox OAuth callback handler with token exchange
+- New `src/components/adapter/dropbox-oauth-button.tsx` — Dropbox OAuth authorization button with status indicator
+- New `src/components/adapter/dropbox-folder-browser.tsx` — Visual folder browser dialog for Dropbox
+- New `src/app/api/system/filesystem/dropbox/route.ts` — Dropbox folder browsing API endpoint
+- Updated `src/lib/adapters/definitions.ts` — Added `DropboxSchema`, `DropboxConfig` type, updated `StorageConfig` union
+- Updated `src/lib/adapters/index.ts` — Registered `DropboxAdapter`
+- Updated `src/components/adapter/form-sections.tsx` — Special rendering for Dropbox OAuth flow and folder browser
+- Updated `src/components/adapter/form-constants.ts` — Added form field mappings and placeholders for Dropbox
+- Updated `src/components/adapter/utils.ts` — Added icon mapping for Dropbox (Cloud)
+- Updated `src/components/adapter/adapter-manager.tsx` — Added summary display case for Dropbox
+- Updated `src/app/api/adapters/test-connection/route.ts` — Added `dropbox` to storage permission regex
+- Updated `src/app/api/adapters/access-check/route.ts` — Added `dropbox` to storage permission regex
 - Updated `Dockerfile` — Added `rsync`, `sshpass`, and `openssh-client` Alpine packages
 - Updated `scripts/setup-dev-macos.sh` — Added `brew install rsync` and `brew install hudochenkov/sshpass/sshpass`
 

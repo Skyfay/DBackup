@@ -10,7 +10,7 @@ export const STORAGE_CONNECTION_KEYS = [
     'clientId', 'clientSecret',
 ];
 
-export const STORAGE_CONFIG_KEYS = ['pathPrefix', 'storageClass', 'forcePathStyle', 'maxProtocol', 'tls', 'options', 'folderId'];
+export const STORAGE_CONFIG_KEYS = ['pathPrefix', 'storageClass', 'forcePathStyle', 'maxProtocol', 'tls', 'options', 'folderId', 'folderPath'];
 
 export const PLACEHOLDERS: Record<string, string> = {
     "email.from": "\"Backup Service\" <backup@example.com>",
@@ -94,4 +94,9 @@ export const PLACEHOLDERS: Record<string, string> = {
     "google-drive.clientId": "123456789-abc.apps.googleusercontent.com",
     "google-drive.clientSecret": "GOCSPX-...",
     "google-drive.folderId": "1AbCdEfGhIjKlMnOpQrStUvWxYz (optional)",
+
+    // Dropbox
+    "dropbox.clientId": "your-app-key",
+    "dropbox.clientSecret": "your-app-secret",
+    "dropbox.folderPath": "/backups (optional)",
 };

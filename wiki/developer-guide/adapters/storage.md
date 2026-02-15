@@ -17,6 +17,7 @@ Storage adapters handle file operations: upload, download, list, and delete.
 | FTP / FTPS | `ftp` | FTP with optional TLS encryption |
 | Rsync (SSH) | `rsync` | Rsync over SSH (delta transfers) |
 | Google Drive | `google-drive` | Google Drive via OAuth 2.0 |
+| Dropbox | `dropbox` | Dropbox via OAuth 2.0 |
 
 ## Interface
 
@@ -599,12 +600,12 @@ If the new adapter requires browser-based OAuth (e.g., Google Drive, Dropbox, On
 | 18 | `src/app/api/system/filesystem/<name>/route.ts` | Folder browse API (if provider supports folder selection) |
 | 19 | `src/components/adapter/<name>-folder-browser.tsx` | Folder browser dialog (if provider supports folder selection) |
 
-**Reference implementation**: See the Google Drive adapter for a complete example of this pattern:
-- Storage adapter: `src/lib/adapters/storage/google-drive.ts`
-- OAuth routes: `src/app/api/adapters/google-drive/auth/` + `callback/`
-- OAuth button: `src/components/adapter/google-drive-oauth-button.tsx`
-- Folder browser: `src/components/adapter/google-drive-folder-browser.tsx`
-- Folder browse API: `src/app/api/system/filesystem/google-drive/route.ts`
+**Reference implementations**: See the Google Drive and Dropbox adapters for complete examples of this pattern:
+- Storage adapters: `src/lib/adapters/storage/google-drive.ts`, `src/lib/adapters/storage/dropbox.ts`
+- OAuth routes: `src/app/api/adapters/google-drive/` and `src/app/api/adapters/dropbox/` (each with `auth/` + `callback/`)
+- OAuth buttons: `src/components/adapter/google-drive-oauth-button.tsx`, `src/components/adapter/dropbox-oauth-button.tsx`
+- Folder browsers: `src/components/adapter/google-drive-folder-browser.tsx`, `src/components/adapter/dropbox-folder-browser.tsx`
+- Folder browse APIs: `src/app/api/system/filesystem/google-drive/route.ts`, `src/app/api/system/filesystem/dropbox/route.ts`
 
 ## Related Documentation
 

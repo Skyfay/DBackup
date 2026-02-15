@@ -124,7 +124,8 @@ export default defineConfig({
             { text: 'WebDAV', link: '/user-guide/destinations/webdav' },
             { text: 'FTP / FTPS', link: '/user-guide/destinations/ftp' },
             { text: 'Rsync (SSH)', link: '/user-guide/destinations/rsync' },
-            { text: 'Google Drive', link: '/user-guide/destinations/google-drive' }
+            { text: 'Google Drive', link: '/user-guide/destinations/google-drive' },
+            { text: 'Dropbox', link: '/user-guide/destinations/dropbox' }
           ]
         },
         {

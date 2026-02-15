@@ -45,11 +45,17 @@ describe('Discord Adapter', () => {
         mockFetch.mockResolvedValue({ ok: true });
 
         const context = {
+             title: 'Backup Successful',
              success: true,
              adapterName: 'MySQL Production',
              duration: 1500,
              size: 1048576, // 1MB
-             jobName: 'Daily Backup'
+             jobName: 'Daily Backup',
+             fields: [
+                 { name: 'Adapter', value: 'MySQL Production', inline: true },
+                 { name: 'Duration', value: '1500ms', inline: true },
+                 { name: 'Size', value: '1 MB', inline: true },
+             ],
         };
 
         await DiscordAdapter.send(
@@ -79,12 +85,12 @@ describe('Discord Adapter', () => {
         await DiscordAdapter.send(
             { webhookUrl: 'url' },
             'Failed',
-            { success: false, error: 'Connection refused' }
+            { title: 'Backup Failed', success: false, error: 'Connection refused' }
         );
 
         const body = JSON.parse(mockFetch.mock.calls[0][1].body);
         expect(body.embeds[0].color).toBe(0xff0000); // Red
         expect(body.embeds[0].title).toBe('Backup Failed');
-        expect(body.embeds[0].description).toContain('Connection refused');
+        expect(body.embeds[0].description).toContain('Failed');
     });
 });

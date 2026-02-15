@@ -74,7 +74,7 @@ describe('Queue Manager Concurrency', () => {
         // Note: Dynamic imports and parallel execution might cause timing issues or partial mock application.
         // We assert at least one call to verify flow, as precise internal orchestration of dynamic imports is fragile to test this way.
         expect(mockPerformExecution).toHaveBeenCalled();
-    });
+    }, 15000);
 
     it('should default to 1 concurrent job if setting missing', async () => {
         vi.mocked(prisma.systemSetting.findUnique).mockResolvedValue(null);

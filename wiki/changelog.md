@@ -2,20 +2,29 @@
 
 All notable changes to DBackup are documented here.
 
-## v0.9.7-beta - Adapter Picker, Grouped Selector & Documentation Updates
+## v0.9.7-beta - Adapter Picker, Brand Icons & Documentation Updates
 *Release: In Progress*
 
-This release introduces a visual adapter picker for creating new sources, destinations, and notifications. The picker displays all available adapters as cards with icons, grouped by category with tabs for quick navigation.
+This release introduces a visual adapter picker for creating new sources, destinations, and notifications. The picker displays all available adapters as cards with brand icons, grouped by category with tabs for quick navigation. A search bar allows filtering adapters by name.
 
 ### ✨ New Features
 
 #### 🎯 Visual Adapter Picker
 - **Two-Step Create Flow**: Clicking "Add New" now opens a visual picker dialog first, then transitions to the configuration form with the selected type pre-filled
 - **Card Grid Layout**: All available adapters are displayed as clickable cards with icons in a responsive 3–4 column grid
+- **Search Bar**: Type to filter adapters by name — shown automatically when more than 6 adapters are available. When searching with tabs active, results collapse into a flat filtered grid
 - **Category Tabs**: Storage destinations are organized into tabs (All, Local, Cloud Storage (S3), Cloud Drives, Network) for quick filtering
 - **Flat Grid Fallback**: Database sources and notification channels (which have no groups) display as a simple flat grid without tabs
 - **Read-Only Type Badge**: After selecting an adapter in the picker, the form shows the type as a non-editable badge instead of a dropdown
 - **Edit Flow Unchanged**: Editing existing configurations still opens the form directly with the full type dropdown
+
+#### 🎨 Brand Icons for Adapters
+- **Simple Icons Integration**: Added `@icons-pack/react-simple-icons` library for official brand logos
+- **Database Icons**: MySQL (dolphin), MariaDB, PostgreSQL (elephant), MongoDB (leaf), SQLite, Redis — all with original brand colors
+- **Storage Icons**: Cloudflare (R2), Hetzner, Google Drive, Dropbox, MinIO (S3 Generic) — with brand colors
+- **Notification Icons**: Discord icon with brand color
+- **Lucide Fallbacks**: MSSQL, AWS S3, OneDrive, SFTP, FTP, WebDAV, SMB, Rsync, and Email use appropriate Lucide icons (Database, Cloud, Network, Globe, Mail)
+- **Color Map**: Brand colors are applied to icons in the picker for visual distinction
 
 #### 🗂️ Grouped Destination Type Selector
 - **Categorized Adapter List**: The destination type dropdown now groups storage adapters into logical categories for better discoverability
@@ -33,13 +42,15 @@ This release introduces a visual adapter picker for creating new sources, destin
 - **Reduced Duplication**: Shortened feature descriptions in the hero section and README features list to avoid repeating information already shown in the new tables
 
 ### 🔧 Technical Changes
-- New `src/components/adapter/adapter-picker.tsx` — Visual adapter picker component with card grid, category tabs, and icon display
+- New `src/components/adapter/adapter-picker.tsx` — Visual adapter picker component with card grid, search bar, category tabs, brand icons, and icon color support
+- Updated `src/components/adapter/utils.ts` — Replaced generic Lucide-only icon resolution with explicit `ADAPTER_ICON_MAP` using Simple Icons for brands (MySQL, PostgreSQL, MongoDB, etc.) and Lucide fallbacks. Added `getAdapterColor()` for brand color hex values
 - Updated `src/components/adapter/adapter-manager.tsx` — Two-step create flow: picker dialog → form dialog. Picker opens on "Add New", passes selected adapter to form
 - Updated `src/components/adapter/adapter-form.tsx` — Shows read-only type badge when single adapter is pre-selected, retains combobox for edit/multi-adapter scenarios
 - Updated `src/lib/adapters/definitions.ts` — Added optional `group` field to `AdapterDefinition` type, assigned groups to all 13 storage adapters
 - Updated `src/components/ui/command.tsx` — Added `onWheel` handler to `CommandList` for manual scroll support, bypassing `cmdk`'s event interception
 - Updated `wiki/index.md` — Added "Supported Destinations" and "Supported Notifications" sections, shortened hero feature texts
 - Updated `README.md` — Added "Supported Destinations" and "Supported Notifications" sections, shortened feature bullet points
+- Added `@icons-pack/react-simple-icons` dependency for brand logo icons
 
 ## v0.9.6-beta - Rsync, Google Drive, Dropbox & OneDrive Storage Destinations & New Notification System
 *Released: February 15, 2026*

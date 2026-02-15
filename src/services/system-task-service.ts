@@ -22,7 +22,8 @@ export const SYSTEM_TASKS = {
     CHECK_FOR_UPDATES: "system.check_for_updates",
     SYNC_PERMISSIONS: "system.sync_permissions",
     CONFIG_BACKUP: "system.config_backup",
-    INTEGRITY_CHECK: "system.integrity_check"
+    INTEGRITY_CHECK: "system.integrity_check",
+    REFRESH_STORAGE_STATS: "system.refresh_storage_stats"
 };
 
 export const DEFAULT_TASK_CONFIG = {
@@ -74,6 +75,13 @@ export const DEFAULT_TASK_CONFIG = {
         enabled: false, // Default disabled - can be resource-intensive
         label: "Backup Integrity Check",
         description: "Verifies SHA-256 checksums of all backup files on storage to detect corruption or tampering. Downloads each file temporarily for verification."
+    },
+    [SYSTEM_TASKS.REFRESH_STORAGE_STATS]: {
+        interval: "0 * * * *", // Every hour
+        runOnStartup: true,
+        enabled: true,
+        label: "Refresh Storage Statistics",
+        description: "Queries all storage destinations to update file counts and total sizes displayed on the dashboard. Runs automatically after each backup."
     }
 };
 
@@ -206,6 +214,11 @@ export class SystemTaskService {
                     failed: result.failed,
                     skipped: result.skipped
                 });
+                break;
+            }
+            case SYSTEM_TASKS.REFRESH_STORAGE_STATS: {
+                const { refreshStorageStatsCache } = await import("@/services/dashboard-service");
+                await refreshStorageStatsCache();
                 break;
             }
             default:

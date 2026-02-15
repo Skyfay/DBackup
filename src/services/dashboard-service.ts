@@ -4,6 +4,8 @@ import { registry } from "@/lib/core/registry";
 import { StorageAdapter } from "@/lib/core/interfaces";
 import { decryptConfig } from "@/lib/crypto";
 import { registerAdapters } from "@/lib/adapters";
+import { logger } from "@/lib/logger";
+import { wrapError } from "@/lib/errors";
 
 export interface DashboardStats {
   totalJobs: number;
@@ -194,43 +196,98 @@ export async function getJobStatusDistribution(): Promise<JobStatusDistribution[
     }));
 }
 
+const STORAGE_CACHE_KEY = "cache.storageVolume";
+const STORAGE_CACHE_UPDATED_KEY = "cache.storageVolume.updatedAt";
+
 /**
- * Fetches storage volume data by reading actual file sizes from each storage adapter.
- * This is more accurate than DB aggregation since it reflects the real storage usage
- * including compression and encryption overhead.
+ * Returns cached storage volume data from the database.
+ * If no cache exists yet, triggers a live refresh to populate it (first load may be slower).
+ * Subsequent loads are instant from cache.
+ * The cache is refreshed by the "Refresh Storage Statistics" system task (default: hourly)
+ * and automatically after backups, retention, and manual file deletions.
  */
 export async function getStorageVolume(): Promise<StorageVolumeEntry[]> {
+  // Try to read cached data first
+  const cached = await prisma.systemSetting.findUnique({
+    where: { key: STORAGE_CACHE_KEY },
+  });
+
+  if (cached) {
+    try {
+      return JSON.parse(cached.value) as StorageVolumeEntry[];
+    } catch {
+      // Cache corrupted, fall through to live refresh
+    }
+  }
+
+  // No cache yet — do a live refresh to populate it (first load only)
+  // This ensures accurate data from the start instead of inaccurate DB estimation
+  try {
+    return await refreshStorageStatsCache();
+  } catch {
+    // If live refresh fails entirely, fall back to DB estimation
+    return getStorageVolumeFromDB();
+  }
+}
+
+/**
+ * Returns the timestamp when the storage stats cache was last refreshed.
+ */
+export async function getStorageVolumeCacheAge(): Promise<string | null> {
+  const setting = await prisma.systemSetting.findUnique({
+    where: { key: STORAGE_CACHE_UPDATED_KEY },
+  });
+  return setting?.value ?? null;
+}
+
+/**
+ * Refreshes the storage volume cache by querying all storage adapters live.
+ * Called by the "Refresh Storage Statistics" system task (default: every hour)
+ * and after each backup completion.
+ */
+export async function refreshStorageStatsCache(): Promise<StorageVolumeEntry[]> {
+  const log = logger.child({ service: "StorageStatsCache" });
+  log.info("Refreshing storage statistics cache");
+
   registerAdapters();
 
   const storageAdapters = await prisma.adapterConfig.findMany({
     where: { type: "storage" },
   });
 
-  if (storageAdapters.length === 0) return [];
+  if (storageAdapters.length === 0) {
+    await saveStorageCache([]);
+    return [];
+  }
 
   const results: StorageVolumeEntry[] = [];
 
-  for (const adapterConfig of storageAdapters) {
+  // Query all adapters in parallel for maximum speed
+  const promises = storageAdapters.map(async (adapterConfig) => {
     try {
       const adapter = registry.get(adapterConfig.adapterId) as StorageAdapter;
-      if (!adapter) continue;
+      if (!adapter) return null;
 
       const config = decryptConfig(JSON.parse(adapterConfig.config));
       const files = await adapter.list(config, "");
 
       // Filter out .meta.json sidecar files (they are not backup data)
       const backupFiles = files.filter((f) => !f.name.endsWith(".meta.json"));
-
       const totalSize = backupFiles.reduce((sum, f) => sum + (f.size || 0), 0);
 
-      results.push({
+      return {
         name: adapterConfig.name,
         adapterId: adapterConfig.adapterId,
         size: totalSize,
         count: backupFiles.length,
-      });
-    } catch {
-      // If adapter is unreachable, fall back to DB aggregation for this adapter
+      } satisfies StorageVolumeEntry;
+    } catch (error) {
+      log.warn("Failed to query storage adapter, using DB fallback", {
+        adapter: adapterConfig.name,
+        adapterId: adapterConfig.adapterId,
+      }, wrapError(error));
+
+      // Fall back to DB aggregation for this adapter
       const executions = await prisma.execution.findMany({
         where: {
           status: "Success",
@@ -242,16 +299,92 @@ export async function getStorageVolume(): Promise<StorageVolumeEntry[]> {
 
       const totalSize = executions.reduce((sum, ex) => sum + Number(ex.size ?? 0), 0);
 
-      results.push({
+      return {
         name: adapterConfig.name,
         adapterId: adapterConfig.adapterId,
         size: totalSize,
         count: executions.length,
-      });
+      } satisfies StorageVolumeEntry;
     }
+  });
+
+  const settled = await Promise.all(promises);
+  for (const entry of settled) {
+    if (entry) results.push(entry);
+  }
+
+  await saveStorageCache(results);
+  log.info("Storage statistics cache refreshed", {
+    destinations: results.length,
+    totalSize: results.reduce((sum, r) => sum + r.size, 0),
+    totalFiles: results.reduce((sum, r) => sum + r.count, 0),
+  });
+
+  return results;
+}
+
+/**
+ * DB-based storage volume estimation using the Execution table.
+ * Used as initial fallback when no cache exists yet.
+ */
+async function getStorageVolumeFromDB(): Promise<StorageVolumeEntry[]> {
+  const storageAdapters = await prisma.adapterConfig.findMany({
+    where: { type: "storage" },
+  });
+
+  if (storageAdapters.length === 0) return [];
+
+  const results: StorageVolumeEntry[] = [];
+
+  for (const adapterConfig of storageAdapters) {
+    const executions = await prisma.execution.findMany({
+      where: {
+        status: "Success",
+        size: { not: null },
+        job: { destinationId: adapterConfig.id },
+      },
+      select: { size: true },
+    });
+
+    const totalSize = executions.reduce((sum, ex) => sum + Number(ex.size ?? 0), 0);
+
+    results.push({
+      name: adapterConfig.name,
+      adapterId: adapterConfig.adapterId,
+      size: totalSize,
+      count: executions.length,
+    });
   }
 
   return results;
+}
+
+/**
+ * Persists storage volume data to the SystemSetting cache.
+ */
+async function saveStorageCache(data: StorageVolumeEntry[]): Promise<void> {
+  const now = new Date().toISOString();
+
+  await prisma.$transaction([
+    prisma.systemSetting.upsert({
+      where: { key: STORAGE_CACHE_KEY },
+      update: { value: JSON.stringify(data) },
+      create: {
+        key: STORAGE_CACHE_KEY,
+        value: JSON.stringify(data),
+        description: "Cached storage volume statistics for dashboard",
+      },
+    }),
+    prisma.systemSetting.upsert({
+      where: { key: STORAGE_CACHE_UPDATED_KEY },
+      update: { value: now },
+      create: {
+        key: STORAGE_CACHE_UPDATED_KEY,
+        value: now,
+        description: "Timestamp of last storage statistics refresh",
+      },
+    }),
+  ]);
 }
 
 /**

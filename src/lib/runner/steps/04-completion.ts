@@ -37,7 +37,16 @@ export async function stepFinalize(ctx: RunnerContext) {
         }
     });
 
-    // 2. Notifications
+    // 2. Refresh storage statistics cache (non-blocking)
+    if (ctx.status === "Success") {
+        import("@/services/dashboard-service").then(({ refreshStorageStatsCache }) => {
+            refreshStorageStatsCache().catch((e) => {
+                log.warn("Failed to refresh storage stats cache after backup", {}, e instanceof Error ? e : undefined);
+            });
+        });
+    }
+
+    // 3. Notifications
     if (ctx.job && ctx.job.notifications && ctx.job.notifications.length > 0) {
         const condition = ctx.job.notificationEvents || "ALWAYS";
         const isSuccess = ctx.status === "Success";

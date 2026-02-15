@@ -46,6 +46,16 @@ This release adds Rsync as a new storage destination for efficient incremental f
 - **Sanitized Error Messages**: All error output is sanitized to strip commands, credentials, and SSH warnings before displaying to users
 - **SSH Options Hardening**: Password auth disables public key authentication to prevent SSH agent interference (`PreferredAuthentications=password`, `PubkeyAuthentication=no`)
 
+### ⚡ Performance
+- **Cached Storage Statistics**: Dashboard no longer queries cloud storage APIs (Dropbox, Google Drive, S3, etc.) on every page load — storage volume data is cached in the database and served instantly
+- **New System Task "Refresh Storage Statistics"**: Periodically refreshes storage file counts and sizes from all destinations (default: every hour). Configurable in Settings → System Tasks
+- **Auto-Refresh After Changes**: Storage cache is automatically updated after each successful backup, retention cleanup, and manual file deletion in the Storage Explorer
+- **Parallel Adapter Queries**: Storage statistics refresh now queries all adapters in parallel instead of sequentially — significantly faster with multiple destinations
+- **Eliminated Duplicate Calls**: Fixed `getStorageVolume()` being called twice per dashboard page load (once directly, once via `getDashboardStats()`)
+
+### 🐛 Bug Fixes
+- **Dashboard Layout**: Fixed Job Status chart stretching to match Storage Usage card height when many destinations are configured
+
 ### 🔧 Technical Changes
 - New `src/lib/adapters/storage/google-drive.ts` — Google Drive storage adapter using `googleapis` npm package
 - New `src/app/api/adapters/google-drive/auth/route.ts` — OAuth authorization URL generation endpoint
@@ -80,6 +90,13 @@ This release adds Rsync as a new storage destination for efficient incremental f
 - Updated `src/components/adapter/adapter-manager.tsx` — Added summary display case for Dropbox
 - Updated `src/app/api/adapters/test-connection/route.ts` — Added `dropbox` to storage permission regex
 - Updated `src/app/api/adapters/access-check/route.ts` — Added `dropbox` to storage permission regex
+- Updated `src/services/dashboard-service.ts` — Replaced live cloud API calls with DB-cached `getStorageVolume()`, added `refreshStorageStatsCache()` and `getStorageVolumeCacheAge()`
+- Updated `src/services/system-task-service.ts` — Added `REFRESH_STORAGE_STATS` system task with hourly default schedule
+- Updated `src/lib/runner/steps/04-completion.ts` — Triggers non-blocking storage stats cache refresh after successful backups
+- Updated `src/lib/runner/steps/05-retention.ts` — Triggers non-blocking storage stats cache refresh after retention deletes files
+- Updated `src/app/api/storage/[id]/files/route.ts` — Triggers non-blocking storage stats cache refresh after manual file deletion
+- Updated `src/components/dashboard/widgets/storage-volume-chart.tsx` — Added "Updated" timestamp with tooltip showing cache age
+- Updated `src/app/dashboard/page.tsx` — Passes cache timestamp to StorageVolumeChart, fixed layout from `grid-rows-2` to `flex flex-col`
 - Updated `Dockerfile` — Added `rsync`, `sshpass`, and `openssh-client` Alpine packages
 - Updated `scripts/setup-dev-macos.sh` — Added `brew install rsync` and `brew install hudochenkov/sshpass/sshpass`
 

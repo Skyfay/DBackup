@@ -4,6 +4,9 @@ import { RetentionService } from "@/services/retention-service";
 import { RetentionConfiguration } from "@/lib/core/retention";
 import { FileInfo } from '@/lib/core/interfaces';
 import path from "path";
+import { logger } from "@/lib/logger";
+
+const log = logger.child({ step: "05-retention" });
 
 export async function stepRetention(ctx: RunnerContext) {
     if (!ctx.job || !ctx.destAdapter) throw new Error("Context not ready for retention");
@@ -31,6 +34,8 @@ export async function stepRetention(ctx: RunnerContext) {
     }
 
     ctx.log(`Retention: Applying policy ${policy.mode}...`);
+
+    let deletedCount = 0;
 
     try {
         if (!ctx.destAdapter.list) {
@@ -98,6 +103,8 @@ export async function stepRetention(ctx: RunnerContext) {
                     await ctx.destAdapter.delete(destConfig, metaPath).catch(() => {
                         // Ignore error if metadata doesn't exist
                     });
+
+                    deletedCount++;
                 }
              } catch (delError: unknown) {
                  const message = delError instanceof Error ? delError.message : String(delError);
@@ -109,5 +116,14 @@ export async function stepRetention(ctx: RunnerContext) {
         const message = error instanceof Error ? error.message : String(error);
         ctx.log(`Retention Process Error: ${message}`);
         // We don't throw here to not fail the backup if retention fails
+    }
+
+    // Refresh storage stats cache after retention deletes files (non-blocking)
+    if (deletedCount > 0) {
+        import("@/services/dashboard-service").then(({ refreshStorageStatsCache }) => {
+            refreshStorageStatsCache().catch((e) => {
+                log.warn("Failed to refresh storage stats cache after retention", {}, e instanceof Error ? e : undefined);
+            });
+        });
     }
 }

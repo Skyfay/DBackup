@@ -77,6 +77,11 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ id: st
              return NextResponse.json({ error: "Failed to delete file" }, { status: 500 });
         }
 
+        // Refresh storage stats cache after file deletion (non-blocking)
+        import("@/services/dashboard-service").then(({ refreshStorageStatsCache }) => {
+            refreshStorageStatsCache().catch(() => {});
+        });
+
         return NextResponse.json({ success: true });
 
     } catch (error: unknown) {

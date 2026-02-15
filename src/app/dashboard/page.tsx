@@ -8,6 +8,7 @@ import {
   getActivityData,
   getJobStatusDistribution,
   getStorageVolume,
+  getStorageVolumeCacheAge,
   getLatestJobs,
   hasRunningJobs,
 } from "@/services/dashboard-service";
@@ -15,10 +16,11 @@ import {
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  const [activityData, statusData, storageData, latestJobs, isRunning] = await Promise.all([
+  const [activityData, statusData, storageData, cacheUpdatedAt, latestJobs, isRunning] = await Promise.all([
     getActivityData(14),
     getJobStatusDistribution(),
     getStorageVolume(),
+    getStorageVolumeCacheAge(),
     getLatestJobs(8),
     hasRunningJobs(),
   ]);
@@ -39,9 +41,9 @@ export default async function DashboardPage() {
           <div className="col-span-full lg:col-span-4 min-h-96">
             <LatestJobs data={latestJobs} />
           </div>
-          <div className="col-span-full lg:col-span-3 grid gap-4 grid-rows-2 min-h-96">
+          <div className="col-span-full lg:col-span-3 flex flex-col gap-4">
             <JobStatusChart data={statusData} />
-            <StorageVolumeChart data={storageData} />
+            <StorageVolumeChart data={storageData} cacheUpdatedAt={cacheUpdatedAt} />
           </div>
         </div>
       </div>

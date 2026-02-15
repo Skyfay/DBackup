@@ -3,13 +3,21 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { StorageVolumeEntry } from "@/services/dashboard-service";
 import { formatBytes } from "@/lib/utils";
+import { format } from "date-fns";
 import { HardDrive } from "lucide-react";
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface StorageVolumeChartProps {
   data: StorageVolumeEntry[];
+  cacheUpdatedAt?: string | null;
 }
 
-export function StorageVolumeChart({ data }: StorageVolumeChartProps) {
+export function StorageVolumeChart({ data, cacheUpdatedAt }: StorageVolumeChartProps) {
   if (data.length === 0) {
     return (
       <Card className="h-full">
@@ -31,7 +39,23 @@ export function StorageVolumeChart({ data }: StorageVolumeChartProps) {
   return (
     <Card className="h-full">
       <CardHeader>
-        <CardTitle>Storage Usage</CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle>Storage Usage</CardTitle>
+          {cacheUpdatedAt && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="text-[10px] text-muted-foreground cursor-default">
+                    Updated: {format(new Date(cacheUpdatedAt), "MM/dd/yyyy HH:mm")}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Storage stats are refreshed periodically. Configure in Settings → System Tasks.</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+        </div>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">

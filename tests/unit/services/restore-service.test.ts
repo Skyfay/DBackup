@@ -305,16 +305,14 @@ describe('RestoreService', () => {
         });
 
         // 2. Mocks
-        // Metadata read
+        // Storage Adapter: download writes real files so createReadStream/pipeline work
         const mockStorageAdapter = {
-            download: vi.fn().mockImplementation((config, remote, local) => {
-                // If asking for meta, write it
+            download: vi.fn().mockImplementation((_config: unknown, remote: string, local: string) => {
                 if (remote.endsWith('.meta.json')) {
                     fs.writeFileSync(local, metaContent);
-                    return Promise.resolve(true);
+                } else {
+                    fs.writeFileSync(local, 'CREATE TABLE valid_sql (id int); -- SQL content');
                 }
-                // If backup file, just touch it
-                fs.writeFileSync(local, 'encrypted-content');
                 return Promise.resolve(true);
             }),
             read: vi.fn().mockResolvedValue(metaContent),
@@ -328,8 +326,6 @@ describe('RestoreService', () => {
         } as unknown as DatabaseAdapter;
 
         // Registry
-        vi.mocked(registry.get).mockReturnValue(mockStorageAdapter);
-        // Force DB adapter return for source calls
         vi.mocked(registry.get).mockImplementation((id) => {
             if (id === 'postgres') return mockDbAdapter;
             return mockStorageAdapter;
@@ -346,7 +342,7 @@ describe('RestoreService', () => {
 
         // --- SMART RECOVERY MOCKS ---
 
-        // 1. Encryption Service: Fail first, then succeed
+        // 1. Encryption Service: Fail first, then succeed with fallback
         const fallbackProfile = { id: 'fallback-id', name: 'Fallback', secretKey: 'enc' };
 
         vi.mocked(encryptionService.getProfileMasterKey)
@@ -356,20 +352,10 @@ describe('RestoreService', () => {
         vi.mocked(encryptionService.getEncryptionProfiles)
             .mockResolvedValue([fallbackProfile as any]);
 
-        // 2. Crypto Stream: Mock Decryption to pass heuristic
-        // We need `createDecryptionStream` to return a stream that emits "valid" data (text/sql like)
+        // 2. Crypto Stream: Return plain PassThrough (data flows through for heuristic check + pipeline)
         vi.mocked(cryptoStream.createDecryptionStream).mockImplementation(() => {
-            const stream = new PassThrough();
-            setTimeout(() => {
-                stream.emit('data', Buffer.from('CREATE TABLE valid_sql (id int); -- This looks like SQL'));
-                stream.end();
-            }, 5);
-            return stream as any;
+            return new PassThrough() as any;
         });
-
-        // 3. File Read Stream (used by Smart Recovery to check header)
-        // We simply return a stream with some data
-        vi.spyOn(fs, 'createReadStream').mockReturnValue(Readable.from(['encrypted-data']) as any);
 
         // Act
         await service.restore({
@@ -378,8 +364,8 @@ describe('RestoreService', () => {
             targetSourceId: 'source-1'
         });
 
-        // Wait for background process (flush promises)
-        await flushPromises();
+        // Wait for background process (Smart Recovery involves many async steps + real file I/O)
+        await new Promise(resolve => setTimeout(resolve, 500));
 
         // Assert
         // 1. Verify it tried to fetch the lost profile
@@ -388,11 +374,10 @@ describe('RestoreService', () => {
         // 2. Verify it fetched all profiles for fallback
         expect(encryptionService.getEncryptionProfiles).toHaveBeenCalled();
 
-        // 3. Verify it verified the fallback key
+        // 3. Verify it tried the fallback key
         expect(encryptionService.getProfileMasterKey).toHaveBeenCalledWith('fallback-id');
 
-        // 4. Verify log contains success message
-        // Since we mock prismaMock.execution.update globally, we might need to check if it was called with specific logs
+        // 4. Verify execution was updated (background process completed)
         const updateCalls = prismaMock.execution.update.mock.calls;
         const lastCall = updateCalls[updateCalls.length - 1];
         expect(lastCall).toBeTruthy();

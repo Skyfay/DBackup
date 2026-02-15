@@ -32,8 +32,15 @@ export interface JobStatusDistribution {
 }
 
 export interface StorageVolumeEntry {
+  configId?: string;
   name: string;
   adapterId: string;
+  size: number;
+  count: number;
+}
+
+export interface StorageSnapshotEntry {
+  date: string;
   size: number;
   count: number;
 }
@@ -276,11 +283,12 @@ export async function refreshStorageStatsCache(): Promise<StorageVolumeEntry[]> 
       const totalSize = backupFiles.reduce((sum, f) => sum + (f.size || 0), 0);
 
       return {
+        configId: adapterConfig.id,
         name: adapterConfig.name,
         adapterId: adapterConfig.adapterId,
         size: totalSize,
         count: backupFiles.length,
-      } satisfies StorageVolumeEntry;
+      };
     } catch (error) {
       log.warn("Failed to query storage adapter, using DB fallback", {
         adapter: adapterConfig.name,
@@ -300,11 +308,12 @@ export async function refreshStorageStatsCache(): Promise<StorageVolumeEntry[]> 
       const totalSize = executions.reduce((sum, ex) => sum + Number(ex.size ?? 0), 0);
 
       return {
+        configId: adapterConfig.id,
         name: adapterConfig.name,
         adapterId: adapterConfig.adapterId,
         size: totalSize,
         count: executions.length,
-      } satisfies StorageVolumeEntry;
+      };
     }
   });
 
@@ -314,6 +323,16 @@ export async function refreshStorageStatsCache(): Promise<StorageVolumeEntry[]> 
   }
 
   await saveStorageCache(results);
+
+  // Save historical snapshots for storage usage over time charts
+  await saveStorageSnapshots(results);
+
+  // Clean up old snapshots (older than 90 days)
+  const cleaned = await cleanupOldSnapshots();
+  if (cleaned > 0) {
+    log.info("Cleaned up old storage snapshots", { deleted: cleaned });
+  }
+
   log.info("Storage statistics cache refreshed", {
     destinations: results.length,
     totalSize: results.reduce((sum, r) => sum + r.size, 0),
@@ -452,4 +471,76 @@ export async function hasRunningJobs(): Promise<boolean> {
     where: { status: { in: ["Running", "Pending"] } },
   });
   return count > 0;
+}
+
+/**
+ * Saves a storage snapshot for each adapter to track usage over time.
+ * Called by refreshStorageStatsCache() on every refresh cycle.
+ */
+async function saveStorageSnapshots(entries: StorageVolumeEntry[]): Promise<void> {
+  const log = logger.child({ service: "StorageSnapshots" });
+
+  try {
+    const data = entries
+      .filter((entry) => entry.configId)
+      .map((entry) => ({
+        adapterConfigId: entry.configId!,
+        adapterName: entry.name,
+        adapterId: entry.adapterId,
+        size: BigInt(Math.round(entry.size)),
+        count: entry.count,
+      }));
+
+    if (data.length === 0) return;
+
+    await prisma.storageSnapshot.createMany({ data });
+
+    log.debug("Saved storage snapshots", { count: data.length });
+  } catch (error) {
+    log.warn("Failed to save storage snapshots", {}, wrapError(error));
+  }
+}
+
+/**
+ * Returns historical storage usage data for a specific adapter config.
+ * Used for the storage history chart modal on the dashboard.
+ */
+export async function getStorageHistory(
+  configId: string,
+  days: number = 30
+): Promise<StorageSnapshotEntry[]> {
+  const since = subDays(new Date(), days);
+
+  const snapshots = await prisma.storageSnapshot.findMany({
+    where: {
+      adapterConfigId: configId,
+      createdAt: { gte: since },
+    },
+    orderBy: { createdAt: "asc" },
+    select: {
+      size: true,
+      count: true,
+      createdAt: true,
+    },
+  });
+
+  return snapshots.map((s) => ({
+    date: s.createdAt.toISOString(),
+    size: Number(s.size),
+    count: s.count,
+  }));
+}
+
+/**
+ * Cleans up old storage snapshots beyond the retention period.
+ * Called during storage stats refresh to prevent unbounded growth.
+ */
+export async function cleanupOldSnapshots(retentionDays: number = 90): Promise<number> {
+  const cutoff = subDays(new Date(), retentionDays);
+
+  const result = await prisma.storageSnapshot.deleteMany({
+    where: { createdAt: { lt: cutoff } },
+  });
+
+  return result.count;
 }

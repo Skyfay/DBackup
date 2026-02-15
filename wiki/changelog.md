@@ -53,6 +53,14 @@ This release adds Rsync as a new storage destination for efficient incremental f
 - **Parallel Adapter Queries**: Storage statistics refresh now queries all adapters in parallel instead of sequentially — significantly faster with multiple destinations
 - **Eliminated Duplicate Calls**: Fixed `getStorageVolume()` being called twice per dashboard page load (once directly, once via `getDashboardStats()`)
 
+### 📊 Storage Usage History
+- **Historical Storage Charts**: Click any storage destination on the dashboard to open a detailed usage history chart — shows how storage size has changed over days, weeks, or months
+- **Configurable Time Range**: Select from 7 days to 1 year to analyze storage growth trends
+- **Area Chart Visualization**: Smooth area chart with gradient fill showing storage size over time
+- **Storage Delta**: Displays the change in storage size compared to the start of the selected period (e.g., "+1.2 GB vs 30d ago")
+- **Automatic Data Collection**: Storage snapshots are recorded at each scheduled stats refresh (default: hourly) — no additional configuration needed
+- **Snapshot Retention**: Old snapshots are automatically cleaned up after 90 days to prevent database bloat
+
 ### 🐛 Bug Fixes
 - **Dashboard Layout**: Fixed Job Status chart stretching to match Storage Usage card height when many destinations are configured
 
@@ -90,12 +98,15 @@ This release adds Rsync as a new storage destination for efficient incremental f
 - Updated `src/components/adapter/adapter-manager.tsx` — Added summary display case for Dropbox
 - Updated `src/app/api/adapters/test-connection/route.ts` — Added `dropbox` to storage permission regex
 - Updated `src/app/api/adapters/access-check/route.ts` — Added `dropbox` to storage permission regex
-- Updated `src/services/dashboard-service.ts` — Replaced live cloud API calls with DB-cached `getStorageVolume()`, added `refreshStorageStatsCache()` and `getStorageVolumeCacheAge()`
+- Updated `src/services/dashboard-service.ts` — Replaced live cloud API calls with DB-cached `getStorageVolume()`, added `refreshStorageStatsCache()`, `getStorageVolumeCacheAge()`, `saveStorageSnapshots()`, `getStorageHistory()`, and `cleanupOldSnapshots()`
 - Updated `src/services/system-task-service.ts` — Added `REFRESH_STORAGE_STATS` system task with hourly default schedule
 - Updated `src/lib/runner/steps/04-completion.ts` — Triggers non-blocking storage stats cache refresh after successful backups
 - Updated `src/lib/runner/steps/05-retention.ts` — Triggers non-blocking storage stats cache refresh after retention deletes files
 - Updated `src/app/api/storage/[id]/files/route.ts` — Triggers non-blocking storage stats cache refresh after manual file deletion
-- Updated `src/components/dashboard/widgets/storage-volume-chart.tsx` — Added "Updated" timestamp with tooltip showing cache age
+- Updated `src/components/dashboard/widgets/storage-volume-chart.tsx` — Added "Updated" timestamp with tooltip, clickable storage entries opening history modal
+- New `src/components/dashboard/widgets/storage-history-modal.tsx` — Storage usage history modal with area chart, time range selector, and delta display
+- New `src/app/api/storage/[id]/history/route.ts` — GET endpoint returning historical storage usage snapshots
+- New `prisma/migrations/*_add_storage_snapshot/` — Database migration for `StorageSnapshot` model
 - Updated `src/app/dashboard/page.tsx` — Passes cache timestamp to StorageVolumeChart, fixed layout from `grid-rows-2` to `flex flex-col`
 - Updated `Dockerfile` — Added `rsync`, `sshpass`, and `openssh-client` Alpine packages
 - Updated `scripts/setup-dev-macos.sh` — Added `brew install rsync` and `brew install hudochenkov/sshpass/sshpass`

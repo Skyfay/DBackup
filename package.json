@@ -14,6 +14,7 @@
     "test:env:up": "docker compose -f docker-compose.test.yml up -d",
     "test:env:down": "docker compose -f docker-compose.test.yml down",
     "test:seed": "npx tsx scripts/seed-test-sources.ts",
+    "test:seed:snapshots": "npx tsx scripts/seed-storage-snapshots.ts",
     "test:ui": "pnpm run test:env:up && sleep 30 && pnpm run test:seed",
     "test:stress:generate": "./scripts/generate-stress-data.sh",
     "test:stress": "pnpm run test:env:up && sleep 45 && pnpm run test:stress:generate",

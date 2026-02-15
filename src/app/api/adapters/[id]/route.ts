@@ -68,6 +68,11 @@ export async function DELETE(
         // or might throw depending on underlying DB constraints.
         // But let's rely on Prisma catch for other cases or strict FKs.
 
+        // Clean up related storage snapshots (no FK relation, manual cleanup)
+        await prisma.storageSnapshot.deleteMany({
+            where: { adapterConfigId: params.id },
+        });
+
         const deletedAdapter = await prisma.adapterConfig.delete({
             where: { id: params.id },
         });

@@ -242,3 +242,16 @@ model AuditLog {
   @@index([resource])
   @@index([createdAt])
 }
+
+model StorageSnapshot {
+  id              String   @id @default(uuid())
+  adapterConfigId String
+  adapterName     String
+  adapterId       String   // e.g. "local", "s3", "dropbox"
+  size            BigInt   @default(0)
+  count           Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  @@index([adapterConfigId])
+  @@index([createdAt])
+}

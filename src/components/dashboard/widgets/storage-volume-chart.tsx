@@ -1,16 +1,18 @@
 "use client";
 
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { StorageVolumeEntry } from "@/services/dashboard-service";
 import { formatBytes } from "@/lib/utils";
-import { format } from "date-fns";
 import { HardDrive } from "lucide-react";
+import { DateDisplay } from "@/components/utils/date-display";
 import {
     Tooltip,
     TooltipContent,
     TooltipProvider,
     TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { StorageHistoryModal } from "./storage-history-modal";
 
 interface StorageVolumeChartProps {
   data: StorageVolumeEntry[];
@@ -18,6 +20,11 @@ interface StorageVolumeChartProps {
 }
 
 export function StorageVolumeChart({ data, cacheUpdatedAt }: StorageVolumeChartProps) {
+  const [selectedAdapter, setSelectedAdapter] = useState<{
+    configId: string;
+    name: string;
+  } | null>(null);
+
   if (data.length === 0) {
     return (
       <Card className="h-full">
@@ -46,7 +53,7 @@ export function StorageVolumeChart({ data, cacheUpdatedAt }: StorageVolumeChartP
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span className="text-[10px] text-muted-foreground cursor-default">
-                    Updated: {format(new Date(cacheUpdatedAt), "MM/dd/yyyy HH:mm")}
+                    Updated: <DateDisplay date={cacheUpdatedAt} format="Pp" />
                   </span>
                 </TooltipTrigger>
                 <TooltipContent>
@@ -60,12 +67,24 @@ export function StorageVolumeChart({ data, cacheUpdatedAt }: StorageVolumeChartP
       <CardContent>
         <div className="space-y-4">
           {data.map((entry) => (
-            <div key={entry.name} className="flex items-center justify-between">
+            <button
+              key={entry.name}
+              type="button"
+              className="flex w-full items-center justify-between rounded-md px-2 py-1.5 -mx-2 transition-colors hover:bg-muted/50 cursor-pointer"
+              onClick={() => {
+                if (entry.configId) {
+                  setSelectedAdapter({
+                    configId: entry.configId,
+                    name: entry.name,
+                  });
+                }
+              }}
+            >
               <div className="flex items-center gap-3">
                 <div className="flex h-8 w-8 items-center justify-center rounded-md border bg-muted">
                   <HardDrive className="h-4 w-4 text-foreground" />
                 </div>
-                <div className="flex flex-col">
+                <div className="flex flex-col items-start">
                   <span className="text-sm font-medium">{entry.name}</span>
                   <span className="text-xs text-muted-foreground">{entry.count} backups</span>
                 </div>
@@ -73,7 +92,7 @@ export function StorageVolumeChart({ data, cacheUpdatedAt }: StorageVolumeChartP
               <div className="text-sm font-bold font-mono">
                 {formatBytes(entry.size)}
               </div>
-            </div>
+            </button>
           ))}
           {data.length > 1 && (
             <>
@@ -91,6 +110,17 @@ export function StorageVolumeChart({ data, cacheUpdatedAt }: StorageVolumeChartP
           )}
         </div>
       </CardContent>
+
+      {selectedAdapter && (
+        <StorageHistoryModal
+          open={!!selectedAdapter}
+          onOpenChange={(open) => {
+            if (!open) setSelectedAdapter(null);
+          }}
+          configId={selectedAdapter.configId}
+          adapterName={selectedAdapter.name}
+        />
+      )}
     </Card>
   );
 }

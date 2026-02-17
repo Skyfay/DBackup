@@ -75,7 +75,7 @@ export function CreateUserDialog() {
                     Add User
                 </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[425px]">
+            <DialogContent className="sm:max-w-106.25">
                 <DialogHeader>
                     <DialogTitle>Add User</DialogTitle>
                     <DialogDescription>

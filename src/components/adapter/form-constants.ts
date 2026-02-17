@@ -37,10 +37,12 @@ export const PLACEHOLDERS: Record<string, string> = {
     "email.port": "587",
     "mongodb.uri": "mongodb://user:password@localhost:27017/db?authSource=admin",
 
-    // MSSQL Paths & Timeout
+    // MSSQL Paths, SSH & Timeout
     "mssql.backupPath": "/var/opt/mssql/backup",
     "mssql.localBackupPath": "/tmp",
     "mssql.requestTimeout": "300000",
+    "mssql.sshPort": "22",
+    "mssql.sshPrivateKey": "-----BEGIN RSA PRIVATE KEY-----\n\n\n-----END RSA PRIVATE KEY-----",
     // Options Examples
     "mysql.options": "--single-transaction --quick",
     "postgres.options": "--clean --if-exists",

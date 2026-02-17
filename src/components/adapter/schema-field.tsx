@@ -79,8 +79,16 @@ export function SchemaField({
     if (fieldKey === 'tls') label = "Encryption";
     if (fieldKey === 'trustServerCertificate') label = "Trust Server Certificate";
     if (fieldKey === 'backupPath') label = "Backup Path (Server)";
-    if (fieldKey === 'localBackupPath') label = "Backup Path (Host)";
+    if (fieldKey === 'localBackupPath') label = "Backup Path (Local)";
+    if (fieldKey === 'fileTransferMode') label = "File Transfer Mode";
     if (fieldKey === 'requestTimeout') label = "Request Timeout (ms)";
+    if (fieldKey === 'sshHost') label = "SSH Host";
+    if (fieldKey === 'sshPort') label = "SSH Port";
+    if (fieldKey === 'sshUsername') label = "SSH Username";
+    if (fieldKey === 'sshAuthType') label = "SSH Auth Method";
+    if (fieldKey === 'sshPassword') label = "SSH Password";
+    if (fieldKey === 'sshPrivateKey') label = "SSH Private Key";
+    if (fieldKey === 'sshPassphrase') label = "SSH Key Passphrase";
 
     const isBoolean = unwrappedShape instanceof z.ZodBoolean || (unwrappedShape as any)._def?.typeName === "ZodBoolean";
     const isEnum = unwrappedShape instanceof z.ZodEnum || (unwrappedShape as any)._def?.typeName === "ZodEnum";

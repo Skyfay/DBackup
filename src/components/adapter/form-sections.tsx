@@ -87,7 +87,7 @@ export function DatabaseFormContent({
 
                             <FieldList keys={['username', 'authType']} adapter={adapter} />
 
-                            {(!authType || authType === 'password') && (
+                            {authType === 'password' && (
                                 <FieldList keys={['password']} adapter={adapter} />
                             )}
 
@@ -108,11 +108,16 @@ export function DatabaseFormContent({
         );
     }
 
+    const isMSSQL = adapter.id === "mssql";
+    const fileTransferMode = watch("config.fileTransferMode");
+    const sshAuthType = watch("config.sshAuthType");
+
     return (
         <Tabs defaultValue="connection" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList className={cn("grid w-full", isMSSQL ? "grid-cols-3" : "grid-cols-2")}>
                 <TabsTrigger value="connection">Connection</TabsTrigger>
                 <TabsTrigger value="configuration">Configuration</TabsTrigger>
+                {isMSSQL && <TabsTrigger value="filetransfer">File Transfer</TabsTrigger>}
             </TabsList>
 
             <TabsContent value="connection" className="space-y-4 pt-4">
@@ -149,7 +154,7 @@ export function DatabaseFormContent({
                     keys={[
                         'database', 'authenticationDatabase', 'options', 'disableSsl',
                         // MSSQL-specific
-                        'encrypt', 'trustServerCertificate', 'backupPath', 'localBackupPath', 'requestTimeout',
+                        'encrypt', 'trustServerCertificate', 'requestTimeout',
                         // Redis-specific
                         'mode', 'tls', 'sentinelMasterName', 'sentinelNodes',
                     ]}
@@ -162,6 +167,43 @@ export function DatabaseFormContent({
                     setIsDbListOpen={setIsDbListOpen}
                 />
             </TabsContent>
+
+            {isMSSQL && (
+                <TabsContent value="filetransfer" className="space-y-4 pt-4">
+                    <FieldList keys={['backupPath', 'fileTransferMode']} adapter={adapter} />
+
+                    {fileTransferMode === "ssh" && (
+                        <div className="space-y-4 border p-4 rounded-md bg-muted/10">
+                            <p className="text-sm text-muted-foreground">
+                                SSH credentials to download/upload .bak files from the SQL Server host.
+                            </p>
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                <div className="md:col-span-3">
+                                    <FieldList keys={['sshHost']} adapter={adapter} />
+                                </div>
+                                <div className="md:col-span-1">
+                                    <FieldList keys={['sshPort']} adapter={adapter} />
+                                </div>
+                            </div>
+                            <FieldList keys={['sshUsername', 'sshAuthType']} adapter={adapter} />
+                            {sshAuthType === 'password' && (
+                                <FieldList keys={['sshPassword']} adapter={adapter} />
+                            )}
+                            {sshAuthType === 'privateKey' && (
+                                <FieldList keys={['sshPrivateKey', 'sshPassphrase']} adapter={adapter} />
+                            )}
+                        </div>
+                    )}
+                    {fileTransferMode === "local" && (
+                        <div className="space-y-4">
+                            <FieldList keys={['localBackupPath']} adapter={adapter} />
+                            <p className="text-sm text-muted-foreground">
+                                The local path must point to the same directory as the server backup path (e.g. Docker volume mount or NFS share).
+                            </p>
+                        </div>
+                    )}
+                </TabsContent>
+            )}
         </Tabs>
     );
 }

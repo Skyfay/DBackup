@@ -2,6 +2,7 @@ import { BackupResult } from "@/lib/core/interfaces";
 import { LogLevel, LogType } from "@/lib/core/logs";
 import { executeQuery, executeParameterizedQuery } from "./connection";
 import { getDialect } from "./dialects";
+import { MssqlSshTransfer, isSSHTransferEnabled } from "./ssh-transfer";
 import fs from "fs/promises";
 import { createReadStream, createWriteStream } from "fs";
 import path from "path";
@@ -84,9 +85,14 @@ export async function restore(
     try {
         const dialect = getDialect(config.detectedVersion);
         const serverBackupPath = config.backupPath || "/var/opt/mssql/backup";
-        // localBackupPath is where the host can access the backup files (Docker volume mount)
-        // Default to /tmp which is the standard mount in our docker-compose
+        const useSSH = isSSHTransferEnabled(config);
         const localBackupPath = config.localBackupPath || "/tmp";
+
+        if (useSSH) {
+            log(`File transfer mode: SSH (remote server)`);
+        } else {
+            log(`File transfer mode: Local (shared filesystem)`);
+        }
 
         // Determine target database(s) from config
         const dbMapping = config.databaseMapping as
@@ -114,12 +120,15 @@ export async function restore(
         // Check if the source is a TAR archive (multi-DB backup)
         const isTarArchive = await checkIfTarArchive(sourcePath);
 
-        // List of .bak files to restore (and their local paths for cleanup)
+        // List of .bak files to restore
         const bakFiles: { serverPath: string; localPath: string; dbName: string }[] = [];
+
+        // Extract temp directory for staging
+        const stagingDir = "/tmp";
 
         if (isTarArchive) {
             log(`Detected TAR archive - extracting backup files...`);
-            const extractedFiles = await extractTarArchive(sourcePath, localBackupPath, log);
+            const extractedFiles = await extractTarArchive(sourcePath, stagingDir, log);
 
             for (const extracted of extractedFiles) {
                 const serverPath = path.posix.join(serverBackupPath, path.basename(extracted));
@@ -131,79 +140,115 @@ export async function restore(
             }
             log(`Extracted ${bakFiles.length} backup file(s)`);
         } else {
-            // Single .bak file - copy to server location
+            // Single .bak file
             const fileName = path.basename(sourcePath);
             const serverBakPath = path.posix.join(serverBackupPath, fileName);
-            const localBakPath = path.join(localBackupPath, fileName);
+            const localBakPath = path.join(stagingDir, fileName);
 
-            log(`Copying backup file to server...`);
-            await copyFile(sourcePath, localBakPath);
-            log(`Backup file staged at: ${serverBakPath} (local: ${localBakPath})`);
+            // Stage the file locally first (copy to staging dir)
+            if (sourcePath !== localBakPath) {
+                await copyFile(sourcePath, localBakPath);
+            }
 
             const dbName = Array.isArray(config.database) ? config.database[0] : (config.database || "database");
             bakFiles.push({ serverPath: serverBakPath, localPath: localBakPath, dbName });
         }
 
-        // Restore each backup file
-        for (const bakFile of bakFiles) {
-            // Find matching target database
-            const targetDb = targetDatabases.find(t => t.original === bakFile.dbName)
-                || targetDatabases[0]; // Fallback to first target if no match
+        // Transfer .bak files to the SQL Server
+        let sshTransfer: MssqlSshTransfer | null = null;
 
-            log(`Restoring from: ${bakFile.serverPath}`);
+        try {
+            if (useSSH) {
+                // SSH mode: upload .bak files to the remote server
+                log(`Connecting via SSH to upload backup file(s)...`);
+                sshTransfer = new MssqlSshTransfer();
+                await sshTransfer.connect(config);
 
-            // Get file list from backup to determine logical names
-            const fileListQuery = `RESTORE FILELISTONLY FROM DISK = '${bakFile.serverPath}'`;
-            const fileListResult = await executeQuery(config, fileListQuery);
+                for (const bakFile of bakFiles) {
+                    log(`Uploading: ${path.basename(bakFile.localPath)} → ${bakFile.serverPath}`);
+                    await sshTransfer.upload(bakFile.localPath, bakFile.serverPath);
+                    log(`Uploaded: ${path.basename(bakFile.localPath)}`);
+                }
+            } else {
+                // Local mode: copy .bak files to the shared filesystem path
+                for (const bakFile of bakFiles) {
+                    const localTarget = path.join(localBackupPath, path.basename(bakFile.localPath));
+                    if (bakFile.localPath !== localTarget) {
+                        log(`Copying backup file to server...`);
+                        await copyFile(bakFile.localPath, localTarget);
+                        log(`Backup file staged at: ${bakFile.serverPath} (local: ${localTarget})`);
+                    }
+                }
+            }
 
-            const logicalFiles = fileListResult.recordset.map((row: any) => ({
-                logicalName: row.LogicalName,
-                type: row.Type, // D = Data, L = Log
-                physicalName: row.PhysicalName,
-            }));
+            // Restore each backup file via T-SQL
+            for (const bakFile of bakFiles) {
+                // Find matching target database
+                const targetDb = targetDatabases.find(t => t.original === bakFile.dbName)
+                    || targetDatabases[0]; // Fallback to first target if no match
 
-            log(`Backup contains ${logicalFiles.length} file(s)`);
+                log(`Restoring from: ${bakFile.serverPath}`);
 
-            log(`Restoring database: ${targetDb.original} -> ${targetDb.target}`);
+                // Get file list from backup to determine logical names
+                const fileListQuery = `RESTORE FILELISTONLY FROM DISK = '${bakFile.serverPath}'`;
+                const fileListResult = await executeQuery(config, fileListQuery);
 
-            // Build MOVE clauses for file relocation
-            const moveOptions: { logicalName: string; physicalPath: string }[] = [];
+                const logicalFiles = fileListResult.recordset.map((row: any) => ({
+                    logicalName: row.LogicalName,
+                    type: row.Type, // D = Data, L = Log
+                    physicalName: row.PhysicalName,
+                }));
 
-            for (const file of logicalFiles) {
-                const ext = file.type === "D" ? ".mdf" : ".ldf";
-                const newPhysicalPath = `/var/opt/mssql/data/${targetDb.target}${ext}`;
-                moveOptions.push({
-                    logicalName: file.logicalName,
-                    physicalPath: newPhysicalPath,
+                log(`Backup contains ${logicalFiles.length} file(s)`);
+
+                log(`Restoring database: ${targetDb.original} -> ${targetDb.target}`);
+
+                // Build MOVE clauses for file relocation
+                const moveOptions: { logicalName: string; physicalPath: string }[] = [];
+
+                for (const file of logicalFiles) {
+                    const ext = file.type === "D" ? ".mdf" : ".ldf";
+                    const newPhysicalPath = `/var/opt/mssql/data/${targetDb.target}${ext}`;
+                    moveOptions.push({
+                        logicalName: file.logicalName,
+                        physicalPath: newPhysicalPath,
+                    });
+                }
+
+                const restoreQuery = dialect.getRestoreQuery(targetDb.target, bakFile.serverPath, {
+                    replace: true,
+                    recovery: true,
+                    stats: 10,
+                    moveFiles: targetDb.original !== targetDb.target ? moveOptions : undefined,
                 });
+
+                log(`Executing restore`, "info", "command", restoreQuery);
+
+                try {
+                    await executeQuery(config, restoreQuery);
+                    log(`Restore completed for: ${targetDb.target}`);
+                } catch (error: unknown) {
+                    const message = error instanceof Error ? error.message : String(error);
+                    log(`Restore failed for ${targetDb.target}: ${message}`, "error");
+                    throw error;
+                }
+
+                // Remove this target from the list so we don't restore to it again
+                const idx = targetDatabases.indexOf(targetDb);
+                if (idx > -1) targetDatabases.splice(idx, 1);
             }
-
-            const restoreQuery = dialect.getRestoreQuery(targetDb.target, bakFile.serverPath, {
-                replace: true,
-                recovery: true,
-                stats: 10,
-                moveFiles: targetDb.original !== targetDb.target ? moveOptions : undefined,
-            });
-
-            log(`Executing restore`, "info", "command", restoreQuery);
-
-            try {
-                await executeQuery(config, restoreQuery);
-                log(`Restore completed for: ${targetDb.target}`);
-            } catch (error: unknown) {
-                const message = error instanceof Error ? error.message : String(error);
-                log(`Restore failed for ${targetDb.target}: ${message}`, "error");
-                throw error;
+        } finally {
+            // Clean up staged backup files (local temp)
+            for (const bakFile of bakFiles) {
+                await fs.unlink(bakFile.localPath).catch(() => {});
             }
-
-            // Remove this target from the list so we don't restore to it again
-            const idx = targetDatabases.indexOf(targetDb);
-            if (idx > -1) targetDatabases.splice(idx, 1);
-        }
-
-        // Clean up staged backup files
-        for (const bakFile of bakFiles) {
-            await fs.unlink(bakFile.localPath).catch(() => {});
+            // Clean up remote .bak files uploaded via SSH
+            if (sshTransfer) {
+                for (const bakFile of bakFiles) {
+                    await sshTransfer.deleteRemote(bakFile.serverPath).catch(() => {});
+                }
+                sshTransfer.end();
+            }
         }
 
         log(`Restore finished successfully`);

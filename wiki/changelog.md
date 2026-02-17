@@ -33,24 +33,51 @@ This release introduces a visual adapter picker for creating new sources, destin
 - **Adapter Reordering**: Storage adapters are reordered to match their category grouping (e.g., all S3 variants together, all network protocols together)
 - **Backward Compatible**: Database and notification adapters without groups continue to display as a flat list
 
+#### 📡 MSSQL SSH File Transfer
+- **Remote Server Support**: MSSQL backups now support SSH/SFTP file transfer for accessing `.bak` files on remote SQL Server hosts — no shared filesystem (Docker volume) required
+- **Two Transfer Modes**: Choose between **Local** (shared volume / Docker mount) and **SSH** (SFTP download/upload) in the new **File Transfer** tab
+- **Backup Flow**: SQL Server writes `.bak` to `backupPath` on the server → DBackup downloads via SFTP → processes (compress/encrypt) → uploads to storage destination
+- **Restore Flow**: DBackup downloads backup from storage → uploads `.bak` to server via SFTP → SQL Server restores from `backupPath` → cleanup
+- **Three Auth Methods**: Password, SSH Private Key (PEM), and SSH Agent authentication
+- **Automatic Cleanup**: Remote `.bak` files are deleted after successful transfer in both backup and restore operations
+- **Multi-Database Support**: Works with TAR-archived multi-database backups — individual `.bak` files are transferred per database
+
+#### 🔒 MSSQL Connection Security
+- **Encrypt Toggle**: Encryption setting (`encrypt`) now exposed in the UI Configuration tab — enable for Azure SQL or production environments
+- **Trust Server Certificate**: Self-signed certificate toggle (`trustServerCertificate`) now accessible in the UI — resolves "Certificate error" when connecting to development/internal SQL Servers
+
+#### 🔢 Port Placeholders
+- **MSSQL**: Default port `1433` shown as placeholder
+- **Redis**: Default port `6379` shown as placeholder
+- **MariaDB**: Default port `3306` shown as placeholder
+
 ### 🐛 Bug Fixes
 - **Mouse Wheel Scrolling**: Fixed mouse wheel scrolling not working in command list dropdowns (type selector, comboboxes). The `cmdk` library was intercepting scroll events — added a manual `onWheel` handler to `CommandList` to ensure native scroll behavior
+- **Conditional Form Fields**: Fixed fields appearing before their controlling dropdown is selected (e.g., SSH password shown before auth method is chosen, local backup path shown before transfer mode is selected). Applied to both MSSQL File Transfer and SQLite SSH Connection forms
 
 ### 📚 Documentation
 - **Supported Destinations Table**: Added a comprehensive table listing all 13 supported storage destinations with details to both the wiki landing page and README
 - **Supported Notifications Table**: Added a table listing all supported notification channels (Discord, Email) to both the wiki landing page and README
 - **Reduced Duplication**: Shortened feature descriptions in the hero section and README features list to avoid repeating information already shown in the new tables
+- **MSSQL User Guide**: Rewritten to cover both Local (shared volume) and SSH file transfer modes with separate setup instructions
+- **MSSQL Developer Guide**: Updated schema documentation and added SSH transfer architecture section
 
 ### 🔧 Technical Changes
 - New `src/components/adapter/adapter-picker.tsx` — Visual adapter picker component with card grid, search bar, category tabs, brand icons, and icon color support
 - Updated `src/components/adapter/utils.ts` — Replaced generic Lucide-only icon resolution with explicit `ADAPTER_ICON_MAP` using Simple Icons for brands (MySQL, PostgreSQL, MongoDB, etc.) and Lucide fallbacks. Added `getAdapterColor()` for brand color hex values
 - Updated `src/components/adapter/adapter-manager.tsx` — Two-step create flow: picker dialog → form dialog. Picker opens on "Add New", passes selected adapter to form
 - Updated `src/components/adapter/adapter-form.tsx` — Shows read-only type badge when single adapter is pre-selected, retains combobox for edit/multi-adapter scenarios
-- Updated `src/lib/adapters/definitions.ts` — Added optional `group` field to `AdapterDefinition` type, assigned groups to all 13 storage adapters
+- Updated `src/lib/adapters/definitions.ts` — Added optional `group` field to `AdapterDefinition` type, assigned groups to all 13 storage adapters. Extended `MSSQLSchema` with `fileTransferMode`, `sshHost`, `sshPort`, `sshUsername`, `sshAuthType`, `sshPassword`, `sshPrivateKey`, `sshPassphrase` fields
 - Updated `src/components/ui/command.tsx` — Added `onWheel` handler to `CommandList` for manual scroll support, bypassing `cmdk`'s event interception
 - Updated `wiki/index.md` — Added "Supported Destinations" and "Supported Notifications" sections, shortened hero feature texts
 - Updated `README.md` — Added "Supported Destinations" and "Supported Notifications" sections, shortened feature bullet points
 - Added `@icons-pack/react-simple-icons` dependency for brand logo icons
+- New `src/lib/adapters/database/mssql/ssh-transfer.ts` — `MssqlSshTransfer` class for SSH/SFTP file transfer with `connect()`, `download()`, `upload()`, `deleteRemote()`, `exists()`, `end()` methods. Includes `isSSHTransferEnabled()` helper
+- Updated `src/lib/adapters/database/mssql/dump.ts` — Refactored to support both local and SSH transfer modes for downloading `.bak` files from remote servers
+- Updated `src/lib/adapters/database/mssql/restore.ts` — Refactored to support both local and SSH transfer modes for uploading `.bak` files to remote servers
+- Updated `src/components/adapter/form-sections.tsx` — Added third "File Transfer" tab for MSSQL with conditional SSH/local field rendering. Fixed conditional visibility for SQLite SSH fields
+- Updated `src/components/adapter/schema-field.tsx` — Added readable labels for all new MSSQL/SSH fields (`trustServerCertificate`, `fileTransferMode`, `sshHost`, etc.)
+- Updated `src/components/adapter/form-constants.ts` — Added port placeholders (MSSQL 1433, Redis 6379, MariaDB 3306), backup path defaults, and SSH field placeholders
 
 ## v0.9.6-beta - Rsync, Google Drive, Dropbox & OneDrive Storage Destinations & New Notification System
 *Released: February 15, 2026*

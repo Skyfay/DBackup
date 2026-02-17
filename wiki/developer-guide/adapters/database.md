@@ -11,7 +11,7 @@ Database adapters handle the dump and restore operations for different database 
 | PostgreSQL | `postgres` | `psql`, `pg_dump`, `pg_restore` | `.sql` |
 | MongoDB | `mongodb` | `mongodump`, `mongorestore` | `.archive` |
 | SQLite | `sqlite` | None (file copy) | `.db` |
-| MSSQL | `mssql` | `sqlcmd` | `.bak` |
+| MSSQL | `mssql` | None (TDS protocol) | `.bak` |
 | Redis | `redis` | `redis-cli` | `.rdb` |
 
 ## Backup File Extensions
@@ -400,6 +400,107 @@ The restore function provides instructions but cannot perform the actual restore
 | Backup Scope | Single/Multiple DBs | Always full server |
 | Restore Method | Stream via TCP | File replacement + restart |
 | Authentication | User/Password | Optional ACL (Redis 6+) |
+
+## MSSQL Adapter
+
+MSSQL is unique among database adapters — it uses the **TDS protocol** (via the `mssql` npm package) instead of CLI tools, and writes native `.bak` files to the server filesystem. A separate file transfer mechanism is needed to access these files.
+
+### Configuration Schema
+
+```typescript
+const MSSQLSchema = z.object({
+  host: z.string().default("localhost"),
+  port: z.coerce.number().default(1433),
+  user: z.string().min(1, "User is required"),
+  password: z.string().optional(),
+  database: z.union([z.string(), z.array(z.string())]).default(""),
+  encrypt: z.boolean().default(true),
+  trustServerCertificate: z.boolean().default(false),
+  backupPath: z.string().default("/var/opt/mssql/backup"),
+  fileTransferMode: z.enum(["local", "ssh"]).default("local"),
+  localBackupPath: z.string().default("/tmp").optional(),
+  sshHost: z.string().optional(),
+  sshPort: z.coerce.number().default(22).optional(),
+  sshUsername: z.string().optional(),
+  sshAuthType: z.enum(["password", "privateKey", "agent"]).default("password").optional(),
+  sshPassword: z.string().optional(),
+  sshPrivateKey: z.string().optional(),
+  sshPassphrase: z.string().optional(),
+  requestTimeout: z.coerce.number().default(300000),
+  options: z.string().optional(),
+});
+```
+
+### File Transfer Architecture
+
+SQL Server writes `.bak` files to its own filesystem. DBackup needs to access these files, which is handled by two transfer modes:
+
+#### Local Mode
+
+Used when DBackup and SQL Server share a filesystem (Docker volumes, NFS):
+
+```
+SQL Server writes .bak → /var/opt/mssql/backup/file.bak (backupPath)
+DBackup reads from    → /mssql-backups/file.bak          (localBackupPath)
+                        ↑ Same directory via Docker volume mount
+```
+
+#### SSH Mode
+
+Used when SQL Server runs on a remote host without shared filesystem:
+
+```
+Backup:
+  SQL Server writes .bak → backupPath on server
+  DBackup connects SSH   → Downloads .bak via SFTP
+  DBackup processes      → Compress/encrypt → Upload to storage
+  Cleanup                → Delete remote .bak via SSH
+
+Restore:
+  DBackup downloads      → Backup from storage
+  DBackup connects SSH   → Uploads .bak via SFTP to backupPath
+  SQL Server restores    → RESTORE DATABASE from backupPath
+  Cleanup                → Delete remote .bak via SSH
+```
+
+### SSH Transfer Utility
+
+The `MssqlSshTransfer` class (`src/lib/adapters/database/mssql/ssh-transfer.ts`) handles all SSH/SFTP operations:
+
+```typescript
+import { MssqlSshTransfer, isSSHTransferEnabled } from "./ssh-transfer";
+
+// Check if SSH mode is enabled
+if (isSSHTransferEnabled(config)) {
+  const transfer = new MssqlSshTransfer();
+  await transfer.connect(config);
+
+  // Download .bak from server
+  await transfer.download(remotePath, localPath);
+
+  // Upload .bak to server
+  await transfer.upload(localPath, remotePath);
+
+  // Check if file exists
+  const exists = await transfer.exists(remotePath);
+
+  // Delete remote file
+  await transfer.deleteRemote(remotePath);
+
+  // Disconnect
+  transfer.end();
+}
+```
+
+### Key Differences from Other Adapters
+
+| Aspect | Other Databases | MSSQL |
+|--------|-----------------|-------|
+| Protocol | CLI tools (mysqldump, pg_dump) | TDS via `mssql` npm package |
+| Backup Format | SQL text / archive | Native `.bak` binary |
+| File Access | Direct stdout/stdin | Server writes to filesystem, then file transfer |
+| Connection Security | SSL/TLS optional | `encrypt` + `trustServerCertificate` options |
+| Remote Support | Direct connection | Requires SSH transfer or shared volume |
 
 ## Testing Database Connections
 

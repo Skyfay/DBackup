@@ -156,6 +156,7 @@ export default defineConfig({
             { text: 'Notifications', link: '/user-guide/features/notifications' },
             { text: 'System Backup', link: '/user-guide/features/system-backup' },
             { text: 'Profile & Settings', link: '/user-guide/features/profile-settings' },
+            { text: 'Rate Limits', link: '/user-guide/features/rate-limits' },
             { text: 'API Keys', link: '/user-guide/features/api-keys' },
             { text: 'Webhook Triggers', link: '/user-guide/features/webhook-triggers' },
             { text: 'API Reference', link: '/user-guide/features/api-reference' }
@@ -190,6 +191,7 @@ export default defineConfig({
             { text: 'Logging System', link: '/developer-guide/core/logging' },
             { text: 'Icon System', link: '/developer-guide/core/icons' },
             { text: 'Download Tokens', link: '/developer-guide/core/download-tokens' },
+            { text: 'Rate Limiting', link: '/developer-guide/core/rate-limiting' },
             { text: 'Update Service', link: '/developer-guide/core/updates' }
           ]
         },

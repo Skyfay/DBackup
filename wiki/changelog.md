@@ -125,6 +125,14 @@ This release introduces API key authentication for programmatic access, webhook 
 - **Docker Status Integration**: `docker ps` now shows `healthy` / `unhealthy` status, and orchestrators (Docker Compose, Kubernetes) can use it for automated restarts
 - **503 on Failure**: Returns HTTP 503 with `"status": "unhealthy"` when the database is unreachable
 
+#### ⚡ Configurable Rate Limits
+- **Per-Category Limits**: Configure separate rate limits for Authentication (login attempts), API Read (GET requests), and API Write (POST/PUT/DELETE mutations) — all adjustable from the Settings page
+- **Auto-Save UI**: New "Rate Limits" tab in Settings with three cards showing Max Requests and Time Window inputs per category — changes auto-save with 800ms debounce, matching the existing settings UX
+- **Reset to Defaults**: One-click reset button restores all rate limits to their default values (Auth: 5/60s, API: 100/60s, Mutation: 20/60s)
+- **Persistent Configuration**: Rate limit values are stored in the `SystemSetting` database table and survive server restarts
+- **Edge Runtime Architecture**: Middleware fetches rate limit config from an internal API endpoint (`/api/internal/rate-limit-config`) with a 30-second TTL cache — avoids the Edge Runtime limitation where Prisma cannot be used directly
+- **Immediate Enforcement**: After saving new rate limits, the middleware picks up the updated config within 30 seconds (or immediately on next cache expiry)
+
 #### 🛑 Graceful Shutdown
 - **SIGTERM/SIGINT Handling**: The application now catches shutdown signals and performs a clean shutdown sequence instead of hard-killing running processes
 - **Wait for Running Backups**: On shutdown, the app waits **indefinitely** for all running backup/restore executions to complete — no arbitrary timeout that could kill a long-running backup
@@ -134,6 +142,11 @@ This release introduces API key authentication for programmatic access, webhook 
 - **Database Cleanup**: Prisma client is gracefully disconnected before process exit
 - **Force Exit**: Sending a second signal (e.g., Ctrl+C twice) forces immediate exit for emergency situations
 
+#### ⚙️ Configurable Rate Limits (Technical)
+- **Internal API Endpoint**: New `GET /api/internal/rate-limit-config` endpoint serving current rate limit config from DB — consumed by Edge Runtime middleware via `fetch()` with 30s TTL cache
+- **Edge-Safe Architecture**: Middleware never imports Prisma — fetches config via HTTP from the Node.js runtime, avoiding the `PrismaClient is not configured to run in Edge Runtime` error
+- **Three Rate Limit Categories**: Authentication (login), API Read (GET/HEAD), API Write (POST/PUT/DELETE) — each with configurable `points` (max requests) and `duration` (window in seconds)
+
 ### 🐛 Bug Fixes
 - **Mouse Wheel Scrolling**: Fixed mouse wheel scrolling not working in command list dropdowns (type selector, comboboxes). The `cmdk` library was intercepting scroll events — added a manual `onWheel` handler to `CommandList` to ensure native scroll behavior
 - **Conditional Form Fields**: Fixed fields appearing before their controlling dropdown is selected (e.g., SSH password shown before auth method is chosen, local backup path shown before transfer mode is selected). Applied to both MSSQL File Transfer and SQLite SSH Connection forms
@@ -142,6 +155,8 @@ This release introduces API key authentication for programmatic access, webhook 
 - **API Reference**: New comprehensive [API Reference](/user-guide/features/api-reference) documentation covering all 43 REST API endpoints — organized by resource group with authentication, permissions, request/response schemas, and usage examples
 - **API Key User Guide**: New [API Keys](/user-guide/features/api-keys) guide covering key creation, permission assignment, rotation, and security best practices
 - **Webhook Triggers Guide**: New [Webhook Triggers](/user-guide/features/webhook-triggers) guide with step-by-step instructions, cURL/Bash/Ansible examples, and a polling flow diagram
+- **Rate Limits User Guide**: New [Rate Limits](/user-guide/features/rate-limits) guide covering rate limit categories, configuration, and enforcement behavior
+- **Rate Limiting Developer Guide**: New [Rate Limiting](/developer-guide/core/rate-limiting) developer documentation covering the Edge/Node architecture, config flow, database storage, and how to add new categories
 - **Supported Destinations Table**: Added a comprehensive table listing all 13 supported storage destinations with details to both the wiki landing page and README
 - **Supported Notifications Table**: Added a table listing all supported notification channels (Discord, Email) to both the wiki landing page and README
 - **Reduced Duplication**: Shortened feature descriptions in the hero section and README features list to avoid repeating information already shown in the new tables
@@ -206,6 +221,16 @@ This release introduces API key authentication for programmatic access, webhook 
 - Updated `src/instrumentation.ts` — Added `validateEnvironment()` call before scheduler init, and `registerShutdownHandlers()` after
 - Updated `src/lib/queue-manager.ts` — Added `isShutdownRequested()` check to skip queue processing during shutdown
 - Updated `Dockerfile` — Added `curl` package and `HEALTHCHECK` directive (`/api/health`, 30s interval, 10s timeout, 30s start period)
+- New `src/lib/rate-limit.ts` — Configurable rate limiting module with `RateLimiterMemory` instances per category, `applyExternalConfig()` for Edge Runtime, `reloadRateLimits()` for server-side DB reads, and `getRateLimitConfig()` for UI display
+- New `src/app/api/internal/rate-limit-config/route.ts` — Internal unauthenticated endpoint serving current rate limit config as JSON (consumed by middleware)
+- New `src/app/actions/rate-limit-settings.ts` — Server actions for saving (`updateRateLimitSettings`) and resetting (`resetRateLimitSettings`) rate limit config with RBAC and Zod validation
+- New `src/components/settings/rate-limit-settings.tsx` — Auto-save settings form with three cards (Auth, API Read, API Write), 800ms debounce, and reset-to-defaults button
+- Updated `src/middleware.ts` — Rate limit config fetched via `fetch()` from internal API with 30s TTL cache instead of direct Prisma access. Added `api/internal` to matcher exclusion
+- Updated `src/app/dashboard/settings/page.tsx` — Added "Rate Limits" tab loading config via `getRateLimitConfig()`
+- Updated `src/instrumentation.ts` — Calls `reloadRateLimits()` on app startup to populate server-side rate limiters from DB
+- New `wiki/user-guide/features/rate-limits.md` — User guide for configuring rate limits
+- New `wiki/developer-guide/core/rate-limiting.md` — Developer guide covering Edge/Node architecture, config flow, and extension guide
+- Updated `wiki/.vitepress/config.mts` — Added Rate Limits and Rate Limiting to sidebar navigation
 
 ## v0.9.6-beta - Rsync, Google Drive, Dropbox & OneDrive Storage Destinations & New Notification System
 *Released: February 15, 2026*

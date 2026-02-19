@@ -1,9 +1,47 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { getAuthLimiter, getApiLimiter, getMutationLimiter } from "./lib/rate-limit";
+import { getAuthLimiter, getApiLimiter, getMutationLimiter, applyExternalConfig } from "./lib/rate-limit";
+import type { RateLimitConfig } from "./lib/rate-limit";
 import { logger } from "./lib/logger";
 
 const log = logger.child({ module: "Middleware" });
+
+// ── Rate Limit Config Cache (fetched from internal API) ────────
+
+let _cachedConfig: RateLimitConfig | null = null;
+let _configFetchedAt = 0;
+const CONFIG_TTL_MS = 30_000; // 30 seconds
+let _fetchInFlight: Promise<void> | null = null;
+
+/**
+ * Fetch rate limit config from the internal API endpoint (Node.js runtime).
+ * Caches the result for CONFIG_TTL_MS. Deduplicates concurrent fetches.
+ */
+async function syncRateLimitConfig(origin: string): Promise<void> {
+    const now = Date.now();
+    if (_cachedConfig && now - _configFetchedAt < CONFIG_TTL_MS) return;
+
+    // Deduplicate concurrent fetch calls
+    if (_fetchInFlight) return _fetchInFlight;
+
+    _fetchInFlight = (async () => {
+        try {
+            const res = await fetch(new URL("/api/internal/rate-limit-config", origin));
+            if (res.ok) {
+                const config: RateLimitConfig = await res.json();
+                applyExternalConfig(config);
+                _cachedConfig = config;
+                _configFetchedAt = Date.now();
+            }
+        } catch {
+            // On error keep using current limiters (defaults or last successful fetch)
+        } finally {
+            _fetchInFlight = null;
+        }
+    })();
+
+    return _fetchInFlight;
+}
 
 // Paths that should not be logged (to reduce noise)
 const SILENT_PATHS = [
@@ -38,6 +76,9 @@ export async function middleware(request: NextRequest) {
     const path = request.nextUrl.pathname;
     const method = request.method;
     const shouldLog = shouldLogRequest(path);
+
+    // Sync rate limiters from internal API (Node.js runtime → Edge middleware)
+    await syncRateLimitConfig(request.nextUrl.origin);
 
     // Rate Limiting Logic
     let rateLimitType: string | null = null;
@@ -112,11 +153,12 @@ export const config = {
         /*
          * Match all request paths except for the ones starting with:
          * - api/auth (auth endpoints must be public)
+         * - api/internal (internal endpoints used by middleware itself)
          * - _next/static (static files)
          * - _next/image (image optimization files)
          * - favicon.ico (favicon file)
          * - public assets if any
          */
-        '/((?!api/auth|_next/static|_next/image|favicon.ico|uploads/).*)',
+        '/((?!api/auth|api/internal|_next/static|_next/image|favicon.ico|uploads/).*)',
     ],
 };

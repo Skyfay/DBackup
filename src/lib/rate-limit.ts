@@ -28,15 +28,9 @@ export const RATE_LIMIT_KEYS = {
     mutationDuration: "rateLimit.mutation.duration",
 } as const;
 
-// ── Limiter Container (mutable object for safe re-assignment) ──
+// ── Module-local Limiter Instances ─────────────────────────────
 
-/**
- * Shared container holding the current rate limiter instances.
- * Using a mutable object ensures the middleware always sees updated
- * limiters even after webpack bundling (live ES module bindings may
- * not survive webpack's module wrapper).
- */
-const limiters = {
+let _limiters = {
     auth: new RateLimiterMemory({
         points: RATE_LIMIT_DEFAULTS.auth.points,
         duration: RATE_LIMIT_DEFAULTS.auth.duration,
@@ -51,14 +45,14 @@ const limiters = {
     }),
 };
 
-// ── Public Getters (stable references) ─────────────────────────
+// ── Public Getters ─────────────────────────────────────────────
 
 /** Auth limiter – login attempts */
-export function getAuthLimiter() { return limiters.auth; }
+export function getAuthLimiter() { return _limiters.auth; }
 /** API (GET) limiter – read requests */
-export function getApiLimiter() { return limiters.api; }
+export function getApiLimiter() { return _limiters.api; }
 /** Mutation limiter – write requests (POST/PUT/DELETE) */
-export function getMutationLimiter() { return limiters.mutation; }
+export function getMutationLimiter() { return _limiters.mutation; }
 
 // ── Helpers ────────────────────────────────────────────────────
 
@@ -69,15 +63,40 @@ function parseSetting(settingMap: Map<string, string>, key: string, fallback: nu
     return isNaN(num) || num < 1 ? fallback : num;
 }
 
-// ── Dynamic Reload ─────────────────────────────────────────────
+function rebuildLimiters(config: RateLimitConfig): void {
+    _limiters = {
+        auth: new RateLimiterMemory({ points: config.auth.points, duration: config.auth.duration }),
+        api: new RateLimiterMemory({ points: config.api.points, duration: config.api.duration }),
+        mutation: new RateLimiterMemory({ points: config.mutation.points, duration: config.mutation.duration }),
+    };
+}
+
+// ── Public API ─────────────────────────────────────────────────
 
 /**
- * Reload rate limiters from SystemSetting values stored in the database.
- * Called on application startup and after settings changes.
+ * Apply an externally-fetched config to the module-local rate limiters.
+ *
+ * Called from middleware after fetching config via the internal API endpoint.
+ * This is Edge Runtime safe — no Prisma, no Node.js APIs.
+ */
+export function applyExternalConfig(config: RateLimitConfig): void {
+    rebuildLimiters(config);
+    log.info("Rate limiters updated from external config", {
+        auth: `${config.auth.points}/${config.auth.duration}s`,
+        api: `${config.api.points}/${config.api.duration}s`,
+        mutation: `${config.mutation.points}/${config.mutation.duration}s`,
+    });
+}
+
+/**
+ * Reload rate limiters from the database (SERVER CONTEXT ONLY).
+ *
+ * Reads SystemSetting values via Prisma and rebuilds local limiters.
+ * Called on app startup (instrumentation.ts) and after settings changes
+ * (server action).
  */
 export async function reloadRateLimits(): Promise<void> {
     try {
-        // Dynamic import to avoid circular dependency with prisma
         const prisma = (await import('./prisma')).default;
 
         const keys = Object.values(RATE_LIMIT_KEYS);
@@ -87,22 +106,27 @@ export async function reloadRateLimits(): Promise<void> {
 
         const settingMap = new Map(settings.map(s => [s.key, s.value]));
 
-        const authPoints = parseSetting(settingMap, RATE_LIMIT_KEYS.authPoints, RATE_LIMIT_DEFAULTS.auth.points);
-        const authDuration = parseSetting(settingMap, RATE_LIMIT_KEYS.authDuration, RATE_LIMIT_DEFAULTS.auth.duration);
-        const apiPoints = parseSetting(settingMap, RATE_LIMIT_KEYS.apiPoints, RATE_LIMIT_DEFAULTS.api.points);
-        const apiDuration = parseSetting(settingMap, RATE_LIMIT_KEYS.apiDuration, RATE_LIMIT_DEFAULTS.api.duration);
-        const mutationPoints = parseSetting(settingMap, RATE_LIMIT_KEYS.mutationPoints, RATE_LIMIT_DEFAULTS.mutation.points);
-        const mutationDuration = parseSetting(settingMap, RATE_LIMIT_KEYS.mutationDuration, RATE_LIMIT_DEFAULTS.mutation.duration);
+        const config: RateLimitConfig = {
+            auth: {
+                points: parseSetting(settingMap, RATE_LIMIT_KEYS.authPoints, RATE_LIMIT_DEFAULTS.auth.points),
+                duration: parseSetting(settingMap, RATE_LIMIT_KEYS.authDuration, RATE_LIMIT_DEFAULTS.auth.duration),
+            },
+            api: {
+                points: parseSetting(settingMap, RATE_LIMIT_KEYS.apiPoints, RATE_LIMIT_DEFAULTS.api.points),
+                duration: parseSetting(settingMap, RATE_LIMIT_KEYS.apiDuration, RATE_LIMIT_DEFAULTS.api.duration),
+            },
+            mutation: {
+                points: parseSetting(settingMap, RATE_LIMIT_KEYS.mutationPoints, RATE_LIMIT_DEFAULTS.mutation.points),
+                duration: parseSetting(settingMap, RATE_LIMIT_KEYS.mutationDuration, RATE_LIMIT_DEFAULTS.mutation.duration),
+            },
+        };
 
-        // Replace limiter instances on the shared container
-        limiters.auth = new RateLimiterMemory({ points: authPoints, duration: authDuration });
-        limiters.api = new RateLimiterMemory({ points: apiPoints, duration: apiDuration });
-        limiters.mutation = new RateLimiterMemory({ points: mutationPoints, duration: mutationDuration });
+        rebuildLimiters(config);
 
-        log.info("Rate limiters reloaded", {
-            auth: `${authPoints}/${authDuration}s`,
-            api: `${apiPoints}/${apiDuration}s`,
-            mutation: `${mutationPoints}/${mutationDuration}s`,
+        log.info("Rate limiters reloaded from DB", {
+            auth: `${config.auth.points}/${config.auth.duration}s`,
+            api: `${config.api.points}/${config.api.duration}s`,
+            mutation: `${config.mutation.points}/${config.mutation.duration}s`,
         });
     } catch (error) {
         log.warn("Failed to reload rate limits from DB, using current values", { error: String(error) });
@@ -110,8 +134,8 @@ export async function reloadRateLimits(): Promise<void> {
 }
 
 /**
- * Get current rate limit configuration (for displaying in UI).
- * Reads from DB, falls back to defaults.
+ * Get current rate limit configuration from DB (for displaying in UI).
+ * Falls back to defaults on error. SERVER CONTEXT ONLY.
  */
 export async function getRateLimitConfig(): Promise<RateLimitConfig> {
     try {

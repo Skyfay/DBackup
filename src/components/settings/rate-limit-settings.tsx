@@ -19,7 +19,7 @@ import { Shield, Globe, PenLine, RotateCcw, Info } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { useState } from "react";
+import { useRef, useCallback, useState } from "react";
 import type { RateLimitConfig } from "@/lib/rate-limit";
 import { RATE_LIMIT_DEFAULTS } from "@/lib/rate-limit";
 
@@ -37,8 +37,8 @@ interface RateLimitSettingsProps {
 }
 
 export function RateLimitSettings({ initialConfig }: RateLimitSettingsProps) {
-    const [isSaving, setIsSaving] = useState(false);
     const [isResetting, setIsResetting] = useState(false);
+    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const form = useForm<z.infer<typeof formSchema>>({
         resolver: zodResolver(formSchema) as any,
@@ -52,24 +52,29 @@ export function RateLimitSettings({ initialConfig }: RateLimitSettingsProps) {
         },
     });
 
-    const isDirty = form.formState.isDirty;
+    const handleAutoSave = useCallback((field: keyof z.infer<typeof formSchema>, value: number) => {
+        // Update local state immediately
+        form.setValue(field, value);
 
-    async function onSubmit(data: z.infer<typeof formSchema>) {
-        setIsSaving(true);
-        try {
-            const result = await updateRateLimitSettings(data);
-            if (result.success) {
-                toast.success("Rate limit settings saved");
-                form.reset(data);
-            } else {
-                toast.error(result.error || "Failed to save settings");
-            }
-        } catch {
-            toast.error("Failed to save settings");
-        } finally {
-            setIsSaving(false);
-        }
-    }
+        // Debounce the save for number inputs (user may still be typing)
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+        debounceRef.current = setTimeout(() => {
+            const currentValues = form.getValues();
+            const dataToSave = { ...currentValues, [field]: value };
+
+            toast.promise(updateRateLimitSettings(dataToSave), {
+                loading: "Saving rate limits...",
+                success: (result) => {
+                    if (result.success) {
+                        return "Rate limits saved";
+                    } else {
+                        throw new Error(result.error);
+                    }
+                },
+                error: (err) => `Failed to save: ${err.message || "Unknown error"}`,
+            });
+        }, 800);
+    }, [form]);
 
     async function handleReset() {
         setIsResetting(true);
@@ -97,7 +102,7 @@ export function RateLimitSettings({ initialConfig }: RateLimitSettingsProps) {
 
     return (
         <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+            <div className="space-y-6">
                 <Alert>
                     <Info className="h-4 w-4" />
                     <AlertDescription>
@@ -126,7 +131,17 @@ export function RateLimitSettings({ initialConfig }: RateLimitSettingsProps) {
                                     <FormItem>
                                         <FormLabel>Max Requests</FormLabel>
                                         <FormControl>
-                                            <Input type="number" min={1} max={1000} {...field} />
+                                            <Input
+                                                type="number"
+                                                min={1}
+                                                max={1000}
+                                                {...field}
+                                                onChange={(e) => {
+                                                    field.onChange(e);
+                                                    const val = parseInt(e.target.value, 10);
+                                                    if (!isNaN(val) && val >= 1) handleAutoSave("authPoints", val);
+                                                }}
+                                            />
                                         </FormControl>
                                         <FormDescription>
                                             Default: {RATE_LIMIT_DEFAULTS.auth.points}
@@ -142,7 +157,17 @@ export function RateLimitSettings({ initialConfig }: RateLimitSettingsProps) {
                                     <FormItem>
                                         <FormLabel>Time Window (seconds)</FormLabel>
                                         <FormControl>
-                                            <Input type="number" min={10} max={3600} {...field} />
+                                            <Input
+                                                type="number"
+                                                min={10}
+                                                max={3600}
+                                                {...field}
+                                                onChange={(e) => {
+                                                    field.onChange(e);
+                                                    const val = parseInt(e.target.value, 10);
+                                                    if (!isNaN(val) && val >= 10) handleAutoSave("authDuration", val);
+                                                }}
+                                            />
                                         </FormControl>
                                         <FormDescription>
                                             Default: {RATE_LIMIT_DEFAULTS.auth.duration}s
@@ -175,7 +200,17 @@ export function RateLimitSettings({ initialConfig }: RateLimitSettingsProps) {
                                     <FormItem>
                                         <FormLabel>Max Requests</FormLabel>
                                         <FormControl>
-                                            <Input type="number" min={1} max={10000} {...field} />
+                                            <Input
+                                                type="number"
+                                                min={1}
+                                                max={10000}
+                                                {...field}
+                                                onChange={(e) => {
+                                                    field.onChange(e);
+                                                    const val = parseInt(e.target.value, 10);
+                                                    if (!isNaN(val) && val >= 1) handleAutoSave("apiPoints", val);
+                                                }}
+                                            />
                                         </FormControl>
                                         <FormDescription>
                                             Default: {RATE_LIMIT_DEFAULTS.api.points}
@@ -191,7 +226,17 @@ export function RateLimitSettings({ initialConfig }: RateLimitSettingsProps) {
                                     <FormItem>
                                         <FormLabel>Time Window (seconds)</FormLabel>
                                         <FormControl>
-                                            <Input type="number" min={10} max={3600} {...field} />
+                                            <Input
+                                                type="number"
+                                                min={10}
+                                                max={3600}
+                                                {...field}
+                                                onChange={(e) => {
+                                                    field.onChange(e);
+                                                    const val = parseInt(e.target.value, 10);
+                                                    if (!isNaN(val) && val >= 10) handleAutoSave("apiDuration", val);
+                                                }}
+                                            />
                                         </FormControl>
                                         <FormDescription>
                                             Default: {RATE_LIMIT_DEFAULTS.api.duration}s
@@ -225,7 +270,17 @@ export function RateLimitSettings({ initialConfig }: RateLimitSettingsProps) {
                                     <FormItem>
                                         <FormLabel>Max Requests</FormLabel>
                                         <FormControl>
-                                            <Input type="number" min={1} max={1000} {...field} />
+                                            <Input
+                                                type="number"
+                                                min={1}
+                                                max={1000}
+                                                {...field}
+                                                onChange={(e) => {
+                                                    field.onChange(e);
+                                                    const val = parseInt(e.target.value, 10);
+                                                    if (!isNaN(val) && val >= 1) handleAutoSave("mutationPoints", val);
+                                                }}
+                                            />
                                         </FormControl>
                                         <FormDescription>
                                             Default: {RATE_LIMIT_DEFAULTS.mutation.points}
@@ -241,7 +296,17 @@ export function RateLimitSettings({ initialConfig }: RateLimitSettingsProps) {
                                     <FormItem>
                                         <FormLabel>Time Window (seconds)</FormLabel>
                                         <FormControl>
-                                            <Input type="number" min={10} max={3600} {...field} />
+                                            <Input
+                                                type="number"
+                                                min={10}
+                                                max={3600}
+                                                {...field}
+                                                onChange={(e) => {
+                                                    field.onChange(e);
+                                                    const val = parseInt(e.target.value, 10);
+                                                    if (!isNaN(val) && val >= 10) handleAutoSave("mutationDuration", val);
+                                                }}
+                                            />
                                         </FormControl>
                                         <FormDescription>
                                             Default: {RATE_LIMIT_DEFAULTS.mutation.duration}s
@@ -254,11 +319,8 @@ export function RateLimitSettings({ initialConfig }: RateLimitSettingsProps) {
                     </CardContent>
                 </Card>
 
-                {/* Actions */}
-                <div className="flex items-center gap-3">
-                    <Button type="submit" disabled={isSaving || !isDirty}>
-                        {isSaving ? "Saving..." : "Save Changes"}
-                    </Button>
+                {/* Reset to Defaults */}
+                <div className="flex items-center">
                     <Button
                         type="button"
                         variant="outline"
@@ -269,7 +331,7 @@ export function RateLimitSettings({ initialConfig }: RateLimitSettingsProps) {
                         {isResetting ? "Resetting..." : "Reset to Defaults"}
                     </Button>
                 </div>
-            </form>
+            </div>
         </Form>
     );
 }

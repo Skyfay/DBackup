@@ -2,10 +2,10 @@
 
 All notable changes to DBackup are documented here.
 
-## v0.9.7-beta - Adapter Picker, Brand Icons & Documentation Updates
+## v0.9.7-beta - API Keys, Webhook Triggers, Adapter Picker & Brand Icons
 *Release: In Progress*
 
-This release introduces a visual adapter picker for creating new sources, destinations, and notifications. The picker displays all available adapters as cards with brand icons, grouped by category with tabs for quick navigation. A search bar allows filtering adapters by name.
+This release introduces API key authentication for programmatic access, webhook triggers for starting backup jobs via REST API, and a visual adapter picker for creating new sources, destinations, and notifications. The picker displays all available adapters as cards with brand icons, grouped by category with tabs for quick navigation. A comprehensive API reference documentation covers all 43 endpoints.
 
 ### ✨ New Features
 
@@ -82,7 +82,44 @@ This release introduces a visual adapter picker for creating new sources, destin
 - **Graceful Warnings**: Invalid optional variables (e.g., malformed `BETTER_AUTH_URL`) are logged as warnings without blocking startup
 - **Default Values**: Optional variables like `LOG_LEVEL`, `TZ`, `PORT`, and `DATABASE_URL` have documented defaults applied automatically
 
-#### 🐳 Docker Health Check
+#### � API Key Management
+- **Programmatic Access**: Create API keys with fine-grained permissions to authenticate against the REST API using `Authorization: Bearer dbackup_xxx` headers
+- **Scoped Permissions**: Each API key has individually assigned permissions — SuperAdmin privileges are never inherited, only explicitly granted permissions apply
+- **Key Lifecycle**: Full CRUD management — create, view, toggle (enable/disable), rotate (regenerate), and delete API keys
+- **Secure Storage**: Only the first 16 characters (`dbackup_` prefix) are stored in the database. The full key is shown exactly once upon creation and cannot be retrieved afterward
+- **Expiration Dates**: Optional expiry date with Shadcn Calendar date picker — expired keys are automatically rejected during authentication
+- **Audit Trail**: API key creation, rotation, toggle, and deletion are logged in the audit trail with the key name and prefix
+- **One-Time Reveal Dialog**: After creation, a dedicated dialog displays the full API key with a copy button and a warning that it won't be shown again
+- **Users Page Integration**: New "API Keys" tab on the Access Management page (requires `api-keys:read` or `api-keys:write` permission)
+
+#### 🔗 Webhook Triggers (API-Based Job Execution)
+- **Trigger Backups via API**: Start any backup job remotely by sending a `POST /api/jobs/:id/run` request with a valid API key
+- **Execution Polling**: Poll job progress via `GET /api/executions/:id` with optional `?includeLogs=true` for real-time status updates
+- **API Trigger Dialog**: New "API Trigger" button (🔗) on each backup job showing ready-to-use code examples in three tabs:
+  - **cURL**: Simple one-liner for quick terminal usage
+  - **Bash**: Full script with polling loop, status checks, and exit codes
+  - **Ansible**: Complete playbook with `uri` module and async polling via `until` loop
+- **Clipboard Copy**: Each code example has a one-click copy button
+- **Queue Integration**: API-triggered jobs go through the same FIFO queue as scheduled/manual jobs — respects `maxConcurrentJobs` concurrency limit
+- **Audit Logging**: API-triggered executions record `trigger: "api"` and the API key ID in the audit log
+
+#### 🔐 Unified Authentication System
+- **Dual Auth Support**: All API routes now support both session-based (browser cookie) and API key (Bearer token) authentication via a unified `getAuthContext()` function
+- **Auth Context**: New `AuthContext` type carries `userId`, `permissions[]`, and `authMethod` ("session" or "apikey") — used consistently across all route handlers
+- **Middleware Rate Limiting**: API key requests are subject to the existing rate limiter (100 GET/min, 20 POST/min per IP)
+- **Route Migration**: All 17+ API route handlers migrated from `auth.api.getSession()` to `getAuthContext()` for consistent auth handling
+
+#### 📋 Execution Polling Endpoint
+- **New Endpoint**: `GET /api/executions/:id` returns execution status, progress percentage, current stage, timing, file size, and error details
+- **Optional Logs**: Pass `?includeLogs=true` to include full execution log entries
+- **Permission Check**: Requires `history:read` permission
+
+#### 🧩 Reusable Permission Picker
+- **Extracted Component**: Permission selection UI extracted from the Groups form into a standalone `<PermissionPicker>` component
+- **Dual Usage**: Used in both the Group edit form (`onPermissionChange` mode) and the API Key create dialog (`react-hook-form` mode)
+- **Grouped Layout**: Permissions are displayed in categorized groups (Jobs, Storage, Sources, etc.) with "Select All" / "Deselect All" per group
+
+#### �🐳 Docker Health Check
 - **Built-in HEALTHCHECK**: Dockerfile now includes a `HEALTHCHECK` directive that polls `/api/health` every 30 seconds
 - **Health Endpoint**: New `GET /api/health` API route (unauthenticated) returning app status, database connectivity, uptime, memory usage, and response time
 - **Docker Status Integration**: `docker ps` now shows `healthy` / `unhealthy` status, and orchestrators (Docker Compose, Kubernetes) can use it for automated restarts
@@ -102,6 +139,9 @@ This release introduces a visual adapter picker for creating new sources, destin
 - **Conditional Form Fields**: Fixed fields appearing before their controlling dropdown is selected (e.g., SSH password shown before auth method is chosen, local backup path shown before transfer mode is selected). Applied to both MSSQL File Transfer and SQLite SSH Connection forms
 
 ### 📚 Documentation
+- **API Reference**: New comprehensive [API Reference](/user-guide/features/api-reference) documentation covering all 43 REST API endpoints — organized by resource group with authentication, permissions, request/response schemas, and usage examples
+- **API Key User Guide**: New [API Keys](/user-guide/features/api-keys) guide covering key creation, permission assignment, rotation, and security best practices
+- **Webhook Triggers Guide**: New [Webhook Triggers](/user-guide/features/webhook-triggers) guide with step-by-step instructions, cURL/Bash/Ansible examples, and a polling flow diagram
 - **Supported Destinations Table**: Added a comprehensive table listing all 13 supported storage destinations with details to both the wiki landing page and README
 - **Supported Notifications Table**: Added a table listing all supported notification channels (Discord, Email) to both the wiki landing page and README
 - **Reduced Duplication**: Shortened feature descriptions in the hero section and README features list to avoid repeating information already shown in the new tables
@@ -109,6 +149,27 @@ This release introduces a visual adapter picker for creating new sources, destin
 - **MSSQL Developer Guide**: Updated schema documentation and added SSH transfer architecture section
 
 ### 🔧 Technical Changes
+- New `ApiKey` model in `prisma/schema.prisma` — Stores API key prefix (first 16 chars of `dbackup_xxx`), SHA-256 hashed key, name, permissions JSON array, optional expiration date, enabled flag, usage counter, and last-used timestamp
+- New `src/services/api-key-service.ts` — Full API key service with `create()`, `validate()`, `list()`, `toggle()`, `rotate()`, `delete()`, and `updateUsage()`. Key generation: `dbackup_` prefix + 30 random bytes (40 hex chars). Only hashed keys stored in DB
+- New `src/lib/access-control.ts` — Unified `getAuthContext(headers)` function: tries session cookie first, falls back to Bearer token API key validation. Returns `AuthContext` with `userId`, `permissions`, `authMethod`
+- New `src/app/api/executions/[id]/route.ts` — Execution polling endpoint with optional log inclusion
+- New `src/app/actions/api-key.ts` — Server actions for API key CRUD (create, list, toggle, rotate, delete) with permission checks and audit logging
+- New `src/components/api-keys/create-api-key-dialog.tsx` — Create dialog with name, expiration (Shadcn Calendar + DateDisplay), and permission picker
+- New `src/components/api-keys/api-key-table.tsx` — DataTable with columns for name, prefix, permissions badge count, status toggle, last used, expiry, and actions (rotate/delete)
+- New `src/components/api-keys/api-key-reveal-dialog.tsx` — One-time key reveal dialog with full key display and copy button
+- New `src/components/dashboard/jobs/api-trigger-dialog.tsx` — Webhook trigger dialog with cURL, Bash, and Ansible code tabs, copy buttons, and permission requirements
+- New `src/components/permission-picker.tsx` — Extracted reusable permission picker with grouped layout, select-all/deselect-all per group, and both callback and react-hook-form modes
+- Updated `src/lib/permissions.ts` — Added `API_KEYS.READ` and `API_KEYS.WRITE` permissions
+- Updated `src/lib/errors.ts` — Added `ApiKeyError` class for API key-specific errors
+- Updated `src/types.ts` — Added `api-key.create`, `api-key.rotate`, `api-key.toggle`, `api-key.delete` audit event types
+- Updated `src/middleware.ts` — API key Bearer tokens pass through rate limiter and are forwarded to route handlers
+- Updated `src/components/layout/sidebar.tsx` — Access Management menu item permission check supports array (any-of logic) for `users:read`, `groups:read`, `api-keys:read`
+- Updated `src/app/dashboard/users/page.tsx` — Added "API Keys" tab with conditional rendering based on `api-keys:read`/`api-keys:write` permissions
+- Updated 17+ API route files — Migrated from `auth.api.getSession()` to `getAuthContext()` for unified session + API key authentication
+- New `wiki/user-guide/features/api-keys.md` — User guide for API key management
+- New `wiki/user-guide/features/webhook-triggers.md` — User guide for webhook triggers with cURL/Bash/Ansible examples
+- New `wiki/user-guide/features/api-reference.md` — Comprehensive API reference covering all 43 endpoints with auth, permissions, request/response schemas, and examples
+- Updated `wiki/.vitepress/config.mts` — Added API Keys, Webhook Triggers, and API Reference to sidebar navigation
 - New `src/components/adapter/adapter-picker.tsx` — Visual adapter picker component with card grid, search bar, category tabs, brand icons, and icon color support
 - Updated `src/components/adapter/utils.ts` — Replaced generic Lucide-only icon resolution with bundled Iconify icon data. `ADAPTER_ICON_MAP` maps adapter IDs to `IconifyIcon` objects from `@iconify-icons/logos` (SVG Logos), `@iconify-icons/simple-icons`, and `@iconify-icons/mdi` (Material Design Icons). Added `getAdapterColor()` for monochrome Simple Icons brand colors
 - New `src/components/adapter/adapter-icon.tsx` — `<AdapterIcon>` component rendering Iconify `<Icon>` with automatic color handling based on icon pack

@@ -12,8 +12,6 @@ DBackup exposes a simple REST API that allows you to:
 
 All API calls require an [API Key](/user-guide/features/api-keys) with appropriate permissions.
 
----
-
 ## Quick Start
 
 ### 1. Create an API Key
@@ -85,8 +83,6 @@ curl "https://your-instance.com/api/executions/EXECUTION_ID?includeLogs=true" \
   -H "Authorization: Bearer dbackup_your_api_key"
 ```
 
----
-
 ## Finding the Job ID
 
 You can find a job's ID in two ways:
@@ -98,8 +94,6 @@ You can find a job's ID in two ways:
 curl "https://your-instance.com/api/jobs" \
   -H "Authorization: Bearer dbackup_your_api_key"
 ```
-
----
 
 ## Integration Examples
 
@@ -162,8 +156,6 @@ done
 
 **Requirements:** `curl`, `jq`
 
----
-
 ### Ansible Playbook
 
 ```yaml
@@ -199,8 +191,6 @@ done
         msg: "Backup failed: {{ poll_result.json.data.error }}"
       when: poll_result.json.data.status == 'Failed'
 ```
-
----
 
 ### CI/CD (GitHub Actions)
 
@@ -241,8 +231,6 @@ jobs:
           exit 1
 ```
 
----
-
 ### Docker Compose Healthcheck Integration
 
 Trigger a backup before deploying a new database version:
@@ -277,8 +265,6 @@ echo "Backup timed out — aborting deploy!"
 exit 1
 ```
 
----
-
 ## API Reference
 
 ### POST /api/jobs/:id/run
@@ -306,8 +292,6 @@ Authorization: Bearer dbackup_your_api_key
 | 401 | `{ "error": "..." }` | Invalid/disabled/expired API key |
 | 403 | `{ "error": "..." }` | Missing `jobs:execute` permission |
 | 404 | `{ "error": "Job not found" }` | Invalid job ID |
-
----
 
 ### GET /api/executions/:id
 
@@ -348,8 +332,6 @@ Authorization: Bearer dbackup_your_api_key
 }
 ```
 
----
-
 ## Rate Limits
 
 API requests are subject to the same rate limits as the web interface:
@@ -358,8 +340,6 @@ API requests are subject to the same rate limits as the web interface:
 | :--- | :--- |
 | GET requests | 100/min per IP |
 | POST/PUT/DELETE | 20/min per IP |
-
----
 
 ## Troubleshooting
 

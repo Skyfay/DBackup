@@ -155,7 +155,10 @@ export default defineConfig({
             { text: 'Restore', link: '/user-guide/features/restore' },
             { text: 'Notifications', link: '/user-guide/features/notifications' },
             { text: 'System Backup', link: '/user-guide/features/system-backup' },
-            { text: 'Profile & Settings', link: '/user-guide/features/profile-settings' }
+            { text: 'Profile & Settings', link: '/user-guide/features/profile-settings' },
+            { text: 'API Keys', link: '/user-guide/features/api-keys' },
+            { text: 'Webhook Triggers', link: '/user-guide/features/webhook-triggers' },
+            { text: 'API Reference', link: '/user-guide/features/api-reference' }
           ]
         },
         {

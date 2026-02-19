@@ -14,8 +14,6 @@ API keys provide a secure alternative to session-based authentication for progra
 
 > **Security**: API keys are stored as SHA-256 hashes. The raw key is only shown once — immediately after creation or rotation.
 
----
-
 ## Creating an API Key
 
 1. Navigate to **Access Management → API Keys** tab
@@ -39,8 +37,6 @@ API keys provide a secure alternative to session-based authentication for progra
 | Trigger + monitor | `jobs:execute`, `history:read` |
 | Full automation | `jobs:read`, `jobs:execute`, `history:read`, `storage:read` |
 | Read-only monitoring | `jobs:read`, `history:read` |
-
----
 
 ## Managing API Keys
 
@@ -68,8 +64,6 @@ Permanently remove a key:
 2. Select **Delete**
 3. Confirm the deletion
 
----
-
 ## Authentication
 
 Include the API key in the `Authorization` header:
@@ -92,8 +86,6 @@ curl -X POST "https://your-instance.com/api/jobs/JOB_ID/run" \
 | `401 Unauthorized` | Invalid, disabled, or expired key |
 | `403 Forbidden` | Key lacks required permission |
 
----
-
 ## Permissions Reference
 
 API keys use the same permission system as user groups. The key can only perform actions allowed by its assigned permissions:
@@ -113,8 +105,6 @@ API keys use the same permission system as user groups. The key can only perform
 
 > **Note**: Unlike user sessions, API keys do **not** inherit SuperAdmin privileges. They can only use explicitly assigned permissions.
 
----
-
 ## Audit Trail
 
 All API key operations are logged in the **Audit Log**:
@@ -125,8 +115,6 @@ All API key operations are logged in the **Audit Log**:
 - API requests made with the key (logged as `trigger: "api"`)
 
 The audit log records which API key was used for each request, enabling full traceability.
-
----
 
 ## Best Practices
 

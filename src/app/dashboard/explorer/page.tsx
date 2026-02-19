@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { DatabaseExplorer } from "@/components/dashboard/explorer/database-explorer";
 import prisma from "@/lib/prisma";
 import { getUserPermissions } from "@/lib/access-control";
@@ -27,5 +28,9 @@ export default async function ExplorerPage() {
         adapterId: s.adapterId,
     }));
 
-    return <DatabaseExplorer sources={sourceOptions} />;
+    return (
+        <Suspense>
+            <DatabaseExplorer sources={sourceOptions} />
+        </Suspense>
+    );
 }

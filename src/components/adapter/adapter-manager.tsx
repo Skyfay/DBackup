@@ -12,7 +12,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable } from "@/components/ui/data-table";
 import { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
-import { Edit, Trash, BarChart3 } from "lucide-react";
+import { Edit, Trash, BarChart3, SearchCode } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 import { AdapterManagerProps, AdapterConfig } from "./types";
@@ -31,6 +32,7 @@ export function AdapterManager({ type, title, description, canManage = true }: A
     const [deletingId, setDeletingId] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [historyAdapter, setHistoryAdapter] = useState<{ id: string; name: string } | null>(null);
+    const router = useRouter();
 
     const fetchConfigs = useCallback(async () => {
         setIsLoading(true);
@@ -198,6 +200,16 @@ export function AdapterManager({ type, title, description, canManage = true }: A
             cell: ({ row }) => {
                 return (
                     <div className="flex justify-end gap-1">
+                        {type === "database" && (
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                title="Inspect Databases"
+                                onClick={() => router.push(`/dashboard/explorer?sourceId=${row.original.id}`)}
+                            >
+                                <SearchCode className="h-4 w-4" />
+                            </Button>
+                        )}
                         {type === "storage" && (
                             <Button
                                 variant="ghost"

@@ -1,14 +1,16 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
-import { Database, RefreshCw, HardDrive, TableIcon, AlertTriangle, Server } from "lucide-react";
+import { Database, RefreshCw, HardDrive, TableIcon, AlertTriangle, Server, ChevronsUpDown, Check } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { formatBytes } from "@/lib/utils";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
@@ -30,13 +32,27 @@ interface DatabaseExplorerProps {
 }
 
 export function DatabaseExplorer({ sources }: DatabaseExplorerProps) {
-    const [selectedSource, setSelectedSource] = useState<string>("");
+    const searchParams = useSearchParams();
+    const initialSourceId = searchParams.get("sourceId") ?? "";
+
+    const [selectedSource, setSelectedSource] = useState<string>(initialSourceId);
     const [databases, setDatabases] = useState<DatabaseInfo[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [serverVersion, setServerVersion] = useState<string | null>(null);
+    const [comboboxOpen, setComboboxOpen] = useState(false);
+    const [hasAutoLoaded, setHasAutoLoaded] = useState(false);
 
     const selectedAdapter = sources.find((s) => s.id === selectedSource);
+
+    // Auto-load databases if sourceId was provided via URL
+    useEffect(() => {
+        if (initialSourceId && !hasAutoLoaded && sources.some((s) => s.id === initialSourceId)) {
+            setHasAutoLoaded(true);
+            fetchDatabases(initialSourceId);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [initialSourceId, hasAutoLoaded, sources]);
 
     const fetchDatabases = useCallback(async (sourceId: string) => {
         setIsLoading(true);
@@ -119,27 +135,55 @@ export function DatabaseExplorer({ sources }: DatabaseExplorerProps) {
                 </CardHeader>
                 <CardContent>
                     <div className="flex items-center gap-3">
-                        <Select value={selectedSource} onValueChange={handleSourceChange}>
-                            <SelectTrigger className="w-full max-w-md">
-                                <SelectValue placeholder="Select a database source..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {sources.map((source) => (
-                                    <SelectItem key={source.id} value={source.id}>
+                        <Popover open={comboboxOpen} onOpenChange={setComboboxOpen}>
+                            <PopoverTrigger asChild>
+                                <Button
+                                    variant="outline"
+                                    role="combobox"
+                                    aria-expanded={comboboxOpen}
+                                    className="w-full max-w-md justify-between font-normal"
+                                >
+                                    {selectedAdapter ? (
                                         <span className="flex items-center gap-2">
-                                            <AdapterIcon adapterId={source.adapterId} className="h-4 w-4" />
-                                            {source.name}
-                                            <span className="text-xs text-muted-foreground">({source.adapterId})</span>
+                                            <AdapterIcon adapterId={selectedAdapter.adapterId} className="h-4 w-4" />
+                                            {selectedAdapter.name}
+                                            <span className="text-xs text-muted-foreground">({selectedAdapter.adapterId})</span>
                                         </span>
-                                    </SelectItem>
-                                ))}
-                                {sources.length === 0 && (
-                                    <SelectItem value="_empty" disabled>
-                                        No database sources configured
-                                    </SelectItem>
-                                )}
-                            </SelectContent>
-                        </Select>
+                                    ) : (
+                                        <span className="text-muted-foreground">Select a database source...</span>
+                                    )}
+                                    <ChevronsUpDown className="ml-auto h-4 w-4 shrink-0 opacity-50" />
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                                <Command>
+                                    <CommandInput placeholder="Search sources..." />
+                                    <CommandEmpty>No source found.</CommandEmpty>
+                                    <CommandGroup>
+                                        {sources.map((source) => (
+                                            <CommandItem
+                                                key={source.id}
+                                                value={`${source.name} ${source.adapterId}`}
+                                                onSelect={() => {
+                                                    handleSourceChange(source.id === selectedSource ? "" : source.id);
+                                                    setComboboxOpen(false);
+                                                }}
+                                            >
+                                                <Check
+                                                    className={cn(
+                                                        "mr-2 h-4 w-4",
+                                                        selectedSource === source.id ? "opacity-100" : "opacity-0"
+                                                    )}
+                                                />
+                                                <AdapterIcon adapterId={source.adapterId} className="h-4 w-4 mr-2" />
+                                                {source.name}
+                                                <span className="text-xs text-muted-foreground ml-1">({source.adapterId})</span>
+                                            </CommandItem>
+                                        ))}
+                                    </CommandGroup>
+                                </Command>
+                            </PopoverContent>
+                        </Popover>
                         {selectedSource && (
                             <Button variant="outline" size="icon" onClick={handleRefresh} disabled={isLoading}>
                                 <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
@@ -153,7 +197,7 @@ export function DatabaseExplorer({ sources }: DatabaseExplorerProps) {
             {selectedSource && !error && (databases.length > 0 || isLoading) && (
                 <div className="grid gap-4 md:grid-cols-3">
                     <Card>
-                        <CardContent className="pt-6">
+                        <CardContent className="py-4">
                             <div className="flex items-center gap-3">
                                 <div className="p-2 rounded-md bg-primary/10">
                                     <Server className="h-5 w-5 text-primary" />
@@ -175,7 +219,7 @@ export function DatabaseExplorer({ sources }: DatabaseExplorerProps) {
                         </CardContent>
                     </Card>
                     <Card>
-                        <CardContent className="pt-6">
+                        <CardContent className="py-4">
                             <div className="flex items-center gap-3">
                                 <div className="p-2 rounded-md bg-blue-500/10">
                                     <Database className="h-5 w-5 text-blue-500" />
@@ -192,7 +236,7 @@ export function DatabaseExplorer({ sources }: DatabaseExplorerProps) {
                         </CardContent>
                     </Card>
                     <Card>
-                        <CardContent className="pt-6">
+                        <CardContent className="py-4">
                             <div className="flex items-center gap-3">
                                 <div className="p-2 rounded-md bg-emerald-500/10">
                                     <HardDrive className="h-5 w-5 text-emerald-500" />
@@ -216,7 +260,7 @@ export function DatabaseExplorer({ sources }: DatabaseExplorerProps) {
             {/* Error State */}
             {error && (
                 <Card className="border-destructive/50">
-                    <CardContent className="pt-6">
+                    <CardContent className="py-6">
                         <div className="flex items-center gap-3 text-destructive">
                             <AlertTriangle className="h-5 w-5" />
                             <div>

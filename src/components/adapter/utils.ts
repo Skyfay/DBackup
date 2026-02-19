@@ -6,7 +6,8 @@
  *
  * - @iconify-icons/logos         → SVG Logos (multi-colored brand icons)
  * - @iconify-icons/simple-icons  → Simple Icons (monochrome, brand color applied)
- * - @iconify-icons/lucide        → Lucide (generic stroke icons)
+ * - @iconify-icons/mdi           → Material Design Icons (protocol & storage icons)
+ * - @iconify-icons/lucide        → Lucide (generic fallback icons)
  */
 
 import type { IconifyIcon } from "@iconify/react";
@@ -31,11 +32,16 @@ import minioIcon from "@iconify-icons/simple-icons/minio";
 import hetznerIcon from "@iconify-icons/simple-icons/hetzner";
 
 // — Lucide (generic UI icons) —
-import folderIcon from "@iconify-icons/lucide/folder";
-import networkIcon from "@iconify-icons/lucide/network";
-import globeIcon from "@iconify-icons/lucide/globe";
 import mailIcon from "@iconify-icons/lucide/mail";
 import discIcon from "@iconify-icons/lucide/disc";
+
+// — Material Design Icons (protocol & storage icons) —
+import harddiskIcon from "@iconify-icons/mdi/harddisk";
+import sshIcon from "@iconify-icons/mdi/ssh";
+import swapVerticalIcon from "@iconify-icons/mdi/swap-vertical";
+import cloudUploadIcon from "@iconify-icons/mdi/cloud-upload";
+import folderNetworkIcon from "@iconify-icons/mdi/folder-network";
+import folderSyncIcon from "@iconify-icons/mdi/folder-sync";
 
 // Map adapter IDs to bundled IconifyIcon data objects
 const ADAPTER_ICON_MAP: Record<string, IconifyIcon> = {
@@ -49,7 +55,7 @@ const ADAPTER_ICON_MAP: Record<string, IconifyIcon> = {
     "mssql": mssqlIcon,
 
     // Storage — Local
-    "local-filesystem": folderIcon,
+    "local-filesystem": harddiskIcon,
 
     // Storage — S3
     "s3-aws": awsS3Icon,
@@ -63,11 +69,11 @@ const ADAPTER_ICON_MAP: Record<string, IconifyIcon> = {
     "onedrive": onedriveIcon,
 
     // Storage — Network
-    "sftp": networkIcon,
-    "ftp": networkIcon,
-    "webdav": globeIcon,
-    "smb": networkIcon,
-    "rsync": networkIcon,
+    "sftp": sshIcon,
+    "ftp": swapVerticalIcon,
+    "webdav": cloudUploadIcon,
+    "smb": folderNetworkIcon,
+    "rsync": folderSyncIcon,
 
     // Notifications
     "discord": discordIcon,

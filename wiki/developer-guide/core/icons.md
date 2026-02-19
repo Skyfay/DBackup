@@ -18,14 +18,16 @@ src/components/adapter/
 |------|------------|-------|----------|
 | **SVG Logos** | `@iconify-icons/logos` | Primary — multi-colored brand icons | Colors embedded in SVG |
 | **Simple Icons** | `@iconify-icons/simple-icons` | Fallback — brands not in SVG Logos | Monochrome, brand color via `ADAPTER_COLOR_MAP` |
-| **Lucide** | `@iconify-icons/lucide` | Generic UI icons (folder, network, etc.) | Inherits `currentColor` |
+| **Material Design Icons** | `@iconify-icons/mdi` | Protocol & storage icons (SSH, FTP, SMB, etc.) | Inherits `currentColor` |
+| **Lucide** | `@iconify-icons/lucide` | Generic fallback icons (mail, disc) | Inherits `currentColor` |
 
-> **Rule:** Always prefer **SVG Logos** first. Only use **Simple Icons** if the brand doesn't exist in SVG Logos (e.g. Hetzner, Minio). Use **Lucide** for generic/protocol icons without a brand.
+> **Rule:** Always prefer **SVG Logos** first. Only use **Simple Icons** if the brand doesn't exist in SVG Logos (e.g. Hetzner, Minio). Use **MDI** for protocol/storage concepts (SSH, FTP, sync). Use **Lucide** only as a last resort for generic icons.
 
 ### Browsing Available Icons
 
 - SVG Logos: [https://icon-sets.iconify.design/logos/](https://icon-sets.iconify.design/logos/)
 - Simple Icons: [https://icon-sets.iconify.design/simple-icons/](https://icon-sets.iconify.design/simple-icons/)
+- Material Design Icons: [https://icon-sets.iconify.design/mdi/](https://icon-sets.iconify.design/mdi/)
 - Lucide: [https://icon-sets.iconify.design/lucide/](https://icon-sets.iconify.design/lucide/)
 
 ## How It Works
@@ -153,12 +155,12 @@ pnpm build
 | `dropbox` | SVG Logos | `logos/dropbox` |
 | `onedrive` | SVG Logos | `logos/microsoft-onedrive` |
 | `discord` | SVG Logos | `logos/discord-icon` |
-| `local-filesystem` | Lucide | `lucide/folder` |
-| `sftp` | Lucide | `lucide/network` |
-| `ftp` | Lucide | `lucide/network` |
-| `webdav` | Lucide | `lucide/globe` |
-| `smb` | Lucide | `lucide/network` |
-| `rsync` | Lucide | `lucide/network` |
+| `local-filesystem` | MDI | `mdi/harddisk` |
+| `sftp` | MDI | `mdi/ssh` |
+| `ftp` | MDI | `mdi/swap-vertical` |
+| `webdav` | MDI | `mdi/cloud-upload` |
+| `smb` | MDI | `mdi/folder-network` |
+| `rsync` | MDI | `mdi/folder-sync` |
 | `email` | Lucide | `lucide/mail` |
 | *(fallback)* | Lucide | `lucide/disc` |
 
@@ -166,4 +168,4 @@ pnpm build
 
 - **Why bundled, not API?** — DBackup is self-hosted. Users may not have internet access or may block external API calls via CSP. Bundled icons render instantly without network requests.
 - **Why Iconify over react-simple-icons?** — Iconify's SVG Logos pack provides multi-colored brand icons (MySQL dolphin in blue, PostgreSQL elephant in blue/white, etc.) rather than flat monochrome. It also covers more brands (OneDrive, AWS S3).
-- **Why three packs?** — SVG Logos has the best brand icons but doesn't cover everything. Simple Icons fills the gaps (Hetzner, Minio). Lucide handles generic concepts (folder, network, mail).
+- **Why four packs?** — SVG Logos has the best brand icons but doesn't cover everything. Simple Icons fills the gaps (Hetzner, Minio). MDI provides expressive protocol icons (SSH lock, folder-network for SMB, folder-sync for rsync) that are far more descriptive than generic Lucide shapes. Lucide remains for edge-case fallbacks (mail, disc).

@@ -66,7 +66,7 @@ export function AdapterCard({ config, definition, onDelete, onEdit, canManage }:
                         displayEntries.map(([key, value]) => (
                              <div key={key} className="flex items-center justify-between gap-2">
                                 <span className="capitalize">{key}:</span>
-                                <span className="font-mono truncate max-w-[120px]" title={String(value)}>{getDisplayValue(key, value)}</span>
+                                <span className="font-mono truncate max-w-30" title={String(value)}>{getDisplayValue(key, value)}</span>
                             </div>
                         ))
                     ) : (

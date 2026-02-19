@@ -63,6 +63,14 @@ This release introduces a visual adapter picker for creating new sources, destin
 - **MSSQL**: Queries `sys.master_files` for file sizes + `INFORMATION_SCHEMA.TABLES` for table count
 - **Graceful Fallback**: If `getDatabasesWithStats()` is not implemented, falls back to `getDatabases()` (names only)
 
+#### 🔍 Database Explorer Page
+- **Standalone Page**: New dedicated page at `/dashboard/explorer` for browsing databases on any configured source — accessible from the sidebar
+- **Searchable Source Selector**: Combobox with type-ahead filtering to quickly find sources by name or adapter type
+- **Server Overview Cards**: Three summary widgets showing server type + version, database count, and total storage size
+- **Database Table**: Sortable table with database name, size, table/collection count, and a visual size distribution bar
+- **Deep Link from Sources**: New inspect button (🔍) on each database source in the Sources table — navigates directly to the Database Explorer with the source pre-selected
+- **URL Parameter Support**: Accepts `?sourceId=...` query parameter for direct linking — auto-selects and loads the specified source on page load
+
 #### �🔢 Port Placeholders
 - **MSSQL**: Default port `1433` shown as placeholder
 - **Redis**: Default port `6379` shown as placeholder
@@ -106,6 +114,10 @@ This release introduces a visual adapter picker for creating new sources, destin
 - Updated all database adapter index files (`mysql`, `postgres`, `mongodb`, `mssql`, `mariadb`) to register `getDatabasesWithStats`
 - New `src/app/api/adapters/database-stats/route.ts` — API endpoint accepting `sourceId` or `adapterId` + `config`, with RBAC check (`SOURCES.READ`)
 - Updated `src/components/dashboard/storage/restore-dialog.tsx` — Added collapsible target database overview with conflict detection, skeleton loading, and size summary
+- New `src/app/dashboard/explorer/page.tsx` — Server page for Database Explorer, fetches database-type AdapterConfigs from Prisma
+- New `src/components/dashboard/explorer/database-explorer.tsx` — Client component with searchable source combobox (Popover + Command), server info cards, database stats table with size distribution progress bars, URL search param support for deep linking
+- Updated `src/components/adapter/adapter-manager.tsx` — Added inspect button (`SearchCode` icon) for database-type adapters linking to `/dashboard/explorer?sourceId=...`
+- Updated `src/components/layout/sidebar.tsx` — Added "Database Explorer" entry with `SearchCode` icon and `PERMISSIONS.SOURCES.READ` permission
 
 ## v0.9.6-beta - Rsync, Google Drive, Dropbox & OneDrive Storage Destinations & New Notification System
 *Released: February 15, 2026*

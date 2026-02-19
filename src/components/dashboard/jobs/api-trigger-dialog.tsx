@@ -49,19 +49,19 @@ export function ApiTriggerDialog({ jobId, jobName, open, onOpenChange }: ApiTrig
     const baseUrl = typeof window !== "undefined" ? window.location.origin : "https://your-dbackup-instance.com"
 
     const triggerCurl = `curl -X POST "${baseUrl}/api/jobs/${jobId}/run" \\
-  -H "Authorization: Bearer dbm_YOUR_API_KEY"`
+  -H "Authorization: Bearer dbackup_YOUR_API_KEY"`
 
-    const pollCurl = `curl "${baseUrl}/api/executions/EXECUTION_ID" \\
-  -H "Authorization: Bearer dbm_YOUR_API_KEY"`
+    const pollCurl = `curl "${baseUrl}/api/executions/EXECUTION_ID" \
+  -H "Authorization: Bearer dbackup_YOUR_API_KEY"`
 
-    const pollWithLogsCurl = `curl "${baseUrl}/api/executions/EXECUTION_ID?includeLogs=true" \\
-  -H "Authorization: Bearer dbm_YOUR_API_KEY"`
+    const pollWithLogsCurl = `curl "${baseUrl}/api/executions/EXECUTION_ID?includeLogs=true" \
+  -H "Authorization: Bearer dbackup_YOUR_API_KEY"`
 
     const bashScript = `#!/bin/bash
 # Trigger backup and wait for completion
 set -euo pipefail
 
-API_KEY="dbm_YOUR_API_KEY"
+API_KEY="dbackup_YOUR_API_KEY"
 BASE_URL="${baseUrl}"
 JOB_ID="${jobId}"
 
@@ -114,7 +114,7 @@ done`
   hosts: localhost
   vars:
     dbackup_url: "${baseUrl}"
-    dbackup_api_key: "dbm_YOUR_API_KEY"
+    dbackup_api_key: "dbackup_YOUR_API_KEY"
     job_id: "${jobId}"
 
   tasks:

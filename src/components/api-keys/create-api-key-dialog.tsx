@@ -19,12 +19,16 @@ import {
     FormControl,
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
+import { Calendar } from "@/components/ui/calendar"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import * as z from "zod"
 import { useState } from "react"
 import { toast } from "sonner"
-import { Loader2, Plus } from "lucide-react"
+import { Loader2, Plus, CalendarIcon } from "lucide-react"
+import { cn } from "@/lib/utils"
+import { DateDisplay } from "@/components/utils/date-display"
 import { createApiKey } from "@/app/actions/api-key"
 import { PermissionPicker } from "@/components/permission-picker"
 import { ApiKeyRevealDialog } from "./api-key-reveal-dialog"
@@ -32,7 +36,7 @@ import { ApiKeyRevealDialog } from "./api-key-reveal-dialog"
 const formSchema = z.object({
     name: z.string().min(1, "Name is required").max(100),
     permissions: z.array(z.string()).min(1, "At least one permission is required"),
-    expiresAt: z.string().optional(),
+    expiresAt: z.date().optional(),
 })
 
 export function CreateApiKeyDialog() {
@@ -45,7 +49,7 @@ export function CreateApiKeyDialog() {
         defaultValues: {
             name: "",
             permissions: [],
-            expiresAt: "",
+            expiresAt: undefined,
         },
     })
 
@@ -56,7 +60,7 @@ export function CreateApiKeyDialog() {
                 name: values.name,
                 permissions: values.permissions,
                 expiresAt: values.expiresAt
-                    ? new Date(values.expiresAt).toISOString()
+                    ? values.expiresAt.toISOString()
                     : null,
             })
 
@@ -111,11 +115,37 @@ export function CreateApiKeyDialog() {
                                 control={form.control}
                                 name="expiresAt"
                                 render={({ field }) => (
-                                    <FormItem>
+                                    <FormItem className="flex flex-col">
                                         <FormLabel>Expiration Date (optional)</FormLabel>
-                                        <FormControl>
-                                            <Input type="date" {...field} />
-                                        </FormControl>
+                                        <Popover>
+                                            <PopoverTrigger asChild>
+                                                <FormControl>
+                                                    <Button
+                                                        variant="outline"
+                                                        className={cn(
+                                                            "w-full pl-3 text-left font-normal",
+                                                            !field.value && "text-muted-foreground"
+                                                        )}
+                                                    >
+                                                        {field.value ? (
+                                                            <DateDisplay date={field.value} format="PPP" />
+                                                        ) : (
+                                                            <span>Pick a date</span>
+                                                        )}
+                                                        <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                                    </Button>
+                                                </FormControl>
+                                            </PopoverTrigger>
+                                            <PopoverContent className="w-auto p-0" align="start">
+                                                <Calendar
+                                                    mode="single"
+                                                    selected={field.value}
+                                                    onSelect={field.onChange}
+                                                    disabled={(date) => date < new Date()}
+                                                    autoFocus
+                                                />
+                                            </PopoverContent>
+                                        </Popover>
                                         <FormDescription>
                                             Leave empty for a key that never expires.
                                         </FormDescription>

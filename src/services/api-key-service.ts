@@ -6,7 +6,7 @@ import { Permission } from "@/lib/permissions";
 
 const log = logger.child({ service: "ApiKeyService" });
 
-const API_KEY_PREFIX = "dbm_";
+const API_KEY_PREFIX = "dbackup_";
 const KEY_BYTE_LENGTH = 30; // 30 bytes = 40 hex chars
 
 /**
@@ -17,7 +17,7 @@ function hashKey(rawKey: string): string {
 }
 
 /**
- * Generate a new raw API key with the dbm_ prefix
+ * Generate a new raw API key with the dbackup_ prefix
  */
 function generateRawKey(): string {
   const randomPart = randomBytes(KEY_BYTE_LENGTH).toString("hex");
@@ -58,7 +58,7 @@ export class ApiKeyService {
   async create(input: CreateApiKeyInput): Promise<{ apiKey: ApiKeyListItem; rawKey: string }> {
     const rawKey = generateRawKey();
     const hashed = hashKey(rawKey);
-    const prefix = rawKey.substring(0, 12); // "dbm_" + 8 hex chars
+    const prefix = rawKey.substring(0, 16); // "dbackup_" + 8 hex chars
 
     const record = await prisma.apiKey.create({
       data: {

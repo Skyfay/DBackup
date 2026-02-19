@@ -27,7 +27,7 @@ Navigate to **Access Management → API Keys** and create a key with at least th
 
 ```bash
 curl -X POST "https://your-instance.com/api/jobs/JOB_ID/run" \
-  -H "Authorization: Bearer dbm_your_api_key"
+  -H "Authorization: Bearer dbackup_your_api_key"
 ```
 
 **Response:**
@@ -42,7 +42,7 @@ curl -X POST "https://your-instance.com/api/jobs/JOB_ID/run" \
 
 ```bash
 curl "https://your-instance.com/api/executions/EXECUTION_ID" \
-  -H "Authorization: Bearer dbm_your_api_key"
+  -H "Authorization: Bearer dbackup_your_api_key"
 ```
 
 **Response:**
@@ -82,7 +82,7 @@ Add `?includeLogs=true` to get full log entries:
 
 ```bash
 curl "https://your-instance.com/api/executions/EXECUTION_ID?includeLogs=true" \
-  -H "Authorization: Bearer dbm_your_api_key"
+  -H "Authorization: Bearer dbackup_your_api_key"
 ```
 
 ---
@@ -96,7 +96,7 @@ You can find a job's ID in two ways:
 
 ```bash
 curl "https://your-instance.com/api/jobs" \
-  -H "Authorization: Bearer dbm_your_api_key"
+  -H "Authorization: Bearer dbackup_your_api_key"
 ```
 
 ---
@@ -111,7 +111,7 @@ A complete script that triggers a backup and polls until completion:
 #!/bin/bash
 set -euo pipefail
 
-API_KEY="dbm_your_api_key"
+API_KEY="dbackup_your_api_key"
 BASE_URL="https://your-instance.com"
 JOB_ID="your-job-id"
 
@@ -171,7 +171,7 @@ done
   hosts: localhost
   vars:
     dbackup_url: "https://your-instance.com"
-    dbackup_api_key: "dbm_your_api_key"
+    dbackup_api_key: "dbackup_your_api_key"
     job_id: "your-job-id"
 
   tasks:
@@ -289,7 +289,7 @@ Trigger a backup job execution.
 
 **Headers:**
 ```
-Authorization: Bearer dbm_your_api_key
+Authorization: Bearer dbackup_your_api_key
 ```
 
 **Response (200):**
@@ -322,7 +322,7 @@ Poll execution status and progress.
 
 **Headers:**
 ```
-Authorization: Bearer dbm_your_api_key
+Authorization: Bearer dbackup_your_api_key
 ```
 
 **Response (200):**
@@ -364,7 +364,7 @@ API requests are subject to the same rate limits as the web interface:
 ## Troubleshooting
 
 ### 401 Unauthorized
-- Verify the API key is correct and starts with `dbm_`
+- Verify the API key is correct and starts with `dbackup_`
 - Check if the key is **enabled** (not disabled)
 - Check if the key has **expired**
 

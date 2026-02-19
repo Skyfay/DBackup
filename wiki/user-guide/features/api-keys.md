@@ -6,7 +6,7 @@ Manage API keys to authenticate external tools, scripts, and CI/CD pipelines wit
 
 API keys provide a secure alternative to session-based authentication for programmatic access. Each key:
 
-- Has a unique prefix (`dbm_`) for easy identification
+- Has a unique prefix (`dbackup_`) for easy identification
 - Is scoped to specific **permissions** (same RBAC model as groups)
 - Can optionally have an **expiration date**
 - Can be **enabled/disabled** without deletion
@@ -75,14 +75,14 @@ Permanently remove a key:
 Include the API key in the `Authorization` header:
 
 ```
-Authorization: Bearer dbm_your_api_key_here
+Authorization: Bearer dbackup_your_api_key_here
 ```
 
 ### Example Request
 
 ```bash
 curl -X POST "https://your-instance.com/api/jobs/JOB_ID/run" \
-  -H "Authorization: Bearer dbm_abc123..."
+  -H "Authorization: Bearer dbackup_abc123..."
 ```
 
 ### Error Responses

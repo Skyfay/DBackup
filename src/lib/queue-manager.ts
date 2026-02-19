@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
+import { isShutdownRequested } from "@/lib/shutdown";
 
 const log = logger.child({ module: "Queue" });
 
@@ -7,6 +8,12 @@ const log = logger.child({ module: "Queue" });
  * Checks the queue and starts jobs if slots are available.
  */
 export async function processQueue() {
+    // Skip queue processing during shutdown
+    if (isShutdownRequested()) {
+        log.info("Shutdown in progress — skipping queue processing");
+        return;
+    }
+
     log.debug("Processing queue...");
 
     // 1. Get concurrency limit

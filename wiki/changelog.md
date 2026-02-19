@@ -76,6 +76,27 @@ This release introduces a visual adapter picker for creating new sources, destin
 - **Redis**: Default port `6379` shown as placeholder
 - **MariaDB**: Default port `3306` shown as placeholder
 
+#### ✅ Environment Variable Validation
+- **Startup Check**: All required and optional environment variables are validated at application startup using Zod schemas
+- **Clear Error Messages**: Missing `ENCRYPTION_KEY` or `BETTER_AUTH_SECRET` produces a formatted error box with generation instructions and a link to the installation docs
+- **Graceful Warnings**: Invalid optional variables (e.g., malformed `BETTER_AUTH_URL`) are logged as warnings without blocking startup
+- **Default Values**: Optional variables like `LOG_LEVEL`, `TZ`, `PORT`, and `DATABASE_URL` have documented defaults applied automatically
+
+#### 🐳 Docker Health Check
+- **Built-in HEALTHCHECK**: Dockerfile now includes a `HEALTHCHECK` directive that polls `/api/health` every 30 seconds
+- **Health Endpoint**: New `GET /api/health` API route (unauthenticated) returning app status, database connectivity, uptime, memory usage, and response time
+- **Docker Status Integration**: `docker ps` now shows `healthy` / `unhealthy` status, and orchestrators (Docker Compose, Kubernetes) can use it for automated restarts
+- **503 on Failure**: Returns HTTP 503 with `"status": "unhealthy"` when the database is unreachable
+
+#### 🛑 Graceful Shutdown
+- **SIGTERM/SIGINT Handling**: The application now catches shutdown signals and performs a clean shutdown sequence instead of hard-killing running processes
+- **Wait for Running Backups**: On shutdown, the app waits **indefinitely** for all running backup/restore executions to complete — no arbitrary timeout that could kill a long-running backup
+- **Queue Freeze**: The queue manager immediately stops picking up new jobs when a shutdown signal is received
+- **Scheduler Stop**: All cron-scheduled jobs are stopped immediately to prevent new triggers during shutdown
+- **Pending Job Cleanup**: Any pending (not yet started) jobs in the queue are marked as `Failed` since they won't be picked up after shutdown
+- **Database Cleanup**: Prisma client is gracefully disconnected before process exit
+- **Force Exit**: Sending a second signal (e.g., Ctrl+C twice) forces immediate exit for emergency situations
+
 ### 🐛 Bug Fixes
 - **Mouse Wheel Scrolling**: Fixed mouse wheel scrolling not working in command list dropdowns (type selector, comboboxes). The `cmdk` library was intercepting scroll events — added a manual `onWheel` handler to `CommandList` to ensure native scroll behavior
 - **Conditional Form Fields**: Fixed fields appearing before their controlling dropdown is selected (e.g., SSH password shown before auth method is chosen, local backup path shown before transfer mode is selected). Applied to both MSSQL File Transfer and SQLite SSH Connection forms
@@ -118,6 +139,12 @@ This release introduces a visual adapter picker for creating new sources, destin
 - New `src/components/dashboard/explorer/database-explorer.tsx` — Client component with searchable source combobox (Popover + Command), server info cards, database stats table with size distribution progress bars, URL search param support for deep linking
 - Updated `src/components/adapter/adapter-manager.tsx` — Added inspect button (`SearchCode` icon) for database-type adapters linking to `/dashboard/explorer?sourceId=...`
 - Updated `src/components/layout/sidebar.tsx` — Added "Database Explorer" entry with `SearchCode` icon and `PERMISSIONS.SOURCES.READ` permission
+- New `src/lib/env-validation.ts` — Zod-based environment variable validation with required/optional schema, formatted error output, and default values
+- New `src/app/api/health/route.ts` — Unauthenticated health check endpoint returning app status, DB connectivity, uptime, memory usage, and response time
+- New `src/lib/shutdown.ts` — Graceful shutdown handler with SIGTERM/SIGINT listeners, indefinite wait for running executions, pending job cleanup, scheduler stop, and Prisma disconnect
+- Updated `src/instrumentation.ts` — Added `validateEnvironment()` call before scheduler init, and `registerShutdownHandlers()` after
+- Updated `src/lib/queue-manager.ts` — Added `isShutdownRequested()` check to skip queue processing during shutdown
+- Updated `Dockerfile` — Added `curl` package and `HEALTHCHECK` directive (`/api/health`, 30s interval, 10s timeout, 30s start period)
 
 ## v0.9.6-beta - Rsync, Google Drive, Dropbox & OneDrive Storage Destinations & New Notification System
 *Released: February 15, 2026*

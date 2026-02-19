@@ -27,6 +27,7 @@ RUN echo 'http://dl-cdn.alpinelinux.org/alpine/v3.17/main' >> /etc/apk/repositor
     sshpass \
     openssh-client \
     openssl \
+    curl \
     zip \
     su-exec
 
@@ -96,6 +97,10 @@ RUN mkdir -p /backups /app/storage/avatars /app/db && \
 
 # Install Prisma globally to run migrations at startup
 RUN npm install -g prisma@5
+
+# Health check: verify app + database are reachable
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:3000/api/health || exit 1
 
 # User nextjs removed to allow permission fix at runtime
 

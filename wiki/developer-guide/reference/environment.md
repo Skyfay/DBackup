@@ -58,6 +58,14 @@ Store this key securely. Losing it means losing access to all encrypted data (da
 openssl rand -base64 32
 ```
 
+## Startup Validation
+
+DBackup validates all environment variables at startup using Zod schemas (`src/lib/env-validation.ts`).
+
+- **Required variables** (`ENCRYPTION_KEY`, `BETTER_AUTH_SECRET`): Missing or invalid values produce a clear error box in the logs and **abort startup**.
+- **Optional variables**: Invalid values (e.g., non-URL in `BETTER_AUTH_URL`, non-numeric `PORT`) are logged as warnings but don't prevent startup.
+- **Defaults**: Optional variables have sensible defaults applied automatically if not set.
+
 ## Security Best Practices
 
 1. **Never commit secrets** - Use `.env` files excluded from git

@@ -137,6 +137,65 @@ Store it securely in a password manager or secrets vault.
 | `/app/db` | SQLite database persistence |
 | `/app/storage` | User uploads (avatars, etc.) |
 
+## Health Check
+
+DBackup includes a built-in Docker health check that verifies both the application and database are running:
+
+```bash
+# Check container health status
+docker ps
+# CONTAINER ID  IMAGE             STATUS                 PORTS
+# abc123        skyfay/dbackup    Up 5m (healthy)        0.0.0.0:3000->3000/tcp
+
+# Manual health check
+curl http://localhost:3000/api/health
+```
+
+Response:
+```json
+{
+  "status": "healthy",
+  "uptime": 300,
+  "database": "connected",
+  "memory": { "rss": 120, "heapUsed": 65, "heapTotal": 90 },
+  "responseTime": 5
+}
+```
+
+The health check runs every 30 seconds with a 30-second start period. Docker will mark the container as `unhealthy` if 3 consecutive checks fail.
+
+## Graceful Shutdown
+
+When stopping the container, DBackup **waits for all running backup/restore jobs to finish** before shutting down — no data is lost, regardless of how long the backup takes:
+
+```bash
+docker stop dbackup          # Sends SIGTERM → waits for running backups to finish
+docker compose down           # Same graceful behavior
+```
+
+- **Running jobs** are always completed before the process exits
+- **Pending jobs** in the queue are cancelled and marked as `Failed`
+- The scheduler is stopped immediately (no new cron triggers)
+- A second `Ctrl+C` / `docker kill` forces immediate exit for emergencies
+
+::: warning Docker Stop Timeout
+By default, Docker sends a `SIGKILL` **10 seconds** after `docker stop` — this forcefully kills the process regardless of what it's doing. Since `SIGKILL` cannot be caught by any application, you **must** increase the timeout if your backups take longer than 10 seconds.
+
+**Docker Compose** (recommended — add to your `docker-compose.yml`):
+```yaml
+services:
+  dbackup:
+    stop_grace_period: 10m   # Wait up to 10 minutes for backups to finish
+```
+
+**Docker CLI**:
+```bash
+docker stop --time=600 dbackup   # Wait up to 10 minutes
+```
+
+Without this setting, Docker will kill the backup process after 10 seconds, even though DBackup is trying to wait for it.
+:::
+
 ## Reverse Proxy Setup
 
 ::: warning Security Recommendation

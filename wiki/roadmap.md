@@ -17,20 +17,14 @@ These items must be resolved before moving from beta to stable release.
 - **Partial Failure Handling**: If 1 of 5 databases fails in a multi-DB backup, save the successful ones
 - **Dead Letter Queue**: Move repeatedly failing jobs to a separate status for investigation
 
-### Graceful Shutdown
-- Cleanly abort running jobs when the container is stopped
-- Set execution status to "Cancelled" instead of leaving "Running" orphans
-- Clean up temporary files on shutdown
+### ~~Graceful Shutdown~~ ✅ *Implemented in v0.9.7*
 
 ### Startup Recovery
 - Detect jobs stuck in "Running" status from a previous crash and mark as "Failed"
 - Clean up orphaned temp files on startup
 - Re-initialize the queue manager
 
-### Robust Health Check Endpoint
-- Verify database connectivity
-- Check queue manager status
-- Monitor available disk space (critical for local storage backups)
+### ~~Robust Health Check Endpoint~~ ✅ *Implemented in v0.9.7*
 
 
 

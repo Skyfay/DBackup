@@ -19,12 +19,13 @@ This release introduces a visual adapter picker for creating new sources, destin
 - **Edit Flow Unchanged**: Editing existing configurations still opens the form directly with the full type dropdown
 
 #### 🎨 Brand Icons for Adapters
-- **Simple Icons Integration**: Added `@icons-pack/react-simple-icons` library for official brand logos
-- **Database Icons**: MySQL (dolphin), MariaDB, PostgreSQL (elephant), MongoDB (leaf), SQLite, Redis — all with original brand colors
-- **Storage Icons**: Cloudflare (R2), Hetzner, Google Drive, Dropbox, MinIO (S3 Generic) — with brand colors
-- **Notification Icons**: Discord icon with brand color
-- **Lucide Fallbacks**: MSSQL, AWS S3, OneDrive, SFTP, FTP, WebDAV, SMB, Rsync, and Email use appropriate Lucide icons (Database, Cloud, Network, Globe, Mail)
-- **Color Map**: Brand colors are applied to icons in the picker for visual distinction
+- **Iconify Integration**: Replaced `@icons-pack/react-simple-icons` with [Iconify](https://iconify.design/) for richer, multi-colored brand icons — bundled offline (no API calls) for self-hosted deployments
+- **SVG Logos (Primary)**: MySQL, MariaDB, PostgreSQL, MongoDB, SQLite, Redis, AWS S3, Cloudflare R2, Google Drive, Dropbox, OneDrive, Discord — all with original multi-colored brand artwork
+- **Simple Icons (Fallback)**: MSSQL, Hetzner, MinIO — monochrome icons with brand colors for brands not available in SVG Logos
+- **Lucide (Generic)**: Folder (Local), Network (SFTP, FTP, SMB, Rsync), Globe (WebDAV), Mail (Email) — for protocol-level icons without a brand
+- **Proper Brand Icons**: OneDrive and Amazon S3 now display their actual brand logos instead of generic Cloud icons
+- **AdapterIcon Component**: New `<AdapterIcon>` component handles icon rendering, color mapping, and pack selection automatically
+- **Icon System Docs**: New [Icon System](/developer-guide/core/icons) developer guide documenting architecture, icon packs, and how to add icons for new adapters
 
 #### 🗂️ Grouped Destination Type Selector
 - **Categorized Adapter List**: The destination type dropdown now groups storage adapters into logical categories for better discoverability
@@ -64,14 +65,16 @@ This release introduces a visual adapter picker for creating new sources, destin
 
 ### 🔧 Technical Changes
 - New `src/components/adapter/adapter-picker.tsx` — Visual adapter picker component with card grid, search bar, category tabs, brand icons, and icon color support
-- Updated `src/components/adapter/utils.ts` — Replaced generic Lucide-only icon resolution with explicit `ADAPTER_ICON_MAP` using Simple Icons for brands (MySQL, PostgreSQL, MongoDB, etc.) and Lucide fallbacks. Added `getAdapterColor()` for brand color hex values
+- Updated `src/components/adapter/utils.ts` — Replaced generic Lucide-only icon resolution with bundled Iconify icon data. `ADAPTER_ICON_MAP` maps adapter IDs to `IconifyIcon` objects from `@iconify-icons/logos` (SVG Logos), `@iconify-icons/simple-icons`, and `@iconify-icons/lucide`. Added `getAdapterColor()` for monochrome Simple Icons brand colors
+- New `src/components/adapter/adapter-icon.tsx` — `<AdapterIcon>` component rendering Iconify `<Icon>` with automatic color handling based on icon pack
 - Updated `src/components/adapter/adapter-manager.tsx` — Two-step create flow: picker dialog → form dialog. Picker opens on "Add New", passes selected adapter to form
 - Updated `src/components/adapter/adapter-form.tsx` — Shows read-only type badge when single adapter is pre-selected, retains combobox for edit/multi-adapter scenarios
 - Updated `src/lib/adapters/definitions.ts` — Added optional `group` field to `AdapterDefinition` type, assigned groups to all 13 storage adapters. Extended `MSSQLSchema` with `fileTransferMode`, `sshHost`, `sshPort`, `sshUsername`, `sshAuthType`, `sshPassword`, `sshPrivateKey`, `sshPassphrase` fields
 - Updated `src/components/ui/command.tsx` — Added `onWheel` handler to `CommandList` for manual scroll support, bypassing `cmdk`'s event interception
 - Updated `wiki/index.md` — Added "Supported Destinations" and "Supported Notifications" sections, shortened hero feature texts
 - Updated `README.md` — Added "Supported Destinations" and "Supported Notifications" sections, shortened feature bullet points
-- Added `@icons-pack/react-simple-icons` dependency for brand logo icons
+- Replaced `@icons-pack/react-simple-icons` with `@iconify/react`, `@iconify-icons/logos`, `@iconify-icons/simple-icons`, and `@iconify-icons/lucide` for bundled offline brand icons
+- New `wiki/developer-guide/core/icons.md` — Icon System documentation covering architecture, icon packs, adding new icons, and current mapping table
 - New `src/lib/adapters/database/mssql/ssh-transfer.ts` — `MssqlSshTransfer` class for SSH/SFTP file transfer with `connect()`, `download()`, `upload()`, `deleteRemote()`, `exists()`, `end()` methods. Includes `isSSHTransferEnabled()` helper
 - Updated `src/lib/adapters/database/mssql/dump.ts` — Refactored to support both local and SSH transfer modes for downloading `.bak` files from remote servers
 - Updated `src/lib/adapters/database/mssql/restore.ts` — Refactored to support both local and SSH transfer modes for uploading `.bak` files to remote servers

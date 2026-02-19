@@ -26,9 +26,6 @@ importers:
       '@iconify-icons/logos':
         specifier: ^1.2.36
         version: 1.2.36
-      '@iconify-icons/lucide':
-        specifier: ^1.2.135
-        version: 1.2.135
       '@iconify-icons/mdi':
         specifier: ^1.2.48
         version: 1.2.48
@@ -1209,9 +1206,6 @@ packages:
 
   '@iconify-icons/logos@1.2.36':
     resolution: {integrity: sha512-VzF299ubR4SKCZzLJoAawxeSjszJV1Q6y+4chCIPQuAafqfjtDjZxagZxL3ILKCsRLNN/z3zmCOOAL83tC8kLw==}
-
-  '@iconify-icons/lucide@1.2.135':
-    resolution: {integrity: sha512-t2Dya1a+PInBmHScbbGyseze7rrGHRW/dYF4GTR6f51N08sCg6KrtE4zmplnZE1ul2NyC+sxKpXRCv48hEgaQw==}
 
   '@iconify-icons/mdi@1.2.48':
     resolution: {integrity: sha512-51bfNoRLhYDfxSu0Nyi/uRVq6q/tP4TyEc0vvuNwImrXpxrRJUAWJF2A36CfBkXm3hO9IBlph/CD/XNDJKgG6w==}
@@ -7669,10 +7663,6 @@ snapshots:
   '@humanwhocodes/retry@0.4.3': {}
 
   '@iconify-icons/logos@1.2.36':
-    dependencies:
-      '@iconify/types': 2.0.0
-
-  '@iconify-icons/lucide@1.2.135':
     dependencies:
       '@iconify/types': 2.0.0
 

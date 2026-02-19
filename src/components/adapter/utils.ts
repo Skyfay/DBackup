@@ -6,8 +6,7 @@
  *
  * - @iconify-icons/logos         → SVG Logos (multi-colored brand icons)
  * - @iconify-icons/simple-icons  → Simple Icons (monochrome, brand color applied)
- * - @iconify-icons/mdi           → Material Design Icons (protocol & storage icons)
- * - @iconify-icons/lucide        → Lucide (generic fallback icons)
+ * - @iconify-icons/mdi           → Material Design Icons (protocol, storage & generic icons)
  */
 
 import type { IconifyIcon } from "@iconify/react";
@@ -31,17 +30,15 @@ import mssqlIcon from "@iconify-icons/simple-icons/microsoftsqlserver";
 import minioIcon from "@iconify-icons/simple-icons/minio";
 import hetznerIcon from "@iconify-icons/simple-icons/hetzner";
 
-// — Lucide (generic UI icons) —
-import mailIcon from "@iconify-icons/lucide/mail";
-import discIcon from "@iconify-icons/lucide/disc";
-
-// — Material Design Icons (protocol & storage icons) —
+// — Material Design Icons (protocol, storage & generic icons) —
 import harddiskIcon from "@iconify-icons/mdi/harddisk";
 import sshIcon from "@iconify-icons/mdi/ssh";
 import swapVerticalIcon from "@iconify-icons/mdi/swap-vertical";
 import cloudUploadIcon from "@iconify-icons/mdi/cloud-upload";
 import folderNetworkIcon from "@iconify-icons/mdi/folder-network";
 import folderSyncIcon from "@iconify-icons/mdi/folder-sync";
+import emailIcon from "@iconify-icons/mdi/email";
+import discIcon from "@iconify-icons/mdi/disc";
 
 // Map adapter IDs to bundled IconifyIcon data objects
 const ADAPTER_ICON_MAP: Record<string, IconifyIcon> = {
@@ -77,7 +74,7 @@ const ADAPTER_ICON_MAP: Record<string, IconifyIcon> = {
 
     // Notifications
     "discord": discordIcon,
-    "email": mailIcon,
+    "email": emailIcon,
 };
 
 /** Returns the bundled Iconify icon data for a given adapter ID */

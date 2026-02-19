@@ -31,7 +31,6 @@
     "@better-auth/sso": "^1.4.17",
     "@hookform/resolvers": "^5.2.2",
     "@iconify-icons/logos": "^1.2.36",
-    "@iconify-icons/lucide": "^1.2.135",
     "@iconify-icons/mdi": "^1.2.48",
     "@iconify-icons/simple-icons": "^1.2.74",
     "@iconify/react": "^6.0.2",

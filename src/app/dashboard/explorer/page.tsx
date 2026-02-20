@@ -2,7 +2,6 @@ import { Suspense } from "react";
 import { DatabaseExplorer } from "@/components/dashboard/explorer/database-explorer";
 import prisma from "@/lib/prisma";
 import { getUserPermissions } from "@/lib/access-control";
-import { PERMISSIONS } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 

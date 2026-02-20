@@ -3,7 +3,7 @@
 All notable changes to DBackup are documented here.
 
 ## v0.9.7-beta - API Keys, Webhook Triggers, Adapter Picker & Brand Icons
-*Release: In Progress*
+*Released: February 20, 2026*
 
 This release introduces API key authentication for programmatic access, webhook triggers for starting backup jobs via REST API, and a visual adapter picker for creating new sources, destinations, and notifications. The picker displays all available adapters as cards with brand icons, grouped by category with tabs for quick navigation. A comprehensive API reference documentation covers all 43 endpoints.
 

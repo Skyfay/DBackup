@@ -30,7 +30,6 @@ import { RestoreOptions } from "@/lib/types/config-backup";
 import { RedisRestoreWizard } from "./redis-restore-wizard";
 import { useUserPreferences } from "@/hooks/use-user-preferences";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Progress } from "@/components/ui/progress";
 
 interface DatabaseInfo {
     name: string;

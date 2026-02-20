@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import { PERMISSIONS, Permission, AVAILABLE_PERMISSIONS } from "@/lib/permissions";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
-import { AuthenticationError, PermissionError, ApiKeyError, wrapError } from "@/lib/errors";
+import { AuthenticationError, PermissionError, wrapError } from "@/lib/errors";
 import { apiKeyService } from "@/services/api-key-service";
 
 const log = logger.child({ module: "AccessControl" });
@@ -74,7 +74,7 @@ export async function getAuthContext(headersObj: Headers): Promise<AuthContext |
         };
       }
     }
-  } catch (error) {
+  } catch (_error) {
     log.debug("Session auth check failed, trying API key");
   }
 

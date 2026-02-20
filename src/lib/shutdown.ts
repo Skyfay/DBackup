@@ -71,7 +71,6 @@ async function performShutdown(signal: string): Promise<void> {
     //    forces immediate exit)
     let lastLoggedCount = -1;
 
-    // eslint-disable-next-line no-constant-condition
     while (true) {
         try {
             const runningCount = await prisma.execution.count({

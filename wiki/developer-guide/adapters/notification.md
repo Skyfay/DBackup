@@ -508,6 +508,7 @@ Every new notification adapter touches these files:
 | 12 | `wiki/index.md` | Update feature card and supported notifications table |
 | 13 | `wiki/changelog.md` | Add changelog entry |
 | 14 | `wiki/developer-guide/adapters/notification.md` | Update "Available Adapters" table (this file) |
+| 15 | `tests/unit/adapters/notification/<id>.test.ts` | Write unit tests for `test()` and `send()` |
 
 ### Step 1 — Define the Zod Schema
 
@@ -716,6 +717,99 @@ Follow the structure of existing adapter pages:
 - Message Format (example output)
 - Troubleshooting (common error messages)
 
+### Step 7 — Unit Tests
+
+Create `tests/unit/adapters/notification/<id>.test.ts` following the existing pattern:
+
+```typescript
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { MyServiceAdapter } from "@/lib/adapters/notification/my-service";
+import { MyServiceConfig } from "@/lib/adapters/definitions";
+
+const mockFetch = vi.fn();
+global.fetch = mockFetch;
+
+const baseConfig: MyServiceConfig = {
+  serverUrl: "https://my-service.example.com",
+  apiToken: "test-token",
+  priority: 5,
+};
+
+describe("My Service Adapter", () => {
+  beforeEach(() => vi.clearAllMocks());
+  afterEach(() => vi.restoreAllMocks());
+
+  describe("test()", () => {
+    it("should return success on 200", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200 });
+      const result = await MyServiceAdapter.test(baseConfig);
+      expect(result.success).toBe(true);
+    });
+
+    it("should return failure on HTTP error", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false, status: 401,
+        text: async () => "Unauthorized",
+        statusText: "Unauthorized",
+      });
+      const result = await MyServiceAdapter.test(baseConfig);
+      expect(result.success).toBe(false);
+    });
+
+    it("should return failure on network error", async () => {
+      mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+      const result = await MyServiceAdapter.test(baseConfig);
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("send()", () => {
+    it("should return true on success", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200 });
+      const result = await MyServiceAdapter.send(baseConfig, "Backup completed");
+      expect(result).toBe(true);
+    });
+
+    it("should verify payload structure", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200 });
+      await MyServiceAdapter.send(baseConfig, "Test", {
+        title: "Backup Success",
+        fields: [{ name: "Database", value: "mydb" }],
+        color: "#00ff00",
+      });
+      const [, options] = mockFetch.mock.calls[0];
+      const body = JSON.parse(options.body);
+      // Assert body structure matches expected format
+      expect(body.title).toBe("Backup Success");
+    });
+
+    it("should return false on HTTP error", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: false, status: 500, text: async () => "error" });
+      const result = await MyServiceAdapter.send(baseConfig, "Test");
+      expect(result).toBe(false);
+    });
+
+    it("should return false on network error", async () => {
+      mockFetch.mockRejectedValueOnce(new Error("Timeout"));
+      const result = await MyServiceAdapter.send(baseConfig, "Test");
+      expect(result).toBe(false);
+    });
+  });
+});
+```
+
+**What to test:**
+- `test()` — success, HTTP error, network error
+- `send()` — success, payload structure with context, HTTP error, network error
+- Adapter-specific features (e.g., priority escalation, color mapping, auth headers, template rendering)
+- Edge cases (trailing slashes in URLs, optional fields omitted, etc.)
+
+::: tip Run notification tests
+```bash
+pnpm test -- tests/unit/adapters/notification/
+```
+:::
+
 **b) VitePress sidebar** — `wiki/.vitepress/config.mts`
 
 Add the entry under the "Notification Channels" section:
@@ -771,6 +865,9 @@ wiki/
         └── notification.md ← Available Adapters table (this file)
 
 README.md                   ← Feature line + channels table
+
+tests/unit/adapters/notification/
+└── <id>.test.ts            ← NEW: Unit tests for test() and send()
 ```
 
 ::: tip User-targeted delivery

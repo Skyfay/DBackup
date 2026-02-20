@@ -12,6 +12,7 @@ export default async function SourcesPage() {
             title="Sources"
             description="Configure the databases you want to backup."
             canManage={canManage}
+            permissions={permissions}
         />
     )
 }

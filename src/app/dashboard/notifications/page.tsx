@@ -12,6 +12,7 @@ export default async function NotificationsPage() {
             title="Notifications"
             description="Configure channels to receive alerts about your backups."
             canManage={canManage}
+            permissions={permissions}
         />
     )
 }

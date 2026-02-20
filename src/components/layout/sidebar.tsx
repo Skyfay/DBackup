@@ -29,19 +29,52 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useTheme } from "next-themes"
 import { PERMISSIONS } from "@/lib/permissions"
 
-const sidebarItems = [
-    { icon: LayoutDashboard, label: "Overview", href: "/dashboard" },
-    { icon: Rocket, label: "Quick Setup", href: "/dashboard/setup", permission: [PERMISSIONS.SOURCES.WRITE, PERMISSIONS.DESTINATIONS.WRITE, PERMISSIONS.JOBS.WRITE], quickSetupOnly: true },
-    { icon: Database, label: "Sources", href: "/dashboard/sources", permission: PERMISSIONS.SOURCES.READ },
-    { icon: HardDrive, label: "Destinations", href: "/dashboard/destinations", permission: PERMISSIONS.DESTINATIONS.READ },
-    { icon: Bell, label: "Notifications", href: "/dashboard/notifications", permission: PERMISSIONS.NOTIFICATIONS.READ },
-    { icon: CalendarClock, label: "Jobs", href: "/dashboard/jobs", permission: PERMISSIONS.JOBS.READ },
-    { icon: FolderOpen, label: "Storage Explorer", href: "/dashboard/storage", permission: PERMISSIONS.STORAGE.READ },
-    { icon: SearchCode, label: "Database Explorer", href: "/dashboard/explorer", permission: PERMISSIONS.SOURCES.READ },
-    { icon: History, label: "History", href: "/dashboard/history", permission: PERMISSIONS.HISTORY.READ },
-    { icon: Lock, label: "Vault", href: "/dashboard/vault", permission: PERMISSIONS.VAULT.READ },
-    { icon: Users, label: "Users & Groups", href: "/dashboard/users", permission: [PERMISSIONS.USERS.READ, PERMISSIONS.GROUPS.READ, PERMISSIONS.AUDIT.READ, PERMISSIONS.API_KEYS.READ] },
-    { icon: Settings, label: "Settings", href: "/dashboard/settings", permission: PERMISSIONS.SETTINGS.READ },
+interface SidebarItem {
+    icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+    label: string;
+    href: string;
+    permission?: string | string[];
+    quickSetupOnly?: boolean;
+}
+
+interface SidebarGroup {
+    label: string;
+    items: SidebarItem[];
+}
+
+const sidebarGroups: SidebarGroup[] = [
+    {
+        label: "General",
+        items: [
+            { icon: LayoutDashboard, label: "Overview", href: "/dashboard" },
+            { icon: Rocket, label: "Quick Setup", href: "/dashboard/setup", permission: [PERMISSIONS.SOURCES.WRITE, PERMISSIONS.DESTINATIONS.WRITE, PERMISSIONS.JOBS.WRITE], quickSetupOnly: true },
+        ],
+    },
+    {
+        label: "Backup",
+        items: [
+            { icon: Database, label: "Sources", href: "/dashboard/sources", permission: PERMISSIONS.SOURCES.READ },
+            { icon: HardDrive, label: "Destinations", href: "/dashboard/destinations", permission: PERMISSIONS.DESTINATIONS.READ },
+            { icon: CalendarClock, label: "Jobs", href: "/dashboard/jobs", permission: PERMISSIONS.JOBS.READ },
+            { icon: Bell, label: "Notifications", href: "/dashboard/notifications", permission: PERMISSIONS.NOTIFICATIONS.READ },
+        ],
+    },
+    {
+        label: "Explorer",
+        items: [
+            { icon: FolderOpen, label: "Storage Explorer", href: "/dashboard/storage", permission: PERMISSIONS.STORAGE.READ },
+            { icon: SearchCode, label: "Database Explorer", href: "/dashboard/explorer", permission: PERMISSIONS.SOURCES.READ },
+            { icon: History, label: "History", href: "/dashboard/history", permission: PERMISSIONS.HISTORY.READ },
+        ],
+    },
+    {
+        label: "Administration",
+        items: [
+            { icon: Lock, label: "Vault", href: "/dashboard/vault", permission: PERMISSIONS.VAULT.READ },
+            { icon: Users, label: "Users & Groups", href: "/dashboard/users", permission: [PERMISSIONS.USERS.READ, PERMISSIONS.GROUPS.READ, PERMISSIONS.AUDIT.READ, PERMISSIONS.API_KEYS.READ] },
+            { icon: Settings, label: "Settings", href: "/dashboard/settings", permission: PERMISSIONS.SETTINGS.READ },
+        ],
+    },
 ]
 
 interface SidebarProps {
@@ -92,31 +125,42 @@ export function Sidebar({ permissions = [], isSuperAdmin = false, updateAvailabl
                 />
                 <h1 className="text-xl font-bold tracking-tight">DBackup</h1>
             </div>
-            <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-                {sidebarItems.map((item) => {
-                    // Hide Quick Setup unless showQuickSetup is true
-                    if ('quickSetupOnly' in item && item.quickSetupOnly && !showQuickSetup) return null;
+            <nav className="flex-1 p-4 space-y-6 overflow-y-auto">
+                {sidebarGroups.map((group) => {
+                    // Filter visible items for this group
+                    const visibleItems = group.items.filter((item) => {
+                        if ('quickSetupOnly' in item && item.quickSetupOnly && !showQuickSetup) return false;
+                        if (item.permission) {
+                            const requiredPerms = Array.isArray(item.permission) ? item.permission : [item.permission];
+                            const hasAny = requiredPerms.some((p) => permissions.includes(p));
+                            if (!isSuperAdmin && !hasAny) return false;
+                        }
+                        return true;
+                    });
 
-                    // Check if item requires specific permission
-                    if (item.permission) {
-                        const requiredPerms = Array.isArray(item.permission) ? item.permission : [item.permission];
-                        const hasAny = requiredPerms.some((p) => permissions.includes(p));
-                        if (!isSuperAdmin && !hasAny) return null;
-                    }
+                    // Don't render group if no items are visible
+                    if (visibleItems.length === 0) return null;
 
                     return (
-                        <Button
-                            key={item.href}
-                            variant={pathname === item.href ? "secondary" : "ghost"}
-                            className={cn("w-full justify-start", pathname === item.href && "font-semibold")}
-                            asChild
-                        >
-                            <Link href={item.href}>
-                                <item.icon className="mr-2 h-4 w-4" />
-                                {item.label}
-                            </Link>
-                        </Button>
-                    )
+                        <div key={group.label} className="space-y-1">
+                            <h4 className="px-2 text-xs font-semibold text-muted-foreground/70 uppercase tracking-wider">
+                                {group.label}
+                            </h4>
+                            {visibleItems.map((item) => (
+                                <Button
+                                    key={item.href}
+                                    variant={pathname === item.href ? "secondary" : "ghost"}
+                                    className={cn("w-full justify-start", pathname === item.href && "font-semibold")}
+                                    asChild
+                                >
+                                    <Link href={item.href}>
+                                        <item.icon className="mr-2 h-4 w-4" />
+                                        {item.label}
+                                    </Link>
+                                </Button>
+                            ))}
+                        </div>
+                    );
                 })}
             </nav>
             {currentVersion && (

@@ -14,9 +14,10 @@ interface HealthStatusBadgeProps {
     adapterId: string;
     lastChecked?: Date | string | null;
     className?: string;
+    interactive?: boolean;
 }
 
-export function HealthStatusBadge({ status, adapterId, lastChecked, className }: HealthStatusBadgeProps) {
+export function HealthStatusBadge({ status, adapterId, lastChecked, className, interactive = true }: HealthStatusBadgeProps) {
     const [isOpen, setIsOpen] = useState(false);
 
     const statusColor = {
@@ -32,6 +33,21 @@ export function HealthStatusBadge({ status, adapterId, lastChecked, className }:
         OFFLINE: "Offline",
         PENDING: "Pending",
     }[status] || "Unknown";
+
+    // Non-interactive mode: show badge only without popover
+    if (!interactive) {
+        return (
+            <div
+                className={cn(
+                    "flex items-center gap-2 px-2 py-1 rounded-full w-fit",
+                    className
+                )}
+            >
+                <span className={cn("h-2.5 w-2.5 rounded-full", statusColor)} />
+                <span className="text-sm font-medium hidden sm:inline-block text-muted-foreground">{statusLabel}</span>
+            </div>
+        );
+    }
 
     return (
         <Popover open={isOpen} onOpenChange={setIsOpen}>

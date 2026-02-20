@@ -21,8 +21,9 @@ import { AdapterForm } from "./adapter-form";
 import { AdapterPicker } from "./adapter-picker";
 import { HealthStatusBadge } from "@/components/ui/health-status-badge";
 import { StorageHistoryModal } from "@/components/dashboard/widgets/storage-history-modal";
+import { PERMISSIONS } from "@/lib/permissions";
 
-export function AdapterManager({ type, title, description, canManage = true }: AdapterManagerProps) {
+export function AdapterManager({ type, title, description, canManage = true, permissions = [] }: AdapterManagerProps) {
     const [configs, setConfigs] = useState<AdapterConfig[]>([]);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [isPickerOpen, setIsPickerOpen] = useState(false);
@@ -158,11 +159,16 @@ export function AdapterManager({ type, title, description, canManage = true }: A
                 // If lastHeathCheck is null, default to PENDING
                 const status = lastCheck ? (row.original.lastStatus || "ONLINE") : "PENDING";
 
+                // Health history popover requires sources:read (database) or destinations:read (storage)
+                const healthPerm = type === "database" ? PERMISSIONS.SOURCES.READ : PERMISSIONS.DESTINATIONS.READ;
+                const canViewHealth = permissions.includes(healthPerm);
+
                 return (
                     <HealthStatusBadge
                         status={status}
                         adapterId={row.original.id}
                         lastChecked={lastCheck}
+                        interactive={canViewHealth}
                     />
                 );
             }
@@ -222,7 +228,7 @@ export function AdapterManager({ type, title, description, canManage = true }: A
                                 <SearchCode className="h-4 w-4" />
                             </Button>
                         )}
-                        {type === "storage" && (
+                        {type === "storage" && permissions.includes(PERMISSIONS.STORAGE.READ) && (
                             <Button
                                 variant="ghost"
                                 size="icon"

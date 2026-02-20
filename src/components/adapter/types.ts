@@ -14,4 +14,5 @@ export interface AdapterManagerProps {
     title: string;
     description: string;
     canManage?: boolean;
+    permissions?: string[];
 }

@@ -94,8 +94,18 @@ This release adds seven new notification adapters: Slack, Microsoft Teams, Gotif
 - **Permission-Aware** — Requires Sources, Destinations, and Jobs write permissions. Vault and Notification steps are shown based on their respective write permissions
 - **Back Navigation** — "← Change Type" button in adapter forms (wizard and standard dialogs) allows going back to the adapter picker without losing the dialog state
 
+### 🎨 UI Improvements
+
+#### 🗂️ Grouped Sidebar Navigation
+- **Section Labels** — Sidebar navigation is now organized into four labeled sections for better discoverability: **General** (Overview, Quick Setup), **Backup** (Sources, Destinations, Jobs, Notifications), **Explorer** (Storage Explorer, Database Explorer, History), and **Administration** (Vault, Users & Groups, Settings)
+- **Cleaner Layout** — Groups are visually separated with `space-y-6` spacing and subtle uppercase section headings
+- **Automatic Group Hiding** — Groups with no visible items (due to missing permissions) are automatically hidden entirely
+
 ### 🐛 Bug Fixes
 - **Config Backup Scheduler Not Refreshing**: Enabling or disabling Automated Configuration Backup in Settings now takes effect immediately without requiring a server restart — `scheduler.refresh()` is called after saving the settings
+- **Storage History Button Visible Without Permission**: The Storage History action button in the Destinations table was always shown for all users, even when they lacked `storage:read` permission — it now only renders if the user has `storage:read`
+- **Health History Popover Visible Without Permission**: The health status badge in Sources/Destinations tables was always clickable and opened the health history popover, regardless of permissions — users without `sources:read` (Sources) or `destinations:read` (Destinations) now see a non-interactive status badge only
+- **Health History API Rejected Destination Users**: `GET /api/adapters/[id]/health-history` only accepted `sources:read`, causing users with `destinations:read` (but not `sources:read`) to receive a 403 error when hovering over a destination status badge — the API now accepts either `sources:read` or `destinations:read`
 
 ### 🔧 Technical Changes
 - Updated `src/app/actions/config-backup-settings.ts` — Added `scheduler.refresh()` call after saving config backup settings to immediately apply enabled/disabled state to the cron scheduler
@@ -108,6 +118,7 @@ This release adds seven new notification adapters: Slack, Microsoft Teams, Gotif
 - New `src/components/dashboard/setup/steps/notification-step.tsx` — Optional notification channel creation step
 - New `src/components/dashboard/setup/steps/job-step.tsx` — Backup job creation with cron presets, auto-filled references to previously created resources
 - New `src/components/dashboard/setup/steps/complete-step.tsx` — Summary and "Run First Backup Now" button
+- Updated `src/components/layout/sidebar.tsx` — Refactored flat `sidebarItems` array into grouped `sidebarGroups: SidebarGroup[]` structure with four sections (General, Backup, Explorer, Administration). Each group renders its own section label; groups with no visible items are skipped entirely
 - Updated `src/components/layout/sidebar.tsx` — Added Quick Setup entry with `Rocket` icon and `showQuickSetup` prop for conditional visibility
 - Updated `src/app/dashboard/layout.tsx` — Queries source count and `general.showQuickSetup` SystemSetting to determine sidebar visibility
 - Updated `src/components/adapter/adapter-form.tsx` — Added `onBack` prop and "← Change Type" button in footer for returning to the adapter picker
@@ -115,6 +126,11 @@ This release adds seven new notification adapters: Slack, Microsoft Teams, Gotif
 - Updated `src/app/actions/settings.ts` — Added `showQuickSetup` field to the settings schema and upsert logic (`general.showQuickSetup` SystemSetting key)
 - Updated `src/app/dashboard/settings/page.tsx` — Loads `general.showQuickSetup` setting and passes to `SystemSettingsForm`
 - Updated `src/components/settings/system-settings-form.tsx` — New "Quick Setup Wizard" card with "Always Show Quick Setup" switch in the General tab
+- Updated `src/components/adapter/types.ts` — Added `permissions?: string[]` prop to `AdapterManagerProps`
+- Updated `src/components/adapter/adapter-manager.tsx` — Accepts `permissions` prop; Storage History button is now gated behind `PERMISSIONS.STORAGE.READ`; `HealthStatusBadge` receives `interactive={false}` when user lacks the required permission (`sources:read` for database adapters, `destinations:read` for storage adapters)
+- Updated `src/components/ui/health-status-badge.tsx` — Added `interactive?: boolean` prop (default `true`); when `false`, renders a plain non-clickable badge without the popover
+- Updated `src/app/dashboard/destinations/page.tsx`, `src/app/dashboard/sources/page.tsx`, `src/app/dashboard/notifications/page.tsx` — Pass `permissions` array to `AdapterManager`
+- Updated `src/app/api/adapters/[id]/health-history/route.ts` — Replaced single `checkPermissionWithContext(ctx, PERMISSIONS.SOURCES.READ)` with an explicit check accepting either `sources:read` or `destinations:read`
 
 ### 🔄 Changes
 - Updated README and documentation to list all 7 notification channels as supported

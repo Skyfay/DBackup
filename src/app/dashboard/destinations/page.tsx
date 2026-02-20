@@ -18,6 +18,7 @@ export default async function DestinationsPage() {
                 title="Destinations"
                 description="Configure where your backups should be stored."
                 canManage={canManage}
+                permissions={permissions}
             />
         </>
     )

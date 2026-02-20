@@ -351,6 +351,7 @@ export function AdapterManager({ type, title, description, canManage = true }: A
                             adapters={selectedAdapterForNew ? availableAdapters.filter(a => a.id === selectedAdapterForNew) : availableAdapters}
                             onSuccess={() => { setIsDialogOpen(false); setSelectedAdapterForNew(null); fetchConfigs(); }}
                             initialData={editingId ? configs.find(c => c.id === editingId) : undefined}
+                            onBack={!editingId ? () => { setIsDialogOpen(false); setSelectedAdapterForNew(null); setIsPickerOpen(true); } : undefined}
                         />
                     )}
                 </DialogContent>

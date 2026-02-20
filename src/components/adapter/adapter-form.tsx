@@ -22,7 +22,7 @@ import { useAdapterConnection } from "./use-adapter-connection";
 import { DatabaseFormContent, GenericFormContent, NotificationFormContent, StorageFormContent } from "./form-sections";
 import { SchemaField } from "./schema-field";
 
-export function AdapterForm({ type, adapters, onSuccess, initialData }: { type: string, adapters: AdapterDefinition[], onSuccess: () => void, initialData?: AdapterConfig }) {
+export function AdapterForm({ type, adapters, onSuccess, initialData, onBack }: { type: string, adapters: AdapterDefinition[], onSuccess: () => void, initialData?: AdapterConfig, onBack?: () => void }) {
     const [selectedAdapterId, setSelectedAdapterId] = useState<string>(initialData?.adapterId || "");
 
     const selectedAdapter = adapters.find(a => a.id === selectedAdapterId);
@@ -296,20 +296,29 @@ export function AdapterForm({ type, adapters, onSuccess, initialData }: { type: 
                 )}
 
                 {/* Dialog Footer Actions */}
-                <div className="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 gap-2 pt-4">
-                    {(type === 'notification' || type === 'database' || type === 'storage') && (
-                        <Button
-                            type="button"
-                            variant="secondary"
-                            onClick={testConnection}
-                            disabled={!selectedAdapter}
-                        >
-                            Test Connection
+                <div className="flex flex-col-reverse sm:flex-row sm:justify-between gap-2 pt-4">
+                    <div>
+                        {onBack && !initialData && (
+                            <Button type="button" variant="ghost" onClick={onBack}>
+                                ← Change Type
+                            </Button>
+                        )}
+                    </div>
+                    <div className="flex flex-col-reverse sm:flex-row sm:space-x-2 gap-2">
+                        {(type === 'notification' || type === 'database' || type === 'storage') && (
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                onClick={testConnection}
+                                disabled={!selectedAdapter}
+                            >
+                                Test Connection
+                            </Button>
+                        )}
+                        <Button type="submit" disabled={!selectedAdapter}>
+                            {initialData ? "Save Changes" : "Create"}
                         </Button>
-                    )}
-                    <Button type="submit" disabled={!selectedAdapter}>
-                        {initialData ? "Save Changes" : "Create"}
-                    </Button>
+                    </div>
                 </div>
             </form>
         </Form>

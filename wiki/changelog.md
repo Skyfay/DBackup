@@ -3,7 +3,7 @@
 All notable changes to DBackup are documented here.
 
 ## v0.9.8-beta - Notification Adapters Expansion
-*Release: In Progress*
+*Released: February 20, 2026*
 
 This release adds seven new notification adapters: Slack, Microsoft Teams, Gotify, ntfy, Generic Webhook, Telegram, and SMS (Twilio). All nine channels (Discord, Slack, Teams, Telegram, Gotify, ntfy, SMS, Generic Webhook, Email) are now available for both per-job and system-wide notifications. The notification documentation has been restructured into dedicated per-channel pages with detailed setup guides.
 

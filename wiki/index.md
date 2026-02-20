@@ -31,7 +31,7 @@ features:
     details: Cron-based job scheduling with GVS (Grandfather-Father-Son) retention policies for intelligent rotation.
   - icon: 🔔
     title: Notifications
-    details: Discord, Slack, Microsoft Teams, Generic Webhook, and Email (SMTP) alerts for backups, restores, logins, and system events.
+    details: Discord, Slack, Microsoft Teams, Gotify, ntfy, Generic Webhook, and Email (SMTP) alerts for backups, restores, logins, and system events.
   - icon: 🔄
     title: One-Click Restore
     details: Browse backup history, verify checksums, download files, or restore databases directly from the web UI.
@@ -131,7 +131,9 @@ Then open [http://localhost:3000](http://localhost:3000) and create your first a
 | **Discord** | Webhook-based notifications with rich embeds |
 | **Slack** | Incoming webhook notifications with Block Kit formatting |
 | **Microsoft Teams** | Adaptive Card notifications via Power Automate webhooks |
-| **Generic Webhook** | JSON payloads to any HTTP endpoint (Ntfy, Gotify, PagerDuty, etc.) |
+| **Gotify** | Self-hosted push notifications with priority levels |
+| **ntfy** | Topic-based push notifications (self-hosted or ntfy.sh) |
+| **Generic Webhook** | JSON payloads to any HTTP endpoint (PagerDuty, etc.) |
 | **Email (SMTP)** | SMTP with SSL/STARTTLS support, multiple recipients |
 
 ## Architecture at a Glance

@@ -101,7 +101,13 @@ Teams channel notifications for enterprise users.
 ### ~~Generic Webhook~~ ✅
 - Send JSON payloads to any HTTP endpoint
 - Customizable payload templates
-- Supports PagerDuty, Ntfy, Gotify, Uptime Kuma, and more
+- Supports PagerDuty, Uptime Kuma, and more
+
+### ~~Gotify~~ ✅
+Self-hosted push notifications with priority levels and Markdown formatting.
+
+### ~~ntfy~~ ✅
+Topic-based push notifications — public (ntfy.sh) or self-hosted.
 
 
 

@@ -9,7 +9,9 @@ DBackup supports multiple notification channels to keep you informed about backu
 | [Discord](/user-guide/notifications/discord) | Webhook | Team chat, gaming communities, dev teams |
 | [Slack](/user-guide/notifications/slack) | Webhook | Workplace communication, DevOps teams |
 | [Microsoft Teams](/user-guide/notifications/teams) | Webhook | Enterprise environments, Microsoft 365 |
-| [Generic Webhook](/user-guide/notifications/generic-webhook) | HTTP | Custom integrations (Ntfy, Gotify, PagerDuty, etc.) |
+| [Gotify](/user-guide/notifications/gotify) | REST API | Self-hosted setups, home labs |
+| [ntfy](/user-guide/notifications/ntfy) | HTTP/Topic | Self-hosted or public push notifications |
+| [Generic Webhook](/user-guide/notifications/generic-webhook) | HTTP | Custom integrations (PagerDuty, etc.) |
 | [Email (SMTP)](/user-guide/notifications/email) | SMTP | Formal alerts, per-user notifications, audit trail |
 
 ## Choosing a Channel
@@ -53,6 +55,34 @@ DBackup supports multiple notification channels to keep you informed about backu
 
 **Best for:** Enterprise environments, Microsoft 365 organizations.
 
+### Gotify
+
+**Pros:**
+- Self-hosted — full control over notification infrastructure
+- Priority levels with automatic escalation on failures
+- Markdown formatting
+- Android app with real-time push
+
+**Cons:**
+- Requires running a Gotify server
+- No native iOS app (web client only)
+
+**Best for:** Self-hosted enthusiasts, home lab admins, privacy-conscious users.
+
+### ntfy
+
+**Pros:**
+- Works without any server setup (public ntfy.sh)
+- Topic-based — subscribe from any device instantly
+- Android, iOS, and web clients
+- Can also be self-hosted
+
+**Cons:**
+- Public topics are not private (use random topic names or self-host)
+- Simpler formatting than rich embed platforms
+
+**Best for:** Quick setup, mobile push notifications, self-hosted or public usage.
+
 ### Generic Webhook
 
 **Pros:**
@@ -64,7 +94,7 @@ DBackup supports multiple notification channels to keep you informed about backu
 - Requires endpoint setup on the receiving end
 - No rich formatting (plain JSON)
 
-**Best for:** Self-hosted notification services (Ntfy, Gotify), monitoring tools (PagerDuty, Uptime Kuma), custom integrations.
+**Best for:** Self-hosted notification services (Gotify, ntfy), monitoring tools (PagerDuty, Uptime Kuma), custom integrations.
 
 ### Email (SMTP)
 
@@ -107,5 +137,7 @@ Choose your notification channel for detailed setup instructions:
 - [Discord](/user-guide/notifications/discord) — Webhook-based rich embeds
 - [Slack](/user-guide/notifications/slack) — Block Kit formatted messages
 - [Microsoft Teams](/user-guide/notifications/teams) — Adaptive Card notifications
+- [Gotify](/user-guide/notifications/gotify) — Self-hosted push notifications
+- [ntfy](/user-guide/notifications/ntfy) — Topic-based push notifications
 - [Generic Webhook](/user-guide/notifications/generic-webhook) — Custom JSON payloads
 - [Email (SMTP)](/user-guide/notifications/email) — HTML email via SMTP

@@ -41,6 +41,8 @@ import folderNetworkIcon from "@iconify-icons/mdi/folder-network";
 import folderSyncIcon from "@iconify-icons/mdi/folder-sync";
 import emailIcon from "@iconify-icons/mdi/email";
 import webhookIcon from "@iconify-icons/mdi/webhook";
+import bellRingIcon from "@iconify-icons/mdi/bell-ring";
+import messageTextIcon from "@iconify-icons/mdi/message-text";
 import discIcon from "@iconify-icons/mdi/disc";
 
 // Map adapter IDs to bundled IconifyIcon data objects
@@ -80,6 +82,8 @@ const ADAPTER_ICON_MAP: Record<string, IconifyIcon> = {
     "slack": slackIcon,
     "teams": teamsIcon,
     "generic-webhook": webhookIcon,
+    "gotify": bellRingIcon,
+    "ntfy": messageTextIcon,
     "email": emailIcon,
 };
 

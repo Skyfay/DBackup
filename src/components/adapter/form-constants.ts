@@ -17,9 +17,10 @@ export const NOTIFICATION_CONNECTION_KEYS = [
     'host', 'port', 'secure',
     'user', 'password',
     'method', 'contentType', 'authHeader',
+    'serverUrl', 'appToken', 'accessToken', 'topic',
 ];
 
-export const NOTIFICATION_CONFIG_KEYS = ['from', 'to', 'username', 'avatarUrl', 'channel', 'iconEmoji', 'customHeaders', 'payloadTemplate'];
+export const NOTIFICATION_CONFIG_KEYS = ['from', 'to', 'username', 'avatarUrl', 'channel', 'iconEmoji', 'customHeaders', 'payloadTemplate', 'priority'];
 
 export const PLACEHOLDERS: Record<string, string> = {
     "email.from": "\"Backup Service\" <backup@example.com>",
@@ -138,4 +139,15 @@ export const PLACEHOLDERS: Record<string, string> = {
     "generic-webhook.authHeader": "Bearer your-token-here",
     "generic-webhook.customHeaders": "X-Custom: value",
     "generic-webhook.payloadTemplate": "{\"text\": \"{{title}}: {{message}}\"}",
+
+    // Gotify
+    "gotify.serverUrl": "https://gotify.example.com",
+    "gotify.appToken": "AbCdEf12345",
+    "gotify.priority": "5",
+
+    // ntfy
+    "ntfy.serverUrl": "https://ntfy.sh",
+    "ntfy.topic": "dbackup-alerts",
+    "ntfy.accessToken": "tk_...",
+    "ntfy.priority": "3",
 };

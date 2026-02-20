@@ -14,6 +14,7 @@ const log = logger.child({ adapter: "teams" });
 export const TeamsAdapter: NotificationAdapter = {
     id: "teams",
     type: "notification",
+    name: "Microsoft Teams",
     configSchema: TeamsSchema,
 
     async test(config: TeamsConfig): Promise<{ success: boolean; message: string }> {

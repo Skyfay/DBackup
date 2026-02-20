@@ -236,6 +236,19 @@ export const GenericWebhookSchema = z.object({
     payloadTemplate: z.string().optional().describe("Custom JSON payload template with {{variable}} placeholders"),
 });
 
+export const GotifySchema = z.object({
+    serverUrl: z.string().url("Valid Gotify server URL is required"),
+    appToken: z.string().min(1, "App Token is required").describe("Application token (from Gotify Apps)"),
+    priority: z.coerce.number().min(0).max(10).default(5).describe("Default message priority (0-10)"),
+});
+
+export const NtfySchema = z.object({
+    serverUrl: z.string().url("Valid ntfy server URL is required").default("https://ntfy.sh"),
+    topic: z.string().min(1, "Topic is required").describe("Notification topic name"),
+    accessToken: z.string().optional().describe("Access token (required for protected topics)"),
+    priority: z.coerce.number().min(1).max(5).default(3).describe("Default message priority (1-5)"),
+});
+
 export const EmailSchema = z.object({
     host: z.string().min(1, "SMTP Host is required"),
     port: z.coerce.number().default(587),
@@ -283,12 +296,14 @@ export type DiscordConfig = z.infer<typeof DiscordSchema>;
 export type SlackConfig = z.infer<typeof SlackSchema>;
 export type TeamsConfig = z.infer<typeof TeamsSchema>;
 export type GenericWebhookConfig = z.infer<typeof GenericWebhookSchema>;
+export type GotifyConfig = z.infer<typeof GotifySchema>;
+export type NtfyConfig = z.infer<typeof NtfySchema>;
 export type EmailConfig = z.infer<typeof EmailSchema>;
 
 // Union types for adapter categories
 export type DatabaseConfig = MySQLConfig | MariaDBConfig | PostgresConfig | MongoDBConfig | SQLiteConfig | MSSQLConfig | RedisConfig;
 export type StorageConfig = LocalStorageConfig | S3GenericConfig | S3AWSConfig | S3R2Config | S3HetznerConfig | SFTPConfig | SMBConfig | WebDAVConfig | FTPConfig | RsyncConfig | GoogleDriveConfig | DropboxConfig | OneDriveConfig;
-export type NotificationConfig = DiscordConfig | SlackConfig | TeamsConfig | GenericWebhookConfig | EmailConfig;
+export type NotificationConfig = DiscordConfig | SlackConfig | TeamsConfig | GenericWebhookConfig | GotifyConfig | NtfyConfig | EmailConfig;
 
 // Generic type alias for dialect base class (accepts any database config)
 export type AnyDatabaseConfig = DatabaseConfig;
@@ -320,6 +335,8 @@ export const ADAPTER_DEFINITIONS: AdapterDefinition[] = [
     { id: "slack", type: "notification", name: "Slack Webhook", configSchema: SlackSchema },
     { id: "teams", type: "notification", name: "Microsoft Teams", configSchema: TeamsSchema },
     { id: "generic-webhook", type: "notification", name: "Generic Webhook", configSchema: GenericWebhookSchema },
+    { id: "gotify", type: "notification", name: "Gotify", configSchema: GotifySchema },
+    { id: "ntfy", type: "notification", name: "ntfy", configSchema: NtfySchema },
     { id: "email", type: "notification", name: "Email (SMTP)", configSchema: EmailSchema },
 ];
 

@@ -137,6 +137,8 @@ export default defineConfig({
             { text: 'Discord', link: '/user-guide/notifications/discord' },
             { text: 'Slack', link: '/user-guide/notifications/slack' },
             { text: 'Microsoft Teams', link: '/user-guide/notifications/teams' },
+            { text: 'Gotify', link: '/user-guide/notifications/gotify' },
+            { text: 'ntfy', link: '/user-guide/notifications/ntfy' },
             { text: 'Generic Webhook', link: '/user-guide/notifications/generic-webhook' },
             { text: 'Email (SMTP)', link: '/user-guide/notifications/email' }
           ]

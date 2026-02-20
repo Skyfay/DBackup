@@ -20,7 +20,9 @@ Both layers share the same notification channels that you configure under **Noti
 | [Discord](/user-guide/notifications/discord) | Team notifications via webhooks |
 | [Slack](/user-guide/notifications/slack) | Workplace communication, DevOps teams |
 | [Microsoft Teams](/user-guide/notifications/teams) | Enterprise environments, Microsoft 365 |
-| [Generic Webhook](/user-guide/notifications/generic-webhook) | Custom integrations (Ntfy, Gotify, PagerDuty, etc.) |
+| [Gotify](/user-guide/notifications/gotify) | Self-hosted push notifications |
+| [ntfy](/user-guide/notifications/ntfy) | Topic-based push (self-hosted or public) |
+| [Generic Webhook](/user-guide/notifications/generic-webhook) | Custom integrations (PagerDuty, etc.) |
 | [Email (SMTP)](/user-guide/notifications/email) | Formal alerts, per-user notifications |
 
 For detailed setup instructions for each channel, see the [Notification Channels](/user-guide/notifications/) section.
@@ -160,6 +162,7 @@ For channel-specific troubleshooting, see the individual channel pages:
 3. **Use channels appropriately**:
    - Discord / Slack: Team visibility
    - Teams: Enterprise communication
+   - Gotify / ntfy: Self-hosted push alerts, mobile notifications
    - Generic Webhook: Automation and monitoring tools
    - Email: Audit trail, per-user alerts
 4. **Test regularly** — Ensure notifications work

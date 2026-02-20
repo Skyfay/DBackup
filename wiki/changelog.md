@@ -2,10 +2,10 @@
 
 All notable changes to DBackup are documented here.
 
-## v0.9.8-beta - Slack, Microsoft Teams & Generic Webhook Notifications
+## v0.9.8-beta - Notification Adapters Expansion
 *Release: In Progress*
 
-This release adds three new notification adapters: Slack, Microsoft Teams, and Generic Webhook. All five channels (Discord, Slack, Teams, Generic Webhook, Email) are now available for both per-job and system-wide notifications. The notification documentation has been restructured into dedicated per-channel pages with detailed setup guides.
+This release adds five new notification adapters: Slack, Microsoft Teams, Gotify, ntfy, and Generic Webhook. All seven channels (Discord, Slack, Teams, Gotify, ntfy, Generic Webhook, Email) are now available for both per-job and system-wide notifications. The notification documentation has been restructured into dedicated per-channel pages with detailed setup guides.
 
 ### ✨ New Features
 
@@ -28,12 +28,27 @@ This release adds three new notification adapters: Slack, Microsoft Teams, and G
 - **Authentication** — Authorization header support for Bearer tokens, API keys, and Basic auth
 - **Custom Headers** — Add arbitrary headers in `Key: Value` format (one per line)
 - **Flexible Content-Type** — Configurable Content-Type header (default: `application/json`)
-- **Compatible Services** — Works with Ntfy, Gotify, PagerDuty, Uptime Kuma, and any custom HTTP receiver
+- **Compatible Services** — Works with PagerDuty, Uptime Kuma, and any custom HTTP receiver
+
+#### 🔔 Gotify Notification Adapter
+- **Self-Hosted Push** — Send notifications to your [Gotify](https://gotify.net/) server via REST API
+- **Priority Levels** — Configurable default priority (0–10) with automatic escalation on failures
+- **Markdown Formatting** — Rich message content with structured fields
+- **App Token Auth** — Simple authentication via Gotify application tokens
+
+#### 🔔 ntfy Notification Adapter
+- **Topic-Based Delivery** — Send push notifications via [ntfy](https://ntfy.sh/) to any subscribed device
+- **Public or Self-Hosted** — Works with the free `ntfy.sh` service or your own ntfy server
+- **Priority & Tags** — Automatic priority escalation and emoji tags based on event type
+- **Access Token Auth** — Optional Bearer token for protected topics
+- **Multi-Platform** — Android, iOS, and web clients with real-time push
 
 #### 🎨 Brand Icons for New Adapters
 - **Slack** — Multi-colored SVG Logos icon (`logos/slack-icon`)
 - **Microsoft Teams** — Multi-colored SVG Logos icon (`logos/microsoft-teams`)
 - **Generic Webhook** — Material Design Icons webhook icon (`mdi/webhook`)
+- **Gotify** — Material Design Icons bell icon (`mdi/bell-ring`)
+- **ntfy** — Material Design Icons message icon (`mdi/message-text`)
 
 ### 📚 Documentation
 
@@ -42,12 +57,14 @@ This release adds three new notification adapters: Slack, Microsoft Teams, and G
 - **Discord** — Dedicated page with setup guide, message format, and troubleshooting
 - **Slack** — Dedicated page with Slack App setup, Block Kit format, channel override, and emoji icons
 - **Microsoft Teams** — Dedicated page with Power Automate Workflows setup, Adaptive Card format, and color mapping
-- **Generic Webhook** — Dedicated page with payload format, template examples (Ntfy, Gotify, PagerDuty), and authentication guide
+- **Generic Webhook** — Dedicated page with payload format, template examples (PagerDuty), and authentication guide
+- **Gotify** — Dedicated page with Gotify server setup, App Token creation, priority levels, and troubleshooting
+- **ntfy** — Dedicated page with public/self-hosted guide, topic subscriptions, priority & tags, and authentication
 - **Email (SMTP)** — Dedicated page with SMTP configurations (Gmail, SendGrid, Mailgun, Amazon SES, Mailtrap), per-user notifications, and security settings
 - **Notifications Feature Page** — Restructured to link to individual channel pages instead of inline setup guides
 
 ### 🔄 Changes
-- Updated README and documentation to list all 5 notification channels as supported
+- Updated README and documentation to list all 7 notification channels as supported
 - Notification adapter picker now shows Slack, Microsoft Teams, and Generic Webhook alongside Discord and Email
 
 ## v0.9.7-beta - API Keys, Webhook Triggers, Adapter Picker & Brand Icons

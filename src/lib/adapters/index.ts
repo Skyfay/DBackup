@@ -20,6 +20,8 @@ import { DiscordAdapter } from "./notification/discord";
 import { SlackAdapter } from "./notification/slack";
 import { TeamsAdapter } from "./notification/teams";
 import { GenericWebhookAdapter } from "./notification/generic-webhook";
+import { GotifyAdapter } from "./notification/gotify";
+import { NtfyAdapter } from "./notification/ntfy";
 import { EmailAdapter } from "./notification/email";
 import { logger } from "@/lib/logger";
 
@@ -57,6 +59,8 @@ export function registerAdapters() {
     registry.register(SlackAdapter);
     registry.register(TeamsAdapter);
     registry.register(GenericWebhookAdapter);
+    registry.register(GotifyAdapter);
+    registry.register(NtfyAdapter);
     registry.register(EmailAdapter);
 
     initialized = true;

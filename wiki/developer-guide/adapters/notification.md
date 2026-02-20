@@ -7,15 +7,15 @@ Notification adapters send alerts about backup status, system events, and user a
 DBackup has **two notification layers** that share the same adapters:
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                Notification Adapters                │
-│          (Discord, Email, future: Slack)            │
-└───────────────┬─────────────────────┬───────────────┘
-                │                     │
-    ┌───────────┴──────┐   ┌─────────┴──────────┐
-    │  Per-Job (Runner)│   │ System Notifications│
-    │  04-completion   │   │ notify() service    │
-    └──────────────────┘   └─────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                        Notification Adapters                            │
+│  Discord · Slack · Teams · Gotify · ntfy · Generic Webhook · Email     │
+└────────────────────┬──────────────────────────────┬─────────────────────┘
+                     │                              │
+         ┌───────────┴──────┐            ┌──────────┴──────────┐
+         │  Per-Job (Runner)│            │ System Notifications │
+         │  04-completion   │            │ notify() service     │
+         └──────────────────┘            └─────────────────────┘
 ```
 
 | Layer | Trigger | Config Location |
@@ -30,6 +30,11 @@ Both layers use `renderTemplate()` from `src/lib/notifications/templates.ts` to 
 | Adapter | ID | File | Description |
 | :--- | :--- | :--- | :--- |
 | Discord | `discord` | `src/lib/adapters/notification/discord.ts` | Discord webhook with rich embeds |
+| Slack | `slack` | `src/lib/adapters/notification/slack.ts` | Slack Incoming Webhook with Block Kit |
+| Microsoft Teams | `teams` | `src/lib/adapters/notification/teams.ts` | Teams webhook with Adaptive Cards |
+| Gotify | `gotify` | `src/lib/adapters/notification/gotify.ts` | Self-hosted push via REST API |
+| ntfy | `ntfy` | `src/lib/adapters/notification/ntfy.ts` | Topic-based push (public or self-hosted) |
+| Generic Webhook | `generic-webhook` | `src/lib/adapters/notification/generic-webhook.ts` | Custom JSON payloads to any HTTP endpoint |
 | Email | `email` | `src/lib/adapters/notification/email.tsx` | SMTP email with React HTML template |
 
 ## Interface
@@ -39,8 +44,7 @@ interface NotificationAdapter {
   id: string;
   type: "notification";
   name: string;
-  configSchema: ZodSchema;
-  inputs: FormFieldDefinition[];
+  configSchema: ZodSchema;  // Zod schema — UI form is auto-generated from this
 
   send(
     config: unknown,
@@ -51,6 +55,10 @@ interface NotificationAdapter {
   test?(config: unknown): Promise<TestResult>;
 }
 ```
+
+::: info No `inputs` array needed
+Unlike what some older docs may show, notification adapters do **not** define an `inputs` array. The form fields in the UI are auto-generated from the Zod `configSchema`. Field labels come from the Zod key names, placeholders from `PLACEHOLDERS` in `form-constants.ts`, and descriptions from `.describe()` on the Zod field.
+:::
 
 The `NotificationContext` passed to `send()`:
 
@@ -168,6 +176,103 @@ The unified React template lives in `src/components/email/system-notification-te
 - Footer with timestamp
 
 All notification types (backup, login, restore, etc.) share this single template.
+
+## Slack Adapter
+
+Sends Block Kit formatted messages to Slack Incoming Webhooks. Uses `attachments` with a color bar for status indication and structured `blocks` for content:
+
+- **Header block** — Notification title
+- **Section block** — Message body (Markdown)
+- **Fields section** — Structured key-value pairs from `context.fields`
+- **Context block** — Timestamp
+- Optional channel, username, and icon emoji overrides
+
+### Slack Schema
+
+```typescript
+const SlackSchema = z.object({
+  webhookUrl: z.string().url("Valid Webhook URL is required"),
+  channel: z.string().optional().describe("Override channel (optional)"),
+  username: z.string().optional().default("DBackup").describe("Bot display name"),
+  iconEmoji: z.string().optional().describe("Bot icon emoji (e.g. :shield:)"),
+});
+```
+
+## Microsoft Teams Adapter
+
+Sends Adaptive Cards v1.4 to Microsoft Teams via Power Automate Workflows webhooks. The payload follows the Teams message wrapper format with an `attachments` array containing the card:
+
+- **TextBlock** — Title and message body
+- **FactSet** — Structured key-value fields
+- Color mapping: hex → named Adaptive Card colors (`Good`, `Attention`, `Warning`, `Accent`, `Default`)
+
+### Teams Schema
+
+```typescript
+const TeamsSchema = z.object({
+  webhookUrl: z.string().url("Valid Webhook URL is required"),
+});
+```
+
+## Gotify Adapter
+
+Sends push notifications to self-hosted Gotify servers via REST API. Messages are formatted as Markdown with `client::display` extras:
+
+- **Priority levels** 0–10 with automatic escalation (failures → 8, tests → 1)
+- Authentication via `X-Gotify-Key` header with Application Token
+- Markdown rendering with structured fields
+
+### Gotify Schema
+
+```typescript
+const GotifySchema = z.object({
+  serverUrl: z.string().url("Valid Gotify server URL is required"),
+  appToken: z.string().min(1, "App Token is required").describe("Application token (from Gotify Apps)"),
+  priority: z.coerce.number().min(0).max(10).default(5).describe("Default message priority (0-10)"),
+});
+```
+
+## ntfy Adapter
+
+Sends topic-based push notifications via ntfy (self-hosted or public `ntfy.sh`). Uses HTTP headers for metadata instead of JSON body:
+
+- **Priority levels** 1–5 with automatic escalation (failures → 5, tests → 2)
+- Emoji tags based on event status (✅ success, ❌ failure)
+- Markdown support via `Markdown: yes` header
+- Optional Bearer token authentication for protected topics
+
+### ntfy Schema
+
+```typescript
+const NtfySchema = z.object({
+  serverUrl: z.string().url("Valid ntfy server URL is required").default("https://ntfy.sh"),
+  topic: z.string().min(1, "Topic is required").describe("Notification topic name"),
+  accessToken: z.string().optional().describe("Access token (required for protected topics)"),
+  priority: z.coerce.number().min(1).max(5).default(3).describe("Default message priority (1-5)"),
+});
+```
+
+## Generic Webhook Adapter
+
+Sends JSON payloads to any HTTP endpoint with customizable templates. The most flexible adapter — used for services without a dedicated adapter:
+
+- Configurable HTTP method (POST, PUT, PATCH)
+- `{{variable}}` placeholder system for custom payload templates
+- Available variables: `title`, `message`, `success`, `color`, `timestamp`, `eventType`, `fields`
+- Custom headers and Authorization header support
+
+### Generic Webhook Schema
+
+```typescript
+const GenericWebhookSchema = z.object({
+  webhookUrl: z.string().url("Valid URL is required"),
+  method: z.enum(["POST", "PUT", "PATCH"]).default("POST").describe("HTTP method"),
+  contentType: z.string().default("application/json").describe("Content-Type header"),
+  authHeader: z.string().optional().describe("Authorization header value (e.g. Bearer token)"),
+  customHeaders: z.string().optional().describe("Additional headers (one per line, Key: Value)"),
+  payloadTemplate: z.string().optional().describe("Custom JSON payload template with {{variable}} placeholders"),
+});
+```
 
 ---
 
@@ -381,106 +486,292 @@ This uses the same `renderTemplate()` and `NotificationPayload` system as system
 
 ## Creating a New Notification Adapter
 
-### 1. Define the Schema
+Adding a new notification adapter requires changes across **multiple files** — the adapter code itself, schema definitions, UI constants, icon mapping, registry, and documentation. This section provides the complete step-by-step guide.
+
+### Quick Reference Checklist
+
+Every new notification adapter touches these files:
+
+| # | File | What to do |
+| :--- | :--- | :--- |
+| 1 | `src/lib/adapters/definitions.ts` | Add Zod schema, inferred type, union type, `ADAPTER_DEFINITIONS` entry |
+| 2 | `src/lib/adapters/notification/<id>.ts` | Create the adapter implementation |
+| 3 | `src/lib/adapters/index.ts` | Import and register the adapter |
+| 4 | `src/components/adapter/utils.ts` | Import icon and add to `ADAPTER_ICON_MAP` |
+| 5 | `src/components/adapter/form-constants.ts` | Add keys to `NOTIFICATION_CONNECTION_KEYS`, `NOTIFICATION_CONFIG_KEYS`, and `PLACEHOLDERS` |
+| 6 | `src/components/adapter/schema-field.tsx` | Update `isTextArea` check (only if adapter has multi-line fields) |
+| 7 | `wiki/user-guide/notifications/<id>.md` | Create wiki page with setup guide |
+| 8 | `wiki/.vitepress/config.mts` | Add sidebar entry under "Notification Channels" |
+| 9 | `wiki/user-guide/notifications/index.md` | Add to supported channels table and "Choosing a Channel" section |
+| 10 | `wiki/user-guide/features/notifications.md` | Add to channels table and best practices |
+| 11 | `README.md` | Update notification feature line and channels table |
+| 12 | `wiki/index.md` | Update feature card and supported notifications table |
+| 13 | `wiki/changelog.md` | Add changelog entry |
+| 14 | `wiki/developer-guide/adapters/notification.md` | Update "Available Adapters" table (this file) |
+
+### Step 1 — Define the Zod Schema
+
+Add the schema, inferred type, and definition entry in `src/lib/adapters/definitions.ts`:
 
 ```typescript
-// src/lib/adapters/definitions.ts
-export const SlackSchema = z.object({
-  webhookUrl: z.string().url(),
-  channel: z.string().optional(),
-  username: z.string().default("DBackup"),
+// 1a. Schema — near the other notification schemas
+export const MyServiceSchema = z.object({
+  serverUrl: z.string().url("Valid URL is required"),
+  apiToken: z.string().min(1, "API Token is required").describe("Your API token"),
+  priority: z.coerce.number().min(1).max(10).default(5).describe("Default priority (1-10)"),
 });
+
+// 1b. Inferred type — in the "Notification Adapters" types section
+export type MyServiceConfig = z.infer<typeof MyServiceSchema>;
+
+// 1c. Union type — add to NotificationConfig
+export type NotificationConfig = DiscordConfig | SlackConfig | /* ... */ | MyServiceConfig | EmailConfig;
+
+// 1d. Definition entry — in the ADAPTER_DEFINITIONS array
+{ id: "my-service", type: "notification", name: "My Service", configSchema: MyServiceSchema },
 ```
 
-### 2. Implement the Adapter
+::: tip Schema conventions
+- Use `.describe("...")` on optional/non-obvious fields — this text appears as a tooltip in the UI
+- Use `.default(value)` for sensible defaults — they auto-fill in the form
+- Use `.coerce.number()` for numeric fields to handle string input from forms
+- Use `.url()` for URL fields to get built-in validation
+:::
+
+### Step 2 — Implement the Adapter
+
+Create `src/lib/adapters/notification/<id>.ts`:
 
 ```typescript
-// src/lib/adapters/notification/slack.ts
-import { SlackSchema } from "@/lib/adapters/definitions";
+import { NotificationAdapter } from "@/lib/core/interfaces";
+import { MyServiceSchema, MyServiceConfig } from "@/lib/adapters/definitions";
+import { logger } from "@/lib/logger";
+import { wrapError } from "@/lib/errors";
 
-export const SlackAdapter: NotificationAdapter = {
-  id: "slack",
+const log = logger.child({ adapter: "my-service" });
+
+export const MyServiceAdapter: NotificationAdapter = {
+  id: "my-service",
   type: "notification",
-  name: "Slack",
-  configSchema: SlackSchema,
-  inputs: [
-    { key: "webhookUrl", label: "Webhook URL", type: "url", required: true },
-    { key: "channel", label: "Channel", type: "text" },
-    { key: "username", label: "Username", type: "text", defaultValue: "DBackup" },
-  ],
+  name: "My Service",
+  configSchema: MyServiceSchema,
 
-  async send(config, message, context) {
-    const validated = SlackSchema.parse(config);
-
-    const blocks = [
-      {
-        type: "header",
-        text: {
-          type: "plain_text",
-          text: context?.title ?? "Notification",
-        },
-      },
-    ];
-
-    // Add fields as Slack sections
-    if (context?.fields?.length) {
-      blocks.push({
-        type: "section",
-        fields: context.fields.map((f) => ({
-          type: "mrkdwn",
-          text: `*${f.name}:*\n${f.value}`,
-        })),
+  async test(config: MyServiceConfig): Promise<{ success: boolean; message: string }> {
+    try {
+      // Send a lightweight test message
+      const response = await fetch(`${config.serverUrl}/message`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${config.apiToken}` },
+        body: JSON.stringify({ text: "DBackup Connection Test" }),
       });
+
+      if (response.ok) {
+        return { success: true, message: "Test notification sent successfully!" };
+      }
+      const body = await response.text().catch(() => "");
+      return { success: false, message: `Returned ${response.status}: ${body || response.statusText}` };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, message: message || "Failed to connect" };
     }
-
-    await fetch(validated.webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        channel: validated.channel,
-        username: validated.username,
-        blocks,
-      }),
-    });
-
-    return true;
   },
 
-  async test(config) {
-    const validated = SlackSchema.parse(config);
+  async send(config: MyServiceConfig, message: string, context?: any): Promise<boolean> {
     try {
-      await fetch(validated.webhookUrl, {
+      // Build the payload using context for rich formatting
+      const title = context?.title || "DBackup Notification";
+
+      // Use context.fields for structured data
+      let body = message;
+      if (context?.fields?.length) {
+        body += "\n" + context.fields
+          .map((f: { name: string; value: string }) => `${f.name}: ${f.value || "-"}`)
+          .join("\n");
+      }
+
+      const response = await fetch(`${config.serverUrl}/message`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: "🧪 DBackup test notification",
-        }),
+        headers: { "Authorization": `Bearer ${config.apiToken}` },
+        body: JSON.stringify({ title, text: body }),
       });
-      return { success: true, message: "Test message sent" };
+
+      if (!response.ok) {
+        log.warn("Notification failed", { status: response.status });
+        return false;
+      }
+      return true;
     } catch (error) {
-      return { success: false, message: `Slack error: ${error}` };
+      log.error("Notification error", {}, wrapError(error));
+      return false;
     }
   },
 };
 ```
 
-### 3. Register the Adapter
+**Key patterns to follow:**
+- Always use `logger.child()` — never `console.log`
+- Always use `wrapError()` in catch blocks
+- `test()` returns `{ success, message }` — never throws
+- `send()` returns `boolean` — `true` on success, `false` on failure (never throws)
+- Handle `context` being `undefined` (plain text fallback)
+- Use `context.color` for status colors (`#00ff00` success, `#ff0000` failure)
+- Use `context.fields` for structured key-value data
+- Use `context.title` for the notification title
+- Use `context.success` to determine success/failure state
+
+### Step 3 — Register the Adapter
+
+In `src/lib/adapters/index.ts`:
 
 ```typescript
-// src/lib/adapters/index.ts
-import { SlackAdapter } from "./notification/slack";
+import { MyServiceAdapter } from "./notification/my-service";
 
 export function registerAdapters() {
   // ... existing registrations
-  registry.register(SlackAdapter);
+  registry.register(MyServiceAdapter);
 }
 ```
 
-### 4. Add to Definitions
+Place the import and registration near the other notification adapters to keep the file organized.
 
-Add the schema and UI field definitions to `src/lib/adapters/definitions.ts`.
+### Step 4 — Add an Icon
 
-The adapter will automatically appear in the notification channel selector across both per-job and system notifications.
+In `src/components/adapter/utils.ts`, import an Iconify icon and map it:
+
+```typescript
+// Import — choose from available icon packages:
+// @iconify-icons/logos       → Multi-colored brand SVGs (preferred for well-known brands)
+// @iconify-icons/simple-icons → Monochrome brand icons (add color via ADAPTER_COLOR_MAP)
+// @iconify-icons/mdi          → Material Design Icons (generic/protocol icons)
+import myServiceIcon from "@iconify-icons/mdi/bell-ring";
+
+// Add to ADAPTER_ICON_MAP
+const ADAPTER_ICON_MAP: Record<string, IconifyIcon> = {
+  // ... existing entries
+  "my-service": myServiceIcon,
+};
+```
+
+::: tip Checking icon availability
+Verify an icon exists before importing:
+```bash
+node -e "try { require('@iconify-icons/simple-icons/myservice'); console.log('OK') } catch { console.log('MISSING') }"
+```
+If the brand icon doesn't exist, use a generic MDI icon (e.g., `mdi/bell-ring`, `mdi/message-text`, `mdi/webhook`).
+:::
+
+If using a `simple-icons` monochrome icon, also add the brand color:
+
+```typescript
+const ADAPTER_COLOR_MAP: Record<string, string> = {
+  // ... existing entries
+  "my-service": "#FF6600",
+};
+```
+
+### Step 5 — Configure Form Constants
+
+In `src/components/adapter/form-constants.ts`, categorize your schema fields into connection vs. configuration tabs and add placeholders:
+
+```typescript
+// Connection tab — fields needed to establish the connection
+export const NOTIFICATION_CONNECTION_KEYS = [
+  // ... existing keys
+  'serverUrl', 'apiToken',  // Add your new keys here
+];
+
+// Configuration tab — optional settings
+export const NOTIFICATION_CONFIG_KEYS = [
+  // ... existing keys
+  'priority',  // Add your new keys here
+];
+
+// Placeholder hints shown in empty form fields
+export const PLACEHOLDERS: Record<string, string> = {
+  // ... existing entries
+  "my-service.serverUrl": "https://my-service.example.com",
+  "my-service.apiToken": "your-api-token-here",
+  "my-service.priority": "5",
+};
+```
+
+**Which tab?** Connection keys go to "Connection" tab, config keys to "Configuration" tab. Rule of thumb: if the field is needed to reach the service, it's a connection key. If it's an optional behavior setting, it's a config key.
+
+If your adapter has **multi-line text fields** (like `payloadTemplate` or `customHeaders`), also update the `isTextArea` check in `src/components/adapter/schema-field.tsx`:
+
+```typescript
+const isTextArea = /* existing checks */ || fieldKey === "myMultiLineField";
+```
+
+### Step 6 — Documentation
+
+Create the following documentation:
+
+**a) Wiki page** — `wiki/user-guide/notifications/<id>.md`
+
+Follow the structure of existing adapter pages:
+- Overview (bullet points with key features)
+- Configuration table (fields, defaults, required)
+- Setup Guide (step-by-step with screenshots/tips)
+- Message Format (example output)
+- Troubleshooting (common error messages)
+
+**b) VitePress sidebar** — `wiki/.vitepress/config.mts`
+
+Add the entry under the "Notification Channels" section:
+
+```typescript
+{
+  text: 'Notification Channels',
+  items: [
+    // ... existing entries
+    { text: 'My Service', link: '/user-guide/notifications/my-service' },
+  ]
+}
+```
+
+**c) Update existing pages:**
+
+| File | Section to update |
+| :--- | :--- |
+| `wiki/user-guide/notifications/index.md` | Supported Channels table, "Choosing a Channel" section, "Next Steps" links |
+| `wiki/user-guide/features/notifications.md` | Supported Channels table, Best Practices |
+| `README.md` | Feature bullet point, Supported Notifications table |
+| `wiki/index.md` | Feature card description, Supported Notifications table |
+| `wiki/changelog.md` | Release entry |
+| `wiki/developer-guide/adapters/notification.md` | Available Adapters table (this file) |
+
+### Summary: File Touch Map
+
+```
+src/lib/adapters/
+├── definitions.ts          ← Schema + type + union + ADAPTER_DEFINITIONS
+├── index.ts                ← Import + registry.register()
+└── notification/
+    └── <id>.ts             ← NEW: Adapter implementation
+
+src/components/adapter/
+├── utils.ts                ← Icon import + ADAPTER_ICON_MAP (+ ADAPTER_COLOR_MAP)
+├── form-constants.ts       ← CONNECTION_KEYS + CONFIG_KEYS + PLACEHOLDERS
+└── schema-field.tsx        ← isTextArea check (only if multi-line fields)
+
+wiki/
+├── user-guide/
+│   ├── notifications/
+│   │   ├── <id>.md         ← NEW: User-facing setup guide
+│   │   └── index.md        ← Update table + choosing section
+│   └── features/
+│       └── notifications.md ← Update table + best practices
+├── .vitepress/config.mts   ← Sidebar entry
+├── changelog.md            ← Release notes
+├── index.md                ← Feature card + table
+├── roadmap.md              ← Mark as implemented (if listed)
+└── developer-guide/
+    └── adapters/
+        └── notification.md ← Available Adapters table (this file)
+
+README.md                   ← Feature line + channels table
+```
 
 ::: tip User-targeted delivery
 If your new adapter should support per-user delivery (like Email does), add its `id` to the `EMAIL_ADAPTER_IDS` array in `system-notification-service.ts`. The adapter's config must have a `to` field that can be overridden.

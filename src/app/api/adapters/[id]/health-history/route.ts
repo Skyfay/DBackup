@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
-import { getAuthContext, checkPermissionWithContext } from "@/lib/access-control";
+import { getAuthContext } from "@/lib/access-control";
 import { PERMISSIONS } from "@/lib/permissions";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";

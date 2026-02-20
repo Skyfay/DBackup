@@ -101,6 +101,9 @@ This release adds seven new notification adapters: Slack, Microsoft Teams, Gotif
 - **Cleaner Layout** — Groups are visually separated with `space-y-6` spacing and subtle uppercase section headings
 - **Automatic Group Hiding** — Groups with no visible items (due to missing permissions) are automatically hidden entirely
 
+#### 📊 Dashboard Stats Labels Clarification
+- **Backups Widget Subtitle** — Changed from "Total successful backups" to "Across all destinations" to clarify that the widget displays currently existing backup files on storage destinations, not cumulative successful execution records. This improves consistency with the "Total Storage" widget subtitle
+
 ### 🐛 Bug Fixes
 - **Config Backup Scheduler Not Refreshing**: Enabling or disabling Automated Configuration Backup in Settings now takes effect immediately without requiring a server restart — `scheduler.refresh()` is called after saving the settings
 - **Storage History Button Visible Without Permission**: The Storage History action button in the Destinations table was always shown for all users, even when they lacked `storage:read` permission — it now only renders if the user has `storage:read`

@@ -43,7 +43,7 @@ export async function StatsCards() {
                 </CardHeader>
                 <CardContent>
                     <div className="text-2xl font-bold">{stats.totalSnapshots}</div>
-                    <p className="text-xs text-muted-foreground">Total successful backups</p>
+                    <p className="text-xs text-muted-foreground">Across all destinations</p>
                 </CardContent>
             </Card>
             <Card>

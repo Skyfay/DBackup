@@ -49,12 +49,16 @@ Whether you're running a single MySQL database or managing multiple PostgreSQL, 
 ## ✨ Features
 
 - **Multi-Database Support** — MySQL, PostgreSQL, MongoDB, Redis, SQLite, Microsoft SQL Server
-- **Enterprise-Grade Security** — AES-256-GCM encryption with key rotation and offline recovery kits
-- **Flexible Storage** — 13+ built-in storage adapters including cloud, self-hosted, and network destinations
-- **Smart Retention** — Grandfather-Father-Son rotation policies
-- **Live Monitoring** — Real-time progress tracking with detailed logs
-- **SSO & RBAC** — OpenID Connect support and granular permission system
-- **Notifications** — Instant alerts on backup success/failure
+- **Enterprise-Grade Security** — AES-256-GCM encryption with Encryption Vault, key rotation, and offline recovery kits
+- **Flexible Storage** — 13+ built-in adapters: S3, Google Drive, Dropbox, OneDrive, SFTP, Rsync, WebDAV, SMB, FTP, and more
+- **Smart Retention** — Grandfather-Father-Son (GVS) rotation with configurable daily, weekly, and monthly policies
+- **API & Webhooks** — Trigger backups via REST API with fine-grained API keys — ready-made cURL, Bash, and Ansible examples for CI/CD integration
+- **Dashboard & Analytics** — Interactive charts, real-time progress tracking, storage usage history, and auto-refreshing activity feeds
+- **One-Click Restore** — Browse backups in the Storage Explorer, verify checksums, and restore to any target database
+- **SSO & RBAC** — OpenID Connect support (Authentik, PocketID, Generic), user groups, and granular permission system
+- **Notifications** — Discord webhooks and multi-recipient email alerts for backups, restores, logins, and system events
+- **Configurable Rate Limits** — Per-category rate limiting (Auth, API Read, API Write) adjustable from the Settings UI
+- **Docker Ready** — Multi-arch images (AMD64/ARM64), built-in health checks, and graceful shutdown with backup-safe SIGTERM handling
 
 ## 🚀 Quick Start
 

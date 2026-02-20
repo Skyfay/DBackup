@@ -25,19 +25,31 @@ features:
     details: Built-in GZIP and Brotli compression to minimize storage costs and transfer times.
   - icon: ☁️
     title: Flexible Storage
-    details: 13+ built-in storage adapters including cloud, self-hosted, and network destinations. See full list below.
+    details: 13+ built-in storage adapters including S3, Google Drive, Dropbox, OneDrive, SFTP, Rsync, WebDAV, SMB, FTP, and local filesystem.
   - icon: 📅
     title: Automated Scheduling
     details: Cron-based job scheduling with GVS (Grandfather-Father-Son) retention policies for intelligent rotation.
   - icon: 🔔
     title: Notifications
-    details: Get instant alerts when backups complete or fail. See supported channels below.
+    details: Discord webhooks and multi-recipient email alerts for backups, restores, logins, and system events.
   - icon: 🔄
     title: One-Click Restore
-    details: Browse backup history, download files, or restore databases directly from the web UI.
+    details: Browse backup history, verify checksums, download files, or restore databases directly from the web UI.
   - icon: 👥
     title: Multi-User & RBAC
-    details: Granular permission system with user groups, SSO/OIDC support, and audit logging.
+    details: Granular permission system with user groups, SSO/OIDC support (Authentik, PocketID), and audit logging.
+  - icon: 🔗
+    title: API & Webhooks
+    details: Trigger backups via REST API with fine-grained API keys. Ready-made cURL, Bash, and Ansible examples for CI/CD pipelines.
+  - icon: 📊
+    title: Dashboard & Analytics
+    details: Interactive charts, real-time progress tracking, storage usage history, and auto-refreshing activity feeds.
+  - icon: 🔍
+    title: Storage Explorer
+    details: Browse all backup files across destinations, inspect metadata, download or generate wget/curl links, and manage retention.
+  - icon: 🐳
+    title: Docker & Health
+    details: Multi-arch images (AMD64/ARM64), built-in health checks, graceful shutdown, and SHA-256 integrity verification.
 ---
 
 ## Quick Start

@@ -135,6 +135,7 @@ describe("Twilio SMS Adapter", () => {
             mockFetch.mockResolvedValue({ ok: true, status: 201 });
 
             await TwilioSmsAdapter.send(baseConfig, "Test", {
+                success: true,
                 fields: [
                     { name: "F1", value: "v1" },
                     { name: "F2", value: "v2" },

@@ -118,6 +118,7 @@ describe("Gotify Adapter", () => {
             mockFetch.mockResolvedValue({ ok: true });
 
             await GotifyAdapter.send(baseConfig, "Test", {
+                success: true,
                 title: "Test",
                 eventType: "test",
             });

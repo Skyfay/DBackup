@@ -155,6 +155,7 @@ describe("ntfy Adapter", () => {
             mockFetch.mockResolvedValue({ ok: true });
 
             await NtfyAdapter.send(baseConfig, "Test", {
+                success: true,
                 title: "Test",
                 eventType: "test",
             });

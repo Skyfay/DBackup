@@ -22,6 +22,8 @@ import { TeamsAdapter } from "./notification/teams";
 import { GenericWebhookAdapter } from "./notification/generic-webhook";
 import { GotifyAdapter } from "./notification/gotify";
 import { NtfyAdapter } from "./notification/ntfy";
+import { TelegramAdapter } from "./notification/telegram";
+import { TwilioSmsAdapter } from "./notification/twilio-sms";
 import { EmailAdapter } from "./notification/email";
 import { logger } from "@/lib/logger";
 
@@ -61,6 +63,8 @@ export function registerAdapters() {
     registry.register(GenericWebhookAdapter);
     registry.register(GotifyAdapter);
     registry.register(NtfyAdapter);
+    registry.register(TelegramAdapter);
+    registry.register(TwilioSmsAdapter);
     registry.register(EmailAdapter);
 
     initialized = true;

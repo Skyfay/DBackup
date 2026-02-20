@@ -26,6 +26,7 @@ import onedriveIcon from "@iconify-icons/logos/microsoft-onedrive";
 import discordIcon from "@iconify-icons/logos/discord-icon";
 import slackIcon from "@iconify-icons/logos/slack-icon";
 import teamsIcon from "@iconify-icons/logos/microsoft-teams";
+import telegramIcon from "@iconify-icons/logos/telegram";
 
 // — Simple Icons (fallback for brands not in SVG Logos) —
 import mssqlIcon from "@iconify-icons/simple-icons/microsoftsqlserver";
@@ -43,6 +44,7 @@ import emailIcon from "@iconify-icons/mdi/email";
 import webhookIcon from "@iconify-icons/mdi/webhook";
 import bellRingIcon from "@iconify-icons/mdi/bell-ring";
 import messageTextIcon from "@iconify-icons/mdi/message-text";
+import cellphoneMessageIcon from "@iconify-icons/mdi/cellphone-message";
 import discIcon from "@iconify-icons/mdi/disc";
 
 // Map adapter IDs to bundled IconifyIcon data objects
@@ -84,6 +86,8 @@ const ADAPTER_ICON_MAP: Record<string, IconifyIcon> = {
     "generic-webhook": webhookIcon,
     "gotify": bellRingIcon,
     "ntfy": messageTextIcon,
+    "telegram": telegramIcon,
+    "twilio-sms": cellphoneMessageIcon,
     "email": emailIcon,
 };
 

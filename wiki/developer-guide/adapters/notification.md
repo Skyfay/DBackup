@@ -9,7 +9,7 @@ DBackup has **two notification layers** that share the same adapters:
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                        Notification Adapters                            │
-│  Discord · Slack · Teams · Gotify · ntfy · Generic Webhook · Email     │
+│  Discord · Slack · Teams · Telegram · Gotify · ntfy · SMS (Twilio) · Generic Webhook · Email     │
 └────────────────────┬──────────────────────────────┬─────────────────────┘
                      │                              │
          ┌───────────┴──────┐            ┌──────────┴──────────┐
@@ -35,6 +35,8 @@ Both layers use `renderTemplate()` from `src/lib/notifications/templates.ts` to 
 | Gotify | `gotify` | `src/lib/adapters/notification/gotify.ts` | Self-hosted push via REST API |
 | ntfy | `ntfy` | `src/lib/adapters/notification/ntfy.ts` | Topic-based push (public or self-hosted) |
 | Generic Webhook | `generic-webhook` | `src/lib/adapters/notification/generic-webhook.ts` | Custom JSON payloads to any HTTP endpoint |
+| Telegram | `telegram` | `src/lib/adapters/notification/telegram.ts` | Telegram Bot API push notifications |
+| SMS (Twilio) | `twilio-sms` | `src/lib/adapters/notification/twilio-sms.ts` | SMS text messages via Twilio API |
 | Email | `email` | `src/lib/adapters/notification/email.tsx` | SMTP email with React HTML template |
 
 ## Interface
@@ -271,6 +273,50 @@ const GenericWebhookSchema = z.object({
   authHeader: z.string().optional().describe("Authorization header value (e.g. Bearer token)"),
   customHeaders: z.string().optional().describe("Additional headers (one per line, Key: Value)"),
   payloadTemplate: z.string().optional().describe("Custom JSON payload template with {{variable}} placeholders"),
+});
+```
+
+---
+
+## Telegram Adapter
+
+Sends push notifications to Telegram chats, groups, and channels via the Telegram Bot API. Messages are formatted as HTML:
+
+- Status emoji (✅ success, ❌ failure) prepended automatically
+- HTML formatting with `<b>` tags for structured fields
+- HTML entity escaping for safe message content
+- Configurable parse mode (HTML, MarkdownV2, Markdown)
+- Silent delivery mode (no notification sound)
+
+### Telegram Schema
+
+```typescript
+const TelegramSchema = z.object({
+  botToken: z.string().min(1, "Bot Token is required").describe("Telegram Bot API token (from @BotFather)"),
+  chatId: z.string().min(1, "Chat ID is required").describe("Chat, group, or channel ID"),
+  parseMode: z.enum(["MarkdownV2", "HTML", "Markdown"]).default("HTML").describe("Message parse mode"),
+  disableNotification: z.boolean().default(false).describe("Send silently (no notification sound)"),
+});
+```
+
+## SMS (Twilio) Adapter
+
+Sends SMS text messages via the Twilio REST API. Optimized for concise message delivery within SMS segment limits:
+
+- Basic auth via Account SID and Auth Token
+- URL-encoded form body (Twilio API convention)
+- Status emoji (✅/❌) and title for quick scanning
+- Field count limited to 4 to keep messages short
+- Accepts both `200` and `201` as success responses
+
+### Twilio SMS Schema
+
+```typescript
+const TwilioSmsSchema = z.object({
+  accountSid: z.string().min(1, "Account SID is required").describe("Twilio Account SID"),
+  authToken: z.string().min(1, "Auth Token is required").describe("Twilio Auth Token"),
+  from: z.string().min(1, "From number is required").describe("Sender phone number (E.164 format)"),
+  to: z.string().min(1, "To number is required").describe("Recipient phone number (E.164 format)"),
 });
 ```
 

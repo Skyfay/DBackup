@@ -109,6 +109,12 @@ Self-hosted push notifications with priority levels and Markdown formatting.
 ### ~~ntfy~~ ✅
 Topic-based push notifications — public (ntfy.sh) or self-hosted.
 
+### ~~Telegram~~ ✅
+Bot API push notifications to chats, groups, and channels.
+
+### ~~SMS (Twilio)~~ ✅
+SMS text message alerts via Twilio API for critical notifications.
+
 
 
 ## 🧪 Testing & Quality

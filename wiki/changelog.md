@@ -5,7 +5,7 @@ All notable changes to DBackup are documented here.
 ## v0.9.8-beta - Notification Adapters Expansion
 *Release: In Progress*
 
-This release adds five new notification adapters: Slack, Microsoft Teams, Gotify, ntfy, and Generic Webhook. All seven channels (Discord, Slack, Teams, Gotify, ntfy, Generic Webhook, Email) are now available for both per-job and system-wide notifications. The notification documentation has been restructured into dedicated per-channel pages with detailed setup guides.
+This release adds seven new notification adapters: Slack, Microsoft Teams, Gotify, ntfy, Generic Webhook, Telegram, and SMS (Twilio). All nine channels (Discord, Slack, Teams, Telegram, Gotify, ntfy, SMS, Generic Webhook, Email) are now available for both per-job and system-wide notifications. The notification documentation has been restructured into dedicated per-channel pages with detailed setup guides.
 
 ### ✨ New Features
 
@@ -43,12 +43,27 @@ This release adds five new notification adapters: Slack, Microsoft Teams, Gotify
 - **Access Token Auth** — Optional Bearer token for protected topics
 - **Multi-Platform** — Android, iOS, and web clients with real-time push
 
+#### 🔔 Telegram Notification Adapter
+- **Bot API Integration** — Send notifications via [Telegram Bot API](https://core.telegram.org/bots/api) to any chat, group, or channel
+- **HTML Formatting** — Rich messages with bold text, structured fields, and status emoji (✅/❌)
+- **Flexible Targets** — Private chats, groups, supergroups, and channels
+- **Silent Mode** — Optional silent delivery with no notification sound
+- **Configurable Parse Mode** — HTML (default), MarkdownV2, or classic Markdown
+
+#### 🔔 SMS (Twilio) Notification Adapter
+- **SMS Delivery** — Send text message alerts to any mobile phone worldwide via [Twilio](https://www.twilio.com/)
+- **Concise Formatting** — Status emoji, title, and up to 4 key fields optimized for SMS length
+- **E.164 Phone Numbers** — International phone number format support
+- **Critical Alerts** — Perfect for high-priority failure notifications and on-call escalation
+
 #### 🎨 Brand Icons for New Adapters
 - **Slack** — Multi-colored SVG Logos icon (`logos/slack-icon`)
 - **Microsoft Teams** — Multi-colored SVG Logos icon (`logos/microsoft-teams`)
 - **Generic Webhook** — Material Design Icons webhook icon (`mdi/webhook`)
 - **Gotify** — Material Design Icons bell icon (`mdi/bell-ring`)
 - **ntfy** — Material Design Icons message icon (`mdi/message-text`)
+- **Telegram** — Multi-colored SVG Logos icon (`logos/telegram`)
+- **SMS (Twilio)** — Material Design Icons cellphone message icon (`mdi/cellphone-message`)
 
 ### 📚 Documentation
 
@@ -60,6 +75,8 @@ This release adds five new notification adapters: Slack, Microsoft Teams, Gotify
 - **Generic Webhook** — Dedicated page with payload format, template examples (PagerDuty), and authentication guide
 - **Gotify** — Dedicated page with Gotify server setup, App Token creation, priority levels, and troubleshooting
 - **ntfy** — Dedicated page with public/self-hosted guide, topic subscriptions, priority & tags, and authentication
+- **Telegram** — Dedicated page with @BotFather setup, Chat ID retrieval, HTML formatting, and troubleshooting
+- **SMS (Twilio)** — Dedicated page with account setup, phone number purchase, E.164 format, cost considerations, and troubleshooting
 - **Email (SMTP)** — Dedicated page with SMTP configurations (Gmail, SendGrid, Mailgun, Amazon SES, Mailtrap), per-user notifications, and security settings
 - **Notifications Feature Page** — Restructured to link to individual channel pages instead of inline setup guides
 

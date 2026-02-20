@@ -23,6 +23,8 @@ Both layers share the same notification channels that you configure under **Noti
 | [Gotify](/user-guide/notifications/gotify) | Self-hosted push notifications |
 | [ntfy](/user-guide/notifications/ntfy) | Topic-based push (self-hosted or public) |
 | [Generic Webhook](/user-guide/notifications/generic-webhook) | Custom integrations (PagerDuty, etc.) |
+| [Telegram](/user-guide/notifications/telegram) | Instant push to chats, groups, and channels |
+| [SMS (Twilio)](/user-guide/notifications/twilio-sms) | Critical alerts to any mobile phone |
 | [Email (SMTP)](/user-guide/notifications/email) | Formal alerts, per-user notifications |
 
 For detailed setup instructions for each channel, see the [Notification Channels](/user-guide/notifications/) section.
@@ -149,6 +151,8 @@ For channel-specific troubleshooting, see the individual channel pages:
 - [Slack Troubleshooting](/user-guide/notifications/slack#troubleshooting)
 - [Microsoft Teams Troubleshooting](/user-guide/notifications/teams#troubleshooting)
 - [Generic Webhook Troubleshooting](/user-guide/notifications/generic-webhook#troubleshooting)
+- [Telegram Troubleshooting](/user-guide/notifications/telegram#troubleshooting)
+- [SMS (Twilio) Troubleshooting](/user-guide/notifications/twilio-sms#troubleshooting)
 - [Email Troubleshooting](/user-guide/notifications/email#troubleshooting)
 
 ---
@@ -163,6 +167,8 @@ For channel-specific troubleshooting, see the individual channel pages:
    - Discord / Slack: Team visibility
    - Teams: Enterprise communication
    - Gotify / ntfy: Self-hosted push alerts, mobile notifications
+   - Telegram: Instant push to any Telegram client
+   - SMS (Twilio): Critical failure alerts to mobile phones
    - Generic Webhook: Automation and monitoring tools
    - Email: Audit trail, per-user alerts
 4. **Test regularly** — Ensure notifications work

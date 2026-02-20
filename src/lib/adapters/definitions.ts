@@ -249,6 +249,20 @@ export const NtfySchema = z.object({
     priority: z.coerce.number().min(1).max(5).default(3).describe("Default message priority (1-5)"),
 });
 
+export const TelegramSchema = z.object({
+    botToken: z.string().min(1, "Bot Token is required").describe("Telegram Bot API token (from @BotFather)"),
+    chatId: z.string().min(1, "Chat ID is required").describe("Chat, group, or channel ID"),
+    parseMode: z.enum(["MarkdownV2", "HTML", "Markdown"]).default("HTML").describe("Message parse mode"),
+    disableNotification: z.boolean().default(false).describe("Send silently (no notification sound)"),
+});
+
+export const TwilioSmsSchema = z.object({
+    accountSid: z.string().min(1, "Account SID is required").describe("Twilio Account SID"),
+    authToken: z.string().min(1, "Auth Token is required").describe("Twilio Auth Token"),
+    from: z.string().min(1, "From number is required").describe("Sender phone number (E.164 format, e.g. +1234567890)"),
+    to: z.string().min(1, "To number is required").describe("Recipient phone number (E.164 format, e.g. +1234567890)"),
+});
+
 export const EmailSchema = z.object({
     host: z.string().min(1, "SMTP Host is required"),
     port: z.coerce.number().default(587),
@@ -298,12 +312,14 @@ export type TeamsConfig = z.infer<typeof TeamsSchema>;
 export type GenericWebhookConfig = z.infer<typeof GenericWebhookSchema>;
 export type GotifyConfig = z.infer<typeof GotifySchema>;
 export type NtfyConfig = z.infer<typeof NtfySchema>;
+export type TelegramConfig = z.infer<typeof TelegramSchema>;
+export type TwilioSmsConfig = z.infer<typeof TwilioSmsSchema>;
 export type EmailConfig = z.infer<typeof EmailSchema>;
 
 // Union types for adapter categories
 export type DatabaseConfig = MySQLConfig | MariaDBConfig | PostgresConfig | MongoDBConfig | SQLiteConfig | MSSQLConfig | RedisConfig;
 export type StorageConfig = LocalStorageConfig | S3GenericConfig | S3AWSConfig | S3R2Config | S3HetznerConfig | SFTPConfig | SMBConfig | WebDAVConfig | FTPConfig | RsyncConfig | GoogleDriveConfig | DropboxConfig | OneDriveConfig;
-export type NotificationConfig = DiscordConfig | SlackConfig | TeamsConfig | GenericWebhookConfig | GotifyConfig | NtfyConfig | EmailConfig;
+export type NotificationConfig = DiscordConfig | SlackConfig | TeamsConfig | GenericWebhookConfig | GotifyConfig | NtfyConfig | TelegramConfig | TwilioSmsConfig | EmailConfig;
 
 // Generic type alias for dialect base class (accepts any database config)
 export type AnyDatabaseConfig = DatabaseConfig;
@@ -337,6 +353,8 @@ export const ADAPTER_DEFINITIONS: AdapterDefinition[] = [
     { id: "generic-webhook", type: "notification", name: "Generic Webhook", configSchema: GenericWebhookSchema },
     { id: "gotify", type: "notification", name: "Gotify", configSchema: GotifySchema },
     { id: "ntfy", type: "notification", name: "ntfy", configSchema: NtfySchema },
+    { id: "telegram", type: "notification", name: "Telegram", configSchema: TelegramSchema },
+    { id: "twilio-sms", type: "notification", name: "SMS (Twilio)", configSchema: TwilioSmsSchema },
     { id: "email", type: "notification", name: "Email (SMTP)", configSchema: EmailSchema },
 ];
 

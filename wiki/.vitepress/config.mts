@@ -140,6 +140,8 @@ export default defineConfig({
             { text: 'Gotify', link: '/user-guide/notifications/gotify' },
             { text: 'ntfy', link: '/user-guide/notifications/ntfy' },
             { text: 'Generic Webhook', link: '/user-guide/notifications/generic-webhook' },
+            { text: 'Telegram', link: '/user-guide/notifications/telegram' },
+            { text: 'SMS (Twilio)', link: '/user-guide/notifications/twilio-sms' },
             { text: 'Email (SMTP)', link: '/user-guide/notifications/email' }
           ]
         },

@@ -12,6 +12,8 @@ DBackup supports multiple notification channels to keep you informed about backu
 | [Gotify](/user-guide/notifications/gotify) | REST API | Self-hosted setups, home labs |
 | [ntfy](/user-guide/notifications/ntfy) | HTTP/Topic | Self-hosted or public push notifications |
 | [Generic Webhook](/user-guide/notifications/generic-webhook) | HTTP | Custom integrations (PagerDuty, etc.) |
+| [Telegram](/user-guide/notifications/telegram) | Bot API | Instant push to chats, groups, channels |
+| [SMS (Twilio)](/user-guide/notifications/twilio-sms) | SMS | Critical alerts to any mobile phone |
 | [Email (SMTP)](/user-guide/notifications/email) | SMTP | Formal alerts, per-user notifications, audit trail |
 
 ## Choosing a Channel
@@ -96,6 +98,34 @@ DBackup supports multiple notification channels to keep you informed about backu
 
 **Best for:** Self-hosted notification services (Gotify, ntfy), monitoring tools (PagerDuty, Uptime Kuma), custom integrations.
 
+### Telegram
+
+**Pros:**
+- Instant push notifications to any device
+- Free — no server or subscription required
+- Groups and channels for team alerts
+- Silent mode for non-urgent notifications
+
+**Cons:**
+- Requires creating a bot via @BotFather
+- Getting a Chat ID can be unintuitive
+
+**Best for:** Personal alerts, small teams, mobile-first users, home lab admins.
+
+### SMS (Twilio)
+
+**Pros:**
+- Works on any mobile phone (no app needed)
+- Highest visibility — SMS are hard to ignore
+- Reliable enterprise-grade delivery
+
+**Cons:**
+- Costs money per SMS segment
+- Requires a Twilio account
+- Limited message length
+
+**Best for:** Critical failure alerts, on-call escalation, environments where internet-based messaging is unreliable.
+
 ### Email (SMTP)
 
 **Pros:**
@@ -140,4 +170,6 @@ Choose your notification channel for detailed setup instructions:
 - [Gotify](/user-guide/notifications/gotify) — Self-hosted push notifications
 - [ntfy](/user-guide/notifications/ntfy) — Topic-based push notifications
 - [Generic Webhook](/user-guide/notifications/generic-webhook) — Custom JSON payloads
+- [Telegram](/user-guide/notifications/telegram) — Bot API push notifications
+- [SMS (Twilio)](/user-guide/notifications/twilio-sms) — SMS text message alerts
 - [Email (SMTP)](/user-guide/notifications/email) — HTML email via SMTP

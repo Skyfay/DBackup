@@ -18,9 +18,11 @@ export const NOTIFICATION_CONNECTION_KEYS = [
     'user', 'password',
     'method', 'contentType', 'authHeader',
     'serverUrl', 'appToken', 'accessToken', 'topic',
+    'botToken', 'chatId',
+    'accountSid', 'authToken', 'from', 'to',
 ];
 
-export const NOTIFICATION_CONFIG_KEYS = ['from', 'to', 'username', 'avatarUrl', 'channel', 'iconEmoji', 'customHeaders', 'payloadTemplate', 'priority'];
+export const NOTIFICATION_CONFIG_KEYS = ['from', 'to', 'username', 'avatarUrl', 'channel', 'iconEmoji', 'customHeaders', 'payloadTemplate', 'priority', 'parseMode', 'disableNotification'];
 
 export const PLACEHOLDERS: Record<string, string> = {
     "email.from": "\"Backup Service\" <backup@example.com>",
@@ -150,4 +152,14 @@ export const PLACEHOLDERS: Record<string, string> = {
     "ntfy.topic": "dbackup-alerts",
     "ntfy.accessToken": "tk_...",
     "ntfy.priority": "3",
+
+    // Telegram
+    "telegram.botToken": "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",
+    "telegram.chatId": "-1001234567890",
+
+    // Twilio SMS
+    "twilio-sms.accountSid": "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "twilio-sms.authToken": "your-auth-token",
+    "twilio-sms.from": "+1234567890",
+    "twilio-sms.to": "+0987654321",
 };

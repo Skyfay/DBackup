@@ -114,7 +114,19 @@ export function AdapterManager({ type, title, description, canManage = true }: A
                 case 'onedrive':
                     return <span className="text-muted-foreground">{config.folderPath || '/ (Root)'}</span>;
                 case 'discord':
+                case 'slack':
+                case 'teams':
                     return <span className="text-muted-foreground">Webhook</span>;
+                case 'generic-webhook':
+                    return <span className="text-muted-foreground">{config.method || 'POST'} → {config.webhookUrl}</span>;
+                case 'gotify':
+                    return <span className="text-muted-foreground">{config.serverUrl}</span>;
+                case 'ntfy':
+                    return <span className="text-muted-foreground">{config.serverUrl}/{config.topic}</span>;
+                case 'telegram':
+                    return <span className="text-muted-foreground">Chat {config.chatId}</span>;
+                case 'twilio-sms':
+                    return <span className="text-muted-foreground">{config.from} → {config.to}</span>;
                 case 'email': {
                     const to = Array.isArray(config.to)
                         ? config.to.length > 2

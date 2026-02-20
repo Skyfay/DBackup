@@ -94,7 +94,10 @@ Then open [http://localhost:3000](http://localhost:3000) and create your first a
 
 → **[Full Installation Guide](/user-guide/installation)** for Docker Compose, volumes, and production setup.
 
-## Supported Databases
+## Supported Integrations
+
+:::tabs
+== 🗄️ Databases
 
 | Database | Versions |
 | :--- | :--- |
@@ -106,7 +109,7 @@ Then open [http://localhost:3000](http://localhost:3000) and create your first a
 | **SQLite** | 3.x (Local & SSH) |
 | **Microsoft SQL Server** | 2017, 2019, 2022, Azure SQL Edge |
 
-## Supported Destinations
+== ☁️ Storage
 
 | Destination | Details |
 | :--- | :--- |
@@ -124,7 +127,7 @@ Then open [http://localhost:3000](http://localhost:3000) and create your first a
 | **SMB (Samba)** | Windows/Samba network shares (SMB2, SMB3) |
 | **Rsync** | File transfer via rsync over SSH |
 
-## Supported Notifications
+== 🔔 Notifications
 
 | Channel | Details |
 | :--- | :--- |
@@ -137,6 +140,8 @@ Then open [http://localhost:3000](http://localhost:3000) and create your first a
 | **Telegram** | Bot API push notifications to chats, groups, and channels |
 | **SMS (Twilio)** | SMS text message alerts via Twilio API |
 | **Email (SMTP)** | SMTP with SSL/STARTTLS support, multiple recipients |
+
+:::
 
 ## Architecture at a Glance
 

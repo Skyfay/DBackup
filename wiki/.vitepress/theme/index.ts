@@ -2,9 +2,13 @@
 import DefaultTheme from 'vitepress/theme'
 import { useData } from 'vitepress'
 import { watch } from 'vue'
+import { enhanceAppWithTabs } from 'vitepress-plugin-tabs/client'
 
 export default {
   extends: DefaultTheme,
+  enhanceApp({ app }: { app: any }) {
+    enhanceAppWithTabs(app)
+  },
   setup() {
     // Override date formatting to use European format (DD.MM.YYYY)
     const { page } = useData()

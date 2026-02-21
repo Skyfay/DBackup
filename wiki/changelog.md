@@ -21,6 +21,22 @@ This release adds SSH connection testing for MSSQL file transfer mode with backu
   - Backup path is readable and writable → All checks passed ✓
 - **Non-Blocking** — Test button doesn't block the form; you can continue configuring even after a failed test
 
+#### 📧 Notification Email Template Redesign (Shadcn/UI Style)
+- **Modern Card Layout** — Email notifications now use a clean card-based design with subtle zinc borders and proper spacing, following Shadcn/UI design system
+- **Color-Coded Status Badge** — Status indicator shown as a pill badge (✓ Success / ✕ Failed / ℹ Info) in the top-right corner instead of a colored header bar
+- **Improved Typography** — Consistent font hierarchy with 18px title, 14px body text, and 12px footer using system font stack (`-apple-system, BlinkMacSystemFont, "Segoe UI"`, etc.)
+- **Enhanced Fields Table** — Individual database info rows with left-aligned category labels on subtle gray background and white value cells for better readability
+- **Zinc Color Palette** — Uses Shadcn/UI's zinc neutral colors (#09090b foreground, #f4f4f5 subtle backgrounds, #e4e4e7 borders) with status-specific variations (green/red/blue/purple)
+- **Clickable Footer Link** — "Sent by DBackup" now links to https://dbackup.app for better branding
+
+#### 📊 Restore Notifications Enhanced with Rich Context
+- **Database Type** — Shows the database adapter type (MYSQL, POSTGRES, MONGODB, MSSQL, SQLITE, REDIS)
+- **Storage Name** — Displays the storage destination name for better tracking of where backups are stored
+- **Backup File** — Shows the backup file name for reference
+- **Complete Source Info** — Uses actual adapter names instead of internal IDs, making notifications much more readable
+- **Duration Tracking** — Includes total restore duration (in seconds) for performance monitoring
+- **Failure Details** — Enhanced error messages provide full error context for easier troubleshooting
+
 ### 🐛 Bug Fixes
 - **Quick Setup Adapter Selection** — Fixed "Please select an adapter type first" error when clicking "Test Connection" in Quick Setup wizard (Database Source, Storage Destination, Notification steps). The hook now correctly falls back to the `adapterId` prop when the form doesn't include that field
 - **Test Connection in Setup** — Test Connection button now works properly in all Quick Setup adapter configuration steps, not just the regular adapter management dialogs
@@ -32,6 +48,12 @@ This release adds SSH connection testing for MSSQL file transfer mode with backu
 - Added `Loader2` icon import to `src/components/adapter/form-sections.tsx` — Loading state indicator for SSH test button
 - Updated `src/components/adapter/form-sections.tsx` — New `SshConfigSection` component with integrated SSH test button; SSH fields moved from inline to dedicated component for better organization
 - Updated `toast` import in `src/components/adapter/form-sections.tsx` — Added to enable SSH test notifications
+- Redesigned `src/components/email/system-notification-template.tsx` — Complete visual overhaul using Shadcn/UI design tokens (zinc palette), table-based layout for HTML email compatibility, status badges, and responsive card styling
+- Extended `RestoreResultData` interface in `src/lib/notifications/types.ts` — Added `databaseType`, `backupFile`, `storageName`, and `size` fields for richer restore notifications
+- Updated restore success/failure templates in `src/lib/notifications/templates.ts` — Enhanced templates to include database type, storage name, backup filename, and file size in notification fields
+- Updated `src/services/restore-service.ts` — Restore notification calls now pass resolved adapter names and additional metadata (database type, storage name, backup file, file size, duration) instead of just IDs
+- Updated unit tests in `tests/unit/lib/notifications/email-template.test.tsx` — Fixed email template tests to account for new table-based layout structure
+- Updated unit tests in `tests/unit/adapters/notification/email.test.ts` — Fixed email footer assertions to check for component parts instead of exact concatenation
 
 ## v0.9.8-beta - Notification Adapters Expansion & Quick Setup Wizard
 *Released: February 20, 2026*

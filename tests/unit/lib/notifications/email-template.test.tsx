@@ -89,7 +89,7 @@ describe("SystemNotificationEmail Template", () => {
     expect(html).toContain("<table");
   });
 
-  it("should not render table when no fields provided", () => {
+  it("should not render fields content when no fields provided", () => {
     const html = renderToStaticMarkup(
       <SystemNotificationEmail
         title="Test"
@@ -98,7 +98,8 @@ describe("SystemNotificationEmail Template", () => {
       />
     );
 
-    expect(html).not.toContain("<table");
+    // No field labels should appear (layout tables are fine)
+    expect(html).not.toContain("text-transform:uppercase");
   });
 
   it("should include DBackup logo", () => {
@@ -123,11 +124,12 @@ describe("SystemNotificationEmail Template", () => {
       />
     );
 
-    expect(html).toContain("Sent by DBackup");
+    expect(html).toContain("Sent by");
+    expect(html).toContain("DBackup");
     expect(html).not.toContain("Database Backup Manager");
   });
 
-  it("should render empty fields array without table", () => {
+  it("should not render fields content with empty fields array", () => {
     const html = renderToStaticMarkup(
       <SystemNotificationEmail
         title="Test"
@@ -137,6 +139,7 @@ describe("SystemNotificationEmail Template", () => {
       />
     );
 
-    expect(html).not.toContain("<table");
+    // No field labels should appear (layout tables are fine)
+    expect(html).not.toContain("text-transform:uppercase");
   });
 });

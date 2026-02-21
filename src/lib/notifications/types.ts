@@ -87,6 +87,10 @@ export interface BackupResultData {
 export interface RestoreResultData {
   sourceName?: string;
   targetDatabase?: string;
+  databaseType?: string;
+  backupFile?: string;
+  storageName?: string;
+  size?: number;
   duration?: number;
   error?: string;
   executionId?: string;

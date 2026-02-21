@@ -161,6 +161,7 @@ export class RestoreService {
     private async runRestoreProcess(executionId: string, input: RestoreInput) {
         const { storageConfigId, file, targetSourceId, targetDatabaseName, databaseMapping, privilegedAuth } = input;
         let tempFile: string | null = null;
+        const restoreStartTime = Date.now();
 
         // Log Buffer
         const internalLogs: LogEntry[] = [{
@@ -209,6 +210,11 @@ export class RestoreService {
              flushLogs();
         };
 
+        // Pre-resolve names for notification context (available in catch)
+        let resolvedSourceName: string | undefined;
+        let resolvedSourceType: string | undefined;
+        let resolvedStorageName: string | undefined;
+
         try {
             if (!file || !targetSourceId) {
                 throw new Error("Missing file or targetSourceId");
@@ -221,6 +227,7 @@ export class RestoreService {
             if (!storageConfig || storageConfig.type !== "storage") {
                 throw new Error("Storage adapter not found");
             }
+            resolvedStorageName = storageConfig.name;
 
             const storageAdapter = registry.get(storageConfig.adapterId) as StorageAdapter;
             if (!storageAdapter) {
@@ -232,6 +239,8 @@ export class RestoreService {
             if (!sourceConfig || sourceConfig.type !== "database") {
                 throw new Error("Source adapter not found");
             }
+            resolvedSourceName = sourceConfig.name;
+            resolvedSourceType = sourceConfig.adapterId;
 
             const sourceAdapter = registry.get(sourceConfig.adapterId) as DatabaseAdapter;
             if (!sourceAdapter) {
@@ -648,8 +657,12 @@ export class RestoreService {
                 notify({
                     eventType: NOTIFICATION_EVENTS.RESTORE_COMPLETE,
                     data: {
-                        sourceName: targetSourceId,
+                        sourceName: resolvedSourceName ?? targetSourceId,
+                        databaseType: resolvedSourceType,
                         targetDatabase: targetDatabaseName,
+                        backupFile: path.basename(file),
+                        storageName: resolvedStorageName,
+                        duration: Date.now() - restoreStartTime,
                         executionId,
                         timestamp: new Date().toISOString(),
                     },
@@ -670,9 +683,13 @@ export class RestoreService {
             notify({
                 eventType: NOTIFICATION_EVENTS.RESTORE_FAILURE,
                 data: {
-                    sourceName: targetSourceId,
+                    sourceName: resolvedSourceName ?? targetSourceId,
+                    databaseType: resolvedSourceType,
                     targetDatabase: targetDatabaseName,
+                    backupFile: path.basename(file),
+                    storageName: resolvedStorageName,
                     error: getErrorMessage(error),
+                    duration: Date.now() - restoreStartTime,
                     executionId,
                     timestamp: new Date().toISOString(),
                 },

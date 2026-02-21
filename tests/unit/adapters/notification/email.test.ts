@@ -150,7 +150,8 @@ describe("Email Adapter", () => {
       });
 
       const html = mockSendMail.mock.calls[0][0].html;
-      expect(html).toContain("Sent by DBackup");
+      expect(html).toContain("Sent by");
+      expect(html).toContain("DBackup");
       expect(html).not.toContain("Database Backup Manager");
     });
   });

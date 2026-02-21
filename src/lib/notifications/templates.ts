@@ -111,8 +111,20 @@ function restoreCompleteTemplate(
       ...(data.sourceName
         ? [{ name: "Source", value: data.sourceName, inline: true }]
         : []),
+      ...(data.databaseType
+        ? [{ name: "Database Type", value: data.databaseType.toUpperCase(), inline: true }]
+        : []),
       ...(data.targetDatabase
         ? [{ name: "Target DB", value: data.targetDatabase, inline: true }]
+        : []),
+      ...(data.storageName
+        ? [{ name: "Storage", value: data.storageName, inline: true }]
+        : []),
+      ...(data.backupFile
+        ? [{ name: "Backup File", value: data.backupFile, inline: false }]
+        : []),
+      ...(data.size !== undefined
+        ? [{ name: "Size", value: formatBytes(data.size), inline: true }]
         : []),
       ...(data.duration !== undefined
         ? [
@@ -140,11 +152,26 @@ function restoreFailureTemplate(
       ...(data.sourceName
         ? [{ name: "Source", value: data.sourceName, inline: true }]
         : []),
+      ...(data.databaseType
+        ? [{ name: "Database Type", value: data.databaseType.toUpperCase(), inline: true }]
+        : []),
       ...(data.targetDatabase
         ? [{ name: "Target DB", value: data.targetDatabase, inline: true }]
         : []),
+      ...(data.backupFile
+        ? [{ name: "Backup File", value: data.backupFile, inline: false }]
+        : []),
       ...(data.error
         ? [{ name: "Error", value: data.error, inline: false }]
+        : []),
+      ...(data.duration !== undefined
+        ? [
+            {
+              name: "Duration",
+              value: `${Math.round(data.duration / 1000)}s`,
+              inline: true,
+            },
+          ]
         : []),
       { name: "Time", value: data.timestamp, inline: true },
     ],

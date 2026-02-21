@@ -149,6 +149,50 @@ export class MssqlSshTransfer {
     }
 
     /**
+     * Test read/write access to a remote directory via SFTP.
+     * Creates a small temp file, verifies it exists, then deletes it.
+     *
+     * @returns Object with `readable` and `writable` booleans, plus an optional `error` message.
+     */
+    public async testBackupPath(remotePath: string): Promise<{ readable: boolean; writable: boolean; error?: string }> {
+        const sftp = await this.getSftp();
+
+        // 1. Check if directory exists / is readable
+        const dirExists = await new Promise<boolean>((resolve) => {
+            sftp.stat(remotePath, (err, stats) => {
+                if (err) {
+                    resolve(false);
+                } else {
+                    resolve(stats.isDirectory());
+                }
+            });
+        });
+
+        if (!dirExists) {
+            return { readable: false, writable: false, error: `Directory does not exist or is not accessible: ${remotePath}` };
+        }
+
+        // 2. Try writing a temp probe file
+        const probeFile = `${remotePath.replace(/\/$/, '')}/.dbackup_probe_${Date.now()}`;
+        const writeOk = await new Promise<boolean>((resolve) => {
+            sftp.writeFile(probeFile, "probe", (err) => {
+                resolve(!err);
+            });
+        });
+
+        if (!writeOk) {
+            return { readable: true, writable: false, error: `Directory is readable but not writable: ${remotePath}` };
+        }
+
+        // 3. Cleanup probe file
+        await new Promise<void>((resolve) => {
+            sftp.unlink(probeFile, () => resolve());
+        });
+
+        return { readable: true, writable: true };
+    }
+
+    /**
      * Close the SSH connection
      */
     public end(): void {

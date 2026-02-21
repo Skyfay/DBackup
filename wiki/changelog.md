@@ -2,6 +2,37 @@
 
 All notable changes to DBackup are documented here.
 
+## v0.9.9-beta - MSSQL SSH Testing & Quick Setup Improvements
+*Release: In Progress*
+
+This release adds SSH connection testing for MSSQL file transfer mode with backup path read/write verification, and fixes adapter selection issues in the Quick Setup wizard.
+
+### ✨ New Features
+
+#### 🔗 MSSQL SSH File Transfer Testing
+- **Dedicated SSH Test Button** — New "Test SSH Connection" button in the File Transfer tab when SSH mode is selected
+- **Connection Verification** — Tests SSH connectivity to the configured `sshHost` and `sshPort`
+- **Backup Path Access Check** — Verifies the configured backup path is accessible and has read/write permissions
+- **Write Capability Test** — Creates a temporary probe file, verifies it exists, then cleans it up — confirms the user has write access at the backup location
+- **Detailed Error Messages** — Differentiates between connection failures, path not found, read-only, and successful conditions:
+  - SSH connection failed → SSH authentication/network error
+  - Backup path is not accessible → Directory doesn't exist or permission denied on read
+  - Backup path is read-only → Can read but cannot write (insufficient permissions)
+  - Backup path is readable and writable → All checks passed ✓
+- **Non-Blocking** — Test button doesn't block the form; you can continue configuring even after a failed test
+
+### 🐛 Bug Fixes
+- **Quick Setup Adapter Selection** — Fixed "Please select an adapter type first" error when clicking "Test Connection" in Quick Setup wizard (Database Source, Storage Destination, Notification steps). The hook now correctly falls back to the `adapterId` prop when the form doesn't include that field
+- **Test Connection in Setup** — Test Connection button now works properly in all Quick Setup adapter configuration steps, not just the regular adapter management dialogs
+
+### 🔧 Technical Changes
+- New `src/app/api/adapters/test-ssh/route.ts` — SSH connection test endpoint with backup path verification
+- New `MssqlSshTransfer.testBackupPath()` method in `src/lib/adapters/database/mssql/ssh-transfer.ts` — Tests directory access, read/write capabilities via SFTP
+- Updated `src/components/adapter/use-adapter-connection.tsx` — Fixed `testConnection()` to use `adapterId` prop as fallback when form field is missing (for Quick Setup compatibility)
+- Added `Loader2` icon import to `src/components/adapter/form-sections.tsx` — Loading state indicator for SSH test button
+- Updated `src/components/adapter/form-sections.tsx` — New `SshConfigSection` component with integrated SSH test button; SSH fields moved from inline to dedicated component for better organization
+- Updated `toast` import in `src/components/adapter/form-sections.tsx` — Added to enable SSH test notifications
+
 ## v0.9.8-beta - Notification Adapters Expansion & Quick Setup Wizard
 *Released: February 20, 2026*
 

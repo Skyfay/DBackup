@@ -1,5 +1,6 @@
 import { useFormContext } from "react-hook-form";
 import { useState } from "react";
+import { toast } from "sonner";
 import {
     Tabs,
     TabsContent,
@@ -11,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { Check, FolderOpen } from "lucide-react";
+import { Check, FolderOpen, Loader2 } from "lucide-react";
 import { AdapterDefinition } from "@/lib/adapters/definitions";
 import { SchemaField } from "./schema-field";
 import { EmailTagField } from "./email-tag-field";
@@ -173,26 +174,7 @@ export function DatabaseFormContent({
                     <FieldList keys={['backupPath', 'fileTransferMode']} adapter={adapter} />
 
                     {fileTransferMode === "ssh" && (
-                        <div className="space-y-4 border p-4 rounded-md bg-muted/10">
-                            <p className="text-sm text-muted-foreground">
-                                SSH credentials to download/upload .bak files from the SQL Server host.
-                            </p>
-                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                <div className="md:col-span-3">
-                                    <FieldList keys={['sshHost']} adapter={adapter} />
-                                </div>
-                                <div className="md:col-span-1">
-                                    <FieldList keys={['sshPort']} adapter={adapter} />
-                                </div>
-                            </div>
-                            <FieldList keys={['sshUsername', 'sshAuthType']} adapter={adapter} />
-                            {sshAuthType === 'password' && (
-                                <FieldList keys={['sshPassword']} adapter={adapter} />
-                            )}
-                            {sshAuthType === 'privateKey' && (
-                                <FieldList keys={['sshPrivateKey', 'sshPassphrase']} adapter={adapter} />
-                            )}
-                        </div>
+                        <SshConfigSection adapter={adapter} sshAuthType={sshAuthType} />
                     )}
                     {fileTransferMode === "local" && (
                         <div className="space-y-4">
@@ -205,6 +187,75 @@ export function DatabaseFormContent({
                 </TabsContent>
             )}
         </Tabs>
+    );
+}
+
+/**
+ * SSH configuration section for MSSQL file transfer with integrated test button.
+ */
+function SshConfigSection({ adapter, sshAuthType }: { adapter: AdapterDefinition; sshAuthType: string }) {
+    const { getValues } = useFormContext();
+    const [isTestingSsh, setIsTestingSsh] = useState(false);
+
+    const testSshConnection = async () => {
+        setIsTestingSsh(true);
+        const toastId = toast.loading("Testing SSH connection...");
+        try {
+            const config = getValues("config");
+            const res = await fetch("/api/adapters/test-ssh", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ config }),
+            });
+            const result = await res.json();
+            toast.dismiss(toastId);
+
+            if (result.success) {
+                toast.success(result.message || "SSH connection successful");
+            } else {
+                toast.error(result.message || "SSH connection failed");
+            }
+        } catch {
+            toast.dismiss(toastId);
+            toast.error("Failed to test SSH connection");
+        } finally {
+            setIsTestingSsh(false);
+        }
+    };
+
+    return (
+        <div className="space-y-4 border p-4 rounded-md bg-muted/10">
+            <p className="text-sm text-muted-foreground">
+                SSH credentials to download/upload .bak files from the SQL Server host.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="md:col-span-3">
+                    <FieldList keys={['sshHost']} adapter={adapter} />
+                </div>
+                <div className="md:col-span-1">
+                    <FieldList keys={['sshPort']} adapter={adapter} />
+                </div>
+            </div>
+            <FieldList keys={['sshUsername', 'sshAuthType']} adapter={adapter} />
+            {sshAuthType === 'password' && (
+                <FieldList keys={['sshPassword']} adapter={adapter} />
+            )}
+            {sshAuthType === 'privateKey' && (
+                <FieldList keys={['sshPrivateKey', 'sshPassphrase']} adapter={adapter} />
+            )}
+            <div className="flex justify-end pt-2">
+                <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={testSshConnection}
+                    disabled={isTestingSsh}
+                >
+                    {isTestingSsh && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Test SSH Connection
+                </Button>
+            </div>
+        </div>
     );
 }
 

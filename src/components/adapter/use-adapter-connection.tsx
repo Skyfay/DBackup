@@ -21,7 +21,9 @@ export function useAdapterConnection({ adapterId, form, initialDataId }: UseAdap
 
     const testConnection = async () => {
         const data = form.getValues();
-        if (!data.adapterId) {
+        // Use adapterId from form (regular form) or fall back to hook prop (Quick Setup)
+        const resolvedAdapterId = data.adapterId || adapterId;
+        if (!resolvedAdapterId) {
             toast.error("Please select an adapter type first");
             return false;
         }
@@ -32,7 +34,7 @@ export function useAdapterConnection({ adapterId, form, initialDataId }: UseAdap
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    adapterId: data.adapterId,
+                    adapterId: resolvedAdapterId,
                     config: data.config,
                     configId: initialDataId
                 })

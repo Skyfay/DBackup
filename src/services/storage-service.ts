@@ -23,6 +23,7 @@ export type RichFileInfo = FileInfo & {
     sourceName?: string;
     sourceType?: string;
     engineVersion?: string;
+    engineEdition?: string;
     dbInfo?: { count: string | number; label: string };
     isEncrypted?: boolean;
     encryptionProfileId?: string;
@@ -238,6 +239,7 @@ export class StorageService {
                      sourceName: sidecar.sourceName || (isConfigBackup ? "System" : undefined),
                      sourceType: sidecar.sourceType || (isConfigBackup ? "SYSTEM" : undefined),
                      engineVersion: sidecar.engineVersion,
+                     engineEdition: sidecar.engineEdition,
                      dbInfo: { count, label },
                      isEncrypted,
                      encryptionProfileId,

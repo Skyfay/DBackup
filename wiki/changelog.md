@@ -5,11 +5,19 @@ All notable changes to DBackup are documented here.
 ## v0.9.9-beta - MSSQL SSH Testing & Quick Setup Improvements
 *Release: In Progress*
 
-This release adds SSH connection testing for MSSQL file transfer mode with backup path read/write verification, and fixes adapter selection issues in the Quick Setup wizard.
+This release adds SSH connection testing for MSSQL file transfer mode with backup path read/write verification, a pre-restore version compatibility matrix that warns about version mismatches before starting the restore, and fixes adapter selection issues in the Quick Setup wizard.
 
 ### ✨ New Features
 
-#### 🔗 MSSQL SSH File Transfer Testing
+#### � Backup Compatibility Matrix in Restore Dialog
+- **Pre-Restore Version Check** — When selecting a target database source in the Restore dialog, the backup's engine version is now compared against the target server's version immediately — before clicking "Start Restore"
+- **Version Mismatch Warning** — If the backup was created on a newer database version than the target server, an orange warning banner appears: "Backup was created on version X, but the target server runs Y"
+- **MSSQL Edition Guard** — Incompatible MSSQL editions (Azure SQL Edge ↔ SQL Server) are detected and shown as a red error banner, blocking the restore button entirely
+- **Compatibility Confirmation** — When versions are compatible, a green "Version compatible" indicator confirms the match (e.g., "Backup 8.0.32 → Target 8.0.35")
+- **Engine Edition in File Details** — The backup file details badge now also displays the engine edition (e.g., "MSSQL 15.0.4405.4 (Azure SQL Edge)") when available
+- **Non-Blocking for Warnings** — Version mismatch warnings do not block the restore — users can still proceed at their own risk. Only hard incompatibilities (edition mismatch) disable the button
+
+#### �🔗 MSSQL SSH File Transfer Testing
 - **Dedicated SSH Test Button** — New "Test SSH Connection" button in the File Transfer tab when SSH mode is selected
 - **Connection Verification** — Tests SSH connectivity to the configured `sshHost` and `sshPort`
 - **Backup Path Access Check** — Verifies the configured backup path is accessible and has read/write permissions
@@ -42,6 +50,10 @@ This release adds SSH connection testing for MSSQL file transfer mode with backu
 - **Test Connection in Setup** — Test Connection button now works properly in all Quick Setup adapter configuration steps, not just the regular adapter management dialogs
 
 ### 🔧 Technical Changes
+- Updated `src/app/dashboard/storage/columns.tsx` — Added `engineEdition?: string` to `FileInfo` type for MSSQL edition display in restore dialog
+- Updated `src/services/storage-service.ts` — Added `engineEdition` to `RichFileInfo` type and passes it through from `.meta.json` sidecar metadata
+- Updated `src/app/api/adapters/database-stats/route.ts` — Extended response with `serverVersion` and `serverEdition` fields by calling `adapter.test()` alongside database stats retrieval
+- Updated `src/components/dashboard/storage/restore-dialog.tsx` — Added `targetServerVersion`, `targetServerEdition`, and `compatibilityIssues` state; runs `compareVersions()` and edition checks after target source selection; renders green/orange/red compatibility banners; blocks restore button on hard incompatibilities (edition mismatch)
 - New `src/app/api/adapters/test-ssh/route.ts` — SSH connection test endpoint with backup path verification
 - New `MssqlSshTransfer.testBackupPath()` method in `src/lib/adapters/database/mssql/ssh-transfer.ts` — Tests directory access, read/write capabilities via SFTP
 - Updated `src/components/adapter/use-adapter-connection.tsx` — Fixed `testConnection()` to use `adapterId` prop as fallback when form field is missing (for Quick Setup compatibility)

@@ -69,7 +69,23 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ success: false, message: "This adapter does not support listing databases." });
         }
 
-        return NextResponse.json({ success: true, databases });
+        // Also retrieve server version/edition for compatibility checks
+        let serverVersion: string | undefined;
+        let serverEdition: string | undefined;
+
+        if (adapter.test) {
+            try {
+                const testResult = await adapter.test(resolvedConfig) as { success: boolean; version?: string; edition?: string };
+                if (testResult.success) {
+                    serverVersion = testResult.version;
+                    serverEdition = testResult.edition;
+                }
+            } catch {
+                // Non-critical — version info is optional
+            }
+        }
+
+        return NextResponse.json({ success: true, databases, serverVersion, serverEdition });
 
     } catch (error: unknown) {
         const message = error instanceof Error ? error.message : "Unknown error";

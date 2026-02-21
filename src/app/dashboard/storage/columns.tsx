@@ -20,6 +20,7 @@ export type FileInfo = {
     sourceName?: string;
     sourceType?: string;
     engineVersion?: string;
+    engineEdition?: string;
     dbInfo?: { count: string | number; label: string };
     isEncrypted?: boolean;
     encryptionProfileId?: string;

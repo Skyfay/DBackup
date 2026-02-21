@@ -18,11 +18,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Database, ArrowRight, FileIcon, AlertTriangle, ShieldAlert, Loader2, HardDrive, ChevronDown, ChevronUp, Server } from "lucide-react";
+import { Database, ArrowRight, FileIcon, AlertTriangle, ShieldAlert, Loader2, HardDrive, ChevronDown, ChevronUp, Server, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { FileInfo } from "@/app/dashboard/storage/columns";
 import { useRouter } from "next/navigation";
-import { formatBytes } from "@/lib/utils";
+import { formatBytes, compareVersions } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { DateDisplay } from "@/components/utils/date-display";
 import { restoreFromStorageAction } from "@/app/actions/config-management";
@@ -85,6 +85,11 @@ export function RestoreDialog({ file, open, onOpenChange, destinationId, sources
     const [isLoadingTargetDbs, setIsLoadingTargetDbs] = useState(false);
     const [showTargetDbs, setShowTargetDbs] = useState(false);
 
+    // Compatibility check state
+    const [targetServerVersion, setTargetServerVersion] = useState<string | undefined>();
+    const [targetServerEdition, setTargetServerEdition] = useState<string | undefined>();
+    const [compatibilityIssues, setCompatibilityIssues] = useState<{ type: 'error' | 'warning'; message: string }[]>([]);
+
     const isSystemConfig = file?.sourceType === 'SYSTEM';
 
     const [restoreOptions, setRestoreOptions] = useState<RestoreOptions>({
@@ -133,12 +138,18 @@ export function RestoreDialog({ file, open, onOpenChange, destinationId, sources
         setPrivUser("root");
         setTargetDatabases([]);
         setShowTargetDbs(false);
+        setTargetServerVersion(undefined);
+        setTargetServerEdition(undefined);
+        setCompatibilityIssues([]);
     }, []);
 
     // Fetch target server databases when a source is selected
     const fetchTargetDatabases = useCallback(async (sourceId: string) => {
         setIsLoadingTargetDbs(true);
         setTargetDatabases([]);
+        setTargetServerVersion(undefined);
+        setTargetServerEdition(undefined);
+        setCompatibilityIssues([]);
         try {
             const res = await fetch('/api/adapters/database-stats', {
                 method: 'POST',
@@ -150,12 +161,43 @@ export function RestoreDialog({ file, open, onOpenChange, destinationId, sources
                 setTargetDatabases(data.databases);
                 setShowTargetDbs(true);
             }
+
+            // Store server version/edition for compatibility checks
+            if (data.serverVersion) setTargetServerVersion(data.serverVersion);
+            if (data.serverEdition) setTargetServerEdition(data.serverEdition);
+
+            // Run compatibility checks
+            if (file && data.serverVersion) {
+                const issues: { type: 'error' | 'warning'; message: string }[] = [];
+
+                // Version check: backup version > target version
+                if (file.engineVersion && compareVersions(file.engineVersion, data.serverVersion) > 0) {
+                    issues.push({
+                        type: 'warning',
+                        message: `Backup was created on version ${file.engineVersion}, but the target server runs ${data.serverVersion}. Restoring a newer backup to an older server can cause incompatibility issues.`
+                    });
+                }
+
+                // MSSQL Edition check: Azure SQL Edge <-> SQL Server
+                if (file.sourceType?.toLowerCase() === 'mssql' && file.engineEdition && data.serverEdition) {
+                    const sourceIsEdge = file.engineEdition === 'Azure SQL Edge';
+                    const targetIsEdge = data.serverEdition === 'Azure SQL Edge';
+                    if (sourceIsEdge !== targetIsEdge) {
+                        issues.push({
+                            type: 'error',
+                            message: `Incompatible MSSQL editions: Backup from "${file.engineEdition}" cannot be restored to "${data.serverEdition}". Azure SQL Edge and SQL Server are not fully compatible.`
+                        });
+                    }
+                }
+
+                setCompatibilityIssues(issues);
+            }
         } catch {
             // Non-critical - just don't show the section
         } finally {
             setIsLoadingTargetDbs(false);
         }
-    }, []);
+    }, [file]);
 
     // Trigger fetch when target source changes
     useEffect(() => {
@@ -164,6 +206,9 @@ export function RestoreDialog({ file, open, onOpenChange, destinationId, sources
         } else {
             setTargetDatabases([]);
             setShowTargetDbs(false);
+            setTargetServerVersion(undefined);
+            setTargetServerEdition(undefined);
+            setCompatibilityIssues([]);
         }
     }, [targetSource, fetchTargetDatabases]);
 
@@ -328,7 +373,7 @@ export function RestoreDialog({ file, open, onOpenChange, destinationId, sources
                             </span>
                             {file.sourceType && (
                                 <Badge variant="secondary" className="h-5 px-1.5 text-[10px] tracking-normal">
-                                    {file.sourceType} {file.engineVersion}
+                                    {file.sourceType} {file.engineVersion}{file.engineEdition ? ` (${file.engineEdition})` : ''}
                                 </Badge>
                             )}
                         </div>
@@ -449,6 +494,33 @@ export function RestoreDialog({ file, open, onOpenChange, destinationId, sources
                                 Existing databases with matching names will be overwritten. Rename targets below to restore as new databases.
                             </p>
                         </div>
+
+                        {/* Version Compatibility Check */}
+                        {targetSource && !isLoadingTargetDbs && targetServerVersion && compatibilityIssues.length === 0 && file?.engineVersion && (
+                            <div className="flex items-center gap-2 px-3 py-2 rounded-md border border-green-500/30 bg-green-500/5 text-sm text-green-700 dark:text-green-400">
+                                <ShieldCheck className="h-4 w-4 shrink-0" />
+                                <span>
+                                    Version compatible — Backup {file.engineVersion} → Target {targetServerVersion}
+                                </span>
+                            </div>
+                        )}
+
+                        {targetSource && !isLoadingTargetDbs && compatibilityIssues.length > 0 && (
+                            <div className="space-y-2">
+                                {compatibilityIssues.map((issue, i) => (
+                                    <Alert key={i} variant={issue.type === 'error' ? 'destructive' : 'default'}
+                                        className={issue.type === 'warning' ? 'border-orange-500/50 bg-orange-500/5 text-orange-700 dark:text-orange-400 [&>svg]:text-orange-500' : ''}>
+                                        <AlertTriangle className="h-4 w-4" />
+                                        <AlertTitle className="text-sm font-semibold">
+                                            {issue.type === 'error' ? 'Incompatible' : 'Version Mismatch'}
+                                        </AlertTitle>
+                                        <AlertDescription className="text-xs">
+                                            {issue.message}
+                                        </AlertDescription>
+                                    </Alert>
+                                ))}
+                            </div>
+                        )}
 
                         {/* Existing Databases on Target Server */}
                         {targetSource && (isLoadingTargetDbs || targetDatabases.length > 0) && (
@@ -709,7 +781,7 @@ export function RestoreDialog({ file, open, onOpenChange, destinationId, sources
                                     {restoring ? 'Restoring...' : 'Start System Restore'}
                                 </Button>
                             ) : (
-                                <Button onClick={() => handleRestore(false)} disabled={restoring || !targetSource || (analyzedDbs.length > 0 && !dbConfig.some(d => d.selected))}>
+                                <Button onClick={() => handleRestore(false)} disabled={restoring || !targetSource || (analyzedDbs.length > 0 && !dbConfig.some(d => d.selected)) || compatibilityIssues.length > 0}>
                                     {restoring && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                                     {restoring ? 'Starting...' : 'Start Restore'}
                                 </Button>

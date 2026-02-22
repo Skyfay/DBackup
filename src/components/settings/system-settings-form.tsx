@@ -15,14 +15,17 @@ import {
 import { toast } from "sonner"
 import { updateSystemSettings } from "@/app/actions/settings"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Shield, Cpu, Rocket } from "lucide-react"
+import { Shield, Cpu, Rocket, Database, ScrollText, HardDrive } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Button } from "@/components/ui/button"
 
 const formSchema = z.object({
     maxConcurrentJobs: z.coerce.number().min(1).max(10),
     disablePasskeyLogin: z.boolean().default(false),
-    auditLogRetentionDays: z.coerce.number().min(1).max(365).default(90),
+    auditLogRetentionDays: z.coerce.number().min(1).max(1825).default(90),
+    storageSnapshotRetentionDays: z.coerce.number().min(7).max(1825).default(90),
     checkForUpdates: z.boolean().default(true),
     showQuickSetup: z.boolean().default(false),
 })
@@ -31,17 +34,19 @@ interface SystemSettingsFormProps {
     initialMaxConcurrentJobs: number;
     initialDisablePasskeyLogin?: boolean;
     initialAuditLogRetentionDays?: number;
+    initialStorageSnapshotRetentionDays?: number;
     initialCheckForUpdates?: boolean;
     initialShowQuickSetup?: boolean;
 }
 
-export function SystemSettingsForm({ initialMaxConcurrentJobs, initialDisablePasskeyLogin, initialAuditLogRetentionDays = 90, initialCheckForUpdates = true, initialShowQuickSetup = false }: SystemSettingsFormProps) {
+export function SystemSettingsForm({ initialMaxConcurrentJobs, initialDisablePasskeyLogin, initialAuditLogRetentionDays = 90, initialStorageSnapshotRetentionDays = 90, initialCheckForUpdates = true, initialShowQuickSetup = false }: SystemSettingsFormProps) {
     const form = useForm<z.infer<typeof formSchema>>({
         resolver: zodResolver(formSchema) as any,
         defaultValues: {
             maxConcurrentJobs: initialMaxConcurrentJobs,
             disablePasskeyLogin: initialDisablePasskeyLogin === true,
             auditLogRetentionDays: initialAuditLogRetentionDays,
+            storageSnapshotRetentionDays: initialStorageSnapshotRetentionDays,
             checkForUpdates: initialCheckForUpdates === true,
             showQuickSetup: initialShowQuickSetup === true,
         },
@@ -66,6 +71,11 @@ export function SystemSettingsForm({ initialMaxConcurrentJobs, initialDisablePas
             },
             error: (err) => `Failed to save: ${err.message || 'Unknown error'}`
         });
+    };
+
+    const formatRetention = (days: number) => {
+        if (days >= 365 && days % 365 === 0) return `${days / 365}y`;
+        return `${days}d`;
     };
 
     return (
@@ -114,37 +124,106 @@ export function SystemSettingsForm({ initialMaxConcurrentJobs, initialDisablePas
                             )}
                         />
 
-                        <FormField
-                            control={form.control}
-                            name="auditLogRetentionDays"
-                            render={({ field }) => (
-                                <FormItem>
-                                    <FormLabel>Audit Log Retention</FormLabel>
-                                    <FormDescription>
-                                        Automatically delete audit logs older than the specified period.
-                                        This runs daily as part of the &quot;Clean Old Logs&quot; system task.
-                                    </FormDescription>
-                                    <Select
-                                        onValueChange={(val) => handleAutoSave("auditLogRetentionDays", Number(val))}
-                                        defaultValue={String(field.value)}
-                                    >
-                                        <FormControl>
-                                            <SelectTrigger>
-                                                <SelectValue placeholder="Select retention period" />
-                                            </SelectTrigger>
-                                        </FormControl>
-                                        <SelectContent>
-                                            <SelectItem value="30">30 Days</SelectItem>
-                                            <SelectItem value="60">60 Days</SelectItem>
-                                            <SelectItem value="90">90 Days (Default)</SelectItem>
-                                            <SelectItem value="180">180 Days</SelectItem>
-                                            <SelectItem value="365">1 Year</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                    <FormMessage />
-                                </FormItem>
-                            )}
-                        />
+                        <div>
+                            <FormLabel>Data Retention</FormLabel>
+                            <FormDescription>
+                                Automatically delete old data beyond the configured retention periods.
+                                Runs daily as part of the &quot;Clean Old Data&quot; system task.
+                            </FormDescription>
+                            <Popover>
+                                <PopoverTrigger asChild>
+                                    <Button variant="outline" className="mt-2 w-full justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <Database className="h-4 w-4 text-muted-foreground" />
+                                            <span>Configure Retention Policies</span>
+                                        </div>
+                                        <span className="text-xs text-muted-foreground">
+                                            {formatRetention(form.watch("auditLogRetentionDays"))} / {formatRetention(form.watch("storageSnapshotRetentionDays"))}
+                                        </span>
+                                    </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-80" align="start">
+                                    <div className="space-y-4">
+                                        <div className="space-y-2">
+                                            <h4 className="font-medium text-sm leading-none">Retention Policies</h4>
+                                            <p className="text-xs text-muted-foreground">
+                                                Set how long each data type is kept before automatic cleanup.
+                                            </p>
+                                        </div>
+
+                                        <FormField
+                                            control={form.control}
+                                            name="auditLogRetentionDays"
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <div className="flex items-center gap-2">
+                                                        <ScrollText className="h-4 w-4 text-muted-foreground shrink-0" />
+                                                        <FormLabel className="text-sm">Audit Logs</FormLabel>
+                                                    </div>
+                                                    <Select
+                                                        onValueChange={(val) => handleAutoSave("auditLogRetentionDays", Number(val))}
+                                                        defaultValue={String(field.value)}
+                                                    >
+                                                        <FormControl>
+                                                            <SelectTrigger className="h-8">
+                                                                <SelectValue />
+                                                            </SelectTrigger>
+                                                        </FormControl>
+                                                        <SelectContent>
+                                                            <SelectItem value="30">30 Days</SelectItem>
+                                                            <SelectItem value="60">60 Days</SelectItem>
+                                                            <SelectItem value="90">90 Days (Default)</SelectItem>
+                                                            <SelectItem value="180">180 Days</SelectItem>
+                                                            <SelectItem value="365">1 Year</SelectItem>
+                                                            <SelectItem value="730">2 Years</SelectItem>
+                                                            <SelectItem value="1095">3 Years</SelectItem>
+                                                            <SelectItem value="1825">5 Years</SelectItem>
+                                                        </SelectContent>
+                                                    </Select>
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )}
+                                        />
+
+                                        <FormField
+                                            control={form.control}
+                                            name="storageSnapshotRetentionDays"
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <div className="flex items-center gap-2">
+                                                        <HardDrive className="h-4 w-4 text-muted-foreground shrink-0" />
+                                                        <FormLabel className="text-sm">Storage Snapshots</FormLabel>
+                                                    </div>
+                                                    <Select
+                                                        onValueChange={(val) => handleAutoSave("storageSnapshotRetentionDays", Number(val))}
+                                                        defaultValue={String(field.value)}
+                                                    >
+                                                        <FormControl>
+                                                            <SelectTrigger className="h-8">
+                                                                <SelectValue />
+                                                            </SelectTrigger>
+                                                        </FormControl>
+                                                        <SelectContent>
+                                                            <SelectItem value="7">7 Days</SelectItem>
+                                                            <SelectItem value="14">14 Days</SelectItem>
+                                                            <SelectItem value="30">30 Days</SelectItem>
+                                                            <SelectItem value="60">60 Days</SelectItem>
+                                                            <SelectItem value="90">90 Days (Default)</SelectItem>
+                                                            <SelectItem value="180">180 Days</SelectItem>
+                                                            <SelectItem value="365">1 Year</SelectItem>
+                                                            <SelectItem value="730">2 Years</SelectItem>
+                                                            <SelectItem value="1095">3 Years</SelectItem>
+                                                            <SelectItem value="1825">5 Years</SelectItem>
+                                                        </SelectContent>
+                                                    </Select>
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )}
+                                        />
+                                    </div>
+                                </PopoverContent>
+                            </Popover>
+                        </div>
 
                         <FormField
                             control={form.control}

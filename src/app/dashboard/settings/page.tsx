@@ -37,6 +37,9 @@ export default async function SettingsPage() {
     const retentionSetting = await prisma.systemSetting.findUnique({ where: { key: "audit.retentionDays" } });
     const auditLogRetentionDays = retentionSetting ? parseInt(retentionSetting.value) : 90;
 
+    const snapshotRetentionSetting = await prisma.systemSetting.findUnique({ where: { key: "storage.snapshotRetentionDays" } });
+    const storageSnapshotRetentionDays = snapshotRetentionSetting ? parseInt(snapshotRetentionSetting.value) : 90;
+
     const checkUpdatesSetting = await prisma.systemSetting.findUnique({ where: { key: "general.checkForUpdates" } });
     const checkForUpdates = checkUpdatesSetting ? checkUpdatesSetting.value === 'true' : true;
 
@@ -96,6 +99,7 @@ export default async function SettingsPage() {
                         initialMaxConcurrentJobs={maxConcurrentJobs}
                         initialDisablePasskeyLogin={disablePasskeyLogin}
                         initialAuditLogRetentionDays={auditLogRetentionDays}
+                        initialStorageSnapshotRetentionDays={storageSnapshotRetentionDays}
                         initialCheckForUpdates={checkForUpdates}
                         initialShowQuickSetup={showQuickSetup}
                     />

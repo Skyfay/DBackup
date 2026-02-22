@@ -52,8 +52,8 @@ export const DEFAULT_TASK_CONFIG = {
         interval: "0 0 * * *", // Daily at midnight
         runOnStartup: true,
         enabled: true,
-        label: "Clean Old Logs",
-        description: "Removes audit logs older than the configured retention period (default: 90 days) to prevent disk filling."
+        label: "Clean Old Data",
+        description: "Removes old audit logs and storage snapshots beyond their configured retention periods to prevent disk filling."
     },
     [SYSTEM_TASKS.CHECK_FOR_UPDATES]: {
         interval: "0 0 * * *", // Daily at midnight
@@ -227,17 +227,31 @@ export class SystemTaskService {
     }
 
     private async runCleanOldLogs() {
+        // Clean audit logs
         try {
-            // Check if there is a configured retention period
-            const retentionKey = "audit.retentionDays";
-            const setting = await prisma.systemSetting.findUnique({ where: { key: retentionKey } });
-            const retentionDays = setting ? parseInt(setting.value) : 90; // Default 90 days
+            const auditSetting = await prisma.systemSetting.findUnique({ where: { key: "audit.retentionDays" } });
+            const auditRetentionDays = auditSetting ? parseInt(auditSetting.value) : 90;
 
-            log.info("Cleaning old audit logs", { retentionDays });
-            const deleted = await auditService.cleanOldLogs(retentionDays);
+            log.info("Cleaning old audit logs", { retentionDays: auditRetentionDays });
+            const deleted = await auditService.cleanOldLogs(auditRetentionDays);
             log.info("Audit log cleanup completed", { deletedCount: deleted.count });
         } catch (error: unknown) {
             log.error("Failed to clean audit logs", {}, wrapError(error));
+        }
+
+        // Clean old storage snapshots
+        try {
+            const snapshotSetting = await prisma.systemSetting.findUnique({ where: { key: "storage.snapshotRetentionDays" } });
+            const snapshotRetentionDays = snapshotSetting ? parseInt(snapshotSetting.value) : 90;
+
+            log.info("Cleaning old storage snapshots", { retentionDays: snapshotRetentionDays });
+            const { cleanupOldSnapshots } = await import("@/services/dashboard-service");
+            const snapshotsDeleted = await cleanupOldSnapshots(snapshotRetentionDays);
+            if (snapshotsDeleted > 0) {
+                log.info("Storage snapshot cleanup completed", { deletedCount: snapshotsDeleted });
+            }
+        } catch (error: unknown) {
+            log.error("Failed to clean storage snapshots", {}, wrapError(error));
         }
     }
 

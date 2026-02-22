@@ -13,7 +13,8 @@ const log = logger.child({ action: "settings" });
 const settingsSchema = z.object({
     maxConcurrentJobs: z.coerce.number().min(1).max(10),
     disablePasskeyLogin: z.boolean().optional(),
-    auditLogRetentionDays: z.coerce.number().min(1).max(365).optional(),
+    auditLogRetentionDays: z.coerce.number().min(1).max(1825).optional(),
+    storageSnapshotRetentionDays: z.coerce.number().min(7).max(1825).optional(),
     checkForUpdates: z.boolean().optional(),
     showQuickSetup: z.boolean().optional(),
 });
@@ -48,6 +49,15 @@ export async function updateSystemSettings(data: z.infer<typeof settingsSchema>)
                 where: { key: "audit.retentionDays" },
                 update: { value: String(result.data.auditLogRetentionDays) },
                 create: { key: "audit.retentionDays", value: String(result.data.auditLogRetentionDays) },
+            });
+        }
+
+        // Storage Snapshot Retention Setting (default 90)
+        if (result.data.storageSnapshotRetentionDays !== undefined) {
+             await prisma.systemSetting.upsert({
+                where: { key: "storage.snapshotRetentionDays" },
+                update: { value: String(result.data.storageSnapshotRetentionDays) },
+                create: { key: "storage.snapshotRetentionDays", value: String(result.data.storageSnapshotRetentionDays) },
             });
         }
 

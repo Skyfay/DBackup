@@ -90,6 +90,15 @@ This release adds SSH connection testing for MSSQL file transfer mode with backu
 - **Alert Config Persistence** — Per-destination settings stored in `SystemSetting` table with keys like `storage.alerts.<configId>`. Defaults provided for new destinations (all alerts disabled by default)
 - **Info Card** — The Settings tab includes a "Notification Delivery" info card explaining that alerts are routed through the global notification channels configured in Settings > Notifications
 
+#### ⏱️ Configurable Data Retention for Storage Snapshots
+- **Extended Storage Management** — Storage snapshots are now automatically cleaned up based on a configurable retention policy, complementing the existing audit log retention
+- **Granular Retention Options** — Choose from 7 days to 5 years (1825 days) per data type — separate configurable retention periods for Audit Logs and Storage Snapshots
+- **Unified Data Retention UI** — New "Data Retention" card in Settings → General with a Popover containing two FormFields (one for Audit Logs, one for Storage Snapshots) with icons for visual clarity
+- **Cleanup Automation** — Extended "Clean Old Data" system task runs daily at midnight, automatically removing both old audit logs and outdated storage snapshots based on their configured retention values
+- **Human-Readable Display** — Retention values are shown in friendly format: 1–364 days as "Xd", while year-aligned values like 730 days display as "2y", 1095 as "3y", etc. (e.g., button shows "90d / 2y" for 90-day logs and 2-year snapshots)
+- **Dynamic Configuration** — Retention periods are stored in the database as SystemSettings and can be updated anytime without restarting — cleanup logic reads current values on each execution
+- **Non-Blocking Cleanup** — Each data type (audit logs, snapshots) is cleaned independently with separate error handling, so a failure in one cleanup type doesn't prevent the other from running
+
 ### 🐛 Bug Fixes
 - **Quick Setup Adapter Selection** — Fixed "Please select an adapter type first" error when clicking "Test Connection" in Quick Setup wizard (Database Source, Storage Destination, Notification steps). The hook now correctly falls back to the `adapterId` prop when the form doesn't include that field
 - **Test Connection in Setup** — Test Connection button now works properly in all Quick Setup adapter configuration steps, not just the regular adapter management dialogs
@@ -115,6 +124,9 @@ This release adds SSH connection testing for MSSQL file transfer mode with backu
 - Updated `src/app/dashboard/storage/page.tsx` — Wrapped `StorageClient` in `<Suspense>` boundary (required for `useSearchParams` in Next.js App Router)
 - New `src/components/dashboard/storage/storage-history-tab.tsx` — Full-page storage history with stats cards (Current Size, Backup Count, Average Size), side-by-side AreaChart (storage size) and BarChart (backup count) using Shadcn/UI Chart components, time range selector (7d–1y), trend indicators
 - New `src/components/dashboard/storage/storage-settings-tab.tsx` — Coming Soon placeholder with Storage Alerts (Usage Spike, Storage Limit, Missing Backup) and Anomaly Detection (Sudden Size Increase/Decrease) — all disabled with opacity overlay and "Coming Soon" badges
+- New `src/app/dashboard/storage/restore/page.tsx` — Server component for the dedicated restore page, checks `PERMISSIONS.STORAGE.RESTORE` and redirects to `/dashboard/storage` if denied
+- New `src/app/dashboard/storage/restore/restore-client.tsx` — Full-page client component (~850 lines) with 2-column grid layout: left column for file details/target selection/database mapping, right column for existing databases sidebar and action buttons. Handles FileInfo parsing from base64 URL params, version compatibility checks, multi-database mapping with selective extraction flags, privileged auth retry flow, system config restore options, and Redis fallback messaging
+- Updated `src/app/dashboard/storage/storage-client.tsx` — Removed `RestoreDialog` import and usage; changed restore button to navigate via `router.push()` with base64-encoded FileInfo and destination ID in URL params instead of opening modal; removed database sources state and API fetch since restore page handles fetching
 
 ## v0.9.8-beta - Notification Adapters Expansion & Quick Setup Wizard
 *Released: February 20, 2026*
@@ -248,9 +260,6 @@ This release adds seven new notification adapters: Slack, Microsoft Teams, Gotif
 - Updated `src/components/ui/health-status-badge.tsx` — Added `interactive?: boolean` prop (default `true`); when `false`, renders a plain non-clickable badge without the popover
 - Updated `src/app/dashboard/destinations/page.tsx`, `src/app/dashboard/sources/page.tsx`, `src/app/dashboard/notifications/page.tsx` — Pass `permissions` array to `AdapterManager`
 - Updated `src/app/api/adapters/[id]/health-history/route.ts` — Replaced single `checkPermissionWithContext(ctx, PERMISSIONS.SOURCES.READ)` with an explicit check accepting either `sources:read` or `destinations:read`
-- New `src/app/dashboard/storage/restore/page.tsx` — Server component for the dedicated restore page, checks `PERMISSIONS.STORAGE.RESTORE` and redirects to `/dashboard/storage` if denied
-- New `src/app/dashboard/storage/restore/restore-client.tsx` — Full-page client component (~850 lines) with 2-column grid layout: left column for file details/target selection/database mapping, right column for existing databases sidebar and action buttons. Handles FileInfo parsing from base64 URL params, version compatibility checks, multi-database mapping with selective extraction flags, privileged auth retry flow, system config restore options, and Redis fallback messaging
-- Updated `src/app/dashboard/storage/storage-client.tsx` — Removed `RestoreDialog` import and usage; changed restore button to navigate via `router.push()` with base64-encoded FileInfo and destination ID in URL params instead of opening modal; removed database sources state and API fetch since restore page handles fetching
 
 ### 🔄 Changes
 - Updated README and documentation to list all 7 notification channels as supported

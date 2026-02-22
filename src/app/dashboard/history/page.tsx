@@ -101,6 +101,7 @@ function HistoryContent() {
     // Fetch notification logs when that tab becomes active
     useEffect(() => {
         if (activeTab === "notifications") {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             fetchNotificationLogs();
             const interval = setInterval(fetchNotificationLogs, 5000);
             return () => clearInterval(interval);

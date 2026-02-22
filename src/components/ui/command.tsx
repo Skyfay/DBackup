@@ -5,6 +5,7 @@ import { Command as CommandPrimitive } from "cmdk"
 import { SearchIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Dialog,
   DialogContent,
@@ -84,33 +85,19 @@ function CommandInput({
 
 function CommandList({
   className,
-  ref,
+  children,
   ...props
 }: React.ComponentProps<typeof CommandPrimitive.List>) {
-  const innerRef = React.useRef<HTMLDivElement>(null)
-
-  // cmdk captures keyboard scroll events which can block mouse wheel scrolling
-  const handleWheel = React.useCallback((e: React.WheelEvent) => {
-    const el = innerRef.current
-    if (!el) return
-    el.scrollTop += e.deltaY
-  }, [])
-
   return (
     <CommandPrimitive.List
-      ref={(node) => {
-        (innerRef as React.MutableRefObject<HTMLDivElement | null>).current = node
-        if (typeof ref === "function") ref(node)
-        else if (ref) (ref as React.MutableRefObject<HTMLDivElement | null>).current = node
-      }}
       data-slot="command-list"
-      onWheel={handleWheel}
-      className={cn(
-        "max-h-75 scroll-py-1 overflow-x-hidden overflow-y-auto scrollbar-thin",
-        className
-      )}
+      className={cn("overflow-hidden!", className)}
       {...props}
-    />
+    >
+      <ScrollArea className="max-h-75 **:data-[slot=scroll-area-viewport]:max-h-[inherit]">
+        {children}
+      </ScrollArea>
+    </CommandPrimitive.List>
   )
 }
 

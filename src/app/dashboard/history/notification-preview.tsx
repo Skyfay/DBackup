@@ -41,6 +41,26 @@ function DiscordPreview({ entry }: NotificationPreviewProps) {
   const fields = parseFields(entry.fields);
   const color = entry.color || (entry.status === "Success" ? "#00ff00" : "#ff0000");
 
+  // Group consecutive inline fields into rows of max 3, non-inline fields get their own row
+  const fieldRows: Array<Array<{ name: string; value: string; inline?: boolean }>> = [];
+  let currentInlineRow: Array<{ name: string; value: string; inline?: boolean }> = [];
+  for (const field of fields) {
+    if (field.inline !== false) {
+      currentInlineRow.push(field);
+      if (currentInlineRow.length === 3) {
+        fieldRows.push(currentInlineRow);
+        currentInlineRow = [];
+      }
+    } else {
+      if (currentInlineRow.length > 0) {
+        fieldRows.push(currentInlineRow);
+        currentInlineRow = [];
+      }
+      fieldRows.push([field]);
+    }
+  }
+  if (currentInlineRow.length > 0) fieldRows.push(currentInlineRow);
+
   return (
     <div className="bg-[#313338] rounded-lg p-4 max-w-lg font-sans">
       {/* Discord message wrapper */}
@@ -55,16 +75,17 @@ function DiscordPreview({ entry }: NotificationPreviewProps) {
           {/* Username + timestamp */}
           <div className="flex items-baseline gap-2 mb-1">
             <span className="text-white font-medium text-sm">Backup Manager</span>
-            <span className="text-[#949BA4] text-xs">Today</span>
+            <span className="bg-[#5865F2] text-white text-[10px] font-semibold px-1 py-px rounded">APP</span>
+            <span className="text-[#949BA4] text-xs">{new Date(entry.sentAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
           </div>
           {/* Embed */}
           <div
-            className="rounded bg-[#2B2D31] overflow-hidden"
+            className="rounded overflow-hidden bg-[#2B2D31] mt-1"
             style={{ borderLeft: `4px solid ${color}` }}
           >
-            <div className="p-3 space-y-2">
+            <div className="p-4 space-y-2">
               {/* Title */}
-              <div className="text-white font-semibold text-sm">
+              <div className="text-white font-semibold text-base">
                 {(embed?.title as string) || entry.title}
               </div>
               {/* Description */}
@@ -72,23 +93,28 @@ function DiscordPreview({ entry }: NotificationPreviewProps) {
                 {(embed?.description as string) || entry.message}
               </div>
               {/* Fields */}
-              {fields.length > 0 && (
-                <div className="grid grid-cols-2 gap-2 mt-2">
-                  {fields.map((field, idx) => (
+              {fieldRows.length > 0 && (
+                <div className="mt-3 space-y-3">
+                  {fieldRows.map((row, rowIdx) => (
                     <div
-                      key={idx}
-                      className={field.inline === false ? "col-span-2" : ""}
+                      key={rowIdx}
+                      className="grid gap-2"
+                      style={{ gridTemplateColumns: row.length > 1 ? `repeat(${row.length}, minmax(0, 1fr))` : "1fr" }}
                     >
-                      <div className="text-[#949BA4] text-xs font-semibold uppercase">
-                        {field.name}
-                      </div>
-                      <div className="text-[#DBDEE1] text-sm">{field.value}</div>
+                      {row.map((field, idx) => (
+                        <div key={idx} className="min-w-0">
+                          <div className="text-[#B5BAC1] text-xs font-bold">
+                            {field.name}
+                          </div>
+                          <div className="text-[#DBDEE1] text-sm mt-0.5 break-words">{field.value}</div>
+                        </div>
+                      ))}
                     </div>
                   ))}
                 </div>
               )}
               {/* Timestamp */}
-              <div className="text-[#949BA4] text-xs mt-2">
+              <div className="text-[#949BA4] text-xs mt-3">
                 {new Date(entry.sentAt).toLocaleString()}
               </div>
             </div>
@@ -151,6 +177,11 @@ function SlackPreview({ entry }: NotificationPreviewProps) {
 
 function EmailPreview({ entry }: NotificationPreviewProps) {
   if (entry.renderedHtml) {
+    // Replace external logo URL with local path for preview rendering
+    const previewHtml = entry.renderedHtml.replace(
+      /https:\/\/dbackup\.app\/logo\.png/g,
+      "/logo.svg"
+    );
     return (
       <div className="bg-card rounded-lg overflow-hidden max-w-xl border border-border">
         <div className="bg-muted/50 border-b border-border px-4 py-2 flex items-center gap-2">
@@ -164,7 +195,7 @@ function EmailPreview({ entry }: NotificationPreviewProps) {
           </span>
         </div>
         <iframe
-          srcDoc={entry.renderedHtml}
+          srcDoc={previewHtml}
           className="w-full border-0 bg-white"
           style={{ minHeight: 400 }}
           sandbox="allow-same-origin"

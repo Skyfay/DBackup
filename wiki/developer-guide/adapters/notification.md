@@ -554,15 +554,16 @@ Every new notification adapter touches these files:
 | 5 | `src/components/adapter/form-constants.ts` | Add keys to `NOTIFICATION_CONNECTION_KEYS`, `NOTIFICATION_CONFIG_KEYS`, and `PLACEHOLDERS` |
 | 6 | `src/components/adapter/adapter-manager.tsx` | Add `case` to `getSummary()` for the Details column |
 | 7 | `src/components/adapter/schema-field.tsx` | Update `isTextArea` check (only if adapter has multi-line fields) |
-| 8 | `wiki/user-guide/notifications/<id>.md` | Create wiki page with setup guide |
-| 9 | `wiki/.vitepress/config.mts` | Add sidebar entry under "Notification Channels" |
-| 10 | `wiki/user-guide/notifications/index.md` | Add to supported channels table and "Choosing a Channel" section |
-| 11 | `wiki/user-guide/features/notifications.md` | Add to channels table and best practices |
-| 12 | `README.md` | Update notification feature line and channels table |
-| 13 | `wiki/index.md` | Update feature card and supported notifications table |
-| 14 | `wiki/changelog.md` | Add changelog entry |
-| 15 | `wiki/developer-guide/adapters/notification.md` | Update "Available Adapters" table (this file) |
-| 16 | `tests/unit/adapters/notification/<id>.test.ts` | Write unit tests for `test()` and `send()` |
+| 8 | `src/app/dashboard/history/notification-preview.tsx` | Add adapter-specific preview component and register in `PREVIEW_COMPONENTS` map (optional) |
+| 9 | `wiki/user-guide/notifications/<id>.md` | Create wiki page with setup guide |
+| 10 | `wiki/.vitepress/config.mts` | Add sidebar entry under "Notification Channels" |
+| 11 | `wiki/user-guide/notifications/index.md` | Add to supported channels table and "Choosing a Channel" section |
+| 12 | `wiki/user-guide/features/notifications.md` | Add to channels table and best practices |
+| 13 | `README.md` | Update notification feature line and channels table |
+| 14 | `wiki/index.md` | Update feature card and supported notifications table |
+| 15 | `wiki/changelog.md` | Add changelog entry |
+| 16 | `wiki/developer-guide/adapters/notification.md` | Update "Available Adapters" table (this file) |
+| 17 | `tests/unit/adapters/notification/<id>.test.ts` | Write unit tests for `test()` and `send()` |
 
 ### Step 1 — Define the Zod Schema
 

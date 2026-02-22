@@ -27,6 +27,7 @@ import {
     DialogDescription,
     DialogFooter
 } from "@/components/ui/dialog";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { DataTable } from "@/components/ui/data-table";
 import { Switch } from "@/components/ui/switch";
@@ -34,6 +35,8 @@ import { Label } from "@/components/ui/label";
 import { getColumns, FileInfo } from "./columns";
 import { lockBackup } from "@/app/actions/storage/lock";
 import { DownloadLinkModal } from "@/components/dashboard/storage/download-link-modal";
+import { StorageHistoryTab } from "@/components/dashboard/storage/storage-history-tab";
+import { StorageSettingsTab } from "@/components/dashboard/storage/storage-settings-tab";
 
 interface AdapterConfig {
     id: string;
@@ -226,6 +229,8 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
         ];
     }, [files]);
 
+    const [activeTab, setActiveTab] = useState("explorer");
+
     return (
         <div className="space-y-6">
             <div>
@@ -280,34 +285,59 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
                     </Popover>
                 </div>
 
-                <div className="flex items-center space-x-2">
-                    <Switch
-                        id="show-system-configs"
-                        checked={showSystemConfigs}
-                        onCheckedChange={setShowSystemConfigs}
-                    />
-                    <Label htmlFor="show-system-configs">Show System Configs</Label>
-                </div>
+                {selectedDestination && activeTab === "explorer" && (
+                    <div className="flex items-center space-x-2">
+                        <Switch
+                            id="show-system-configs"
+                            checked={showSystemConfigs}
+                            onCheckedChange={setShowSystemConfigs}
+                        />
+                        <Label htmlFor="show-system-configs">Show System Configs</Label>
+                    </div>
+                )}
             </div>
 
             {selectedDestination && (
-                 <Card>
-                    <CardHeader>
-                        <CardTitle>Backups</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        {loading ? (
-                             <div className="flex justify-center p-8">Loading files...</div>
-                        ) : (
-                             <DataTable
-                                columns={columns}
-                                data={files}
-                                filterableColumns={filterableColumns}
-                                onRefresh={() => selectedDestination && fetchFiles(selectedDestination, showSystemConfigs)}
-                             />
-                        )}
-                    </CardContent>
-                 </Card>
+                <Tabs value={activeTab} onValueChange={setActiveTab}>
+                    <TabsList>
+                        <TabsTrigger value="explorer">Explorer</TabsTrigger>
+                        <TabsTrigger value="history">History</TabsTrigger>
+                        <TabsTrigger value="settings">Settings</TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="explorer" className="mt-4">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Backups</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                {loading ? (
+                                    <div className="flex justify-center p-8">Loading files...</div>
+                                ) : (
+                                    <DataTable
+                                        columns={columns}
+                                        data={files}
+                                        filterableColumns={filterableColumns}
+                                        onRefresh={() => selectedDestination && fetchFiles(selectedDestination, showSystemConfigs)}
+                                    />
+                                )}
+                            </CardContent>
+                        </Card>
+                    </TabsContent>
+
+                    <TabsContent value="history" className="mt-4">
+                        <StorageHistoryTab
+                            configId={selectedDestination}
+                            adapterName={destinations.find(d => d.id === selectedDestination)?.name || ""}
+                        />
+                    </TabsContent>
+
+                    <TabsContent value="settings" className="mt-4">
+                        <StorageSettingsTab
+                            adapterName={destinations.find(d => d.id === selectedDestination)?.name || ""}
+                        />
+                    </TabsContent>
+                </Tabs>
             )}
 
             {/* Restore now uses /dashboard/storage/restore page */}

@@ -68,6 +68,17 @@ This release adds SSH connection testing for MSSQL file transfer mode with backu
 - **Redis Fallback** — Redis restores (which use a specialized wizard) show a helpful message directing users to use the Storage Explorer button instead
 - **Optimized Spacing** — Refined padding and margins throughout for better visual balance — warning alert centered between top and separator, reduced gaps between existing databases header and table
 
+#### 📊 Storage Explorer Tabs & Dedicated History Page
+- **Tab Navigation** — Storage Explorer now features three tabs (Explorer, History, Settings) that appear once a destination is selected — enabling quick switching between browsing backups, viewing analytics, and configuring alerts
+- **Dedicated History Tab** — Full-page storage history with two side-by-side charts: an area chart for storage size over time and a bar chart for backup count over time — replacing the small modal dialog
+- **Stats Overview Cards** — Three summary cards above the charts: Current Size (with delta vs. start of period), Backup Count (with change indicator), and Average Size (across all snapshots in the period)
+- **Time Range Selector** — Choose from 7 days, 14 days, 30 days, 90 days, 180 days, or 1 year — same as the existing modal but now with more space for the charts
+- **Shadcn/UI Charts** — Uses `ChartContainer`, `ChartTooltip`, `ChartTooltipContent` from `@/components/ui/chart` with `recharts` AreaChart and BarChart — proper CSS variable theming for dark/light mode
+- **Trend Indicators** — Stats cards show colored up/down arrows (TrendingUp/TrendingDown) with size or count deltas compared to the oldest data point in the selected range
+- **Settings Tab (Coming Soon)** — Placeholder tab with planned features: Usage Spike Alerts, Storage Limit Warnings, Missing Backup Alerts, and Anomaly Detection (sudden size increases/decreases) — all marked with "Coming Soon" badges
+- **Context-Aware Controls** — "Show System Configs" toggle only visible when the Explorer tab is active — hides when viewing History or Settings
+- **Restore Back Navigation** — Returning from the restore page now preserves the previously selected storage destination via `?destination=` URL parameter
+
 ### 🐛 Bug Fixes
 - **Quick Setup Adapter Selection** — Fixed "Please select an adapter type first" error when clicking "Test Connection" in Quick Setup wizard (Database Source, Storage Destination, Notification steps). The hook now correctly falls back to the `adapterId` prop when the form doesn't include that field
 - **Test Connection in Setup** — Test Connection button now works properly in all Quick Setup adapter configuration steps, not just the regular adapter management dialogs
@@ -89,6 +100,10 @@ This release adds SSH connection testing for MSSQL file transfer mode with backu
 - Updated `src/services/restore-service.ts` — Restore notification calls now pass resolved adapter names and additional metadata (database type, storage name, backup file, file size, duration) instead of just IDs
 - Updated unit tests in `tests/unit/lib/notifications/email-template.test.tsx` — Fixed email template tests to account for new table-based layout structure
 - Updated unit tests in `tests/unit/adapters/notification/email.test.ts` — Fixed email footer assertions to check for component parts instead of exact concatenation
+- Updated `src/app/dashboard/storage/storage-client.tsx` — Added Shadcn `Tabs` (Explorer, History, Settings) with conditional rendering; "Show System Configs" toggle only visible in Explorer tab; added `useSearchParams` for `?destination=` pre-selection when returning from restore page
+- Updated `src/app/dashboard/storage/page.tsx` — Wrapped `StorageClient` in `<Suspense>` boundary (required for `useSearchParams` in Next.js App Router)
+- New `src/components/dashboard/storage/storage-history-tab.tsx` — Full-page storage history with stats cards (Current Size, Backup Count, Average Size), side-by-side AreaChart (storage size) and BarChart (backup count) using Shadcn/UI Chart components, time range selector (7d–1y), trend indicators
+- New `src/components/dashboard/storage/storage-settings-tab.tsx` — Coming Soon placeholder with Storage Alerts (Usage Spike, Storage Limit, Missing Backup) and Anomaly Detection (Sudden Size Increase/Decrease) — all disabled with opacity overlay and "Coming Soon" badges
 
 ## v0.9.8-beta - Notification Adapters Expansion & Quick Setup Wizard
 *Released: February 20, 2026*

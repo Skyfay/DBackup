@@ -24,6 +24,7 @@ import { RestoreOptions } from "@/lib/types/config-backup";
 import { useUserPreferences } from "@/hooks/use-user-preferences";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { RedisRestoreWizard } from "@/components/dashboard/storage/redis-restore-wizard";
 
 interface DatabaseInfo {
     name: string;
@@ -337,8 +338,65 @@ export function RestoreClient() {
         );
     }
 
-    // Redis backups are not supported on this page (they use their own wizard)
     const isRedisBackup = file.sourceType?.toLowerCase() === 'redis';
+
+    // Redis backups use a specialized step-by-step wizard
+    if (isRedisBackup) {
+        return (
+            <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                    <div className="space-y-1">
+                        <div className="flex items-center gap-3">
+                            <Button variant="ghost" size="icon" onClick={handleCancel} className="h-8 w-8">
+                                <ArrowLeft className="h-4 w-4" />
+                            </Button>
+                            <div>
+                                <h2 className="text-3xl font-bold tracking-tight">Restore Backup</h2>
+                                <p className="text-muted-foreground">Redis restore requires manual steps — follow the wizard below.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* File Details Card */}
+                <Card>
+                    <CardContent className="py-4">
+                        <div className="flex items-center gap-4">
+                            <div className="p-2.5 rounded-lg bg-primary/10 border">
+                                <FileIcon className="h-6 w-6 text-primary" />
+                            </div>
+                            <div className="flex-1 space-y-1.5">
+                                <p className="font-semibold text-lg leading-none">{file.name}</p>
+                                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-muted-foreground">
+                                    <span className="flex items-center gap-1.5">
+                                        <HardDrive className="h-3.5 w-3.5" /> {formatBytes(file.size)}
+                                    </span>
+                                    <span className="flex items-center">
+                                        <DateDisplay date={file.lastModified} className="text-sm" />
+                                    </span>
+                                    <Badge variant="secondary" className="text-xs">
+                                        Redis {file.engineVersion || ""}
+                                    </Badge>
+                                    {file.compression && (
+                                        <Badge variant="outline" className="text-xs">{file.compression}</Badge>
+                                    )}
+                                    {file.isEncrypted && (
+                                        <Badge variant="outline" className="text-xs">Encrypted</Badge>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <RedisRestoreWizard
+                    file={file}
+                    destinationId={destinationId}
+                    onCancel={handleCancel}
+                />
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6">
@@ -393,19 +451,8 @@ export function RestoreClient() {
                         </CardContent>
                     </Card>
 
-                    {/* Redis not supported on page — fallback message */}
-                    {isRedisBackup && (
-                        <Alert>
-                            <AlertTriangle className="h-4 w-4" />
-                            <AlertTitle>Redis Restore</AlertTitle>
-                            <AlertDescription>
-                                Redis restores use a specialized wizard. Please use the restore button in the Storage Explorer.
-                            </AlertDescription>
-                        </Alert>
-                    )}
-
                     {/* System Config Restore */}
-                    {!isRedisBackup && isSystemConfig && !restoreLogs && (
+                    {isSystemConfig && !restoreLogs && (
                         <Card>
                             <CardHeader>
                                 <CardTitle>System Restore</CardTitle>
@@ -446,7 +493,7 @@ export function RestoreClient() {
                     )}
 
                     {/* Database Restore */}
-                    {!isRedisBackup && !isSystemConfig && !restoreLogs && (
+                    {!isSystemConfig && !restoreLogs && (
                         <>
                             {/* Target Selection Card */}
                             <Card>
@@ -691,7 +738,7 @@ export function RestoreClient() {
                 {/* Right Column: Target Server Info + Actions */}
                 <div className="space-y-6">
                     {/* Existing Databases on Target */}
-                    {!isSystemConfig && !isRedisBackup && targetSource && (isLoadingTargetDbs || targetDatabases.length > 0) && (
+                    {!isSystemConfig && targetSource && (isLoadingTargetDbs || targetDatabases.length > 0) && (
                         <Card>
                             <CardHeader className="px-4 py-2.5">
                                 <button
@@ -807,7 +854,7 @@ export function RestoreClient() {
                                     ) : (
                                         <Button
                                             onClick={() => handleRestore(false)}
-                                            disabled={restoring || !targetSource || (analyzedDbs.length > 0 && !dbConfig.some(d => d.selected)) || compatibilityIssues.length > 0 || isRedisBackup}
+                                            disabled={restoring || !targetSource || (analyzedDbs.length > 0 && !dbConfig.some(d => d.selected)) || compatibilityIssues.length > 0}
                                             className="w-full"
                                         >
                                             {restoring && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

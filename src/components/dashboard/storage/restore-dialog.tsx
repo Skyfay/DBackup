@@ -26,7 +26,6 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { DateDisplay } from "@/components/utils/date-display";
 import { restoreFromStorageAction } from "@/app/actions/config-management";
 import { RestoreOptions } from "@/lib/types/config-backup";
-import { RedisRestoreWizard } from "./redis-restore-wizard";
 import { useUserPreferences } from "@/hooks/use-user-preferences";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -331,19 +330,6 @@ export function RestoreDialog({ file, open, onOpenChange, destinationId, sources
     };
 
     if (!file) return null;
-
-    // Show Redis-specific wizard for Redis backups
-    const isRedisBackup = file.sourceType?.toLowerCase() === 'redis';
-    if (isRedisBackup) {
-        return (
-            <RedisRestoreWizard
-                file={file}
-                open={open}
-                onOpenChange={onOpenChange}
-                destinationId={destinationId}
-            />
-        );
-    }
 
     return (
         <Dialog open={open} onOpenChange={(val) => {

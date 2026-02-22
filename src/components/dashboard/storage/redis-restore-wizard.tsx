@@ -1,16 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import {
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogTitle,
-    DialogDescription,
-} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
     Download,
     Server,
@@ -18,25 +12,21 @@ import {
     CheckCircle2,
     Circle,
     AlertTriangle,
-    FileIcon,
-    HardDrive,
     Copy,
-    ChevronRight
+    ChevronRight,
+    ArrowLeft,
 } from "lucide-react";
 import { FileInfo } from "@/app/dashboard/storage/columns";
-import { formatBytes } from "@/lib/utils";
-import { DateDisplay } from "@/components/utils/date-display";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 interface RedisRestoreWizardProps {
-    file: FileInfo | null;
-    open: boolean;
-    onOpenChange: (open: boolean) => void;
+    file: FileInfo;
     destinationId: string;
+    onCancel: () => void;
 }
 
-type WizardStep = "intro" | "download" | "stop" | "replace" | "start" | "verify" | "complete";
+type WizardStep = "intro" | "download" | "stop" | "replace" | "start" | "verify";
 
 const STEPS: { id: WizardStep; title: string; description: string }[] = [
     { id: "intro", title: "Overview", description: "Understand the restore process" },
@@ -47,20 +37,44 @@ const STEPS: { id: WizardStep; title: string; description: string }[] = [
     { id: "verify", title: "Verify", description: "Confirm data restored" },
 ];
 
-export function RedisRestoreWizard({ file, open, onOpenChange, destinationId }: RedisRestoreWizardProps) {
+function CommandBlock({ command, label }: { command: string; label?: string }) {
+    const copyToClipboard = () => {
+        navigator.clipboard.writeText(command);
+        toast.success("Copied to clipboard");
+    };
+
+    return (
+        <div className="space-y-1.5">
+            {label && <p className="text-sm font-medium">{label}</p>}
+            <div className="relative group">
+                <pre className="text-xs bg-muted p-3 rounded-md overflow-x-auto whitespace-pre-wrap break-all font-mono">
+                    {command}
+                </pre>
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={copyToClipboard}
+                >
+                    <Copy className="h-3 w-3" />
+                </Button>
+            </div>
+        </div>
+    );
+}
+
+export function RedisRestoreWizard({ file, destinationId, onCancel }: RedisRestoreWizardProps) {
     const [currentStep, setCurrentStep] = useState<WizardStep>("intro");
     const [completedSteps, setCompletedSteps] = useState<Set<WizardStep>>(new Set());
     const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
     const [isGeneratingUrl, setIsGeneratingUrl] = useState(false);
 
-    // Reset when dialog opens
+    // Reset on mount
     useEffect(() => {
-        if (open) {
-            setCurrentStep("intro");
-            setCompletedSteps(new Set());
-            setDownloadUrl(null);
-        }
-    }, [open]);
+        setCurrentStep("intro");
+        setCompletedSteps(new Set());
+        setDownloadUrl(null);
+    }, [file]);
 
     const markStepComplete = (step: WizardStep) => {
         setCompletedSteps(prev => new Set([...prev, step]));
@@ -103,86 +117,67 @@ export function RedisRestoreWizard({ file, open, onOpenChange, destinationId }: 
         }
     };
 
-    const copyToClipboard = (text: string) => {
-        navigator.clipboard.writeText(text);
-        toast.success("Copied to clipboard");
-    };
-
-    if (!file) return null;
-
     const currentStepIndex = STEPS.findIndex(s => s.id === currentStep);
 
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2">
-                        <Server className="h-5 w-5 text-red-500" />
-                        Redis Restore Wizard
-                    </DialogTitle>
-                    <DialogDescription>
-                        Redis requires manual steps to restore. Follow this wizard carefully.
-                    </DialogDescription>
-                </DialogHeader>
-
-                {/* File Info */}
-                <div className="flex items-start gap-4 p-4 border rounded-lg bg-secondary/20">
-                    <div className="p-2 rounded bg-background border shadow-sm">
-                        <FileIcon className="h-6 w-6 text-red-500" />
+        <div className="space-y-6">
+            {/* Redis Wizard Header Card */}
+            <Card className="border-red-500/20 bg-red-500/5">
+                <CardContent className="flex items-center gap-3 py-4">
+                    <Server className="h-5 w-5 text-red-500 shrink-0" />
+                    <div>
+                        <p className="font-semibold leading-none">Redis Restore Wizard</p>
+                        <p className="text-sm text-muted-foreground mt-1">
+                            Redis requires manual steps to restore. Follow this wizard carefully.
+                        </p>
                     </div>
-                    <div className="flex-1 space-y-1">
-                        <p className="font-medium leading-none">{file.name}</p>
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                            <span className="flex items-center gap-1">
-                                <HardDrive className="h-3 w-3" /> {formatBytes(file.size)}
-                            </span>
-                            <DateDisplay date={file.lastModified} className="text-xs" />
-                            <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
-                                Redis {file.engineVersion || "RDB"}
-                            </Badge>
-                        </div>
-                    </div>
-                </div>
+                </CardContent>
+            </Card>
 
-                {/* Step Progress */}
-                <div className="flex items-center justify-between px-2 py-4">
-                    {STEPS.map((step, index) => (
-                        <div key={step.id} className="flex items-center">
-                            <button
-                                onClick={() => {
-                                    if (completedSteps.has(step.id) || index <= currentStepIndex) {
-                                        setCurrentStep(step.id);
-                                    }
-                                }}
-                                className={cn(
-                                    "flex flex-col items-center gap-1 transition-colors",
-                                    currentStep === step.id ? "text-primary" : "text-muted-foreground",
-                                    (completedSteps.has(step.id) || index <= currentStepIndex) && "cursor-pointer hover:text-primary"
-                                )}
-                            >
-                                <div className={cn(
-                                    "w-8 h-8 rounded-full flex items-center justify-center border-2 transition-colors",
-                                    currentStep === step.id && "border-primary bg-primary text-primary-foreground",
-                                    completedSteps.has(step.id) && currentStep !== step.id && "border-green-500 bg-green-500 text-white",
-                                    !completedSteps.has(step.id) && currentStep !== step.id && "border-muted-foreground/30"
-                                )}>
-                                    {completedSteps.has(step.id) && currentStep !== step.id ? (
-                                        <CheckCircle2 className="h-4 w-4" />
-                                    ) : (
-                                        <span className="text-xs font-medium">{index + 1}</span>
+            {/* Step Progress */}
+            <Card>
+                <CardContent className="py-4">
+                    <div className="flex items-center justify-center gap-1">
+                        {STEPS.map((step, index) => (
+                            <div key={step.id} className="flex items-center">
+                                <button
+                                    onClick={() => {
+                                        if (completedSteps.has(step.id) || index <= currentStepIndex) {
+                                            setCurrentStep(step.id);
+                                        }
+                                    }}
+                                    className={cn(
+                                        "flex flex-col items-center gap-1.5 transition-colors",
+                                        currentStep === step.id ? "text-primary" : "text-muted-foreground",
+                                        (completedSteps.has(step.id) || index <= currentStepIndex) && "cursor-pointer hover:text-primary"
                                     )}
-                                </div>
-                                <span className="text-[10px] font-medium hidden sm:block">{step.title}</span>
-                            </button>
-                            {index < STEPS.length - 1 && (
-                                <ChevronRight className="h-4 w-4 mx-1 text-muted-foreground/50" />
-                            )}
-                        </div>
-                    ))}
-                </div>
+                                >
+                                    <div className={cn(
+                                        "w-9 h-9 rounded-full flex items-center justify-center border-2 transition-colors",
+                                        currentStep === step.id && "border-primary bg-primary text-primary-foreground",
+                                        completedSteps.has(step.id) && currentStep !== step.id && "border-green-500 bg-green-500 text-white",
+                                        !completedSteps.has(step.id) && currentStep !== step.id && "border-muted-foreground/30"
+                                    )}>
+                                        {completedSteps.has(step.id) && currentStep !== step.id ? (
+                                            <CheckCircle2 className="h-4 w-4" />
+                                        ) : (
+                                            <span className="text-xs font-medium">{index + 1}</span>
+                                        )}
+                                    </div>
+                                    <span className="text-[11px] font-medium hidden sm:block">{step.title}</span>
+                                </button>
+                                {index < STEPS.length - 1 && (
+                                    <ChevronRight className="h-4 w-4 mx-1.5 text-muted-foreground/50" />
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </CardContent>
+            </Card>
 
-                {/* Step Content */}
-                <div className="min-h-[200px] py-4">
+            {/* Step Content */}
+            <Card>
+                <CardContent className="py-6">
                     {currentStep === "intro" && (
                         <div className="space-y-4">
                             <Alert>
@@ -236,7 +231,7 @@ export function RedisRestoreWizard({ file, open, onOpenChange, destinationId }: 
 
                             <div className="flex flex-col gap-3">
                                 {!downloadUrl ? (
-                                    <Button onClick={generateDownloadUrl} disabled={isGeneratingUrl} className="w-full">
+                                    <Button onClick={generateDownloadUrl} disabled={isGeneratingUrl}>
                                         {isGeneratingUrl ? (
                                             <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
                                         ) : (
@@ -252,32 +247,23 @@ export function RedisRestoreWizard({ file, open, onOpenChange, destinationId }: 
                                             <Badge variant="outline" className="text-xs">Expires in 5 min</Badge>
                                         </div>
                                         <div className="flex gap-2">
-                                            <Button asChild className="flex-1">
+                                            <Button asChild>
                                                 <a href={downloadUrl} download>
                                                     <Download className="h-4 w-4 mr-2" />
                                                     Download File
                                                 </a>
                                             </Button>
-                                            <Button variant="outline" size="icon" onClick={() => copyToClipboard(downloadUrl)}>
+                                            <Button variant="outline" size="icon" onClick={() => {
+                                                navigator.clipboard.writeText(downloadUrl);
+                                                toast.success("Copied to clipboard");
+                                            }}>
                                                 <Copy className="h-4 w-4" />
                                             </Button>
                                         </div>
-                                        <p className="text-xs text-muted-foreground">
-                                            Or use wget/curl on your server (link is single-use):
-                                        </p>
-                                        <div className="relative">
-                                            <pre className="text-xs bg-muted p-3 rounded-md overflow-x-auto whitespace-pre-wrap break-all">
-                                                wget -O dump.rdb &quot;{downloadUrl}&quot;
-                                            </pre>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="absolute top-1 right-1 h-6 w-6"
-                                                onClick={() => copyToClipboard(`wget -O dump.rdb "${downloadUrl}"`)}
-                                            >
-                                                <Copy className="h-3 w-3" />
-                                            </Button>
-                                        </div>
+                                        <CommandBlock
+                                            label="Or use wget/curl on your server (link is single-use):"
+                                            command={`wget -O dump.rdb "${downloadUrl}"`}
+                                        />
                                     </div>
                                 )}
                             </div>
@@ -292,50 +278,9 @@ export function RedisRestoreWizard({ file, open, onOpenChange, destinationId }: 
                             </p>
 
                             <div className="space-y-3">
-                                <div className="space-y-2">
-                                    <p className="text-sm font-medium">Systemd (Linux):</p>
-                                    <div className="relative">
-                                        <pre className="text-xs bg-muted p-3 rounded-md">sudo systemctl stop redis</pre>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="absolute top-1 right-1 h-6 w-6"
-                                            onClick={() => copyToClipboard("sudo systemctl stop redis")}
-                                        >
-                                            <Copy className="h-3 w-3" />
-                                        </Button>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <p className="text-sm font-medium">Docker:</p>
-                                    <div className="relative">
-                                        <pre className="text-xs bg-muted p-3 rounded-md">docker stop &lt;redis-container&gt;</pre>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="absolute top-1 right-1 h-6 w-6"
-                                            onClick={() => copyToClipboard("docker stop <redis-container>")}
-                                        >
-                                            <Copy className="h-3 w-3" />
-                                        </Button>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <p className="text-sm font-medium">Redis CLI (Graceful shutdown):</p>
-                                    <div className="relative">
-                                        <pre className="text-xs bg-muted p-3 rounded-md">redis-cli -a &lt;password&gt; SHUTDOWN SAVE</pre>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="absolute top-1 right-1 h-6 w-6"
-                                            onClick={() => copyToClipboard("redis-cli -a <password> SHUTDOWN SAVE")}
-                                        >
-                                            <Copy className="h-3 w-3" />
-                                        </Button>
-                                    </div>
-                                </div>
+                                <CommandBlock label="Systemd (Linux):" command="sudo systemctl stop redis" />
+                                <CommandBlock label="Docker:" command="docker stop <redis-container>" />
+                                <CommandBlock label="Redis CLI (Graceful shutdown):" command="redis-cli -a <password> SHUTDOWN SAVE" />
                             </div>
 
                             <Alert>
@@ -356,36 +301,14 @@ export function RedisRestoreWizard({ file, open, onOpenChange, destinationId }: 
                             </p>
 
                             <div className="space-y-3">
-                                <div className="space-y-2">
-                                    <p className="text-sm font-medium">Linux (default path):</p>
-                                    <div className="relative">
-                                        <pre className="text-xs bg-muted p-3 rounded-md overflow-x-auto">{`sudo cp ~/Downloads/${file.name} /var/lib/redis/dump.rdb
-sudo chown redis:redis /var/lib/redis/dump.rdb`}</pre>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="absolute top-1 right-1 h-6 w-6"
-                                            onClick={() => copyToClipboard(`sudo cp ~/Downloads/${file.name} /var/lib/redis/dump.rdb\nsudo chown redis:redis /var/lib/redis/dump.rdb`)}
-                                        >
-                                            <Copy className="h-3 w-3" />
-                                        </Button>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <p className="text-sm font-medium">Docker:</p>
-                                    <div className="relative">
-                                        <pre className="text-xs bg-muted p-3 rounded-md overflow-x-auto">{`docker cp ~/Downloads/${file.name} <container>:/data/dump.rdb`}</pre>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="absolute top-1 right-1 h-6 w-6"
-                                            onClick={() => copyToClipboard(`docker cp ~/Downloads/${file.name} <container>:/data/dump.rdb`)}
-                                        >
-                                            <Copy className="h-3 w-3" />
-                                        </Button>
-                                    </div>
-                                </div>
+                                <CommandBlock
+                                    label="Linux (default path):"
+                                    command={`sudo cp ~/Downloads/${file.name} /var/lib/redis/dump.rdb\nsudo chown redis:redis /var/lib/redis/dump.rdb`}
+                                />
+                                <CommandBlock
+                                    label="Docker:"
+                                    command={`docker cp ~/Downloads/${file.name} <container>:/data/dump.rdb`}
+                                />
                             </div>
 
                             <Alert>
@@ -406,35 +329,8 @@ sudo chown redis:redis /var/lib/redis/dump.rdb`}</pre>
                             </p>
 
                             <div className="space-y-3">
-                                <div className="space-y-2">
-                                    <p className="text-sm font-medium">Systemd (Linux):</p>
-                                    <div className="relative">
-                                        <pre className="text-xs bg-muted p-3 rounded-md">sudo systemctl start redis</pre>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="absolute top-1 right-1 h-6 w-6"
-                                            onClick={() => copyToClipboard("sudo systemctl start redis")}
-                                        >
-                                            <Copy className="h-3 w-3" />
-                                        </Button>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <p className="text-sm font-medium">Docker:</p>
-                                    <div className="relative">
-                                        <pre className="text-xs bg-muted p-3 rounded-md">docker start &lt;redis-container&gt;</pre>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="absolute top-1 right-1 h-6 w-6"
-                                            onClick={() => copyToClipboard("docker start <redis-container>")}
-                                        >
-                                            <Copy className="h-3 w-3" />
-                                        </Button>
-                                    </div>
-                                </div>
+                                <CommandBlock label="Systemd (Linux):" command="sudo systemctl start redis" />
+                                <CommandBlock label="Docker:" command="docker start <redis-container>" />
                             </div>
 
                             <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-md">
@@ -453,35 +349,14 @@ sudo chown redis:redis /var/lib/redis/dump.rdb`}</pre>
                             </p>
 
                             <div className="space-y-3">
-                                <div className="space-y-2">
-                                    <p className="text-sm font-medium">Check connection and key count:</p>
-                                    <div className="relative">
-                                        <pre className="text-xs bg-muted p-3 rounded-md">{`redis-cli -a <password> INFO keyspace`}</pre>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="absolute top-1 right-1 h-6 w-6"
-                                            onClick={() => copyToClipboard("redis-cli -a <password> INFO keyspace")}
-                                        >
-                                            <Copy className="h-3 w-3" />
-                                        </Button>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <p className="text-sm font-medium">Sample some keys:</p>
-                                    <div className="relative">
-                                        <pre className="text-xs bg-muted p-3 rounded-md">{`redis-cli -a <password> KEYS "*" | head -20`}</pre>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="absolute top-1 right-1 h-6 w-6"
-                                            onClick={() => copyToClipboard('redis-cli -a <password> KEYS "*" | head -20')}
-                                        >
-                                            <Copy className="h-3 w-3" />
-                                        </Button>
-                                    </div>
-                                </div>
+                                <CommandBlock
+                                    label="Check connection and key count:"
+                                    command="redis-cli -a <password> INFO keyspace"
+                                />
+                                <CommandBlock
+                                    label="Sample some keys:"
+                                    command='redis-cli -a <password> KEYS "*" | head -20'
+                                />
                             </div>
 
                             <div className="flex items-center gap-3 p-4 bg-green-500/10 border border-green-500/20 rounded-md">
@@ -495,36 +370,43 @@ sudo chown redis:redis /var/lib/redis/dump.rdb`}</pre>
                             </div>
                         </div>
                     )}
-                </div>
+                </CardContent>
+            </Card>
 
-                {/* Navigation */}
-                <div className="flex items-center justify-between pt-4 border-t">
-                    <div>
-                        {currentStep !== "intro" && (
-                            <Button variant="ghost" onClick={goToPrevStep}>
-                                Back
-                            </Button>
-                        )}
+            {/* Navigation */}
+            <Card>
+                <CardContent className="py-4">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            {currentStep === "intro" ? (
+                                <Button variant="outline" onClick={onCancel}>
+                                    <ArrowLeft className="h-4 w-4 mr-2" />
+                                    Back to Storage
+                                </Button>
+                            ) : (
+                                <Button variant="ghost" onClick={goToPrevStep}>
+                                    <ArrowLeft className="h-4 w-4 mr-2" />
+                                    Back
+                                </Button>
+                            )}
+                        </div>
+                        <div className="flex gap-2">
+                            {currentStep !== "verify" && (
+                                <Button onClick={goToNextStep}>
+                                    {currentStep === "intro" ? "Start Wizard" : "I've Completed This Step"}
+                                    <ChevronRight className="h-4 w-4 ml-1" />
+                                </Button>
+                            )}
+                            {currentStep === "verify" && (
+                                <Button onClick={onCancel} className="bg-green-600 hover:bg-green-700">
+                                    <CheckCircle2 className="h-4 w-4 mr-2" />
+                                    Complete Restore
+                                </Button>
+                            )}
+                        </div>
                     </div>
-                    <div className="flex gap-2">
-                        <Button variant="outline" onClick={() => onOpenChange(false)}>
-                            {currentStep === "verify" ? "Done" : "Cancel"}
-                        </Button>
-                        {currentStep !== "verify" && (
-                            <Button onClick={goToNextStep}>
-                                {currentStep === "intro" ? "Start Wizard" : "I've Completed This Step"}
-                                <ChevronRight className="h-4 w-4 ml-1" />
-                            </Button>
-                        )}
-                        {currentStep === "verify" && (
-                            <Button onClick={() => onOpenChange(false)} className="bg-green-600 hover:bg-green-700">
-                                <CheckCircle2 className="h-4 w-4 mr-2" />
-                                Complete Restore
-                            </Button>
-                        )}
-                    </div>
-                </div>
-            </DialogContent>
-        </Dialog>
+                </CardContent>
+            </Card>
+        </div>
     );
 }

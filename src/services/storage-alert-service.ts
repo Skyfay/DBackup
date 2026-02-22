@@ -4,8 +4,14 @@
  * Checks storage snapshots against user-configured thresholds and
  * dispatches notifications through the system notification framework.
  *
+ * Uses state tracking to prevent notification flooding:
+ * - Sends once when a condition first becomes active (inactive → active)
+ * - Re-sends a reminder after a 24h cooldown while the condition persists
+ * - Resets when the condition resolves (allowing future re-notifications)
+ *
  * Alert configuration is stored per-destination in SystemSetting with
  * keys like "storage.alerts.<configId>".
+ * Alert state is tracked separately with keys like "storage.alerts.<configId>.state".
  *
  * Triggered by saveStorageSnapshots() during the storage stats refresh cycle.
  */
@@ -50,10 +56,57 @@ export function defaultAlertConfig(): StorageAlertConfig {
   };
 }
 
+// ── Alert State Types ──────────────────────────────────────────
+
+/** State of an individual alert type (active/inactive + last notification time) */
+export interface AlertTypeState {
+  /** Whether the alert condition is currently active */
+  active: boolean;
+  /** ISO timestamp of the last notification sent (null if never or after reset) */
+  lastNotifiedAt: string | null;
+}
+
+/** Combined alert states for all alert types of a single destination */
+export interface StorageAlertStates {
+  usageSpike: AlertTypeState;
+  storageLimit: AlertTypeState;
+  missingBackup: AlertTypeState;
+}
+
+/** Cooldown period between repeated notifications for the same active condition (24 hours) */
+export const ALERT_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+
+function defaultAlertTypeState(): AlertTypeState {
+  return { active: false, lastNotifiedAt: null };
+}
+
+/** Default states for a destination with no prior alert history */
+export function defaultAlertStates(): StorageAlertStates {
+  return {
+    usageSpike: defaultAlertTypeState(),
+    storageLimit: defaultAlertTypeState(),
+    missingBackup: defaultAlertTypeState(),
+  };
+}
+
+/**
+ * Determine whether a notification should be sent for the given alert state.
+ * Returns true if the alert is newly active or the cooldown period has elapsed.
+ */
+function shouldNotify(state: AlertTypeState): boolean {
+  if (!state.active) return true;
+  if (!state.lastNotifiedAt) return true;
+  return Date.now() - new Date(state.lastNotifiedAt).getTime() >= ALERT_COOLDOWN_MS;
+}
+
 // ── Config Persistence ─────────────────────────────────────────
 
 function settingKey(configId: string): string {
   return `storage.alerts.${configId}`;
+}
+
+function stateKey(configId: string): string {
+  return `storage.alerts.${configId}.state`;
 }
 
 /** Load alert configuration for a storage destination */
@@ -92,11 +145,52 @@ export async function saveAlertConfig(
   });
 }
 
+// ── Alert State Persistence ────────────────────────────────────
+
+/** Load alert states for a storage destination */
+export async function getAlertStates(
+  configId: string
+): Promise<StorageAlertStates> {
+  const row = await prisma.systemSetting.findUnique({
+    where: { key: stateKey(configId) },
+  });
+
+  if (!row) return defaultAlertStates();
+
+  try {
+    return { ...defaultAlertStates(), ...JSON.parse(row.value) };
+  } catch {
+    log.warn("Invalid storage alert state JSON, returning defaults", {
+      configId,
+    });
+    return defaultAlertStates();
+  }
+}
+
+/** Save alert states for a storage destination */
+export async function saveAlertStates(
+  configId: string,
+  states: StorageAlertStates
+): Promise<void> {
+  await prisma.systemSetting.upsert({
+    where: { key: stateKey(configId) },
+    update: { value: JSON.stringify(states) },
+    create: {
+      key: stateKey(configId),
+      value: JSON.stringify(states),
+      description: `Storage alert state tracking for destination ${configId}`,
+    },
+  });
+}
+
 // ── Alert Checks ───────────────────────────────────────────────
 
 /**
  * Check all storage alert conditions for the given destinations.
  * Called after saving new storage snapshots.
+ *
+ * Loads alert state once per destination, passes it to individual checks,
+ * and persists only if the state changed.
  */
 export async function checkStorageAlerts(
   entries: StorageVolumeEntry[]
@@ -116,16 +210,31 @@ export async function checkStorageAlerts(
         continue;
       }
 
+      const states = await getAlertStates(entry.configId);
+      const snapshot = JSON.stringify(states);
+
       if (config.usageSpikeEnabled) {
-        await checkUsageSpike(entry, config);
+        await checkUsageSpike(entry, config, states);
+      } else if (states.usageSpike.active) {
+        // Reset state when alert type is disabled
+        states.usageSpike = defaultAlertTypeState();
       }
 
       if (config.storageLimitEnabled) {
-        await checkStorageLimit(entry, config);
+        await checkStorageLimit(entry, config, states);
+      } else if (states.storageLimit.active) {
+        states.storageLimit = defaultAlertTypeState();
       }
 
       if (config.missingBackupEnabled) {
-        await checkMissingBackup(entry, config);
+        await checkMissingBackup(entry, config, states);
+      } else if (states.missingBackup.active) {
+        states.missingBackup = defaultAlertTypeState();
+      }
+
+      // Only persist if state actually changed
+      if (JSON.stringify(states) !== snapshot) {
+        await saveAlertStates(entry.configId, states);
       }
     } catch (error) {
       log.error(
@@ -143,7 +252,8 @@ export async function checkStorageAlerts(
  */
 async function checkUsageSpike(
   entry: StorageVolumeEntry,
-  config: StorageAlertConfig
+  config: StorageAlertConfig,
+  states: StorageAlertStates
 ): Promise<void> {
   // Get the previous snapshot (second most recent)
   const previousSnapshots = await prisma.storageSnapshot.findMany({
@@ -166,23 +276,30 @@ async function checkUsageSpike(
     ((currentSize - previousSize) / previousSize) * 100;
 
   if (Math.abs(changePercent) >= config.usageSpikeThresholdPercent) {
-    log.info("Storage usage spike detected", {
-      storageName: entry.name,
-      previousSize,
-      currentSize,
-      changePercent: changePercent.toFixed(1),
-    });
-
-    await notify({
-      eventType: NOTIFICATION_EVENTS.STORAGE_USAGE_SPIKE,
-      data: {
+    if (shouldNotify(states.usageSpike)) {
+      log.info("Storage usage spike detected", {
         storageName: entry.name,
         previousSize,
         currentSize,
-        changePercent,
-        timestamp: new Date().toISOString(),
-      },
-    });
+        changePercent: changePercent.toFixed(1),
+      });
+
+      await notify({
+        eventType: NOTIFICATION_EVENTS.STORAGE_USAGE_SPIKE,
+        data: {
+          storageName: entry.name,
+          previousSize,
+          currentSize,
+          changePercent,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      states.usageSpike = { active: true, lastNotifiedAt: new Date().toISOString() };
+    }
+  } else {
+    // No spike — reset so next spike fires immediately
+    states.usageSpike = defaultAlertTypeState();
   }
 }
 
@@ -191,7 +308,8 @@ async function checkUsageSpike(
  */
 async function checkStorageLimit(
   entry: StorageVolumeEntry,
-  config: StorageAlertConfig
+  config: StorageAlertConfig,
+  states: StorageAlertStates
 ): Promise<void> {
   if (config.storageLimitBytes <= 0) return;
 
@@ -200,23 +318,30 @@ async function checkStorageLimit(
 
   // Alert when usage is at or above 90% of the limit
   if (usagePercent >= 90) {
-    log.info("Storage limit warning triggered", {
-      storageName: entry.name,
-      currentSize: entry.size,
-      limitSize: config.storageLimitBytes,
-      usagePercent: usagePercent.toFixed(1),
-    });
-
-    await notify({
-      eventType: NOTIFICATION_EVENTS.STORAGE_LIMIT_WARNING,
-      data: {
+    if (shouldNotify(states.storageLimit)) {
+      log.info("Storage limit warning triggered", {
         storageName: entry.name,
         currentSize: entry.size,
         limitSize: config.storageLimitBytes,
-        usagePercent,
-        timestamp: new Date().toISOString(),
-      },
-    });
+        usagePercent: usagePercent.toFixed(1),
+      });
+
+      await notify({
+        eventType: NOTIFICATION_EVENTS.STORAGE_LIMIT_WARNING,
+        data: {
+          storageName: entry.name,
+          currentSize: entry.size,
+          limitSize: config.storageLimitBytes,
+          usagePercent,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      states.storageLimit = { active: true, lastNotifiedAt: new Date().toISOString() };
+    }
+  } else {
+    // Condition resolved — reset for future re-notification
+    states.storageLimit = defaultAlertTypeState();
   }
 }
 
@@ -225,7 +350,8 @@ async function checkStorageLimit(
  */
 async function checkMissingBackup(
   entry: StorageVolumeEntry,
-  config: StorageAlertConfig
+  config: StorageAlertConfig,
+  states: StorageAlertStates
 ): Promise<void> {
   if (config.missingBackupHours <= 0) return;
 
@@ -260,21 +386,28 @@ async function checkMissingBackup(
     (Date.now() - lastChangeAt.getTime()) / (1000 * 60 * 60);
 
   if (hoursSinceLastBackup >= config.missingBackupHours) {
-    log.info("Missing backup alert triggered", {
-      storageName: entry.name,
-      hoursSinceLastBackup: Math.round(hoursSinceLastBackup),
-      thresholdHours: config.missingBackupHours,
-    });
-
-    await notify({
-      eventType: NOTIFICATION_EVENTS.STORAGE_MISSING_BACKUP,
-      data: {
+    if (shouldNotify(states.missingBackup)) {
+      log.info("Missing backup alert triggered", {
         storageName: entry.name,
-        lastBackupAt: lastChangeAt.toISOString(),
-        thresholdHours: config.missingBackupHours,
         hoursSinceLastBackup: Math.round(hoursSinceLastBackup),
-        timestamp: new Date().toISOString(),
-      },
-    });
+        thresholdHours: config.missingBackupHours,
+      });
+
+      await notify({
+        eventType: NOTIFICATION_EVENTS.STORAGE_MISSING_BACKUP,
+        data: {
+          storageName: entry.name,
+          lastBackupAt: lastChangeAt.toISOString(),
+          thresholdHours: config.missingBackupHours,
+          hoursSinceLastBackup: Math.round(hoursSinceLastBackup),
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      states.missingBackup = { active: true, lastNotifiedAt: new Date().toISOString() };
+    }
+  } else {
+    // Condition resolved — reset for future re-notification
+    states.missingBackup = defaultAlertTypeState();
   }
 }

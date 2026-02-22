@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { ChevronsUpDown } from "lucide-react";
+import { ChevronsUpDown, HardDrive, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -240,49 +240,61 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
             </div>
 
             <div className="flex items-center space-x-4 justify-between">
-                <div className="w-75">
-                    <Popover open={open} onOpenChange={setOpen}>
-                        <PopoverTrigger asChild>
-                            <Button
-                                variant="outline"
-                                role="combobox"
-                                aria-expanded={open}
-                                className="w-full justify-between"
-                            >
-                                {selectedDestination ? (
-                                    <span className="flex items-center gap-2">
-                                        <AdapterIcon adapterId={destinations.find((dest) => dest.id === selectedDestination)?.adapterId ?? ""} className="h-4 w-4" />
-                                        {destinations.find((dest) => dest.id === selectedDestination)?.name}
-                                    </span>
-                                ) : "Select Destination..."}
-                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                            </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-75 p-0">
-                            <Command>
-                                <CommandInput placeholder="Search destination..." />
-                                <CommandList>
-                                    <CommandEmpty>No destination found.</CommandEmpty>
-                                    <CommandGroup>
-                                        {destinations.map((destination) => (
-                                            <CommandItem
-                                                key={destination.id}
-                                                value={destination.name}
-                                                onSelect={() => {
-                                                    setSelectedDestination(destination.id === selectedDestination ? "" : destination.id);
-                                                    setOpen(false);
-                                                }}
-                                                className={cn(selectedDestination === destination.id && "bg-accent")}
-                                            >
-                                                <AdapterIcon adapterId={destination.adapterId} className="h-4 w-4" />
-                                                {destination.name}
-                                            </CommandItem>
-                                        ))}
-                                    </CommandGroup>
-                                </CommandList>
-                            </Command>
-                        </PopoverContent>
-                    </Popover>
+                <div className="flex items-center gap-3">
+                    <div className="w-75">
+                        <Popover open={open} onOpenChange={setOpen}>
+                            <PopoverTrigger asChild>
+                                <Button
+                                    variant="outline"
+                                    role="combobox"
+                                    aria-expanded={open}
+                                    className="w-full justify-between"
+                                >
+                                    {selectedDestination ? (
+                                        <span className="flex items-center gap-2">
+                                            <AdapterIcon adapterId={destinations.find((dest) => dest.id === selectedDestination)?.adapterId ?? ""} className="h-4 w-4" />
+                                            {destinations.find((dest) => dest.id === selectedDestination)?.name}
+                                        </span>
+                                    ) : "Select Destination..."}
+                                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-75 p-0">
+                                <Command>
+                                    <CommandInput placeholder="Search destination..." />
+                                    <CommandList>
+                                        <CommandEmpty>No destination found.</CommandEmpty>
+                                        <CommandGroup>
+                                            {destinations.map((destination) => (
+                                                <CommandItem
+                                                    key={destination.id}
+                                                    value={destination.name}
+                                                    onSelect={() => {
+                                                        setSelectedDestination(destination.id === selectedDestination ? "" : destination.id);
+                                                        setOpen(false);
+                                                    }}
+                                                    className={cn(selectedDestination === destination.id && "bg-accent")}
+                                                >
+                                                    <AdapterIcon adapterId={destination.adapterId} className="h-4 w-4" />
+                                                    {destination.name}
+                                                </CommandItem>
+                                            ))}
+                                        </CommandGroup>
+                                    </CommandList>
+                                </Command>
+                            </PopoverContent>
+                        </Popover>
+                    </div>
+                    {selectedDestination && (
+                        <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={() => fetchFiles(selectedDestination, showSystemConfigs)}
+                            disabled={loading}
+                        >
+                            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                        </Button>
+                    )}
                 </div>
 
                 {selectedDestination && activeTab === "explorer" && (
@@ -342,6 +354,19 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
             )}
 
             {/* Restore now uses /dashboard/storage/restore page */}
+
+            {/* Empty State (no destination selected) */}
+            {!selectedDestination && (
+                <Card>
+                    <CardContent className="py-16">
+                        <div className="text-center text-muted-foreground">
+                            <HardDrive className="h-12 w-12 mx-auto mb-4 opacity-20" />
+                            <p className="text-lg font-medium">Select a storage destination</p>
+                            <p className="text-sm mt-1">Choose a destination above to browse your backup files.</p>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
 
             {/* Delete Confirmation Modal */}
             <Dialog open={!!fileToDelete} onOpenChange={(o) => { if(!o && !deleting) setFileToDelete(null); }}>

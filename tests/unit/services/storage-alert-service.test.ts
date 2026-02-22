@@ -30,7 +30,12 @@ import {
   saveAlertConfig,
   checkStorageAlerts,
   defaultAlertConfig,
+  defaultAlertStates,
+  getAlertStates,
+  saveAlertStates,
+  ALERT_COOLDOWN_MS,
   type StorageAlertConfig,
+  type StorageAlertStates,
 } from "@/services/storage-alert-service";
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -56,13 +61,38 @@ function makeAlertConfig(overrides?: Partial<StorageAlertConfig>): StorageAlertC
   return { ...defaultAlertConfig(), ...overrides };
 }
 
-function mockAlertSetting(configId: string, config: Partial<StorageAlertConfig>) {
-  prismaMock.systemSetting.findUnique.mockResolvedValue({
-    key: `storage.alerts.${configId}`,
-    value: JSON.stringify({ ...defaultAlertConfig(), ...config }),
-    description: null,
-    updatedAt: new Date(),
-  });
+/**
+ * Mock both alert config and state for a destination.
+ * Uses mockImplementation to distinguish between config and state keys.
+ */
+function mockAlertSetting(
+  configId: string,
+  config: Partial<StorageAlertConfig>,
+  state?: Partial<StorageAlertStates>
+) {
+  prismaMock.systemSetting.findUnique.mockImplementation((async (args: any) => {
+    const key = args.where.key;
+    if (key === `storage.alerts.${configId}`) {
+      return {
+        key,
+        value: JSON.stringify({ ...defaultAlertConfig(), ...config }),
+        description: null,
+        updatedAt: new Date(),
+      };
+    }
+    if (key === `storage.alerts.${configId}.state`) {
+      if (state) {
+        return {
+          key,
+          value: JSON.stringify({ ...defaultAlertStates(), ...state }),
+          description: null,
+          updatedAt: new Date(),
+        };
+      }
+      return null; // default: no prior state
+    }
+    return null;
+  }) as any);
 }
 
 // ── Tests ──────────────────────────────────────────────────────
@@ -93,6 +123,17 @@ describe("StorageAlertService", () => {
       expect(config.usageSpikeThresholdPercent).toBe(50);
       expect(config.storageLimitBytes).toBe(10 * 1024 * 1024 * 1024); // 10 GB
       expect(config.missingBackupHours).toBe(48);
+    });
+  });
+
+  // ── defaultAlertStates ─────────────────────────────────────
+
+  describe("defaultAlertStates", () => {
+    it("should return all alerts inactive with no prior notifications", () => {
+      const states = defaultAlertStates();
+      expect(states.usageSpike).toEqual({ active: false, lastNotifiedAt: null });
+      expect(states.storageLimit).toEqual({ active: false, lastNotifiedAt: null });
+      expect(states.missingBackup).toEqual({ active: false, lastNotifiedAt: null });
     });
   });
 
@@ -183,6 +224,77 @@ describe("StorageAlertService", () => {
     });
   });
 
+  // ── getAlertStates / saveAlertStates ───────────────────────
+
+  describe("getAlertStates", () => {
+    it("should return defaults when no state exists", async () => {
+      prismaMock.systemSetting.findUnique.mockResolvedValue(null);
+
+      const states = await getAlertStates("cfg-1");
+
+      expect(states).toEqual(defaultAlertStates());
+      expect(prismaMock.systemSetting.findUnique).toHaveBeenCalledWith({
+        where: { key: "storage.alerts.cfg-1.state" },
+      });
+    });
+
+    it("should parse stored JSON state", async () => {
+      const stored: StorageAlertStates = {
+        ...defaultAlertStates(),
+        storageLimit: { active: true, lastNotifiedAt: "2026-02-22T10:00:00Z" },
+      };
+
+      prismaMock.systemSetting.findUnique.mockResolvedValue({
+        key: "storage.alerts.cfg-1.state",
+        value: JSON.stringify(stored),
+        description: null,
+        updatedAt: new Date(),
+      });
+
+      const states = await getAlertStates("cfg-1");
+
+      expect(states.storageLimit.active).toBe(true);
+      expect(states.storageLimit.lastNotifiedAt).toBe("2026-02-22T10:00:00Z");
+      expect(states.usageSpike.active).toBe(false);
+    });
+
+    it("should return defaults for invalid JSON", async () => {
+      prismaMock.systemSetting.findUnique.mockResolvedValue({
+        key: "storage.alerts.cfg-1.state",
+        value: "broken{{{",
+        description: null,
+        updatedAt: new Date(),
+      });
+
+      const states = await getAlertStates("cfg-1");
+
+      expect(states).toEqual(defaultAlertStates());
+    });
+  });
+
+  describe("saveAlertStates", () => {
+    it("should upsert state to SystemSetting", async () => {
+      prismaMock.systemSetting.upsert.mockResolvedValue({} as any);
+
+      const states: StorageAlertStates = {
+        ...defaultAlertStates(),
+        storageLimit: { active: true, lastNotifiedAt: "2026-02-22T12:00:00Z" },
+      };
+
+      await saveAlertStates("cfg-1", states);
+
+      expect(prismaMock.systemSetting.upsert).toHaveBeenCalledWith({
+        where: { key: "storage.alerts.cfg-1.state" },
+        update: { value: JSON.stringify(states) },
+        create: {
+          key: "storage.alerts.cfg-1.state",
+          value: JSON.stringify(states),
+          description: "Storage alert state tracking for destination cfg-1",
+        },
+      });
+    });
+  });
+
   // ── checkStorageAlerts ─────────────────────────────────────
 
   describe("checkStorageAlerts", () => {
@@ -196,7 +308,7 @@ describe("StorageAlertService", () => {
     });
 
     it("should skip when all alerts are disabled", async () => {
-      prismaMock.systemSetting.findUnique.mockResolvedValue(null); // defaults = all disabled
+      mockAlertSetting("cfg-1", {}); // defaults = all disabled
 
       await checkStorageAlerts([makeEntry()]);
 
@@ -235,20 +347,19 @@ describe("StorageAlertService", () => {
     });
 
     it("should process multiple destinations independently", async () => {
-      // Both have spike enabled
-      prismaMock.systemSetting.findUnique
-        .mockResolvedValueOnce({
-          key: "storage.alerts.cfg-1",
-          value: JSON.stringify(makeAlertConfig({ usageSpikeEnabled: true })),
-          description: null,
-          updatedAt: new Date(),
-        })
-        .mockResolvedValueOnce({
-          key: "storage.alerts.cfg-2",
-          value: JSON.stringify(makeAlertConfig({ usageSpikeEnabled: true })),
-          description: null,
-          updatedAt: new Date(),
-        });
+      // Both have spike enabled — use mockImplementation to handle both configIds
+      prismaMock.systemSetting.findUnique.mockImplementation((async (args: any) => {
+        const key: string = args.where.key;
+        if (key === "storage.alerts.cfg-1" || key === "storage.alerts.cfg-2") {
+          return {
+            key,
+            value: JSON.stringify(makeAlertConfig({ usageSpikeEnabled: true })),
+            description: null,
+            updatedAt: new Date(),
+          };
+        }
+        return null; // state keys → default
+      }) as any);
 
       // Both need 2+ snapshots for spike check — return <2 so no notify
       prismaMock.storageSnapshot.findMany.mockResolvedValue([]);
@@ -258,7 +369,38 @@ describe("StorageAlertService", () => {
         makeEntry({ configId: "cfg-2", name: "Storage B" }),
       ]);
 
-      expect(prismaMock.systemSetting.findUnique).toHaveBeenCalledTimes(2);
+      // Config + state per destination = 4 findUnique calls
+      expect(prismaMock.systemSetting.findUnique).toHaveBeenCalledTimes(4);
+    });
+
+    it("should persist state changes after alert checks", async () => {
+      mockAlertSetting("cfg-1", {
+        storageLimitEnabled: true,
+        storageLimitBytes: 1000,
+      });
+
+      // 950 / 1000 = 95% → triggers alert → state changes
+      await checkStorageAlerts([makeEntry({ size: 950 })]);
+
+      expect(prismaMock.systemSetting.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { key: "storage.alerts.cfg-1.state" },
+        })
+      );
+    });
+
+    it("should not persist state when nothing changed", async () => {
+      mockAlertSetting("cfg-1", {
+        usageSpikeEnabled: true,
+      });
+
+      // No snapshots → spike check returns early → state stays at default
+      prismaMock.storageSnapshot.findMany.mockResolvedValue([]);
+
+      await checkStorageAlerts([makeEntry()]);
+
+      // upsert should NOT be called for state (no state change from default)
+      expect(prismaMock.systemSetting.upsert).not.toHaveBeenCalled();
     });
   });
 
@@ -670,6 +812,240 @@ describe("StorageAlertService", () => {
       await checkStorageAlerts([makeEntry({ size: 1181116006 })]);
 
       expect(mockNotify).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── Alert Deduplication & Cooldown ─────────────────────────
+
+  describe("alert deduplication", () => {
+    describe("storage limit deduplication", () => {
+      it("should not re-send when alert is already active and within cooldown", async () => {
+        // Alert was sent 2 hours ago → within 24h cooldown
+        mockAlertSetting("cfg-1",
+          { storageLimitEnabled: true, storageLimitBytes: 1000 },
+          { storageLimit: { active: true, lastNotifiedAt: "2026-02-22T10:00:00Z" } }
+        );
+
+        // 950 / 1000 = 95% → condition still met
+        await checkStorageAlerts([makeEntry({ size: 950 })]);
+
+        expect(mockNotify).not.toHaveBeenCalled();
+      });
+
+      it("should re-send as reminder after cooldown expires (24h)", async () => {
+        // Alert was sent 25 hours ago → cooldown expired
+        mockAlertSetting("cfg-1",
+          { storageLimitEnabled: true, storageLimitBytes: 1000 },
+          { storageLimit: { active: true, lastNotifiedAt: "2026-02-21T11:00:00Z" } }
+        );
+
+        // 950 / 1000 = 95% → condition still met, but cooldown expired
+        await checkStorageAlerts([makeEntry({ size: 950 })]);
+
+        expect(mockNotify).toHaveBeenCalledOnce();
+        expect(mockNotify).toHaveBeenCalledWith(
+          expect.objectContaining({
+            eventType: NOTIFICATION_EVENTS.STORAGE_LIMIT_WARNING,
+          })
+        );
+      });
+
+      it("should reset state when condition resolves", async () => {
+        // Alert was previously active
+        mockAlertSetting("cfg-1",
+          { storageLimitEnabled: true, storageLimitBytes: 1000 },
+          { storageLimit: { active: true, lastNotifiedAt: "2026-02-22T10:00:00Z" } }
+        );
+
+        // 800 / 1000 = 80% → condition resolved
+        await checkStorageAlerts([makeEntry({ size: 800 })]);
+
+        expect(mockNotify).not.toHaveBeenCalled();
+
+        // Verify state was persisted (reset to inactive)
+        const upsertCall = prismaMock.systemSetting.upsert.mock.calls.find(
+          (c: any[]) => c[0].where.key === "storage.alerts.cfg-1.state"
+        );
+        const savedState = JSON.parse(upsertCall![0].update.value as string);
+        expect(savedState.storageLimit.active).toBe(false);
+        expect(savedState.storageLimit.lastNotifiedAt).toBeNull();
+      });
+
+      it("should fire immediately after condition resolves and re-triggers", async () => {
+        // State is inactive (was previously resolved)
+        mockAlertSetting("cfg-1",
+          { storageLimitEnabled: true, storageLimitBytes: 1000 }
+        );
+
+        // 950 / 1000 = 95% → condition triggers freshly
+        await checkStorageAlerts([makeEntry({ size: 950 })]);
+
+        expect(mockNotify).toHaveBeenCalledOnce();
+      });
+    });
+
+    describe("missing backup deduplication", () => {
+      it("should not re-send when alert is already active and within cooldown", async () => {
+        // Alert was sent 6 hours ago → within 24h cooldown
+        mockAlertSetting("cfg-1",
+          { missingBackupEnabled: true, missingBackupHours: 24 },
+          { missingBackup: { active: true, lastNotifiedAt: "2026-02-22T06:00:00Z" } }
+        );
+
+        // Count unchanged for 30h → condition still met
+        prismaMock.storageSnapshot.findMany.mockResolvedValue([
+          { count: 5, createdAt: new Date("2026-02-22T12:00:00Z") } as any,
+          { count: 5, createdAt: new Date("2026-02-21T06:00:00Z") } as any, // 30h ago
+        ]);
+
+        await checkStorageAlerts([makeEntry()]);
+
+        expect(mockNotify).not.toHaveBeenCalled();
+      });
+
+      it("should re-send as reminder after cooldown expires", async () => {
+        // Alert was sent 25 hours ago → cooldown expired
+        mockAlertSetting("cfg-1",
+          { missingBackupEnabled: true, missingBackupHours: 10 },
+          { missingBackup: { active: true, lastNotifiedAt: "2026-02-21T11:00:00Z" } }
+        );
+
+        // Count unchanged for 30h → still triggered, cooldown expired
+        prismaMock.storageSnapshot.findMany.mockResolvedValue([
+          { count: 3, createdAt: new Date("2026-02-22T12:00:00Z") } as any,
+          { count: 3, createdAt: new Date("2026-02-21T06:00:00Z") } as any,
+        ]);
+
+        await checkStorageAlerts([makeEntry()]);
+
+        expect(mockNotify).toHaveBeenCalledOnce();
+      });
+
+      it("should reset state when a new backup appears", async () => {
+        // Missing backup alert was active
+        mockAlertSetting("cfg-1",
+          { missingBackupEnabled: true, missingBackupHours: 24 },
+          { missingBackup: { active: true, lastNotifiedAt: "2026-02-22T06:00:00Z" } }
+        );
+
+        // Count changed 1h ago → condition resolved
+        prismaMock.storageSnapshot.findMany.mockResolvedValue([
+          { count: 6, createdAt: new Date("2026-02-22T12:00:00Z") } as any,
+          { count: 6, createdAt: new Date("2026-02-22T11:00:00Z") } as any,
+          { count: 5, createdAt: new Date("2026-02-22T10:00:00Z") } as any,
+        ]);
+
+        await checkStorageAlerts([makeEntry()]);
+
+        expect(mockNotify).not.toHaveBeenCalled();
+
+        // State should be saved (reset to inactive)
+        const upsertCall = prismaMock.systemSetting.upsert.mock.calls.find(
+          (c: any[]) => c[0].where.key === "storage.alerts.cfg-1.state"
+        );
+        const savedState = JSON.parse(upsertCall![0].update.value as string);
+        expect(savedState.missingBackup.active).toBe(false);
+      });
+    });
+
+    describe("usage spike deduplication", () => {
+      it("should not re-send spike when already active and within cooldown", async () => {
+        // Spike alert sent 1 hour ago
+        mockAlertSetting("cfg-1",
+          { usageSpikeEnabled: true, usageSpikeThresholdPercent: 50 },
+          { usageSpike: { active: true, lastNotifiedAt: "2026-02-22T11:00:00Z" } }
+        );
+
+        // Still a spike in the latest snapshots
+        prismaMock.storageSnapshot.findMany.mockResolvedValue([
+          { size: BigInt(2147483648) } as any,
+          { size: BigInt(1073741824) } as any,
+        ]);
+
+        await checkStorageAlerts([makeEntry({ size: 2147483648 })]);
+
+        expect(mockNotify).not.toHaveBeenCalled();
+      });
+
+      it("should reset spike state when no spike is detected", async () => {
+        // Spike was active
+        mockAlertSetting("cfg-1",
+          { usageSpikeEnabled: true, usageSpikeThresholdPercent: 50 },
+          { usageSpike: { active: true, lastNotifiedAt: "2026-02-22T10:00:00Z" } }
+        );
+
+        // No spike (only 5% change)
+        prismaMock.storageSnapshot.findMany.mockResolvedValue([
+          { size: BigInt(1127428915) } as any, // ~5% increase
+          { size: BigInt(1073741824) } as any,
+        ]);
+
+        await checkStorageAlerts([makeEntry({ size: 1127428915 })]);
+
+        expect(mockNotify).not.toHaveBeenCalled();
+
+        // State should be saved (reset)
+        expect(prismaMock.systemSetting.upsert).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { key: "storage.alerts.cfg-1.state" },
+          })
+        );
+      });
+
+      it("should fire again after spike resolves and new spike occurs", async () => {
+        // No prior alert state (spike was resolved)
+        mockAlertSetting("cfg-1", {
+          usageSpikeEnabled: true,
+          usageSpikeThresholdPercent: 50,
+        });
+
+        // New spike: 100% increase
+        prismaMock.storageSnapshot.findMany.mockResolvedValue([
+          { size: BigInt(2147483648) } as any,
+          { size: BigInt(1073741824) } as any,
+        ]);
+
+        await checkStorageAlerts([makeEntry({ size: 2147483648 })]);
+
+        expect(mockNotify).toHaveBeenCalledOnce();
+      });
+    });
+
+    describe("cooldown constant", () => {
+      it("should have a 24-hour cooldown period", () => {
+        expect(ALERT_COOLDOWN_MS).toBe(24 * 60 * 60 * 1000);
+      });
+    });
+
+    describe("disabled alert resets state", () => {
+      it("should reset active state when alert type is disabled", async () => {
+        // Limit was active, but now storageLimitEnabled is false
+        mockAlertSetting("cfg-1",
+          {
+            usageSpikeEnabled: true, // at least one enabled so it doesn't skip entirely
+            storageLimitEnabled: false,
+          },
+          { storageLimit: { active: true, lastNotifiedAt: "2026-02-22T10:00:00Z" } }
+        );
+
+        // Need snapshots for spike check (no spike)
+        prismaMock.storageSnapshot.findMany.mockResolvedValue([
+          { size: BigInt(1073741824) } as any,
+          { size: BigInt(1073741824) } as any, // no change = no spike
+        ]);
+
+        await checkStorageAlerts([makeEntry()]);
+
+        expect(mockNotify).not.toHaveBeenCalled();
+
+        // State should be saved with storageLimit reset
+        const upsertCall = prismaMock.systemSetting.upsert.mock.calls.find(
+          (c: any[]) => c[0].where.key === "storage.alerts.cfg-1.state"
+        );
+        const savedState = JSON.parse(upsertCall![0].update.value as string);
+        expect(savedState.storageLimit.active).toBe(false);
+        expect(savedState.storageLimit.lastNotifiedAt).toBeNull();
+      });
     });
   });
 });

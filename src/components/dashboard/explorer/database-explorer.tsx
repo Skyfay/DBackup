@@ -128,67 +128,61 @@ export function DatabaseExplorer({ sources }: DatabaseExplorerProps) {
             </div>
 
             {/* Source Selector */}
-            <Card>
-                <CardHeader className="pb-4">
-                    <CardTitle className="text-base">Select Source</CardTitle>
-                    <CardDescription>Choose a configured database source to inspect.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <div className="flex items-center gap-3">
-                        <Popover open={comboboxOpen} onOpenChange={setComboboxOpen}>
-                            <PopoverTrigger asChild>
-                                <Button
-                                    variant="outline"
-                                    role="combobox"
-                                    aria-expanded={comboboxOpen}
-                                    className="w-full max-w-md justify-between font-normal"
-                                >
-                                    {selectedAdapter ? (
-                                        <span className="flex items-center gap-2">
-                                            <AdapterIcon adapterId={selectedAdapter.adapterId} className="h-4 w-4" />
-                                            {selectedAdapter.name}
-                                            <span className="text-xs text-muted-foreground">({selectedAdapter.adapterId})</span>
-                                        </span>
-                                    ) : (
-                                        <span className="text-muted-foreground">Select a database source...</span>
-                                    )}
-                                    <ChevronsUpDown className="ml-auto h-4 w-4 shrink-0 opacity-50" />
-                                </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-                                <Command>
-                                    <CommandInput placeholder="Search sources..." />
-                                    <CommandList>
-                                    <CommandEmpty>No source found.</CommandEmpty>
-                                    <CommandGroup>
-                                        {sources.map((source) => (
-                                            <CommandItem
-                                                key={source.id}
-                                                value={`${source.name} ${source.adapterId}`}
-                                                onSelect={() => {
-                                                    handleSourceChange(source.id === selectedSource ? "" : source.id);
-                                                    setComboboxOpen(false);
-                                                }}
-                                                className={cn(selectedSource === source.id && "bg-accent")}
-                                            >
-                                                <AdapterIcon adapterId={source.adapterId} className="h-4 w-4" />
-                                                {source.name}
-                                                <span className="text-xs text-muted-foreground ml-1">({source.adapterId})</span>
-                                            </CommandItem>
-                                        ))}
-                                    </CommandGroup>
-                                    </CommandList>
-                                </Command>
-                            </PopoverContent>
-                        </Popover>
-                        {selectedSource && (
-                            <Button variant="outline" size="icon" onClick={handleRefresh} disabled={isLoading}>
-                                <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+            <div className="flex items-center gap-3">
+                <div className="w-75">
+                    <Popover open={comboboxOpen} onOpenChange={setComboboxOpen}>
+                        <PopoverTrigger asChild>
+                            <Button
+                                variant="outline"
+                                role="combobox"
+                                aria-expanded={comboboxOpen}
+                                className="w-full justify-between"
+                            >
+                                {selectedAdapter ? (
+                                    <span className="flex items-center gap-2">
+                                        <AdapterIcon adapterId={selectedAdapter.adapterId} className="h-4 w-4" />
+                                        {selectedAdapter.name}
+                                        <span className="text-xs text-muted-foreground">({selectedAdapter.adapterId})</span>
+                                    </span>
+                                ) : (
+                                    "Select Source..."
+                                )}
+                                <ChevronsUpDown className="ml-auto h-4 w-4 shrink-0 opacity-50" />
                             </Button>
-                        )}
-                    </div>
-                </CardContent>
-            </Card>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-75 p-0">
+                            <Command>
+                                <CommandInput placeholder="Search sources..." />
+                                <CommandList>
+                                <CommandEmpty>No source found.</CommandEmpty>
+                                <CommandGroup>
+                                    {sources.map((source) => (
+                                        <CommandItem
+                                            key={source.id}
+                                            value={`${source.name} ${source.adapterId}`}
+                                            onSelect={() => {
+                                                handleSourceChange(source.id === selectedSource ? "" : source.id);
+                                                setComboboxOpen(false);
+                                            }}
+                                            className={cn(selectedSource === source.id && "bg-accent")}
+                                        >
+                                            <AdapterIcon adapterId={source.adapterId} className="h-4 w-4" />
+                                            {source.name}
+                                            <span className="text-xs text-muted-foreground ml-1">({source.adapterId})</span>
+                                        </CommandItem>
+                                    ))}
+                                </CommandGroup>
+                                </CommandList>
+                            </Command>
+                        </PopoverContent>
+                    </Popover>
+                </div>
+                {selectedSource && (
+                    <Button variant="outline" size="icon" onClick={handleRefresh} disabled={isLoading}>
+                        <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+                    </Button>
+                )}
+            </div>
 
             {/* Server Info + Stats Summary */}
             {selectedSource && !error && (databases.length > 0 || isLoading) && (

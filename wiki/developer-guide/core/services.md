@@ -12,6 +12,7 @@ src/services/
 ├── retention-service.ts  # GVS algorithm
 ├── encryption-service.ts # Encryption profiles
 ├── integrity-service.ts  # SHA-256 checksum verification
+├── notification-log-service.ts # Notification log recording & queries
 ├── user-service.ts       # User management
 └── oidc-provider-service.ts # SSO configuration
 ```
@@ -216,6 +217,38 @@ interface IntegrityCheckResult {
 ```
 
 **Integration:** Registered as a system task (`system.integrity_check`) in `system-task-service.ts`. Runs weekly (Sunday 4 AM), disabled by default. Can be triggered manually via Settings → System Tasks.
+
+### NotificationLogService
+
+Records and queries notification delivery history. Every notification sent through the system (per-job and system-wide) is logged for auditing and debugging.
+
+```typescript
+// src/services/notification-log-service.ts
+export async function recordNotificationLog(entry: NotificationLogEntry): Promise<void> {
+  // Fire-and-forget: catches all errors to never block callers
+  await prisma.notificationLog.create({ data: entry });
+}
+
+export async function getNotificationLogs(query: {
+  page?: number;
+  pageSize?: number;
+  adapterId?: string;
+  eventType?: string;
+  status?: string;
+}): Promise<{ data: NotificationLog[]; total: number }> {
+  // Paginated query with optional filters
+}
+
+export async function getNotificationLogById(id: string): Promise<NotificationLog | null> {
+  return prisma.notificationLog.findUnique({ where: { id } });
+}
+```
+
+**Key Design Decisions:**
+- `recordNotificationLog()` is fire-and-forget — it catches and swallows errors to never block notification delivery
+- Called from two dispatch points: `04-completion.ts` (per-job) and `system-notification-service.ts` (system events)
+- Stores adapter-specific rendered payloads (Discord embed, Slack blocks, email HTML) for preview rendering on the History page
+- Records are cleaned up by the "Clean Old Data" system task based on `notification.logRetentionDays` SystemSetting
 
 ## Response Format
 

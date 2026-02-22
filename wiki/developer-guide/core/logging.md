@@ -1,9 +1,10 @@
 # Logging System
 
-DBackup uses two distinct logging systems:
+DBackup uses three distinct logging systems:
 
 1. **System Logger** - For application-wide logging (errors, debug info, operations)
 2. **Execution Logs** - Structured logs for backup/restore job tracking (UI display)
+3. **Notification Logs** - Records every notification sent for audit trail and preview rendering
 
 ## System Logger
 
@@ -471,3 +472,69 @@ const { data } = useSWR(
   { refreshInterval: 1000 }
 );
 ```
+
+## Notification Logs
+
+::: info Added in v0.9.9-beta
+Notification logging was introduced for audit trail and adapter-specific preview rendering on the History page.
+:::
+
+### Overview
+
+Every notification sent through the system (per-job and system-wide) is logged to the `NotificationLog` table. This provides a full audit trail and enables adapter-specific preview rendering on the History page.
+
+**Service**: `src/services/notification-log-service.ts`
+
+### Recording Notifications
+
+Logging happens transparently in both dispatch points:
+
+```typescript
+import { recordNotificationLog } from "@/services/notification-log-service";
+
+// After sending a notification
+await recordNotificationLog({
+  eventType: "BACKUP_SUCCESS",
+  channelId: channel.id,
+  channelName: channel.name,
+  adapterId: "discord",
+  status: "success",           // or "error"
+  title: payload.title,
+  message: payload.message,
+  fields: JSON.stringify(payload.fields),
+  color: payload.color,
+  renderedPayload: JSON.stringify(discordEmbed),
+  executionId: execution.id,   // optional, for per-job notifications
+  error: null,                 // error message if send failed
+});
+```
+
+**Key design:** `recordNotificationLog()` is fire-and-forget — it catches and swallows all errors to never block notification delivery.
+
+### Dispatch Points
+
+| Location | Context |
+| :--- | :--- |
+| `src/lib/runner/steps/04-completion.ts` | Per-job backup notifications |
+| `src/services/system-notification-service.ts` | System-wide events (login, restore, config backup, storage alerts) |
+
+### Rendered Payloads
+
+Each log entry stores adapter-specific rendered content for History page preview:
+
+| Adapter | `renderedPayload` Content | `renderedHtml` |
+| :--- | :--- | :--- |
+| Discord | Embed object (title, description, fields, color) | — |
+| Slack | Block Kit blocks array | — |
+| Teams | Adaptive Card body | — |
+| Telegram | Parsed HTML message | — |
+| Email | — | Full rendered React email HTML |
+| Others | — | — |
+
+### Data Retention
+
+Notification logs are automatically cleaned by the "Clean Old Data" system task:
+
+- **SystemSetting key**: `notification.logRetentionDays`
+- **Default**: 90 days
+- **Configurable**: 7 days to 5 years (Settings → General → Data Retention)

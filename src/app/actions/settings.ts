@@ -15,6 +15,7 @@ const settingsSchema = z.object({
     disablePasskeyLogin: z.boolean().optional(),
     auditLogRetentionDays: z.coerce.number().min(1).max(1825).optional(),
     storageSnapshotRetentionDays: z.coerce.number().min(7).max(1825).optional(),
+    notificationLogRetentionDays: z.coerce.number().min(7).max(1825).optional(),
     checkForUpdates: z.boolean().optional(),
     showQuickSetup: z.boolean().optional(),
 });
@@ -58,6 +59,15 @@ export async function updateSystemSettings(data: z.infer<typeof settingsSchema>)
                 where: { key: "storage.snapshotRetentionDays" },
                 update: { value: String(result.data.storageSnapshotRetentionDays) },
                 create: { key: "storage.snapshotRetentionDays", value: String(result.data.storageSnapshotRetentionDays) },
+            });
+        }
+
+        // Notification Log Retention Setting (default 90)
+        if (result.data.notificationLogRetentionDays !== undefined) {
+             await prisma.systemSetting.upsert({
+                where: { key: "notification.logRetentionDays" },
+                update: { value: String(result.data.notificationLogRetentionDays) },
+                create: { key: "notification.logRetentionDays", value: String(result.data.notificationLogRetentionDays) },
             });
         }
 

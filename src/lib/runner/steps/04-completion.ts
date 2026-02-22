@@ -5,8 +5,9 @@ import { registry } from "@/lib/core/registry";
 import { NotificationAdapter } from "@/lib/core/interfaces";
 import { decryptConfig } from "@/lib/crypto";
 import { logger } from "@/lib/logger";
-import { wrapError } from "@/lib/errors";
+import { wrapError, getErrorMessage } from "@/lib/errors";
 import { renderTemplate, NOTIFICATION_EVENTS } from "@/lib/notifications";
+import { recordNotificationLog } from "@/services/notification-log-service";
 
 const log = logger.child({ step: "04-completion" });
 
@@ -68,11 +69,12 @@ export async function stepFinalize(ctx: RunnerContext) {
                     if (notifyAdapter) {
                         const channelConfig = decryptConfig(JSON.parse(channel.config));
                         const isSuccess = ctx.status === "Success";
+                        const eventType = isSuccess
+                            ? NOTIFICATION_EVENTS.BACKUP_SUCCESS
+                            : NOTIFICATION_EVENTS.BACKUP_FAILURE;
 
                         const payload = renderTemplate({
-                            eventType: isSuccess
-                                ? NOTIFICATION_EVENTS.BACKUP_SUCCESS
-                                : NOTIFICATION_EVENTS.BACKUP_FAILURE,
+                            eventType,
                             data: {
                                 jobName: ctx.job.name,
                                 sourceName: ctx.job.source?.name,
@@ -84,19 +86,106 @@ export async function stepFinalize(ctx: RunnerContext) {
                             },
                         });
 
+                        // Build adapter-specific rendered payload for logging
+                        let renderedPayload: string | undefined;
+                        let renderedHtml: string | undefined;
+
+                        if (channel.adapterId === "email") {
+                            try {
+                                const { renderToStaticMarkup } = await import("react-dom/server");
+                                const { SystemNotificationEmail } = await import(
+                                    "@/components/email/system-notification-template"
+                                );
+                                const React = await import("react");
+                                renderedHtml = renderToStaticMarkup(
+                                    React.createElement(SystemNotificationEmail, {
+                                        title: payload.title,
+                                        message: payload.message,
+                                        fields: payload.fields,
+                                        color: payload.color,
+                                        success: payload.success,
+                                        badge: payload.badge,
+                                    })
+                                );
+                            } catch { /* non-critical */ }
+                        } else if (channel.adapterId === "discord") {
+                            const color = payload.color
+                                ? parseInt(payload.color.replace("#", ""), 16)
+                                : payload.success ? 0x00ff00 : 0xff0000;
+                            renderedPayload = JSON.stringify({
+                                embeds: [{
+                                    title: payload.title || "Notification",
+                                    description: payload.message,
+                                    color,
+                                    timestamp: new Date().toISOString(),
+                                    fields: (payload.fields || []).map((f: { name: string; value: string; inline?: boolean }) => ({
+                                        name: f.name, value: f.value, inline: f.inline ?? true,
+                                    })),
+                                }],
+                            });
+                        } else if (channel.adapterId === "slack") {
+                            const colorHex = payload.color
+                                ? payload.color.replace("#", "")
+                                : payload.success ? "00ff00" : "ff0000";
+                            renderedPayload = JSON.stringify({
+                                attachments: [{
+                                    color: `#${colorHex}`,
+                                    blocks: [
+                                        { type: "header", text: { type: "plain_text", text: payload.title || "Notification" } },
+                                        { type: "section", text: { type: "mrkdwn", text: payload.message } },
+                                        ...(payload.fields?.length ? [{
+                                            type: "section",
+                                            fields: payload.fields.map((f: { name: string; value: string }) => ({
+                                                type: "mrkdwn", text: `*${f.name}:*\n${f.value || "-"}`,
+                                            })),
+                                        }] : []),
+                                    ],
+                                }],
+                            });
+                        }
+
                         await notifyAdapter.send(channelConfig, payload.message, {
                             success: payload.success,
-                            eventType: isSuccess
-                                ? NOTIFICATION_EVENTS.BACKUP_SUCCESS
-                                : NOTIFICATION_EVENTS.BACKUP_FAILURE,
+                            eventType,
                             title: payload.title,
                             fields: payload.fields,
                             color: payload.color,
+                        });
+
+                        // Record successful send
+                        await recordNotificationLog({
+                            eventType,
+                            channelId: channel.id,
+                            channelName: channel.name,
+                            adapterId: channel.adapterId,
+                            status: "Success",
+                            title: payload.title,
+                            message: payload.message,
+                            fields: payload.fields,
+                            color: payload.color,
+                            renderedHtml,
+                            renderedPayload,
+                            executionId: ctx.execution?.id,
                         });
                     }
                 } catch (e) {
                     log.error("Failed to send notification", { channelName: channel.name }, wrapError(e));
                     ctx.log(`Failed to send notification to channel ${channel.name}`);
+
+                    // Record failed send
+                    await recordNotificationLog({
+                        eventType: ctx.status === "Success"
+                            ? NOTIFICATION_EVENTS.BACKUP_SUCCESS
+                            : NOTIFICATION_EVENTS.BACKUP_FAILURE,
+                        channelId: channel.id,
+                        channelName: channel.name,
+                        adapterId: channel.adapterId,
+                        status: "Failed",
+                        title: "Backup Notification",
+                        message: "",
+                        error: getErrorMessage(e),
+                        executionId: ctx.execution?.id,
+                    });
                 }
             }
         }

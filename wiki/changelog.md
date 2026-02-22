@@ -99,6 +99,22 @@ This release adds SSH connection testing for MSSQL file transfer mode with backu
 - **Dynamic Configuration** — Retention periods are stored in the database as SystemSettings and can be updated anytime without restarting — cleanup logic reads current values on each execution
 - **Non-Blocking Cleanup** — Each data type (audit logs, snapshots) is cleaned independently with separate error handling, so a failure in one cleanup type doesn't prevent the other from running
 
+#### 📋 Notification Log History
+- **Full Notification Audit Trail** — Every notification sent (per-job and system-wide) is now permanently logged in a dedicated `NotificationLog` table with event type, adapter, channel, status, and timestamp
+- **History Page Tabs** — The History page now features two tabs: "Activity Logs" (existing execution history) and "Notification Logs" — enabling quick switching between backup activity and notification delivery records
+- **Adapter-Specific Previews** — Each log entry can be previewed in a dialog that renders the notification as it would appear on the target platform:
+  - **Discord** — Dark-themed embed card with color bar, title, fields grid, and timestamp
+  - **Email** — Full HTML render in an isolated iframe using `srcDoc`
+  - **Slack** — Block Kit styled preview with header, sections, fields, and context blocks
+  - **Telegram** — Chat bubble style with parsed HTML formatting and bot identity
+  - **Microsoft Teams** — Adaptive Card preview with FactSet fields, color header, and team styling
+  - **Generic** — Plain text fallback for webhook, Gotify, ntfy, SMS adapters showing title, message, and fields
+- **Preview Tabs** — Each notification preview dialog includes inner tabs: "Preview" (visual render), "Plain Text" (title + message + fields), and "Raw Payload" (full JSON payload as sent to the adapter)
+- **Filterable & Searchable** — Notification log table supports filtering by adapter type, event type (backup success/failure, restore, system events), and status (success/error)
+- **Data Retention Integration** — Notification logs are included in the Data Retention system with a configurable retention period (7 days to 5 years, default 90 days). A new "Notification Logs" field with Bell icon appears in the Data Retention popover alongside Audit Logs and Storage Snapshots
+- **API Endpoints** — Two new API routes: `GET /api/notification-logs` (paginated list with filters) and `GET /api/notification-logs/[id]` (single entry with full payload)
+- **Automatic Logging** — Logging happens transparently in both dispatch points (runner pipeline step 04-completion and system notification service) without requiring adapter changes
+
 ### 🐛 Bug Fixes
 - **Quick Setup Adapter Selection** — Fixed "Please select an adapter type first" error when clicking "Test Connection" in Quick Setup wizard (Database Source, Storage Destination, Notification steps). The hook now correctly falls back to the `adapterId` prop when the form doesn't include that field
 - **Test Connection in Setup** — Test Connection button now works properly in all Quick Setup adapter configuration steps, not just the regular adapter management dialogs

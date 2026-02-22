@@ -40,6 +40,9 @@ export default async function SettingsPage() {
     const snapshotRetentionSetting = await prisma.systemSetting.findUnique({ where: { key: "storage.snapshotRetentionDays" } });
     const storageSnapshotRetentionDays = snapshotRetentionSetting ? parseInt(snapshotRetentionSetting.value) : 90;
 
+    const notifLogRetentionSetting = await prisma.systemSetting.findUnique({ where: { key: "notification.logRetentionDays" } });
+    const notificationLogRetentionDays = notifLogRetentionSetting ? parseInt(notifLogRetentionSetting.value) : 90;
+
     const checkUpdatesSetting = await prisma.systemSetting.findUnique({ where: { key: "general.checkForUpdates" } });
     const checkForUpdates = checkUpdatesSetting ? checkUpdatesSetting.value === 'true' : true;
 
@@ -100,6 +103,7 @@ export default async function SettingsPage() {
                         initialDisablePasskeyLogin={disablePasskeyLogin}
                         initialAuditLogRetentionDays={auditLogRetentionDays}
                         initialStorageSnapshotRetentionDays={storageSnapshotRetentionDays}
+                        initialNotificationLogRetentionDays={notificationLogRetentionDays}
                         initialCheckForUpdates={checkForUpdates}
                         initialShowQuickSetup={showQuickSetup}
                     />

@@ -273,3 +273,27 @@ model StorageSnapshot {
   @@index([adapterConfigId])
   @@index([createdAt])
 }
+
+// Tracks every notification sent through any adapter (per-job or system)
+model NotificationLog {
+  id              String   @id @default(uuid())
+  eventType       String   // e.g. "backup_success", "user_login"
+  channelId       String?  // AdapterConfig.id (nullable if channel was deleted)
+  channelName     String   // Display name snapshot at send time
+  adapterId       String   // e.g. "discord", "email", "slack"
+  status          String   // "Success" | "Failed"
+  title           String   // Notification title / email subject
+  message         String   // Plain text body
+  fields          String?  // JSON array of { name, value, inline? }
+  color           String?  // Hex color used
+  renderedHtml    String?  // Pre-rendered HTML (email only)
+  renderedPayload String?  // JSON of adapter-specific payload (Discord embed, Slack blocks, etc.)
+  error           String?  // Error message if failed
+  executionId     String?  // Link to Execution if triggered by backup/restore
+  sentAt          DateTime @default(now())
+
+  @@index([eventType])
+  @@index([adapterId])
+  @@index([sentAt])
+  @@index([executionId])
+}

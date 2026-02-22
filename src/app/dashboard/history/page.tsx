@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import {
     Dialog,
     DialogContent,
@@ -12,11 +12,14 @@ import {
 // import { format } from "date-fns";
 import { DataTable } from "@/components/ui/data-table";
 import { createColumns, Execution } from "./columns";
+import { createNotificationLogColumns, NotificationLogRow } from "./notification-log-columns";
+import { NotificationPreview } from "./notification-preview";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { DateDisplay } from "@/components/utils/date-display";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LogViewer } from "@/components/execution/log-viewer";
 import { Badge } from "@/components/ui/badge";
 
@@ -29,6 +32,12 @@ export default function HistoryPage() {
 function HistoryContent() {
     const [executions, setExecutions] = useState<Execution[]>([]);
     const [selectedLog, setSelectedLog] = useState<Execution | null>(null);
+    const [activeTab, setActiveTab] = useState("activity");
+
+    // Notification log state
+    const [notificationLogs, setNotificationLogs] = useState<NotificationLogRow[]>([]);
+    const [selectedNotification, setSelectedNotification] = useState<NotificationLogRow | null>(null);
+
     const searchParams = useSearchParams();
     const router = useRouter();
 
@@ -61,21 +70,42 @@ function HistoryContent() {
         }
     }, [executions, executionId, selectedLog, router]);
 
-    const fetchHistory = async () => {
+    const fetchHistory = useCallback(async () => {
         try {
             const res = await fetch("/api/history");
             if (res.ok) setExecutions(await res.json());
         } catch (_e) {
             console.error(_e);
         }
-    };
+    }, []);
+
+    const fetchNotificationLogs = useCallback(async () => {
+        try {
+            const res = await fetch("/api/notification-logs?pageSize=100");
+            if (res.ok) {
+                const result = await res.json();
+                setNotificationLogs(result.data);
+            }
+        } catch (_e) {
+            console.error(_e);
+        }
+    }, []);
 
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect
         fetchHistory();
         const interval = setInterval(fetchHistory, 1000); // Poll faster (1s) for live feel
         return () => clearInterval(interval);
-    }, []);
+    }, [fetchHistory]);
+
+    // Fetch notification logs when that tab becomes active
+    useEffect(() => {
+        if (activeTab === "notifications") {
+            fetchNotificationLogs();
+            const interval = setInterval(fetchNotificationLogs, 5000);
+            return () => clearInterval(interval);
+        }
+    }, [activeTab, fetchNotificationLogs]);
 
     const parseLogs = (json: string) => {
         try {
@@ -86,6 +116,10 @@ function HistoryContent() {
     };
 
     const columns = useMemo(() => createColumns(setSelectedLog), []);
+    const notificationColumns = useMemo(
+        () => createNotificationLogColumns(setSelectedNotification),
+        []
+    );
 
     const filterableColumns = useMemo(() => [
         {
@@ -103,6 +137,32 @@ function HistoryContent() {
                 { label: "Success", value: "Success" },
                 { label: "Failed", value: "Failed" },
                 { label: "Running", value: "Running" },
+            ]
+        },
+    ], []);
+
+    const notificationFilterableColumns = useMemo(() => [
+        {
+            id: "adapterId",
+            title: "Adapter",
+            options: [
+                { label: "Email", value: "email" },
+                { label: "Discord", value: "discord" },
+                { label: "Slack", value: "slack" },
+                { label: "Telegram", value: "telegram" },
+                { label: "Teams", value: "teams" },
+                { label: "ntfy", value: "ntfy" },
+                { label: "Gotify", value: "gotify" },
+                { label: "Webhook", value: "generic-webhook" },
+                { label: "SMS", value: "twilio-sms" },
+            ]
+        },
+        {
+            id: "status",
+            title: "Status",
+            options: [
+                { label: "Sent", value: "Success" },
+                { label: "Failed", value: "Failed" },
             ]
         },
     ], []);
@@ -129,23 +189,56 @@ function HistoryContent() {
                 </div>
             </div>
 
-            <Card>
-                <CardHeader>
-                    <CardTitle>Activity Logs</CardTitle>
-                    <CardDescription>Comprehensive list of all system activities and their status.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <DataTable
-                        columns={columns}
-                        data={executions}
-                        searchKey="jobName"
-                        filterableColumns={filterableColumns}
-                        autoResetPageIndex={false}
-                        onRefresh={fetchHistory}
-                    />
-                </CardContent>
-            </Card>
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                <TabsList>
+                    <TabsTrigger value="activity">Activity Logs</TabsTrigger>
+                    <TabsTrigger value="notifications">
+                        Notification Logs
+                    </TabsTrigger>
+                </TabsList>
 
+                <TabsContent value="activity">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Activity Logs</CardTitle>
+                            <CardDescription>Comprehensive list of all system activities and their status.</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <DataTable
+                                columns={columns}
+                                data={executions}
+                                searchKey="jobName"
+                                filterableColumns={filterableColumns}
+                                autoResetPageIndex={false}
+                                onRefresh={fetchHistory}
+                            />
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+
+                <TabsContent value="notifications">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Notification Logs</CardTitle>
+                            <CardDescription>
+                                History of all notifications sent through your configured channels.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <DataTable
+                                columns={notificationColumns}
+                                data={notificationLogs}
+                                searchKey="title"
+                                filterableColumns={notificationFilterableColumns}
+                                autoResetPageIndex={false}
+                                onRefresh={fetchNotificationLogs}
+                            />
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+            </Tabs>
+
+            {/* Execution Log Dialog */}
             <Dialog open={!!selectedLog} onOpenChange={(open) => { if(!open) setSelectedLog(null); }}>
                 <DialogContent className="max-w-[60vw] w-full max-h-[85vh] h-full flex flex-col p-0 gap-0 overflow-hidden bg-popover border-border sm:max-w-[60vw]">
                     <DialogHeader className="p-6 pb-4 border-b border-border/50 shrink-0">
@@ -185,6 +278,31 @@ function HistoryContent() {
                             status={selectedLog?.status}
                             className="h-full border-0 bg-transparent"
                          />
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Notification Preview Dialog */}
+            <Dialog open={!!selectedNotification} onOpenChange={(open) => { if (!open) setSelectedNotification(null); }}>
+                <DialogContent className="max-w-175 w-full max-h-[85vh] flex flex-col p-0 gap-0 overflow-hidden bg-popover border-border sm:max-w-175">
+                    <DialogHeader className="p-6 pb-4 border-b border-border/50 shrink-0">
+                        <DialogTitle className="flex items-center gap-3">
+                            <span>{selectedNotification?.title}</span>
+                        </DialogTitle>
+                        <DialogDescription className="text-muted-foreground">
+                            {selectedNotification?.sentAt && (
+                                <>
+                                    Sent via <span className="font-medium">{selectedNotification.channelName}</span>
+                                    {" "}on{" "}
+                                    <DateDisplay date={selectedNotification.sentAt} format="PPpp" />
+                                </>
+                            )}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="flex-1 min-h-0 p-6 overflow-y-auto">
+                        {selectedNotification && (
+                            <NotificationPreview entry={selectedNotification} />
+                        )}
                     </div>
                 </DialogContent>
             </Dialog>

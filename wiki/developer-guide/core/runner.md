@@ -214,7 +214,7 @@ export async function stepUpload(ctx: RunnerContext): Promise<void> {
 
 ### Step 4: Completion (`04-completion.ts`)
 
-Cleans up and finalizes the execution.
+Cleans up, finalizes the execution, sends notifications, and logs notification delivery.
 
 ```typescript
 export async function stepCompletion(ctx: RunnerContext): Promise<void> {
@@ -234,14 +234,29 @@ export async function stepCompletion(ctx: RunnerContext): Promise<void> {
     },
   });
 
-  // Send notifications
+  // Send notifications and log delivery
   if (ctx.job.notificationId) {
-    await sendNotification(ctx);
+    for (const channel of ctx.job.notifications) {
+      const adapter = registry.get(channel.adapterId);
+      const payload = renderTemplate(event);
+
+      // Generate adapter-specific rendered payload for preview
+      const renderedPayload = generateRenderedPayload(channel.adapterId, payload);
+
+      try {
+        await adapter.send(config, payload.message, { title, fields, color });
+        await recordNotificationLog({ ...entry, status: "success" });
+      } catch (error) {
+        await recordNotificationLog({ ...entry, status: "error", error: message });
+      }
+    }
   }
 
   ctx.logs.push("Backup completed successfully");
 }
 ```
+
+**Notification Logging:** Each notification send attempt is logged to `NotificationLog` with the full rendered payload (Discord embed, Slack blocks, email HTML) for preview on the History page. Logging is fire-and-forget and never blocks execution.
 
 ### Step 5: Retention (`05-retention.ts`)
 

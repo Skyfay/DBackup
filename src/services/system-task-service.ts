@@ -253,6 +253,24 @@ export class SystemTaskService {
         } catch (error: unknown) {
             log.error("Failed to clean storage snapshots", {}, wrapError(error));
         }
+
+        // Clean old notification logs
+        try {
+            const notifSetting = await prisma.systemSetting.findUnique({ where: { key: "notification.logRetentionDays" } });
+            const notifRetentionDays = notifSetting ? parseInt(notifSetting.value) : 90;
+
+            log.info("Cleaning old notification logs", { retentionDays: notifRetentionDays });
+            const cutoff = new Date();
+            cutoff.setDate(cutoff.getDate() - notifRetentionDays);
+            const result = await prisma.notificationLog.deleteMany({
+                where: { sentAt: { lt: cutoff } },
+            });
+            if (result.count > 0) {
+                log.info("Notification log cleanup completed", { deletedCount: result.count });
+            }
+        } catch (error: unknown) {
+            log.error("Failed to clean notification logs", {}, wrapError(error));
+        }
     }
 
     private async runCheckForUpdates() {

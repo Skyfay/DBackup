@@ -339,6 +339,41 @@ model HealthCheckLog {
 }
 ```
 
+### NotificationLog
+
+Records every notification sent (per-job and system-wide) for audit and debugging.
+
+```prisma
+model NotificationLog {
+  id              String   @id @default(uuid())
+  eventType       String              // e.g. "BACKUP_SUCCESS", "USER_LOGIN"
+  channelId       String?             // AdapterConfig ID of the channel
+  channelName     String?             // Display name snapshot
+  adapterId       String              // "discord", "email", "slack", etc.
+  status          String              // "success" or "error"
+  title           String?             // Notification title
+  message         String?             // Plain text message body
+  fields          String?             // JSON: key-value fields array
+  color           String?             // Hex color code
+  renderedHtml    String?             // Pre-rendered HTML (email only)
+  renderedPayload String?             // JSON: adapter-specific payload (embed, blocks, etc.)
+  error           String?             // Error message if send failed
+  executionId     String?             // Linked Execution ID (for per-job notifications)
+  sentAt          DateTime @default(now())
+
+  @@index([eventType])
+  @@index([adapterId])
+  @@index([sentAt])
+  @@index([executionId])
+}
+```
+
+**Notes:**
+- `renderedPayload` stores the adapter-specific payload (Discord embed, Slack blocks, Teams card) for preview rendering
+- `renderedHtml` stores the fully rendered email HTML for iframe preview
+- Logging is fire-and-forget — failures are caught and never block notification delivery
+- Records are cleaned up by the "Clean Old Data" system task based on `notification.logRetentionDays`
+
 ## Common Operations
 
 ### Prisma Commands

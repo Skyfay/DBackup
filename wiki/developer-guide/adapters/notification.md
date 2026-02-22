@@ -441,12 +441,16 @@ notify(event)
     ├── registerAdapters() (ensure adapters are loaded)
     │
     ├── If notifyUser ≠ "only":
-    │   └── Send to all admin channels (Discord, Email, etc.)
+    │   └── For each admin channel:
+    │       ├── Generate adapter-specific payload (embed, blocks, HTML)
+    │       ├── adapter.send(config, message, options)
+    │       └── recordNotificationLog(entry) ← success or error
     │
     └── If notifyUser = "also" or "only":
         ├── Filter channels to email-type adapters only
         ├── Extract user email from event data
-        └── Send via email adapter with overridden `to` field
+        ├── Send via email adapter with overridden `to` field
+        └── recordNotificationLog(entry)
 ```
 
 Key design decisions:
@@ -522,11 +526,14 @@ RunnerContext (job, execution, metadata)
     ├── Job has notificationId? → Load AdapterConfig
     ├── Check notifyCondition (always / success / failure)
     ├── renderTemplate(BACKUP_SUCCESS or BACKUP_FAILURE)
-    ├── adapter.send(config, payload.message, { title, fields, color })
+    ├── For each notification channel:
+    │   ├── Generate adapter-specific rendered payload
+    │   ├── adapter.send(config, payload.message, { title, fields, color })
+    │   └── recordNotificationLog(entry) ← success or error
     └── Log result
 ```
 
-This uses the same `renderTemplate()` and `NotificationPayload` system as system notifications, ensuring consistent message formatting across both layers.
+This uses the same `renderTemplate()` and `NotificationPayload` system as system notifications, ensuring consistent message formatting across both layers. Each send attempt is logged to `NotificationLog` with the full rendered payload for preview on the History page.
 
 ---
 

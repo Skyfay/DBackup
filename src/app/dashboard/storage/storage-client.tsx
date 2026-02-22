@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { ChevronsUpDown, HardDrive, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
@@ -38,6 +38,9 @@ import { lockBackup } from "@/app/actions/storage/lock";
 import { DownloadLinkModal } from "@/components/dashboard/storage/download-link-modal";
 import { StorageHistoryTab } from "@/components/dashboard/storage/storage-history-tab";
 import { StorageSettingsTab } from "@/components/dashboard/storage/storage-settings-tab";
+import { Skeleton } from "@/components/ui/skeleton";
+import type { StorageHistoryTabRef } from "@/components/dashboard/storage/storage-history-tab";
+import type { StorageSettingsTabRef } from "@/components/dashboard/storage/storage-settings-tab";
 
 interface AdapterConfig {
     id: string;
@@ -232,6 +235,23 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
 
     const [activeTab, setActiveTab] = useState("explorer");
 
+    const historyRef = useRef<StorageHistoryTabRef>(null);
+    const settingsRef = useRef<StorageSettingsTabRef>(null);
+
+    const handleRefresh = useCallback(() => {
+        switch (activeTab) {
+            case "explorer":
+                fetchFiles(selectedDestination, showSystemConfigs);
+                break;
+            case "history":
+                historyRef.current?.refresh();
+                break;
+            case "settings":
+                settingsRef.current?.refresh();
+                break;
+        }
+    }, [activeTab, selectedDestination, showSystemConfigs]);
+
     return (
         <div className="space-y-6">
             <div>
@@ -289,7 +309,7 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
                         <Button
                             variant="outline"
                             size="icon"
-                            onClick={() => fetchFiles(selectedDestination, showSystemConfigs)}
+                            onClick={handleRefresh}
                             disabled={loading}
                         >
                             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
@@ -324,7 +344,40 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
                             </CardHeader>
                             <CardContent>
                                 {loading ? (
-                                    <div className="flex justify-center p-8">Loading files...</div>
+                                    <div className="space-y-4">
+                                        {/* Toolbar skeleton */}
+                                        <div className="flex items-center gap-2">
+                                            <Skeleton className="h-9 w-64" />
+                                            <Skeleton className="h-9 w-28" />
+                                            <Skeleton className="h-9 w-28" />
+                                        </div>
+                                        {/* Table header skeleton */}
+                                        <div className="border rounded-md">
+                                            <div className="flex items-center gap-4 px-4 py-3 border-b bg-muted/50">
+                                                <Skeleton className="h-4 w-4" />
+                                                <Skeleton className="h-4 w-40" />
+                                                <Skeleton className="h-4 w-16" />
+                                                <Skeleton className="h-4 w-20" />
+                                                <Skeleton className="h-4 w-16" />
+                                                <Skeleton className="h-4 w-16" />
+                                                <Skeleton className="h-4 w-16 ml-auto" />
+                                                <Skeleton className="h-4 w-24" />
+                                            </div>
+                                            {/* Table rows skeleton */}
+                                            {[...Array(6)].map((_, i) => (
+                                                <div key={i} className="flex items-center gap-4 px-4 py-3 border-b last:border-b-0">
+                                                    <Skeleton className="h-4 w-4" />
+                                                    <Skeleton className="h-4 w-48" />
+                                                    <Skeleton className="h-5 w-16 rounded-full" />
+                                                    <Skeleton className="h-4 w-24" />
+                                                    <Skeleton className="h-4 w-12" />
+                                                    <Skeleton className="h-4 w-12" />
+                                                    <Skeleton className="h-4 w-16 ml-auto" />
+                                                    <Skeleton className="h-4 w-28" />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
                                 ) : (
                                     <DataTable
                                         columns={columns}
@@ -339,6 +392,7 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
 
                     <TabsContent value="history" className="mt-4">
                         <StorageHistoryTab
+                            ref={historyRef}
                             configId={selectedDestination}
                             adapterName={destinations.find(d => d.id === selectedDestination)?.name || ""}
                         />
@@ -346,6 +400,7 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
 
                     <TabsContent value="settings" className="mt-4">
                         <StorageSettingsTab
+                            ref={settingsRef}
                             configId={selectedDestination}
                             adapterName={destinations.find(d => d.id === selectedDestination)?.name || ""}
                         />

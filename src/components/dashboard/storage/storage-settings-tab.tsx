@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, forwardRef, useImperativeHandle } from "react";
 import { toast } from "sonner";
 import {
   Card,
@@ -49,6 +49,10 @@ interface StorageSettingsTabProps {
   adapterName: string;
 }
 
+export interface StorageSettingsTabRef {
+  refresh: () => void;
+}
+
 /** Convert bytes to a human-readable size unit and value */
 function bytesToUnit(bytes: number): { value: number; unit: string } {
   if (bytes >= 1024 * 1024 * 1024 * 1024) {
@@ -79,10 +83,8 @@ function unitToBytes(value: number, unit: string): number {
   }
 }
 
-export function StorageSettingsTab({
-  configId,
-  adapterName,
-}: StorageSettingsTabProps) {
+export const StorageSettingsTab = forwardRef<StorageSettingsTabRef, StorageSettingsTabProps>(
+  function StorageSettingsTab({ configId, adapterName }, ref) {
   const [config, setConfig] = useState<StorageAlertConfig | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -117,6 +119,10 @@ export function StorageSettingsTab({
   useEffect(() => {
     fetchSettings();
   }, [fetchSettings]);
+
+  useImperativeHandle(ref, () => ({
+    refresh: fetchSettings,
+  }), [fetchSettings]);
 
   const updateField = useCallback(
     <K extends keyof StorageAlertConfig>(
@@ -400,4 +406,4 @@ export function StorageSettingsTab({
       </div>
     </div>
   );
-}
+});

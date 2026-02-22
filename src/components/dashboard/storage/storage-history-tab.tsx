@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, forwardRef, useImperativeHandle } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import {
   ChartConfig,
@@ -16,8 +16,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { formatBytes } from "@/lib/utils";
-import { Loader2, HardDrive, FileStack, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { HardDrive, FileStack, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import type { StorageSnapshotEntry } from "@/services/dashboard-service";
 import { useDateFormatter } from "@/hooks/use-date-formatter";
 
@@ -40,7 +41,12 @@ interface StorageHistoryTabProps {
   adapterName: string;
 }
 
-export function StorageHistoryTab({ configId, adapterName }: StorageHistoryTabProps) {
+export interface StorageHistoryTabRef {
+  refresh: () => void;
+}
+
+export const StorageHistoryTab = forwardRef<StorageHistoryTabRef, StorageHistoryTabProps>(
+  function StorageHistoryTab({ configId, adapterName }, ref) {
   const [data, setData] = useState<StorageSnapshotEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [days, setDays] = useState("30");
@@ -73,6 +79,10 @@ export function StorageHistoryTab({ configId, adapterName }: StorageHistoryTabPr
     fetchHistory();
   }, [fetchHistory]);
 
+  useImperativeHandle(ref, () => ({
+    refresh: fetchHistory,
+  }), [fetchHistory]);
+
   const formatXAxis = (dateStr: string) => {
     return formatDate(dateStr, "P");
   };
@@ -94,8 +104,46 @@ export function StorageHistoryTab({ configId, adapterName }: StorageHistoryTabPr
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      <div className="space-y-6">
+        {/* Header skeleton */}
+        <div className="flex items-center justify-between">
+          <div>
+            <Skeleton className="h-6 w-56 mb-2" />
+            <Skeleton className="h-4 w-72" />
+          </div>
+          <Skeleton className="h-9 w-28" />
+        </div>
+
+        {/* Stats cards skeleton */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {[...Array(3)].map((_, i) => (
+            <Card key={i}>
+              <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-4 w-4" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-8 w-28 mb-2" />
+                <Skeleton className="h-3 w-36" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {/* Charts skeleton */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {[...Array(2)].map((_, i) => (
+            <Card key={i}>
+              <CardHeader>
+                <Skeleton className="h-5 w-32 mb-1" />
+                <Skeleton className="h-4 w-48" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-72 w-full" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       </div>
     );
   }
@@ -312,4 +360,4 @@ export function StorageHistoryTab({ configId, adapterName }: StorageHistoryTabPr
       )}
     </div>
   );
-}
+});

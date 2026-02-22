@@ -528,7 +528,7 @@ export function JobForm({ sources, destinations, notifications, encryptionProfil
                                         </Command>
                                     </PopoverContent>
                                 </Popover>
-                                <div className="min-h-[100px] border rounded-md mt-2 p-2">
+                                <div className="min-h-25 border rounded-md mt-2 p-2">
                                     {field.value && field.value.length > 0 ? (
                                         <div className="flex gap-2 flex-wrap">
                                             {field.value.map((id: string) => {

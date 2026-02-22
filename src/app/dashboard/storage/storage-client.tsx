@@ -73,19 +73,7 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
     // Download Link Modal State
     const [downloadLinkFile, setDownloadLinkFile] = useState<FileInfo | null>(null);
 
-    useEffect(() => {
-        fetchAdapters();
-    }, []);
-
-    useEffect(() => {
-        if (selectedDestination) {
-            fetchFiles(selectedDestination, showSystemConfigs);
-        } else {
-            setFiles([]);
-        }
-    }, [selectedDestination, showSystemConfigs]);
-
-    const fetchAdapters = async () => {
+    const fetchAdapters = useCallback(async () => {
         try {
             const storageRes = await fetch("/api/adapters?type=storage");
             if (storageRes.ok) {
@@ -101,7 +89,19 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
         } catch (e) {
             console.error(e);
         }
-    };
+    }, [searchParams]);
+
+    useEffect(() => {
+        fetchAdapters();
+    }, [fetchAdapters]);
+
+    useEffect(() => {
+        if (selectedDestination) {
+            fetchFiles(selectedDestination, showSystemConfigs);
+        } else {
+            setFiles([]);
+        }
+    }, [selectedDestination, showSystemConfigs]);
 
     const fetchFiles = async (destId: string, showSystem: boolean) => {
         setLoading(true);

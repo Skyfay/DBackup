@@ -1,7 +1,7 @@
 "use client"
 
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useForm } from "react-hook-form"
+import { useForm, useWatch } from "react-hook-form"
 import * as z from "zod"
 import {
     Form,
@@ -78,6 +78,9 @@ export function SystemSettingsForm({ initialMaxConcurrentJobs, initialDisablePas
         return `${days}d`;
     };
 
+    const auditLogRetentionDays = useWatch({ control: form.control, name: "auditLogRetentionDays" });
+    const storageSnapshotRetentionDays = useWatch({ control: form.control, name: "storageSnapshotRetentionDays" });
+
     return (
         <Form {...form}>
             <div className="space-y-6">
@@ -138,7 +141,7 @@ export function SystemSettingsForm({ initialMaxConcurrentJobs, initialDisablePas
                                             <span>Configure Retention Policies</span>
                                         </div>
                                         <span className="text-xs text-muted-foreground">
-                                            {formatRetention(form.watch("auditLogRetentionDays"))} / {formatRetention(form.watch("storageSnapshotRetentionDays"))}
+                                            {formatRetention(auditLogRetentionDays)} / {formatRetention(storageSnapshotRetentionDays)}
                                         </span>
                                     </Button>
                                 </PopoverTrigger>

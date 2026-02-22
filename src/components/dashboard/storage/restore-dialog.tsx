@@ -86,7 +86,7 @@ export function RestoreDialog({ file, open, onOpenChange, destinationId, sources
 
     // Compatibility check state
     const [targetServerVersion, setTargetServerVersion] = useState<string | undefined>();
-    const [targetServerEdition, setTargetServerEdition] = useState<string | undefined>();
+    const [_targetServerEdition, setTargetServerEdition] = useState<string | undefined>();
     const [compatibilityIssues, setCompatibilityIssues] = useState<{ type: 'error' | 'warning'; message: string }[]>([]);
 
     const isSystemConfig = file?.sourceType === 'SYSTEM';

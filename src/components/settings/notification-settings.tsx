@@ -35,7 +35,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Bell, ChevronsUpDown, Mail, Send, Shield, Database, RotateCcw, Monitor } from "lucide-react";
+import { Bell, ChevronsUpDown, Mail, Send, Shield, Database, RotateCcw, Monitor, HardDrive } from "lucide-react";
 import {
   getNotificationSettings,
   updateNotificationSettings,
@@ -70,6 +70,11 @@ const CATEGORY_META: Record<string, { label: string; icon: React.ReactNode; desc
     label: "System",
     icon: <Monitor className="h-4 w-4" />,
     description: "System-level events and errors.",
+  },
+  storage: {
+    label: "Storage",
+    icon: <HardDrive className="h-4 w-4" />,
+    description: "Storage monitoring and alert events.",
   },
 };
 

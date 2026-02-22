@@ -334,6 +334,7 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
 
                     <TabsContent value="settings" className="mt-4">
                         <StorageSettingsTab
+                            configId={selectedDestination}
                             adapterName={destinations.find(d => d.id === selectedDestination)?.name || ""}
                         />
                     </TabsContent>

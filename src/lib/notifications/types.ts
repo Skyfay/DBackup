@@ -16,6 +16,9 @@ export const NOTIFICATION_EVENTS = {
   RESTORE_FAILURE: "restore_failure",
   CONFIG_BACKUP: "config_backup",
   SYSTEM_ERROR: "system_error",
+  STORAGE_USAGE_SPIKE: "storage_usage_spike",
+  STORAGE_LIMIT_WARNING: "storage_limit_warning",
+  STORAGE_MISSING_BACKUP: "storage_missing_backup",
 } as const;
 
 export type NotificationEventType =
@@ -34,7 +37,7 @@ export interface NotificationEventDefinition {
   id: NotificationEventType;
   name: string;
   description: string;
-  category: "auth" | "backup" | "restore" | "system";
+  category: "auth" | "backup" | "restore" | "system" | "storage";
   /** Default enabled state when first configured */
   defaultEnabled: boolean;
   /**
@@ -111,6 +114,30 @@ export interface SystemErrorData {
   timestamp: string;
 }
 
+export interface StorageUsageSpikeData {
+  storageName: string;
+  previousSize: number;
+  currentSize: number;
+  changePercent: number;
+  timestamp: string;
+}
+
+export interface StorageLimitWarningData {
+  storageName: string;
+  currentSize: number;
+  limitSize: number;
+  usagePercent: number;
+  timestamp: string;
+}
+
+export interface StorageMissingBackupData {
+  storageName: string;
+  lastBackupAt?: string;
+  thresholdHours: number;
+  hoursSinceLastBackup: number;
+  timestamp: string;
+}
+
 /** Union of all event data types for type-safe template dispatch */
 export type NotificationEventData =
   | { eventType: typeof NOTIFICATION_EVENTS.USER_LOGIN; data: UserLoginData }
@@ -120,7 +147,10 @@ export type NotificationEventData =
   | { eventType: typeof NOTIFICATION_EVENTS.RESTORE_COMPLETE; data: RestoreResultData }
   | { eventType: typeof NOTIFICATION_EVENTS.RESTORE_FAILURE; data: RestoreResultData }
   | { eventType: typeof NOTIFICATION_EVENTS.CONFIG_BACKUP; data: ConfigBackupData }
-  | { eventType: typeof NOTIFICATION_EVENTS.SYSTEM_ERROR; data: SystemErrorData };
+  | { eventType: typeof NOTIFICATION_EVENTS.SYSTEM_ERROR; data: SystemErrorData }
+  | { eventType: typeof NOTIFICATION_EVENTS.STORAGE_USAGE_SPIKE; data: StorageUsageSpikeData }
+  | { eventType: typeof NOTIFICATION_EVENTS.STORAGE_LIMIT_WARNING; data: StorageLimitWarningData }
+  | { eventType: typeof NOTIFICATION_EVENTS.STORAGE_MISSING_BACKUP; data: StorageMissingBackupData };
 
 /** Persisted notification configuration (stored as JSON in SystemSetting) */
 export interface SystemNotificationConfig {

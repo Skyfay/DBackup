@@ -62,6 +62,29 @@ export const EVENT_DEFINITIONS: NotificationEventDefinition[] = [
     category: "system",
     defaultEnabled: true,
   },
+
+  // ── Storage Events ───────────────────────────────────────────
+  {
+    id: NOTIFICATION_EVENTS.STORAGE_USAGE_SPIKE,
+    name: "Storage Usage Spike",
+    description: "Storage size changed significantly between snapshots.",
+    category: "storage",
+    defaultEnabled: true,
+  },
+  {
+    id: NOTIFICATION_EVENTS.STORAGE_LIMIT_WARNING,
+    name: "Storage Limit Warning",
+    description: "Storage usage is approaching the configured size limit.",
+    category: "storage",
+    defaultEnabled: true,
+  },
+  {
+    id: NOTIFICATION_EVENTS.STORAGE_MISSING_BACKUP,
+    name: "Missing Backup Alert",
+    description: "No new backup was created within the expected time window.",
+    category: "storage",
+    defaultEnabled: true,
+  },
 ];
 
 /** Look up an event definition by its type string */

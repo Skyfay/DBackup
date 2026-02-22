@@ -16,6 +16,9 @@ import {
   RestoreResultData,
   ConfigBackupData,
   SystemErrorData,
+  StorageUsageSpikeData,
+  StorageLimitWarningData,
+  StorageMissingBackupData,
 } from "./types";
 
 // ── Individual Template Functions ──────────────────────────────
@@ -220,6 +223,91 @@ function systemErrorTemplate(data: SystemErrorData): NotificationPayload {
   };
 }
 
+function storageUsageSpikeTemplate(
+  data: StorageUsageSpikeData
+): NotificationPayload {
+  const direction = data.changePercent > 0 ? "increased" : "decreased";
+  return {
+    title: "Storage Usage Spike",
+    message: `Storage '${data.storageName}' ${direction} by ${Math.abs(data.changePercent).toFixed(1)}%.`,
+    fields: [
+      { name: "Storage", value: data.storageName, inline: true },
+      {
+        name: "Change",
+        value: `${data.changePercent > 0 ? "+" : ""}${data.changePercent.toFixed(1)}%`,
+        inline: true,
+      },
+      {
+        name: "Previous Size",
+        value: formatBytes(data.previousSize),
+        inline: true,
+      },
+      {
+        name: "Current Size",
+        value: formatBytes(data.currentSize),
+        inline: true,
+      },
+      { name: "Time", value: data.timestamp, inline: true },
+    ],
+    color: "#f59e0b", // amber
+    success: false,
+  };
+}
+
+function storageLimitWarningTemplate(
+  data: StorageLimitWarningData
+): NotificationPayload {
+  return {
+    title: "Storage Limit Warning",
+    message: `Storage '${data.storageName}' is at ${data.usagePercent.toFixed(1)}% of its configured limit.`,
+    fields: [
+      { name: "Storage", value: data.storageName, inline: true },
+      {
+        name: "Usage",
+        value: `${data.usagePercent.toFixed(1)}%`,
+        inline: true,
+      },
+      {
+        name: "Current Size",
+        value: formatBytes(data.currentSize),
+        inline: true,
+      },
+      { name: "Limit", value: formatBytes(data.limitSize), inline: true },
+      { name: "Time", value: data.timestamp, inline: true },
+    ],
+    color: "#ef4444", // red
+    success: false,
+  };
+}
+
+function storageMissingBackupTemplate(
+  data: StorageMissingBackupData
+): NotificationPayload {
+  return {
+    title: "Missing Backup Alert",
+    message: `No new backup detected for '${data.storageName}' in the last ${data.hoursSinceLastBackup} hours (threshold: ${data.thresholdHours}h).`,
+    fields: [
+      { name: "Storage", value: data.storageName, inline: true },
+      {
+        name: "Hours Since Last Backup",
+        value: `${data.hoursSinceLastBackup}h`,
+        inline: true,
+      },
+      {
+        name: "Threshold",
+        value: `${data.thresholdHours}h`,
+        inline: true,
+      },
+      ...(data.lastBackupAt
+        ? [{ name: "Last Backup", value: data.lastBackupAt, inline: true }]
+        : []),
+      { name: "Time", value: data.timestamp, inline: true },
+    ],
+    color: "#3b82f6", // blue
+    success: false,
+  };
+}
+
 // ── Template Dispatcher ────────────────────────────────────────
 
 /**
@@ -247,6 +335,12 @@ export function renderTemplate(
       return configBackupTemplate(event.data);
     case NOTIFICATION_EVENTS.SYSTEM_ERROR:
       return systemErrorTemplate(event.data);
+    case NOTIFICATION_EVENTS.STORAGE_USAGE_SPIKE:
+      return storageUsageSpikeTemplate(event.data);
+    case NOTIFICATION_EVENTS.STORAGE_LIMIT_WARNING:
+      return storageLimitWarningTemplate(event.data);
+    case NOTIFICATION_EVENTS.STORAGE_MISSING_BACKUP:
+      return storageMissingBackupTemplate(event.data);
     default:
       // Fallback for unknown events
       return {

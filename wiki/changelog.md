@@ -79,6 +79,17 @@ This release adds SSH connection testing for MSSQL file transfer mode with backu
 - **Context-Aware Controls** — "Show System Configs" toggle only visible when the Explorer tab is active — hides when viewing History or Settings
 - **Restore Back Navigation** — Returning from the restore page now preserves the previously selected storage destination via `?destination=` URL parameter
 
+#### 🔔 Storage Alert System (Notification Integration)
+- **Per-Destination Alert Configuration** — Each storage destination now has its own alert settings in the Settings tab, with individual toggles and thresholds for three alert types
+- **Usage Spike Alert** — Detects when total storage size increases or decreases by more than a configurable percentage (default: 50%) between refresh cycles. Compares the latest two storage snapshots
+- **Storage Limit Warning** — Alerts when storage usage reaches 90% of a user-configured size limit (e.g., 10 GB). Configurable in MB, GB, or TB with a dropdown unit selector
+- **Missing Backup Alert** — Triggers when no new backup files appear within a configurable time window (default: 48 hours, max: 8760h / 1 year). Tracks backup count changes across storage snapshots
+- **System Notification Integration** — All three storage alert types are registered as system notification events under a new "Storage" category in Settings > Notifications. Events can be enabled/disabled per channel, and test notifications can be sent for each event type
+- **Automatic Alert Checking** — Storage alerts are evaluated automatically during each storage stats refresh cycle (triggered by the "Refresh Storage Statistics" system task and after backups). No additional scheduler or cron job required
+- **Notification Templates** — Rich notification payloads with storage name, size values, percentage changes, and timestamps. Compatible with all notification adapters (Email, Discord, Gotify, etc.)
+- **Alert Config Persistence** — Per-destination settings stored in `SystemSetting` table with keys like `storage.alerts.<configId>`. Defaults provided for new destinations (all alerts disabled by default)
+- **Info Card** — The Settings tab includes a "Notification Delivery" info card explaining that alerts are routed through the global notification channels configured in Settings > Notifications
+
 ### 🐛 Bug Fixes
 - **Quick Setup Adapter Selection** — Fixed "Please select an adapter type first" error when clicking "Test Connection" in Quick Setup wizard (Database Source, Storage Destination, Notification steps). The hook now correctly falls back to the `adapterId` prop when the form doesn't include that field
 - **Test Connection in Setup** — Test Connection button now works properly in all Quick Setup adapter configuration steps, not just the regular adapter management dialogs

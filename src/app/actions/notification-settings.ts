@@ -162,6 +162,36 @@ function buildTestData(eventType: string): any {
         timestamp: now,
       },
     },
+    storage_usage_spike: {
+      eventType: "storage_usage_spike",
+      data: {
+        storageName: "Local Storage (Test)",
+        previousSize: 1073741824,
+        currentSize: 1610612736,
+        changePercent: 50,
+        timestamp: now,
+      },
+    },
+    storage_limit_warning: {
+      eventType: "storage_limit_warning",
+      data: {
+        storageName: "Local Storage (Test)",
+        currentSize: 9663676416,
+        limitSize: 10737418240,
+        usagePercent: 90,
+        timestamp: now,
+      },
+    },
+    storage_missing_backup: {
+      eventType: "storage_missing_backup",
+      data: {
+        storageName: "Local Storage (Test)",
+        lastBackupAt: new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString(),
+        thresholdHours: 48,
+        hoursSinceLastBackup: 72,
+        timestamp: now,
+      },
+    },
   };
 
   return testPayloads[eventType] ?? null;

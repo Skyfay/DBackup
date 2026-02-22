@@ -6,6 +6,7 @@ import { decryptConfig } from "@/lib/crypto";
 import { registerAdapters } from "@/lib/adapters";
 import { logger } from "@/lib/logger";
 import { wrapError } from "@/lib/errors";
+import { checkStorageAlerts } from "@/services/storage-alert-service";
 
 export interface DashboardStats {
   totalJobs: number;
@@ -496,6 +497,13 @@ async function saveStorageSnapshots(entries: StorageVolumeEntry[]): Promise<void
     await prisma.storageSnapshot.createMany({ data });
 
     log.debug("Saved storage snapshots", { count: data.length });
+
+    // Check storage alert conditions against new snapshot data
+    try {
+      await checkStorageAlerts(entries);
+    } catch (alertError) {
+      log.warn("Failed to check storage alerts", {}, wrapError(alertError));
+    }
   } catch (error) {
     log.warn("Failed to save storage snapshots", {}, wrapError(error));
   }

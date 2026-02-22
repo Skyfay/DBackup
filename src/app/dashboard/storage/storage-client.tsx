@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
     Command,
     CommandEmpty,
@@ -54,6 +54,7 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
     const [selectedDestination, setSelectedDestination] = useState<string>("");
     const [open, setOpen] = useState(false);
     const router = useRouter();
+    const searchParams = useSearchParams();
 
     // Filter State
     const [showSystemConfigs, setShowSystemConfigs] = useState(false);
@@ -86,6 +87,12 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
             if (storageRes.ok) {
                 const storageData = await storageRes.json();
                 setDestinations(storageData);
+                // Pre-select destination from URL param (e.g., when returning from restore page)
+                const destParam = searchParams.get("destination");
+                if (destParam) {
+                    const match = storageData.find((d: AdapterConfig) => d.id === destParam);
+                    if (match) setSelectedDestination(match.id);
+                }
             }
         } catch (e) {
             console.error(e);

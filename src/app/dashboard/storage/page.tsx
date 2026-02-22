@@ -1,4 +1,5 @@
 
+import { Suspense } from "react";
 import { StorageClient } from "./storage-client";
 import { getUserPermissions } from "@/lib/access-control";
 import { PERMISSIONS } from "@/lib/permissions";
@@ -9,5 +10,9 @@ export default async function StoragePage() {
     const canRestore = permissions.includes(PERMISSIONS.STORAGE.RESTORE);
     const canDelete = permissions.includes(PERMISSIONS.STORAGE.DELETE);
 
-    return <StorageClient canDownload={canDownload} canRestore={canRestore} canDelete={canDelete} />;
+    return (
+        <Suspense>
+            <StorageClient canDownload={canDownload} canRestore={canRestore} canDelete={canDelete} />
+        </Suspense>
+    );
 }

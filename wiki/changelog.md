@@ -2,14 +2,14 @@
 
 All notable changes to DBackup are documented here.
 
-## v0.9.9-beta - MSSQL SSH Testing & Quick Setup Improvements
-*Release: In Progress*
+## v0.9.9-beta - Storage Alerts, Notification Logs & Restore Improvements
+*Released: February 22, 2026*
 
-This release adds SSH connection testing for MSSQL file transfer mode with backup path read/write verification, a pre-restore version compatibility matrix that warns about version mismatches before starting the restore, and fixes adapter selection issues in the Quick Setup wizard.
+This release introduces a per-destination storage alert system with deduplication, a full notification log history with adapter-specific previews, a dedicated restore page with version compatibility checks, skeleton loading states, and numerous UI refinements across the Storage and Database Explorers.
 
 ### ✨ New Features
 
-#### � Backup Compatibility Matrix in Restore Dialog
+#### 🛡️ Backup Compatibility Matrix in Restore Dialog
 - **Pre-Restore Version Check** — When selecting a target database source in the Restore dialog, the backup's engine version is now compared against the target server's version immediately — before clicking "Start Restore"
 - **Version Mismatch Warning** — If the backup was created on a newer database version than the target server, an orange warning banner appears: "Backup was created on version X, but the target server runs Y"
 - **MSSQL Edition Guard** — Incompatible MSSQL editions (Azure SQL Edge ↔ SQL Server) are detected and shown as a red error banner, blocking the restore button entirely
@@ -17,7 +17,7 @@ This release adds SSH connection testing for MSSQL file transfer mode with backu
 - **Engine Edition in File Details** — The backup file details badge now also displays the engine edition (e.g., "MSSQL 15.0.4405.4 (Azure SQL Edge)") when available
 - **Non-Blocking for Warnings** — Version mismatch warnings do not block the restore — users can still proceed at their own risk. Only hard incompatibilities (edition mismatch) disable the button
 
-#### �🔗 MSSQL SSH File Transfer Testing
+#### 🔗 MSSQL SSH File Transfer Testing
 - **Dedicated SSH Test Button** — New "Test SSH Connection" button in the File Transfer tab when SSH mode is selected
 - **Connection Verification** — Tests SSH connectivity to the configured `sshHost` and `sshPort`
 - **Backup Path Access Check** — Verifies the configured backup path is accessible and has read/write permissions
@@ -118,6 +118,16 @@ This release adds SSH connection testing for MSSQL file transfer mode with backu
 ### 🐛 Bug Fixes
 - **Quick Setup Adapter Selection** — Fixed "Please select an adapter type first" error when clicking "Test Connection" in Quick Setup wizard (Database Source, Storage Destination, Notification steps). The hook now correctly falls back to the `adapterId` prop when the form doesn't include that field
 - **Test Connection in Setup** — Test Connection button now works properly in all Quick Setup adapter configuration steps, not just the regular adapter management dialogs
+
+### 🎨 UI Improvements
+- **Skeleton Loading States** — Replaced plain text "Loading..." indicators with Shadcn Skeleton placeholders throughout the application: Storage Explorer file table (toolbar + header + 6 row skeletons), Storage History tab (stats cards + chart placeholders), Database Explorer (stats grid + database table rows). Settings tab already had Skeleton loading
+- **Tab-Aware Refresh Button** — The refresh button in Storage Explorer now reloads the currently active tab: Explorer reloads the file list, History reloads charts and stats, Settings reloads alert configuration — instead of always refreshing only the file list
+- **Unified Explorer Layout** — Database Explorer now matches the Storage Explorer's visual style: naked dropdown selector (no Card wrapper), consistent `w-75` width, and matching refresh button placement next to the dropdown
+- **Empty States** — Both Storage Explorer and Database Explorer now show a centered empty state Card with a descriptive icon (HardDrive / Database) and helpful text when no source or destination is selected
+- **Storage Alert Deduplication** — Storage alerts (Usage Spike, Storage Limit, Missing Backup) now use state tracking with a 24-hour cooldown to prevent notification flooding. Alerts only fire on first activation or after the cooldown expires, and reset automatically when the condition resolves
+- **Email Dark Mode Support** — Email notification templates now include dark mode media queries and meta tags for proper rendering in email clients that support `prefers-color-scheme: dark`
+- **ScrollArea Migration** — Replaced custom Radix ScrollArea components with native browser scrollbars across the application for more consistent cross-platform behavior and reduced bundle size
+- **Discord Notification Preview** — Fixed field layout rendering in the Discord notification preview dialog to properly display inline fields in a grid
 
 ### 🔧 Technical Changes
 - Updated `src/app/dashboard/storage/columns.tsx` — Added `engineEdition?: string` to `FileInfo` type for MSSQL edition display in restore dialog
@@ -327,7 +337,7 @@ This release introduces API key authentication for programmatic access, webhook 
 - **Encrypt Toggle**: Encryption setting (`encrypt`) now exposed in the UI Configuration tab — enable for Azure SQL or production environments
 - **Trust Server Certificate**: Self-signed certificate toggle (`trustServerCertificate`) now accessible in the UI — resolves "Certificate error" when connecting to development/internal SQL Servers
 
-#### � Database Stats in Restore Dialog
+#### 📊 Database Stats in Restore Dialog
 - **Existing Databases Overview**: After selecting a target source in the Restore dialog, a collapsible section "Existing Databases on Target" appears showing all user databases on that server
 - **Size & Table Count**: Each database displays its total size (data + index) and number of tables/collections
 - **Conflict Detection**: Databases that would be overwritten by the restore are highlighted in red with a ⚠️ warning tooltip

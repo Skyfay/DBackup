@@ -11,7 +11,7 @@ import path from "path";
 import { waitForProcess } from "@/lib/adapters/process";
 import {
     isMultiDbTar,
-    extractMultiDbTar,
+    extractSelectedDatabases,
     createTempDir,
     cleanupTempDir,
     shouldRestoreDatabase,
@@ -107,15 +107,22 @@ export async function restore(config: MySQLRestoreConfig, sourcePath: string, on
             const tempDir = await createTempDir("mysql-restore-");
 
             try {
-                const { manifest, files } = await extractMultiDbTar(sourcePath, tempDir);
+                // Build list of selected database names for selective extraction
+                const selectedNames = dbMapping
+                    ? dbMapping.filter(m => m.selected).map(m => m.originalName)
+                    : [];
+
+                const { manifest, files } = await extractSelectedDatabases(sourcePath, tempDir, selectedNames);
                 log(`Archive contains ${manifest.databases.length} database(s): ${manifest.databases.map(d => d.name).join(', ')}`);
+                if (selectedNames.length > 0) {
+                    log(`Selectively extracted ${files.length} of ${manifest.databases.length} database(s)`);
+                }
 
                 let restoredCount = 0;
 
                 for (const dbEntry of manifest.databases) {
                     // Check if this database should be restored
                     if (!shouldRestoreDatabase(dbEntry.name, dbMapping)) {
-                        log(`Skipping database: ${dbEntry.name} (not selected)`);
                         continue;
                     }
 

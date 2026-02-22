@@ -8,7 +8,7 @@ import path from "path";
 import { getPostgresBinary } from "./version-utils";
 import {
     isMultiDbTar,
-    extractMultiDbTar,
+    extractSelectedDatabases,
     createTempDir,
     cleanupTempDir,
     shouldRestoreDatabase,
@@ -210,15 +210,19 @@ export async function restore(
             tempDir = await createTempDir('pg-restore-');
             log(`Created temp directory: ${tempDir}`, 'info');
 
-            const { manifest, files } = await extractMultiDbTar(sourcePath, tempDir);
-            log(`Extracted ${files.length} database dumps from TAR`, 'info');
+            // Build list of selected database names for selective extraction
+            const selectedNames = mapping
+                ? mapping.filter(m => m.selected).map(m => m.originalName)
+                : [];
+
+            const { manifest, files } = await extractSelectedDatabases(sourcePath, tempDir, selectedNames);
+            log(`Extracted ${files.length} of ${manifest.databases.length} database dumps from TAR`, 'info');
 
             const totalDbs = manifest.databases.length;
             let processed = 0;
 
             for (const dbEntry of manifest.databases) {
                 if (!shouldRestoreDatabase(dbEntry.name, mapping)) {
-                    log(`Skipping database: ${dbEntry.name} (not selected)`, 'info');
                     processed++;
                     continue;
                 }

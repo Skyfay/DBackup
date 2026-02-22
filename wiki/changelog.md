@@ -67,6 +67,15 @@ This release adds SSH connection testing for MSSQL file transfer mode with backu
 - Updated unit tests in `tests/unit/lib/notifications/email-template.test.tsx` — Fixed email template tests to account for new table-based layout structure
 - Updated unit tests in `tests/unit/adapters/notification/email.test.ts` — Fixed email footer assertions to check for component parts instead of exact concatenation
 
+#### ⚡ Selective TAR Extraction for Multi-Database Restores
+- **Performance Optimization**: Implemented `extractSelectedDatabases()` function in `src/lib/adapters/database/common/tar-utils.ts` — only extracts database dump files matching selected databases instead of extracting all entries from the TAR archive
+- **Manifest-First Approach**: Reads manifest first to build a lookup set of selected filenames, skips unselected entries via `stream.resume()` without I/O
+- **Applies to All Adapters**: MySQL, PostgreSQL, MongoDB, and MSSQL restore operations now use selective extraction
+- **MSSQL Filtering**: MSSQL's `extractTarArchive()` function enhanced to filter `.bak` files by database name (derived from filename)
+- **Backward Compatible**: Empty selection list extracts all databases — maintains fallback behavior
+- **Benefits**: Significantly reduces disk I/O and temporary storage requirements when restoring only 1 of many databases from a large multi-DB backup (e.g., 100 MB extracted instead of 50 GB)
+- **New Unit Tests**: Four comprehensive tests in `tests/unit/adapters/database/common/tar-utils.test.ts` covering single/multiple selective extraction, full extraction fallback, and error handling
+
 ## v0.9.8-beta - Notification Adapters Expansion & Quick Setup Wizard
 *Released: February 20, 2026*
 

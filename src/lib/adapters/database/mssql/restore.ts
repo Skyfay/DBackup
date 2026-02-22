@@ -128,7 +128,10 @@ export async function restore(
 
         if (isTarArchive) {
             log(`Detected TAR archive - extracting backup files...`);
-            const extractedFiles = await extractTarArchive(sourcePath, stagingDir, log);
+
+            // Build list of selected database names for selective extraction
+            const selectedDbNames = targetDatabases.map(t => t.original);
+            const extractedFiles = await extractTarArchive(sourcePath, stagingDir, log, selectedDbNames);
 
             for (const extracted of extractedFiles) {
                 const serverPath = path.posix.join(serverBackupPath, path.basename(extracted));
@@ -320,19 +323,40 @@ async function checkIfTarArchive(filePath: string): Promise<boolean> {
 
 /**
  * Extract .bak files from a TAR archive
+ *
+ * Only extracts .bak files matching the selected database names.
+ * If no selectedDbNames are provided, all .bak files are extracted.
+ * Database names are derived from filenames by stripping the timestamp suffix.
  */
 async function extractTarArchive(
     tarPath: string,
     outputDir: string,
-    log: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void
+    log: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void,
+    selectedDbNames?: string[]
 ): Promise<string[]> {
     const extractedFiles: string[] = [];
+
+    // Build a Set for fast lookup (empty means extract all)
+    const selectedSet = selectedDbNames && selectedDbNames.length > 0
+        ? new Set(selectedDbNames)
+        : null;
 
     return new Promise((resolve, reject) => {
         const extractor = extract();
 
         extractor.on("entry", async (header, stream, next) => {
             if (header.name.endsWith(".bak")) {
+                // Derive database name from filename (strip timestamp + .bak suffix)
+                const derivedDbName = header.name.replace(/_\d{4}-\d{2}-\d{2}.*\.bak$/, "");
+
+                // Skip if not in selected set
+                if (selectedSet && !selectedSet.has(derivedDbName)) {
+                    log(`Skipping extraction: ${header.name} (not selected)`);
+                    stream.resume();
+                    next();
+                    return;
+                }
+
                 const outputPath = path.join(outputDir, header.name);
                 log(`Extracting: ${header.name}`);
 
@@ -349,7 +373,7 @@ async function extractTarArchive(
                     reject(err);
                 });
             } else {
-                // Skip non-.bak files
+                // Skip non-.bak files (e.g. manifest.json)
                 stream.resume();
                 next();
             }

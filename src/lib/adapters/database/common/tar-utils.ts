@@ -181,6 +181,84 @@ export async function extractMultiDbTar(
 }
 
 /**
+ * Extract only selected databases from a Multi-DB TAR archive
+ *
+ * Instead of extracting all entries, this function reads the manifest first
+ * and only writes files matching the selected database names to disk.
+ * Unselected entries are skipped via stream.resume() without I/O.
+ *
+ * @param sourcePath - Path to the TAR archive
+ * @param extractDir - Directory to extract files into
+ * @param selectedNames - Database names to extract (from manifest). If empty, extracts all.
+ * @returns The manifest and list of extracted file paths
+ */
+export async function extractSelectedDatabases(
+    sourcePath: string,
+    extractDir: string,
+    selectedNames: string[]
+): Promise<ExtractResult> {
+    // Ensure extract directory exists
+    await fs.mkdir(extractDir, { recursive: true });
+
+    // Read manifest first to build a lookup of filename → dbName
+    const manifest = await readTarManifest(sourcePath);
+    if (!manifest) {
+        throw new Error("TAR archive does not contain a manifest.json");
+    }
+
+    // Build a Set of filenames that belong to selected databases
+    const selectedFilenames = new Set<string>();
+    for (const db of manifest.databases) {
+        if (selectedNames.length === 0 || selectedNames.includes(db.name)) {
+            selectedFilenames.add(db.filename);
+        }
+    }
+
+    const extractedFiles: string[] = [];
+
+    return new Promise((resolve, reject) => {
+        const extractor = extract();
+
+        extractor.on("entry", (header, stream, next) => {
+            // Skip manifest (already parsed) and non-selected files
+            if (header.name === MANIFEST_FILENAME || !selectedFilenames.has(header.name)) {
+                stream.resume();
+                next();
+                return;
+            }
+
+            // Write selected database dump file
+            const outputPath = path.join(extractDir, header.name);
+            const writeStream = createWriteStream(outputPath);
+
+            writeStream.on("finish", () => {
+                extractedFiles.push(outputPath);
+                next();
+            });
+
+            writeStream.on("error", (err) => {
+                reject(err);
+            });
+
+            stream.pipe(writeStream);
+        });
+
+        extractor.on("finish", () => {
+            resolve({
+                manifest,
+                files: extractedFiles,
+            });
+        });
+
+        extractor.on("error", (err) => {
+            reject(err);
+        });
+
+        createReadStream(sourcePath).pipe(extractor);
+    });
+}
+
+/**
  * Check if a file is a Multi-DB TAR archive
  *
  * Checks for TAR magic bytes and verifies manifest.json exists

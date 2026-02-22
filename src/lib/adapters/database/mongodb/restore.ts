@@ -8,7 +8,7 @@ import { waitForProcess } from "@/lib/adapters/process";
 import path from "path";
 import {
     isMultiDbTar,
-    extractMultiDbTar,
+    extractSelectedDatabases,
     createTempDir,
     cleanupTempDir,
     shouldRestoreDatabase,
@@ -195,8 +195,13 @@ export async function restore(
             tempDir = await createTempDir('mongo-restore-');
             log(`Created temp directory: ${tempDir}`, 'info');
 
-            const { manifest, files } = await extractMultiDbTar(sourcePath, tempDir);
-            log(`Extracted ${files.length} database archives from TAR`, 'info');
+            // Build list of selected database names for selective extraction
+            const selectedNames = mapping
+                ? mapping.filter(m => m.selected).map(m => m.originalName)
+                : [];
+
+            const { manifest, files } = await extractSelectedDatabases(sourcePath, tempDir, selectedNames);
+            log(`Extracted ${files.length} of ${manifest.databases.length} database archives from TAR`, 'info');
 
             const totalDbs = manifest.databases.length;
             let processed = 0;
@@ -204,7 +209,6 @@ export async function restore(
             for (const dbEntry of manifest.databases) {
                 // Check if database should be restored (based on mapping)
                 if (!shouldRestoreDatabase(dbEntry.name, mapping)) {
-                    log(`Skipping database: ${dbEntry.name} (not selected)`, 'info');
                     processed++;
                     continue;
                 }

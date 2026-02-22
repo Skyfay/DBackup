@@ -4,6 +4,7 @@ import path from "path";
 import {
     createMultiDbTar,
     extractMultiDbTar,
+    extractSelectedDatabases,
     isMultiDbTar,
     readTarManifest,
     createTempDir,
@@ -273,6 +274,111 @@ describe("TAR Utils for Multi-DB Backups", () => {
             ];
 
             expect(getTargetDatabaseName("unknown", mapping)).toBe("unknown");
+        });
+    });
+
+    describe("extractSelectedDatabases", () => {
+        it("should extract only selected databases from TAR archive", async () => {
+            // Create a TAR with 3 databases
+            const file1 = path.join(tempDir, "db1.sql");
+            const file2 = path.join(tempDir, "db2.sql");
+            const file3 = path.join(tempDir, "db3.sql");
+            await fs.writeFile(file1, "-- DB1 dump\nCREATE TABLE t1;");
+            await fs.writeFile(file2, "-- DB2 dump\nCREATE TABLE t2;");
+            await fs.writeFile(file3, "-- DB3 dump\nCREATE TABLE t3;");
+
+            const files: TarFileEntry[] = [
+                { name: "db1.sql", path: file1, dbName: "database1", format: "sql" },
+                { name: "db2.sql", path: file2, dbName: "database2", format: "sql" },
+                { name: "db3.sql", path: file3, dbName: "database3", format: "sql" },
+            ];
+
+            const tarPath = path.join(tempDir, "multi.tar");
+            await createMultiDbTar(files, tarPath, { sourceType: "mysql" });
+
+            // Extract only database2
+            const extractDir = path.join(tempDir, "selective");
+            const result = await extractSelectedDatabases(tarPath, extractDir, ["database2"]);
+
+            // Manifest should still contain all 3 databases
+            expect(result.manifest.databases).toHaveLength(3);
+            // But only 1 file should be extracted
+            expect(result.files).toHaveLength(1);
+            expect(result.files[0]).toContain("db2.sql");
+
+            // Verify only the selected file exists on disk
+            const dirContents = await fs.readdir(extractDir);
+            expect(dirContents).toEqual(["db2.sql"]);
+
+            // Verify content is correct
+            const content = await fs.readFile(result.files[0], "utf-8");
+            expect(content).toBe("-- DB2 dump\nCREATE TABLE t2;");
+        });
+
+        it("should extract all databases when selectedNames is empty", async () => {
+            const file1 = path.join(tempDir, "a.sql");
+            const file2 = path.join(tempDir, "b.sql");
+            await fs.writeFile(file1, "A");
+            await fs.writeFile(file2, "B");
+
+            const files: TarFileEntry[] = [
+                { name: "a.sql", path: file1, dbName: "alpha", format: "sql" },
+                { name: "b.sql", path: file2, dbName: "beta", format: "sql" },
+            ];
+
+            const tarPath = path.join(tempDir, "all.tar");
+            await createMultiDbTar(files, tarPath, { sourceType: "mysql" });
+
+            const extractDir = path.join(tempDir, "all-extract");
+            const result = await extractSelectedDatabases(tarPath, extractDir, []);
+
+            expect(result.files).toHaveLength(2);
+        });
+
+        it("should extract multiple selected databases", async () => {
+            const file1 = path.join(tempDir, "d1.sql");
+            const file2 = path.join(tempDir, "d2.sql");
+            const file3 = path.join(tempDir, "d3.sql");
+            await fs.writeFile(file1, "1");
+            await fs.writeFile(file2, "2");
+            await fs.writeFile(file3, "3");
+
+            const files: TarFileEntry[] = [
+                { name: "d1.sql", path: file1, dbName: "one", format: "sql" },
+                { name: "d2.sql", path: file2, dbName: "two", format: "sql" },
+                { name: "d3.sql", path: file3, dbName: "three", format: "sql" },
+            ];
+
+            const tarPath = path.join(tempDir, "pick2.tar");
+            await createMultiDbTar(files, tarPath, { sourceType: "postgresql" });
+
+            const extractDir = path.join(tempDir, "pick2-extract");
+            const result = await extractSelectedDatabases(tarPath, extractDir, ["one", "three"]);
+
+            expect(result.files).toHaveLength(2);
+            const basenames = result.files.map(f => path.basename(f)).sort();
+            expect(basenames).toEqual(["d1.sql", "d3.sql"]);
+        });
+
+        it("should throw error if TAR has no manifest", async () => {
+            const { pack } = await import("tar-stream");
+            const { createWriteStream } = await import("fs");
+            const { pipeline } = await import("stream/promises");
+
+            const tarPath = path.join(tempDir, "no-manifest-sel.tar");
+            const tarPack = pack();
+            const outputStream = createWriteStream(tarPath);
+            const pipePromise = pipeline(tarPack, outputStream);
+
+            const entry = tarPack.entry({ name: "random.txt", size: 4 });
+            entry.end("test");
+            tarPack.finalize();
+            await pipePromise;
+
+            const extractDir = path.join(tempDir, "sel-fail");
+            await expect(
+                extractSelectedDatabases(tarPath, extractDir, ["anything"])
+            ).rejects.toThrow("TAR archive does not contain a manifest.json");
         });
     });
 });

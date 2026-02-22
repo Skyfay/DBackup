@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge"
 import { Check, Copy, Webhook } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 
 interface ApiTriggerDialogProps {
     jobId: string
@@ -178,9 +179,12 @@ function CopyBlock({ code, language, label }: { code: string; language: string; 
                     </Button>
                 </div>
             )}
-            <pre className="p-4 text-[13px] leading-relaxed overflow-x-auto text-zinc-200 font-mono">
-                <code>{highlightCode(code, language)}</code>
-            </pre>
+            <ScrollArea className="w-full" type="auto">
+                <pre className="p-4 text-[13px] leading-relaxed text-zinc-200 font-mono">
+                    <code>{highlightCode(code, language)}</code>
+                </pre>
+                <ScrollBar orientation="horizontal" />
+            </ScrollArea>
             {!label && (
                 <Button
                     variant="ghost"
@@ -548,7 +552,7 @@ trigger_backup:
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
+            <DialogContent className="sm:max-w-4xl max-h-[85vh] grid-rows-[auto_1fr] overflow-hidden">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <Webhook className="h-5 w-5" />
@@ -559,6 +563,8 @@ trigger_backup:
                     </DialogDescription>
                 </DialogHeader>
 
+                <ScrollArea className="overflow-hidden">
+                <div className="pr-4">
                 <Tabs defaultValue="overview" className="mt-1">
                     <TabsList className="w-full flex-wrap h-auto gap-1 p-1">
                         <TabsTrigger value="overview">Overview</TabsTrigger>
@@ -704,6 +710,8 @@ trigger_backup:
                         <CopyBlock code={ansiblePlaybook} language="yaml" label="backup-playbook.yml" />
                     </TabsContent>
                 </Tabs>
+                </div>
+                </ScrollArea>
             </DialogContent>
         </Dialog>
     )

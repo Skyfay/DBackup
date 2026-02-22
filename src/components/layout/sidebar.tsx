@@ -26,6 +26,7 @@ import {
     AvatarImage,
 } from "@/components/ui/avatar"
 import { Skeleton } from "@/components/ui/skeleton"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { useTheme } from "next-themes"
 import { PERMISSIONS } from "@/lib/permissions"
 
@@ -114,7 +115,7 @@ export function Sidebar({ permissions = [], isSuperAdmin = false, updateAvailabl
     };
 
     return (
-        <div className="w-64 border-r bg-background h-screen flex flex-col hidden md:flex sticky top-0">
+        <div className="w-64 border-r bg-background h-screen flex flex-col hidden md:flex sticky top-0 overflow-hidden">
             <div className="h-16 flex items-center px-6 border-b gap-3">
                 <Image
                     src="/logo.svg"
@@ -125,7 +126,8 @@ export function Sidebar({ permissions = [], isSuperAdmin = false, updateAvailabl
                 />
                 <h1 className="text-xl font-bold tracking-tight">DBackup</h1>
             </div>
-            <nav className="flex-1 p-4 space-y-6 overflow-y-auto">
+            <ScrollArea className="flex-1 overflow-hidden">
+                <nav className="p-4 space-y-6">
                 {sidebarGroups.map((group) => {
                     // Filter visible items for this group
                     const visibleItems = group.items.filter((item) => {
@@ -162,7 +164,8 @@ export function Sidebar({ permissions = [], isSuperAdmin = false, updateAvailabl
                         </div>
                     );
                 })}
-            </nav>
+                </nav>
+            </ScrollArea>
             {currentVersion && (
                 <div className="px-6 pb-2 text-xs text-muted-foreground/50 select-none flex items-center justify-center gap-2">
                     <span>v{currentVersion}</span>

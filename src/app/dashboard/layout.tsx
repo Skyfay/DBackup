@@ -1,5 +1,6 @@
 import { Sidebar } from "@/components/layout/sidebar"
 import { Header } from "@/components/layout/header"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
 import { redirect } from "next/navigation"
@@ -47,7 +48,7 @@ export default async function DashboardLayout({
     const showQuickSetup = forceShowQuickSetup || sourceCount === 0;
 
     return (
-        <div className="flex min-h-screen">
+        <div className="flex h-screen overflow-hidden">
             <Sidebar
                 permissions={permissions}
                 isSuperAdmin={isSuperAdmin}
@@ -56,13 +57,15 @@ export default async function DashboardLayout({
                 latestVersion={updateInfo.latestVersion}
                 showQuickSetup={showQuickSetup}
             />
-            <div className="flex-1 flex flex-col min-h-screen">
+            <div className="flex-1 flex flex-col h-screen overflow-hidden">
                 <Header />
-                <main className="flex-1 overflow-y-auto bg-muted/10 p-6">
-                    <div className="mx-auto space-y-6">
-                        {children}
-                    </div>
-                </main>
+                <ScrollArea className="flex-1 overflow-hidden">
+                    <main className="bg-muted/10 p-6">
+                        <div className="mx-auto space-y-6">
+                            {children}
+                        </div>
+                    </main>
+                </ScrollArea>
             </div>
         </div>
     )

@@ -59,6 +59,8 @@ export interface NotificationPayload {
   color?: string;
   /** Whether the event represents a success or failure */
   success: boolean;
+  /** Optional badge label override (e.g. "Alert") — replaces auto-detected status badge in emails */
+  badge?: string;
 }
 
 /** Data passed to template functions per event type */

@@ -19,6 +19,8 @@ interface SystemNotificationEmailProps {
   fields?: Array<{ name: string; value: string; inline?: boolean }>;
   color?: string;
   success: boolean;
+  /** Override the auto-detected badge label (e.g. "Alert") */
+  badge?: string;
 }
 
 /* ── Design tokens (Shadcn zinc palette) ─────────────────────── */
@@ -46,8 +48,21 @@ const tokens = {
 };
 
 /** Map hex color to a status label + icon + background set */
-function getStatusStyle(color: string | undefined, success: boolean) {
+function getStatusStyle(color: string | undefined, success: boolean, badge?: string) {
   if (!success) {
+    // Allow badge override for non-failure events like alerts/warnings
+    if (badge) {
+      switch (color) {
+        case "#f59e0b": // amber
+          return { label: badge, icon: "⚠", accent: tokens.amber, bg: "#fffbeb", border: "#fde68a" };
+        case "#3b82f6": // blue
+          return { label: badge, icon: "⚠", accent: tokens.blue, bg: "#eff6ff", border: "#bfdbfe" };
+        case "#ef4444": // red
+          return { label: badge, icon: "⚠", accent: tokens.destructive, bg: tokens.destructiveBg, border: tokens.destructiveBorder };
+        default:
+          return { label: badge, icon: "⚠", accent: tokens.amber, bg: "#fffbeb", border: "#fde68a" };
+      }
+    }
     return {
       label: "Failed",
       icon: "✕",
@@ -81,8 +96,9 @@ export const SystemNotificationEmail: React.FC<SystemNotificationEmailProps> = (
   fields,
   color,
   success,
+  badge,
 }) => {
-  const status = getStatusStyle(color, success);
+  const status = getStatusStyle(color, success, badge);
 
   return (
     <div

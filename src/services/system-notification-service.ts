@@ -127,6 +127,7 @@ async function sendThroughChannel(
     title: payload.title,
     fields: payload.fields,
     color: payload.color,
+    badge: payload.badge,
   });
 
   log.info("System notification sent", {

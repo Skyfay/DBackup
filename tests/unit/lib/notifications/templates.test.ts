@@ -328,6 +328,7 @@ describe("Notification Templates", () => {
         expect(payload.message).toContain("increased");
         expect(payload.message).toContain("50.0%");
         expect(payload.success).toBe(false);
+        expect(payload.badge).toBe("Alert");
         expect(payload.color).toBe("#f59e0b"); // amber
         expect(payload.fields).toEqual(
           expect.arrayContaining([
@@ -379,6 +380,7 @@ describe("Notification Templates", () => {
         expect(payload.message).toContain("NAS Storage");
         expect(payload.message).toContain("90.0%");
         expect(payload.success).toBe(false);
+        expect(payload.badge).toBe("Alert");
         expect(payload.color).toBe("#ef4444"); // red
         expect(payload.fields).toEqual(
           expect.arrayContaining([
@@ -410,6 +412,7 @@ describe("Notification Templates", () => {
         expect(payload.message).toContain("50 hours");
         expect(payload.message).toContain("48h");
         expect(payload.success).toBe(false);
+        expect(payload.badge).toBe("Alert");
         expect(payload.color).toBe("#3b82f6"); // blue
         expect(payload.fields).toEqual(
           expect.arrayContaining([

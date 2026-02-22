@@ -204,6 +204,8 @@ export interface NotificationContext {
     fields?: Array<{ name: string; value: string; inline?: boolean }>;
     /** Hex colour for embeds / status indicators */
     color?: string;
+    /** Optional badge label override (e.g. "Alert") */
+    badge?: string;
 }
 
 export interface NotificationAdapter extends BaseAdapter {

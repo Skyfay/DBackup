@@ -65,6 +65,7 @@ export const EmailAdapter: NotificationAdapter = {
                     fields={context?.fields}
                     color={context?.color}
                     success={context?.success ?? true}
+                    badge={context?.badge}
                 />
             );
 

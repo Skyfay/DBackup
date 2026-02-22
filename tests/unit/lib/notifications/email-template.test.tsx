@@ -142,4 +142,48 @@ describe("SystemNotificationEmail Template", () => {
     // No field labels should appear (layout tables are fine)
     expect(html).not.toContain("text-transform:uppercase");
   });
+
+  it("should render 'Alert' badge when badge prop is provided with success=false", () => {
+    const html = renderToStaticMarkup(
+      <SystemNotificationEmail
+        title="Storage Limit Warning"
+        message="Storage at 90%"
+        success={false}
+        color="#ef4444"
+        badge="Alert"
+      />
+    );
+
+    expect(html).toContain("Alert");
+    expect(html).not.toContain("Failed");
+  });
+
+  it("should render 'Failed' badge when success=false and no badge override", () => {
+    const html = renderToStaticMarkup(
+      <SystemNotificationEmail
+        title="Backup Failed"
+        message="Something broke"
+        success={false}
+      />
+    );
+
+    expect(html).toContain("Failed");
+    expect(html).not.toContain("Alert");
+  });
+
+  it("should use amber styling for Alert badge with amber color", () => {
+    const html = renderToStaticMarkup(
+      <SystemNotificationEmail
+        title="Storage Usage Spike"
+        message="Spike detected"
+        success={false}
+        color="#f59e0b"
+        badge="Alert"
+      />
+    );
+
+    expect(html).toContain("Alert");
+    expect(html).toContain("#f59e0b"); // amber accent
+    expect(html).not.toContain("Failed");
+  });
 });

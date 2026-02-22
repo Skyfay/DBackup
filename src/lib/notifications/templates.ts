@@ -251,6 +251,7 @@ function storageUsageSpikeTemplate(
     ],
     color: "#f59e0b", // amber
     success: false,
+    badge: "Alert",
   };
 }
 
@@ -277,6 +278,7 @@ function storageLimitWarningTemplate(
     ],
     color: "#ef4444", // red
     success: false,
+    badge: "Alert",
   };
 }
 
@@ -305,6 +307,7 @@ function storageMissingBackupTemplate(
     ],
     color: "#3b82f6", // blue
     success: false,
+    badge: "Alert",
   };
 }
 

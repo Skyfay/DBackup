@@ -106,7 +106,7 @@ function CommandList({
       data-slot="command-list"
       onWheel={handleWheel}
       className={cn(
-        "max-h-75 scroll-py-1 overflow-x-hidden overflow-y-auto",
+        "max-h-75 scroll-py-1 overflow-x-hidden overflow-y-auto scrollbar-thin",
         className
       )}
       {...props}

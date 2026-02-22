@@ -10,7 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { Lock, History, Check, ChevronsUpDown } from "lucide-react";
+import { Lock, History, ChevronsUpDown } from "lucide-react";
+import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -177,9 +178,12 @@ export function JobForm({ sources, destinations, notifications, encryptionProfil
                                                     aria-expanded={sourceOpen}
                                                     className={cn("w-full justify-between", !field.value && "text-muted-foreground")}
                                                 >
-                                                    {field.value
-                                                        ? sources.find((s) => s.id === field.value)?.name
-                                                        : "Select Source"}
+                                                    {field.value ? (
+                                                        <span className="flex items-center gap-2">
+                                                            <AdapterIcon adapterId={sources.find((s) => s.id === field.value)?.adapterId ?? ""} className="h-4 w-4" />
+                                                            {sources.find((s) => s.id === field.value)?.name}
+                                                        </span>
+                                                    ) : "Select Source"}
                                                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                                                 </Button>
                                             </FormControl>
@@ -198,13 +202,9 @@ export function JobForm({ sources, destinations, notifications, encryptionProfil
                                                                     form.setValue("sourceId", s.id);
                                                                     setSourceOpen(false);
                                                                 }}
+                                                                className={cn(field.value === s.id && "bg-accent")}
                                                             >
-                                                                <Check
-                                                                    className={cn(
-                                                                        "mr-2 h-4 w-4",
-                                                                        field.value === s.id ? "opacity-100" : "opacity-0"
-                                                                    )}
-                                                                />
+                                                                <AdapterIcon adapterId={s.adapterId} className="h-4 w-4" />
                                                                 {s.name}
                                                             </CommandItem>
                                                         ))}
@@ -229,9 +229,12 @@ export function JobForm({ sources, destinations, notifications, encryptionProfil
                                                     aria-expanded={destOpen}
                                                     className={cn("w-full justify-between", !field.value && "text-muted-foreground")}
                                                 >
-                                                    {field.value
-                                                        ? destinations.find((d) => d.id === field.value)?.name
-                                                        : "Select Destination"}
+                                                    {field.value ? (
+                                                        <span className="flex items-center gap-2">
+                                                            <AdapterIcon adapterId={destinations.find((d) => d.id === field.value)?.adapterId ?? ""} className="h-4 w-4" />
+                                                            {destinations.find((d) => d.id === field.value)?.name}
+                                                        </span>
+                                                    ) : "Select Destination"}
                                                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                                                 </Button>
                                             </FormControl>
@@ -250,13 +253,9 @@ export function JobForm({ sources, destinations, notifications, encryptionProfil
                                                                     form.setValue("destinationId", d.id);
                                                                     setDestOpen(false);
                                                                 }}
+                                                                className={cn(field.value === d.id && "bg-accent")}
                                                             >
-                                                                <Check
-                                                                    className={cn(
-                                                                        "mr-2 h-4 w-4",
-                                                                        field.value === d.id ? "opacity-100" : "opacity-0"
-                                                                    )}
-                                                                />
+                                                                <AdapterIcon adapterId={d.adapterId} className="h-4 w-4" />
                                                                 {d.name}
                                                             </CommandItem>
                                                         ))}
@@ -518,13 +517,9 @@ export function JobForm({ sources, destinations, notifications, encryptionProfil
                                                                 // Let's allow toggle and keep OPEN ? No, standard is close.
                                                                 setNotifyOpen(false);
                                                             }}
+                                                            className={cn((field.value || []).includes(n.id) && "bg-accent")}
                                                         >
-                                                            <Check
-                                                                className={cn(
-                                                                    "mr-2 h-4 w-4",
-                                                                    (field.value || []).includes(n.id) ? "opacity-100" : "opacity-0"
-                                                                )}
-                                                            />
+                                                            <AdapterIcon adapterId={n.adapterId} className="h-4 w-4" />
                                                             {n.name}
                                                         </CommandItem>
                                                     ))}

@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { Check, ChevronsUpDown } from "lucide-react";
+import { ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
     Command,
@@ -248,9 +249,12 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
                                 aria-expanded={open}
                                 className="w-full justify-between"
                             >
-                                {selectedDestination
-                                    ? destinations.find((dest) => dest.id === selectedDestination)?.name
-                                    : "Select Destination..."}
+                                {selectedDestination ? (
+                                    <span className="flex items-center gap-2">
+                                        <AdapterIcon adapterId={destinations.find((dest) => dest.id === selectedDestination)?.adapterId ?? ""} className="h-4 w-4" />
+                                        {destinations.find((dest) => dest.id === selectedDestination)?.name}
+                                    </span>
+                                ) : "Select Destination..."}
                                 <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                             </Button>
                         </PopoverTrigger>
@@ -268,13 +272,9 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
                                                     setSelectedDestination(destination.id === selectedDestination ? "" : destination.id);
                                                     setOpen(false);
                                                 }}
+                                                className={cn(selectedDestination === destination.id && "bg-accent")}
                                             >
-                                                <Check
-                                                    className={cn(
-                                                        "mr-2 h-4 w-4",
-                                                        selectedDestination === destination.id ? "opacity-100" : "opacity-0"
-                                                    )}
-                                                />
+                                                <AdapterIcon adapterId={destination.adapterId} className="h-4 w-4" />
                                                 {destination.name}
                                             </CommandItem>
                                         ))}

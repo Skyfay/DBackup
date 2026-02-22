@@ -19,6 +19,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { AdapterManagerProps, AdapterConfig } from "./types";
 import { AdapterForm } from "./adapter-form";
 import { AdapterPicker } from "./adapter-picker";
+import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { HealthStatusBadge } from "@/components/ui/health-status-badge";
 import { StorageHistoryModal } from "@/components/dashboard/widgets/storage-history-modal";
 import { PERMISSIONS } from "@/lib/permissions";
@@ -188,7 +189,7 @@ export function AdapterManager({ type, title, description, canManage = true, per
                 const def = ADAPTER_DEFINITIONS.find(d => d.id === row.getValue("adapterId"));
                 return (
                     <div className="flex items-center gap-2">
-                         {/* Optional Icon based on type/id could go here */}
+                         <AdapterIcon adapterId={row.getValue("adapterId")} className="h-4 w-4" />
                          <Badge variant="outline">{def?.name || row.getValue("adapterId")}</Badge>
                     </div>
                 );

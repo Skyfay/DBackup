@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
-import { Database, RefreshCw, HardDrive, TableIcon, AlertTriangle, Server, ChevronsUpDown, Check } from "lucide-react";
+import { Database, RefreshCw, HardDrive, TableIcon, AlertTriangle, Server, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { formatBytes } from "@/lib/utils";
@@ -169,14 +169,9 @@ export function DatabaseExplorer({ sources }: DatabaseExplorerProps) {
                                                     handleSourceChange(source.id === selectedSource ? "" : source.id);
                                                     setComboboxOpen(false);
                                                 }}
+                                                className={cn(selectedSource === source.id && "bg-accent")}
                                             >
-                                                <Check
-                                                    className={cn(
-                                                        "mr-2 h-4 w-4",
-                                                        selectedSource === source.id ? "opacity-100" : "opacity-0"
-                                                    )}
-                                                />
-                                                <AdapterIcon adapterId={source.adapterId} className="h-4 w-4 mr-2" />
+                                                <AdapterIcon adapterId={source.adapterId} className="h-4 w-4" />
                                                 {source.name}
                                                 <span className="text-xs text-muted-foreground ml-1">({source.adapterId})</span>
                                             </CommandItem>

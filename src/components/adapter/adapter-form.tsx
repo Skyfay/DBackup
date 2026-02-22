@@ -6,8 +6,9 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { ChevronsUpDown, Check, AlertCircle } from "lucide-react";
+import { ChevronsUpDown, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -212,9 +213,12 @@ export function AdapterForm({ type, adapters, onSuccess, initialData, onBack }: 
                                                     disabled={!!initialData}
                                                 >
                                                     {field.value
-                                                        ? adapters.find(
-                                                            (adapter) => adapter.id === field.value
-                                                        )?.name
+                                                        ? (
+                                                            <span className="flex items-center gap-2">
+                                                                <AdapterIcon adapterId={field.value} className="h-4 w-4" />
+                                                                {adapters.find((adapter) => adapter.id === field.value)?.name}
+                                                            </span>
+                                                        )
                                                         : "Select a type"}
                                                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                                                 </Button>
@@ -235,15 +239,9 @@ export function AdapterForm({ type, adapters, onSuccess, initialData, onBack }: 
                                                                         form.setValue("adapterId", adapter.id)
                                                                         setSelectedAdapterId(adapter.id);
                                                                     }}
+                                                                    className={cn(adapter.id === field.value && "bg-accent")}
                                                                 >
-                                                                    <Check
-                                                                        className={cn(
-                                                                            "mr-2 h-4 w-4",
-                                                                            adapter.id === field.value
-                                                                                ? "opacity-100"
-                                                                                : "opacity-0"
-                                                                        )}
-                                                                    />
+                                                                    <AdapterIcon adapterId={adapter.id} className="h-4 w-4" />
                                                                     {adapter.name}
                                                                 </CommandItem>
                                                             ))}

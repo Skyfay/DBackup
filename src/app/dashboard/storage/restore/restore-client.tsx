@@ -12,13 +12,14 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Database, ArrowRight, ArrowLeft, FileIcon, AlertTriangle, ShieldAlert, Loader2, HardDrive, ChevronDown, ChevronUp, Server, ShieldCheck } from "lucide-react";
+import { ArrowRight, ArrowLeft, FileIcon, AlertTriangle, ShieldAlert, Loader2, HardDrive, ChevronDown, ChevronUp, Server, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { FileInfo } from "@/app/dashboard/storage/columns";
 import { useRouter, useSearchParams } from "next/navigation";
 import { formatBytes, compareVersions } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { DateDisplay } from "@/components/utils/date-display";
+import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { restoreFromStorageAction } from "@/app/actions/config-management";
 import { RestoreOptions } from "@/lib/types/config-backup";
 import { useUserPreferences } from "@/hooks/use-user-preferences";
@@ -518,7 +519,7 @@ export function RestoreClient() {
                                                 .map(format => (
                                                     <SelectItem key={format.id} value={format.id}>
                                                         <span className="flex items-center gap-2">
-                                                            <Database className="h-4 w-4 text-muted-foreground" />
+                                                            <AdapterIcon adapterId={format.adapterId} className="h-4 w-4" />
                                                             {format.name}
                                                             <span className="text-xs text-muted-foreground">({format.adapterId})</span>
                                                         </span>

@@ -307,5 +307,137 @@ describe("Notification Templates", () => {
         expect(payload.success).toBe(true);
       });
     });
+
+    // ── Storage Alert Templates ──────────────────────────────────
+
+    describe("STORAGE_USAGE_SPIKE", () => {
+      it("should render spike payload for increase", () => {
+        const payload = renderTemplate({
+          eventType: NOTIFICATION_EVENTS.STORAGE_USAGE_SPIKE,
+          data: {
+            storageName: "S3 Prod",
+            previousSize: 1073741824, // 1 GB
+            currentSize: 1610612736,  // 1.5 GB
+            changePercent: 50,
+            timestamp: "2026-02-22T10:00:00Z",
+          },
+        });
+
+        expect(payload.title).toBe("Storage Usage Spike");
+        expect(payload.message).toContain("S3 Prod");
+        expect(payload.message).toContain("increased");
+        expect(payload.message).toContain("50.0%");
+        expect(payload.success).toBe(false);
+        expect(payload.color).toBe("#f59e0b"); // amber
+        expect(payload.fields).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ name: "Storage", value: "S3 Prod" }),
+            expect.objectContaining({ name: "Change", value: "+50.0%" }),
+            expect.objectContaining({ name: "Previous Size" }),
+            expect.objectContaining({ name: "Current Size" }),
+            expect.objectContaining({ name: "Time" }),
+          ])
+        );
+      });
+
+      it("should render spike payload for decrease", () => {
+        const payload = renderTemplate({
+          eventType: NOTIFICATION_EVENTS.STORAGE_USAGE_SPIKE,
+          data: {
+            storageName: "Local Backup",
+            previousSize: 2147483648, // 2 GB
+            currentSize: 1073741824,  // 1 GB
+            changePercent: -50,
+            timestamp: "2026-02-22T10:00:00Z",
+          },
+        });
+
+        expect(payload.message).toContain("decreased");
+        expect(payload.message).toContain("50.0%");
+        expect(payload.fields).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ name: "Change", value: "-50.0%" }),
+          ])
+        );
+      });
+    });
+
+    describe("STORAGE_LIMIT_WARNING", () => {
+      it("should render limit warning payload", () => {
+        const payload = renderTemplate({
+          eventType: NOTIFICATION_EVENTS.STORAGE_LIMIT_WARNING,
+          data: {
+            storageName: "NAS Storage",
+            currentSize: 9663676416,  // ~9 GB
+            limitSize: 10737418240,   // 10 GB
+            usagePercent: 90,
+            timestamp: "2026-02-22T10:00:00Z",
+          },
+        });
+
+        expect(payload.title).toBe("Storage Limit Warning");
+        expect(payload.message).toContain("NAS Storage");
+        expect(payload.message).toContain("90.0%");
+        expect(payload.success).toBe(false);
+        expect(payload.color).toBe("#ef4444"); // red
+        expect(payload.fields).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ name: "Storage", value: "NAS Storage" }),
+            expect.objectContaining({ name: "Usage", value: "90.0%" }),
+            expect.objectContaining({ name: "Current Size" }),
+            expect.objectContaining({ name: "Limit" }),
+            expect.objectContaining({ name: "Time" }),
+          ])
+        );
+      });
+    });
+
+    describe("STORAGE_MISSING_BACKUP", () => {
+      it("should render missing backup payload with last backup date", () => {
+        const payload = renderTemplate({
+          eventType: NOTIFICATION_EVENTS.STORAGE_MISSING_BACKUP,
+          data: {
+            storageName: "S3 Archive",
+            lastBackupAt: "2026-02-20T08:00:00Z",
+            thresholdHours: 48,
+            hoursSinceLastBackup: 50,
+            timestamp: "2026-02-22T10:00:00Z",
+          },
+        });
+
+        expect(payload.title).toBe("Missing Backup Alert");
+        expect(payload.message).toContain("S3 Archive");
+        expect(payload.message).toContain("50 hours");
+        expect(payload.message).toContain("48h");
+        expect(payload.success).toBe(false);
+        expect(payload.color).toBe("#3b82f6"); // blue
+        expect(payload.fields).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ name: "Storage", value: "S3 Archive" }),
+            expect.objectContaining({ name: "Hours Since Last Backup", value: "50h" }),
+            expect.objectContaining({ name: "Threshold", value: "48h" }),
+            expect.objectContaining({ name: "Last Backup" }),
+            expect.objectContaining({ name: "Time" }),
+          ])
+        );
+      });
+
+      it("should omit last backup field when not provided", () => {
+        const payload = renderTemplate({
+          eventType: NOTIFICATION_EVENTS.STORAGE_MISSING_BACKUP,
+          data: {
+            storageName: "Local",
+            thresholdHours: 24,
+            hoursSinceLastBackup: 30,
+            timestamp: "2026-02-22T10:00:00Z",
+          },
+        });
+
+        const fieldNames = payload.fields?.map((f) => f.name) ?? [];
+        expect(fieldNames).not.toContain("Last Backup");
+        expect(fieldNames).toContain("Storage");
+        expect(fieldNames).toContain("Hours Since Last Backup");
+      });
+    });
   });
 });

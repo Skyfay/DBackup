@@ -8,8 +8,8 @@ import {
 
 describe("Notification Types & Constants", () => {
   describe("NOTIFICATION_EVENTS", () => {
-    it("should define all 8 event types", () => {
-      expect(Object.keys(NOTIFICATION_EVENTS)).toHaveLength(8);
+    it("should define all 11 event types", () => {
+      expect(Object.keys(NOTIFICATION_EVENTS)).toHaveLength(11);
     });
 
     it("should have unique event string values", () => {
@@ -27,15 +27,19 @@ describe("Notification Types & Constants", () => {
       expect(NOTIFICATION_EVENTS.RESTORE_FAILURE).toBe("restore_failure");
       expect(NOTIFICATION_EVENTS.CONFIG_BACKUP).toBe("config_backup");
       expect(NOTIFICATION_EVENTS.SYSTEM_ERROR).toBe("system_error");
+      expect(NOTIFICATION_EVENTS.STORAGE_USAGE_SPIKE).toBe("storage_usage_spike");
+      expect(NOTIFICATION_EVENTS.STORAGE_LIMIT_WARNING).toBe("storage_limit_warning");
+      expect(NOTIFICATION_EVENTS.STORAGE_MISSING_BACKUP).toBe("storage_missing_backup");
     });
   });
 });
 
 describe("Notification Event Registry", () => {
   describe("EVENT_DEFINITIONS", () => {
-    it("should define 6 system events (no backup events)", () => {
+    it("should define 9 system events (no backup events)", () => {
       // Backup events are excluded from system notifications (per-job only)
-      expect(EVENT_DEFINITIONS.length).toBe(6);
+      // 6 original + 3 storage events = 9
+      expect(EVENT_DEFINITIONS.length).toBe(9);
     });
 
     it("should have unique event IDs", () => {
@@ -44,9 +48,21 @@ describe("Notification Event Registry", () => {
     });
 
     it("should assign valid categories to all events", () => {
-      const validCategories = ["auth", "backup", "restore", "system"];
+      const validCategories = ["auth", "backup", "restore", "system", "storage"];
       for (const event of EVENT_DEFINITIONS) {
         expect(validCategories).toContain(event.category);
+      }
+    });
+
+    it("should have 3 storage events", () => {
+      const storageEvents = EVENT_DEFINITIONS.filter((e) => e.category === "storage");
+      expect(storageEvents).toHaveLength(3);
+    });
+
+    it("should have all storage events enabled by default", () => {
+      const storageEvents = EVENT_DEFINITIONS.filter((e) => e.category === "storage");
+      for (const event of storageEvents) {
+        expect(event.defaultEnabled).toBe(true);
       }
     });
 
@@ -102,6 +118,8 @@ describe("Notification Event Registry", () => {
 
       expect(grouped.restore).toBeDefined();
       expect(grouped.system).toBeDefined();
+      expect(grouped.storage).toBeDefined();
+      expect(grouped.storage.length).toBe(3);
     });
 
     it("should include all events across all categories", () => {
@@ -115,6 +133,14 @@ describe("Notification Event Registry", () => {
       const authIds = grouped.auth.map((e) => e.id);
       expect(authIds).toContain(NOTIFICATION_EVENTS.USER_LOGIN);
       expect(authIds).toContain(NOTIFICATION_EVENTS.USER_CREATED);
+    });
+
+    it("should have storage events in storage category", () => {
+      const grouped = getEventsByCategory();
+      const storageIds = grouped.storage.map((e) => e.id);
+      expect(storageIds).toContain(NOTIFICATION_EVENTS.STORAGE_USAGE_SPIKE);
+      expect(storageIds).toContain(NOTIFICATION_EVENTS.STORAGE_LIMIT_WARNING);
+      expect(storageIds).toContain(NOTIFICATION_EVENTS.STORAGE_MISSING_BACKUP);
     });
   });
 });

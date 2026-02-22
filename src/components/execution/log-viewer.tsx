@@ -19,6 +19,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { DateDisplay } from "@/components/utils/date-display";
 
 interface LogViewerProps {
@@ -139,12 +140,13 @@ export function LogViewer({ logs, className, autoScroll = true, status }: LogVie
   };
 
   return (
-    <div className={cn("rounded-md border border-border bg-popover text-sm font-mono shadow-sm relative flex flex-col", className)}>
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="flex-1 w-full p-4 overflow-y-auto scrollbar-thin scrollbar-thumb-muted scrollbar-track-transparent"
+    <div className={cn("rounded-md border border-border bg-popover text-sm font-mono shadow-sm relative flex flex-col overflow-hidden", className)}>
+      <ScrollArea
+        viewportRef={scrollRef}
+        className="flex-1 h-0"
+        onScrollCapture={handleScroll}
       >
+        <div className="p-4">
         <Accordion
             type="multiple"
             value={activeStages}
@@ -199,7 +201,8 @@ export function LogViewer({ logs, className, autoScroll = true, status }: LogVie
                 );
             })}
         </Accordion>
-      </div>
+        </div>
+      </ScrollArea>
 
       {!shouldAutoScroll && (
           <button

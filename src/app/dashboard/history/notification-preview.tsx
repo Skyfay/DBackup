@@ -152,7 +152,7 @@ function SlackPreview({ entry }: NotificationPreviewProps) {
 function EmailPreview({ entry }: NotificationPreviewProps) {
   if (entry.renderedHtml) {
     return (
-      <div className="bg-white rounded-lg overflow-hidden max-w-xl border border-border">
+      <div className="bg-card rounded-lg overflow-hidden max-w-xl border border-border">
         <div className="bg-muted/50 border-b border-border px-4 py-2 flex items-center gap-2">
           <div className="flex gap-1.5">
             <div className="w-3 h-3 rounded-full bg-red-400" />
@@ -165,7 +165,7 @@ function EmailPreview({ entry }: NotificationPreviewProps) {
         </div>
         <iframe
           srcDoc={entry.renderedHtml}
-          className="w-full border-0"
+          className="w-full border-0 bg-white"
           style={{ minHeight: 400 }}
           sandbox="allow-same-origin"
           title="Email Preview"

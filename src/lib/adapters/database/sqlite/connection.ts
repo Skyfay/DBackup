@@ -75,3 +75,65 @@ export const getDatabases: DatabaseAdapter["getDatabases"] = async (config) => {
      const name = path.split(/[\\/]/).pop() || "database.sqlite";
      return [name];
 };
+
+export const getDatabasesWithStats: DatabaseAdapter["getDatabasesWithStats"] = async (config) => {
+    const dbPath = config.path as string;
+    const name = dbPath.split(/[\\/]/).pop() || "database.sqlite";
+    const mode = config.mode || "local";
+    const binaryPath = (config.sqliteBinaryPath as string) || "sqlite3";
+
+    let sizeInBytes: number | undefined;
+    let tableCount: number | undefined;
+
+    try {
+        if (mode === "local") {
+            // Get file size
+            const stat = await fs.stat(dbPath);
+            sizeInBytes = stat.size;
+
+            // Get table count
+            try {
+                const { stdout } = await execAsync(
+                    `${binaryPath} "${dbPath}" "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';"`
+                );
+                const count = parseInt(stdout.trim(), 10);
+                if (!isNaN(count)) tableCount = count;
+            } catch {
+                // Table count is optional, ignore errors
+            }
+        } else if (mode === "ssh") {
+            const client = new SshClient();
+            try {
+                await client.connect(config);
+
+                // Get file size via stat
+                const sizeResult = await client.exec(`stat -c %s "${dbPath}" 2>/dev/null || stat -f %z "${dbPath}" 2>/dev/null`);
+                if (sizeResult.code === 0) {
+                    const size = parseInt(sizeResult.stdout.trim(), 10);
+                    if (!isNaN(size)) sizeInBytes = size;
+                }
+
+                // Get table count
+                try {
+                    const tableResult = await client.exec(
+                        `${binaryPath} "${dbPath}" "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';"`
+                    );
+                    if (tableResult.code === 0) {
+                        const count = parseInt(tableResult.stdout.trim(), 10);
+                        if (!isNaN(count)) tableCount = count;
+                    }
+                } catch {
+                    // Table count is optional
+                }
+
+                client.end();
+            } catch {
+                client.end();
+            }
+        }
+    } catch {
+        // If stats fail, return name only
+    }
+
+    return [{ name, sizeInBytes, tableCount }];
+};

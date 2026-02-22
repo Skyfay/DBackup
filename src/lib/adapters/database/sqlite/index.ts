@@ -2,7 +2,7 @@ import { DatabaseAdapter } from "@/lib/core/interfaces";
 import { SQLiteSchema } from "@/lib/adapters/definitions";
 import { dump } from "./dump";
 import { restore, prepareRestore } from "./restore";
-import { test, getDatabases } from "./connection";
+import { test, getDatabases, getDatabasesWithStats } from "./connection";
 
 export const SQLiteAdapter: DatabaseAdapter = {
     id: "sqlite",
@@ -13,5 +13,6 @@ export const SQLiteAdapter: DatabaseAdapter = {
     restore,
     prepareRestore,
     test,
-    getDatabases
+    getDatabases,
+    getDatabasesWithStats
 };

@@ -7,7 +7,6 @@ import {
     DialogHeader,
     DialogTitle,
     DialogDescription,
-    DialogFooter
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +29,7 @@ import { RestoreOptions } from "@/lib/types/config-backup";
 import { RedisRestoreWizard } from "./redis-restore-wizard";
 import { useUserPreferences } from "@/hooks/use-user-preferences";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface DatabaseInfo {
     name: string;
@@ -349,425 +349,455 @@ export function RestoreDialog({ file, open, onOpenChange, destinationId, sources
         <Dialog open={open} onOpenChange={(val) => {
             if (!restoring) onOpenChange(val);
         }}>
-            <DialogContent className="sm:max-w-xl">
-                <DialogHeader>
+            <DialogContent
+                className="sm:max-w-2xl max-h-[85vh] flex flex-col gap-0 p-0"
+                onInteractOutside={(e) => e.preventDefault()}
+                onEscapeKeyDown={(e) => { if (restoring) e.preventDefault(); }}
+            >
+                <DialogHeader className="px-6 pt-6 pb-4 shrink-0">
                     <DialogTitle>Restore Backup</DialogTitle>
                     <DialogDescription>
                         Review the details below before starting the recovery process.
                     </DialogDescription>
                 </DialogHeader>
 
-                {/* File Details Card */}
-                <div className="flex items-start gap-4 p-4 mb-2 border rounded-lg bg-secondary/20">
-                    <div className="p-2 rounded bg-background border shadow-sm">
-                        <FileIcon className="h-6 w-6 text-primary" />
-                    </div>
-                    <div className="flex-1 space-y-1">
-                        <p className="font-medium leading-none">{file.name}</p>
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                            <span className="flex items-center gap-1">
-                                <HardDrive className="h-3 w-3" /> {formatBytes(file.size)}
-                            </span>
-                            <span className="flex items-center">
-                                <DateDisplay date={file.lastModified} className="text-xs" />
-                            </span>
-                            {file.sourceType && (
-                                <Badge variant="secondary" className="h-5 px-1.5 text-[10px] tracking-normal">
-                                    {file.sourceType} {file.engineVersion}{file.engineEdition ? ` (${file.engineEdition})` : ''}
-                                </Badge>
-                            )}
+                {/* Scrollable content area */}
+                <div className="flex-1 overflow-y-auto px-6 space-y-6">
+                    {/* File Details Card */}
+                    <div className="flex items-start gap-4 p-4 border rounded-lg bg-secondary/20">
+                        <div className="p-2 rounded bg-background border shadow-sm">
+                            <FileIcon className="h-6 w-6 text-primary" />
                         </div>
-                    </div>
-                </div>
-
-                {!restoreLogs ? (
-                    isSystemConfig ? (
-                        <div className="space-y-6 py-2">
-                             <Alert variant="destructive" className="my-4">
-                                 <AlertTriangle className="h-4 w-4" />
-                                 <AlertTitle>Warning: System Overwrite</AlertTitle>
-                                 <AlertDescription>
-                                     This action will overwrite your current System Settings, Adapters, Jobs, and Users with the data from the backup.
-                                     Existing data will be lost. This cannot be undone.
-                                 </AlertDescription>
-                             </Alert>
-                             <div className="space-y-3">
-                                <Label className="text-sm font-medium">Select components to restore:</Label>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 border rounded-md bg-muted/20">
-                                    <div className="flex items-center space-x-2">
-                                        <Checkbox
-                                            id="opt-settings"
-                                            checked={restoreOptions.settings}
-                                            onCheckedChange={(c) => setRestoreOptions(p => ({...p, settings: !!c}))}
-                                        />
-                                        <label htmlFor="opt-settings" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                            System Settings
-                                        </label>
-                                    </div>
-                                    <div className="flex items-center space-x-2">
-                                        <Checkbox
-                                            id="opt-adapters"
-                                            checked={restoreOptions.adapters}
-                                            onCheckedChange={(c) => setRestoreOptions(p => ({...p, adapters: !!c}))}
-                                        />
-                                        <label htmlFor="opt-adapters" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                            Adapter Configs
-                                        </label>
-                                    </div>
-                                    <div className="flex items-center space-x-2">
-                                        <Checkbox
-                                            id="opt-jobs"
-                                            checked={restoreOptions.jobs}
-                                            onCheckedChange={(c) => setRestoreOptions(p => ({...p, jobs: !!c}))}
-                                        />
-                                        <label htmlFor="opt-jobs" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                            Jobs & Schedules
-                                        </label>
-                                    </div>
-                                    <div className="flex items-center space-x-2">
-                                        <Checkbox
-                                            id="opt-users"
-                                            checked={restoreOptions.users}
-                                            onCheckedChange={(c) => setRestoreOptions(p => ({...p, users: !!c}))}
-                                        />
-                                        <label htmlFor="opt-users" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                            Users & Groups
-                                        </label>
-                                    </div>
-                                    <div className="flex items-center space-x-2">
-                                        <Checkbox
-                                            id="opt-sso"
-                                            checked={restoreOptions.sso}
-                                            onCheckedChange={(c) => setRestoreOptions(p => ({...p, sso: !!c}))}
-                                        />
-                                        <label htmlFor="opt-sso" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                            SSO Providers
-                                        </label>
-                                    </div>
-                                    <div className="flex items-center space-x-2">
-                                        <Checkbox
-                                            id="opt-profiles"
-                                            checked={restoreOptions.profiles}
-                                            onCheckedChange={(c) => setRestoreOptions(p => ({...p, profiles: !!c}))}
-                                        />
-                                        <label htmlFor="opt-profiles" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                            Encryption Profiles
-                                        </label>
-                                    </div>
-                                </div>
-                             </div>
-                        </div>
-                    ) : (
-                    <div className="space-y-6 py-2">
-                        {/* Target Selection */}
-                        <div className="space-y-3">
-                            <Label className="text-sm font-medium">1. Select Destination Target</Label>
-                            <Select value={targetSource} onValueChange={setTargetSource}>
-                                <SelectTrigger className="w-full">
-                                    <SelectValue placeholder="Select Database Source..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {sources
-                                        // Filter sources: If we know the backup type, only show matching adapters.
-                                        .filter(s => {
-                                            if (!file?.sourceType) return true;
-                                            // Handle mapping: "mysql" (backup) -> "mysql" or "mariadb" (adapter)
-                                            // Some adapters share compatibility.
-                                            const type = file.sourceType.toLowerCase();
-                                            const adapter = s.adapterId.toLowerCase();
-
-                                            if (type === 'mysql' || type === 'mariadb') return adapter === 'mysql' || adapter === 'mariadb';
-                                            return adapter === type;
-                                        })
-                                        .map(format => (
-                                        <SelectItem key={format.id} value={format.id}>
-                                            <span className="flex items-center gap-2">
-                                                <Database className="h-4 w-4 text-muted-foreground" />
-                                                {format.name}
-                                                <span className="text-xs text-muted-foreground">({format.adapterId})</span>
-                                            </span>
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                            <p className="text-[0.8rem] text-muted-foreground">
-                                Existing databases with matching names will be overwritten. Rename targets below to restore as new databases.
-                            </p>
-                        </div>
-
-                        {/* Version Compatibility Check */}
-                        {targetSource && !isLoadingTargetDbs && targetServerVersion && compatibilityIssues.length === 0 && file?.engineVersion && (
-                            <div className="flex items-center gap-2 px-3 py-2 rounded-md border border-green-500/30 bg-green-500/5 text-sm text-green-700 dark:text-green-400">
-                                <ShieldCheck className="h-4 w-4 shrink-0" />
-                                <span>
-                                    Version compatible — Backup {file.engineVersion} → Target {targetServerVersion}
+                        <div className="flex-1 space-y-1">
+                            <p className="font-medium leading-none">{file.name}</p>
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                                <span className="flex items-center gap-1">
+                                    <HardDrive className="h-3 w-3" /> {formatBytes(file.size)}
                                 </span>
-                            </div>
-                        )}
-
-                        {targetSource && !isLoadingTargetDbs && compatibilityIssues.length > 0 && (
-                            <div className="space-y-2">
-                                {compatibilityIssues.map((issue, i) => (
-                                    <Alert key={i} variant={issue.type === 'error' ? 'destructive' : 'default'}
-                                        className={issue.type === 'warning' ? 'border-orange-500/50 bg-orange-500/5 text-orange-700 dark:text-orange-400 [&>svg]:text-orange-500' : ''}>
-                                        <AlertTriangle className="h-4 w-4" />
-                                        <AlertTitle className="text-sm font-semibold">
-                                            {issue.type === 'error' ? 'Incompatible' : 'Version Mismatch'}
-                                        </AlertTitle>
-                                        <AlertDescription className="text-xs">
-                                            {issue.message}
-                                        </AlertDescription>
-                                    </Alert>
-                                ))}
-                            </div>
-                        )}
-
-                        {/* Existing Databases on Target Server */}
-                        {targetSource && (isLoadingTargetDbs || targetDatabases.length > 0) && (
-                            <div className="space-y-2">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowTargetDbs(!showTargetDbs)}
-                                    className="flex items-center justify-between w-full text-sm font-medium hover:text-foreground/80 transition-colors"
-                                >
-                                    <span className="flex items-center gap-2">
-                                        <Server className="h-4 w-4 text-muted-foreground" />
-                                        Existing Databases on Target
-                                        {!isLoadingTargetDbs && (
-                                            <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
-                                                {targetDatabases.length}
-                                            </Badge>
-                                        )}
-                                    </span>
-                                    {showTargetDbs ? (
-                                        <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                                    ) : (
-                                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                                    )}
-                                </button>
-
-                                {showTargetDbs && (
-                                    isLoadingTargetDbs ? (
-                                        <div className="space-y-1.5">
-                                            <Skeleton className="h-7 w-full" />
-                                            <Skeleton className="h-7 w-full" />
-                                            <Skeleton className="h-7 w-3/4" />
-                                        </div>
-                                    ) : (
-                                        <div className="border rounded-md overflow-hidden bg-card">
-                                            <div className="max-h-48 overflow-y-auto">
-                                                <Table>
-                                                    <TableHeader className="bg-muted/50 sticky top-0">
-                                                        <TableRow className="hover:bg-transparent border-b text-xs uppercase tracking-wider">
-                                                            <TableHead>Database</TableHead>
-                                                            <TableHead className="text-right w-24">Size</TableHead>
-                                                            <TableHead className="text-right w-20">Tables</TableHead>
-                                                        </TableRow>
-                                                    </TableHeader>
-                                                    <TableBody>
-                                                        {targetDatabases.map(db => {
-                                                            const isConflict = analyzedDbs.some(
-                                                                backupDb => dbConfig.find(c => c.name === backupDb && c.selected)?.targetName === db.name
-                                                            );
-                                                            return (
-                                                                <TableRow key={db.name} className={isConflict ? 'bg-destructive/5' : ''}>
-                                                                    <TableCell className="py-1.5 text-sm">
-                                                                        <span className="flex items-center gap-2">
-                                                                            {db.name}
-                                                                            {isConflict && (
-                                                                                <TooltipProvider>
-                                                                                    <Tooltip>
-                                                                                        <TooltipTrigger>
-                                                                                            <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
-                                                                                        </TooltipTrigger>
-                                                                                        <TooltipContent>
-                                                                                            <p>Will be overwritten by restore</p>
-                                                                                        </TooltipContent>
-                                                                                    </Tooltip>
-                                                                                </TooltipProvider>
-                                                                            )}
-                                                                        </span>
-                                                                    </TableCell>
-                                                                    <TableCell className="py-1.5 text-sm text-right text-muted-foreground">
-                                                                        {db.sizeInBytes != null ? formatBytes(db.sizeInBytes) : '—'}
-                                                                    </TableCell>
-                                                                    <TableCell className="py-1.5 text-sm text-right text-muted-foreground">
-                                                                        {db.tableCount != null ? db.tableCount : '—'}
-                                                                    </TableCell>
-                                                                </TableRow>
-                                                            );
-                                                        })}
-                                                        {targetDatabases.length === 0 && (
-                                                            <TableRow>
-                                                                <TableCell colSpan={3} className="py-3 text-center text-sm text-muted-foreground">
-                                                                    No databases found on target server.
-                                                                </TableCell>
-                                                            </TableRow>
-                                                        )}
-                                                    </TableBody>
-                                                </Table>
-                                            </div>
-                                            {/* Total size summary */}
-                                            {targetDatabases.some(db => db.sizeInBytes != null) && (
-                                                <div className="px-4 py-2 border-t bg-muted/30 text-xs text-muted-foreground flex justify-between">
-                                                    <span>Total: {targetDatabases.length} database{targetDatabases.length !== 1 ? 's' : ''}</span>
-                                                    <span>{formatBytes(targetDatabases.reduce((sum, db) => sum + (db.sizeInBytes ?? 0), 0))}</span>
-                                                </div>
-                                            )}
-                                        </div>
-                                    )
+                                <span className="flex items-center">
+                                    <DateDisplay date={file.lastModified} className="text-xs" />
+                                </span>
+                                {file.sourceType && (
+                                    <Badge variant="secondary" className="h-5 px-1.5 text-[10px] tracking-normal">
+                                        {file.sourceType} {file.engineVersion}{file.engineEdition ? ` (${file.engineEdition})` : ''}
+                                    </Badge>
                                 )}
                             </div>
-                        )}
-
-                        {/* Database Mapping */}
-                        {isAnalyzing ? (
-                            <div className="space-y-3">
-                                <Label className="text-sm font-medium">2. Analyzing Backup Content...</Label>
-                                <div className="space-y-2">
-                                    <Skeleton className="h-10 w-full" />
-                                    <Skeleton className="h-10 w-full" />
-                                </div>
-                            </div>
-                        ) : analyzedDbs.length > 0 ? (
-                            <div className="space-y-3">
-                                <div className="flex items-center justify-between">
-                                    <Label className="text-sm font-medium">2. Database Mapping</Label>
-                                    <Badge variant="outline" className="text-xs font-normal">
-                                        {dbConfig.filter(d => d.selected).length} Selected
-                                    </Badge>
-                                </div>
-                                <div className="border rounded-md overflow-hidden bg-card">
-                                    <Table>
-                                        <TableHeader className="bg-muted/50">
-                                            <TableRow className="hover:bg-transparent border-b text-xs uppercase tracking-wider">
-                                                <TableHead colSpan={2}>Source DB</TableHead>
-                                                <TableHead className="w-7.5"></TableHead>
-                                                <TableHead>Target DB Name</TableHead>
-                                            </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            {dbConfig.map(db => (
-                                                <TableRow key={db.id} className={!db.selected ? 'opacity-50 bg-muted/20' : ''}>
-                                                    <TableCell className="py-2">
-                                                        <Checkbox
-                                                            id={`chk-${db.id}`}
-                                                            checked={db.selected}
-                                                            onCheckedChange={() => handleToggleDb(db.id)}
-                                                        />
-                                                    </TableCell>
-                                                    <TableCell className="py-2 font-medium">
-                                                        <Label htmlFor={`chk-${db.id}`} className="cursor-pointer">{db.name}</Label>
-                                                    </TableCell>
-                                                    <TableCell className="py-2">
-                                                        <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                                                    </TableCell>
-                                                    <TableCell className="py-2">
-                                                        <Input
-                                                            value={db.targetName}
-                                                            onChange={(e) => handleRenameDb(db.id, e.target.value)}
-                                                            className="h-8 text-sm"
-                                                            placeholder="Target Name"
-                                                            disabled={!db.selected}
-                                                        />
-                                                    </TableCell>
-                                                </TableRow>
-                                            ))}
-                                        </TableBody>
-                                    </Table>
-                                </div>
-                            </div>
-                        ) : targetSource && !isAnalyzing ? (
-                             <div className="space-y-4">
-                                <Label>2. Restore Configuration</Label>
-                                <RadioGroup defaultValue="overwrite" className="grid grid-cols-1 gap-4">
-                                    <div>
-                                        <div className="flex items-center space-x-2">
-                                            <RadioGroupItem value="overwrite" id="r1" onClick={() => setTargetDbName("")} />
-                                            <Label htmlFor="r1">Overwrite Existing</Label>
-                                        </div>
-                                        <p className="text-xs text-muted-foreground pl-6 mt-1">
-                                            Restores into the default/original database. Existing data will be lost.
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <div className="flex items-center space-x-2">
-                                            <RadioGroupItem value="rename" id="r2" />
-                                            <Label htmlFor="r2">Restore as New Database</Label>
-                                        </div>
-                                        <div className="pl-6 mt-2">
-                                             <Input
-                                                placeholder="Enter new database name..."
-                                                value={targetDbName}
-                                                onChange={(e) => {
-                                                    setTargetDbName(e.target.value);
-                                                    // Auto-select radio if typing
-                                                    const radio = document.getElementById('r2') as HTMLInputElement;
-                                                    if(radio) radio.checked = true;
-                                                }}
-                                                className="h-8"
-                                            />
-                                        </div>
-                                    </div>
-                                </RadioGroup>
-                            </div>
-                        ) : null}
-
-                         {/* Warning */}
-                         <Alert variant="destructive" className="py-2">
-                            <AlertTriangle className="h-4 w-4" />
-                            <AlertTitle className="text-sm font-semibold ml-2">Warning</AlertTitle>
-                            <AlertDescription className="text-xs ml-2">
-                                This action is irreversible. Ensure you have a backup of the target if needed.
-                            </AlertDescription>
-                        </Alert>
-                    </div>
-                    )
-                ) : (
-                    <div className="space-y-4 py-4">
-                        <div className="bg-destructive/10 p-4 rounded-md border border-destructive/20 space-y-2">
-                             <div className="flex items-center gap-2 text-destructive font-medium">
-                                 <AlertTriangle className="h-4 w-4" />
-                                 Restore Failed
-                             </div>
-                             <div className="text-xs font-mono bg-background/50 p-2 rounded border overflow-x-auto max-h-37.5">
-                                {restoreLogs?.map((l: string, i: number) => (
-                                    <div key={i}>{l}</div>
-                                ))}
-                             </div>
                         </div>
-
-                        {showPrivileged && (
-                             <div className="space-y-3 border p-4 rounded-md bg-accent/20">
-                                <div className="flex items-center gap-2">
-                                    <ShieldAlert className="h-4 w-4 text-orange-500" />
-                                    <h4 className="font-semibold text-sm">Privileged Access Required</h4>
-                                </div>
-                                <p className="text-xs text-muted-foreground">
-                                    The restore process needs higher privileges (e.g. to create databases).
-                                    Please provide root/admin credentials for the target server.
-                                </p>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <div className="space-y-1">
-                                        <Label className="text-xs">User</Label>
-                                        <Input value={privUser} onChange={e => setPrivUser(e.target.value)} className="h-8" />
-                                    </div>
-                                    <div className="space-y-1">
-                                        <Label className="text-xs">Password</Label>
-                                        <Input type="password" value={privPass} onChange={e => setPrivPass(e.target.value)} className="h-8" />
-                                    </div>
-                                </div>
-                                <Button onClick={() => handleRestore(true)} disabled={restoring} size="sm" className="w-full">
-                                    {restoring && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                    Retry with Admin Auth
-                                </Button>
-                             </div>
-                        )}
                     </div>
-                )}
 
+                    {!restoreLogs ? (
+                        isSystemConfig ? (
+                            <div className="space-y-6">
+                                 <Alert variant="destructive">
+                                     <AlertTriangle className="h-4 w-4" />
+                                     <AlertTitle>Warning: System Overwrite</AlertTitle>
+                                     <AlertDescription>
+                                         This action will overwrite your current System Settings, Adapters, Jobs, and Users with the data from the backup.
+                                         Existing data will be lost. This cannot be undone.
+                                     </AlertDescription>
+                                 </Alert>
+                                 <div className="space-y-3">
+                                    <Label className="text-sm font-medium">Select components to restore:</Label>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 border rounded-md bg-muted/20">
+                                        <div className="flex items-center space-x-2">
+                                            <Checkbox
+                                                id="opt-settings"
+                                                checked={restoreOptions.settings}
+                                                onCheckedChange={(c) => setRestoreOptions(p => ({...p, settings: !!c}))}
+                                            />
+                                            <label htmlFor="opt-settings" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                                                System Settings
+                                            </label>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                            <Checkbox
+                                                id="opt-adapters"
+                                                checked={restoreOptions.adapters}
+                                                onCheckedChange={(c) => setRestoreOptions(p => ({...p, adapters: !!c}))}
+                                            />
+                                            <label htmlFor="opt-adapters" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                                                Adapter Configs
+                                            </label>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                            <Checkbox
+                                                id="opt-jobs"
+                                                checked={restoreOptions.jobs}
+                                                onCheckedChange={(c) => setRestoreOptions(p => ({...p, jobs: !!c}))}
+                                            />
+                                            <label htmlFor="opt-jobs" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                                                Jobs & Schedules
+                                            </label>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                            <Checkbox
+                                                id="opt-users"
+                                                checked={restoreOptions.users}
+                                                onCheckedChange={(c) => setRestoreOptions(p => ({...p, users: !!c}))}
+                                            />
+                                            <label htmlFor="opt-users" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                                                Users & Groups
+                                            </label>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                            <Checkbox
+                                                id="opt-sso"
+                                                checked={restoreOptions.sso}
+                                                onCheckedChange={(c) => setRestoreOptions(p => ({...p, sso: !!c}))}
+                                            />
+                                            <label htmlFor="opt-sso" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                                                SSO Providers
+                                            </label>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                            <Checkbox
+                                                id="opt-profiles"
+                                                checked={restoreOptions.profiles}
+                                                onCheckedChange={(c) => setRestoreOptions(p => ({...p, profiles: !!c}))}
+                                            />
+                                            <label htmlFor="opt-profiles" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                                                Encryption Profiles
+                                            </label>
+                                        </div>
+                                    </div>
+                                 </div>
+                            </div>
+                        ) : (
+                        <div className="space-y-6">
+                            {/* Target Selection */}
+                            <div className="space-y-3">
+                                <Label className="text-sm font-medium">Select Destination Target</Label>
+                                <Select value={targetSource} onValueChange={setTargetSource}>
+                                    <SelectTrigger className="w-full">
+                                        <SelectValue placeholder="Select Database Source..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {sources
+                                            .filter(s => {
+                                                if (!file?.sourceType) return true;
+                                                const type = file.sourceType.toLowerCase();
+                                                const adapter = s.adapterId.toLowerCase();
+                                                if (type === 'mysql' || type === 'mariadb') return adapter === 'mysql' || adapter === 'mariadb';
+                                                return adapter === type;
+                                            })
+                                            .map(format => (
+                                            <SelectItem key={format.id} value={format.id}>
+                                                <span className="flex items-center gap-2">
+                                                    <Database className="h-4 w-4 text-muted-foreground" />
+                                                    {format.name}
+                                                    <span className="text-xs text-muted-foreground">({format.adapterId})</span>
+                                                </span>
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-[0.8rem] text-muted-foreground">
+                                    Existing databases with matching names will be overwritten. Rename targets below.
+                                </p>
+                            </div>
 
-                <DialogFooter>
+                            {/* Version Compatibility Check */}
+                            {targetSource && !isLoadingTargetDbs && targetServerVersion && compatibilityIssues.length === 0 && file?.engineVersion && (
+                                <div className="flex items-center gap-2 px-3 py-2 rounded-md border border-green-500/30 bg-green-500/5 text-sm text-green-700 dark:text-green-400">
+                                    <ShieldCheck className="h-4 w-4 shrink-0" />
+                                    <span>
+                                        Version compatible — Backup {file.engineVersion} → Target {targetServerVersion}
+                                    </span>
+                                </div>
+                            )}
+
+                            {targetSource && !isLoadingTargetDbs && compatibilityIssues.length > 0 && (
+                                <div className="space-y-2">
+                                    {compatibilityIssues.map((issue, i) => (
+                                        <Alert key={i} variant={issue.type === 'error' ? 'destructive' : 'default'}
+                                            className={issue.type === 'warning' ? 'border-orange-500/50 bg-orange-500/5 text-orange-700 dark:text-orange-400 [&>svg]:text-orange-500' : ''}>
+                                            <AlertTriangle className="h-4 w-4" />
+                                            <AlertTitle className="text-sm font-semibold">
+                                                {issue.type === 'error' ? 'Incompatible' : 'Version Mismatch'}
+                                            </AlertTitle>
+                                            <AlertDescription className="text-xs">
+                                                {issue.message}
+                                            </AlertDescription>
+                                        </Alert>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Database Mapping / Restore Configuration */}
+                            {targetSource && (
+                                isAnalyzing ? (
+                                    <div className="space-y-3">
+                                        <Label className="text-sm font-medium">Analyzing Backup Content...</Label>
+                                        <div className="space-y-2">
+                                            <Skeleton className="h-10 w-full" />
+                                            <Skeleton className="h-10 w-full" />
+                                        </div>
+                                    </div>
+                                ) : analyzedDbs.length > 0 ? (
+                                    <div className="space-y-3">
+                                        <div className="flex items-center justify-between">
+                                            <Label className="text-sm font-medium">Database Mapping</Label>
+                                            <Badge variant="outline" className="text-xs font-normal">
+                                                {dbConfig.filter(d => d.selected).length} of {analyzedDbs.length} Selected
+                                            </Badge>
+                                        </div>
+                                        <div className="border rounded-md overflow-hidden bg-card">
+                                            <Table>
+                                                <TableHeader className="bg-muted/50">
+                                                    <TableRow className="hover:bg-transparent border-b text-xs uppercase tracking-wider">
+                                                        <TableHead className="w-10"></TableHead>
+                                                        <TableHead>Source DB</TableHead>
+                                                        <TableHead className="w-8"></TableHead>
+                                                        <TableHead>Target DB Name</TableHead>
+                                                        <TableHead className="w-20 text-center">Status</TableHead>
+                                                    </TableRow>
+                                                </TableHeader>
+                                                <TableBody>
+                                                    {dbConfig.map(db => {
+                                                        const willOverwrite = targetDatabases.some(tdb => tdb.name === db.targetName);
+                                                        return (
+                                                            <TableRow key={db.id} className={!db.selected ? 'opacity-50 bg-muted/20' : ''}>
+                                                                <TableCell className="py-2">
+                                                                    <Checkbox
+                                                                        id={`chk-${db.id}`}
+                                                                        checked={db.selected}
+                                                                        onCheckedChange={() => handleToggleDb(db.id)}
+                                                                    />
+                                                                </TableCell>
+                                                                <TableCell className="py-2 font-medium">
+                                                                    <Label htmlFor={`chk-${db.id}`} className="cursor-pointer">{db.name}</Label>
+                                                                </TableCell>
+                                                                <TableCell className="py-2">
+                                                                    <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                                                                </TableCell>
+                                                                <TableCell className="py-2">
+                                                                    <Input
+                                                                        value={db.targetName}
+                                                                        onChange={(e) => handleRenameDb(db.id, e.target.value)}
+                                                                        className="h-8 text-sm"
+                                                                        placeholder="Target Name"
+                                                                        disabled={!db.selected}
+                                                                    />
+                                                                </TableCell>
+                                                                <TableCell className="py-2 text-center">
+                                                                    {db.selected && willOverwrite ? (
+                                                                        <TooltipProvider>
+                                                                            <Tooltip>
+                                                                                <TooltipTrigger>
+                                                                                    <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
+                                                                                        <AlertTriangle className="h-3 w-3 mr-1" />
+                                                                                        Overwrite
+                                                                                    </Badge>
+                                                                                </TooltipTrigger>
+                                                                                <TooltipContent>
+                                                                                    <p>Database &quot;{db.targetName}&quot; exists on target and will be overwritten</p>
+                                                                                </TooltipContent>
+                                                                            </Tooltip>
+                                                                        </TooltipProvider>
+                                                                    ) : db.selected ? (
+                                                                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                                                                            New
+                                                                        </Badge>
+                                                                    ) : null}
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        );
+                                                    })}
+                                                </TableBody>
+                                            </Table>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-4">
+                                        <Label className="text-sm font-medium">Restore Configuration</Label>
+                                        <RadioGroup defaultValue="overwrite" className="grid grid-cols-1 gap-4">
+                                            <div>
+                                                <div className="flex items-center space-x-2">
+                                                    <RadioGroupItem value="overwrite" id="r1" onClick={() => setTargetDbName("")} />
+                                                    <Label htmlFor="r1">Overwrite Existing</Label>
+                                                </div>
+                                                <p className="text-xs text-muted-foreground pl-6 mt-1">
+                                                    Restores into the default/original database. Existing data will be lost.
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <div className="flex items-center space-x-2">
+                                                    <RadioGroupItem value="rename" id="r2" />
+                                                    <Label htmlFor="r2">Restore as New Database</Label>
+                                                </div>
+                                                <div className="pl-6 mt-2">
+                                                     <Input
+                                                        placeholder="Enter new database name..."
+                                                        value={targetDbName}
+                                                        onChange={(e) => {
+                                                            setTargetDbName(e.target.value);
+                                                            const radio = document.getElementById('r2') as HTMLInputElement;
+                                                            if(radio) radio.checked = true;
+                                                        }}
+                                                        className="h-8"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </RadioGroup>
+                                    </div>
+                                )
+                            )}
+
+                            {/* Existing Databases on Target Server */}
+                            {targetSource && (isLoadingTargetDbs || targetDatabases.length > 0) && (
+                                <div className="space-y-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowTargetDbs(!showTargetDbs)}
+                                        className="flex items-center justify-between w-full text-sm font-medium hover:text-foreground/80 transition-colors"
+                                    >
+                                        <span className="flex items-center gap-2">
+                                            <Server className="h-4 w-4 text-muted-foreground" />
+                                            Existing Databases on Target
+                                            {!isLoadingTargetDbs && (
+                                                <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+                                                    {targetDatabases.length}
+                                                </Badge>
+                                            )}
+                                        </span>
+                                        {showTargetDbs ? (
+                                            <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                                        ) : (
+                                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                                        )}
+                                    </button>
+
+                                    {showTargetDbs && (
+                                        isLoadingTargetDbs ? (
+                                            <div className="space-y-1.5">
+                                                <Skeleton className="h-7 w-full" />
+                                                <Skeleton className="h-7 w-full" />
+                                                <Skeleton className="h-7 w-3/4" />
+                                            </div>
+                                        ) : (
+                                            <div className="border rounded-md overflow-hidden bg-card">
+                                                <ScrollArea className="max-h-48">
+                                                    <Table>
+                                                        <TableHeader className="bg-muted/50 sticky top-0">
+                                                            <TableRow className="hover:bg-transparent border-b text-xs uppercase tracking-wider">
+                                                                <TableHead>Database</TableHead>
+                                                                <TableHead className="text-right w-24">Size</TableHead>
+                                                                <TableHead className="text-right w-20">Tables</TableHead>
+                                                            </TableRow>
+                                                        </TableHeader>
+                                                        <TableBody>
+                                                            {targetDatabases.map(db => {
+                                                                const isConflict = analyzedDbs.some(
+                                                                    backupDb => dbConfig.find(c => c.name === backupDb && c.selected)?.targetName === db.name
+                                                                );
+                                                                return (
+                                                                    <TableRow key={db.name} className={isConflict ? 'bg-destructive/5' : ''}>
+                                                                        <TableCell className="py-1.5 text-sm">
+                                                                            <span className="flex items-center gap-2">
+                                                                                {db.name}
+                                                                                {isConflict && (
+                                                                                    <TooltipProvider>
+                                                                                        <Tooltip>
+                                                                                            <TooltipTrigger>
+                                                                                                <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
+                                                                                            </TooltipTrigger>
+                                                                                            <TooltipContent>
+                                                                                                <p>Will be overwritten by restore</p>
+                                                                                            </TooltipContent>
+                                                                                        </Tooltip>
+                                                                                    </TooltipProvider>
+                                                                                )}
+                                                                            </span>
+                                                                        </TableCell>
+                                                                        <TableCell className="py-1.5 text-sm text-right text-muted-foreground">
+                                                                            {db.sizeInBytes != null ? formatBytes(db.sizeInBytes) : '—'}
+                                                                        </TableCell>
+                                                                        <TableCell className="py-1.5 text-sm text-right text-muted-foreground">
+                                                                            {db.tableCount != null ? db.tableCount : '—'}
+                                                                        </TableCell>
+                                                                    </TableRow>
+                                                                );
+                                                            })}
+                                                            {targetDatabases.length === 0 && (
+                                                                <TableRow>
+                                                                    <TableCell colSpan={3} className="py-3 text-center text-sm text-muted-foreground">
+                                                                        No databases found on target server.
+                                                                    </TableCell>
+                                                                </TableRow>
+                                                            )}
+                                                        </TableBody>
+                                                    </Table>
+                                                </ScrollArea>
+                                                {/* Total size summary */}
+                                                {targetDatabases.some(db => db.sizeInBytes != null) && (
+                                                    <div className="px-4 py-2 border-t bg-muted/30 text-xs text-muted-foreground flex justify-between">
+                                                        <span>Total: {targetDatabases.length} database{targetDatabases.length !== 1 ? 's' : ''}</span>
+                                                        <span>{formatBytes(targetDatabases.reduce((sum, db) => sum + (db.sizeInBytes ?? 0), 0))}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Warning */}
+                            <Alert variant="destructive" className="py-2">
+                                <AlertTriangle className="h-4 w-4" />
+                                <AlertTitle className="text-sm font-semibold ml-2">Warning</AlertTitle>
+                                <AlertDescription className="text-xs ml-2">
+                                    This action is irreversible. Ensure you have a backup of the target if needed.
+                                </AlertDescription>
+                            </Alert>
+                        </div>
+                        )
+                    ) : (
+                        <div className="space-y-4">
+                            <div className="bg-destructive/10 p-4 rounded-md border border-destructive/20 space-y-2">
+                                 <div className="flex items-center gap-2 text-destructive font-medium">
+                                     <AlertTriangle className="h-4 w-4" />
+                                     Restore Failed
+                                 </div>
+                                 <div className="text-xs font-mono bg-background/50 p-2 rounded border overflow-x-auto max-h-60">
+                                    {restoreLogs?.map((l: string, i: number) => (
+                                        <div key={i}>{l}</div>
+                                    ))}
+                                 </div>
+                            </div>
+
+                            {showPrivileged && (
+                                 <div className="space-y-3 border p-4 rounded-md bg-accent/20">
+                                    <div className="flex items-center gap-2">
+                                        <ShieldAlert className="h-4 w-4 text-orange-500" />
+                                        <h4 className="font-semibold text-sm">Privileged Access Required</h4>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">
+                                        The restore process needs higher privileges (e.g. to create databases).
+                                        Please provide root/admin credentials for the target server.
+                                    </p>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div className="space-y-1">
+                                            <Label className="text-xs">User</Label>
+                                            <Input value={privUser} onChange={e => setPrivUser(e.target.value)} className="h-8" />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label className="text-xs">Password</Label>
+                                            <Input type="password" value={privPass} onChange={e => setPrivPass(e.target.value)} className="h-8" />
+                                        </div>
+                                    </div>
+                                    <Button onClick={() => handleRestore(true)} disabled={restoring} size="sm" className="w-full">
+                                        {restoring && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                        Retry with Admin Auth
+                                    </Button>
+                                 </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                {/* Sticky Footer */}
+                <div className="shrink-0 border-t px-6 py-4 flex justify-end gap-2">
                      {!restoreLogs && (
                          <>
                             <Button variant="outline" onClick={() => onOpenChange(false)} disabled={restoring}>Cancel</Button>
@@ -781,7 +811,7 @@ export function RestoreDialog({ file, open, onOpenChange, destinationId, sources
                                     {restoring ? 'Restoring...' : 'Start System Restore'}
                                 </Button>
                             ) : (
-                                <Button onClick={() => handleRestore(false)} disabled={restoring || !targetSource || (analyzedDbs.length > 0 && !dbConfig.some(d => d.selected)) || compatibilityIssues.length > 0}>
+                                <Button onClick={() => handleRestore(false)} disabled={restoring || !targetSource || (analyzedDbs.length > 0 && !dbConfig.some(d => d.selected)) || compatibilityIssues.some(i => i.type === 'error')}>
                                     {restoring && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                                     {restoring ? 'Starting...' : 'Start Restore'}
                                 </Button>
@@ -791,7 +821,7 @@ export function RestoreDialog({ file, open, onOpenChange, destinationId, sources
                      {restoreLogs && !showPrivileged && (
                          <Button onClick={() => onOpenChange(false)}>Close</Button>
                      )}
-                </DialogFooter>
+                </div>
             </DialogContent>
         </Dialog>
     );

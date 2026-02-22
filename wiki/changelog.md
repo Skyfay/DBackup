@@ -45,6 +45,29 @@ This release adds SSH connection testing for MSSQL file transfer mode with backu
 - **Duration Tracking** — Includes total restore duration (in seconds) for performance monitoring
 - **Failure Details** — Enhanced error messages provide full error context for easier troubleshooting
 
+#### ⚡ Selective TAR Extraction for Multi-Database Restores
+- **Performance Optimization**: Implemented `extractSelectedDatabases()` function in `src/lib/adapters/database/common/tar-utils.ts` — only extracts database dump files matching selected databases instead of extracting all entries from the TAR archive
+- **Manifest-First Approach**: Reads manifest first to build a lookup set of selected filenames, skips unselected entries via `stream.resume()` without I/O
+- **Applies to All Adapters**: MySQL, PostgreSQL, MongoDB, and MSSQL restore operations now use selective extraction
+- **MSSQL Filtering**: MSSQL's `extractTarArchive()` function enhanced to filter `.bak` files by database name (derived from filename)
+- **Backward Compatible**: Empty selection list extracts all databases — maintains fallback behavior
+- **Benefits**: Significantly reduces disk I/O and temporary storage requirements when restoring only 1 of many databases from a large multi-DB backup (e.g., 100 MB extracted instead of 50 GB)
+- **New Unit Tests**: Four comprehensive tests in `tests/unit/adapters/database/common/tar-utils.test.ts` covering single/multiple selective extraction, full extraction fallback, and error handling
+
+#### 🎨 Dedicated Restore Page & Enhanced UI
+- **Full-Page Restore Experience** — Moved restore workflow from a modal dialog to a dedicated page at `/dashboard/storage/restore` with unlimited space and better visual hierarchy
+- **2-Column Grid Layout** — Left column (2/3 width) shows file details, target database selection, and database mapping table; right column (1/3 width) displays existing databases on target, warnings, and action buttons
+- **File Details Card** — Shows backup filename, size, creation date, database type, engine version, edition, compression method, and encryption status with icon-coded badges
+- **Target Database Selection** — Dropdown to select which database source to restore to, with automatic version compatibility checking and conflict detection
+- **Database Mapping Table** — For multi-database backups, shows a table with Source DB name, target name input, and status badges (Overwrite for existing DBs, New for new DBs) with checkboxes to select which databases to restore
+- **Privileged Auth Support** — After failed restore due to insufficient permissions, shows inline form to enter elevated credentials (root/admin user) and retry with higher privileges
+- **Existing Databases Sidebar** — Collapsible section on the right showing all databases currently on the target server with sizes and count badges. Databases marked in red if they will be overwritten by the restore
+- **Compatibility Checks Live** — When target is selected, fetches server version and runs compatibility checks. Hard incompatibilities (MSSQL edition mismatch) disable the button immediately. Soft warnings (version mismatch) show as orange alert but still allow proceeding
+- **URL Parameter State** — FileInfo and destination ID are passed via base64-encoded URL parameters (`?file=...&destinationId=...`) for easy bookmarking and returning to the same restore session
+- **System Config Restore** — If restoring a system configuration backup, shows checkboxes for which components to restore (Settings, Adapters, Jobs, Users, SSO, Encryption Profiles)
+- **Redis Fallback** — Redis restores (which use a specialized wizard) show a helpful message directing users to use the Storage Explorer button instead
+- **Optimized Spacing** — Refined padding and margins throughout for better visual balance — warning alert centered between top and separator, reduced gaps between existing databases header and table
+
 ### 🐛 Bug Fixes
 - **Quick Setup Adapter Selection** — Fixed "Please select an adapter type first" error when clicking "Test Connection" in Quick Setup wizard (Database Source, Storage Destination, Notification steps). The hook now correctly falls back to the `adapterId` prop when the form doesn't include that field
 - **Test Connection in Setup** — Test Connection button now works properly in all Quick Setup adapter configuration steps, not just the regular adapter management dialogs
@@ -66,15 +89,6 @@ This release adds SSH connection testing for MSSQL file transfer mode with backu
 - Updated `src/services/restore-service.ts` — Restore notification calls now pass resolved adapter names and additional metadata (database type, storage name, backup file, file size, duration) instead of just IDs
 - Updated unit tests in `tests/unit/lib/notifications/email-template.test.tsx` — Fixed email template tests to account for new table-based layout structure
 - Updated unit tests in `tests/unit/adapters/notification/email.test.ts` — Fixed email footer assertions to check for component parts instead of exact concatenation
-
-#### ⚡ Selective TAR Extraction for Multi-Database Restores
-- **Performance Optimization**: Implemented `extractSelectedDatabases()` function in `src/lib/adapters/database/common/tar-utils.ts` — only extracts database dump files matching selected databases instead of extracting all entries from the TAR archive
-- **Manifest-First Approach**: Reads manifest first to build a lookup set of selected filenames, skips unselected entries via `stream.resume()` without I/O
-- **Applies to All Adapters**: MySQL, PostgreSQL, MongoDB, and MSSQL restore operations now use selective extraction
-- **MSSQL Filtering**: MSSQL's `extractTarArchive()` function enhanced to filter `.bak` files by database name (derived from filename)
-- **Backward Compatible**: Empty selection list extracts all databases — maintains fallback behavior
-- **Benefits**: Significantly reduces disk I/O and temporary storage requirements when restoring only 1 of many databases from a large multi-DB backup (e.g., 100 MB extracted instead of 50 GB)
-- **New Unit Tests**: Four comprehensive tests in `tests/unit/adapters/database/common/tar-utils.test.ts` covering single/multiple selective extraction, full extraction fallback, and error handling
 
 ## v0.9.8-beta - Notification Adapters Expansion & Quick Setup Wizard
 *Released: February 20, 2026*
@@ -208,6 +222,9 @@ This release adds seven new notification adapters: Slack, Microsoft Teams, Gotif
 - Updated `src/components/ui/health-status-badge.tsx` — Added `interactive?: boolean` prop (default `true`); when `false`, renders a plain non-clickable badge without the popover
 - Updated `src/app/dashboard/destinations/page.tsx`, `src/app/dashboard/sources/page.tsx`, `src/app/dashboard/notifications/page.tsx` — Pass `permissions` array to `AdapterManager`
 - Updated `src/app/api/adapters/[id]/health-history/route.ts` — Replaced single `checkPermissionWithContext(ctx, PERMISSIONS.SOURCES.READ)` with an explicit check accepting either `sources:read` or `destinations:read`
+- New `src/app/dashboard/storage/restore/page.tsx` — Server component for the dedicated restore page, checks `PERMISSIONS.STORAGE.RESTORE` and redirects to `/dashboard/storage` if denied
+- New `src/app/dashboard/storage/restore/restore-client.tsx` — Full-page client component (~850 lines) with 2-column grid layout: left column for file details/target selection/database mapping, right column for existing databases sidebar and action buttons. Handles FileInfo parsing from base64 URL params, version compatibility checks, multi-database mapping with selective extraction flags, privileged auth retry flow, system config restore options, and Redis fallback messaging
+- Updated `src/app/dashboard/storage/storage-client.tsx` — Removed `RestoreDialog` import and usage; changed restore button to navigate via `router.push()` with base64-encoded FileInfo and destination ID in URL params instead of opening modal; removed database sources state and API fetch since restore page handles fetching
 
 ### 🔄 Changes
 - Updated README and documentation to list all 7 notification channels as supported

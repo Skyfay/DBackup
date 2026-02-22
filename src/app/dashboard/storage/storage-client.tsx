@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useRouter } from "next/navigation";
 import {
     Command,
     CommandEmpty,
@@ -32,7 +33,6 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { getColumns, FileInfo } from "./columns";
 import { lockBackup } from "@/app/actions/storage/lock";
-import { RestoreDialog } from "@/components/dashboard/storage/restore-dialog";
 import { DownloadLinkModal } from "@/components/dashboard/storage/download-link-modal";
 
 interface AdapterConfig {
@@ -51,9 +51,9 @@ interface StorageClientProps {
 
 export function StorageClient({ canDownload, canRestore, canDelete }: StorageClientProps) {
     const [destinations, setDestinations] = useState<AdapterConfig[]>([]);
-    const [sources, setSources] = useState<AdapterConfig[]>([]);
     const [selectedDestination, setSelectedDestination] = useState<string>("");
     const [open, setOpen] = useState(false);
+    const router = useRouter();
 
     // Filter State
     const [showSystemConfigs, setShowSystemConfigs] = useState(false);
@@ -64,9 +64,6 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
     // Delete Confirmation State
     const [fileToDelete, setFileToDelete] = useState<FileInfo | null>(null);
     const [deleting, setDeleting] = useState(false);
-
-    // Restore State
-    const [restoreFile, setRestoreFile] = useState<FileInfo | null>(null);
 
     // Download Link Modal State
     const [downloadLinkFile, setDownloadLinkFile] = useState<FileInfo | null>(null);
@@ -85,19 +82,10 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
 
     const fetchAdapters = async () => {
         try {
-            // Fetch storage destinations and database sources separately
-            const [storageRes, databaseRes] = await Promise.all([
-                fetch("/api/adapters?type=storage"),
-                fetch("/api/adapters?type=database")
-            ]);
-
+            const storageRes = await fetch("/api/adapters?type=storage");
             if (storageRes.ok) {
                 const storageData = await storageRes.json();
                 setDestinations(storageData);
-            }
-            if (databaseRes.ok) {
-                const databaseData = await databaseRes.json();
-                setSources(databaseData);
             }
         } catch (e) {
             console.error(e);
@@ -140,8 +128,9 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
             toast.error("Permission denied");
             return;
         }
-        setRestoreFile(file);
-    }, [canRestore]);
+        const encoded = btoa(JSON.stringify(file));
+        router.push(`/dashboard/storage/restore?destinationId=${encodeURIComponent(selectedDestination)}&file=${encodeURIComponent(encoded)}`);
+    }, [canRestore, selectedDestination, router]);
 
     const handleDeleteClick = useCallback((file: FileInfo) => {
         if (!canDelete) {
@@ -314,16 +303,7 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
                  </Card>
             )}
 
-            <RestoreDialog
-                open={!!restoreFile}
-                onOpenChange={(v) => !v && setRestoreFile(null)}
-                file={restoreFile}
-                destinationId={selectedDestination}
-                sources={sources}
-                onSuccess={() => {
-                    setRestoreFile(null);
-                }}
-            />
+            {/* Restore now uses /dashboard/storage/restore page */}
 
             {/* Delete Confirmation Modal */}
             <Dialog open={!!fileToDelete} onOpenChange={(o) => { if(!o && !deleting) setFileToDelete(null); }}>

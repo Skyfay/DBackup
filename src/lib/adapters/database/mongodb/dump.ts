@@ -207,39 +207,85 @@ export async function dump(
             log(`Starting single-database dump (archive format)`, 'info');
             await dumpSingleDatabase(dbs[0] || '', destinationPath, config, log);
         }
-        // Case 2: Multiple Databases - TAR archive with individual mongodump per DB
+        // Case 2: Multiple Databases - TAR archive or separate files
         else {
-            log(`Dumping ${dbs.length} databases using TAR archive: ${dbs.join(', ')}`, 'info');
+            const backupType = (config as any).multiDbBackupType || 'SINGLE_TAR';
 
-            tempDir = await createTempDir('mongo-multidb-');
-            log(`Created temp directory: ${tempDir}`, 'info');
+            if (backupType === 'SEPARATE_FILES') {
+                log(`Dumping ${dbs.length} databases as separate files: ${dbs.join(', ')}`, 'info');
 
-            const tarFiles: TarFileEntry[] = [];
+                tempDir = await createTempDir('mongo-multidb-');
+                log(`Created temp directory: ${tempDir}`, 'info');
 
-            for (const dbName of dbs) {
-                const dumpFilename = `${dbName}.archive`;
-                const dumpPath = path.join(tempDir, dumpFilename);
+                const finalFiles = [];
 
-                await dumpSingleDatabase(dbName, dumpPath, config, log);
-                log(`Database ${dbName} dumped successfully`, 'success');
+                for (const dbName of dbs) {
+                    const dumpFilename = `${dbName}.archive`;
+                    const dumpPath = path.join(tempDir, dumpFilename);
 
-                tarFiles.push({
-                    name: dumpFilename,
-                    path: dumpPath,
-                    dbName,
-                    format: 'archive',
+                    await dumpSingleDatabase(dbName, dumpPath, config, log);
+                    log(`Database ${dbName} dumped successfully`, 'success');
+
+                    const finalPath = path.join(path.dirname(destinationPath), dumpFilename);
+                    await fs.copyFile(dumpPath, finalPath);
+                    const fileStats = await fs.stat(finalPath);
+                    finalFiles.push({
+                        path: finalPath,
+                        name: dumpFilename,
+                        size: fileStats.size,
+                        database: dbName,
+                    });
+                    log(`Prepared file: ${dumpFilename}`, 'success');
+                }
+
+                log(`SEPARATE_FILES backup ready: ${finalFiles.length} files`, 'success');
+                await cleanupTempDir(tempDir);
+                tempDir = null;
+
+                return {
+                    success: true,
+                    files: finalFiles,
+                    logs,
+                    startedAt,
+                    completedAt: new Date(),
+                    metadata: {
+                        databases: dbs,
+                    },
+                };
+            } else {
+                log(`Dumping ${dbs.length} databases using TAR archive: ${dbs.join(', ')}`, 'info');
+
+                tempDir = await createTempDir('mongo-multidb-');
+                log(`Created temp directory: ${tempDir}`, 'info');
+
+                const tarFiles: TarFileEntry[] = [];
+
+                for (const dbName of dbs) {
+                    const dumpFilename = `${dbName}.archive`;
+                    const dumpPath = path.join(tempDir, dumpFilename);
+
+                    await dumpSingleDatabase(dbName, dumpPath, config, log);
+                    log(`Database ${dbName} dumped successfully`, 'success');
+
+                    tarFiles.push({
+                        name: dumpFilename,
+                        path: dumpPath,
+                        dbName,
+                        format: 'archive',
+                    });
+                }
+
+                // Create TAR archive with manifest
+                log(`Creating TAR archive with ${tarFiles.length} databases...`, 'info');
+                const manifest: TarManifest = await createMultiDbTar(tarFiles, destinationPath, {
+                    sourceType: 'mongodb',
+                    engineVersion: config.detectedVersion || 'unknown',
+                    backupType: 'SINGLE_TAR',
                 });
+
+                log(`Multi-database TAR archive created successfully`, 'success');
+                log(`Manifest: ${manifest.databases.length} databases, ${manifest.totalSize} bytes`, 'info');
             }
-
-            // Create TAR archive with manifest
-            log(`Creating TAR archive with ${tarFiles.length} databases...`, 'info');
-            const manifest: TarManifest = await createMultiDbTar(tarFiles, destinationPath, {
-                sourceType: 'mongodb',
-                engineVersion: config.detectedVersion || 'unknown',
-            });
-
-            log(`Multi-database TAR archive created successfully`, 'success');
-            log(`Manifest: ${manifest.databases.length} databases, ${manifest.totalSize} bytes`, 'info');
         }
 
         // Verify
@@ -248,7 +294,7 @@ export async function dump(
             throw new Error("Dump file is empty. Check logs/permissions.");
         }
 
-        return {
+        const result: any = {
             success: true,
             path: destinationPath,
             size: stats.size,
@@ -256,6 +302,15 @@ export async function dump(
             startedAt,
             completedAt: new Date(),
         };
+
+        // Add metadata for multi-database backups
+        if (dbs.length > 1) {
+            result.metadata = {
+                databases: dbs,
+            };
+        }
+
+        return result;
 
     } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);

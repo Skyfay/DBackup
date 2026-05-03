@@ -48,6 +48,7 @@ export interface RunnerContext {
 
     // File paths
     tempFile?: string;
+    dumpFiles?: Array<{ path: string; name: string; database: string; size: number }>;
     finalRemotePath?: string;
 
     // Result Data

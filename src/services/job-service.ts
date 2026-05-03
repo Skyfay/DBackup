@@ -20,6 +20,7 @@ export interface CreateJobInput {
     notificationIds?: string[];
     encryptionProfileId?: string;
     compression?: string;
+    multiDbBackupType?: string;
     pgCompression?: string;
     enabled?: boolean;
     notificationEvents?: string;
@@ -34,6 +35,7 @@ export interface UpdateJobInput {
     notificationIds?: string[];
     encryptionProfileId?: string;
     compression?: string;
+    multiDbBackupType?: string;
     pgCompression?: string;
     enabled?: boolean;
     notificationEvents?: string;
@@ -73,7 +75,7 @@ export class JobService {
     }
 
     async createJob(input: CreateJobInput) {
-        const { name, schedule, sourceId, databases, destinations, notificationIds, enabled, encryptionProfileId, compression, pgCompression, notificationEvents } = input;
+        const { name, schedule, sourceId, databases, destinations, notificationIds, enabled, encryptionProfileId, compression, multiDbBackupType, pgCompression, notificationEvents } = input;
 
         // Check name uniqueness
         const existingByName = await prisma.job.findFirst({ where: { name } });
@@ -90,6 +92,7 @@ export class JobService {
                 enabled: enabled !== undefined ? enabled : true,
                 encryptionProfileId: encryptionProfileId || null,
                 compression: compression || "NONE",
+                multiDbBackupType: multiDbBackupType || "SINGLE_TAR",
                 pgCompression: pgCompression ?? "",
                 notificationEvents: notificationEvents || "ALWAYS",
                 notifications: {
@@ -112,7 +115,7 @@ export class JobService {
     }
 
     async updateJob(id: string, input: UpdateJobInput) {
-        const { name, schedule, sourceId, databases, destinations, notificationIds, enabled, encryptionProfileId, compression, pgCompression, notificationEvents } = input;
+        const { name, schedule, sourceId, databases, destinations, notificationIds, enabled, encryptionProfileId, compression, multiDbBackupType, pgCompression, notificationEvents } = input;
 
         // Check name uniqueness (excluding current job)
         if (name) {
@@ -147,6 +150,7 @@ export class JobService {
                     sourceId,
                     databases: databases !== undefined ? JSON.stringify(databases) : undefined,
                     compression,
+                    multiDbBackupType,
                     pgCompression,
                     notificationEvents,
                     encryptionProfileId: encryptionProfileId === "" ? null : encryptionProfileId,

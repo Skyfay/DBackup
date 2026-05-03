@@ -14,10 +14,14 @@
  */
 export function getBackupFileExtension(adapterId: string): string {
     const extensions: Record<string, string> = {
-        // SQL-based databases use .sql
+        // SQL text-based databases
         mysql: "sql",
         mariadb: "sql",
-        postgres: "sql",
+
+        // PostgreSQL uses custom binary format (more efficient than SQL text)
+        postgres: "dump",
+
+        // SQL Server native backup format
         mssql: "bak",
 
         // NoSQL and special formats

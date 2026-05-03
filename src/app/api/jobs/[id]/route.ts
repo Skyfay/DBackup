@@ -38,7 +38,7 @@ export async function PUT(
     const params = await props.params;
     try {
         const body = await req.json();
-        const { name, schedule, sourceId, databases, destinations, notificationIds, enabled, encryptionProfileId, compression, pgCompression, notificationEvents } = body;
+        const { name, schedule, sourceId, databases, destinations, notificationIds, enabled, encryptionProfileId, compression, multiDbBackupType, pgCompression, notificationEvents } = body;
 
         const updatedJob = await jobService.updateJob(params.id, {
             name,
@@ -54,6 +54,7 @@ export async function PUT(
             notificationIds,
             encryptionProfileId,
             compression,
+            multiDbBackupType,
             pgCompression,
             notificationEvents
         });

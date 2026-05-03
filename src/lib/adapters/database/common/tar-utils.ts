@@ -23,6 +23,50 @@ import {
 export const MANIFEST_FILENAME = "manifest.json";
 
 /**
+ * Helper to add a manifest to an existing tar stream.
+ * Useful for adapters like MSSQL that create their own TAR streams.
+ * @param tarPack - Active tar-stream pack instance
+ * @param databases - Database names in the archive
+ * @param sourceType - Type of database engine
+ * @param backupType - SINGLE_TAR or SEPARATE_FILES
+ * @param engineVersion - Optional engine version
+ */
+export async function addManifestToTar(
+    tarPack: any,
+    databases: string[],
+    sourceType: string,
+    backupType: "SINGLE_TAR" | "SEPARATE_FILES" = "SINGLE_TAR",
+    engineVersion?: string
+): Promise<TarManifest> {
+    const manifest: TarManifest = {
+        version: 1,
+        createdAt: new Date().toISOString(),
+        sourceType,
+        engineVersion,
+        backupType,
+        databases: databases.map(name => ({
+            name,
+            filename: `${name}.bak`,
+            size: 0, // Size will be calculated during packing
+            format: "bak" as const,
+        })),
+        totalSize: 0,
+    };
+
+    // Add manifest.json as first entry
+    const manifestJson = JSON.stringify(manifest, null, 2);
+    const manifestBuffer = Buffer.from(manifestJson, "utf-8");
+
+    const manifestEntry = tarPack.entry({
+        name: MANIFEST_FILENAME,
+        size: manifestBuffer.length,
+    });
+    manifestEntry.end(manifestBuffer);
+
+    return manifest;
+}
+
+/**
  * Create a TAR archive containing multiple database dumps
  *
  * @param files - Array of files to include in the archive
@@ -62,6 +106,7 @@ export async function createMultiDbTar(
         createdAt: new Date().toISOString(),
         sourceType: options.sourceType,
         engineVersion: options.engineVersion,
+        backupType: options.backupType || "SINGLE_TAR",
         databases,
         totalSize,
     };

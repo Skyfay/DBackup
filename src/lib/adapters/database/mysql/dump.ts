@@ -193,11 +193,13 @@ export async function dump(config: MySQLDumpConfig, destinationPath: string, onL
             };
         }
 
-        // Multi-DB: Dump each database separately, then pack into TAR
-        log(`Multi-database backup: ${dbs.length} databases`);
+        // Multi-DB: Dump each database separately, then either pack into TAR or keep separate
+        const backupType = (config as any).multiDbBackupType || 'SINGLE_TAR';
+        log(`Multi-database backup: ${dbs.length} databases (${backupType})`);
 
         const tempDir = await createTempDir("mysql-multidb-");
         const dbFiles: TarFileEntry[] = [];
+        const dumpedFiles: Array<{ path: string; name: string; size: number; database: string }> = [];
 
         try {
             for (const dbName of dbs) {
@@ -206,41 +208,82 @@ export async function dump(config: MySQLDumpConfig, destinationPath: string, onL
 
                 await dumpSingleDatabase(config, dbName, dbFilePath, log);
 
-                dbFiles.push({
-                    name: dbFileName,
+                const stats = await fs.stat(dbFilePath);
+                dumpedFiles.push({
                     path: dbFilePath,
-                    dbName,
-                    format: "sql",
+                    name: dbFileName,
+                    size: stats.size,
+                    database: dbName,
                 });
+
+                if (backupType === 'SINGLE_TAR') {
+                    dbFiles.push({
+                        name: dbFileName,
+                        path: dbFilePath,
+                        dbName,
+                        format: "sql",
+                    });
+                }
 
                 log(`Completed dump for: ${dbName}`);
             }
 
-            // Create TAR archive with manifest
-            log(`Creating TAR archive with ${dbFiles.length} databases...`);
-            const manifest = await createMultiDbTar(dbFiles, destinationPath, {
-                sourceType: config.type === 'mariadb' ? 'mariadb' : 'mysql',
-                engineVersion: config.detectedVersion,
-            });
+            // Handle based on backup type
+            if (backupType === 'SEPARATE_FILES') {
+                log(`Preparing ${dumpedFiles.length} separate backup files...`);
 
-            const stats = await fs.stat(destinationPath);
-            const sizeMB = (stats.size / 1024 / 1024).toFixed(2);
-            log(`Multi-DB backup finished successfully. Size: ${sizeMB} MB`);
+                const finalFiles = [];
+                for (const file of dumpedFiles) {
+                    const finalPath = path.join(path.dirname(destinationPath), `${file.database}.sql`);
+                    await fs.copyFile(file.path, finalPath);
+                    finalFiles.push({
+                        path: finalPath,
+                        name: `${file.database}.sql`,
+                        size: file.size,
+                        database: file.database,
+                    });
+                    log(`Prepared file: ${file.database}.sql`, 'success');
+                }
 
-            return {
-                success: true,
-                path: destinationPath,
-                size: stats.size,
-                logs,
-                startedAt,
-                completedAt: new Date(),
-                metadata: {
-                    multiDb: {
-                        format: 'tar',
-                        databases: manifest.databases.map(d => d.name),
+                log(`SEPARATE_FILES backup ready: ${finalFiles.length} files`, 'success');
+                return {
+                    success: true,
+                    files: finalFiles,
+                    logs,
+                    startedAt,
+                    completedAt: new Date(),
+                    metadata: {
+                        databases: dbs,
                     },
-                },
-            };
+                };
+            } else {
+                // Create TAR archive with manifest
+                log(`Creating TAR archive with ${dbFiles.length} databases...`);
+                const manifest = await createMultiDbTar(dbFiles, destinationPath, {
+                    sourceType: config.type === 'mariadb' ? 'mariadb' : 'mysql',
+                    engineVersion: config.detectedVersion,
+                    backupType: 'SINGLE_TAR',
+                });
+
+                const stats = await fs.stat(destinationPath);
+                const sizeMB = (stats.size / 1024 / 1024).toFixed(2);
+                log(`Multi-DB backup finished successfully. Size: ${sizeMB} MB`);
+
+                return {
+                    success: true,
+                    path: destinationPath,
+                    size: stats.size,
+                    logs,
+                    startedAt,
+                    completedAt: new Date(),
+                    metadata: {
+                        multiDb: {
+                            format: 'tar',
+                            databases: manifest.databases.map(d => d.name),
+                        },
+                    },
+                };
+            }
         } finally {
             // Always cleanup temp files
             await cleanupTempDir(tempDir);

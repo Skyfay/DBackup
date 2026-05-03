@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "Job" ADD COLUMN "multiDbBackupType" TEXT NOT NULL DEFAULT 'SINGLE_TAR';

@@ -32,6 +32,8 @@ export interface TarManifest {
     sourceType: string;
     /** Database engine version (e.g., "8.0.32", "15.2") */
     engineVersion?: string;
+    /** Backup type: SINGLE_TAR (all DBs in one stream) or SEPARATE_FILES (individual files per DB) */
+    backupType?: "SINGLE_TAR" | "SEPARATE_FILES";
     /** List of databases in the archive */
     databases: DatabaseEntry[];
     /** Total size of all dumps in bytes (uncompressed) */
@@ -56,6 +58,8 @@ export interface CreateTarOptions {
     sourceType: string;
     /** Database engine version */
     engineVersion?: string;
+    /** Backup type: SINGLE_TAR or SEPARATE_FILES */
+    backupType?: "SINGLE_TAR" | "SEPARATE_FILES";
 }
 
 /**

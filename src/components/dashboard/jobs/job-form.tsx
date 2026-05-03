@@ -64,6 +64,7 @@ export interface JobData {
     databases?: string;
     encryptionProfileId?: string;
     compression: string;
+    multiDbBackupType?: string;
     pgCompression?: string;
     notificationEvents?: string;
     notifications: { id: string, name: string }[];
@@ -125,6 +126,7 @@ const jobSchema = z.object({
     destinations: z.array(destinationSchema).min(1, "At least one destination is required"),
     encryptionProfileId: z.string().optional(),
     compression: z.enum(["NONE", "GZIP", "BROTLI"]).default("NONE"),
+    multiDbBackupType: z.enum(["SINGLE_TAR", "SEPARATE_FILES"]).default("SINGLE_TAR"),
     pgCompressionAlgo: z.enum(["LEGACY", "NONE", "GZIP", "LZ4", "ZSTD"]).default("LEGACY"),
     pgCompressionLevel: z.coerce.number().int().min(0).max(22).default(6),
     notificationIds: z.array(z.string()).optional(),
@@ -148,6 +150,7 @@ interface JobFormProps {
         databases?: string;
         encryptionProfileId?: string;
         compression: string;
+        multiDbBackupType?: string;
         pgCompression?: string;
         notificationEvents?: string;
         notifications: { id: string; name: string }[];
@@ -202,6 +205,7 @@ export function JobForm({ sources, destinations, notifications, encryptionProfil
             destinations: defaultDestinations,
             encryptionProfileId: initialData?.encryptionProfileId || "no-encryption",
             compression: (initialData?.compression as "NONE" | "GZIP" | "BROTLI") || "NONE",
+            multiDbBackupType: (initialData?.multiDbBackupType as "SINGLE_TAR" | "SEPARATE_FILES") || "SINGLE_TAR",
             pgCompressionAlgo: parsePgCompression(initialData?.pgCompression).algo,
             pgCompressionLevel: parsePgCompression(initialData?.pgCompression).level,
             notificationIds: initialData?.notifications?.map((n) => n.id) || [],
@@ -231,8 +235,12 @@ export function JobForm({ sources, destinations, notifications, encryptionProfil
     const isPgSource = selectedSource?.adapterId === "postgres";
     const pgMajorVersion = isPgSource ? parsePgMajorVersion(selectedSource?.metadata) : null;
 
+    // Watch databases to show/hide multiDbBackupType option
+    const selectedDatabases = form.watch("databases") || [];
+    const showMultiDbOptions = selectedDatabases.length > 1;
+
     const pgCompressionAlgo = (form.watch("pgCompressionAlgo") ?? "LEGACY") as PgCompressionAlgo;
-    const isNativeCompressionActive = ["LEGACY", "GZIP", "LZ4", "ZSTD"].includes(pgCompressionAlgo);
+    const isNativeCompressionActive = isPgSource && ["LEGACY", "GZIP", "LZ4", "ZSTD"].includes(pgCompressionAlgo);
 
     // Auto-disable external compression when native pg compression is active
     useEffect(() => {
@@ -692,6 +700,29 @@ export function JobForm({ sources, destinations, notifications, encryptionProfil
                                     )}
                                 </div>
                             </div>
+                        )}
+
+                        {showMultiDbOptions && (
+                            <FormField control={form.control} name="multiDbBackupType" render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>Multi-Database Backup Type</FormLabel>
+                                    <Select onValueChange={field.onChange} value={field.value}>
+                                        <FormControl>
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Select backup type" />
+                                            </SelectTrigger>
+                                        </FormControl>
+                                        <SelectContent>
+                                            <SelectItem value="SINGLE_TAR">Single TAR Archive (All DBs)</SelectItem>
+                                            <SelectItem value="SEPARATE_FILES">Separate Files (One per DB)</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                    <FormDescription>
+                                        Choose how to group databases when multiple are selected. Single TAR groups all databases into one archive. Separate Files creates individual backup files for each database.
+                                    </FormDescription>
+                                    <FormMessage />
+                                </FormItem>
+                            )} />
                         )}
                     </TabsContent>
 

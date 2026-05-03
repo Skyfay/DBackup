@@ -37,10 +37,10 @@ export interface BackupMetadata {
         iv: string;
         authTag: string;
     };
-    /** Multi-DB TAR archive metadata */
+    /** Multi-DB archive metadata (TAR or separate files) */
     multiDb?: {
-        format: 'tar';
-        /** Database names contained in the archive */
+        format: 'tar' | 'separate_files';
+        /** Database names contained in the archive or files */
         databases: string[];
     };
     /** SHA-256 checksum of the final backup file (after compression/encryption) */
@@ -84,8 +84,10 @@ export interface BaseAdapter {
 
 export type BackupResult = {
     success: boolean;
-    path?: string;
-    size?: number;
+    path?: string; // Single file (for SINGLE_TAR or single DB)
+    size?: number; // Single file size
+    /** Multiple files for SEPARATE_FILES backups */
+    files?: Array<{ path: string; name: string; size: number; database: string }>;
     error?: string;
     logs: string[];
     /** Partial metadata from adapter - will be merged with full metadata in runner */

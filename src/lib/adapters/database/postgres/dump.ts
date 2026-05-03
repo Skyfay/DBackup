@@ -249,14 +249,16 @@ export async function dump(
             log(`Starting single-database dump (custom format)`, 'info');
             await dumpSingleDatabase(dbs[0], destinationPath, config, env, log);
         }
-        // Case 2: Multiple Databases - TAR archive with individual pg_dump per DB
+        // Case 2: Multiple Databases - Either separate files or TAR archive
         else {
-            log(`Dumping ${dbs.length} databases using TAR archive: ${dbs.join(', ')}`, 'info');
+            const backupType = (config as any).multiDbBackupType || 'SINGLE_TAR';
+            log(`Dumping ${dbs.length} databases (${backupType}): ${dbs.join(', ')}`, 'info');
 
             // Create temp directory for individual dumps
             tempDir = await createTempDir('pg-multidb-');
             log(`Created temp directory: ${tempDir}`, 'info');
 
+            const dumpedFiles: Array<{ path: string; name: string; size: number; database: string }> = [];
             const tarFiles: TarFileEntry[] = [];
 
             // Dump each database individually with custom format
@@ -267,23 +269,65 @@ export async function dump(
                 await dumpSingleDatabase(dbName, dumpPath, config, env, log);
                 log(`Database ${dbName} dumped successfully`, 'success');
 
-                tarFiles.push({
-                    name: dumpFilename,
+                const stats = await fs.stat(dumpPath);
+                dumpedFiles.push({
                     path: dumpPath,
-                    dbName,
-                    format: 'custom', // PostgreSQL custom format
+                    name: dumpFilename,
+                    size: stats.size,
+                    database: dbName,
                 });
+
+                if (backupType === 'SINGLE_TAR') {
+                    tarFiles.push({
+                        name: dumpFilename,
+                        path: dumpPath,
+                        dbName,
+                        format: 'custom',
+                    });
+                }
             }
 
-            // Create TAR archive with manifest
-            log(`Creating TAR archive with ${tarFiles.length} databases...`, 'info');
-            const manifest: TarManifest = await createMultiDbTar(tarFiles, destinationPath, {
-                sourceType: 'postgres',
-                engineVersion: config.detectedVersion || 'unknown',
-            });
+            // Handle based on backup type
+            if (backupType === 'SEPARATE_FILES') {
+                // Copy each file to final destination with database name prefix
+                log(`Preparing ${dumpedFiles.length} separate backup files...`, 'info');
 
-            log(`Multi-database TAR archive created successfully`, 'success');
-            log(`Manifest: ${manifest.databases.length} databases, ${manifest.totalSize} bytes`, 'info');
+                const finalFiles = [];
+                for (const file of dumpedFiles) {
+                    const finalPath = path.join(path.dirname(destinationPath), `${file.database}.dump`);
+                    await fs.copyFile(file.path, finalPath);
+                    finalFiles.push({
+                        path: finalPath,
+                        name: `${file.database}.dump`,
+                        size: file.size,
+                        database: file.database,
+                    });
+                    log(`Prepared file: ${file.database}.dump`, 'success');
+                }
+
+                log(`SEPARATE_FILES backup ready: ${finalFiles.length} files`, 'success');
+                return {
+                    success: true,
+                    files: finalFiles,
+                    logs,
+                    startedAt,
+                    completedAt: new Date(),
+                    metadata: {
+                        databases: dbs,
+                    },
+                };
+            } else {
+                // Create TAR archive with manifest
+                log(`Creating TAR archive with ${tarFiles.length} databases...`, 'info');
+                const manifest: TarManifest = await createMultiDbTar(tarFiles, destinationPath, {
+                    sourceType: 'postgres',
+                    engineVersion: config.detectedVersion || 'unknown',
+                    backupType: 'SINGLE_TAR',
+                });
+
+                log(`Multi-database TAR archive created successfully`, 'success');
+                log(`Manifest: ${manifest.databases.length} databases, ${manifest.totalSize} bytes`, 'info');
+            }
         }
 
         const stats = await fs.stat(destinationPath);

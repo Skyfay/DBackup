@@ -34,6 +34,9 @@ export async function stepExecuteDump(ctx: RunnerContext) {
     // Inject adapterId as type for Dialect selection (e.g. 'mariadb')
     sourceConfig.type = job.source.adapterId;
 
+    // Inject multiDbBackupType for handling multiple databases
+    sourceConfig.multiDbBackupType = job.multiDbBackupType || 'SINGLE_TAR';
+
     // Inject databases from Job (always takes precedence over source config).
     // An empty job selection means "backup all" - clear the source's default database
     // so each adapter's auto-discovery logic triggers instead of using the source default.
@@ -237,13 +240,58 @@ export async function stepExecuteDump(ctx: RunnerContext) {
         throw new Error(`Dump failed: ${dumpResult.error}`);
     }
 
-    // If adapter appended an extension (like .gz), use that path
-    if (dumpResult.path && dumpResult.path !== tempFile) {
-        ctx.tempFile = dumpResult.path;
-    }
+    // Handle both single file and multiple files (SEPARATE_FILES mode)
+    if (dumpResult.files && dumpResult.files.length > 0) {
+        // SEPARATE_FILES mode: multiple files
+        // Apply the filename pattern to each database file
+        const renamedFiles = [];
 
-    ctx.dumpSize = dumpResult.size || 0;
-    ctx.log(`Dump successful. Size: ${dumpResult.size} bytes`);
+        for (const dumpFile of dumpResult.files) {
+            // Generate filename for this specific database using the pattern
+            const dbSpecificDbName = dumpFile.database.replace(/[^a-z0-9]/gi, '_');
+            const escapeName = (text: string) => text.replace(/'/g, "''");
+            let dbSpecificPattern = pattern
+                .replace('{name}', `'${escapeName(sanitizedName)}'`)
+                .replace('{db_name}', `'${escapeName(dbSpecificDbName)}'`);
+
+            const dbSpecificFileName = formatInTimeZone(new Date(), timezone, dbSpecificPattern) + `.${ext}`;
+            const dbSpecificPath = path.join(path.dirname(dumpFile.path), dbSpecificFileName);
+
+            // Rename the file to the new name
+            if (dumpFile.path !== dbSpecificPath) {
+                await fs.rename(dumpFile.path, dbSpecificPath);
+                ctx.log(`Renamed ${dumpFile.database} backup to: ${dbSpecificFileName}`);
+            }
+
+            renamedFiles.push({
+                path: dbSpecificPath,
+                name: dbSpecificFileName,
+                database: dumpFile.database,
+                size: dumpFile.size
+            });
+        }
+
+        ctx.dumpFiles = renamedFiles;
+        ctx.dumpSize = renamedFiles.reduce((sum, f) => sum + f.size, 0);
+        ctx.log(`Dump successful (${renamedFiles.length} separate files). Total size: ${ctx.dumpSize} bytes`);
+        // Create a manifest file for reference
+        const manifestPath = path.join(getTempDir(), `${path.basename(tempFile)}.manifest.json`);
+        await fs.writeFile(manifestPath, JSON.stringify({
+            format: 'separate_files',
+            files: renamedFiles.map(f => ({ name: f.name, database: f.database, size: f.size }))
+        }, null, 2));
+    } else if (dumpResult.path) {
+        // Single file mode
+        if (dumpResult.path !== tempFile) {
+            ctx.tempFile = dumpResult.path;
+        } else {
+            ctx.tempFile = tempFile;
+        }
+        ctx.dumpSize = dumpResult.size || 0;
+        ctx.log(`Dump successful. Size: ${dumpResult.size} bytes`);
+    } else {
+        throw new Error("Dump result has neither path nor files");
+    }
 
     // If metadata has no DB names yet (auto-discovered during dump), fetch them now
     if (ctx.metadata && (!ctx.metadata.names || ctx.metadata.names.length === 0)) {
@@ -268,32 +316,45 @@ export async function stepExecuteDump(ctx: RunnerContext) {
         }
     }
 
-    // Check if the dump is a Multi-DB TAR archive and update metadata
-    try {
-        const dumpPath = ctx.tempFile;
-        if (await isMultiDbTar(dumpPath)) {
-            const manifest = await readTarManifest(dumpPath);
-            if (manifest) {
-                ctx.metadata = {
-                    ...ctx.metadata,
-                    multiDb: {
-                        format: 'tar',
-                        databases: manifest.databases.map(db => db.name)
-                    }
-                };
-                ctx.log(`Multi-DB TAR archive detected: ${manifest.databases.length} databases`);
+    // Check if we have separate files (SEPARATE_FILES mode) or a Multi-DB TAR archive
+    if (ctx.dumpFiles && ctx.dumpFiles.length > 0) {
+        // SEPARATE_FILES mode
+        ctx.metadata = {
+            ...ctx.metadata,
+            multiDb: {
+                format: 'separate_files',
+                databases: ctx.dumpFiles.map(f => f.database)
+            }
+        };
+        ctx.log(`Separate files mode detected: ${ctx.dumpFiles.length} databases`);
+    } else if (ctx.tempFile) {
+        // Check if it's a Multi-DB TAR archive
+        try {
+            const dumpPath = ctx.tempFile;
+            if (await isMultiDbTar(dumpPath)) {
+                const manifest = await readTarManifest(dumpPath);
+                if (manifest) {
+                    ctx.metadata = {
+                        ...ctx.metadata,
+                        multiDb: {
+                            format: 'tar',
+                            databases: manifest.databases.map(db => db.name)
+                        }
+                    };
+                    ctx.log(`Multi-DB TAR archive detected: ${manifest.databases.length} databases`);
 
-                // Rename file to .tar extension to reflect actual format
-                if (!dumpPath.endsWith('.tar')) {
-                    const tarPath = dumpPath.replace(/\.[^.]+$/, '.tar');
-                    await fs.rename(dumpPath, tarPath);
-                    ctx.tempFile = tarPath;
-                    ctx.log(`Renamed backup file to .tar extension: ${path.basename(tarPath)}`);
+                    // Rename file to .tar extension to reflect actual format
+                    if (!dumpPath.endsWith('.tar')) {
+                        const tarPath = dumpPath.replace(/\.[^.]+$/, '.tar');
+                        await fs.rename(dumpPath, tarPath);
+                        ctx.tempFile = tarPath;
+                        ctx.log(`Renamed backup file to .tar extension: ${path.basename(tarPath)}`);
+                    }
                 }
             }
+        } catch (e: unknown) {
+            const message = e instanceof Error ? e.message : String(e);
+            ctx.log(`Warning: Could not check for Multi-DB TAR format: ${message}`);
         }
-    } catch (e: unknown) {
-        const message = e instanceof Error ? e.message : String(e);
-        ctx.log(`Warning: Could not check for Multi-DB TAR format: ${message}`);
     }
 }

@@ -162,10 +162,45 @@ export async function dump(
             }
 
             // Copy backup file(s) to final destination
+            const backupType = (config as any).multiDbBackupType || 'SINGLE_TAR';
+
             if (tempFiles.length === 1) {
                 // Single database - copy directly
                 await copyFile(tempFiles[0].local, destinationPath);
                 log(`Backup file copied to: ${destinationPath}`);
+            } else if (backupType === 'SEPARATE_FILES') {
+                // Multiple databases - copy each .bak file separately
+                log(`Preparing ${tempFiles.length} separate backup files...`);
+
+                const finalFiles = [];
+                for (let i = 0; i < tempFiles.length; i++) {
+                    const f = tempFiles[i];
+                    const dbName = databases[i];
+                    const finalPath = path.join(path.dirname(destinationPath), `${dbName}.bak`);
+                    await copyFile(f.local, finalPath);
+                    const fileStats = await fs.stat(finalPath);
+                    finalFiles.push({
+                        path: finalPath,
+                        name: `${dbName}.bak`,
+                        size: fileStats.size,
+                        database: dbName,
+                    });
+                    log(`Prepared file: ${dbName}.bak`, 'success');
+                }
+
+                log(`SEPARATE_FILES backup ready: ${finalFiles.length} files`, 'success');
+                const result: any = {
+                    success: true,
+                    files: finalFiles,
+                    logs,
+                    startedAt,
+                    completedAt: new Date(),
+                    metadata: {
+                        databases,
+                    },
+                };
+                await cleanupTempFiles();
+                return result;
             } else {
                 // Multiple databases - pack all .bak files into a tar archive
                 // MSSQL cannot create multi-DB backups in a single file like MySQL
@@ -219,7 +254,7 @@ export async function dump(
             const sizeMB = (stats.size / 1024 / 1024).toFixed(2);
             log(`Backup finished successfully. Size: ${sizeMB} MB`);
 
-            return {
+            const result: any = {
                 success: true,
                 path: destinationPath,
                 size: stats.size,
@@ -227,6 +262,19 @@ export async function dump(
                 startedAt,
                 completedAt: new Date(),
             };
+
+            // Add metadata for multi-database backups
+            if (databases.length > 1) {
+                result.metadata = {
+                    multiDb: {
+                        format: "tar",
+                        databases,
+                        backupType: (config as any).multiDbBackupType || "SINGLE_TAR",
+                    },
+                };
+            }
+
+            return result;
         } finally {
             // Always clean up temp .bak files (even on error/abort)
             await cleanupTempFiles();

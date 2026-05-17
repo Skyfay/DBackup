@@ -10,6 +10,7 @@ All notable changes to DBackup are documented here.
 - **Backup Metadata**: The trigger source (type and actor) is now stored in each backup's `.meta.json` sidecar file. The `trigger.type` field records how the backup was initiated (`Manual`, `Scheduler`, or `Api`). The `trigger.actor` field records the username or API key name - this can be disabled via the new Privacy settings tab. ([#81](https://github.com/Skyfay/DBackup/issues/81))
 - **Settings**: A new "Privacy" tab has been added to System Settings. It currently contains a toggle to opt out of storing the trigger actor (username or API key name) in unencrypted backup metadata files. The setting is enabled by default.
 - **Storage Explorer**: A new "Triggered by" column shows who or what initiated each backup, using the same badge style as the Activity Log (blue for Manual, violet for Scheduler, teal for API). The column is populated from the backup's metadata sidecar and only appears for backups created after this update.
+- **Job Trigger API**: The `POST /api/jobs/{id}/run` endpoint now accepts an optional JSON body with a `lock` boolean field. When `lock: true` is set, the created backup is immediately written with `locked: true` in its `.meta.json` sidecar - excluding it from all retention policies. The CI container image (`skyfay/dbackup:ci`) supports this via a new `DBACKUP_AUTO_LOCK=1` environment variable. ([#80](https://github.com/Skyfay/DBackup/issues/80))
 
 ### 🐛 Bug Fixes
 

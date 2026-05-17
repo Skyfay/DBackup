@@ -154,6 +154,7 @@ export async function stepUpload(ctx: RunnerContext) {
         checksum,
         multiDb: ctx.metadata?.multiDb,
         trigger,
+        locked: ctx.lock === true,
     };
 
     const metaPath = ctx.tempFile + ".meta.json";

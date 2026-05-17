@@ -185,6 +185,20 @@ paths:
         - BearerAuth: []
       parameters:
         - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                lock:
+                  type: boolean
+                  description: |
+                    When `true`, the created backup is immediately written with `locked: true`
+                    in its metadata sidecar file. Locked backups are excluded from all retention
+                    policies and must be unlocked manually in the Storage Explorer.
+                  example: true
       responses:
         "200":
           description: Job queued

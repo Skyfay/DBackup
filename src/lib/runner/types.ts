@@ -65,4 +65,7 @@ export interface RunnerContext {
         type: string;
         label: string;
     };
+
+    // Auto-lock: if true the backup will be written with locked=true in .meta.json
+    lock?: boolean;
 }

@@ -13,6 +13,7 @@ require_env() {
 api_request() {
   local method="$1"
   local url="$2"
+  local body="${3:-}"
   local response_file
   local http_code
   local curl_exit
@@ -25,6 +26,10 @@ api_request() {
   if [ "${DBACKUP_SKIP_TLS_VERIFY:-0}" = "1" ]; then
     echo "TLS certificate verification: disabled" >&2
     curl_args+=(--insecure)
+  fi
+
+  if [ -n "${body}" ]; then
+    curl_args+=(-H "Content-Type: application/json" --data "${body}")
   fi
 
   http_code=$(curl "${curl_args[@]}" \
@@ -79,7 +84,13 @@ require_env "DBACKUP_URL"
 require_env "JOB_ID"
 require_env "DBACKUP_API_KEY"
 
-RESPONSE=$(api_request "POST" "${DBACKUP_URL}/api/jobs/${JOB_ID}/run") || exit 1
+TRIGGER_BODY=""
+if [ "${DBACKUP_AUTO_LOCK:-0}" = "1" ]; then
+  echo "Auto-lock enabled: backup will be locked after creation" >&2
+  TRIGGER_BODY='{"lock":true}'
+fi
+
+RESPONSE=$(api_request "POST" "${DBACKUP_URL}/api/jobs/${JOB_ID}/run" "${TRIGGER_BODY}") || exit 1
 
 EXECUTION_ID=$(json_value "${RESPONSE}" '.executionId' "execution id") || exit 1
 echo "Execution started: $EXECUTION_ID"

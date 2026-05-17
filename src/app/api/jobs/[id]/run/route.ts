@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { backupService } from "@/services/backup/backup-service";
 import { TriggerInfo } from "@/lib/runner";
 import { headers } from "next/headers";
@@ -9,6 +10,10 @@ import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { ApiKeyError } from "@/lib/logging/errors";
 import { apiKeyService } from "@/services/auth/api-key-service";
 import prisma from "@/lib/prisma";
+
+const triggerBodySchema = z.object({
+    lock: z.boolean().optional(),
+}).optional();
 
 export async function POST(
     req: NextRequest,
@@ -37,6 +42,21 @@ export async function POST(
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.JOBS.EXECUTE);
 
+        // Parse optional request body
+        let lock: boolean | undefined;
+        const contentType = req.headers.get("content-type") ?? "";
+        if (contentType.includes("application/json")) {
+            const rawBody = await req.json().catch(() => ({}));
+            const parsed = triggerBodySchema.safeParse(rawBody);
+            if (!parsed.success) {
+                return NextResponse.json(
+                    { success: false, error: "Invalid request body" },
+                    { status: 400 }
+                );
+            }
+            lock = parsed.data?.lock;
+        }
+
         let triggerInfo: TriggerInfo;
         if (ctx.authMethod === "apikey" && ctx.apiKeyId) {
             const apiKey = await apiKeyService.getById(ctx.apiKeyId);
@@ -46,7 +66,7 @@ export async function POST(
             triggerInfo = { type: "Manual", label: user?.name ?? "Unknown" };
         }
 
-        const result = await backupService.executeJob(id, triggerInfo);
+        const result = await backupService.executeJob(id, triggerInfo, { lock });
 
         // Audit log
         if (result.success) {
@@ -57,6 +77,7 @@ export async function POST(
                 {
                     executionId: result.executionId,
                     trigger: ctx.authMethod === "apikey" ? "api" : "manual",
+                    lock: lock ?? false,
                     ...(ctx.apiKeyId ? { apiKeyId: ctx.apiKeyId } : {}),
                 },
                 id

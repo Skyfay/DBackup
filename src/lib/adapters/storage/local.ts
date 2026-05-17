@@ -139,7 +139,7 @@ export const LocalFileSystemAdapter: StorageAdapter = {
             try {
                 await fs.access(dirPath);
             } catch {
-                return [];
+                throw new AdapterError("local-filesystem", "list", `Storage path not accessible: ${dirPath}`);
             }
 
             const entries = await fs.readdir(dirPath, { withFileTypes: true, recursive: true });

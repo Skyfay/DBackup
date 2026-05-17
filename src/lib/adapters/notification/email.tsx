@@ -37,10 +37,26 @@ export const EmailAdapter: NotificationAdapter = {
         try {
             const transporter = createTransporter(config);
             await transporter.verify();
-            return { success: true, message: "SMTP connection verified successfully!" };
+
+            const recipient = Array.isArray(config.to) ? config.to.join(", ") : config.to;
+
+            await transporter.sendMail({
+                from: config.from,
+                to: recipient,
+                subject: "DBackup - Test Email",
+                text: "This is a test email sent by DBackup to verify that your SMTP configuration is working correctly.",
+                html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px">
+  <h2 style="color:#22c55e;margin-bottom:8px">Test Email</h2>
+  <p style="color:#374151">This is a test email sent by <strong>DBackup</strong> to verify that your SMTP configuration is working correctly.</p>
+  <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0"/>
+  <p style="color:#9ca3af;font-size:12px">You can safely ignore this message.</p>
+</div>`,
+            });
+
+            return { success: true, message: `SMTP connection verified. Test email sent to ${recipient}` };
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : String(error);
-            return { success: false, message: message || "Failed to verify SMTP connection" };
+            return { success: false, message: message || "Failed to send test email" };
         }
     },
 

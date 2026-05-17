@@ -10,6 +10,7 @@ import { ConfigBackupSettings } from "@/components/settings/config-backup-settin
 import { NotificationSettings } from "@/components/settings/notification-settings";
 import { RateLimitSettings } from "@/components/settings/rate-limit-settings";
 import { CertificateSettings } from "@/components/settings/certificate-settings";
+import { PrivacySettings } from "@/components/settings/privacy-settings";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getRateLimitConfig } from "@/lib/rate-limit/server";
 
@@ -94,6 +95,10 @@ export default async function SettingsPage() {
     // Load Rate Limit Settings
     const rateLimitConfig = await getRateLimitConfig();
 
+    // Load Privacy Settings
+    const includeActorSetting = await prisma.systemSetting.findUnique({ where: { key: "privacy.includeActorInMetadata" } });
+    const includeActorInMetadata = includeActorSetting ? includeActorSetting.value === 'true' : true;
+
 
     return (
         <div className="space-y-6">
@@ -112,6 +117,7 @@ export default async function SettingsPage() {
                     <TabsTrigger value="config">Configuration Backup</TabsTrigger>
                     <TabsTrigger value="ratelimits">Rate Limits</TabsTrigger>
                     <TabsTrigger value="certificate">Certificate</TabsTrigger>
+                    <TabsTrigger value="privacy">Privacy</TabsTrigger>
                 </TabsList>
                 <TabsContent value="general" className="space-y-4">
                     <SystemSettingsForm
@@ -146,6 +152,9 @@ export default async function SettingsPage() {
                 </TabsContent>
                 <TabsContent value="certificate" className="space-y-4">
                     <CertificateSettings />
+                </TabsContent>
+                <TabsContent value="privacy" className="space-y-4">
+                    <PrivacySettings initialIncludeActorInMetadata={includeActorInMetadata} />
                 </TabsContent>
             </Tabs>
         </div>

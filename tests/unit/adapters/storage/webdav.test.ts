@@ -217,12 +217,10 @@ describe("WebDAVAdapter", () => {
             expect(result[0].path).not.toContain("/backups/");
         });
 
-        it("returns empty array on getDirectoryContents error", async () => {
+        it("throws on getDirectoryContents error", async () => {
             mockClient.getDirectoryContents.mockRejectedValue(new Error("Connection refused"));
 
-            const result = await WebDAVAdapter.list(config, "Job");
-
-            expect(result).toEqual([]);
+            await expect(WebDAVAdapter.list(config, "Job")).rejects.toThrow("Connection refused");
         });
     });
 

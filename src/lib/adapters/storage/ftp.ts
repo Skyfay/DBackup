@@ -212,7 +212,7 @@ export const FTPAdapter: StorageAdapter = {
             return files;
         } catch (error: unknown) {
             log.error("FTP list failed", { host: config.host, dir }, wrapError(error));
-            return [];
+            throw error;
         } finally {
             if (client) client.close();
         }

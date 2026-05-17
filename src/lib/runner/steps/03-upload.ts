@@ -1,6 +1,7 @@
 import { RunnerContext } from "../types";
 import path from "path";
 import fs from "fs/promises";
+import prisma from "@/lib/prisma";
 import { createReadStream, createWriteStream } from "fs";
 import { pipeline } from "stream/promises";
 import { BackupMetadata } from "@/lib/core/interfaces";
@@ -120,6 +121,18 @@ export async function stepUpload(ctx: RunnerContext) {
     const checksum = await calculateFileChecksum(ctx.tempFile);
     ctx.log(`Checksum: ${checksum}`);
 
+    // --- PRIVACY SETTING: include actor in metadata? ---
+    const privacySetting = await prisma.systemSetting.findUnique({ where: { key: "privacy.includeActorInMetadata" } });
+    const includeActor = privacySetting ? privacySetting.value === 'true' : true;
+
+    const triggerInfo = ctx.triggerInfo;
+    const trigger: BackupMetadata['trigger'] = triggerInfo
+        ? {
+            type: triggerInfo.type as NonNullable<BackupMetadata['trigger']>['type'],
+            ...(includeActor && triggerInfo.label ? { actor: triggerInfo.label } : {}),
+          }
+        : undefined;
+
     // --- METADATA SIDECAR (created once, uploaded to each destination) ---
     const metadata: BackupMetadata = {
         version: 1,
@@ -139,7 +152,9 @@ export async function stepUpload(ctx: RunnerContext) {
         compression: compressionMeta,
         encryption: encryptionMeta,
         checksum,
-        multiDb: ctx.metadata?.multiDb
+        multiDb: ctx.metadata?.multiDb,
+        trigger,
+        locked: ctx.lock === true,
     };
 
     const metaPath = ctx.tempFile + ".meta.json";

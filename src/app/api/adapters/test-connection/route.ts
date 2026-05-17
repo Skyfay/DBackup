@@ -67,7 +67,17 @@ export async function POST(req: NextRequest) {
             sshCredentialId ?? null
         );
 
-        const result = await adapter.test(mergedConfig);
+        const TEST_TIMEOUT_MS = 10_000;
+
+        const result = await Promise.race([
+            adapter.test(mergedConfig),
+            new Promise<{ success: false; message: string }>((resolve) =>
+                setTimeout(
+                    () => resolve({ success: false, message: "Connection test timed out after 10s. Check the host and port settings." }),
+                    TEST_TIMEOUT_MS
+                )
+            ),
+        ]);
 
         // If test successful and we have a configId (editing existing config), update metadata
         if (result.success && result.version && configId) {

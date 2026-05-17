@@ -29,6 +29,7 @@ export type RichFileInfo = FileInfo & {
     encryptionProfileId?: string;
     compression?: string;
     locked?: boolean;
+    trigger?: { type: string; actor?: string };
 };
 
 export class StorageService {
@@ -245,7 +246,8 @@ export class StorageService {
                      isEncrypted,
                      encryptionProfileId,
                      compression,
-                     locked: sidecar.locked
+                     locked: sidecar.locked,
+                     trigger: sidecar.trigger as { type: string; actor?: string } | undefined,
                  };
              }
 

@@ -12,6 +12,20 @@ import { PIPELINE_STAGES } from "@/lib/core/logs";
 
 const log = logger.child({ step: "04-completion" });
 
+const NOTIFICATION_TIMEOUT_MS = 30_000;
+
+function notifyWithTimeout(send: () => Promise<unknown>): Promise<unknown> {
+    return Promise.race([
+        send(),
+        new Promise<never>((_, reject) =>
+            setTimeout(
+                () => reject(new Error("Notification send timed out after 30s")),
+                NOTIFICATION_TIMEOUT_MS
+            )
+        ),
+    ]);
+}
+
 export async function stepCleanup(ctx: RunnerContext) {
     // 1. Filesystem Cleanup
     if (ctx.tempFile) {
@@ -174,13 +188,13 @@ export async function stepFinalize(ctx: RunnerContext) {
                             });
                         }
 
-                        await notifyAdapter.send(channelConfig, payload.message, {
+                        await notifyWithTimeout(() => notifyAdapter.send(channelConfig, payload.message, {
                             success: payload.success,
                             eventType,
                             title: payload.title,
                             fields: payload.fields,
                             color: payload.color,
-                        });
+                        }));
 
                         // Record successful send
                         await recordNotificationLog({

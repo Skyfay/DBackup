@@ -28,6 +28,20 @@ const log = logger.child({ service: "SystemNotificationService" });
 
 const SETTING_KEY = "notifications.config";
 
+const NOTIFICATION_TIMEOUT_MS = 30_000;
+
+function notifyWithTimeout(send: () => Promise<unknown>): Promise<unknown> {
+    return Promise.race([
+        send(),
+        new Promise<never>((_, reject) =>
+            setTimeout(
+                () => reject(new Error("Notification send timed out after 30s")),
+                NOTIFICATION_TIMEOUT_MS
+            )
+        ),
+    ]);
+}
+
 /** Email adapter IDs that support per-user `to` override */
 const EMAIL_ADAPTER_IDS = ["email"];
 
@@ -181,14 +195,14 @@ async function sendThroughChannel(
   }
 
   try {
-    await adapter.send(channelConfig, payload.message, {
+    await notifyWithTimeout(() => adapter.send(channelConfig, payload.message, {
       success: payload.success,
       eventType,
       title: payload.title,
       fields: payload.fields,
       color: payload.color,
       badge: payload.badge,
-    });
+    }));
 
     // Record successful send
     await recordNotificationLog({
@@ -242,7 +256,9 @@ async function sendThroughChannel(
  * Failures are logged but never thrown – callers should not be blocked by
  * notification delivery issues.
  */
-export async function notify(event: NotificationEventData): Promise<void> {
+export async function notify(event: NotificationEventData): Promise<{ succeeded: number; failed: number } | undefined> {
+  let succeeded = 0;
+  let failed = 0;
   try {
     const config = await getNotificationConfig();
 
@@ -295,12 +311,14 @@ export async function notify(event: NotificationEventData): Promise<void> {
       for (const channel of channels) {
         try {
           await sendThroughChannel(channel, payload, event.eventType);
+          succeeded++;
         } catch (err) {
           log.error(
             "Failed to send system notification through channel",
             { channelName: channel.name, eventType: event.eventType },
             wrapError(err)
           );
+          failed++;
         }
       }
     }
@@ -346,4 +364,5 @@ export async function notify(event: NotificationEventData): Promise<void> {
       wrapError(err)
     );
   }
+  return { succeeded, failed };
 }

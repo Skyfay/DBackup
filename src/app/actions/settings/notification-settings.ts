@@ -94,8 +94,17 @@ export async function sendTestNotification(eventType: string) {
       return { success: false, error: "No test data available for this event" };
     }
 
-    await notify(testData);
+    const result = await notify(testData);
 
+    if (!result) {
+      return { success: true, message: "Test notification skipped (disabled or no channels configured)" };
+    }
+    if (result.failed > 0 && result.succeeded === 0) {
+      return { success: false, error: "Test notification failed to deliver. Check the system logs for details." };
+    }
+    if (result.failed > 0) {
+      return { success: true, message: `Test notification sent (${result.failed} channel(s) failed to deliver)` };
+    }
     return { success: true, message: "Test notification sent" };
   } catch (error: unknown) {
     log.error("Failed to send test notification", {}, wrapError(error));

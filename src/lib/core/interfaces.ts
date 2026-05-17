@@ -46,6 +46,12 @@ export interface BackupMetadata {
     };
     /** SHA-256 checksum of the final backup file (after compression/encryption) */
     checksum?: string;
+    /** Trigger information - what initiated the backup */
+    trigger?: {
+        type: "Manual" | "Scheduler" | "Api";
+        /** Username or API key name. Only present if privacy.includeActorInMetadata is enabled. */
+        actor?: string;
+    };
     /** Allow additional adapter-specific properties */
     [key: string]: unknown;
 }

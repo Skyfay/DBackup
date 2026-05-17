@@ -101,7 +101,7 @@ async function s3List(internalConfig: S3InternalConfig, dir: string = ""): Promi
         })).filter(f => f.name && f.size > 0); // Filter folders or empty keys
     } catch (error) {
         log.error("S3 list failed", { bucket: internalConfig.bucket, prefix: listPrefix }, wrapError(error));
-        return [];
+        throw error;
     }
 }
 

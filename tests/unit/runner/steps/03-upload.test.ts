@@ -85,6 +85,12 @@ vi.mock('@/lib/core/logs', () => ({
     },
 }));
 
+vi.mock('@/lib/prisma', () => ({
+    default: {
+        systemSetting: { findUnique: vi.fn().mockResolvedValue(null) },
+    },
+}));
+
 // --- Helpers ---
 
 function makeDestination(overrides: Partial<DestinationContext> = {}): DestinationContext {

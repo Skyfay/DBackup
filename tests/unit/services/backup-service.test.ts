@@ -29,7 +29,7 @@ describe('BackupService', () => {
         const result = await service.executeJob(jobId);
 
         // Assert
-        expect(runJob).toHaveBeenCalledWith(jobId, undefined);
+        expect(runJob).toHaveBeenCalledWith(jobId, undefined, undefined);
         expect(runJob).toHaveBeenCalledTimes(1);
         expect(result).toBe(expectedResult);
     });

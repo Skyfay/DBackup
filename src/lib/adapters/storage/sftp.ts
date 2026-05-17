@@ -162,7 +162,7 @@ export const SFTPAdapter: StorageAdapter = {
 
         } catch (error) {
             log.error("SFTP list failed", { host: config.host, dir }, wrapError(error));
-            return [];
+            throw error;
         } finally {
             if (sftp) await sftp.end();
         }

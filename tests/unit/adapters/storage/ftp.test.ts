@@ -210,12 +210,10 @@ describe("FTPAdapter", () => {
             expect(result).toHaveLength(1);
         });
 
-        it("returns empty array on connection error", async () => {
+        it("throws on connection error", async () => {
             mockAccess.mockRejectedValue(new Error("Auth failed"));
 
-            const result = await FTPAdapter.list(config, "Job");
-
-            expect(result).toEqual([]);
+            await expect(FTPAdapter.list(config, "Job")).rejects.toThrow("Auth failed");
         });
     });
 

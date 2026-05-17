@@ -316,7 +316,7 @@ export const GoogleDriveAdapter: StorageAdapter = {
             return await listFilesRecursive(drive, rootFolderId, dir || "");
         } catch (error: unknown) {
             log.error("Google Drive list failed", { dir }, wrapError(error));
-            return [];
+            throw error;
         }
     },
 

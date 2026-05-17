@@ -1,0 +1,11 @@
+# docker compose -f docker-compose.ci.yml up --build
+services:
+  dbackup-ci:
+    build:
+      context: ./ci
+      dockerfile: Dockerfile
+    environment:
+      - DBACKUP_URL=http://host.docker.internal:3000
+      - DBACKUP_API_KEY=dbackup_api_key
+      - JOB_ID=dbackup_job_id
+      - DBACKUP_AUTO_LOCK=0 # New environment variable to enable auto-locking for CI-triggered backups

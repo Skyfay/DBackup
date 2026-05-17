@@ -40,6 +40,8 @@ export interface StorageVolumeEntry {
   adapterId: string;
   size: number;
   count: number;
+  /** True when the live adapter scan failed and DB fallback data was used. Snapshots and alerts are skipped for these entries. */
+  scanError?: boolean;
 }
 
 export interface StorageSnapshotEntry {
@@ -328,6 +330,7 @@ export async function refreshStorageStatsCache(): Promise<StorageVolumeEntry[]> 
         adapterId: adapterConfig.adapterId,
         size: totalSize,
         count: executions.length,
+        scanError: true,
       };
     }
   });
@@ -498,15 +501,22 @@ async function saveStorageSnapshots(entries: StorageVolumeEntry[]): Promise<void
   const log = logger.child({ service: "StorageSnapshots" });
 
   try {
-    const data = entries
-      .filter((entry) => entry.configId)
-      .map((entry) => ({
-        adapterConfigId: entry.configId!,
-        adapterName: entry.name,
-        adapterId: entry.adapterId,
-        size: BigInt(Math.round(entry.size)),
-        count: entry.count,
-      }));
+    // Skip entries where the live adapter scan failed - their sizes come from DB fallback
+    // and are unreliable for snapshot history and spike detection.
+    const validEntries = entries.filter((entry) => entry.configId && !entry.scanError);
+
+    if (validEntries.length < entries.length) {
+      const skipped = entries.filter((e) => e.scanError).map((e) => e.name);
+      log.warn("Skipping snapshots for adapters with scan errors", { skipped });
+    }
+
+    const data = validEntries.map((entry) => ({
+      adapterConfigId: entry.configId!,
+      adapterName: entry.name,
+      adapterId: entry.adapterId,
+      size: BigInt(Math.round(entry.size)),
+      count: entry.count,
+    }));
 
     if (data.length === 0) return;
 
@@ -514,9 +524,9 @@ async function saveStorageSnapshots(entries: StorageVolumeEntry[]): Promise<void
 
     log.debug("Saved storage snapshots", { count: data.length });
 
-    // Check storage alert conditions against new snapshot data
+    // Check storage alert conditions only for entries with valid live scan data
     try {
-      await checkStorageAlerts(entries);
+      await checkStorageAlerts(validEntries);
     } catch (alertError) {
       log.warn("Failed to check storage alerts", {}, wrapError(alertError));
     }

@@ -191,12 +191,10 @@ describe("SFTPAdapter", () => {
             expect(result).toEqual([]);
         });
 
-        it("returns empty array on connection error", async () => {
+        it("throws on connection error", async () => {
             mockSftpConnect.mockRejectedValue(new Error("Auth failed"));
 
-            const result = await SFTPAdapter.list(config, "Job");
-
-            expect(result).toEqual([]);
+            await expect(SFTPAdapter.list(config, "Job")).rejects.toThrow("Auth failed");
         });
 
         it("recurses into subdirectories", async () => {

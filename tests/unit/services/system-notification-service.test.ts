@@ -400,7 +400,7 @@ describe("SystemNotificationService", () => {
             timestamp: "2026-02-15T12:00:00Z",
           },
         })
-      ).resolves.toBeUndefined();
+      ).resolves.toBeDefined();
     });
 
     it("should not throw when config loading fails", async () => {
@@ -417,7 +417,7 @@ describe("SystemNotificationService", () => {
             timestamp: "2026-02-15T12:00:00Z",
           },
         })
-      ).resolves.toBeUndefined();
+      ).resolves.toBeDefined();
     });
 
     it("should skip notifyUser for events that don't support it", async () => {
@@ -536,7 +536,7 @@ describe("SystemNotificationService", () => {
           eventType: NOTIFICATION_EVENTS.USER_LOGIN,
           data: { userName: "Alice", email: "alice@test.com", timestamp: "2026-01-01T00:00:00Z" },
         })
-      ).resolves.toBeUndefined();
+      ).resolves.toBeDefined();
 
       expect(mockSend).not.toHaveBeenCalled();
     });
@@ -584,7 +584,7 @@ describe("SystemNotificationService", () => {
           eventType: NOTIFICATION_EVENTS.USER_LOGIN,
           data: { userName: "Alice", email: "alice@test.com", timestamp: "2026-01-01T00:00:00Z" },
         })
-      ).resolves.toBeUndefined();
+      ).resolves.toBeDefined();
 
       // No sends: notifyUser "only" means only email, but no email channel exists
       expect(mockSend).not.toHaveBeenCalled();
@@ -608,7 +608,7 @@ describe("SystemNotificationService", () => {
           eventType: NOTIFICATION_EVENTS.USER_LOGIN,
           data: { userName: "Alice", email: "alice@test.com", timestamp: "2026-01-01T00:00:00Z" },
         })
-      ).resolves.toBeUndefined();
+      ).resolves.toBeDefined();
     });
   });
 });

@@ -362,7 +362,7 @@ export const OneDriveAdapter: StorageAdapter = {
             return await listFilesRecursive(client, listPath, dir || "");
         } catch (error: unknown) {
             log.error("OneDrive list failed", { dir }, wrapError(error));
-            return [];
+            throw error;
         }
     },
 

@@ -290,12 +290,10 @@ describe("SMBAdapter", () => {
     // list() outer catch - when SambaClient constructor throws (lines 180-181)
     // ====================================================================
     describe("list() outer catch when SambaClient constructor throws", () => {
-        it("returns empty array when SambaClient constructor fails", async () => {
+        it("throws when SambaClient constructor fails", async () => {
             mockSambaCtorShouldThrow.value = true;
 
-            const result = await SMBAdapter.list(config, "Job");
-
-            expect(result).toEqual([]);
+            await expect(SMBAdapter.list(config, "Job")).rejects.toThrow("SambaClient constructor failed");
         });
     });
 });

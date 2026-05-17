@@ -4,7 +4,10 @@ import { RunnerContext, DestinationContext } from '@/lib/runner/types';
 
 // Mock all external dependencies
 vi.mock('@/lib/prisma', () => ({
-    default: { execution: { update: vi.fn() } }
+    default: {
+        execution: { update: vi.fn() },
+        systemSetting: { findUnique: vi.fn().mockResolvedValue(null) },
+    }
 }));
 vi.mock('@/lib/crypto', () => ({
     decryptConfig: vi.fn((c) => c),

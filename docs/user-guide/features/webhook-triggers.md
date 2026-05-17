@@ -36,6 +36,17 @@ curl -X POST "https://your-instance.com/api/jobs/JOB_ID/run" \
 }
 ```
 
+To **auto-lock** the created backup so it is excluded from all retention policies, pass `lock: true` in a JSON body:
+
+```bash
+curl -X POST "https://your-instance.com/api/jobs/JOB_ID/run" \
+  -H "Authorization: Bearer dbackup_your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{"lock":true}'
+```
+
+> Locked backups are skipped by the retention policy and must be unlocked manually in the Storage Explorer before they can be deleted.
+
 ### 3. Poll Execution Status
 
 ```bash
@@ -109,6 +120,7 @@ This is the same script used inside the `skyfay/dbackup:ci` container. It trigge
 | `JOB_ID` | Yes | ID of the backup job to trigger |
 | `DBACKUP_API_KEY` | Yes | API key with `jobs:execute` and `history:read` permissions |
 | `DBACKUP_SKIP_TLS_VERIFY` | No | Set to `1` to skip TLS certificate verification (self-signed certs) |
+| `DBACKUP_AUTO_LOCK` | No | Set to `1` to lock the backup immediately after creation, excluding it from retention policies |
 
 ```bash
 #!/usr/bin/env bash
@@ -279,6 +291,7 @@ The image is available on Docker Hub and GHCR:
 | `JOB_ID` | Yes | ID of the backup job to trigger |
 | `DBACKUP_API_KEY` | Yes | API key with `jobs:execute` and `history:read` permissions |
 | `DBACKUP_SKIP_TLS_VERIFY` | No | Set to `1` to skip TLS certificate verification (self-signed certs) |
+| `DBACKUP_AUTO_LOCK` | No | Set to `1` to lock the backup immediately after creation, excluding it from retention policies |
 
 ---
 

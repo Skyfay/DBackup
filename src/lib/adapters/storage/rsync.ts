@@ -443,7 +443,7 @@ export const RsyncAdapter: StorageAdapter = {
             return files;
         } catch (error: unknown) {
             log.error("Rsync list failed", { host: config.host, dir }, wrapError(error));
-            return [];
+            throw error;
         } finally {
             if (keyFile) await fs.unlink(keyFile).catch(() => {});
         }

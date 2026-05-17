@@ -495,12 +495,10 @@ describe("DropboxAdapter", () => {
             expect(files[0].name).toBe("backup.sql");
         });
 
-        it("should return empty array on error", async () => {
+        it("should throw on error", async () => {
             mockDbx.filesListFolder.mockRejectedValue(new Error("API error"));
 
-            const files = await DropboxAdapter.list(validConfig, "");
-
-            expect(files).toEqual([]);
+            await expect(DropboxAdapter.list(validConfig, "")).rejects.toThrow("API error");
         });
     });
 

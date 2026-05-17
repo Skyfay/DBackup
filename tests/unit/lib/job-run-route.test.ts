@@ -172,7 +172,7 @@ describe("POST /api/jobs/[id]/run", () => {
     expect(body.executionId).toBe("exec-123");
 
     // Backup service was called with the correct job ID and trigger info
-    expect(mockExecuteJob).toHaveBeenCalledWith("job-42", expect.objectContaining({ type: "Api" }));
+    expect(mockExecuteJob).toHaveBeenCalledWith("job-42", expect.objectContaining({ type: "Api" }), expect.any(Object));
   });
 
   it("should log audit event with trigger=api for API key auth", async () => {

@@ -178,7 +178,7 @@ export const SMBAdapter: StorageAdapter = {
             return files;
         } catch (error: unknown) {
             log.error("SMB list failed", { address: config.address, dir }, wrapError(error));
-            return [];
+            throw error;
         }
     },
 

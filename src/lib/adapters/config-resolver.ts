@@ -68,12 +68,12 @@ export async function resolveAdapterConfig(adapter: AdapterConfigInput): Promise
     }
 
     // --- Primary slot ---
+    // When the adapter declares a required primary credential, a profile must be assigned.
     if (requirements.primary) {
         if (!adapter.primaryCredentialId) {
             throw new ConfigurationError(
                 adapter.adapterId,
-                "No credential profile assigned to the primary slot",
-                { context: { adapterConfigId: adapter.id } }
+                "A credential profile is required but none is assigned"
             );
         }
         const profile = await loadAndValidate(

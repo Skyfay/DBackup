@@ -292,7 +292,7 @@ export const DropboxAdapter: StorageAdapter = {
             return await listFilesRecursive(dbx, listPath, basePath);
         } catch (error: unknown) {
             log.error("Dropbox list failed", { dir }, wrapError(error));
-            return [];
+            throw error;
         }
     },
 

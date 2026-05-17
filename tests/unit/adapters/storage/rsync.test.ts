@@ -383,12 +383,10 @@ describe("RsyncAdapter", () => {
             expect(result).toEqual([]);
         });
 
-        it("returns empty array on SSH error", async () => {
+        it("throws on SSH error", async () => {
             sshFails("SSH connection refused");
 
-            const result = await RsyncAdapter.list!(agentConfig, "Job");
-
-            expect(result).toEqual([]);
+            await expect(RsyncAdapter.list!(agentConfig, "Job")).rejects.toThrow("SSH connection refused");
         });
 
         it("skips lines without enough tab-separated fields", async () => {

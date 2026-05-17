@@ -213,12 +213,10 @@ describe("S3 Adapters - shared logic via S3GenericAdapter", () => {
             expect(result).toEqual([]);
         });
 
-        it("returns empty array on ListObjects error", async () => {
+        it("throws on ListObjects error", async () => {
             mockSend.mockRejectedValue(new Error("Access Denied"));
 
-            const result = await S3GenericAdapter.list(genericConfig, "Job");
-
-            expect(result).toEqual([]);
+            await expect(S3GenericAdapter.list(genericConfig, "Job")).rejects.toThrow("Access Denied");
         });
 
         it("filters out zero-size entries (virtual folder markers)", async () => {

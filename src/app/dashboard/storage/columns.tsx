@@ -1,7 +1,7 @@
 "use client";
 
 import { ColumnDef } from "@tanstack/react-table";
-import { ArrowUpDown, HardDrive } from "lucide-react";
+import { ArrowUpDown, Clock, HardDrive, KeyRound, MousePointerClick } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { Button } from "@/components/ui/button";
 import { DateDisplay } from "@/components/utils/date-display";
@@ -26,6 +26,7 @@ export type FileInfo = {
     encryptionProfileId?: string;
     compression?: string;
     locked?: boolean;
+    trigger?: { type: string; actor?: string };
 };
 
 interface ColumnsProps {
@@ -124,6 +125,36 @@ export const getColumns = ({ onRestore, onDownload, onDelete, onToggleLock, onGe
             const comp = row.original.compression;
             if (!comp || comp === "NONE") return <span className="text-muted-foreground text-xs">-</span>;
             return <Badge variant="outline" className="text-[10px] h-5 px-1.5 border-blue-200 text-blue-700 dark:text-blue-400 dark:border-blue-900">{comp}</Badge>;
+        }
+    },
+    {
+        id: "trigger",
+        header: "Triggered by",
+        cell: ({ row }) => {
+            const trigger = row.original.trigger;
+            if (!trigger) return <span className="text-muted-foreground text-xs">-</span>;
+
+            const iconClass = "h-3.5 w-3.5 shrink-0";
+            let icon: React.ReactNode;
+            let badgeClass: string;
+
+            if (trigger.type === "Scheduler") {
+                icon = <Clock className={iconClass} />;
+                badgeClass = "bg-violet-100 text-violet-700 border-violet-200 dark:bg-violet-950 dark:text-violet-300 dark:border-violet-800";
+            } else if (trigger.type === "Api") {
+                icon = <KeyRound className={iconClass} />;
+                badgeClass = "bg-teal-100 text-teal-700 border-teal-200 dark:bg-teal-950 dark:text-teal-300 dark:border-teal-800";
+            } else {
+                icon = <MousePointerClick className={iconClass} />;
+                badgeClass = "bg-sky-100 text-sky-700 border-sky-200 dark:bg-sky-950 dark:text-sky-300 dark:border-sky-800";
+            }
+
+            return (
+                <Badge variant="outline" className={`flex items-center gap-1.5 w-fit font-normal ${badgeClass}`}>
+                    {icon}
+                    <span>{trigger.actor || trigger.type}</span>
+                </Badge>
+            );
         }
     },
     {

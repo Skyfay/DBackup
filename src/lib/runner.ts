@@ -19,12 +19,16 @@ export interface TriggerInfo {
     label: string;
 }
 
+export interface RunJobOptions {
+    lock?: boolean;
+}
+
 /**
  * Entry point for scheduling/running a job.
  * It now enqueues the job instead of running immediately.
  */
-export async function runJob(jobId: string, triggerInfo?: TriggerInfo) {
-    log.info("Enqueuing job", { jobId, triggerType: triggerInfo?.type });
+export async function runJob(jobId: string, triggerInfo?: TriggerInfo, options?: RunJobOptions) {
+    log.info("Enqueuing job", { jobId, triggerType: triggerInfo?.type, lock: options?.lock });
 
     try {
         const initialLog: LogEntry = {
@@ -40,7 +44,7 @@ export async function runJob(jobId: string, triggerInfo?: TriggerInfo) {
                 jobId: jobId,
                 status: "Pending",
                 logs: JSON.stringify([initialLog]),
-                metadata: JSON.stringify({ progress: 0, stage: "Queued" }),
+                metadata: JSON.stringify({ progress: 0, stage: "Queued", ...(options?.lock ? { lock: true } : {}) }),
                 triggerType: triggerInfo?.type ?? null,
                 triggerLabel: triggerInfo?.label ?? null,
             }
@@ -253,6 +257,14 @@ export async function performExecution(executionId: string, jobId: string) {
         flushLogs(executionId);
     };
 
+    // Read lock option stored in the initial metadata at enqueue time.
+    // The metadata field is later overwritten with live progress, so we
+    // capture the value here before the flush loop takes over.
+    const initialMetadataParsed: Record<string, unknown> = initialExe.metadata
+        ? JSON.parse(initialExe.metadata)
+        : {};
+    const lockBackup = initialMetadataParsed.lock === true;
+
     // Create Context
     // We cast initialExe to any because Prisma types might mismatch RunnerContext expectation slightly,
     // but stepInitialize usually overwrites/fixes it.
@@ -269,6 +281,11 @@ export async function performExecution(executionId: string, jobId: string) {
         execution: initialExe as any,
         destinations: [],
         abortSignal: abortController.signal,
+        triggerInfo: initialExe.triggerType ? {
+            type: initialExe.triggerType,
+            label: initialExe.triggerLabel ?? "Unknown",
+        } : undefined,
+        lock: lockBackup,
     };
 
     // Helper: throw if cancellation was requested

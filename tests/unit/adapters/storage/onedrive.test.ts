@@ -553,7 +553,7 @@ describe("OneDriveAdapter", () => {
             expect(result[1].path).toContain("subfolder/nested.sql");
         });
 
-        it("should return empty array on error", async () => {
+        it("should throw on error", async () => {
             mockTokenRefresh();
 
             mockClient.api.mockReturnValue({
@@ -564,9 +564,7 @@ describe("OneDriveAdapter", () => {
                 get: vi.fn().mockRejectedValue(new Error("Access denied")),
             });
 
-            const result = await OneDriveAdapter.list(validConfig, "");
-
-            expect(result).toEqual([]);
+            await expect(OneDriveAdapter.list(validConfig, "")).rejects.toThrow("Access denied");
         });
 
         it("should handle pagination with @odata.nextLink", async () => {

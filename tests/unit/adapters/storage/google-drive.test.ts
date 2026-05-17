@@ -518,12 +518,10 @@ describe("GoogleDriveAdapter", () => {
             expect(files).toHaveLength(2);
         });
 
-        it("should return empty array on error", async () => {
+        it("should throw on error", async () => {
             mockDrive.files.list.mockRejectedValue(new Error("Forbidden"));
 
-            const files = await GoogleDriveAdapter.list(validConfig, "");
-
-            expect(files).toEqual([]);
+            await expect(GoogleDriveAdapter.list(validConfig, "")).rejects.toThrow("Forbidden");
         });
     });
 

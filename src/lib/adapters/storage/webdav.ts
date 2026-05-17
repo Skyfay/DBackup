@@ -167,7 +167,7 @@ export const WebDAVAdapter: StorageAdapter = {
             return files;
         } catch (error: unknown) {
             log.error("WebDAV list failed", { url: config.url, dir }, wrapError(error));
-            return [];
+            throw error;
         }
     },
 

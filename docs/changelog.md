@@ -2,6 +2,42 @@
 
 All notable changes to DBackup are documented here.
 
+## v2.3.2 - Backup Trigger Metadata, Job Trigger Locking, and Notification Improvements
+*Released: May 17, 2026*
+
+### ✨ Features
+
+- **Backup Metadata**: The trigger source (type and actor) is now stored in each backup's `.meta.json` sidecar file. The `trigger.type` field records how the backup was initiated (`Manual`, `Scheduler`, or `Api`). The `trigger.actor` field records the username or API key name - this can be disabled via the new Privacy settings tab. ([#81](https://github.com/Skyfay/DBackup/issues/81))
+- **Settings**: A new "Privacy" tab has been added to System Settings. It currently contains a toggle to opt out of storing the trigger actor (username or API key name) in unencrypted backup metadata files. The setting is enabled by default.
+- **Storage Explorer**: A new "Triggered by" column shows who or what initiated each backup, using the same badge style as the Activity Log (blue for Manual, violet for Scheduler, teal for API). The column is populated from the backup's metadata sidecar and only appears for backups created after this update.
+- **Job Trigger API**: The `POST /api/jobs/{id}/run` endpoint now accepts an optional JSON body with a `lock` boolean field. When `lock: true` is set, the created backup is immediately written with `locked: true` in its `.meta.json` sidecar - excluding it from all retention policies. The CI container image (`skyfay/dbackup:ci`) supports this via a new `DBACKUP_AUTO_LOCK=1` environment variable. ([#80](https://github.com/Skyfay/DBackup/issues/80))
+
+### 🐛 Bug Fixes
+
+- **Notifications**: The "Test Connection" button for Email (SMTP) connectors now sends an actual test email to the configured recipient instead of only verifying the SMTP handshake. The success toast shows the recipient address ("Test email sent to …"). If the send fails the error is shown instead of always returning success. ([#79](https://github.com/Skyfay/DBackup/issues/79))
+- **Notifications**: The "Test Connection" endpoint now enforces a 10-second timeout. Previously a wrong host or unreachable port caused the loading spinner to spin indefinitely. The user now receives a clear timeout error message instead.
+- **Notifications**: Fixed email (SMTP) notifications failing with `No credential profile assigned to the primary slot` when no credential profile is set. The credential profile is now truly optional for the email adapter - if no profile is assigned the structural config (host, port, from, to, inline user/password if any) is used directly, which allows unauthenticated relays and connectors with embedded SMTP credentials to work. ([#79](https://github.com/Skyfay/DBackup/issues/79))
+- **Notifications**: Backup and restore jobs no longer hang indefinitely when a notification channel (e.g. an unresponsive SMTP server) does not respond. A 30-second timeout is now enforced on every `send()` call in the runner pipeline and in the system notification service. A timed-out send is treated as a delivery failure and logged accordingly - the job is never blocked. ([#79](https://github.com/Skyfay/DBackup/issues/79))
+- **Notifications**: The "Test" button in Settings / Notifications now correctly reports when delivery failed. Previously the action always returned `"Test notification sent"` even when every channel errored out internally. It now returns an explicit error when all channels failed, or a partial warning when some failed. ([#79](https://github.com/Skyfay/DBackup/issues/79))
+- **Storage**: Fixed false "-100% change" spike notifications. All 10 storage adapters (Local, S3, SFTP, FTP, SMB, WebDAV, Rsync, Dropbox, Google Drive, OneDrive) were silently returning an empty file list on any connection or access error instead of throwing. This caused a 0-byte snapshot to be saved and triggered a -100% spike alert. Two changes were made: (1) all storage adapter `list()` functions now throw on error instead of returning `[]`, so the existing DB fallback in the stats cache is correctly triggered; (2) storage snapshots and spike checks are skipped for any adapter that fell back to DB estimation, preventing unreliable data from creating false alert history. ([#82](https://github.com/Skyfay/DBackup/issues/82))
+
+### 🧪 Tests
+
+- Updated unit tests for all 9 cloud/network storage adapters (`S3`, `SFTP`, `FTP`, `SMB`, `WebDAV`, `Rsync`, `Dropbox`, `Google Drive`, `OneDrive`) to expect `list()` to throw on connection/access errors, matching the behavior introduced by the #82 bug fix.
+- Fixed missing `prisma.systemSetting` mock in the multi-destination upload step tests.
+- Updated `executeJob` and `runJob` call assertions to include the third `options` argument introduced with the `lock` feature.
+- Fixed 5 system-notification-service test assertions from `.toBeUndefined()` to `.toBeDefined()` to match the updated `notify()` return type.
+- Fixed missing `@/lib/prisma` mock in `tests/unit/runner/steps/03-upload.test.ts` causing 10 `PrismaClientInitializationError` failures in CI (no `DATABASE_URL` available).
+- Fixed TypeScript build errors: non-nullable trigger type access in `03-upload.ts`; `notify()` return type updated to allow `undefined`; null-check guard added in `notification-settings.ts`.
+
+### 🐳 Docker
+
+- **Image**: `skyfay/dbackup:v2.3.2`
+- **Also tagged as**: `latest`, `v2`
+- **CI Image**: `skyfay/dbackup:ci`
+- **Platforms**: linux/amd64, linux/arm64
+
+
 ## v2.3.1 - General Improvements, MySQL/MariaDB SSH Mode Fixes and SSH Key Conversion
 *Released: May 11, 2026*
 

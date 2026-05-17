@@ -27,6 +27,7 @@ All notable changes to DBackup are documented here.
 - Fixed missing `prisma.systemSetting` mock in the multi-destination upload step tests.
 - Updated `executeJob` and `runJob` call assertions to include the third `options` argument introduced with the `lock` feature.
 - Fixed 5 system-notification-service test assertions from `.toBeUndefined()` to `.toBeDefined()` to match the updated `notify()` return type.
+- Fixed missing `@/lib/prisma` mock in `tests/unit/runner/steps/03-upload.test.ts` causing 10 `PrismaClientInitializationError` failures in CI (no `DATABASE_URL` available).
 - Fixed TypeScript build errors: non-nullable trigger type access in `03-upload.ts`; `notify()` return type updated to allow `undefined`; null-check guard added in `notification-settings.ts`.
 
 ### 🐳 Docker

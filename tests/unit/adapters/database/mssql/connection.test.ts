@@ -354,10 +354,9 @@ describe("getDatabasesWithStats()", () => {
         expect(result[0].sizeInBytes).toBe(0);
     });
 
-    it("returns empty array when main query throws", async () => {
+    it("throws when connection fails", async () => {
         mockConnect.mockRejectedValue(new Error("Connection refused"));
-        const result = await getDatabasesWithStats(buildConfig());
-        expect(result).toEqual([]);
+        await expect(getDatabasesWithStats(buildConfig())).rejects.toThrow("Connection refused");
     });
 });
 

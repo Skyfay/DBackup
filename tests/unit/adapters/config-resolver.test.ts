@@ -254,7 +254,7 @@ describe("Adapter credential declarations", () => {
         expect(registry.get("s3-aws")?.credentials).toEqual({ primary: "ACCESS_KEY" });
         expect(registry.get("sftp")?.credentials).toEqual({ primary: "SSH_KEY" });
         expect(registry.get("gotify")?.credentials).toEqual({ primary: "TOKEN" });
-        expect(registry.get("email")?.credentials).toEqual({ primary: "SMTP" });
+        expect(registry.get("email")?.credentials).toEqual({ primary: "SMTP", primaryOptional: true });
         expect(registry.get("sqlite")?.credentials).toEqual({ ssh: "SSH_KEY" });
         expect(registry.get("local-filesystem")?.credentials).toBeUndefined();
         expect(registry.get("discord")?.credentials).toBeUndefined();

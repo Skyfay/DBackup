@@ -113,6 +113,12 @@ export interface AdapterCredentialRequirements {
     primary?: CredentialType;
     /** Credential type for the optional SSH tunnel. */
     ssh?: CredentialType;
+    /**
+     * When true, the adapter can operate without a primary credential profile.
+     * The config resolver skips the "missing credential" error if no profile is
+     * assigned and falls back to the structural config values.
+     */
+    primaryOptional?: boolean;
 }
 
 /**

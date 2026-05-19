@@ -2,8 +2,8 @@
 
 All notable changes to DBackup are documented here.
 
-## vNEXT
-*Release: In Progress*
+## v2.3.3 - Multiple Bug Fixes across MSSQL, Redis, Email, and Storage Adapters
+*Released: May 19, 2026*
 
 ### 🐛 Bug Fixes
 
@@ -26,8 +26,8 @@ All notable changes to DBackup are documented here.
 
 ### 🐳 Docker
 
-- **Image**: `skyfay/dbackup:vNEXT`
-- **Also tagged as**: `latest`, `vNEXT`
+- **Image**: `skyfay/dbackup:v2.3.3`
+- **Also tagged as**: `latest`, `v2`
 - **CI Image**: `skyfay/dbackup:ci`
 - **Platforms**: linux/amd64, linux/arm64
 

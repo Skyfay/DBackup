@@ -147,6 +147,7 @@ export type FileInfo = {
     size: number;
     lastModified: Date;
     locked?: boolean;
+    storageClass?: string;
 };
 
 export interface StorageAdapter extends BaseAdapter {

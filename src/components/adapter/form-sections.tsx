@@ -27,7 +27,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import { Check, FolderOpen, Loader2 } from "lucide-react";
+import { AlertTriangle, Check, FolderOpen, Loader2 } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AdapterDefinition } from "@/lib/adapters/definitions";
 import { SchemaField } from "./schema-field";
 import { EmailTagField } from "./email-tag-field";
@@ -603,6 +604,8 @@ export function StorageFormContent({
 }: { adapter: AdapterDefinition; initialData?: AdapterConfig; healthNotificationsDisabled?: boolean; onHealthNotificationsDisabledChange?: (disabled: boolean) => void } & CredentialPickerHostProps) {
     const { watch } = useFormContext();
     const authType = watch("config.authType");
+    const storageClass = watch("config.storageClass");
+    const isArchivedStorageClass = storageClass === "GLACIER" || storageClass === "DEEP_ARCHIVE";
     const hasRealConfigKeys = hasFields(adapter, STORAGE_CONFIG_KEYS);
     // Always show Configuration tab for storage adapters (health check switch lives there)
     const hasConfigKeys = hasRealConfigKeys || !!onHealthNotificationsDisabledChange;
@@ -720,7 +723,19 @@ export function StorageFormContent({
                             hasRefreshToken={hasRefreshToken}
                         />
                     ) : hasRealConfigKeys ? (
-                        <FieldList keys={configKeys} adapter={adapter} />
+                        <>
+                            <FieldList keys={configKeys} adapter={adapter} />
+                            {isArchivedStorageClass && (
+                                <Alert className="border-orange-200 bg-orange-50 dark:bg-orange-950/30 dark:border-orange-900">
+                                    <AlertTriangle className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+                                    <AlertDescription className="text-orange-700 dark:text-orange-300 text-sm">
+                                        <strong>{storageClass === "DEEP_ARCHIVE" ? "Deep Archive" : "Glacier"}</strong> is an archived storage class.
+                                        Backups stored with this class cannot be downloaded or restored directly through DBackup.
+                                        You must first restore the object via the AWS Console (S3 - select object - Actions - Initiate restore) before accessing it.
+                                    </AlertDescription>
+                                </Alert>
+                            )}
+                        </>
                     ) : null}
                     {onHealthNotificationsDisabledChange && (
                         <HealthCheckNotificationSwitch

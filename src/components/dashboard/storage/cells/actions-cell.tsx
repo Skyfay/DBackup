@@ -4,6 +4,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Download, RotateCcw, Trash2, Lock, FileLock2, FileCheck, Terminal } from "lucide-react";
 import { FileInfo } from "@/app/dashboard/storage/columns";
 
+const ARCHIVED_STORAGE_CLASSES = ["GLACIER", "DEEP_ARCHIVE"];
+
 interface ActionsCellProps {
     file: FileInfo;
     onDownload: (file: FileInfo, decrypt?: boolean) => void;
@@ -27,6 +29,9 @@ export function ActionsCell({
     canRestore,
     canDelete
 }: ActionsCellProps) {
+    const isArchived = ARCHIVED_STORAGE_CLASSES.includes(file.storageClass ?? "");
+    const archivedTooltip = "This backup is archived in S3 Glacier or Deep Archive. Restore it via the AWS Console first (S3 - select object - Actions - Initiate restore).";
+
     return (
         <div className="flex items-center justify-end gap-2">
             {onToggleLock && canDelete && (
@@ -50,7 +55,20 @@ export function ActionsCell({
             )}
 
             {canDownload && (
-                file.isEncrypted ? (
+                isArchived ? (
+                    <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <span>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 opacity-40 cursor-not-allowed" disabled>
+                                        <Download className="h-4 w-4" />
+                                    </Button>
+                                </span>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-xs">{archivedTooltip}</TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                ) : file.isEncrypted ? (
                     <DropdownMenu>
                         <TooltipProvider>
                             <Tooltip>
@@ -118,16 +136,31 @@ export function ActionsCell({
             )}
 
             {canRestore && (
-                <TooltipProvider>
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onRestore(file)}>
-                                <RotateCcw className="h-4 w-4" />
-                            </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Restore</TooltipContent>
-                    </Tooltip>
-                </TooltipProvider>
+                isArchived ? (
+                    <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <span>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 opacity-40 cursor-not-allowed" disabled>
+                                        <RotateCcw className="h-4 w-4" />
+                                    </Button>
+                                </span>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-xs">{archivedTooltip}</TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                ) : (
+                    <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onRestore(file)}>
+                                    <RotateCcw className="h-4 w-4" />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Restore</TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                )
             )}
 
             {canDelete && (

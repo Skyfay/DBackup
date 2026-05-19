@@ -23,7 +23,7 @@ export const S3AWSSchema = z.object({
     accessKeyId: z.string().min(1, "Access Key is required"),
     secretAccessKey: z.string().min(1, "Secret Key is required"),
     pathPrefix: z.string().optional().describe("Optional folder prefix"),
-    storageClass: z.enum(["STANDARD", "STANDARD_IA", "GLACIER", "DEEP_ARCHIVE"]).default("STANDARD").describe("Storage Class for uploaded files"),
+    storageClass: z.enum(["STANDARD", "STANDARD_IA", "GLACIER", "DEEP_ARCHIVE"]).default("STANDARD").describe("Storage Class for uploaded files. Warning: GLACIER and DEEP_ARCHIVE are archived storage classes. Backups stored with these classes cannot be downloaded or restored directly through DBackup."),
 });
 
 export const S3R2Schema = z.object({

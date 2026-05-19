@@ -27,6 +27,7 @@ export type FileInfo = {
     compression?: string;
     locked?: boolean;
     trigger?: { type: string; actor?: string };
+    storageClass?: string;
 };
 
 interface ColumnsProps {
@@ -123,8 +124,24 @@ export const getColumns = ({ onRestore, onDownload, onDelete, onToggleLock, onGe
         header: "Compression",
         cell: ({ row }) => {
             const comp = row.original.compression;
-            if (!comp || comp === "NONE") return <span className="text-muted-foreground text-xs">-</span>;
-            return <Badge variant="outline" className="text-[10px] h-5 px-1.5 border-blue-200 text-blue-700 dark:text-blue-400 dark:border-blue-900">{comp}</Badge>;
+            const storageClass = row.original.storageClass;
+            const isArchived = storageClass === "GLACIER" || storageClass === "DEEP_ARCHIVE";
+            const hasContent = isArchived || (comp && comp !== "NONE");
+
+            if (!hasContent) return <span className="text-muted-foreground text-xs">-</span>;
+
+            return (
+                <div className="flex items-center gap-1 flex-wrap">
+                    {isArchived && (
+                        <Badge variant="outline" className="text-[10px] h-5 px-1.5 border-orange-200 text-orange-700 dark:text-orange-400 dark:border-orange-900">
+                            {storageClass === "DEEP_ARCHIVE" ? "Deep Archive" : "Glacier"}
+                        </Badge>
+                    )}
+                    {comp && comp !== "NONE" && (
+                        <Badge variant="outline" className="text-[10px] h-5 px-1.5 border-blue-200 text-blue-700 dark:text-blue-400 dark:border-blue-900">{comp}</Badge>
+                    )}
+                </div>
+            );
         }
     },
     {

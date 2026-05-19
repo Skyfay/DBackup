@@ -418,12 +418,19 @@ export const OneDriveAdapter: StorageAdapter = {
             // Test 3: Write and delete a test file
             const testFileName = `.dbackup-test-${Date.now()}.txt`;
             const testPath = basePath ? `${basePath}/${testFileName}` : testFileName;
+            let testFileUploaded = false;
 
-            await client
-                .api(`${driveItemPath(testPath)}/content`)
-                .put(Buffer.from("Connection Test"));
+            try {
+                await client
+                    .api(`${driveItemPath(testPath)}/content`)
+                    .put(Buffer.from("Connection Test"));
+                testFileUploaded = true;
 
-            await client.api(driveItemPath(testPath)).delete();
+                await client.api(driveItemPath(testPath)).delete();
+                testFileUploaded = false;
+            } finally {
+                if (testFileUploaded) await client.api(driveItemPath(testPath)).delete().catch(() => {});
+            }
 
             return {
                 success: true,

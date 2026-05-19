@@ -370,9 +370,15 @@ export const GoogleDriveAdapter: StorageAdapter = {
                 },
                 fields: "id",
             });
+            let testFileId: string | undefined = testFile.data.id ?? undefined;
 
             // Test 3: Delete the test file
-            await drive.files.delete({ fileId: testFile.data.id! });
+            try {
+                await drive.files.delete({ fileId: testFileId! });
+                testFileId = undefined;
+            } finally {
+                if (testFileId) await drive.files.delete({ fileId: testFileId }).catch(() => {});
+            }
 
             return { success: true, message: "Connection successful (Write/Delete verified)" };
         } catch (error: unknown) {

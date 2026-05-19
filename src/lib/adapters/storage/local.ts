@@ -190,19 +190,24 @@ export const LocalFileSystemAdapter: StorageAdapter = {
 
     async test(config: { basePath: string }): Promise<{ success: boolean; message: string }> {
         const testFile = path.join(config.basePath, `.connection-test-${Date.now()}`);
+        let written = false;
         try {
             await fs.mkdir(config.basePath, { recursive: true });
 
             // 1. Write
             await fs.writeFile(testFile, "Connection Test");
+            written = true;
 
             // 2. Delete
             await fs.unlink(testFile);
+            written = false;
 
             return { success: true, message: `Access to ${config.basePath} verified (Read/Write)` };
         } catch (error: unknown) {
              const message = error instanceof Error ? error.message : String(error);
              return { success: false, message: `Access failed: ${message}` };
+        } finally {
+            if (written) await fs.unlink(testFile).catch(() => {});
         }
     }
 };

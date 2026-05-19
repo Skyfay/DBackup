@@ -196,6 +196,7 @@ async function s3Test(internalConfig: S3InternalConfig): Promise<{ success: bool
     const testFile = `.backup-manager-test-${Date.now()}`;
     // Use target key logic to respect pathPrefix
     const targetKey = S3ClientFactory.getTargetKey(internalConfig, testFile);
+    let uploaded = false;
 
     try {
         // 1. Try to write
@@ -204,17 +205,21 @@ async function s3Test(internalConfig: S3InternalConfig): Promise<{ success: bool
             Key: targetKey,
             Body: "Database Backup Manager - Connection Test"
         }));
+        uploaded = true;
 
         // 2. Try to delete
         await client.send(new DeleteObjectCommand({
             Bucket: internalConfig.bucket,
             Key: targetKey
         }));
+        uploaded = false;
 
         return { success: true, message: "Connection successful (Write/Delete verified)" };
     } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         return { success: false, message: message || "Connection failed" };
+    } finally {
+        if (uploaded) await client.send(new DeleteObjectCommand({ Bucket: internalConfig.bucket, Key: targetKey })).catch(() => {});
     }
 }
 

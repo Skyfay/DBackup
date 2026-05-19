@@ -245,12 +245,12 @@ export const SFTPAdapter: StorageAdapter = {
     async test(config: SFTPConfig): Promise<{ success: boolean; message: string }> {
         let sftp: Client | null = null;
         const testFileName = `.connection-test-${Date.now()}`;
+        const destination = config.pathPrefix
+            ? path.posix.join(config.pathPrefix, testFileName)
+            : testFileName;
+        let remoteFileCreated = false;
         try {
             sftp = await connectSFTP(config);
-
-            const destination = config.pathPrefix
-                ? path.posix.join(config.pathPrefix, testFileName)
-                : testFileName;
 
             // Ensure directory exists if needed - though createWriteStream/put usually needs dir exist
             if (config.pathPrefix) {
@@ -262,15 +262,18 @@ export const SFTPAdapter: StorageAdapter = {
 
             // 1. Write Test
             await sftp.put(Buffer.from("Connection Test"), destination);
+            remoteFileCreated = true;
 
             // 2. Delete Test
             await sftp.delete(destination);
+            remoteFileCreated = false;
 
             return { success: true, message: "Connection successful (Write/Delete verified)" };
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : String(error);
             return { success: false, message: `SFTP Connection failed: ${message}` };
         } finally {
+            if (remoteFileCreated) await sftp?.delete(destination).catch(() => {});
             if (sftp) await sftp.end();
         }
     }

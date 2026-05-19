@@ -347,14 +347,21 @@ export const DropboxAdapter: StorageAdapter = {
             const testPath = basePath
                 ? `${basePath}/.dbackup-test-${Date.now()}`
                 : `/.dbackup-test-${Date.now()}`;
+            let testFileUploaded = false;
 
-            await dbx.filesUpload({
-                path: testPath,
-                contents: Buffer.from("Connection Test"),
-                mode: { ".tag": "overwrite" },
-            });
+            try {
+                await dbx.filesUpload({
+                    path: testPath,
+                    contents: Buffer.from("Connection Test"),
+                    mode: { ".tag": "overwrite" },
+                });
+                testFileUploaded = true;
 
-            await dbx.filesDeleteV2({ path: testPath });
+                await dbx.filesDeleteV2({ path: testPath });
+                testFileUploaded = false;
+            } finally {
+                if (testFileUploaded) await dbx.filesDeleteV2({ path: testPath }).catch(() => {});
+            }
 
             return {
                 success: true,

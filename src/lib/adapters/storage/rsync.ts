@@ -472,6 +472,7 @@ export const RsyncAdapter: StorageAdapter = {
         let keyFile: string | undefined;
         const testFileName = `.connection-test-${Date.now()}`;
         const tmpPath = path.join(os.tmpdir(), testFileName);
+        let remoteFileCreated = false;
         try {
             if (config.authType === "privateKey" && config.privateKey) {
                 keyFile = await writeTempKey(config.privateKey);
@@ -501,15 +502,21 @@ export const RsyncAdapter: StorageAdapter = {
             rsync.destination(destination);
 
             await executeRsync(rsync);
+            remoteFileCreated = true;
 
             // 2. Delete Test
             const fullPath = path.posix.join(config.pathPrefix, testFileName);
             await execSSH(config, `rm -f '${shellEscapeSingleQuote(fullPath)}'`, keyFile);
+            remoteFileCreated = false;
 
             return { success: true, message: "Connection successful (Write/Delete verified)" };
         } catch (error: unknown) {
             return { success: false, message: `Rsync connection failed: ${sanitizeError(error)}` };
         } finally {
+            if (remoteFileCreated) {
+                const fullPath = path.posix.join(config.pathPrefix, testFileName);
+                await execSSH(config, `rm -f '${shellEscapeSingleQuote(fullPath)}'`, keyFile).catch(() => {});
+            }
             if (keyFile) await fs.unlink(keyFile).catch(() => {});
             await fs.unlink(tmpPath).catch(() => {});
         }

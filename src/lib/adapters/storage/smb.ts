@@ -218,15 +218,19 @@ export const SMBAdapter: StorageAdapter = {
             const tmpPath = path.join(os.tmpdir(), testFileName);
             await fs.writeFile(tmpPath, "Connection Test");
 
+            let remoteFileCreated = false;
             try {
                 // 1. Write Test
                 await client.sendFile(tmpPath, destination);
+                remoteFileCreated = true;
 
                 // 2. Delete Test
                 await client.deleteFile(destination);
+                remoteFileCreated = false;
 
                 return { success: true, message: "Connection successful (Write/Delete verified)" };
             } finally {
+                if (remoteFileCreated) await client.deleteFile(destination).catch(() => {});
                 await fs.unlink(tmpPath).catch(() => {});
             }
         } catch (error: unknown) {

@@ -186,10 +186,10 @@ export const WebDAVAdapter: StorageAdapter = {
 
     async test(config: WebDAVConfig): Promise<{ success: boolean; message: string }> {
         const testFileName = `.connection-test-${Date.now()}`;
+        const client = getClient(config);
+        const destination = resolvePath(config, testFileName);
+        let remoteFileCreated = false;
         try {
-            const client = getClient(config);
-            const destination = resolvePath(config, testFileName);
-
             // Ensure pathPrefix directory exists if set
             if (config.pathPrefix) {
                 const prefixDir = path.posix.join("/", config.pathPrefix);
@@ -200,14 +200,18 @@ export const WebDAVAdapter: StorageAdapter = {
 
             // 1. Write Test
             await client.putFileContents(destination, "Connection Test");
+            remoteFileCreated = true;
 
             // 2. Delete Test
             await client.deleteFile(destination);
+            remoteFileCreated = false;
 
             return { success: true, message: "Connection successful (Write/Delete verified)" };
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : String(error);
             return { success: false, message: `WebDAV Connection failed: ${message}` };
+        } finally {
+            if (remoteFileCreated) await client.deleteFile(destination).catch(() => {});
         }
     },
 };

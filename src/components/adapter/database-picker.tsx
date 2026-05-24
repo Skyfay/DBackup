@@ -39,6 +39,10 @@ export function DatabasePicker({
 }: DatabasePickerProps) {
     const currentValues = Array.isArray(value) ? value : (value ? [value] : []);
 
+    const MAX_VISIBLE_BADGES = 8;
+    const visibleDbs = currentValues.slice(0, MAX_VISIBLE_BADGES);
+    const hiddenCount = currentValues.length - visibleDbs.length;
+
     return (
         <div className="flex gap-2">
             <Popover open={isOpen} onOpenChange={setIsOpen}>
@@ -50,11 +54,16 @@ export function DatabasePicker({
                     >
                         {currentValues.length > 0 ? (
                             <div className="flex flex-wrap gap-1">
-                                {currentValues.map((db) => (
+                                {visibleDbs.map((db) => (
                                     <Badge variant="secondary" key={db} className="mr-1">
                                         {db}
                                     </Badge>
                                 ))}
+                                {hiddenCount > 0 && (
+                                    <Badge variant="outline">
+                                        +{hiddenCount} more
+                                    </Badge>
+                                )}
                             </div>
                         ) : (
                             "Select databases..."

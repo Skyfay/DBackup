@@ -2,6 +2,21 @@
 
 All notable changes to DBackup are documented here.
 
+## vNEXT
+*Release: In Progress*
+
+### 🐛 Bug Fixes
+
+- **DatabasePicker**: Fixed the backup job edit dialog becoming unusable when a large number of databases are selected. The trigger button now shows at most 8 database badges and collapses the rest into a "+N more" indicator. ([#91](https://github.com/Skyfay/DBackup/issues/91))
+
+### 🐳 Docker
+
+- **Image**: `skyfay/dbackup:vNEXT`
+- **Also tagged as**: `latest`, `vNEXT`
+- **CI Image**: `skyfay/dbackup:ci`
+- **Platforms**: linux/amd64, linux/arm64
+
+
 ## v2.3.3 - Multiple Bug Fixes across MSSQL, Redis, Email, and Storage Adapters
 *Released: May 19, 2026*
 

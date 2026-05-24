@@ -221,7 +221,7 @@ npx prisma db push
 pnpm dev
 ```
 
-For testing infrastructure and contribution guidelines, see the [Developer Guide](https://docs.dbackup.app/developer-guide/).
+For contribution guidelines, see the [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## 💬 Community & Support
 

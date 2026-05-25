@@ -61,6 +61,7 @@ export function DatabaseTableData({ sourceId, database, table, adapterId }: Data
     const [debouncedSearch, setDebouncedSearch] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [schemaSearch, setSchemaSearch] = useState("");
 
     // Debounce search input
     useEffect(() => {
@@ -107,6 +108,13 @@ export function DatabaseTableData({ sourceId, database, table, adapterId }: Data
 
     const pageCount = Math.max(1, Math.ceil(totalCount / pageSize));
 
+    const filteredColumns = schemaSearch
+        ? columns.filter(col =>
+              col.name.toLowerCase().includes(schemaSearch.toLowerCase()) ||
+              col.dataType.toLowerCase().includes(schemaSearch.toLowerCase())
+          )
+        : columns;
+
     const renderCellValue = (value: unknown): string => {
         if (value === null || value === undefined) return "";
         if (typeof value === "string") return value.length > 120 ? value.slice(0, 120) + "…" : value;
@@ -117,31 +125,17 @@ export function DatabaseTableData({ sourceId, database, table, adapterId }: Data
     const isMongo = adapterId === MONGO_ADAPTER;
 
     return (
-        <div className="space-y-4">
+        <div className="space-y-4 min-w-0 w-full">
             <Tabs defaultValue="data">
-                <div className="flex items-center justify-between gap-4 flex-wrap">
-                    <TabsList>
-                        <TabsTrigger value="data" className="flex items-center gap-1.5">
-                            <TableIcon className="h-3.5 w-3.5" />
-                            Data
-                        </TabsTrigger>
-                        {!isRedis && (
-                            <TabsTrigger value="schema">Schema</TabsTrigger>
-                        )}
-                    </TabsList>
-
+                <TabsList>
+                    <TabsTrigger value="data" className="flex items-center gap-1.5">
+                        <TableIcon className="h-3.5 w-3.5" />
+                        Data
+                    </TabsTrigger>
                     {!isRedis && (
-                        <div className="relative">
-                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                            <Input
-                                placeholder="Search..."
-                                value={search}
-                                onChange={e => setSearch(e.target.value)}
-                                className="pl-8 h-9 w-56"
-                            />
-                        </div>
+                        <TabsTrigger value="schema">Schema</TabsTrigger>
                     )}
-                </div>
+                </TabsList>
 
                 {/* DATA TAB */}
                 <TabsContent value="data" className="mt-4">
@@ -156,7 +150,18 @@ export function DatabaseTableData({ sourceId, database, table, adapterId }: Data
                                             : `${totalCount.toLocaleString()} ${isMongo ? "document" : isRedis ? "key" : "row"}${totalCount !== 1 ? "s" : ""} total`}
                                     </CardDescription>
                                 </div>
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    {!isRedis && !isMongo && (
+                                        <div className="relative">
+                                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                                            <Input
+                                                placeholder="Search rows..."
+                                                value={search}
+                                                onChange={e => setSearch(e.target.value)}
+                                                className="pl-8 h-9 w-52"
+                                            />
+                                        </div>
+                                    )}
                                     <span className="text-sm text-muted-foreground">Rows per page</span>
                                     <Select
                                         value={String(pageSize)}
@@ -203,7 +208,7 @@ export function DatabaseTableData({ sourceId, database, table, adapterId }: Data
                             ) : isMongo ? (
                                 <MongoDocumentTable columns={columns} rows={rows} renderCellValue={renderCellValue} />
                             ) : (
-                                <div className="border rounded-md overflow-x-auto">
+                                <div className="border rounded-md overflow-x-auto max-w-[calc(100vw-6rem)] md:max-w-[calc(100vw-22rem)]">
                                     <Table>
                                         <TableHeader className="bg-muted/50">
                                             <TableRow className="hover:bg-transparent">
@@ -287,16 +292,29 @@ export function DatabaseTableData({ sourceId, database, table, adapterId }: Data
                     <TabsContent value="schema" className="mt-4">
                         <Card>
                             <CardHeader className="pb-3">
-                                <CardTitle className="text-base">Schema</CardTitle>
-                                <CardDescription>
-                                    {isMongo ? "Fields derived from sampled documents" : "Column definitions"}
-                                </CardDescription>
+                                <div className="flex items-center justify-between gap-4 flex-wrap">
+                                    <div>
+                                        <CardTitle className="text-base">Schema</CardTitle>
+                                        <CardDescription>
+                                            {isMongo ? "Fields derived from sampled documents" : "Column definitions"}
+                                        </CardDescription>
+                                    </div>
+                                    <div className="relative">
+                                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                                        <Input
+                                            placeholder="Search columns..."
+                                            value={schemaSearch}
+                                            onChange={e => setSchemaSearch(e.target.value)}
+                                            className="pl-8 h-9 w-52"
+                                        />
+                                    </div>
+                                </div>
                             </CardHeader>
                             <CardContent>
                                 {columns.length === 0 ? (
                                     <p className="text-sm text-muted-foreground">No schema information available.</p>
                                 ) : (
-                                    <div className="border rounded-md overflow-hidden">
+                                    <div className="border rounded-md overflow-x-auto max-w-[calc(100vw-6rem)] md:max-w-[calc(100vw-22rem)]">
                                         <Table>
                                             <TableHeader className="bg-muted/50">
                                                 <TableRow className="hover:bg-transparent">
@@ -308,7 +326,13 @@ export function DatabaseTableData({ sourceId, database, table, adapterId }: Data
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
-                                                {columns.map(col => (
+                                                {filteredColumns.length === 0 ? (
+                                                    <TableRow>
+                                                        <TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-6">
+                                                            No columns match your search.
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ) : filteredColumns.map(col => (
                                                     <TableRow key={col.name}>
                                                         <TableCell className="font-medium font-mono text-sm">{col.name}</TableCell>
                                                         <TableCell>

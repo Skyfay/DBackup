@@ -3,6 +3,7 @@ import { SQLiteSchema } from "@/lib/adapters/definitions";
 import { dump } from "./dump";
 import { restore, prepareRestore } from "./restore";
 import { test, getDatabases, getDatabasesWithStats } from "./connection";
+import { getTables, getTableData } from "./browser";
 
 export const SQLiteAdapter: DatabaseAdapter = {
     id: "sqlite",
@@ -15,5 +16,7 @@ export const SQLiteAdapter: DatabaseAdapter = {
     prepareRestore,
     test,
     getDatabases,
-    getDatabasesWithStats
+    getDatabasesWithStats,
+    getTables,
+    getTableData,
 };

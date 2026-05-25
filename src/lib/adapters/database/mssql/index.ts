@@ -4,6 +4,7 @@ import { dump } from "./dump";
 import { restore, prepareRestore } from "./restore";
 import { test, getDatabases, getDatabasesWithStats } from "./connection";
 import { analyzeDump } from "./analyze";
+import { getTables, getTableData } from "./browser";
 
 export const MSSQLAdapter: DatabaseAdapter = {
     id: "mssql",
@@ -17,5 +18,7 @@ export const MSSQLAdapter: DatabaseAdapter = {
     test,
     getDatabases,
     getDatabasesWithStats,
-    analyzeDump
+    analyzeDump,
+    getTables,
+    getTableData,
 };

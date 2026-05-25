@@ -7,6 +7,8 @@ All notable changes to DBackup are documented here.
 
 ### ✨ Features
 
+- **Database Explorer**: Added drill-down table and data viewer to the Database Explorer. Clicking a database row now navigates into a table/collection list showing type, row count, and size. Clicking a table opens a paginated read-only data viewer with a "Data" tab (server-side pagination, search, configurable page size) and a "Schema" tab (column definitions). Redis shows a key/type/TTL view. MongoDB renders documents as flat columns with derived types. Breadcrumb navigation supports deep linking via URL params (`?sourceId=&database=&table=`). All 7 adapter implementations follow the existing adapter-based plugin architecture via two new optional methods on the `DatabaseAdapter` interface: `getTables` and `getTableData`. ([#92](https://github.com/Skyfay/DBackup/issues/92))
+
 - **sources**: Added an "Exclude from Restore" toggle to database source settings. Sources marked as excluded are hidden from the restore target dropdown - backups can still be created from them. Thanks @iberlob ([#97](https://github.com/Skyfay/DBackup/pull/97))
 
 ### 🐛 Bug Fixes

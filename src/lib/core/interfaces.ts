@@ -68,6 +68,56 @@ export interface DatabaseInfo {
     tableCount?: number;
 }
 
+/**
+ * Information about a single table, view, or collection inside a database.
+ * Returned by getTables().
+ */
+export interface TableInfo {
+    name: string;
+    /** Approximate row or document count. Undefined if not available. */
+    rowCount?: number;
+    /** Size in bytes. Undefined if not available. */
+    sizeInBytes?: number;
+    /** Object type. Defaults to "table" if not provided. */
+    type?: "table" | "view" | "collection" | "materialized_view";
+}
+
+/**
+ * Metadata for a single column (or document field) in a table/collection.
+ * Returned as part of TableDataResult.
+ */
+export interface ColumnInfo {
+    name: string;
+    dataType: string;
+    nullable?: boolean;
+    primaryKey?: boolean;
+    defaultValue?: string;
+}
+
+/**
+ * Input options for getTableData().
+ */
+export interface TableDataOptions {
+    database: string;
+    table: string;
+    /** 1-based page number. */
+    page: number;
+    pageSize: number;
+    /** Optional text search term applied server-side. */
+    search?: string;
+}
+
+/**
+ * Result returned by getTableData().
+ */
+export interface TableDataResult {
+    rows: Record<string, unknown>[];
+    /** Total row/document count for the table (used for pagination). */
+    totalCount: number;
+    /** Column definitions. For schemaless adapters (MongoDB, Redis) derived dynamically. */
+    columns: ColumnInfo[];
+}
+
 export interface BaseAdapter {
     id: string; // Unique identifier (e.g., 'mysql', 's3')
     name: string; // Display name
@@ -139,6 +189,18 @@ export interface DatabaseAdapter extends BaseAdapter {
      * Optional method to analyze a dump file and return contained databases
      */
     analyzeDump?: (sourcePath: string) => Promise<string[]>;
+
+    /**
+     * Optional method to list tables, views, or collections inside a database.
+     * Returns TableInfo[] with optional row count and size.
+     */
+    getTables?: (config: AdapterConfig, database: string) => Promise<TableInfo[]>;
+
+    /**
+     * Optional method to fetch paginated row data from a table or collection.
+     * Returns rows, total count, and column definitions.
+     */
+    getTableData?: (config: AdapterConfig, options: TableDataOptions) => Promise<TableDataResult>;
 }
 
 export type FileInfo = {

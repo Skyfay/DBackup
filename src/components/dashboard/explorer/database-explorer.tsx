@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
+import { DatabaseTableList } from "./database-table-list";
+import { DatabaseTableData } from "./database-table-data";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -9,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
-import { Database, RefreshCw, HardDrive, TableIcon, AlertTriangle, Server, ChevronsUpDown } from "lucide-react";
+import { Database, RefreshCw, HardDrive, TableIcon, AlertTriangle, Server, ChevronsUpDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { formatBytes } from "@/lib/utils";
@@ -33,9 +35,14 @@ interface DatabaseExplorerProps {
 
 export function DatabaseExplorer({ sources }: DatabaseExplorerProps) {
     const searchParams = useSearchParams();
+    const router = useRouter();
     const initialSourceId = searchParams.get("sourceId") ?? "";
+    const initialDatabase = searchParams.get("database") ?? "";
+    const initialTable = searchParams.get("table") ?? "";
 
     const [selectedSource, setSelectedSource] = useState<string>(initialSourceId);
+    const [selectedDatabase, setSelectedDatabase] = useState<string>(initialDatabase);
+    const [selectedTable, setSelectedTable] = useState<string>(initialTable);
     const [databases, setDatabases] = useState<DatabaseInfo[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -44,6 +51,36 @@ export function DatabaseExplorer({ sources }: DatabaseExplorerProps) {
     const [hasAutoLoaded, setHasAutoLoaded] = useState(false);
 
     const selectedAdapter = sources.find((s) => s.id === selectedSource);
+
+    const buildUrl = (sourceId: string, database?: string, table?: string) => {
+        const params = new URLSearchParams();
+        if (sourceId) params.set("sourceId", sourceId);
+        if (database) params.set("database", database);
+        if (table) params.set("table", table);
+        return `?${params.toString()}`;
+    };
+
+    const handleDatabaseClick = (dbName: string) => {
+        setSelectedDatabase(dbName);
+        setSelectedTable("");
+        router.push(buildUrl(selectedSource, dbName));
+    };
+
+    const handleTableClick = (tableName: string) => {
+        setSelectedTable(tableName);
+        router.push(buildUrl(selectedSource, selectedDatabase, tableName));
+    };
+
+    const handleBackToSource = () => {
+        setSelectedDatabase("");
+        setSelectedTable("");
+        router.push(buildUrl(selectedSource));
+    };
+
+    const handleBackToDatabase = () => {
+        setSelectedTable("");
+        router.push(buildUrl(selectedSource, selectedDatabase));
+    };
 
     // Auto-load databases if sourceId was provided via URL
     useEffect(() => {
@@ -89,12 +126,16 @@ export function DatabaseExplorer({ sources }: DatabaseExplorerProps) {
 
     const handleSourceChange = (sourceId: string) => {
         setSelectedSource(sourceId);
+        setSelectedDatabase("");
+        setSelectedTable("");
         if (sourceId) {
             fetchDatabases(sourceId);
+            router.replace(buildUrl(sourceId));
         } else {
             setDatabases([]);
             setError(null);
             setServerVersion(null);
+            router.replace("?");
         }
     };
 
@@ -119,6 +160,33 @@ export function DatabaseExplorer({ sources }: DatabaseExplorerProps) {
                     Inspect databases on your configured sources - view sizes, table counts, and server details.
                 </p>
             </div>
+
+            {/* Breadcrumb */}
+            {selectedDatabase && (
+                <nav className="flex items-center gap-1 text-sm text-muted-foreground">
+                    <button
+                        className="hover:text-foreground transition-colors"
+                        onClick={handleBackToSource}
+                    >
+                        {selectedAdapter?.name ?? selectedSource}
+                    </button>
+                    <ChevronRight className="h-3.5 w-3.5" />
+                    {selectedTable ? (
+                        <>
+                            <button
+                                className="hover:text-foreground transition-colors"
+                                onClick={handleBackToDatabase}
+                            >
+                                {selectedDatabase}
+                            </button>
+                            <ChevronRight className="h-3.5 w-3.5" />
+                            <span className="text-foreground font-medium">{selectedTable}</span>
+                        </>
+                    ) : (
+                        <span className="text-foreground font-medium">{selectedDatabase}</span>
+                    )}
+                </nav>
+            )}
 
             {/* Source Selector */}
             <div className="flex items-center gap-3">
@@ -242,7 +310,7 @@ export function DatabaseExplorer({ sources }: DatabaseExplorerProps) {
             )}
 
             {/* Error State */}
-            {error && (
+            {error && !selectedDatabase && (
                 <Card className="border-destructive/50">
                     <CardContent className="py-6">
                         <div className="flex items-center gap-3 text-destructive">
@@ -256,8 +324,26 @@ export function DatabaseExplorer({ sources }: DatabaseExplorerProps) {
                 </Card>
             )}
 
+            {/* Drill-down views */}
+            {selectedSource && selectedTable && selectedAdapter && (
+                <DatabaseTableData
+                    sourceId={selectedSource}
+                    database={selectedDatabase}
+                    table={selectedTable}
+                    adapterId={selectedAdapter.adapterId}
+                />
+            )}
+
+            {selectedSource && selectedDatabase && !selectedTable && (
+                <DatabaseTableList
+                    sourceId={selectedSource}
+                    database={selectedDatabase}
+                    onTableClick={handleTableClick}
+                />
+            )}
+
             {/* Database Table */}
-            {selectedSource && !error && (
+            {selectedSource && !error && !selectedDatabase && (
                 <Card>
                     <CardHeader className="pb-4">
                         <div className="flex items-center justify-between">
@@ -300,7 +386,11 @@ export function DatabaseExplorer({ sources }: DatabaseExplorerProps) {
                                             .map((db) => {
                                                 const sizePercent = maxSize > 0 ? ((db.sizeInBytes ?? 0) / maxSize) * 100 : 0;
                                                 return (
-                                                    <TableRow key={db.name}>
+                                                    <TableRow
+                                                        key={db.name}
+                                                        className="cursor-pointer hover:bg-accent/50"
+                                                        onClick={() => handleDatabaseClick(db.name)}
+                                                    >
                                                         <TableCell className="font-medium">
                                                             <span className="flex items-center gap-2">
                                                                 <Database className="h-4 w-4 text-muted-foreground shrink-0" />

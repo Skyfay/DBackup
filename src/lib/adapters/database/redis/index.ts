@@ -4,6 +4,7 @@ import { dump } from "./dump";
 import { restore, prepareRestore } from "./restore";
 import { test, getDatabases } from "./connection";
 import { analyzeDump } from "./analyze";
+import { getTables, getTableData } from "./browser";
 
 export const RedisAdapter: DatabaseAdapter = {
     id: "redis",
@@ -16,5 +17,7 @@ export const RedisAdapter: DatabaseAdapter = {
     prepareRestore,
     test,
     getDatabases,
-    analyzeDump
+    analyzeDump,
+    getTables,
+    getTableData,
 };

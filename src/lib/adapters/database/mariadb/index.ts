@@ -4,6 +4,7 @@ import { MariaDBSchema } from "@/lib/adapters/definitions";
 import { dump } from "../mysql/dump";
 import { restore, prepareRestore } from "../mysql/restore";
 import { test, getDatabases, getDatabasesWithStats } from "../mysql/connection";
+import { getTables, getTableData } from "../mysql/browser";
 
 export const MariaDBAdapter: DatabaseAdapter = {
     id: "mariadb",
@@ -16,5 +17,7 @@ export const MariaDBAdapter: DatabaseAdapter = {
     prepareRestore,
     test,
     getDatabases,
-    getDatabasesWithStats
+    getDatabasesWithStats,
+    getTables,
+    getTableData,
 };

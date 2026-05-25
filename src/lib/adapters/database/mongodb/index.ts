@@ -4,6 +4,7 @@ import { dump } from "./dump";
 import { restore, prepareRestore } from "./restore";
 import { test, getDatabases, getDatabasesWithStats } from "./connection";
 import { analyzeDump } from "./analyze";
+import { getTables, getTableData } from "./browser";
 
 export const MongoDBAdapter: DatabaseAdapter = {
     id: "mongodb",
@@ -17,5 +18,7 @@ export const MongoDBAdapter: DatabaseAdapter = {
     test,
     getDatabases,
     getDatabasesWithStats,
-    analyzeDump
+    analyzeDump,
+    getTables,
+    getTableData,
 };

@@ -16,6 +16,10 @@ All notable changes to DBackup are documented here.
 - **DatabasePicker**: Fixed the backup job edit dialog becoming unusable when a large number of databases are selected. The trigger button now shows at most 8 database badges and collapses the rest into a "+N more" indicator. ([#91](https://github.com/Skyfay/DBackup/issues/91))
 - **Queue**: Fixed scheduled backup jobs remaining stuck as "Pending" indefinitely after a restore operation completes. The restore pipeline now triggers `processQueue()` in its `finally` block, mirroring the behaviour of the backup runner. ([#95](https://github.com/Skyfay/DBackup/issues/95))
 
+### 🧪 Tests
+
+- **Database Browser**: Added unit tests for all 6 `browser.ts` adapter modules (MySQL, PostgreSQL, MongoDB, MSSQL, Redis, SQLite). Covers `getTables` and `getTableData` including parser logic, type mapping, TTL formatting, and search modes. 36 tests total.
+
 ### 🐳 Docker
 
 - **Image**: `skyfay/dbackup:vNEXT`

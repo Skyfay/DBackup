@@ -100,12 +100,6 @@ function parseDataRows(
         });
 }
 
-/** Resolve which database to connect to for admin queries. */
-function resolveConnectDb(config: PostgresConfig): string {
-    if (typeof config.database === "string" && config.database) return config.database;
-    return "postgres";
-}
-
 export async function getTables(config: PostgresConfig, database: string): Promise<TableInfo[]> {
     const query = tablesQuery(database);
     const connectDb = database;

@@ -22,7 +22,7 @@ export async function getTables(config: MSSQLConfig, database: string): Promise<
                 t.TABLE_NAME AS name,
                 t.TABLE_TYPE AS table_type,
                 COALESCE(SUM(p.rows), 0) AS row_count,
-                COALESCE(SUM(a.total_pages) * 8 * 1024, 0) AS size_bytes
+                COALESCE(SUM(CAST(a.total_pages AS BIGINT)) * 8 * 1024, 0) AS size_bytes
             FROM [${dbId}].INFORMATION_SCHEMA.TABLES t
             LEFT JOIN [${dbId}].sys.tables st ON st.name = t.TABLE_NAME
             LEFT JOIN [${dbId}].sys.indexes i ON i.object_id = st.object_id AND i.type <= 1

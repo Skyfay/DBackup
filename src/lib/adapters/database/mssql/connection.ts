@@ -158,7 +158,7 @@ export async function getDatabasesWithStats(config: MSSQLConfig): Promise<Databa
             SELECT
                 d.name,
                 d.state_desc,
-                SUM(mf.size) * 8 * 1024 AS size_bytes
+                SUM(CAST(mf.size AS BIGINT)) * 8 * 1024 AS size_bytes
             FROM sys.databases d
             LEFT JOIN sys.master_files mf ON d.database_id = mf.database_id
             WHERE d.database_id > 4

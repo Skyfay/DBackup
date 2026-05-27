@@ -7,6 +7,7 @@ All notable changes to DBackup are documented here.
 
 ### 🐛 Bug Fixes
 
+- **MSSQL**: Fixed "Arithmetic overflow error converting expression to data type int" crash in the Database Explorer and Restore database list for large databases. The size queries now cast page counts to `BIGINT` before multiplying by 8192, preventing `INT` overflow on databases larger than ~2 GB.
 - **SMB**: Fixed orphaned `.connection-test-*` files occasionally surviving on SMB shares. The previous fix used a `remoteFileCreated` flag, but if `sendFile` threw after the file was already written on the server (e.g. a network hiccup before the final ACK arrived), the flag was never set and no cleanup was attempted. The `finally` block now always calls `deleteFile` unconditionally, covering that edge case.
 
 ### 🧪 Tests

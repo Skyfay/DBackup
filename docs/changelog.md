@@ -2,8 +2,8 @@
 
 All notable changes to DBackup are documented here.
 
-## vNEXT
-*Release: In Progress*
+## v2.4.1 - Multiple Bug Fixes across MSSQL, SMB, Retention, and Storage Adapters
+*Released: May 27, 2026*
 
 ### 🐛 Bug Fixes
 
@@ -22,11 +22,12 @@ All notable changes to DBackup are documented here.
 
 - **smb**: Added unit tests for `finally`-block cleanup when `sendFile` throws and for cleanup retry when the delete itself fails.
 - **retention**: Added regression tests for GFS non-overlapping tier selection and template-name visibility in retention history. ([#101](https://github.com/Skyfay/DBackup/issues/101))
+- **ftp/sftp**: Fixed broken upload unit tests by adding missing `destroy: vi.fn()` to the `createReadStream` mock - the adapter calls `fileStream.destroy()` in the `finally` block, which threw a TypeError without this mock method.
 
 ### 🐳 Docker
 
-- **Image**: `skyfay/dbackup:vNEXT`
-- **Also tagged as**: `latest`, `vNEXT`
+- **Image**: `skyfay/dbackup:v2.4.1`
+- **Also tagged as**: `latest`, `v2`
 - **CI Image**: `skyfay/dbackup:ci`
 - **Platforms**: linux/amd64, linux/arm64
 

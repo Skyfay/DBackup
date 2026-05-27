@@ -33,9 +33,9 @@ vi.mock("ssh2-sftp-client", () => {
 });
 
 vi.mock("fs", () => ({
-    createReadStream: vi.fn(() => ({ pipe: vi.fn() })),
+    createReadStream: vi.fn(() => ({ pipe: vi.fn(), destroy: vi.fn() })),
     default: {
-        createReadStream: vi.fn(() => ({ pipe: vi.fn() })),
+        createReadStream: vi.fn(() => ({ pipe: vi.fn(), destroy: vi.fn() })),
     },
     promises: {
         stat: mockFsStat,

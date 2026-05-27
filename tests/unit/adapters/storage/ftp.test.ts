@@ -33,10 +33,10 @@ vi.mock("basic-ftp", () => {
 });
 
 vi.mock("fs", () => ({
-    createReadStream: vi.fn(() => ({ pipe: vi.fn() })),
+    createReadStream: vi.fn(() => ({ pipe: vi.fn(), destroy: vi.fn() })),
     createWriteStream: vi.fn(() => ({ on: vi.fn(), end: vi.fn() })),
     default: {
-        createReadStream: vi.fn(() => ({ pipe: vi.fn() })),
+        createReadStream: vi.fn(() => ({ pipe: vi.fn(), destroy: vi.fn() })),
         createWriteStream: vi.fn(() => ({ on: vi.fn(), end: vi.fn() })),
     },
 }));

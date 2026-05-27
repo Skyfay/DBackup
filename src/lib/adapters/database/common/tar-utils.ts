@@ -89,7 +89,10 @@ export async function createMultiDbTar(
         // Stream file contents to tar entry
         const fileStream = createReadStream(file.path);
         await new Promise<void>((resolve, reject) => {
-            fileStream.on("error", reject);
+            fileStream.on("error", (err) => {
+                fileStream.destroy();
+                reject(err);
+            });
             fileStream.on("end", () => {
                 entry.end();
                 resolve();
@@ -179,13 +182,19 @@ export async function extractMultiDbTar(
                 files: extractedFiles,
             });
         });
+        const readStream = createReadStream(sourcePath);
         /* v8 ignore start */
         extractor.on("error", (err) => {
+            readStream.destroy();
+            reject(err);
+        });
+        readStream.on("error", (err) => {
+            extractor.destroy(err);
             reject(err);
         });
         /* v8 ignore end */
 
-        createReadStream(sourcePath).pipe(extractor);
+        readStream.pipe(extractor);
     });
 }
 
@@ -261,13 +270,19 @@ export async function extractSelectedDatabases(
             });
         });
 
+        const readStream = createReadStream(sourcePath);
         /* v8 ignore start */
         extractor.on("error", (err) => {
+            readStream.destroy();
+            reject(err);
+        });
+        readStream.on("error", (err) => {
+            extractor.destroy(err);
             reject(err);
         });
         /* v8 ignore end */
 
-        createReadStream(sourcePath).pipe(extractor);
+        readStream.pipe(extractor);
     });
 }
 
@@ -320,6 +335,7 @@ export async function readTarManifest(filePath: string): Promise<TarManifest | n
     return new Promise((resolve) => {
         const extractor = extract();
         let manifestFound = false;
+        const readStream = createReadStream(filePath);
 
         extractor.on("entry", (header, stream, next) => {
             if (header.name === MANIFEST_FILENAME) {
@@ -355,14 +371,19 @@ export async function readTarManifest(filePath: string): Promise<TarManifest | n
         });
 
         extractor.on("error", () => {
+            readStream.destroy();
             resolve(null);
         });
 
         extractor.on("close", () => {
-            // Handle early close from destroy()
+            readStream.destroy();
         });
 
-        createReadStream(filePath).pipe(extractor);
+        readStream.on("error", () => {
+            extractor.destroy();
+            resolve(null);
+        });
+        readStream.pipe(extractor);
     });
 }
 

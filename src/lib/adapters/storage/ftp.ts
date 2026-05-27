@@ -94,7 +94,12 @@ export const FTPAdapter: StorageAdapter = {
                 }
             });
 
-            await client.uploadFrom(createReadStream(localPath), destination);
+            const fileStream = createReadStream(localPath);
+            try {
+                await client.uploadFrom(fileStream, destination);
+            } finally {
+                fileStream.destroy();
+            }
 
             client.trackProgress();
 

@@ -44,11 +44,10 @@ async function s3Upload(internalConfig: S3InternalConfig, localPath: string, rem
     const client = S3ClientFactory.create(internalConfig);
     const targetKey = S3ClientFactory.getTargetKey(internalConfig, remotePath);
 
+    if (onLog) onLog(`Starting S3 upload to bucket: ${internalConfig.bucket}, key: ${targetKey}`, 'info', 'storage');
+
+    const fileStream = createReadStream(localPath);
     try {
-        if (onLog) onLog(`Starting S3 upload to bucket: ${internalConfig.bucket}, key: ${targetKey}`, 'info', 'storage');
-
-        const fileStream = createReadStream(localPath);
-
         const parallelUploads3 = new Upload({
             client: client,
             params: {
@@ -73,6 +72,8 @@ async function s3Upload(internalConfig: S3InternalConfig, localPath: string, rem
         log.error("S3 upload failed", { bucket: internalConfig.bucket, targetKey }, wrapError(error));
         if (onLog && error instanceof Error) onLog(`S3 upload failed: ${error.message}`, 'error', 'storage', error instanceof Error ? error.stack : undefined);
         return false;
+    } finally {
+        fileStream.destroy();
     }
 }
 

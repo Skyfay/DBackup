@@ -233,24 +233,28 @@ export const OneDriveAdapter: StorageAdapter = {
                 const fileStream = createReadStream(localPath, { highWaterMark: UPLOAD_CHUNK_SIZE });
                 let offset = 0;
 
-                for await (const chunk of fileStream) {
-                    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-                    const end = offset + buffer.length - 1;
+                try {
+                    for await (const chunk of fileStream) {
+                        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+                        const end = offset + buffer.length - 1;
 
-                    await fetch(uploadUrl, {
-                        method: "PUT",
-                        headers: {
-                            "Content-Range": `bytes ${offset}-${end}/${fileSize}`,
-                            "Content-Length": String(buffer.length),
-                        },
-                        body: buffer,
-                    });
+                        await fetch(uploadUrl, {
+                            method: "PUT",
+                            headers: {
+                                "Content-Range": `bytes ${offset}-${end}/${fileSize}`,
+                                "Content-Length": String(buffer.length),
+                            },
+                            body: buffer,
+                        });
 
-                    offset += buffer.length;
+                        offset += buffer.length;
 
-                    if (onProgress) {
-                        onProgress(Math.min(99, Math.round((offset / fileSize) * 100)));
+                        if (onProgress) {
+                            onProgress(Math.min(99, Math.round((offset / fileSize) * 100)));
+                        }
                     }
+                } finally {
+                    fileStream.destroy();
                 }
             }
 

@@ -82,16 +82,21 @@ export const SFTPAdapter: StorageAdapter = {
             // Note: ssh2-sftp-client default 'step' progress might not be granualr enough for small files, but works.
             // However, the signature is (total_transferred, chunk, total).
 
-            await sftp.put(createReadStream(localPath), destination, {
-                step: (total_transferred: any, _chunk: any, _total: any) => {
-                    if (onProgress && totalSize > 0) {
-                        // total param in callback is total bytes to transfer, which is known if we pass it, but put() with stream might not know it unless we checked.
-                        // We use our known totalSize.
-                        const percent = Math.round((total_transferred / totalSize) * 100);
-                        onProgress(percent);
+            const fileStream = createReadStream(localPath);
+            try {
+                await sftp.put(fileStream, destination, {
+                    step: (total_transferred: any, _chunk: any, _total: any) => {
+                        if (onProgress && totalSize > 0) {
+                            // total param in callback is total bytes to transfer, which is known if we pass it, but put() with stream might not know it unless we checked.
+                            // We use our known totalSize.
+                            const percent = Math.round((total_transferred / totalSize) * 100);
+                            onProgress(percent);
+                        }
                     }
-                }
-            } as any);
+                } as any);
+            } finally {
+                fileStream.destroy();
+            }
 
             if (onLog) onLog(`SFTP upload completed successfully`, 'info', 'storage');
             return true;

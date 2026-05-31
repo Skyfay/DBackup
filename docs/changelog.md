@@ -11,6 +11,11 @@ All notable changes to DBackup are documented here.
 - **System Tasks**: The hourly "Update Database Versions" task now records a new `DbVersionHistory` entry whenever the detected server engine version (or edition for MSSQL) changes since the last check. The first observation per source is stored as a baseline.
 - **Notifications**: Added a new `db_version_changed` system notification event that fires when a database server's engine version changes between two consecutive checks. The initial baseline observation does not trigger a notification.
 
+### 🐛 Bug Fixes
+
+- **mssql**: Fixed Database Explorer showing "No tables found" for databases that use non-dbo schemas - tables in all schemas are now returned and displayed with a `schema.table` prefix for non-dbo objects.
+- **mssql**: Fixed "Total Size" showing "undefined" in the Database Explorer General tab - BIGINT size values returned as strings by the database driver are now converted to numbers.
+
 ### 🐳 Docker
 
 - **Image**: `skyfay/dbackup:vNEXT`

@@ -47,10 +47,10 @@ const baseConfig = {
 describe("MSSQL browser - getTables", () => {
     beforeEach(() => vi.clearAllMocks());
 
-    it("returns parsed table list", async () => {
+    it("returns parsed table list for dbo schema", async () => {
         mockQuery.mockResolvedValue({
             recordset: [
-                { name: "Products", table_type: "BASE TABLE", row_count: 10, size_bytes: 8192 },
+                { schema_name: "dbo", name: "Products", table_type: "BASE TABLE", row_count: 10, size_bytes: 8192 },
             ],
         });
 
@@ -65,9 +65,37 @@ describe("MSSQL browser - getTables", () => {
         });
     });
 
+    it("prefixes non-dbo schema tables with schema name", async () => {
+        mockQuery.mockResolvedValue({
+            recordset: [
+                { schema_name: "hr", name: "Employees", table_type: "BASE TABLE", row_count: 50, size_bytes: 16384 },
+            ],
+        });
+
+        const result = await getTables(baseConfig as any, "testdb");
+
+        expect(result).toHaveLength(1);
+        expect(result[0].name).toBe("hr.Employees");
+        expect(result[0].type).toBe("table");
+        expect(result[0].rowCount).toBe(50);
+    });
+
+    it("converts BIGINT size_bytes strings to numbers", async () => {
+        mockQuery.mockResolvedValue({
+            recordset: [
+                { schema_name: "dbo", name: "BigTable", table_type: "BASE TABLE", row_count: "1000", size_bytes: "49631498240" },
+            ],
+        });
+
+        const result = await getTables(baseConfig as any, "testdb");
+
+        expect(typeof result[0].sizeInBytes).toBe("number");
+        expect(result[0].sizeInBytes).toBe(49631498240);
+    });
+
     it("maps VIEW type correctly", async () => {
         mockQuery.mockResolvedValue({
-            recordset: [{ name: "v_active", table_type: "VIEW", row_count: 0, size_bytes: 0 }],
+            recordset: [{ schema_name: "dbo", name: "v_active", table_type: "VIEW", row_count: 0, size_bytes: 0 }],
         });
 
         const result = await getTables(baseConfig as any, "testdb");
@@ -126,5 +154,19 @@ describe("MSSQL browser - getTableData", () => {
         } as any);
 
         expect(mockInput).toHaveBeenCalledWith("searchTerm", expect.anything(), "%wid%");
+    });
+
+    it("resolves correct schema for non-dbo table names", async () => {
+        mockQuery.mockResolvedValue({ recordset: [] });
+
+        await getTableData(baseConfig as any, {
+            ...options,
+            table: "hr.Employees",
+        } as any);
+
+        // All three queries should reference [hr].[Employees] not [dbo].[Employees]
+        const calls: string[] = mockQuery.mock.calls.map(c => c[0] as string);
+        expect(calls.some(q => q.includes("[hr].[Employees]"))).toBe(true);
+        expect(calls.every(q => !q.includes("[dbo].[Employees]"))).toBe(true);
     });
 });

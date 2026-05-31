@@ -185,7 +185,7 @@ export async function getDatabasesWithStats(config: MSSQLConfig): Promise<Databa
 
             databases.push({
                 name: row.name,
-                sizeInBytes: row.size_bytes ?? 0,
+                sizeInBytes: row.size_bytes != null ? Number(row.size_bytes) : 0,
                 tableCount,
             });
         }

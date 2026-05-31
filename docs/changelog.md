@@ -7,6 +7,7 @@ All notable changes to DBackup are documented here.
 
 ### ✨ Features
 
+- **Jobs Table**: Added "Last Run" and "Next Run" columns to the Backup Jobs table. "Last Run" shows the start time of the most recent execution. "Next Run" is computed from the job's cron schedule using the system timezone and displayed in the user's configured timezone and date/time format.
 - **Clone Modal**: Cloning a Job, Source, Destination, or Notification now opens a confirmation dialog where the name for the clone can be customized before it is created. The default name is pre-filled as "Original Name (Copy)".
 - **Database Explorer**: Added a new "Version History" tab per source showing the current engine version, a step-line timeline chart of detected version changes over time, and a change log table (previous version → new version, edition, detected at). History entries are persisted to a new `DbVersionHistory` table.
 - **System Tasks**: The hourly "Update Database Versions" task now records a new `DbVersionHistory` entry whenever the detected server engine version (or edition for MSSQL) changes since the last check. The first observation per source is stored as a baseline.

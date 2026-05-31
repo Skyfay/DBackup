@@ -5,6 +5,8 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { jobService } from "@/services/jobs/job-service";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
+import { Cron } from "croner";
+import prisma from "@/lib/prisma";
 
 const log = logger.child({ route: "jobs" });
 
@@ -17,8 +19,31 @@ export async function GET(_req: NextRequest) {
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.JOBS.READ);
 
-        const jobs = await jobService.getJobs();
-        return NextResponse.json(jobs);
+        const [jobs, tzSetting] = await Promise.all([
+            jobService.getJobs(),
+            prisma.systemSetting.findUnique({ where: { key: "system.timezone" } }),
+        ]);
+        const timezone = tzSetting?.value || "UTC";
+
+        const enriched = jobs.map(({ executions, schedulePreset, ...job }) => {
+            const lastRunAt = executions[0]?.startedAt?.toISOString() ?? null;
+
+            let nextRunAt: string | null = null;
+            if (job.enabled) {
+                const effectiveSchedule = schedulePreset?.schedule ?? job.schedule;
+                try {
+                    const cronJob = new Cron(effectiveSchedule, { timezone });
+                    const next = cronJob.nextRun();
+                    nextRunAt = next ? next.toISOString() : null;
+                } catch {
+                    // Invalid cron expression - leave nextRunAt null
+                }
+            }
+
+            return { ...job, schedulePreset, lastRunAt, nextRunAt };
+        });
+
+        return NextResponse.json(enriched);
     } catch (_error) {
         return NextResponse.json({ error: "Failed to fetch jobs" }, { status: 500 });
     }

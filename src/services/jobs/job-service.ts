@@ -52,7 +52,12 @@ const jobInclude = {
     },
     notifications: true,
     encryptionProfile: { select: { id: true, name: true } },
-    schedulePreset: { select: { id: true, name: true, schedule: true } }
+    schedulePreset: { select: { id: true, name: true, schedule: true } },
+    executions: {
+        take: 1,
+        orderBy: { startedAt: 'desc' as const },
+        select: { startedAt: true, status: true }
+    }
 };
 
 export class JobService {

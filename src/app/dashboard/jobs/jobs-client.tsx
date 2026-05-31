@@ -35,6 +35,7 @@ import { ColumnDef } from "@tanstack/react-table";
 import { useMemo } from "react";
 import { useUserPreferences } from "@/hooks/use-user-preferences";
 import { CloneDialog } from "@/components/ui/clone-dialog";
+import { DateDisplay } from "@/components/utils/date-display";
 
 // Extended destination with config relation from API
 interface JobDestinationWithConfig {
@@ -52,6 +53,8 @@ interface Job extends Omit<JobData, 'destinations'> {
     createdAt: string;
     encryptionProfile?: { name: string };
     namingTemplateId?: string | null;
+    lastRunAt: string | null;
+    nextRunAt: string | null;
 }
 
 interface JobsClientProps {
@@ -249,6 +252,22 @@ export function JobsClient({ canManage, canExecute }: JobsClientProps) {
                 ) : (
                     <span className="text-muted-foreground text-sm">-</span>
                 );
+            }
+        },
+        {
+            id: "lastRunAt",
+            header: "Last Run",
+            cell: ({ row }) => {
+                const v = row.original.lastRunAt;
+                return v ? <DateDisplay date={v} format="Pp" className="tabular-nums text-sm" /> : <span className="text-muted-foreground text-sm">-</span>;
+            }
+        },
+        {
+            id: "nextRunAt",
+            header: "Next Run",
+            cell: ({ row }) => {
+                const v = row.original.nextRunAt;
+                return v ? <DateDisplay date={v} format="Pp" className="tabular-nums text-sm" /> : <span className="text-muted-foreground text-sm">-</span>;
             }
         },
         {

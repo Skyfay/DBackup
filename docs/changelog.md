@@ -20,6 +20,15 @@ All notable changes to DBackup are documented here.
 
 - **storage**: SFTP, FTP, SMB, Rsync, and OneDrive adapters now reuse a single connection for the metadata sidecar (`.meta.json`) and the backup file upload per job. Previously each upload performed a full connect/auth/disconnect cycle, doubling the SSH/FTP handshake and OneDrive OAuth token requests. Introduced an optional `openSession()` method on the `StorageAdapter` interface; adapters without it transparently fall back to the previous stateless behavior, so S3, WebDAV, Dropbox, Google Drive, and local filesystem remain unchanged.
 
+### 🔧 CI/CD
+
+- **deps**: Updated `better-auth`, `@better-auth/passkey`, `@better-auth/sso` 1.6.9 → 1.6.13 (security fix: SAML XML injection vulnerability GHSA-34r5-q4jw-r36m in `@better-auth/sso`, passkey replay attack prevention).
+- **deps**: Updated `next` + `eslint-config-next` 16.2.4 → 16.2.6.
+- **deps**: Updated `react` + `react-dom` 19.2.5 → 19.2.6.
+- **deps**: Updated `mssql` 12.5.0 → 12.5.5, `nodemailer` 8.0.7 → 8.0.10, `basic-ftp` 6.0.0 → 6.0.1, `zod` 4.4.1 → 4.4.3.
+- **deps**: Updated `vitest` + `@vitest/coverage-v8` 4.1.5 → 4.1.7, `@types/react` 19.2.14 → 19.2.15.
+- **deps (docs)**: Updated `vue` 3.5.28 → 3.5.35.
+
 ### 🐳 Docker
 
 - **Image**: `skyfay/dbackup:vNEXT`

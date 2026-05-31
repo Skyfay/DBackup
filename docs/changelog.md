@@ -27,6 +27,7 @@ All notable changes to DBackup are documented here.
 ### 🔧 CI/CD
 
 - **deps**: Updated `next` + `eslint-config-next` 16.2.4 → 16.2.6, `react` + `react-dom` 19.2.5 → 19.2.6, `mssql` 12.5.0 → 12.5.5, `nodemailer` 8.0.7 → 8.0.10, `basic-ftp` 6.0.0 → 6.0.1, `zod` 4.4.1 → 4.4.3, `vitest` + `@vitest/coverage-v8` 4.1.5 → 4.1.7, `@types/react` 19.2.14 → 19.2.15, `vue` (docs) 3.5.28 → 3.5.35, `@aws-sdk/client-s3` + `@aws-sdk/lib-storage` 3.1039.0 → 3.1057.0, `@hookform/resolvers` 5.2.2 → 5.4.0, `date-fns` 4.1.0 → 4.4.0, `lucide-react` 1.14.0 → 1.17.0, `react-hook-form` 7.74.0 → 7.77.0, `tailwind-merge` 3.5.0 → 3.6.0, `tailwindcss` + `@tailwindcss/postcss` 4.2.4 → 4.3.0.
+- **deps**: Added pnpm override `kysely` → `0.28.17` to work around a bug in `@better-auth/kysely-adapter@1.6.13` that imports the removed `DEFAULT_MIGRATION_LOCK_TABLE` export from `kysely@0.29.x`, which Turbopack now catches as a hard build error.
 
 ### 🐳 Docker
 

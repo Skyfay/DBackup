@@ -23,7 +23,7 @@
     "version:sync": "./scripts/sync-version.sh --sync-only",
     "version:bump": "./scripts/sync-version.sh",
     "changelog:next": "./scripts/sync-version.sh --changelog-init",
-    "database:deploy": "prisma db push && npx prisma generate",
+    "database:deploy": "prisma migrate deploy && prisma generate",
     "docs:install": "cd docs && pnpm install",
     "docs:dev": "cd docs && pnpm dev",
     "docs:build": "cd docs && pnpm build",

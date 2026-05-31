@@ -220,12 +220,40 @@ export type FileInfo = {
     storageClass?: string;
 };
 
+/**
+ * A persistent upload session that reuses a single connection for multiple uploads.
+ * Returned by `StorageAdapter.openSession()` when an adapter supports connection reuse.
+ *
+ * The session must be closed by calling `close()` after use, typically in a `finally` block.
+ * Progress and log callbacks are passed per upload call and behave identically to the
+ * stateless `StorageAdapter.upload()` method.
+ */
+export interface StorageSession {
+    upload(
+        localPath: string,
+        remotePath: string,
+        onProgress?: (percent: number) => void,
+        onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void
+    ): Promise<boolean>;
+    close(): Promise<void>;
+}
+
 export interface StorageAdapter extends BaseAdapter {
     type: 'storage';
     /**
      * Uploads a local file to the storage destination
      */
     upload(config: AdapterConfig, localPath: string, remotePath: string, onProgress?: (percent: number) => void, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void): Promise<boolean>;
+
+    /**
+     * Optional: Opens a persistent session for multiple uploads on a single connection.
+     * Adapters that do not implement this fall back to per-call `upload()` (stateless).
+     * Implementations should hold the underlying connection until `close()` is invoked.
+     */
+    openSession?(
+        config: AdapterConfig,
+        onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void
+    ): Promise<StorageSession>;
 
     /**
      * Downloads a file from storage to local path

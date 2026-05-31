@@ -1,4 +1,4 @@
-import { StorageAdapter, FileInfo } from "@/lib/core/interfaces";
+import { StorageAdapter, StorageSession, FileInfo } from "@/lib/core/interfaces";
 import { FTPSchema } from "@/lib/adapters/definitions";
 import { Client, FileInfo as FTPFileInfo } from "basic-ftp";
 import { createReadStream, createWriteStream } from "fs";
@@ -59,6 +59,61 @@ async function ensureDir(client: Client, remotePath: string): Promise<void> {
     }
 }
 
+/**
+ * Performs a single upload on an already-connected FTP client. The directory
+ * cache prevents redundant ensureDir calls when reused across multiple uploads
+ * in the same session.
+ */
+async function performFtpUpload(
+    client: Client,
+    config: FTPConfig,
+    localPath: string,
+    remotePath: string,
+    onProgress: ((percent: number) => void) | undefined,
+    onLog: ((msg: string, level?: LogLevel, type?: LogType, details?: string) => void) | undefined,
+    dirCache: Set<string>
+): Promise<boolean> {
+    try {
+        const destination = resolvePath(config, remotePath);
+        const dir = path.posix.dirname(destination);
+
+        if (!dirCache.has(dir)) {
+            await ensureDir(client, destination);
+            await client.cd("/");
+            dirCache.add(dir);
+        }
+
+        if (onLog) onLog(`Starting FTP upload to: ${destination}`, "info", "storage");
+
+        const stats = await fs.stat(localPath);
+        const totalSize = stats.size;
+
+        client.trackProgress((info) => {
+            if (onProgress && totalSize > 0) {
+                const percent = Math.round((info.bytesOverall / totalSize) * 100);
+                onProgress(Math.min(percent, 100));
+            }
+        });
+
+        const fileStream = createReadStream(localPath);
+        try {
+            await client.uploadFrom(fileStream, destination);
+        } finally {
+            fileStream.destroy();
+        }
+
+        client.trackProgress();
+
+        if (onProgress) onProgress(100);
+        if (onLog) onLog("FTP upload completed successfully", "info", "storage");
+        return true;
+    } catch (error: unknown) {
+        log.error("FTP upload failed", { host: config.host, remotePath }, wrapError(error));
+        if (onLog && error instanceof Error) onLog(`FTP upload failed: ${error.message}`, "error", "storage", error.stack);
+        return false;
+    }
+}
+
 export const FTPAdapter: StorageAdapter = {
     id: "ftp",
     type: "storage",
@@ -66,46 +121,25 @@ export const FTPAdapter: StorageAdapter = {
     configSchema: FTPSchema,
     credentials: { primary: "USERNAME_PASSWORD" },
 
+    async openSession(config: FTPConfig, onLog?): Promise<StorageSession> {
+        const client = await connectFTP(config);
+        if (onLog) onLog(`Connected to FTP ${config.host}:${config.port}`, "info", "storage");
+        const dirCache = new Set<string>();
+        return {
+            upload: (localPath, remotePath, onProgress, uploadLog) =>
+                performFtpUpload(client, config, localPath, remotePath, onProgress, uploadLog ?? onLog, dirCache),
+            close: async () => {
+                client.close();
+            },
+        };
+    },
+
     async upload(config: FTPConfig, localPath: string, remotePath: string, onProgress?: (percent: number) => void, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void): Promise<boolean> {
         let client: Client | null = null;
         try {
             client = await connectFTP(config);
-
             if (onLog) onLog(`Connected to FTP ${config.host}:${config.port}`, "info", "storage");
-
-            const destination = resolvePath(config, remotePath);
-
-            // Ensure directory exists. basic-ftp's ensureDir changes CWD to the
-            // created directory, so reset to root afterwards to allow absolute-style
-            // path resolution in the subsequent uploadFrom call.
-            await ensureDir(client, destination);
-            await client.cd("/");
-
-            if (onLog) onLog(`Starting FTP upload to: ${destination}`, "info", "storage");
-
-            // Track progress
-            const stats = await fs.stat(localPath);
-            const totalSize = stats.size;
-
-            client.trackProgress((info) => {
-                if (onProgress && totalSize > 0) {
-                    const percent = Math.round((info.bytesOverall / totalSize) * 100);
-                    onProgress(Math.min(percent, 100));
-                }
-            });
-
-            const fileStream = createReadStream(localPath);
-            try {
-                await client.uploadFrom(fileStream, destination);
-            } finally {
-                fileStream.destroy();
-            }
-
-            client.trackProgress();
-
-            if (onProgress) onProgress(100);
-            if (onLog) onLog("FTP upload completed successfully", "info", "storage");
-            return true;
+            return await performFtpUpload(client, config, localPath, remotePath, onProgress, onLog, new Set());
         } catch (error: unknown) {
             log.error("FTP upload failed", { host: config.host, remotePath }, wrapError(error));
             if (onLog && error instanceof Error) onLog(`FTP upload failed: ${error.message}`, "error", "storage", error.stack);

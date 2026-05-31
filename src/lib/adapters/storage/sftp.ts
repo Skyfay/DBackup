@@ -1,4 +1,4 @@
-import { StorageAdapter, FileInfo } from "@/lib/core/interfaces";
+import { StorageAdapter, StorageSession, FileInfo } from "@/lib/core/interfaces";
 import { normalizeSshPrivateKey } from "@/lib/ssh/pkcs8-compat";
 import { SFTPSchema } from "@/lib/adapters/definitions";
 import Client from "ssh2-sftp-client";
@@ -43,6 +43,62 @@ const connectSFTP = async (config: SFTPConfig): Promise<Client> => {
     return sftp;
 };
 
+/**
+ * Performs a single upload on an already-connected SFTP client. The directory
+ * cache prevents redundant mkdir calls when reused across multiple uploads
+ * (e.g. metadata sidecar + backup file in the same session).
+ */
+async function performSftpUpload(
+    sftp: Client,
+    config: SFTPConfig,
+    localPath: string,
+    remotePath: string,
+    onProgress: ((percent: number) => void) | undefined,
+    onLog: ((msg: string, level?: LogLevel, type?: LogType, details?: string) => void) | undefined,
+    dirCache: Set<string>
+): Promise<boolean> {
+    try {
+        const destination = config.pathPrefix
+            ? path.posix.join(config.pathPrefix, remotePath)
+            : remotePath;
+
+        const remoteDir = path.posix.dirname(destination);
+        if (!dirCache.has(remoteDir)) {
+            if (await sftp.exists(remoteDir) !== 'd') {
+                if (onLog) onLog(`Creating remote directory: ${remoteDir}`, 'info', 'storage');
+                await sftp.mkdir(remoteDir, true);
+            }
+            dirCache.add(remoteDir);
+        }
+
+        if (onLog) onLog(`Starting SFTP upload to: ${destination}`, 'info', 'storage');
+
+        const stats = await import('fs').then(fs => fs.promises.stat(localPath));
+        const totalSize = stats.size;
+
+        const fileStream = createReadStream(localPath);
+        try {
+            await sftp.put(fileStream, destination, {
+                step: (total_transferred: any, _chunk: any, _total: any) => {
+                    if (onProgress && totalSize > 0) {
+                        const percent = Math.round((total_transferred / totalSize) * 100);
+                        onProgress(percent);
+                    }
+                }
+            } as any);
+        } finally {
+            fileStream.destroy();
+        }
+
+        if (onLog) onLog(`SFTP upload completed successfully`, 'info', 'storage');
+        return true;
+    } catch (error: unknown) {
+        log.error("SFTP upload failed", { host: config.host, remotePath }, wrapError(error));
+        if (onLog && error instanceof Error) onLog(`SFTP upload failed: ${error.message}`, 'error', 'storage', error.stack);
+        return false;
+    }
+}
+
 export const SFTPAdapter: StorageAdapter = {
     id: "sftp",
     type: "storage",
@@ -50,56 +106,25 @@ export const SFTPAdapter: StorageAdapter = {
     configSchema: SFTPSchema,
     credentials: { primary: "SSH_KEY" },
 
+    async openSession(config: SFTPConfig, onLog?): Promise<StorageSession> {
+        const sftp = await connectSFTP(config);
+        if (onLog) onLog(`Connected to SFTP ${config.host}:${config.port}`, 'info', 'storage');
+        const dirCache = new Set<string>();
+        return {
+            upload: (localPath, remotePath, onProgress, uploadLog) =>
+                performSftpUpload(sftp, config, localPath, remotePath, onProgress, uploadLog ?? onLog, dirCache),
+            close: async () => {
+                await sftp.end().catch(() => { });
+            },
+        };
+    },
+
     async upload(config: SFTPConfig, localPath: string, remotePath: string, onProgress?: (percent: number) => void, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void): Promise<boolean> {
         let sftp: Client | null = null;
         try {
             sftp = await connectSFTP(config);
             if (onLog) onLog(`Connected to SFTP ${config.host}:${config.port}`, 'info', 'storage');
-
-            const destination = config.pathPrefix
-                ? path.posix.join(config.pathPrefix, remotePath)
-                : remotePath;
-
-            // Ensure directory exists
-            const remoteDir = path.posix.dirname(destination);
-            if (await sftp.exists(remoteDir) !== 'd') {
-                if (onLog) onLog(`Creating remote directory: ${remoteDir}`, 'info', 'storage');
-                await sftp.mkdir(remoteDir, true);
-            }
-
-            if (onLog) onLog(`Starting SFTP upload to: ${destination}`, 'info', 'storage');
-
-            // Use fastPut for local files (more efficient than streams for files on disk)
-            // or put with fs stream if we want better progress tracking support?
-            // ssh2-sftp-client put() supports streams and returns promise.
-            // But fastPut is faster for file-to-file.
-            // Let's use put() with ReadStream to match our architecture and handle progress if possible (though ssh2-sftp-client progress is step based usually).
-
-            // Actually, put() accepts a stream.
-            const stats = await import('fs').then(fs => fs.promises.stat(localPath));
-            const totalSize = stats.size;
-
-            // Note: ssh2-sftp-client default 'step' progress might not be granualr enough for small files, but works.
-            // However, the signature is (total_transferred, chunk, total).
-
-            const fileStream = createReadStream(localPath);
-            try {
-                await sftp.put(fileStream, destination, {
-                    step: (total_transferred: any, _chunk: any, _total: any) => {
-                        if (onProgress && totalSize > 0) {
-                            // total param in callback is total bytes to transfer, which is known if we pass it, but put() with stream might not know it unless we checked.
-                            // We use our known totalSize.
-                            const percent = Math.round((total_transferred / totalSize) * 100);
-                            onProgress(percent);
-                        }
-                    }
-                } as any);
-            } finally {
-                fileStream.destroy();
-            }
-
-            if (onLog) onLog(`SFTP upload completed successfully`, 'info', 'storage');
-            return true;
+            return await performSftpUpload(sftp, config, localPath, remotePath, onProgress, onLog, new Set());
         } catch (error: unknown) {
             log.error("SFTP upload failed", { host: config.host, remotePath }, wrapError(error));
             if (onLog && error instanceof Error) onLog(`SFTP upload failed: ${error.message}`, 'error', 'storage', error.stack);

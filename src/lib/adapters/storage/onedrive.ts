@@ -1,4 +1,4 @@
-import { StorageAdapter, FileInfo } from "@/lib/core/interfaces";
+import { StorageAdapter, StorageSession, FileInfo } from "@/lib/core/interfaces";
 import { OneDriveSchema } from "@/lib/adapters/definitions";
 import { Client } from "@microsoft/microsoft-graph-client";
 import fs from "fs/promises";
@@ -173,11 +173,113 @@ async function listFilesRecursive(
     return files;
 }
 
+/**
+ * Performs a single upload on an already-authenticated Graph client. The
+ * folder cache prevents redundant ensureFolderExists calls when reused across
+ * multiple uploads in the same session.
+ */
+async function performOneDriveUpload(
+    client: Client,
+    config: OneDriveConfig,
+    localPath: string,
+    remotePath: string,
+    onProgress: ((percent: number) => void) | undefined,
+    onLog: ((msg: string, level?: LogLevel, type?: LogType, details?: string) => void) | undefined,
+    folderCache: Set<string>
+): Promise<boolean> {
+    try {
+        const drivePath = buildDrivePath(config.folderPath, remotePath);
+        const fileName = path.basename(drivePath);
+        const dirPath = path.posix.dirname(drivePath);
+
+        if (onLog) onLog(`Starting OneDrive upload: ${drivePath}`, "info", "storage");
+
+        if (dirPath && dirPath !== "." && !folderCache.has(dirPath)) {
+            await ensureFolderExists(client, dirPath);
+            folderCache.add(dirPath);
+        }
+
+        // Delete existing file before upload to avoid "nameAlreadyExists" conflicts.
+        try {
+            await client.api(driveItemPath(drivePath)).delete();
+        } catch {
+            // File doesn't exist yet - that's fine
+        }
+
+        const stats = await fs.stat(localPath);
+        const fileSize = stats.size;
+
+        if (fileSize <= SIMPLE_UPLOAD_LIMIT) {
+            const contents = await fs.readFile(localPath);
+            await client
+                .api(`${driveItemPath(drivePath)}/content`)
+                .put(contents);
+        } else {
+            const session = await client
+                .api(`${driveItemPath(drivePath)}/createUploadSession`)
+                .post({
+                    item: {
+                        "@microsoft.graph.conflictBehavior": "replace",
+                        name: fileName,
+                    },
+                });
+
+            const uploadUrl = session.uploadUrl;
+            const fileStream = createReadStream(localPath, { highWaterMark: UPLOAD_CHUNK_SIZE });
+            let offset = 0;
+
+            try {
+                for await (const chunk of fileStream) {
+                    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+                    const end = offset + buffer.length - 1;
+
+                    await fetch(uploadUrl, {
+                        method: "PUT",
+                        headers: {
+                            "Content-Range": `bytes ${offset}-${end}/${fileSize}`,
+                            "Content-Length": String(buffer.length),
+                        },
+                        body: buffer,
+                    });
+
+                    offset += buffer.length;
+
+                    if (onProgress) {
+                        onProgress(Math.min(99, Math.round((offset / fileSize) * 100)));
+                    }
+                }
+            } finally {
+                fileStream.destroy();
+            }
+        }
+
+        if (onProgress) onProgress(100);
+        if (onLog) onLog(`OneDrive upload completed: ${drivePath} (${fileSize} bytes)`, "info", "storage");
+        return true;
+    } catch (error: unknown) {
+        log.error("OneDrive upload failed", { remotePath }, wrapError(error));
+        if (onLog) onLog(`OneDrive upload failed: ${error instanceof Error ? error.message : String(error)}`, "error", "storage");
+        return false;
+    }
+}
+
 export const OneDriveAdapter: StorageAdapter = {
     id: "onedrive",
     type: "storage",
     name: "Microsoft OneDrive",
     configSchema: OneDriveSchema,
+
+    async openSession(config: OneDriveConfig, onLog?): Promise<StorageSession> {
+        const accessToken = await getAccessToken(config);
+        const client = createGraphClient(accessToken);
+        if (onLog) onLog("Authenticated with Microsoft Graph", "info", "storage");
+        const folderCache = new Set<string>();
+        return {
+            upload: (localPath, remotePath, onProgress, uploadLog) =>
+                performOneDriveUpload(client, config, localPath, remotePath, onProgress, uploadLog ?? onLog, folderCache),
+            close: async () => { },
+        };
+    },
 
     async upload(
         config: OneDriveConfig,
@@ -189,78 +291,7 @@ export const OneDriveAdapter: StorageAdapter = {
         try {
             const accessToken = await getAccessToken(config);
             const client = createGraphClient(accessToken);
-            const drivePath = buildDrivePath(config.folderPath, remotePath);
-            const fileName = path.basename(drivePath);
-            const dirPath = path.posix.dirname(drivePath);
-
-            if (onLog) onLog(`Starting OneDrive upload: ${drivePath}`, "info", "storage");
-
-            // Ensure parent folder exists
-            if (dirPath && dirPath !== ".") {
-                await ensureFolderExists(client, dirPath);
-            }
-
-            // Delete existing file before upload to avoid "nameAlreadyExists" conflicts.
-            // The Graph SDK does not reliably pass @microsoft.graph.conflictBehavior
-            // as a query parameter, so we proactively remove the old file.
-            try {
-                await client.api(driveItemPath(drivePath)).delete();
-            } catch {
-                // File doesn't exist yet - that's fine
-            }
-
-            const stats = await fs.stat(localPath);
-            const fileSize = stats.size;
-
-            if (fileSize <= SIMPLE_UPLOAD_LIMIT) {
-                // Simple upload for small files (< 4 MB)
-                const contents = await fs.readFile(localPath);
-                await client
-                    .api(`${driveItemPath(drivePath)}/content`)
-                    .put(contents);
-            } else {
-                // Create upload session for large files
-                const session = await client
-                    .api(`${driveItemPath(drivePath)}/createUploadSession`)
-                    .post({
-                        item: {
-                            "@microsoft.graph.conflictBehavior": "replace",
-                            name: fileName,
-                        },
-                    });
-
-                const uploadUrl = session.uploadUrl;
-                const fileStream = createReadStream(localPath, { highWaterMark: UPLOAD_CHUNK_SIZE });
-                let offset = 0;
-
-                try {
-                    for await (const chunk of fileStream) {
-                        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-                        const end = offset + buffer.length - 1;
-
-                        await fetch(uploadUrl, {
-                            method: "PUT",
-                            headers: {
-                                "Content-Range": `bytes ${offset}-${end}/${fileSize}`,
-                                "Content-Length": String(buffer.length),
-                            },
-                            body: buffer,
-                        });
-
-                        offset += buffer.length;
-
-                        if (onProgress) {
-                            onProgress(Math.min(99, Math.round((offset / fileSize) * 100)));
-                        }
-                    }
-                } finally {
-                    fileStream.destroy();
-                }
-            }
-
-            if (onProgress) onProgress(100);
-            if (onLog) onLog(`OneDrive upload completed: ${drivePath} (${fileSize} bytes)`, "info", "storage");
-            return true;
+            return await performOneDriveUpload(client, config, localPath, remotePath, onProgress, onLog, new Set());
         } catch (error: unknown) {
             log.error("OneDrive upload failed", { remotePath }, wrapError(error));
             if (onLog) onLog(`OneDrive upload failed: ${error instanceof Error ? error.message : String(error)}`, "error", "storage");

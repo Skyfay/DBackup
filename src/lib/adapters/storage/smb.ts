@@ -1,4 +1,4 @@
-import { StorageAdapter, FileInfo } from "@/lib/core/interfaces";
+import { StorageAdapter, StorageSession, FileInfo } from "@/lib/core/interfaces";
 import { SMBSchema } from "@/lib/adapters/definitions";
 import SambaClient from "samba-client";
 import path from "path";
@@ -57,6 +57,48 @@ async function ensureDir(client: SambaClient, remotePath: string): Promise<void>
     }
 }
 
+/**
+ * Performs a single upload on an already-created SambaClient. The directory
+ * cache prevents redundant mkdir calls when reused across multiple uploads
+ * in the same session.
+ *
+ * Note: the underlying `samba-client` library still spawns a new `smbclient`
+ * subprocess for every `sendFile`/`mkdir` call, so the per-call TCP/SMB
+ * negotiation overhead remains. Full connection reuse would require switching
+ * to a different SMB library.
+ */
+async function performSmbUpload(
+    client: SambaClient,
+    config: SMBConfig,
+    localPath: string,
+    remotePath: string,
+    onProgress: ((percent: number) => void) | undefined,
+    onLog: ((msg: string, level?: LogLevel, type?: LogType, details?: string) => void) | undefined,
+    dirCache: Set<string>
+): Promise<boolean> {
+    try {
+        const destination = resolvePath(config, remotePath);
+        const dir = path.posix.dirname(destination);
+
+        if (!dirCache.has(dir)) {
+            await ensureDir(client, destination);
+            dirCache.add(dir);
+        }
+
+        if (onLog) onLog(`Starting SMB upload to: ${destination}`, "info", "storage");
+
+        await client.sendFile(localPath, destination);
+
+        if (onProgress) onProgress(100);
+        if (onLog) onLog("SMB upload completed successfully", "info", "storage");
+        return true;
+    } catch (error: unknown) {
+        log.error("SMB upload failed", { address: config.address, remotePath }, wrapError(error));
+        if (onLog && error instanceof Error) onLog(`SMB upload failed: ${error.message}`, "error", "storage", error.stack);
+        return false;
+    }
+}
+
 export const SMBAdapter: StorageAdapter = {
     id: "smb",
     type: "storage",
@@ -64,28 +106,21 @@ export const SMBAdapter: StorageAdapter = {
     configSchema: SMBSchema,
     credentials: { primary: "USERNAME_PASSWORD" },
 
+    async openSession(config: SMBConfig, onLog?): Promise<StorageSession> {
+        const client = createClient(config);
+        if (onLog) onLog(`Connecting to SMB share ${config.address}`, "info", "storage");
+        const dirCache = new Set<string>();
+        return {
+            upload: (localPath, remotePath, onProgress, uploadLog) =>
+                performSmbUpload(client, config, localPath, remotePath, onProgress, uploadLog ?? onLog, dirCache),
+            close: async () => { },
+        };
+    },
+
     async upload(config: SMBConfig, localPath: string, remotePath: string, onProgress?: (percent: number) => void, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void): Promise<boolean> {
-        try {
-            const client = createClient(config);
-            const destination = resolvePath(config, remotePath);
-
-            if (onLog) onLog(`Connecting to SMB share ${config.address}`, "info", "storage");
-
-            // Ensure remote directory exists
-            await ensureDir(client, destination);
-
-            if (onLog) onLog(`Starting SMB upload to: ${destination}`, "info", "storage");
-
-            await client.sendFile(localPath, destination);
-
-            if (onProgress) onProgress(100);
-            if (onLog) onLog("SMB upload completed successfully", "info", "storage");
-            return true;
-        } catch (error: unknown) {
-            log.error("SMB upload failed", { address: config.address, remotePath }, wrapError(error));
-            if (onLog && error instanceof Error) onLog(`SMB upload failed: ${error.message}`, "error", "storage", error.stack);
-            return false;
-        }
+        const client = createClient(config);
+        if (onLog) onLog(`Connecting to SMB share ${config.address}`, "info", "storage");
+        return performSmbUpload(client, config, localPath, remotePath, onProgress, onLog, new Set());
     },
 
     async download(config: SMBConfig, remotePath: string, localPath: string, _onProgress?: (processed: number, total: number) => void, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void): Promise<boolean> {

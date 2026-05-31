@@ -16,6 +16,10 @@ All notable changes to DBackup are documented here.
 - **mssql**: Fixed Database Explorer showing "No tables found" for databases that use non-dbo schemas - tables in all schemas are now returned and displayed with a `schema.table` prefix for non-dbo objects.
 - **mssql**: Fixed "Total Size" showing "undefined" in the Database Explorer General tab - BIGINT size values returned as strings by the database driver are now converted to numbers.
 
+### 🎨 Improvements
+
+- **storage**: SFTP, FTP, SMB, Rsync, and OneDrive adapters now reuse a single connection for the metadata sidecar (`.meta.json`) and the backup file upload per job. Previously each upload performed a full connect/auth/disconnect cycle, doubling the SSH/FTP handshake and OneDrive OAuth token requests. Introduced an optional `openSession()` method on the `StorageAdapter` interface; adapters without it transparently fall back to the previous stateless behavior, so S3, WebDAV, Dropbox, Google Drive, and local filesystem remain unchanged.
+
 ### 🐳 Docker
 
 - **Image**: `skyfay/dbackup:vNEXT`

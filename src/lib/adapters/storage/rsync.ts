@@ -1,4 +1,4 @@
-import { StorageAdapter, FileInfo } from "@/lib/core/interfaces";
+import { StorageAdapter, StorageSession, FileInfo } from "@/lib/core/interfaces";
 import { RsyncSchema } from "@/lib/adapters/definitions";
 import Rsync from "rsync";
 import { exec, execFile } from "child_process";
@@ -260,6 +260,68 @@ async function createRsyncInstance(config: RsyncConfig, keyFile?: string): Promi
     return rsync;
 }
 
+/**
+ * Performs a single rsync upload using a pre-written key file. The mkdir cache
+ * prevents redundant remote `mkdir -p` SSH calls when reused across multiple
+ * uploads in the same session (e.g. metadata sidecar + backup file in the
+ * same target directory).
+ *
+ * Note: each rsync invocation still opens its own SSH connection internally;
+ * the savings here are the extra `execSSH` mkdir call and the temporary key
+ * file write per additional upload.
+ */
+async function performRsyncUpload(
+    config: RsyncConfig,
+    keyFile: string | undefined,
+    localPath: string,
+    remotePath: string,
+    onProgress: ((percent: number) => void) | undefined,
+    onLog: ((msg: string, level?: LogLevel, type?: LogType, details?: string) => void) | undefined,
+    dirCache: Set<string>
+): Promise<boolean> {
+    try {
+        const destination = buildRemotePath(config, remotePath);
+        const remoteDir = path.posix.dirname(path.posix.join(config.pathPrefix, remotePath));
+
+        if (!dirCache.has(remoteDir)) {
+            if (onLog) onLog(`Ensuring remote directory: ${remoteDir}`, "info", "storage");
+            try {
+                await execSSH(config, `mkdir -p '${shellEscapeSingleQuote(remoteDir)}'`, keyFile);
+            } catch (e) {
+                log.warn("Could not create remote directory via SSH, rsync may handle it", {}, wrapError(e));
+            }
+            dirCache.add(remoteDir);
+        }
+
+        if (onLog) onLog(`Starting rsync upload to: ${config.host}:${remotePath}`, "info", "storage");
+
+        const rsync = await createRsyncInstance(config, keyFile);
+        rsync.source(localPath);
+        rsync.destination(destination);
+
+        let lastPercent = 0;
+        await executeRsync(rsync, (msg, level, type, details) => {
+            const progressMatch = msg.match(/(\d+)%/);
+            if (progressMatch && onProgress) {
+                const percent = parseInt(progressMatch[1], 10);
+                if (percent > lastPercent) {
+                    lastPercent = percent;
+                    onProgress(percent);
+                }
+            }
+            if (onLog) onLog(msg, level, type, details);
+        });
+
+        if (onProgress) onProgress(100);
+        if (onLog) onLog("Rsync upload completed successfully", "info", "storage");
+        return true;
+    } catch (error: unknown) {
+        log.error("Rsync upload failed", { host: config.host, remotePath }, wrapError(error));
+        if (onLog) onLog(`Rsync upload failed: ${sanitizeError(error)}`, "error", "storage");
+        return false;
+    }
+}
+
 export const RsyncAdapter: StorageAdapter = {
     id: "rsync",
     type: "storage",
@@ -267,55 +329,30 @@ export const RsyncAdapter: StorageAdapter = {
     configSchema: RsyncSchema,
     credentials: { primary: "SSH_KEY" },
 
+    async openSession(config: RsyncConfig, onLog?): Promise<StorageSession> {
+        let keyFile: string | undefined;
+        if (config.authType === "privateKey" && config.privateKey) {
+            keyFile = await writeTempKey(config.privateKey);
+        }
+        const dirCache = new Set<string>();
+        return {
+            upload: (localPath, remotePath, onProgress, uploadLog) =>
+                performRsyncUpload(config, keyFile, localPath, remotePath, onProgress, uploadLog ?? onLog, dirCache),
+            close: async () => {
+                if (keyFile) await fs.unlink(keyFile).catch(() => { });
+            },
+        };
+    },
+
     async upload(config: RsyncConfig, localPath: string, remotePath: string, onProgress?: (percent: number) => void, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void): Promise<boolean> {
         let keyFile: string | undefined;
         try {
             if (config.authType === "privateKey" && config.privateKey) {
                 keyFile = await writeTempKey(config.privateKey);
             }
-
-            const destination = buildRemotePath(config, remotePath);
-            const remoteDir = path.posix.dirname(path.posix.join(config.pathPrefix, remotePath));
-
-            // Ensure remote directory exists
-            if (onLog) onLog(`Ensuring remote directory: ${remoteDir}`, "info", "storage");
-            try {
-                await execSSH(config, `mkdir -p '${shellEscapeSingleQuote(remoteDir)}'`, keyFile);
-            } catch (e) {
-                log.warn("Could not create remote directory via SSH, rsync may handle it", {}, wrapError(e));
-            }
-
-            if (onLog) onLog(`Starting rsync upload to: ${config.host}:${remotePath}`, "info", "storage");
-
-            const rsync = await createRsyncInstance(config, keyFile);
-
-            rsync.source(localPath);
-            rsync.destination(destination);
-
-            let lastPercent = 0;
-
-            await executeRsync(rsync, (msg, level, type, details) => {
-                // Try to parse progress from rsync output (e.g., "  1,234,567 100%   12.34MB/s")
-                const progressMatch = msg.match(/(\d+)%/);
-                if (progressMatch && onProgress) {
-                    const percent = parseInt(progressMatch[1], 10);
-                    if (percent > lastPercent) {
-                        lastPercent = percent;
-                        onProgress(percent);
-                    }
-                }
-                if (onLog) onLog(msg, level, type, details);
-            });
-
-            if (onProgress) onProgress(100);
-            if (onLog) onLog("Rsync upload completed successfully", "info", "storage");
-            return true;
-        } catch (error: unknown) {
-            log.error("Rsync upload failed", { host: config.host, remotePath }, wrapError(error));
-            if (onLog) onLog(`Rsync upload failed: ${sanitizeError(error)}`, "error", "storage");
-            return false;
+            return await performRsyncUpload(config, keyFile, localPath, remotePath, onProgress, onLog, new Set());
         } finally {
-            if (keyFile) await fs.unlink(keyFile).catch(() => {});
+            if (keyFile) await fs.unlink(keyFile).catch(() => { });
         }
     },
 

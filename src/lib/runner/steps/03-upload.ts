@@ -13,6 +13,7 @@ import { formatBytes } from "@/lib/utils";
 import { calculateFileChecksum, verifyFileChecksum } from "@/lib/crypto/checksum";
 import { getTempDir } from "@/lib/temp-dir";
 import { PIPELINE_STAGES } from "@/lib/core/logs";
+import { withStorageSession } from "./upload-helpers";
 
 export async function stepUpload(ctx: RunnerContext) {
     if (!ctx.job || ctx.destinations.length === 0 || !ctx.tempFile) throw new Error("Context not ready for upload");
@@ -191,29 +192,32 @@ export async function stepUpload(ctx: RunnerContext) {
 
         ctx.log(`${destLabel} Starting upload...`);
 
+        const sessionLog: (msg: string, level?: any, type?: any, details?: any) => void =
+            (msg, level, type, details) => ctx.log(`${destLabel} ${msg}`, level, type, details);
+
         try {
-            // Upload metadata sidecar
-            ctx.log(`${destLabel} Uploading metadata sidecar...`);
-            await dest.adapter.upload(
-                dest.config,
-                metaPath,
-                remotePath + ".meta.json",
-                undefined,
-                (msg, level, type, details) => ctx.log(`${destLabel} ${msg}`, level, type, details)
-            );
+            await withStorageSession(dest.adapter, dest.config, sessionLog, async (session) => {
+                // Upload metadata sidecar
+                ctx.log(`${destLabel} Uploading metadata sidecar...`);
+                await session.upload(
+                    metaPath,
+                    remotePath + ".meta.json",
+                    undefined,
+                    sessionLog
+                );
 
-            // Upload main backup file
-            const uploadSuccess = await dest.adapter.upload(
-                dest.config,
-                ctx.tempFile,
-                remotePath,
-                destProgress,
-                (msg, level, type, details) => ctx.log(`${destLabel} ${msg}`, level, type, details)
-            );
+                // Upload main backup file
+                const uploadSuccess = await session.upload(
+                    ctx.tempFile!,
+                    remotePath,
+                    destProgress,
+                    sessionLog
+                );
 
-            if (!uploadSuccess) {
-                throw new Error("Adapter returned false");
-            }
+                if (!uploadSuccess) {
+                    throw new Error("Adapter returned false");
+                }
+            });
 
             dest.uploadResult = { success: true, path: remotePath };
             ctx.log(`${destLabel} Upload complete: ${remotePath}`);

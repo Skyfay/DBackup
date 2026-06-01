@@ -5,7 +5,7 @@ import { overlayCredentialsOnConfig } from "@/lib/adapters/config-resolver";
 import { headers } from "next/headers";
 import prisma from "@/lib/prisma";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
-import { PERMISSIONS, Permission } from "@/lib/auth/permissions";
+import { getPermissionForAdapter } from "@/lib/auth/adapter-permissions";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 
@@ -13,18 +13,6 @@ const log = logger.child({ route: "adapters/test-connection" });
 
 // Ensure adapters are registered
 registerAdapters();
-
-// Helper to determine permission based on adapter type
-function getPermissionForAdapter(adapterId: string): Permission | null {
-    if (/mysql|postgres|mongo|mssql|sqlite/i.test(adapterId)) {
-        return PERMISSIONS.SOURCES.VIEW;
-    } else if (/local-filesystem|s3|sftp|smb|ftp|webdav|rsync|google-drive|dropbox|onedrive/i.test(adapterId)) {
-        return PERMISSIONS.DESTINATIONS.READ;
-    } else if (/discord|email|smtp|slack/i.test(adapterId)) {
-        return PERMISSIONS.NOTIFICATIONS.READ;
-    }
-    return null;
-}
 
 export async function POST(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
@@ -37,15 +25,15 @@ export async function POST(req: NextRequest) {
         const body = await req.json();
         const { adapterId, config, configId, primaryCredentialId, sshCredentialId } = body;
 
-        // RBAC: Check permission based on adapter type
-        const requiredPermission = getPermissionForAdapter(adapterId || '');
-        if (requiredPermission) {
-            checkPermissionWithContext(ctx, requiredPermission);
-        }
-
         if (!adapterId || !config) {
             return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
         }
+
+        const requiredPermission = getPermissionForAdapter(adapterId);
+        if (!requiredPermission) {
+            return NextResponse.json({ success: false, message: "Unsupported adapter" }, { status: 400 });
+        }
+        checkPermissionWithContext(ctx, requiredPermission);
 
         const adapter = registry.get(adapterId);
 

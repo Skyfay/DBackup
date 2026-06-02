@@ -2,8 +2,8 @@
 
 All notable changes to DBackup are documented here.
 
-## vNEXT
-*Release: In Progress*
+## v2.5.1 - Security Update, Smart Recovery Improvements, and Multiple Bug Fixes
+*Released: June 2, 2026*
 
 > 🔒 **Security Update:** This release fixes a security vulnerability in DBackup's own code ([GHSA-h929-x237-c5h2](https://github.com/skyfay/DBackup/security/advisories/GHSA-h929-x237-c5h2)). Update as soon as possible.
 
@@ -21,7 +21,7 @@ All notable changes to DBackup are documented here.
 
 ### 🔒 Security
 
-- **adapters**: Adapter connection-test and access-check routes now fail closed - permission checks deny access by default instead of falling through when the check is inconclusive. ([GHSA-h929-x237-c5h2](https://github.com/skyfay/DBackup/security/advisories/GHSA-h929-x237-c5h2))
+- **adapters**: Adapter connection-test and access-check routes now fail closed - permission checks deny access by default instead of falling through when the check is inconclusive. Thanks @endscene665 ([GHSA-h929-x237-c5h2](https://github.com/skyfay/DBackup/security/advisories/GHSA-h929-x237-c5h2))
 
 ### 🎨 Improvements
 
@@ -31,10 +31,10 @@ All notable changes to DBackup are documented here.
 
 - **retention**: Added comprehensive GFS retention unit tests with realistic multi-month backup sets.
 
-### �🐳 Docker
+### 🐳 Docker
 
-- **Image**: `skyfay/dbackup:vNEXT`
-- **Also tagged as**: `latest`, `vNEXT`
+- **Image**: `skyfay/dbackup:v2.5.1`
+- **Also tagged as**: `latest`, `v2`
 - **CI Image**: `skyfay/dbackup:ci`
 - **Platforms**: linux/amd64, linux/arm64
 

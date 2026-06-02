@@ -7,9 +7,14 @@ All notable changes to DBackup are documented here.
 
 > 🔒 **Security Update:** This release fixes a security vulnerability in DBackup's own code ([GHSA-h929-x237-c5h2](https://github.com/skyfay/DBackup/security/advisories/GHSA-h929-x237-c5h2)). Update as soon as possible.
 
+### ✨ Features
+
+- **encryption**: Added a "Key Required" fallback dialog for decrypted downloads and offline config restore. When Smart Recovery cannot find a matching key, users can manually select a vault profile or paste a raw hex key to complete the operation.
+
 ### 🐛 Bug Fixes
 
 - **ftp**: Fixed GFS retention on FTP servers without MLSD support by falling back to dates extracted from backup filenames when server-provided modification times are unavailable.
+- **encryption**: Smart Recovery (try-all-keys) is now applied during offline config backup restore and decrypted file downloads from the Storage Explorer - both previously failed with "Encryption Profile not found" when the profile ID changed after a key reimport. ([#108](https://github.com/Skyfay/DBackup/issues/108))
 
 ### 🔒 Security
 

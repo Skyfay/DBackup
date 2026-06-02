@@ -40,6 +40,7 @@ import { DownloadLinkModal } from "@/components/dashboard/storage/download-link-
 import { StorageHistoryTab } from "@/components/dashboard/storage/storage-history-tab";
 import { StorageSettingsTab } from "@/components/dashboard/storage/storage-settings-tab";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EncryptionKeyResolutionDialog, type KeyResolutionResult } from "@/components/common/encryption-key-resolution-dialog";
 import type { StorageHistoryTabRef } from "@/components/dashboard/storage/storage-history-tab";
 import type { StorageSettingsTabRef } from "@/components/dashboard/storage/storage-settings-tab";
 
@@ -80,6 +81,12 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
 
     // Download Link Modal State
     const [downloadLinkFile, setDownloadLinkFile] = useState<FileInfo | null>(null);
+
+    // Encryption Key Resolution Dialog State (decrypted download fallback)
+    const [decryptKeyDialogOpen, setDecryptKeyDialogOpen] = useState(false);
+    const [pendingDecryptFile, setPendingDecryptFile] = useState<FileInfo | null>(null);
+    const [pendingDecryptProfileId, setPendingDecryptProfileId] = useState<string>("");
+    const [decryptDialogLoading, setDecryptDialogLoading] = useState(false);
 
     const fetchAdapters = useCallback(async () => {
         try {
@@ -143,13 +150,72 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
             toast.error("Permission denied");
             return;
         }
-        // Trigger download via API
-        let url = `/api/storage/${selectedDestination}/download?file=${encodeURIComponent(file.path)}`;
-        if (decrypt) {
-            url += "&decrypt=true";
+        if (!decrypt) {
+            // Non-decrypted download stays as direct browser navigation
+            window.open(`/api/storage/${selectedDestination}/download?file=${encodeURIComponent(file.path)}`, '_blank');
+            return;
         }
-        window.open(url, '_blank');
+        // Decrypted download via fetch so we can intercept ENCRYPTION_KEY_REQUIRED errors
+        void performDecryptedDownload(file, null);
+    }, [canDownload, selectedDestination]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const performDecryptedDownload = useCallback(async (file: FileInfo, keyResolution: KeyResolutionResult | null) => {
+        if (!canDownload) return;
+        const baseUrl = `/api/storage/${selectedDestination}/download`;
+        const fileParam = encodeURIComponent(file.path);
+
+        try {
+            let response: Response;
+
+            if (keyResolution?.type === "rawKey") {
+                response = await fetch(baseUrl, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ file: file.path, rawKeyHex: keyResolution.keyHex }),
+                });
+            } else {
+                const url = `${baseUrl}?file=${fileParam}&decrypt=true`
+                    + (keyResolution?.type === "profile" ? `&profileIdOverride=${encodeURIComponent(keyResolution.profileId)}` : "");
+                response = await fetch(url);
+            }
+
+            if (response.ok) {
+                const blob = await response.blob();
+                const disposition = response.headers.get("Content-Disposition") ?? "";
+                const filenameMatch = disposition.match(/filename="([^"]+)"/);
+                const filename = filenameMatch?.[1] ?? file.name.replace(/\.enc$/, "");
+                const objectUrl = URL.createObjectURL(blob);
+                const anchor = document.createElement("a");
+                anchor.href = objectUrl;
+                anchor.download = filename;
+                anchor.click();
+                URL.revokeObjectURL(objectUrl);
+                setDecryptKeyDialogOpen(false);
+            } else if (response.status === 422) {
+                const data: { code?: string; profileId?: string; error?: string } = await response.json().catch(() => ({}));
+                if (data.code === "ENCRYPTION_KEY_REQUIRED") {
+                    setPendingDecryptFile(file);
+                    setPendingDecryptProfileId(data.profileId ?? "");
+                    setDecryptKeyDialogOpen(true);
+                } else {
+                    toast.error(data.error ?? "Download failed");
+                }
+            } else {
+                const data: { error?: string } = await response.json().catch(() => ({}));
+                toast.error(data.error ?? "Download failed");
+            }
+        } catch {
+            toast.error("Download failed");
+        } finally {
+            setDecryptDialogLoading(false);
+        }
     }, [canDownload, selectedDestination]);
+
+    const handleKeyResolutionConfirm = useCallback(async (result: KeyResolutionResult) => {
+        if (!pendingDecryptFile) return;
+        setDecryptDialogLoading(true);
+        await performDecryptedDownload(pendingDecryptFile, result);
+    }, [pendingDecryptFile, performDecryptedDownload]);
 
     const handleRestoreClick = useCallback((file: FileInfo) => {
         if (!canRestore) {
@@ -474,6 +540,18 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
                     }}
                 />
             )}
+
+            {/* Encryption Key Resolution Dialog (decrypted download fallback) */}
+            <EncryptionKeyResolutionDialog
+                open={decryptKeyDialogOpen}
+                onOpenChange={(o) => {
+                    setDecryptKeyDialogOpen(o);
+                    if (!o) { setPendingDecryptFile(null); setPendingDecryptProfileId(""); }
+                }}
+                profileIdHint={pendingDecryptProfileId}
+                onConfirm={handleKeyResolutionConfirm}
+                loading={decryptDialogLoading}
+            />
         </div>
     );
 }

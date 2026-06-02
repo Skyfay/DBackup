@@ -10,6 +10,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import { logger } from "@/lib/logging/logger";
 import { wrapError, getErrorMessage } from "@/lib/logging/errors";
+import { getProfileMasterKey } from "@/services/backup/encryption-service";
 
 const log = logger.child({ action: "config-management" });
 const configService = new ConfigService();
@@ -63,7 +64,17 @@ export async function uploadAndRestoreConfigAction(formData: FormData) {
 
         // 3. Parse & Process
         // This helper handles decryption and decompression if needed
-        const configData = await configService.parseBackupFile(tempBackupPath, tempMetaPath);
+        const rawKeyHex = formData.get("encryptionKeyHex") as string | null;
+        const profileIdOverride = formData.get("encryptionProfileIdOverride") as string | null;
+
+        let resolvedKeyHex = rawKeyHex || undefined;
+        if (profileIdOverride && !resolvedKeyHex) {
+            // User selected a vault profile in the key resolution dialog - resolve to raw key server-side
+            const profileKey = await getProfileMasterKey(profileIdOverride);
+            resolvedKeyHex = profileKey.toString('hex');
+        }
+
+        const configData = await configService.parseBackupFile(tempBackupPath, tempMetaPath, resolvedKeyHex);
 
         // 4. Import
         await configService.import(configData, strategy);
@@ -71,7 +82,12 @@ export async function uploadAndRestoreConfigAction(formData: FormData) {
         return { success: true };
     } catch (e: unknown) {
         log.error("Offline restore failed", {}, wrapError(e));
-        return { success: false, error: getErrorMessage(e) || "Failed to restore configuration" };
+        const message = getErrorMessage(e) || "Failed to restore configuration";
+        if (message.startsWith("ENCRYPTION_KEY_REQUIRED:")) {
+            const profileId = message.split(":").slice(1).join(":") || "unknown";
+            return { success: false, code: "ENCRYPTION_KEY_REQUIRED" as const, profileId };
+        }
+        return { success: false, error: message };
     } finally {
         // Cleanup
         try {

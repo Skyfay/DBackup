@@ -3,7 +3,7 @@ import { createDecryptionStream } from "@/lib/crypto/stream";
 import { createGunzip } from "zlib";
 import { createReadStream, promises as fs } from "fs";
 import { Readable, Transform } from "stream";
-import { getProfileMasterKey } from "@/services/backup/encryption-service";
+import { resolveDecryptionKey } from "@/services/restore/smart-recovery";
 import { pipeline } from "stream/promises";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
@@ -16,7 +16,8 @@ const svcLog = logger.child({ service: "ConfigService" });
  */
 export async function parseBackupFile(
   filePath: string,
-  metaFilePath?: string
+  metaFilePath?: string,
+  rawKeyHex?: string
 ): Promise<AppConfigurationBackup> {
   let iv: Buffer | undefined;
   let authTag: Buffer | undefined;
@@ -68,16 +69,32 @@ export async function parseBackupFile(
       throw new Error("Encrypted backup detected but metadata (IV/AuthTag/Profile) is missing. Please upload the .meta.json file as well.");
     }
 
-    // Get Key
-    const key = await getProfileMasterKey(profileId).catch(() => null);
-
-    // Smart Recovery: If key not found (e.g. ID mismatch after new install), try finding ANY profile that works?
-    // AES-GCM requires the key to init. If we pick wrong key, setAuthTag matches fine, until final() throws.
-    // Implementing a loop here is tricky with streams (can't rewind easily).
-    // Strategy: If lookup fails, fail. User works around by editing meta or ensuring profile matches.
-
-    if (!key) {
-      throw new Error(`Encryption Profile ${profileId} not found. Please ensure the relevant Encryption Profile is restored first.`);
+    let key: Buffer;
+    if (rawKeyHex) {
+      // Caller-supplied raw key override (e.g. from manual key resolution UI)
+      if (!/^[0-9a-fA-F]{64}$/.test(rawKeyHex)) {
+        throw new Error("Invalid encryption key format. Must be a 64-character hex string.");
+      }
+      key = Buffer.from(rawKeyHex, 'hex');
+    } else {
+      // Auto-resolve: try vault profile first, then Smart Recovery (try all profiles)
+      const encryptionMeta = {
+        enabled: true as const,
+        profileId,
+        algorithm: 'aes-256-gcm' as const,
+        iv: iv.toString('hex'),
+        authTag: authTag.toString('hex'),
+      };
+      try {
+        key = await resolveDecryptionKey(
+          encryptionMeta,
+          filePath,
+          isCompressed ? 'GZIP' : undefined,
+          (msg) => svcLog.info(msg, {}),
+        );
+      } catch {
+        throw new Error(`ENCRYPTION_KEY_REQUIRED:${profileId}`);
+      }
     }
 
     streams.push(createDecryptionStream(key, iv, authTag));

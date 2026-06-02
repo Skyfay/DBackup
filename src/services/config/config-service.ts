@@ -17,8 +17,8 @@ export class ConfigService {
     return exportConfiguration(optionsOrIncludeSecrets);
   }
 
-  parseBackupFile(filePath: string, metaFilePath?: string): Promise<AppConfigurationBackup> {
-    return parseBackupFile(filePath, metaFilePath);
+  parseBackupFile(filePath: string, metaFilePath?: string, rawKeyHex?: string): Promise<AppConfigurationBackup> {
+    return parseBackupFile(filePath, metaFilePath, rawKeyHex);
   }
 
   import(data: AppConfigurationBackup, strategy: 'OVERWRITE', options?: RestoreOptions): Promise<void> {

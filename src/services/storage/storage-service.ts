@@ -5,6 +5,7 @@ import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { pipeline } from "stream/promises";
 import { createReadStream, createWriteStream, promises as fs } from "fs";
 import { getProfileMasterKey } from "@/services/backup/encryption-service";
+import { resolveDecryptionKey } from "@/services/restore/smart-recovery";
 import { createDecryptionStream } from "@/lib/crypto/stream";
 import { getTempDir } from "@/lib/temp-dir";
 import path from "path";
@@ -382,7 +383,7 @@ export class StorageService {
     /**
      * Downloads a file from storage to a local path.
      */
-    async downloadFile(adapterConfigId: string, remotePath: string, localDestination: string, decrypt: boolean = false): Promise<{ success: boolean; isZip?: boolean }> {
+    async downloadFile(adapterConfigId: string, remotePath: string, localDestination: string, decrypt: boolean = false, options?: { profileIdOverride?: string; rawKeyHex?: string }): Promise<{ success: boolean; isZip?: boolean }> {
         const adapterConfig = await prisma.adapterConfig.findUnique({
            where: { id: adapterConfigId }
        });
@@ -458,7 +459,40 @@ export class StorageService {
                 }
 
                 if (encryptionParams) {
-                    const masterKey = await getProfileMasterKey(encryptionParams.profileId);
+                    let masterKey: Buffer;
+
+                    if (options?.rawKeyHex) {
+                        // Caller-supplied raw key (from manual key resolution UI, passed via POST body)
+                        masterKey = Buffer.from(options.rawKeyHex, 'hex');
+                    } else if (options?.profileIdOverride) {
+                        // Caller explicitly chose a different vault profile
+                        masterKey = await getProfileMasterKey(options.profileIdOverride);
+                    } else {
+                        // Auto-resolve: try the referenced profile first, then Smart Recovery
+                        const encryptionMeta = {
+                            enabled: true as const,
+                            profileId: encryptionParams.profileId,
+                            algorithm: 'aes-256-gcm' as const,
+                            iv: encryptionParams.iv,
+                            authTag: encryptionParams.authTag,
+                        };
+                        const compression = meta?.compression as 'GZIP' | 'BROTLI' | 'NONE' | undefined;
+                        try {
+                            masterKey = await resolveDecryptionKey(
+                                encryptionMeta,
+                                localDestination,
+                                compression,
+                                (msg, level) => {
+                                    if (level === 'error') log.error(msg, {});
+                                    else if (level === 'warning') log.warn(msg, {});
+                                    else log.info(msg, {});
+                                },
+                            );
+                        } catch {
+                            throw new Error(`ENCRYPTION_KEY_REQUIRED:${encryptionParams.profileId}`);
+                        }
+                    }
+
                     const iv = Buffer.from(encryptionParams.iv, 'hex');
                     const authTag = Buffer.from(encryptionParams.authTag, 'hex');
 
@@ -479,8 +513,11 @@ export class StorageService {
 
                 return { success: true, isZip: false };
             } catch (e: unknown) {
+                // Re-throw key-required errors unwrapped so the API route can detect them
+                if (e instanceof Error && e.message.startsWith("ENCRYPTION_KEY_REQUIRED:")) {
+                    throw e;
+                }
                 const message = e instanceof Error ? e.message : String(e);
-                // Return failed state so API returns 500
                 throw new Error("Decryption failed: " + message);
             }
        }

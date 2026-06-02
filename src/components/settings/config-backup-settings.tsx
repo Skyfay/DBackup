@@ -32,7 +32,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { useState } from "react"
+import { useState, useRef } from "react"
+import { EncryptionKeyResolutionDialog, type KeyResolutionResult } from "@/components/common/encryption-key-resolution-dialog"
 
 
 const formSchema = z.object({
@@ -100,24 +101,63 @@ export function ConfigBackupSettings({ initialSettings, storageAdapters, encrypt
     const profileId = useWatch({ control: form.control, name: "profileId" });
 
     const [isRestoreOpen, setIsRestoreOpen] = useState(false);
+    const [restoreLoading, setRestoreLoading] = useState(false);
+    const pendingRestoreFormData = useRef<FormData | null>(null);
+
+    // Key resolution dialog state (appears when smart recovery fails during offline restore)
+    const [keyDialogOpen, setKeyDialogOpen] = useState(false);
+    const [keyDialogProfileId, setKeyDialogProfileId] = useState("");
+    const [keyDialogLoading, setKeyDialogLoading] = useState(false);
+
+    const runRestore = async (formData: FormData) => {
+        setRestoreLoading(true);
+        try {
+            const res = await uploadAndRestoreConfigAction(formData);
+            if (res.success) {
+                toast.success("Configuration Restored & Applied Successfully");
+                setIsRestoreOpen(false);
+                pendingRestoreFormData.current = null;
+            } else if ("code" in res && res.code === "ENCRYPTION_KEY_REQUIRED") {
+                // Smart Recovery failed - ask user to provide a key manually
+                pendingRestoreFormData.current = formData;
+                setKeyDialogProfileId(res.profileId ?? "");
+                setKeyDialogOpen(true);
+            } else {
+                toast.error(`Restore Failed: ${"error" in res ? res.error : "Unknown error"}`);
+            }
+        } catch (err: unknown) {
+            toast.error(`Restore Failed: ${err instanceof Error ? err.message : "Unknown error"}`);
+        } finally {
+            setRestoreLoading(false);
+        }
+    };
 
     const handleOfflineRestore = async (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         const formData = new FormData(event.currentTarget);
-
         setIsRestoreOpen(false);
+        await runRestore(formData);
+    };
 
-        toast.promise(uploadAndRestoreConfigAction(formData), {
-             loading: 'Uploading and Restoring...',
-             success: (res) => {
-                 if (!res.success) throw new Error(res.error);
-                 return "Configuration Restored & Applied Successfully";
-             },
-             error: (err) => `Restore Failed: ${err.message}`
-        });
-    }
+    const handleKeyResolutionConfirm = async (result: KeyResolutionResult) => {
+        if (!pendingRestoreFormData.current) return;
+        setKeyDialogLoading(true);
+        const formData = pendingRestoreFormData.current;
+        if (result.type === "rawKey") {
+            formData.set("encryptionKeyHex", result.keyHex);
+        } else {
+            // Profile selected: re-run with a synthetic rawKey by passing the profileId
+            // We encode it as a special marker so the action knows to look it up server-side.
+            // Actually, we store it as profileIdOverride in a dedicated field.
+            formData.set("encryptionProfileIdOverride", result.profileId);
+        }
+        await runRestore(formData);
+        setKeyDialogLoading(false);
+        setKeyDialogOpen(false);
+    };
 
     return (
+        <>
         <Form {...form}>
             <div className="space-y-6">
                 <Card>
@@ -368,18 +408,17 @@ export function ConfigBackupSettings({ initialSettings, storageAdapters, encrypt
 
                                         <Alert variant="default" className="bg-muted">
                                             <LockKeyhole className="h-4 w-4" />
-                                            <AlertTitle>Encryption Profile Required (if encrypted)</AlertTitle>
+                                            <AlertTitle>Encryption Profile (if encrypted)</AlertTitle>
                                             <AlertDescription>
-                                                The system will attempt to unlock the file using the Encryption Profile ID specified in the metadata.
-                                                <br/>
-                                                Ensure the relevant Encryption Profile exists in this system before restoring.
+                                                The system first tries to find the matching key automatically.
+                                                If that fails, you will be prompted to select or enter a key.
                                             </AlertDescription>
                                         </Alert>
 
                                         <DialogFooter>
                                             <Button type="button" variant="outline" onClick={() => setIsRestoreOpen(false)}>Cancel</Button>
-                                            <Button type="submit" variant="destructive">
-                                                Restore & Overwrite
+                                            <Button type="submit" variant="destructive" disabled={restoreLoading}>
+                                                {restoreLoading ? "Restoring..." : "Restore & Overwrite"}
                                             </Button>
                                         </DialogFooter>
                                     </form>
@@ -391,5 +430,18 @@ export function ConfigBackupSettings({ initialSettings, storageAdapters, encrypt
             </Card>
            </div>
         </Form>
+
+        {/* Key Resolution Dialog - shown when Smart Recovery fails during offline restore */}
+        <EncryptionKeyResolutionDialog
+            open={keyDialogOpen}
+            onOpenChange={(o) => {
+                setKeyDialogOpen(o);
+                if (!o) { pendingRestoreFormData.current = null; setKeyDialogProfileId(""); }
+            }}
+            profileIdHint={keyDialogProfileId}
+            onConfirm={handleKeyResolutionConfirm}
+            loading={keyDialogLoading}
+        />
+        </>
     )
 }

@@ -70,6 +70,7 @@ export function RestoreClient() {
 
     const [targetSource, setTargetSource] = useState<string>("");
     const [targetDbName, setTargetDbName] = useState<string>("");
+    const [restoreMode, setRestoreMode] = useState<'overwrite' | 'rename'>('overwrite');
 
     // Advanced Restore State
     const [analyzedDbs, setAnalyzedDbs] = useState<string[]>([]);
@@ -284,7 +285,7 @@ export function RestoreClient() {
             const payload = {
                 file: file.path,
                 targetSourceId: targetSource,
-                targetDatabaseName: targetDbName || undefined,
+                targetDatabaseName: restoreMode === 'rename' && targetDbName ? targetDbName : undefined,
                 databaseMapping: mapping,
                 privilegedAuth: auth
             };
@@ -701,10 +702,14 @@ export function RestoreClient() {
                                                 </div>
                                             </div>
                                         ) : (
-                                            <RadioGroup defaultValue="overwrite" className="grid grid-cols-1 gap-4">
+                                            <RadioGroup value={restoreMode} onValueChange={(v) => {
+                                                const mode = v as 'overwrite' | 'rename';
+                                                setRestoreMode(mode);
+                                                if (mode === 'overwrite') setTargetDbName('');
+                                            }} className="grid grid-cols-1 gap-4">
                                                 <div>
                                                     <div className="flex items-center space-x-2">
-                                                        <RadioGroupItem value="overwrite" id="r1" onClick={() => setTargetDbName("")} />
+                                                        <RadioGroupItem value="overwrite" id="r1" />
                                                         <Label htmlFor="r1">Overwrite Existing</Label>
                                                     </div>
                                                     <p className="text-xs text-muted-foreground pl-6 mt-1">
@@ -722,8 +727,7 @@ export function RestoreClient() {
                                                             value={targetDbName}
                                                             onChange={(e) => {
                                                                 setTargetDbName(e.target.value);
-                                                                const radio = document.getElementById('r2') as HTMLInputElement;
-                                                                if (radio) radio.checked = true;
+                                                                setRestoreMode('rename');
                                                             }}
                                                             className="h-8"
                                                         />

@@ -432,6 +432,20 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
 
         if (databaseMapping) {
             dbConf.databaseMapping = databaseMapping;
+
+            // For SQLite: getDatabases() returns the filename, so a mapping entry means
+            // "restore to a different file name". Translate the selected target name into
+            // the adapter path so the restore lands in the right file instead of the original.
+            if (sourceConfig.adapterId === 'sqlite' && dbConf.path && Array.isArray(databaseMapping)) {
+                type MappingEntry = { originalName: string; targetName: string; selected: boolean };
+                const rename = (databaseMapping as MappingEntry[])
+                    .find(m => m.selected && m.targetName && m.targetName !== m.originalName);
+                if (rename) {
+                    const dir = path.dirname(dbConf.path as string);
+                    dbConf.path = path.join(dir, rename.targetName);
+                    log(`SQLite target path overridden by mapping: ${dbConf.path}`, 'info');
+                }
+            }
         }
 
         if (privilegedAuth) {

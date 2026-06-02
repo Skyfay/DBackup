@@ -97,6 +97,12 @@ async function applyRetentionForDestination(ctx: RunnerContext, dest: Destinatio
         }
     }
 
+    // Log each file with its timestamp so adapter-level timestamp issues are immediately visible.
+    const sorted = [...backupFiles].sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
+    for (const f of sorted) {
+        ctx.log(`${destLabel} Retention: Found file: ${f.name} (${f.lastModified.toISOString()})`);
+    }
+
     const { keep, delete: filesToDelete } = RetentionService.calculateRetention(backupFiles, policy, timezone);
     ctx.log(`${destLabel} Retention: Keeping ${keep.length}, Deleting ${filesToDelete.length}.`);
 

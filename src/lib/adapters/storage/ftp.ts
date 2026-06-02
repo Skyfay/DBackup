@@ -21,6 +21,30 @@ interface FTPConfig {
 }
 
 /**
+ * Tries to extract a Date from the DBackup default filename pattern.
+ * Example: MyJob_2026-06-05_10-00-00.sql.gz.enc → 2026-06-05T10:00:00Z
+ *
+ * Used as a fallback when the FTP server does not support MLSD and therefore
+ * does not provide per-file modification timestamps.
+ */
+function extractDateFromFilename(name: string): Date | undefined {
+    const match = name.match(/(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})/);
+    if (match) {
+        const [, year, month, day, hour, min, sec] = match;
+        const d = new Date(`${year}-${month}-${day}T${hour}:${min}:${sec}Z`);
+        if (!isNaN(d.getTime())) return d;
+    }
+    // Date-only fallback (e.g. custom template without time)
+    const dateOnly = name.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (dateOnly) {
+        const [, year, month, day] = dateOnly;
+        const d = new Date(`${year}-${month}-${day}T12:00:00Z`);
+        if (!isNaN(d.getTime())) return d;
+    }
+    return undefined;
+}
+
+/**
  * Creates and connects an FTP client with the given config.
  */
 async function connectFTP(config: FTPConfig): Promise<Client> {
@@ -212,6 +236,7 @@ export const FTPAdapter: StorageAdapter = {
                 : (dir || "/");
 
             const files: FileInfo[] = [];
+            let warnedAboutMissingTimestamp = false;
 
             const walk = async (currentDir: string) => {
                 let items: FTPFileInfo[];
@@ -240,11 +265,40 @@ export const FTPAdapter: StorageAdapter = {
                         }
                         if (relativePath.startsWith("/")) relativePath = relativePath.substring(1);
 
+                        // modifiedAt is only available when the server supports MLSD.
+                        // Fall back to parsing the timestamp from the filename (DBackup naming
+                        // templates always embed yyyy-MM-dd_HH-mm-ss). Without a real timestamp
+                        // all files would share new Date() and collapse into one daily GFS bucket.
+                        let lastModified = item.modifiedAt;
+                        if (!lastModified) {
+                            lastModified = extractDateFromFilename(item.name);
+                            if (!warnedAboutMissingTimestamp) {
+                                log.warn(
+                                    "FTP server does not provide file modification times (no MLSD). " +
+                                    "Falling back to date extracted from the backup filename. " +
+                                    "This requires the Naming Template to include a date pattern (e.g. yyyy-MM-dd). " +
+                                    "If your template does not contain a date, GFS retention will not work correctly. " +
+                                    "Enable MLSD on your FTP server to remove this dependency.",
+                                    { host: config.host, dir }
+                                );
+                                warnedAboutMissingTimestamp = true;
+                            }
+                            if (!lastModified) {
+                                log.warn(
+                                    "FTP: could not parse a date from the filename. " +
+                                    "The Naming Template likely does not contain a date pattern (yyyy-MM-dd). " +
+                                    "GFS retention will treat this file as the newest and may delete older backups incorrectly.",
+                                    { name: item.name }
+                                );
+                                lastModified = new Date();
+                            }
+                        }
+
                         files.push({
                             name: item.name,
                             path: relativePath,
                             size: item.size,
-                            lastModified: item.modifiedAt || new Date(),
+                            lastModified,
                         });
                     }
                 }
@@ -291,6 +345,17 @@ export const FTPAdapter: StorageAdapter = {
                 await client.cd("/");
             }
 
+            // Check MLSD support via FEAT command.
+            // MLSD provides accurate per-file modification timestamps which are required
+            // for correct GFS retention. Without MLSD, timestamps fall back to filename parsing.
+            let mlsdSupported = false;
+            try {
+                const featResponse = await client.send("FEAT");
+                mlsdSupported = featResponse.message.toUpperCase().includes("MLSD");
+            } catch {
+                // FEAT not supported — assume no MLSD
+            }
+
             // Create a temp file to upload
             await fs.writeFile(tmpPath, "Connection Test");
 
@@ -302,7 +367,11 @@ export const FTPAdapter: StorageAdapter = {
             await client.remove(destination);
             remoteFileCreated = false;
 
-            return { success: true, message: "Connection successful (Write/Delete verified)" };
+            const mlsdNote = mlsdSupported
+                ? "MLSD supported ✓ (accurate file timestamps for GFS retention)"
+                : "MLSD not supported ⚠ (GFS retention falls back to filename date — Naming Template must contain yyyy-MM-dd)";
+
+            return { success: true, message: `Connection successful (Write/Delete verified). ${mlsdNote}` };
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : String(error);
             return { success: false, message: `FTP Connection failed: ${message}` };

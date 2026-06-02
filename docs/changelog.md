@@ -2,6 +2,33 @@
 
 All notable changes to DBackup are documented here.
 
+## vNEXT
+*Release: In Progress*
+
+### 🐛 Bug Fixes
+
+- **ftp**: Fixed GFS retention on FTP servers without MLSD support by falling back to dates extracted from backup filenames when server-provided modification times are unavailable.
+
+### 🔒 Security
+
+- **adapters**: Adapter connection-test and access-check routes now fail closed - permission checks deny access by default instead of falling through when the check is inconclusive. ([GHSA-h929-x237-c5h2](https://github.com/skyfay/DBackup/security/advisories/GHSA-h929-x237-c5h2))
+
+### 🎨 Improvements
+
+- **retention**: GFS retention calculations now use the configured system timezone for day/week/month/year bucketing instead of always using UTC.
+
+### 🧪 Tests
+
+- **retention**: Added comprehensive GFS retention unit tests with realistic multi-month backup sets.
+
+### �🐳 Docker
+
+- **Image**: `skyfay/dbackup:vNEXT`
+- **Also tagged as**: `latest`, `vNEXT`
+- **CI Image**: `skyfay/dbackup:ci`
+- **Platforms**: linux/amd64, linux/arm64
+
+
 ## v2.5.0 - Version History & General Improvements
 *Released: May 31, 2026*
 

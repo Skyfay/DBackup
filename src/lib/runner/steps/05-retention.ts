@@ -3,11 +3,15 @@ import { RetentionService } from "@/services/backup/retention-service";
 import { FileInfo } from '@/lib/core/interfaces';
 import path from "path";
 import { logger } from "@/lib/logging/logger";
+import prisma from "@/lib/prisma";
 
 const log = logger.child({ step: "05-retention" });
 
 export async function stepRetention(ctx: RunnerContext) {
     if (!ctx.job || ctx.destinations.length === 0) throw new Error("Context not ready for retention");
+
+    const tzSetting = await prisma.systemSetting.findUnique({ where: { key: "system.timezone" } });
+    const timezone = tzSetting?.value || 'UTC';
 
     let totalDeleted = 0;
 
@@ -18,7 +22,7 @@ export async function stepRetention(ctx: RunnerContext) {
             continue;
         }
 
-        await applyRetentionForDestination(ctx, dest).then(deleted => {
+        await applyRetentionForDestination(ctx, dest, timezone).then(deleted => {
             totalDeleted += deleted;
         }).catch(error => {
             const message = error instanceof Error ? error.message : String(error);
@@ -36,7 +40,7 @@ export async function stepRetention(ctx: RunnerContext) {
     }
 }
 
-async function applyRetentionForDestination(ctx: RunnerContext, dest: DestinationContext): Promise<number> {
+async function applyRetentionForDestination(ctx: RunnerContext, dest: DestinationContext, timezone: string): Promise<number> {
     const destLabel = `[${dest.configName}]`;
     const policy = dest.retention;
 
@@ -93,7 +97,7 @@ async function applyRetentionForDestination(ctx: RunnerContext, dest: Destinatio
         }
     }
 
-    const { keep, delete: filesToDelete } = RetentionService.calculateRetention(backupFiles, policy);
+    const { keep, delete: filesToDelete } = RetentionService.calculateRetention(backupFiles, policy, timezone);
     ctx.log(`${destLabel} Retention: Keeping ${keep.length}, Deleting ${filesToDelete.length}.`);
 
     let deletedCount = 0;

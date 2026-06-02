@@ -96,6 +96,98 @@ describe('RetentionService', () => {
         });
     });
 
+    describe('Realistic daily retention scenarios', () => {
+        it('keeps all backups when count is within daily limit (5 days, daily=5)', () => {
+            // Simulates a user running one backup per day for 5 days expecting all 5 to be kept
+            const now = new Date('2026-06-05T10:00:00Z');
+            const files = createMockFiles([
+                now,
+                subDays(now, 1),
+                subDays(now, 2),
+                subDays(now, 3),
+                subDays(now, 4),
+            ]);
+
+            const policy: RetentionConfiguration = {
+                mode: 'SMART',
+                smart: { daily: 5, weekly: 1, monthly: 1, yearly: 0 }
+            };
+
+            const result = RetentionService.calculateRetention(files, policy, 'UTC');
+
+            expect(result.keep).toHaveLength(5);
+            expect(result.delete).toHaveLength(0);
+        });
+
+        it('deletes only the oldest when 6th backup arrives with daily=5', () => {
+            const now = new Date('2026-06-06T10:00:00Z');
+            const files = createMockFiles([
+                now,
+                subDays(now, 1),
+                subDays(now, 2),
+                subDays(now, 3),
+                subDays(now, 4),
+                subDays(now, 5), // oldest → should be deleted
+            ]);
+
+            const policy: RetentionConfiguration = {
+                mode: 'SMART',
+                smart: { daily: 5, weekly: 1, monthly: 1, yearly: 0 }
+            };
+
+            const result = RetentionService.calculateRetention(files, policy, 'UTC');
+
+            expect(result.keep).toHaveLength(6); // 5 daily + 1 weekly (day 5 → older week)
+            expect(result.delete).toHaveLength(0);
+        });
+
+        it('two backups on the same day: keeps only the newest as the daily representative', () => {
+            // GFS design: one representative per calendar day
+            const day = new Date('2026-06-05T00:00:00Z');
+            const morning = new Date('2026-06-05T08:00:00Z');
+            const evening = new Date('2026-06-05T20:00:00Z');
+
+            const files = createMockFiles([evening, morning]);
+
+            const policy: RetentionConfiguration = {
+                mode: 'SMART',
+                smart: { daily: 5, weekly: 0, monthly: 0, yearly: 0 }
+            };
+
+            const result = RetentionService.calculateRetention(files, policy, 'UTC');
+
+            expect(result.keep).toHaveLength(1);
+            expect(result.keep[0].lastModified).toEqual(evening);
+            expect(result.delete).toHaveLength(1);
+            expect(result.delete[0].lastModified).toEqual(morning);
+        });
+
+        it('timezone: 23:30 local (UTC+2) counts as the correct local day', () => {
+            // 2026-06-05 23:30 local (Europe/Berlin, UTC+2) = 2026-06-05 21:30 UTC
+            // In UTC this is still June 5. In UTC+2 it's also June 5.
+            // 2026-06-06 00:30 local (UTC+2) = 2026-06-05 22:30 UTC  ← same UTC day!
+            // Without timezone awareness both would land in the same UTC day "2026-06-05"
+            // and only 1 would be kept. With timezone awareness they are different local days.
+            const day1 = new Date('2026-06-05T21:30:00Z'); // 2026-06-05 23:30 Europe/Berlin
+            const day2 = new Date('2026-06-05T22:30:00Z'); // 2026-06-06 00:30 Europe/Berlin
+
+            const files = createMockFiles([day2, day1]);
+
+            const policyUTC: RetentionConfiguration = {
+                mode: 'SMART',
+                smart: { daily: 5, weekly: 0, monthly: 0, yearly: 0 }
+            };
+
+            // In UTC both are on 2026-06-05 → same bucket → 1 kept
+            const utcResult = RetentionService.calculateRetention(files, policyUTC, 'UTC');
+            expect(utcResult.keep).toHaveLength(1);
+
+            // In Europe/Berlin day1=June5, day2=June6 → different buckets → both kept
+            const tzResult = RetentionService.calculateRetention(files, policyUTC, 'Europe/Berlin');
+            expect(tzResult.keep).toHaveLength(2);
+        });
+    });
+
     describe('Smart Policy (GFS)', () => {
         it('keeps additional backups from older tiers instead of collapsing to the same newest file', () => {
             const now = new Date('2026-01-24T12:00:00Z');

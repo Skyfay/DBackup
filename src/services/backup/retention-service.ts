@@ -13,9 +13,10 @@ export class RetentionService {
      * Calculates which files to keep and which to delete based on the policy.
      * @param files List of backup files (metadata)
      * @param policy The retention policy configuration
+     * @param timezone IANA timezone string used for day/week/month/year bucketing (defaults to 'UTC')
      * @returns Object with lists of file paths to keep and delete
      */
-    static calculateRetention(files: FileInfo[], policy: RetentionConfiguration): { keep: FileInfo[]; delete: FileInfo[] } {
+    static calculateRetention(files: FileInfo[], policy: RetentionConfiguration, timezone: string = 'UTC'): { keep: FileInfo[]; delete: FileInfo[] } {
         if (!policy || policy.mode === 'NONE') {
             return { keep: files, delete: [] };
         }
@@ -32,7 +33,7 @@ export class RetentionService {
         if (policy.mode === 'SIMPLE' && policy.simple) {
             this.applySimplePolicy(processedFiles, policy.simple.keepCount);
         } else if (policy.mode === 'SMART' && policy.smart) {
-            this.applySmartPolicy(processedFiles, policy.smart);
+            this.applySmartPolicy(processedFiles, policy.smart, timezone);
         }
 
         const keptFromPolicy = processedFiles.filter(f => f.keep).map(f => f.file);
@@ -53,37 +54,39 @@ export class RetentionService {
         }
     }
 
-    private static applySmartPolicy(files: FileWithReasons[], policy: NonNullable<RetentionConfiguration['smart']>) {
+    private static applySmartPolicy(files: FileWithReasons[], policy: NonNullable<RetentionConfiguration['smart']>, timezone: string) {
         const { daily, weekly, monthly, yearly } = policy;
 
         // SMART/GFS is applied as non-overlapping tiers.
         // Daily picks newest unique days first.
         // Weekly/Monthly/Yearly then pick additional representatives from older buckets.
+        // All buckets are computed in the configured timezone so that "day" aligns with
+        // local midnight rather than UTC midnight.
         this.applyTier(
             files,
             daily,
-            (date) => formatInTimeZone(date, 'UTC', 'yyyy-MM-dd'),
+            (date) => formatInTimeZone(date, timezone, 'yyyy-MM-dd'),
             'Daily'
         );
 
         this.applyTier(
             files,
             weekly,
-            (date) => formatInTimeZone(date, 'UTC', "RRRR-'W'II"),
+            (date) => formatInTimeZone(date, timezone, "RRRR-'W'II"),
             'Weekly'
         );
 
         this.applyTier(
             files,
             monthly,
-            (date) => formatInTimeZone(date, 'UTC', 'yyyy-MM'),
+            (date) => formatInTimeZone(date, timezone, 'yyyy-MM'),
             'Monthly'
         );
 
         this.applyTier(
             files,
             yearly,
-            (date) => formatInTimeZone(date, 'UTC', 'yyyy'),
+            (date) => formatInTimeZone(date, timezone, 'yyyy'),
             'Yearly'
         );
     }

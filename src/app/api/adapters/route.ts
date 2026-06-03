@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { encryptConfig, decryptConfig } from "@/lib/crypto";
+import { encryptConfig, decryptConfig, stripSecrets } from "@/lib/crypto";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
@@ -62,7 +62,7 @@ export async function GET(req: NextRequest) {
 
                 return {
                     ...adapter,
-                    config: JSON.stringify(decryptedConfig)
+                    config: JSON.stringify(stripSecrets(decryptedConfig))
                 };
             } catch (e: unknown) {
                 log.error("Failed to process config for adapter", { adapterId: adapter.id }, wrapError(e));

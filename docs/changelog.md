@@ -15,8 +15,8 @@ All notable changes to DBackup are documented here.
 
 ### 🔒 Security
 
-- **adapters**: All adapter endpoints (list, create, update, clone) now return a safe DTO that strips all sensitive fields and replaces them with a `secretStatus` map - decrypted secrets are no longer serialized to API responses. ([GHSA-cj5h-46h6-72wc](https://github.com/skyfay/DBackup/security/advisories/GHSA-cj5h-46h6-72wc))
-- **adapters**: Notification webhook URLs and tokens (`webhookUrl`, `botToken`, `authToken`, `authHeader`, `appToken`, `accessToken`) and SSH keys (`sshPassword`, `sshPrivateKey`, `sshPassphrase`) added to `SENSITIVE_KEYS` and redacted in all DTO and strip operations.
+- **adapters**: All adapter endpoints (list, create, update, clone) now return a safe DTO that strips all sensitive fields and replaces them with a `secretStatus` map - decrypted secrets are no longer serialized to API responses. Thanks @YHalo-wyh ([GHSA-cj5h-46h6-72wc](https://github.com/skyfay/DBackup/security/advisories/GHSA-cj5h-46h6-72wc))
+- **adapters**: Notification webhook URLs and tokens (`webhookUrl`, `botToken`, `authToken`, `authHeader`, `appToken`, `accessToken`) and SSH keys (`sshPassword`, `sshPrivateKey`, `sshPassphrase`) added to `SENSITIVE_KEYS` and redacted in all DTO and strip operations. Thanks @YHalo-wyh ([GHSA-cj5h-46h6-72wc](https://github.com/skyfay/DBackup/security/advisories/GHSA-cj5h-46h6-72wc))
 - **OAuth**: Refresh tokens for Dropbox, Google Drive, and OneDrive are now stored exclusively in credential profiles instead of adapter configs.
 - **adapters**: Adapter update (PUT) now preserves existing secrets via `mergeSecrets` - re-saving an adapter form without changing secret fields no longer overwrites stored credentials with empty values.
 

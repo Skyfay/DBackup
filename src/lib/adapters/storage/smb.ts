@@ -10,6 +10,15 @@ import { wrapError } from "@/lib/logging/errors";
 
 const log = logger.child({ adapter: "smb" });
 
+function sanitizeSmbError(error: unknown, password?: string): Error {
+    const original = error instanceof Error ? error : new Error(String(error));
+    if (!password) return original;
+    const sanitized = original.message.split(password).join("****");
+    const out = new Error(sanitized);
+    out.stack = original.stack?.split(password).join("****");
+    return out;
+}
+
 interface SMBConfig {
     address: string;
     username: string;
@@ -93,8 +102,9 @@ async function performSmbUpload(
         if (onLog) onLog("SMB upload completed successfully", "info", "storage");
         return true;
     } catch (error: unknown) {
-        log.error("SMB upload failed", { address: config.address, remotePath }, wrapError(error));
-        if (onLog && error instanceof Error) onLog(`SMB upload failed: ${error.message}`, "error", "storage", error.stack);
+        const safe = sanitizeSmbError(error, config.password);
+        log.error("SMB upload failed", { address: config.address, remotePath }, wrapError(safe));
+        if (onLog) onLog(`SMB upload failed: ${safe.message}`, "error", "storage", safe.stack);
         return false;
     }
 }
@@ -133,8 +143,9 @@ export const SMBAdapter: StorageAdapter = {
             await client.getFile(source, localPath);
             return true;
         } catch (error: unknown) {
-            log.error("SMB download failed", { address: config.address, remotePath }, wrapError(error));
-            if (onLog && error instanceof Error) onLog(`SMB download failed: ${error.message}`, "error", "storage", error.stack);
+            const safe = sanitizeSmbError(error, config.password);
+            log.error("SMB download failed", { address: config.address, remotePath }, wrapError(safe));
+            if (onLog) onLog(`SMB download failed: ${safe.message}`, "error", "storage", safe.stack);
             return false;
         }
     },
@@ -180,7 +191,7 @@ export const SMBAdapter: StorageAdapter = {
                 } catch (error: unknown) {
                     // Root directory listing failure means the share is unreachable or inaccessible.
                     // Propagate to trigger the DB fallback in the stats cache.
-                    if (currentDir === startDir) throw error;
+                    if (currentDir === startDir) throw sanitizeSmbError(error, config.password);
                     // Sub-directory listing failure (e.g. permission denied on one folder): skip silently.
                     return;
                 }
@@ -216,8 +227,9 @@ export const SMBAdapter: StorageAdapter = {
             await walk(startDir);
             return files;
         } catch (error: unknown) {
-            log.error("SMB list failed", { address: config.address, dir }, wrapError(error));
-            throw error;
+            const safe = sanitizeSmbError(error, config.password);
+            log.error("SMB list failed", { address: config.address, dir }, wrapError(safe));
+            throw safe;
         }
     },
 
@@ -229,7 +241,8 @@ export const SMBAdapter: StorageAdapter = {
             await client.deleteFile(target);
             return true;
         } catch (error: unknown) {
-            log.error("SMB delete failed", { address: config.address, remotePath }, wrapError(error));
+            const safe = sanitizeSmbError(error, config.password);
+            log.error("SMB delete failed", { address: config.address, remotePath }, wrapError(safe));
             return false;
         }
     },
@@ -262,8 +275,8 @@ export const SMBAdapter: StorageAdapter = {
 
             return { success: true, message: "Connection successful (Write/Delete verified)" };
         } catch (error: unknown) {
-            const message = error instanceof Error ? error.message : String(error);
-            return { success: false, message: `SMB Connection failed: ${message}` };
+            const safe = sanitizeSmbError(error, config.password);
+            return { success: false, message: `SMB Connection failed: ${safe.message}` };
         } finally {
             // Always attempt remote cleanup. This guards against the edge case where
             // sendFile partially succeeded (file exists on the SMB share) but then

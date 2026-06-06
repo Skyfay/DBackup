@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma";
-import { encrypt, decrypt } from "@/lib/crypto";
+import { encrypt, decrypt, getSecretStatus } from "@/lib/crypto";
 import { logger } from "@/lib/logging/logger";
 import { ConflictError, NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
 import {
@@ -32,6 +32,19 @@ function sanitize(profile: {
         createdAt: profile.createdAt,
         updatedAt: profile.updatedAt,
     };
+}
+
+/**
+ * Computes which sensitive payload fields are set, WITHOUT exposing values.
+ * Used so the UI can tell whether an OAUTH profile is authorized (has a
+ * refreshToken). Returns undefined if the payload can't be decrypted/parsed.
+ */
+function secretStatusOf(encryptedData: string): Record<string, boolean> | undefined {
+    try {
+        return getSecretStatus(JSON.parse(decrypt(encryptedData)));
+    } catch {
+        return undefined;
+    }
 }
 
 /**
@@ -90,7 +103,7 @@ export async function listCredentialProfiles(
         where: type ? { type } : undefined,
         orderBy: { createdAt: "desc" },
     });
-    return profiles.map(sanitize);
+    return profiles.map((p) => ({ ...sanitize(p), secretStatus: secretStatusOf(p.data) }));
 }
 
 /**
@@ -111,6 +124,7 @@ export async function listCredentialProfilesWithCounts(
     });
     return profiles.map((p) => ({
         ...sanitize(p),
+        secretStatus: secretStatusOf(p.data),
         usageCount: p._count.primaryAdapters + p._count.sshAdapters,
     }));
 }
@@ -123,7 +137,7 @@ export async function getCredentialProfile(id: string): Promise<CredentialProfil
     if (!profile) {
         throw new NotFoundError("CredentialProfile", id);
     }
-    return sanitize(profile);
+    return { ...sanitize(profile), secretStatus: secretStatusOf(profile.data) };
 }
 
 /**

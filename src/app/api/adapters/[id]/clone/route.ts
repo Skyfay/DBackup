@@ -8,6 +8,7 @@ import { PERMISSIONS, Permission } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
 import { wrapError, getErrorMessage } from "@/lib/logging/errors";
 import { registerAdapters } from "@/lib/adapters";
+import { toAdapterListItem } from "@/lib/adapters/dto";
 
 registerAdapters();
 
@@ -82,7 +83,7 @@ export async function POST(
             cloned.id
         );
 
-        return NextResponse.json(cloned, { status: 201 });
+        return NextResponse.json(toAdapterListItem(cloned), { status: 201 });
     } catch (error: unknown) {
         log.error("Clone adapter error", { adapterId: params.id }, wrapError(error));
         return NextResponse.json({

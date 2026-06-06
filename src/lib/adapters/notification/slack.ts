@@ -11,6 +11,7 @@ export const SlackAdapter: NotificationAdapter = {
     type: "notification",
     name: "Slack Webhook",
     configSchema: SlackSchema,
+    credentials: { primary: "WEBHOOK" },
 
     async test(config: SlackConfig): Promise<{ success: boolean; message: string }> {
         try {

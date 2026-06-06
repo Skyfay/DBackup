@@ -190,6 +190,115 @@ describe("stripSecrets", () => {
         stripSecrets(original);
         expect(original.password).toBe("secret");
     });
+
+    it("strips the newly added webhook/twilio/token sensitive keys", async () => {
+        const { stripSecrets } = await getCrypto();
+        const result = stripSecrets({
+            authHeader: "Bearer abc",
+            accountSid: "AC123",
+            authToken: "tok",
+            appToken: "app",
+            botToken: "bot",
+            accessToken: "acc",
+            serverUrl: "https://example.com",
+        });
+        expect(result.authHeader).toBe("");
+        expect(result.accountSid).toBe("");
+        expect(result.authToken).toBe("");
+        expect(result.appToken).toBe("");
+        expect(result.botToken).toBe("");
+        expect(result.accessToken).toBe("");
+        expect(result.serverUrl).toBe("https://example.com");
+    });
+});
+
+describe("mergeSecrets", () => {
+    async function getCrypto() {
+        vi.resetModules();
+        return import("@/lib/crypto");
+    }
+
+    it("keeps the existing secret when the incoming value is empty", async () => {
+        const { mergeSecrets } = await getCrypto();
+        const result = mergeSecrets(
+            { host: "new-host", password: "" },
+            { host: "old-host", password: "real-secret" }
+        );
+        expect(result.host).toBe("new-host");
+        expect(result.password).toBe("real-secret");
+    });
+
+    it("restores a secret that is absent from incoming (DTO redacts the key)", async () => {
+        const { mergeSecrets } = await getCrypto();
+        const result = mergeSecrets({ host: "h" }, { host: "h", refreshToken: "rt" });
+        // The list DTO removes secret keys, so an untouched secret is omitted on
+        // re-submit and must be restored from the existing config.
+        expect(result.refreshToken).toBe("rt");
+    });
+
+    it("does not restore an absent non-sensitive key", async () => {
+        const { mergeSecrets } = await getCrypto();
+        const result = mergeSecrets({ host: "h" }, { host: "h", region: "eu" });
+        expect(result.region).toBeUndefined();
+    });
+
+    it("overwrites the existing secret when a non-empty value is supplied", async () => {
+        const { mergeSecrets } = await getCrypto();
+        const result = mergeSecrets(
+            { clientSecret: "new-secret" },
+            { clientSecret: "old-secret" }
+        );
+        expect(result.clientSecret).toBe("new-secret");
+    });
+
+    it("merges nested objects recursively", async () => {
+        const { mergeSecrets } = await getCrypto();
+        const result = mergeSecrets(
+            { db: { host: "h", password: "" } },
+            { db: { host: "old", password: "kept" } }
+        );
+        expect(result.db.password).toBe("kept");
+        expect(result.db.host).toBe("h");
+    });
+
+    it("returns incoming verbatim when existing is not an object", async () => {
+        const { mergeSecrets } = await getCrypto();
+        expect(mergeSecrets({ password: "" }, null)).toEqual({ password: "" });
+    });
+});
+
+describe("redactSecrets / getSecretStatus", () => {
+    async function getCrypto() {
+        vi.resetModules();
+        return import("@/lib/crypto");
+    }
+
+    it("removes scalar secret keys entirely (not blanked to \"\")", async () => {
+        const { redactSecrets } = await getCrypto();
+        const result = redactSecrets({ host: "h", password: "secret", clientSecret: "cs" });
+        expect(result).toEqual({ host: "h" });
+        expect("password" in result).toBe(false);
+        expect("clientSecret" in result).toBe(false);
+    });
+
+    it("recurses into nested objects and arrays", async () => {
+        const { redactSecrets } = await getCrypto();
+        const result = redactSecrets({ db: { port: 5432, password: "x" }, list: [{ token: "t", id: 1 }] });
+        expect(result.db).toEqual({ port: 5432 });
+        expect(result.list[0]).toEqual({ id: 1 });
+    });
+
+    it("reports which secrets are set via getSecretStatus", async () => {
+        const { getSecretStatus } = await getCrypto();
+        const status = getSecretStatus({
+            host: "h",
+            clientSecret: "cs",
+            refreshToken: "",
+            password: "pw",
+        });
+        expect(status).toEqual({ clientSecret: true, refreshToken: false, password: true });
+        expect("host" in status).toBe(false);
+    });
 });
 
 describe("encryptConfig / decryptConfig", () => {

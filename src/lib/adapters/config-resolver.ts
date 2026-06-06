@@ -11,6 +11,8 @@ import type {
     AccessKeyData,
     TokenData,
     SmtpData,
+    WebhookData,
+    OAuthData,
 } from "@/lib/core/credentials";
 
 const log = logger.child({ module: "ConfigResolver" });
@@ -215,18 +217,35 @@ function applyPrimaryOverlay(
             const p = profile as TokenData;
             // Write to all known token field names. Each notification adapter
             // schema uses a different key (Gotify: appToken, ntfy: accessToken,
-            // Telegram: botToken) and zod strips unknowns it doesn't declare,
-            // so spraying is safe and avoids per-adapter switch logic.
+            // Telegram: botToken, Twilio: authToken) and zod strips unknowns it
+            // doesn't declare, so spraying is safe and avoids per-adapter switch logic.
             config.token = p.token;
             config.appToken = p.token;
             config.accessToken = p.token;
             config.botToken = p.token;
+            config.authToken = p.token;
             return;
         }
         case "SMTP": {
             const p = profile as SmtpData;
             config.user = p.user;
             config.password = p.password;
+            return;
+        }
+        case "WEBHOOK": {
+            const p = profile as WebhookData;
+            // Discord/Slack/Teams use `webhookUrl`; the generic webhook also uses
+            // an optional `authHeader`. Spray both known field names.
+            config.webhookUrl = p.url;
+            config.url = p.url;
+            if (p.authHeader !== undefined) config.authHeader = p.authHeader;
+            return;
+        }
+        case "OAUTH": {
+            const p = profile as OAuthData;
+            config.clientId = p.clientId;
+            config.clientSecret = p.clientSecret;
+            if (p.refreshToken !== undefined) config.refreshToken = p.refreshToken;
             return;
         }
     }

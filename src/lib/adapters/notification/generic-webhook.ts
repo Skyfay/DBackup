@@ -31,6 +31,7 @@ export const GenericWebhookAdapter: NotificationAdapter = {
     type: "notification",
     name: "Generic Webhook",
     configSchema: GenericWebhookSchema,
+    credentials: { primary: "WEBHOOK" },
 
     async test(config: GenericWebhookConfig): Promise<{ success: boolean; message: string }> {
         try {

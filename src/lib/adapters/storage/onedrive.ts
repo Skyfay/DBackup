@@ -268,6 +268,9 @@ export const OneDriveAdapter: StorageAdapter = {
     type: "storage",
     name: "Microsoft OneDrive",
     configSchema: OneDriveSchema,
+    // clientSecret + refreshToken live in an OAUTH credential profile; clientId
+    // stays structural. The refreshToken is written by the OAuth callback.
+    credentials: { primary: "OAUTH" },
 
     async openSession(config: OneDriveConfig, onLog?): Promise<StorageSession> {
         const accessToken = await getAccessToken(config);

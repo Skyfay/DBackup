@@ -88,7 +88,7 @@ export function decrypt(text: string): string {
   }
 }
 
-const SENSITIVE_KEYS = [
+export const SENSITIVE_KEYS = [
   'password',
   'token',
   'secret',
@@ -101,8 +101,17 @@ const SENSITIVE_KEYS = [
   'uri', // MongoDB Connection String
   'passphrase', // SSH Key Passphrase
   'privateKey', // SSH Private Key
+  'sshPassword', // SSH tunnel password (legacy inline SSH field)
+  'sshPrivateKey', // SSH tunnel private key (legacy inline SSH field)
+  'sshPassphrase', // SSH tunnel key passphrase (legacy inline SSH field)
   'clientSecret', // OAuth Client Secret (Google Drive, etc.)
   'refreshToken', // OAuth Refresh Token
+  'authHeader', // Generic Webhook Authorization header
+  'accountSid', // Twilio Account SID
+  'authToken', // Twilio Auth Token
+  'appToken', // Gotify application token
+  'botToken', // Telegram bot token
+  'accessToken', // ntfy access token
 ];
 
 
@@ -176,4 +185,100 @@ export function decryptConfig(config: any): any {
   }
 
   return result;
+}
+
+/**
+ * Merges sensitive fields of an incoming (plaintext) config with an existing
+ * (plaintext) config, preserving the existing secret whenever the incoming
+ * value for a sensitive key is empty or absent.
+ *
+ * This is the server-side half of the "hasSecret" pattern: the API only ever
+ * returns redacted secrets (see `stripSecrets` / the adapter DTO), so an edit
+ * round-trip submits empty secret fields. Without this merge, re-encrypting the
+ * submitted config would clobber the real secret with an encrypted empty string.
+ *
+ * Non-sensitive keys are taken verbatim from `incoming`. Nested objects are
+ * merged recursively for sensitive keys; non-object structural values pass
+ * through from `incoming`.
+ */
+export function mergeSecrets(incoming: any, existing: any): any {
+  if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
+    return incoming;
+  }
+  const existingObj =
+    existing && typeof existing === 'object' && !Array.isArray(existing) ? existing : {};
+
+  const result: Record<string, any> = { ...incoming };
+
+  const isEmpty = (v: unknown) => v === undefined || v === null || v === '';
+
+  // 1. Sensitive keys present in `incoming`: if empty, restore from existing.
+  //    Nested objects merge recursively.
+  for (const key of Object.keys(result)) {
+    const value = result[key];
+    const existingValue = existingObj[key];
+
+    if (value && typeof value === 'object') {
+      result[key] = mergeSecrets(value, existingValue);
+    } else if (SENSITIVE_KEYS.includes(key) && isEmpty(value) && existingValue !== undefined) {
+      result[key] = existingValue;
+    }
+  }
+
+  // 2. Sensitive keys present in `existing` but absent from `incoming`: restore
+  //    them. The API redacts (removes) secret keys, so an edit round-trip omits
+  //    untouched secrets entirely — without this they would be lost on save.
+  for (const key of Object.keys(existingObj)) {
+    if (!(key in result) && SENSITIVE_KEYS.includes(key) && !isEmpty(existingObj[key])) {
+      result[key] = existingObj[key];
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Recursively removes sensitive fields from a (decrypted) config, returning a
+ * config that structurally cannot carry a secret. Unlike `stripSecrets` (which
+ * blanks values to `""`), this deletes the keys entirely so a response DTO never
+ * even hints at a value. Use together with `getSecretStatus` to tell the client
+ * which secrets are set without exposing them.
+ */
+export function redactSecrets(config: any): any {
+  if (!config || typeof config !== 'object') {
+    return config;
+  }
+
+  if (Array.isArray(config)) {
+    return config.map(redactSecrets);
+  }
+
+  const result: Record<string, any> = {};
+  for (const key of Object.keys(config)) {
+    const value = config[key];
+    if (SENSITIVE_KEYS.includes(key) && typeof value !== 'object') {
+      continue; // drop scalar secret entirely
+    }
+    result[key] = value && typeof value === 'object' ? redactSecrets(value) : value;
+  }
+  return result;
+}
+
+/**
+ * Reports which sensitive top-level keys of a (decrypted) config hold a
+ * non-empty value, e.g. `{ clientSecret: true, refreshToken: false }`. Lets the
+ * UI render "secret is set, leave blank to keep" without seeing the value.
+ */
+export function getSecretStatus(config: any): Record<string, boolean> {
+  const status: Record<string, boolean> = {};
+  if (!config || typeof config !== 'object' || Array.isArray(config)) {
+    return status;
+  }
+  for (const key of Object.keys(config)) {
+    if (SENSITIVE_KEYS.includes(key)) {
+      const value = config[key];
+      status[key] = typeof value === 'string' ? value.length > 0 : value != null;
+    }
+  }
+  return status;
 }

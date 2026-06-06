@@ -43,6 +43,9 @@ export const TwilioSmsAdapter: NotificationAdapter = {
     type: "notification",
     name: "SMS (Twilio)",
     configSchema: TwilioSmsSchema,
+    // The auth token is the secret; it comes from a TOKEN profile (resolver sprays
+    // it to `authToken`). `accountSid` stays structural (now in SENSITIVE_KEYS).
+    credentials: { primary: "TOKEN" },
 
     async test(config: TwilioSmsConfig): Promise<{ success: boolean; message: string }> {
         try {

@@ -11,6 +11,7 @@ export const DiscordAdapter: NotificationAdapter = {
     type: "notification",
     name: "Discord Webhook",
     configSchema: DiscordSchema,
+    credentials: { primary: "WEBHOOK" },
 
     async test(config: DiscordConfig): Promise<{ success: boolean; message: string }> {
         try {

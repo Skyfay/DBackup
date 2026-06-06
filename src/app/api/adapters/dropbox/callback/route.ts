@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
-import { decryptConfig, encryptConfig } from "@/lib/crypto";
+import { getDecryptedCredentialData, updateCredentialProfile } from "@/services/auth/credential-service";
+import type { OAuthData } from "@/lib/core/credentials";
 import { logger } from "@/lib/logging/logger";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
@@ -10,8 +10,8 @@ const log = logger.child({ route: "adapters/dropbox/callback" });
 /**
  * GET /api/adapters/dropbox/callback
  * Handles the OAuth callback from Dropbox.
- * Exchanges auth code for tokens and stores the refresh token in the adapter config.
- * Redirects back to the destinations page with success/error status.
+ * `state` is the OAUTH credential profile id; the refresh token is written back
+ * into that profile. Redirects back to the destinations page with status.
  */
 export async function GET(req: NextRequest) {
     const origin = process.env.BETTER_AUTH_URL || req.nextUrl.origin;
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
     }
 
     const code = req.nextUrl.searchParams.get("code");
-    const state = req.nextUrl.searchParams.get("state"); // adapter config ID
+    const state = req.nextUrl.searchParams.get("state"); // OAUTH credential profile id
     const error = req.nextUrl.searchParams.get("error");
     const errorDescription = req.nextUrl.searchParams.get("error_description");
 
@@ -46,18 +46,8 @@ export async function GET(req: NextRequest) {
     }
 
     try {
-        // Load the adapter config
-        const adapterConfig = await prisma.adapterConfig.findUnique({
-            where: { id: state },
-        });
-
-        if (!adapterConfig || adapterConfig.adapterId !== "dropbox") {
-            return NextResponse.redirect(
-                `${origin}/dashboard/destinations?oauth=error&message=${encodeURIComponent("Adapter not found.")}`
-            );
-        }
-
-        const config = decryptConfig(JSON.parse(adapterConfig.config));
+        // `state` is the OAUTH credential profile id.
+        const profile = (await getDecryptedCredentialData(state, "OAUTH")) as OAuthData;
 
         const redirectUri = `${origin}/api/adapters/dropbox/callback`;
 
@@ -71,8 +61,8 @@ export async function GET(req: NextRequest) {
             body: new URLSearchParams({
                 code,
                 grant_type: "authorization_code",
-                client_id: config.clientId,
-                client_secret: config.clientSecret,
+                client_id: profile.clientId,
+                client_secret: profile.clientSecret,
                 redirect_uri: redirectUri,
             }),
         });
@@ -88,28 +78,18 @@ export async function GET(req: NextRequest) {
         const tokenData = await tokenRes.json();
 
         if (!tokenData.refresh_token) {
-            log.warn("No refresh token received from Dropbox", { adapterId: state });
+            log.warn("No refresh token received from Dropbox", { credentialId: state });
             return NextResponse.redirect(
                 `${origin}/dashboard/destinations?oauth=error&message=${encodeURIComponent("No refresh token received. Ensure the app has 'offline' access configured.")}`
             );
         }
 
-        // Update the adapter config with the refresh token
-        const updatedConfig = {
-            ...config,
-            refreshToken: tokenData.refresh_token,
-        };
-
-        const encryptedConfig = encryptConfig(updatedConfig);
-
-        await prisma.adapterConfig.update({
-            where: { id: state },
-            data: {
-                config: JSON.stringify(encryptedConfig),
-            },
+        // Store the refresh token in the credential profile.
+        await updateCredentialProfile(state, {
+            data: { clientId: profile.clientId, clientSecret: profile.clientSecret, refreshToken: tokenData.refresh_token } satisfies OAuthData,
         });
 
-        log.info("Dropbox OAuth completed successfully", { adapterId: state });
+        log.info("Dropbox OAuth completed successfully", { credentialId: state });
 
         return NextResponse.redirect(
             `${origin}/dashboard/destinations?oauth=success&message=${encodeURIComponent("Dropbox authorized successfully!")}`

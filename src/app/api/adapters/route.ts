@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { encryptConfig, decryptConfig } from "@/lib/crypto";
+import { encryptConfig } from "@/lib/crypto";
+import { toAdapterListItem } from "@/lib/adapters/dto";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
@@ -45,32 +46,13 @@ export async function GET(req: NextRequest) {
             orderBy: { createdAt: 'desc' }
         });
 
-        const decryptedAdapters = adapters.map(adapter => {
-            try {
-                // Parse the config JSON first
-                const configObj = JSON.parse(adapter.config);
-                // Decrypt sensitive fields
-                const decryptedConfig = decryptConfig(configObj);
-                // Return adapter with config object (or string depending on frontend expectation)
-                // The frontend seems to expect objects if we look at similar code or just stringified
-                // Actually the API previously returned the raw Prisma result where `config` is string.
-                // However, the frontend likely JSON.parse() it.
-                // Wait, Prisma returns `config` as string because schema says `String`.
+        // Map every row through the safe DTO. `toAdapterListItem` redacts all
+        // sensitive keys (deletes them, not blanks them) and reports `secretStatus`,
+        // so a decrypted secret can never reach the client regardless of caller
+        // permission level. See src/lib/adapters/dto.ts.
+        const items = adapters.map(toAdapterListItem);
 
-                // If I modify the response here, I should make sure I am consistent.
-                // If I return the string, I should stringify it back.
-
-                return {
-                    ...adapter,
-                    config: JSON.stringify(decryptedConfig)
-                };
-            } catch (e: unknown) {
-                log.error("Failed to process config for adapter", { adapterId: adapter.id }, wrapError(e));
-                return adapter; // Return as-is if error (fallback)
-            }
-        });
-
-        return NextResponse.json(decryptedAdapters);
+        return NextResponse.json(items);
     } catch (error: unknown) {
         const message = error instanceof Error ? error.message : "Failed to fetch adapters";
         return NextResponse.json({ error: message }, { status: 500 });
@@ -153,7 +135,7 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        return NextResponse.json(newAdapter, { status: 201 });
+        return NextResponse.json(toAdapterListItem(newAdapter), { status: 201 });
     } catch (error: unknown) {
         log.error("Create adapter error", {}, wrapError(error));
         return NextResponse.json({ error: getErrorMessage(error) || "Failed to create adapter" }, { status: 500 });

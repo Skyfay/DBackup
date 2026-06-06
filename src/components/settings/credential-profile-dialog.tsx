@@ -31,14 +31,18 @@ const TYPE_LABELS: Record<CredentialType, string> = {
     ACCESS_KEY: "Access Key (S3 / API)",
     TOKEN: "Token",
     SMTP: "SMTP",
+    WEBHOOK: "Webhook URL",
+    OAUTH: "OAuth (Client Secret)",
 };
 
 const TYPE_DESCRIPTIONS: Record<CredentialType, string> = {
     USERNAME_PASSWORD: "Database / FTP / SMB user + password.",
     SSH_KEY: "SSH credentials (password, private key, or agent).",
     ACCESS_KEY: "S3-style access key + secret key pair.",
-    TOKEN: "Bearer token (Gotify, ntfy, Telegram bot, generic webhook).",
+    TOKEN: "Bearer token (Gotify, ntfy, Telegram bot, Twilio).",
     SMTP: "SMTP user + password for email notifications.",
+    WEBHOOK: "Webhook URL (Discord, Slack, Teams, generic webhook) + optional auth header.",
+    OAUTH: "OAuth app (Google Drive, Dropbox, OneDrive): client ID + secret. The refresh token is added automatically after authorization.",
 };
 
 export interface CredentialProfileSummary {
@@ -48,6 +52,8 @@ export interface CredentialProfileSummary {
     description: string | null;
     createdAt: string | Date;
     updatedAt: string | Date;
+    /** Which sensitive fields are set (e.g. OAUTH `refreshToken`) - no values. */
+    secretStatus?: Record<string, boolean>;
 }
 
 interface Props {
@@ -68,6 +74,8 @@ const DEFAULTS: Record<CredentialType, FormState> = {
     ACCESS_KEY: { accessKeyId: "", secretAccessKey: "" },
     TOKEN: { token: "" },
     SMTP: { user: "", password: "" },
+    WEBHOOK: { url: "", authHeader: "" },
+    OAUTH: { clientId: "", clientSecret: "" },
 };
 
 export function CredentialProfileDialog({
@@ -358,6 +366,24 @@ function TypeFields({
             <div className="space-y-3">
                 <Field label="User" value={data.user ?? ""} onChange={(v) => update("user", v)} />
                 <Field label="Password" type={secret} value={data.password ?? ""} onChange={(v) => update("password", v)} />
+            </div>
+        );
+    }
+
+    if (type === "WEBHOOK") {
+        return (
+            <div className="space-y-3">
+                <Field label="Webhook URL" type={secret} value={data.url ?? ""} onChange={(v) => update("url", v)} />
+                <Field label="Auth header (optional)" type={secret} value={data.authHeader ?? ""} onChange={(v) => update("authHeader", v)} />
+            </div>
+        );
+    }
+
+    if (type === "OAUTH") {
+        return (
+            <div className="space-y-3">
+                <Field label="Client ID" value={data.clientId ?? ""} onChange={(v) => update("clientId", v)} />
+                <Field label="Client Secret" type={secret} value={data.clientSecret ?? ""} onChange={(v) => update("clientSecret", v)} />
             </div>
         );
     }

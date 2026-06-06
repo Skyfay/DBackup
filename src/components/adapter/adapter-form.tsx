@@ -23,6 +23,7 @@ import { AdapterConfig } from "./types";
 import { useAdapterConnection } from "./use-adapter-connection";
 import { DatabaseFormContent, GenericFormContent, NotificationFormContent, StorageFormContent } from "./form-sections";
 import { SchemaField } from "./schema-field";
+import { SecretStatusProvider } from "./secret-status-context";
 
 /**
  * Walks a Zod schema shape and calls form.setValue for every field that has a
@@ -113,10 +114,16 @@ export function AdapterForm({ type, adapters, onSuccess, initialData, onBack }: 
             credentialKeys.push("username", "authType", "password", "privateKey", "passphrase");
         }
         if (selectedAdapter.credentials?.primary === "TOKEN") {
-            credentialKeys.push("token", "appToken", "accessToken", "botToken");
+            credentialKeys.push("token", "appToken", "accessToken", "botToken", "authToken");
         }
         if (selectedAdapter.credentials?.primary === "SMTP") {
             credentialKeys.push("user", "password");
+        }
+        if (selectedAdapter.credentials?.primary === "WEBHOOK") {
+            credentialKeys.push("webhookUrl", "url", "authHeader");
+        }
+        if (selectedAdapter.credentials?.primary === "OAUTH") {
+            credentialKeys.push("clientId", "clientSecret", "refreshToken");
         }
         if (selectedAdapter.credentials?.ssh === "SSH_KEY") {
             credentialKeys.push(
@@ -265,6 +272,7 @@ export function AdapterForm({ type, adapters, onSuccess, initialData, onBack }: 
     return (
         <>
             <Form {...form}>
+            <SecretStatusProvider value={initialData?.secretStatus ?? {}}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
                 {/* Header: Name and Type */}
                 <div className="space-y-4">
@@ -459,6 +467,7 @@ export function AdapterForm({ type, adapters, onSuccess, initialData, onBack }: 
                     </div>
                 </div>
             </form>
+            </SecretStatusProvider>
         </Form>
 
         <AlertDialog open={!!connectionError} onOpenChange={(open) => !open && setConnectionError(null)}>

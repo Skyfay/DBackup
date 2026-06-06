@@ -46,14 +46,18 @@ export function EncryptionKeyResolutionDialog({
     const [rawKeyError, setRawKeyError] = useState("");
     const [activeTab, setActiveTab] = useState<"profile" | "rawKey">("profile");
 
-    // Fetch profiles when dialog opens
+    // Fetch profiles when dialog opens; auto-switch to raw key tab if vault is empty
     useEffect(() => {
         if (!open) return;
         getEncryptionProfiles().then((res) => {
             if (res.success && res.data) {
-                setProfiles(res.data.map((p: { id: string; name: string }) => ({ id: p.id, name: p.name })));
+                const mapped = res.data.map((p: { id: string; name: string }) => ({ id: p.id, name: p.name }));
+                setProfiles(mapped);
+                setActiveTab(mapped.length === 0 ? "rawKey" : "profile");
+            } else {
+                setActiveTab("rawKey");
             }
-        }).catch(() => {});
+        }).catch(() => { setActiveTab("rawKey"); });
     }, [open]);
 
     const handleConfirm = () => {

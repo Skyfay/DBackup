@@ -202,6 +202,61 @@ describe("resolveAdapterConfig", () => {
         expect(result.password).toBe("smtp-pw");
     });
 
+    it("overlays WEBHOOK onto `webhookUrl`/`url`/`authHeader` for webhook adapters", async () => {
+        (getDecryptedCredentialData as any).mockResolvedValue({
+            url: "https://hooks.example.com/abc",
+            authHeader: "Bearer xyz",
+        });
+
+        const result = (await resolveAdapterConfig(
+            buildRow({
+                adapterId: "discord",
+                primaryCredentialId: "cred-1",
+                config: { username: "Backup Bot" },
+            })
+        )) as Record<string, unknown>;
+
+        expect(result.webhookUrl).toBe("https://hooks.example.com/abc");
+        expect(result.url).toBe("https://hooks.example.com/abc");
+        expect(result.authHeader).toBe("Bearer xyz");
+    });
+
+    it("overlays TOKEN onto `authToken` for Twilio", async () => {
+        (getDecryptedCredentialData as any).mockResolvedValue({ token: "tw-secret" });
+
+        const result = (await resolveAdapterConfig(
+            buildRow({
+                adapterId: "twilio-sms",
+                primaryCredentialId: "cred-1",
+                config: { accountSid: "AC123", from: "+1", to: "+2" },
+            })
+        )) as Record<string, unknown>;
+
+        expect(result.authToken).toBe("tw-secret");
+        expect(result.accountSid).toBe("AC123"); // structural field preserved
+    });
+
+    it("overlays OAUTH clientId/clientSecret/refreshToken for cloud storage", async () => {
+        (getDecryptedCredentialData as any).mockResolvedValue({
+            clientId: "oauth-client-id",
+            clientSecret: "oauth-client-secret",
+            refreshToken: "oauth-refresh",
+        });
+
+        const result = (await resolveAdapterConfig(
+            buildRow({
+                adapterId: "google-drive",
+                primaryCredentialId: "cred-1",
+                config: { folderId: "root" },
+            })
+        )) as Record<string, unknown>;
+
+        expect(result.clientId).toBe("oauth-client-id");
+        expect(result.clientSecret).toBe("oauth-client-secret");
+        expect(result.refreshToken).toBe("oauth-refresh");
+        expect(result.folderId).toBe("root");
+    });
+
     it("throws ConfigurationError when config JSON is malformed", async () => {
         await expect(
             resolveAdapterConfig({
@@ -257,8 +312,10 @@ describe("Adapter credential declarations", () => {
         expect(registry.get("email")?.credentials).toEqual({ primary: "SMTP", primaryOptional: true });
         expect(registry.get("sqlite")?.credentials).toEqual({ ssh: "SSH_KEY" });
         expect(registry.get("local-filesystem")?.credentials).toBeUndefined();
-        expect(registry.get("discord")?.credentials).toBeUndefined();
-        expect(registry.get("google-drive")?.credentials).toBeUndefined();
+        expect(registry.get("discord")?.credentials).toEqual({ primary: "WEBHOOK" });
+        expect(registry.get("generic-webhook")?.credentials).toEqual({ primary: "WEBHOOK" });
+        expect(registry.get("twilio-sms")?.credentials).toEqual({ primary: "TOKEN" });
+        expect(registry.get("google-drive")?.credentials).toEqual({ primary: "OAUTH" });
     });
 });
 

@@ -17,6 +17,7 @@ export const TeamsAdapter: NotificationAdapter = {
     type: "notification",
     name: "Microsoft Teams",
     configSchema: TeamsSchema,
+    credentials: { primary: "WEBHOOK" },
 
     async test(config: TeamsConfig): Promise<{ success: boolean; message: string }> {
         try {

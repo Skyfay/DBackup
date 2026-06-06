@@ -144,6 +144,9 @@ export const DropboxAdapter: StorageAdapter = {
     type: "storage",
     name: "Dropbox",
     configSchema: DropboxSchema,
+    // clientSecret + refreshToken live in an OAUTH credential profile; clientId
+    // stays structural. The refreshToken is written by the OAuth callback.
+    credentials: { primary: "OAUTH" },
 
     async upload(
         config: DropboxConfig,

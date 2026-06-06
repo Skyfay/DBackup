@@ -34,7 +34,11 @@ export const PostgresSchema = z.object({
 });
 
 export const MongoDBSchema = z.object({
-    uri: z.string().optional().describe("Connection URI (overrides other settings)"),
+    // DEPRECATED: inline connection URI. No longer offered in the UI because it
+    // embeds credentials directly in the adapter config. New sources build the
+    // URI from host/port + a USERNAME_PASSWORD credential profile. Still honored
+    // at runtime for existing sources (see buildConnectionUri) until reconfigured.
+    uri: z.string().optional().describe("DEPRECATED — use host/port + a credential profile instead"),
     host: z.string().default("localhost"),
     port: z.coerce.number().default(27017),
     user: z.string().optional(),

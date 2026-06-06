@@ -30,6 +30,8 @@ const TYPE_LABELS: Record<CredentialType, string> = {
     ACCESS_KEY: "Access Key",
     TOKEN: "Token",
     SMTP: "SMTP",
+    WEBHOOK: "Webhook",
+    OAUTH: "OAuth",
 };
 
 const TYPE_FILTER_OPTIONS = (Object.entries(TYPE_LABELS) as [CredentialType, string][]).map(

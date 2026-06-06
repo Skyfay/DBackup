@@ -1,5 +1,5 @@
 import { useFormContext } from "react-hook-form";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import {
     Tabs,
@@ -40,6 +40,7 @@ import { DropboxFolderBrowser } from "./dropbox-folder-browser";
 import { OneDriveOAuthButton } from "./onedrive-oauth-button";
 import { OneDriveFolderBrowser } from "./onedrive-folder-browser";
 import { CredentialPicker } from "./credential-picker";
+import type { CredentialProfileSummary } from "@/components/settings/credential-profile-dialog";
 import { AdapterConfig } from "./types";
 
 interface CredentialPickerHostProps {
@@ -66,7 +67,9 @@ function PrimaryCredentialPickerSlot({
     adapter,
     primaryCredentialId,
     onPrimaryChange,
-}: { adapter: AdapterDefinition } & CredentialPickerHostProps) {
+    onSelectedProfile,
+    refreshKey,
+}: { adapter: AdapterDefinition; onSelectedProfile?: (p: CredentialProfileSummary | null) => void; refreshKey?: number } & CredentialPickerHostProps) {
     const required = adapter.credentials?.primary;
     if (!required || !onPrimaryChange) return null;
     return (
@@ -76,6 +79,8 @@ function PrimaryCredentialPickerSlot({
             value={primaryCredentialId ?? null}
             onChange={onPrimaryChange}
             label="Credential Profile"
+            onSelectedProfile={onSelectedProfile}
+            refreshKey={refreshKey}
         />
     );
 }
@@ -372,7 +377,7 @@ export function DatabaseFormContent({
                     onPrimaryChange={onPrimaryChange}
                 />
                 <FieldList
-                    keys={['uri', 'host', 'port', 'user', 'username', 'password']}
+                    keys={['host', 'port', 'user', 'username', 'password']}
                     adapter={adapter}
                 />
             </TabsContent>
@@ -509,7 +514,7 @@ function SshAwareTabLayout({
                             onPrimaryChange={onPrimaryChange}
                         />
                         <FieldList
-                            keys={['uri', 'host', 'port', 'user', 'username', 'password']}
+                            keys={['host', 'port', 'user', 'username', 'password']}
                             adapter={adapter}
                         />
                     </TabsContent>
@@ -552,7 +557,7 @@ function SshAwareTabLayout({
                             onPrimaryChange={onPrimaryChange}
                         />
                         <FieldList
-                            keys={['uri', 'host', 'port', 'user', 'username', 'password']}
+                            keys={['host', 'port', 'user', 'username', 'password']}
                             adapter={adapter}
                         />
                     </TabsContent>
@@ -658,7 +663,7 @@ function SshConfigSection({ adapter, sshAuthType, sshCredentialId, description }
 
 export function StorageFormContent({
     adapter,
-    initialData,
+    initialData: _initialData,
     healthNotificationsDisabled,
     onHealthNotificationsDisabledChange,
     primaryCredentialId,
@@ -676,30 +681,20 @@ export function StorageFormContent({
     const isGoogleDrive = adapter.id === 'google-drive';
     const isDropbox = adapter.id === 'dropbox';
     const isOneDrive = adapter.id === 'onedrive';
-    const isOAuthAdapter = isGoogleDrive || isDropbox || isOneDrive;
 
-    // For OAuth adapters: filter out refreshToken from connection keys (auto-managed via OAuth)
-    const connectionKeys = isOAuthAdapter
-        ? STORAGE_CONNECTION_KEYS.filter(k => k !== 'refreshToken')
-        : STORAGE_CONNECTION_KEYS;
+    const connectionKeys = STORAGE_CONNECTION_KEYS;
+    const configKeys = STORAGE_CONFIG_KEYS;
 
-    // For OAuth adapters: filter out refreshToken from config keys too
-    const configKeys = isOAuthAdapter
-        ? STORAGE_CONFIG_KEYS.filter(k => k !== 'refreshToken')
-        : STORAGE_CONFIG_KEYS;
+    // OAuth authorization now lives on the credential profile: the refresh token
+    // is stored there, not on the adapter. We read the selected profile's
+    // `secretStatus` to know whether it's authorized - so it reflects reality
+    // even before the destination itself is saved.
+    const [selectedProfile, setSelectedProfile] = useState<CredentialProfileSummary | null>(null);
+    const authorized = selectedProfile?.secretStatus?.refreshToken === true;
 
-    // Check if the config has a refresh token (for existing/authorized adapters)
-    const hasRefreshToken = initialData ? (() => {
-        try {
-            const config = JSON.parse(initialData.config);
-            return !!config.refreshToken;
-        } catch {
-            return false;
-        }
-    })() : false;
-
-    // Watch full config for Google Drive folder browser
-    const config = watch("config");
+    // Incremented after a successful popup OAuth to trigger a credential re-fetch.
+    const [credentialRefreshKey, setCredentialRefreshKey] = useState(0);
+    const handleOAuthAuthorized = useCallback(() => setCredentialRefreshKey((k) => k + 1), []);
 
     return (
         <Tabs defaultValue="connection" className="w-full">
@@ -715,6 +710,8 @@ export function StorageFormContent({
                     adapter={adapter}
                     primaryCredentialId={primaryCredentialId}
                     onPrimaryChange={onPrimaryChange}
+                    onSelectedProfile={setSelectedProfile}
+                    refreshKey={credentialRefreshKey}
                 />
                 {(adapter.id === 'sftp' || adapter.id === 'rsync') ? (
                     <div className="space-y-4">
@@ -738,29 +735,23 @@ export function StorageFormContent({
                         )}
                     </div>
                 ) : isGoogleDrive ? (
-                    <div className="space-y-4">
-                        <FieldList keys={['clientId', 'clientSecret']} adapter={adapter} />
-                        <GoogleDriveOAuthButton
-                            adapterId={initialData?.id}
-                            hasRefreshToken={hasRefreshToken}
-                        />
-                    </div>
+                    <GoogleDriveOAuthButton
+                        credentialId={primaryCredentialId ?? undefined}
+                        authorized={authorized}
+                        onAuthorized={handleOAuthAuthorized}
+                    />
                 ) : isDropbox ? (
-                    <div className="space-y-4">
-                        <FieldList keys={['clientId', 'clientSecret']} adapter={adapter} />
-                        <DropboxOAuthButton
-                            adapterId={initialData?.id}
-                            hasRefreshToken={hasRefreshToken}
-                        />
-                    </div>
+                    <DropboxOAuthButton
+                        credentialId={primaryCredentialId ?? undefined}
+                        authorized={authorized}
+                        onAuthorized={handleOAuthAuthorized}
+                    />
                 ) : isOneDrive ? (
-                    <div className="space-y-4">
-                        <FieldList keys={['clientId', 'clientSecret']} adapter={adapter} />
-                        <OneDriveOAuthButton
-                            adapterId={initialData?.id}
-                            hasRefreshToken={hasRefreshToken}
-                        />
-                    </div>
+                    <OneDriveOAuthButton
+                        credentialId={primaryCredentialId ?? undefined}
+                        authorized={authorized}
+                        onAuthorized={handleOAuthAuthorized}
+                    />
                 ) : (
                     <FieldList keys={connectionKeys} adapter={adapter} />
                 )}
@@ -771,20 +762,20 @@ export function StorageFormContent({
                     {isGoogleDrive ? (
                         <GoogleDriveFolderField
                             adapter={adapter}
-                            config={config}
-                            hasRefreshToken={hasRefreshToken}
+                            authorized={authorized}
+                            credentialId={primaryCredentialId ?? undefined}
                         />
                     ) : isDropbox ? (
                         <DropboxFolderField
                             adapter={adapter}
-                            config={config}
-                            hasRefreshToken={hasRefreshToken}
+                            authorized={authorized}
+                            credentialId={primaryCredentialId ?? undefined}
                         />
                     ) : isOneDrive ? (
                         <OneDriveFolderField
                             adapter={adapter}
-                            config={config}
-                            hasRefreshToken={hasRefreshToken}
+                            authorized={authorized}
+                            credentialId={primaryCredentialId ?? undefined}
                         />
                     ) : hasRealConfigKeys ? (
                         <>
@@ -879,21 +870,21 @@ export function GenericFormContent({ adapter, detectedVersion }: { adapter: Adap
  */
 function GoogleDriveFolderField({
     adapter: _adapter,
-    config,
-    hasRefreshToken,
+    authorized,
+    credentialId,
 }: {
     adapter: AdapterDefinition;
-    config: Record<string, unknown>;
-    hasRefreshToken: boolean;
+    authorized: boolean;
+    credentialId?: string;
 }) {
     const { setValue, watch } = useFormContext();
     const [isBrowserOpen, setIsBrowserOpen] = useState(false);
     const folderId = watch("config.folderId") || "";
     const [folderName, setFolderName] = useState<string | null>(null);
 
-    // Get refresh token from current form values (might be encrypted in DB but decrypted in form)
-    const refreshToken = config?.refreshToken as string | undefined;
-    const canBrowse = hasRefreshToken && !!refreshToken && !!config?.clientId && !!config?.clientSecret;
+    // Secrets (clientSecret/refreshToken) live in the vault and are resolved
+    // server-side by adapterId; the browser only needs the saved adapter id.
+    const canBrowse = authorized && !!credentialId;
 
     return (
         <div className="space-y-4">
@@ -937,11 +928,7 @@ function GoogleDriveFolderField({
                         setValue("config.folderId", selectedId);
                         setFolderName(selectedName);
                     }}
-                    config={{
-                        clientId: config.clientId as string,
-                        clientSecret: config.clientSecret as string,
-                        refreshToken: refreshToken!,
-                    }}
+                    credentialId={credentialId!}
                     initialFolderId={folderId || undefined}
                 />
             )}
@@ -955,19 +942,18 @@ function GoogleDriveFolderField({
  */
 function DropboxFolderField({
     adapter: _adapter,
-    config,
-    hasRefreshToken,
+    authorized,
+    credentialId,
 }: {
     adapter: AdapterDefinition;
-    config: Record<string, unknown>;
-    hasRefreshToken: boolean;
+    authorized: boolean;
+    credentialId?: string;
 }) {
     const { setValue, watch } = useFormContext();
     const [isBrowserOpen, setIsBrowserOpen] = useState(false);
     const folderPath = watch("config.folderPath") || "";
 
-    const refreshToken = config?.refreshToken as string | undefined;
-    const canBrowse = hasRefreshToken && !!refreshToken && !!config?.clientId && !!config?.clientSecret;
+    const canBrowse = authorized && !!credentialId;
 
     return (
         <div className="space-y-4">
@@ -1005,11 +991,7 @@ function DropboxFolderField({
                     onSelect={(selectedPath) => {
                         setValue("config.folderPath", selectedPath);
                     }}
-                    config={{
-                        clientId: config.clientId as string,
-                        clientSecret: config.clientSecret as string,
-                        refreshToken: refreshToken!,
-                    }}
+                    credentialId={credentialId!}
                     initialPath={folderPath || undefined}
                 />
             )}
@@ -1023,19 +1005,18 @@ function DropboxFolderField({
  */
 function OneDriveFolderField({
     adapter: _adapter,
-    config,
-    hasRefreshToken,
+    authorized,
+    credentialId,
 }: {
     adapter: AdapterDefinition;
-    config: Record<string, unknown>;
-    hasRefreshToken: boolean;
+    authorized: boolean;
+    credentialId?: string;
 }) {
     const { setValue, watch } = useFormContext();
     const [isBrowserOpen, setIsBrowserOpen] = useState(false);
     const folderPath = watch("config.folderPath") || "";
 
-    const refreshToken = config?.refreshToken as string | undefined;
-    const canBrowse = hasRefreshToken && !!refreshToken && !!config?.clientId && !!config?.clientSecret;
+    const canBrowse = authorized && !!credentialId;
 
     return (
         <div className="space-y-4">
@@ -1073,11 +1054,7 @@ function OneDriveFolderField({
                     onSelect={(selectedPath) => {
                         setValue("config.folderPath", selectedPath);
                     }}
-                    config={{
-                        clientId: config.clientId as string,
-                        clientSecret: config.clientSecret as string,
-                        refreshToken: refreshToken!,
-                    }}
+                    credentialId={credentialId!}
                     initialPath={folderPath || undefined}
                 />
             )}
@@ -1158,9 +1135,14 @@ function getCredentialManagedKeys(adapter: AdapterDefinition): Set<string> {
     } else if (reqs.primary === "ACCESS_KEY") {
         ["accessKeyId", "secretAccessKey"].forEach((k) => hidden.add(k));
     } else if (reqs.primary === "TOKEN") {
-        ["token", "appToken", "accessToken", "botToken"].forEach((k) => hidden.add(k));
+        ["token", "appToken", "accessToken", "botToken", "authToken"].forEach((k) => hidden.add(k));
     } else if (reqs.primary === "SMTP") {
         ["user", "password"].forEach((k) => hidden.add(k));
+    } else if (reqs.primary === "WEBHOOK") {
+        ["webhookUrl", "url", "authHeader"].forEach((k) => hidden.add(k));
+    } else if (reqs.primary === "OAUTH") {
+        // The whole OAuth-app identity lives in the vault profile.
+        ["clientId", "clientSecret", "refreshToken"].forEach((k) => hidden.add(k));
     }
 
     if (reqs.ssh === "SSH_KEY") {

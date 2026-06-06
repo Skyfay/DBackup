@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { Dropbox } from "dropbox";
 import { checkPermission } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { getDecryptedCredentialData } from "@/services/auth/credential-service";
+import type { OAuthData } from "@/lib/core/credentials";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 
@@ -12,19 +14,28 @@ const log = logger.child({ route: "system/filesystem/dropbox" });
  * Browse Dropbox folders for the folder picker.
  *
  * Body: {
- *   config: { clientId, clientSecret, refreshToken },
- *   folderPath?: string  // Folder to list ("" or undefined = root)
+ *   credentialId: string, // OAUTH credential profile id
+ *   folderPath?: string   // Folder to list ("" or undefined = root)
  * }
+ *
+ * Credentials are resolved server-side from the OAUTH credential profile - they
+ * never travel through the client.
  *
  * Returns the same shape as the local/remote filesystem API:
  * { success, data: { currentPath, currentName, parentPath, entries: [{ name, type, path }] } }
  */
 export async function POST(req: NextRequest) {
     try {
-        await checkPermission(PERMISSIONS.SETTINGS.READ);
+        await checkPermission(PERMISSIONS.DESTINATIONS.READ);
 
         const body = await req.json();
-        const { config, folderPath } = body;
+        const { credentialId, folderPath } = body;
+
+        if (!credentialId) {
+            return NextResponse.json({ success: false, error: "Missing credentialId" }, { status: 400 });
+        }
+
+        const config = (await getDecryptedCredentialData(credentialId, "OAUTH")) as OAuthData;
 
         if (!config?.clientId || !config?.clientSecret || !config?.refreshToken) {
             return NextResponse.json(

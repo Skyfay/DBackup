@@ -154,6 +154,9 @@ export const GoogleDriveAdapter: StorageAdapter = {
     type: "storage",
     name: "Google Drive",
     configSchema: GoogleDriveSchema,
+    // clientSecret + refreshToken live in an OAUTH credential profile; clientId
+    // stays structural. The refreshToken is written by the OAuth callback.
+    credentials: { primary: "OAUTH" },
 
     async upload(
         config: GoogleDriveConfig,

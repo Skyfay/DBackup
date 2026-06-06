@@ -13,6 +13,8 @@ export const CREDENTIAL_TYPES = [
     "ACCESS_KEY",
     "TOKEN",
     "SMTP",
+    "WEBHOOK",
+    "OAUTH",
 ] as const;
 
 export type CredentialType = (typeof CREDENTIAL_TYPES)[number];
@@ -65,6 +67,22 @@ export const SmtpSchema = z.object({
     password: z.string().min(1, "Password is required"),
 });
 
+export const WebhookSchema = z.object({
+    url: z.string().url("Valid Webhook URL is required"),
+    authHeader: z.string().optional(),
+});
+
+export const OAuthSchema = z.object({
+    // clientId + clientSecret form one OAuth-app registration; keeping them together
+    // (with the refreshToken) avoids the mismatch where a refreshToken issued for one
+    // clientId is used with another. clientId is not itself a secret.
+    clientId: z.string().min(1, "Client ID is required"),
+    clientSecret: z.string().min(1, "Client Secret is required"),
+    // Set automatically by the OAuth callback after the consent flow; optional so
+    // the profile can be created up-front with just the client id + secret.
+    refreshToken: z.string().optional(),
+});
+
 // ---------------------------------------------------------------------------
 // Type-to-schema map (single source of truth for validation)
 // ---------------------------------------------------------------------------
@@ -75,6 +93,8 @@ export const CREDENTIAL_SCHEMAS = {
     ACCESS_KEY: AccessKeySchema,
     TOKEN: TokenSchema,
     SMTP: SmtpSchema,
+    WEBHOOK: WebhookSchema,
+    OAUTH: OAuthSchema,
 } as const satisfies Record<CredentialType, z.ZodTypeAny>;
 
 export type UsernamePasswordData = z.infer<typeof UsernamePasswordSchema>;
@@ -82,13 +102,17 @@ export type SshKeyData = z.infer<typeof SshKeySchema>;
 export type AccessKeyData = z.infer<typeof AccessKeySchema>;
 export type TokenData = z.infer<typeof TokenSchema>;
 export type SmtpData = z.infer<typeof SmtpSchema>;
+export type WebhookData = z.infer<typeof WebhookSchema>;
+export type OAuthData = z.infer<typeof OAuthSchema>;
 
 export type CredentialData =
     | UsernamePasswordData
     | SshKeyData
     | AccessKeyData
     | TokenData
-    | SmtpData;
+    | SmtpData
+    | WebhookData
+    | OAuthData;
 
 /**
  * A credential profile as exposed to clients (no `data` payload).
@@ -102,6 +126,13 @@ export interface CredentialProfileShape {
     description: string | null;
     createdAt: Date;
     updatedAt: Date;
+    /**
+     * Which sensitive fields of the (encrypted) payload hold a non-empty value,
+     * e.g. `{ clientSecret: true, refreshToken: false }`. Lets the UI tell whether
+     * an OAUTH profile has been authorized (refreshToken present) WITHOUT exposing
+     * any secret value. Never contains the values themselves.
+     */
+    secretStatus?: Record<string, boolean>;
 }
 
 /**

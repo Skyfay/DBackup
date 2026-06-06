@@ -15,6 +15,9 @@ const log = logger.child({ service: "mongodb-connection" });
  * Build MongoDB connection URI from config
  */
 function buildConnectionUri(config: MongoDBConfig): string {
+    // Backward-compat: honor a stored inline `uri` for sources created before the
+    // URI field was deprecated. The UI no longer exposes it; new sources arrive
+    // here with host/port + credentials resolved from the vault profile.
     if (config.uri) {
         return config.uri;
     }

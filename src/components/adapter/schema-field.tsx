@@ -30,6 +30,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { FolderOpen } from "lucide-react";
 import { PLACEHOLDERS } from "./form-constants";
+import { useSecretStatus } from "./secret-status-context";
 import { DatabasePicker } from "./database-picker";
 import { FileBrowserDialog } from "@/components/system/file-browser-dialog";
 import { useState } from "react";
@@ -99,7 +100,15 @@ export function SchemaField({
     const isTextArea = fieldKey.toLowerCase().includes("privatekey") || fieldKey.toLowerCase().includes("certificate") || fieldKey.toLowerCase().includes("options") || fieldKey === "customHeaders" || fieldKey === "payloadTemplate";
     const description = (schemaShape as any).description;
 
-    const placeholder = PLACEHOLDERS[`${adapterId}.${fieldKey}`] || PLACEHOLDERS[fieldKey];
+    const rawPlaceholder = PLACEHOLDERS[`${adapterId}.${fieldKey}`] || PLACEHOLDERS[fieldKey];
+
+    // When editing, the API redacts stored secrets (the value is never sent).
+    // `secretStatus[fieldKey]` tells us a value IS stored, so show a "leave blank
+    // to keep" hint instead of an empty-looking field. Submitting it blank keeps
+    // the existing secret (server-side mergeSecrets); typing replaces it.
+    const secretStatus = useSecretStatus();
+    const hasStoredSecret = secretStatus[fieldKey] === true;
+    const placeholder = hasStoredSecret ? "•••••••• — saved, leave blank to keep" : rawPlaceholder;
 
     const isPathField = fieldKey === 'path' || fieldKey === 'sqliteBinaryPath' || fieldKey === 'basePath';
     const [isFileBrowserOpen, setIsFileBrowserOpen] = useState(false);

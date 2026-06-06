@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { encryptConfig } from "@/lib/crypto";
+import { encryptConfig, decryptConfig, mergeSecrets } from "@/lib/crypto";
+import { toAdapterListItem } from "@/lib/adapters/dto";
 import { headers } from "next/headers";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
@@ -111,7 +112,7 @@ export async function PUT(
         // RBAC: Check permission based on adapter type
         const existingAdapter = await prisma.adapterConfig.findUnique({
             where: { id: params.id },
-            select: { type: true, adapterId: true, lastError: true }
+            select: { type: true, adapterId: true, lastError: true, config: true }
         });
         if (!existingAdapter) {
             return NextResponse.json({ success: false, error: "Adapter not found" }, { status: 404 });
@@ -151,15 +152,29 @@ export async function PUT(
             }
         }
 
-        const configObj = typeof config === 'string' ? JSON.parse(config) : config;
-        const encryptedConfig = encryptConfig(configObj);
-        const configString = JSON.stringify(encryptedConfig);
+        // Build the encrypted config string only when a config payload was supplied.
+        // Secret-preserving merge: the API returns redacted secrets, so an edit
+        // round-trip submits empty secret fields. Re-fill them from the existing
+        // (decrypted) config before re-encrypting so we never clobber a real
+        // secret with an encrypted empty string (data-loss bug).
+        let configString: string | undefined;
+        if (config !== undefined) {
+            const incomingConfig = typeof config === 'string' ? JSON.parse(config) : config;
+            let existingDecrypted: unknown = {};
+            try {
+                existingDecrypted = decryptConfig(JSON.parse(existingAdapter.config));
+            } catch (e) {
+                log.warn("Failed to decrypt existing config during update; secret merge skipped", { adapterId: params.id }, wrapError(e));
+            }
+            const mergedConfig = mergeSecrets(incomingConfig, existingDecrypted);
+            configString = JSON.stringify(encryptConfig(mergedConfig));
+        }
 
         const updatedAdapter = await prisma.adapterConfig.update({
             where: { id: params.id },
             data: {
                 name,
-                config: configString,
+                ...(configString !== undefined ? { config: configString } : {}),
                 ...(primaryCredentialId !== undefined ? { primaryCredentialId: primaryCredentialId ?? null } : {}),
                 ...(sshCredentialId !== undefined ? { sshCredentialId: sshCredentialId ?? null } : {}),
                 ...(metadata !== undefined ? { metadata: JSON.stringify(metadata) } : {}),
@@ -180,7 +195,7 @@ export async function PUT(
             );
         }
 
-        return NextResponse.json(updatedAdapter);
+        return NextResponse.json(toAdapterListItem(updatedAdapter));
     } catch (_error) {
         return NextResponse.json({ error: "Failed to update adapter" }, { status: 500 });
     }

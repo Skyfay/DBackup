@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DropboxAuth } from "dropbox";
 import { headers } from "next/headers";
-import prisma from "@/lib/prisma";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { decryptConfig } from "@/lib/crypto";
+import { getDecryptedCredentialData } from "@/services/auth/credential-service";
+import type { OAuthData } from "@/lib/core/credentials";
 import { logger } from "@/lib/logging/logger";
 
 const log = logger.child({ route: "adapters/dropbox/auth" });
@@ -12,7 +12,8 @@ const log = logger.child({ route: "adapters/dropbox/auth" });
 /**
  * POST /api/adapters/dropbox/auth
  * Generates the Dropbox OAuth authorization URL.
- * Body: { adapterId: string } - The saved adapter config ID to authorize.
+ * Body: { credentialId: string } - The OAUTH credential profile to authorize.
+ * The resulting refresh token is written back into that profile.
  */
 export async function POST(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
@@ -21,25 +22,16 @@ export async function POST(req: NextRequest) {
     }
 
     try {
-        checkPermissionWithContext(ctx, PERMISSIONS.DESTINATIONS.WRITE);
+        checkPermissionWithContext(ctx, PERMISSIONS.CREDENTIALS.WRITE);
 
-        const { adapterId } = await req.json();
-        if (!adapterId) {
-            return NextResponse.json({ error: "Missing adapterId" }, { status: 400 });
+        const { credentialId } = await req.json();
+        if (!credentialId) {
+            return NextResponse.json({ error: "Missing credentialId" }, { status: 400 });
         }
 
-        // Load the adapter config to get clientId and clientSecret
-        const adapterConfig = await prisma.adapterConfig.findUnique({
-            where: { id: adapterId },
-        });
+        const profile = (await getDecryptedCredentialData(credentialId, "OAUTH")) as OAuthData;
 
-        if (!adapterConfig || adapterConfig.adapterId !== "dropbox") {
-            return NextResponse.json({ error: "Adapter not found or not a Dropbox adapter" }, { status: 404 });
-        }
-
-        const config = decryptConfig(JSON.parse(adapterConfig.config));
-
-        if (!config.clientId || !config.clientSecret) {
+        if (!profile.clientId || !profile.clientSecret) {
             return NextResponse.json({ error: "App Key and App Secret are required" }, { status: 400 });
         }
 
@@ -48,14 +40,14 @@ export async function POST(req: NextRequest) {
         const redirectUri = `${origin}/api/adapters/dropbox/callback`;
 
         const dbxAuth = new DropboxAuth({
-            clientId: config.clientId,
-            clientSecret: config.clientSecret,
+            clientId: profile.clientId,
+            clientSecret: profile.clientSecret,
             fetch: fetch,
         });
 
         const authUrl = await dbxAuth.getAuthenticationUrl(
             redirectUri,
-            adapterId, // state parameter for callback
+            credentialId, // state parameter for callback
             "code",
             "offline", // Request offline access to get refresh_token
             undefined, // scopes - use app-configured scopes
@@ -63,7 +55,7 @@ export async function POST(req: NextRequest) {
             false
         );
 
-        log.info("Generated Dropbox OAuth URL", { adapterId });
+        log.info("Generated Dropbox OAuth URL", { credentialId });
 
         return NextResponse.json({ success: true, data: { authUrl: String(authUrl) } });
     } catch (error) {

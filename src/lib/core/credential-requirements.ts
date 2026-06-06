@@ -8,8 +8,8 @@ import type { CredentialType } from "@/lib/core/credentials";
  * - The adapter form to decide whether to render the primary/SSH picker
  *
  * NOTE: When adding a new adapter, mirror its `credentials` declaration here.
- * Adapters without a credential profile (local-filesystem, OAuth storage,
- * non-token webhook notifications) are intentionally absent.
+ * Adapters without a credential profile (e.g. local-filesystem) are
+ * intentionally absent.
  */
 export const ADAPTER_CREDENTIAL_REQUIREMENTS: Record<
     string,
@@ -39,11 +39,23 @@ export const ADAPTER_CREDENTIAL_REQUIREMENTS: Record<
     "s3-r2": { primary: "ACCESS_KEY" },
     "s3-hetzner": { primary: "ACCESS_KEY" },
 
+    // OAuth cloud storage (clientSecret + refreshToken in an OAUTH profile)
+    "google-drive": { primary: "OAUTH" },
+    dropbox: { primary: "OAUTH" },
+    onedrive: { primary: "OAUTH" },
+
     // Notifications
     email: { primary: "SMTP" },
     gotify: { primary: "TOKEN" },
     ntfy: { primary: "TOKEN" },
     telegram: { primary: "TOKEN" },
+    "twilio-sms": { primary: "TOKEN" }, // token = Twilio Auth Token; accountSid stays structural
+
+    // Webhook notifications (URL + optional auth header in the vault)
+    discord: { primary: "WEBHOOK" },
+    slack: { primary: "WEBHOOK" },
+    teams: { primary: "WEBHOOK" },
+    "generic-webhook": { primary: "WEBHOOK" },
 };
 
 export function getCredentialRequirements(adapterId: string) {

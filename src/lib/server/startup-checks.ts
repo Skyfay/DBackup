@@ -40,7 +40,7 @@ export async function validateAdapterCredentials(): Promise<void> {
 
         for (const cfg of configs) {
             const adapter = registry.get(cfg.adapterId);
-            const requiresPrimary = adapter?.credentials?.primary !== undefined;
+            const requiresPrimary = adapter?.credentials?.primary !== undefined && !adapter?.credentials?.primaryOptional;
             const isMissing = requiresPrimary && !cfg.primaryCredentialId;
 
             if (isMissing) {

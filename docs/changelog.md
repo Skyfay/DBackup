@@ -22,7 +22,7 @@ All notable changes to DBackup are documented here.
 
 - **dev**: `pnpm dev` now automatically applies pending Prisma migrations on startup via `prisma migrate deploy`, keeping the local database schema in sync without any manual steps.
 - **storage**: Storage Explorer cache now uses surgical updates instead of full invalidation. Backup creation appends one entry, deletion removes one entry, lock toggle and verification patch only the affected fields - the cache stays warm after every change.
-- **storage**: A new "Pre-warm Storage Cache" system task (enabled by default) populates the file listing cache for all storage adapters 10 seconds after server startup and daily at 3 AM, so the first visit to Storage Explorer is instant even after a restart.
+- **storage**: A new "Pre-warm Storage Cache" system task (enabled by default, runs hourly) reconciles existing caches against remote storage to detect files deleted outside DBackup, and pre-populates the cache for adapters not yet loaded. First visit to Storage Explorer is instant even after a restart.
 - **storage**: Stale cache entries (older than 2 hours) now trigger a background reconciliation using only `adapter.list()` - files deleted outside DBackup are detected without re-reading all `.meta.json` sidecars.
 - **storage**: Long backup names in the Storage Explorer are now truncated with a tooltip showing the full name on hover.
 - **ui**: All data tables (Storage, Jobs, Sources, Destinations, Notifications) now support horizontal scrolling when columns overflow, matching the Database Explorer behavior.

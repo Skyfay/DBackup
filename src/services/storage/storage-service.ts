@@ -282,7 +282,7 @@ export class StorageService {
         };
     }
 
-    private async reconcileStorageListCache(adapterConfigId: string): Promise<void> {
+    async reconcileStorageListCache(adapterConfigId: string): Promise<void> {
         const adapterConfig = await prisma.adapterConfig.findUnique({ where: { id: adapterConfigId } });
         if (!adapterConfig || adapterConfig.type !== "storage") return;
 

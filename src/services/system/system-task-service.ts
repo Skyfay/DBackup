@@ -103,11 +103,11 @@ export const DEFAULT_TASK_CONFIG = {
         description: "Queries all storage destinations to update file counts and total sizes displayed on the dashboard. Runs automatically after each backup."
     },
     [SYSTEM_TASKS.WARMUP_STORAGE_CACHE]: {
-        interval: "0 3 * * *", // Daily at 3 AM
+        interval: "0 * * * *", // Every hour
         runOnStartup: true,
         enabled: true,
         label: "Pre-warm Storage Cache",
-        description: "Fetches and caches file listings for all storage adapters so the first visit to Storage Explorer is instant. Runs on startup and daily."
+        description: "Keeps the Storage Explorer cache fresh. Reconciles existing caches against remote storage to detect external changes, and pre-populates the cache for adapters not yet loaded."
     }
 };
 
@@ -567,13 +567,21 @@ export class SystemTaskService {
             select: { id: true, name: true },
         });
         log.info("Pre-warming storage cache", { count: adapters.length });
+        const { storageService } = await import("@/services/storage/storage-service");
         for (const adapter of adapters) {
             try {
-                const { storageService } = await import("@/services/storage/storage-service");
-                await storageService.listFilesWithMetadata(adapter.id);
-                log.debug("Warmed storage cache", { adapterId: adapter.id, name: adapter.name });
+                // If a cache row already exists: reconcile against remote to detect external changes.
+                // If no cache row: do a full fetch to populate it.
+                const cached = await prisma.storageListCache.findUnique({ where: { adapterConfigId: adapter.id } });
+                if (cached) {
+                    await storageService.reconcileStorageListCache(adapter.id);
+                    log.debug("Reconciled storage cache", { adapterId: adapter.id, name: adapter.name });
+                } else {
+                    await storageService.listFilesWithMetadata(adapter.id);
+                    log.debug("Warmed storage cache", { adapterId: adapter.id, name: adapter.name });
+                }
             } catch (e: unknown) {
-                log.warn("Failed to warm cache for adapter", { adapterId: adapter.id, name: adapter.name }, wrapError(e));
+                log.warn("Failed to warm/reconcile cache for adapter", { adapterId: adapter.id, name: adapter.name }, wrapError(e));
             }
         }
     }

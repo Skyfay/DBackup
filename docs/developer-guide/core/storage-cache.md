@@ -75,16 +75,18 @@ Reconciliation runs in the background (non-blocking) whenever a cached listing i
 const CACHE_STALENESS_HOURS = 2;
 ```
 
-## Pre-warm System Task
+## Pre-warm / Reconcile System Task
 
-The `system.warmup_storage_cache` task populates the cache for all storage adapters shortly after server startup so the first visit to Storage Explorer is fast even after a restart.
+The `system.warmup_storage_cache` task keeps the cache consistent for all storage adapters.
 
 - **Startup delay**: 10 seconds (standard for all startup tasks, controlled by the scheduler).
-- **Recurring schedule**: Daily at 3 AM (keeps the cache warm if it goes cold overnight).
+- **Recurring schedule**: Every hour.
 - **Enabled by default**: yes.
-- **Concurrency**: adapters are warmed sequentially to avoid simultaneous rate-limit hits on remote APIs.
+- **Concurrency**: adapters are processed sequentially to avoid simultaneous rate-limit hits.
 
-The task calls `listFilesWithMetadata()` for each adapter. If the cache is already warm and fresh, the call returns immediately from cache — no redundant remote fetch.
+**Per-adapter logic:**
+- **Cache exists**: calls `reconcileStorageListCache()` — runs `adapter.list()`, diffs against the cached list, removes entries for files deleted externally, enriches and appends new files. Detects changes made outside DBackup within the hour.
+- **No cache row**: calls `listFilesWithMetadata()` — full fetch to populate the cache from scratch.
 
 ## Force Refresh
 

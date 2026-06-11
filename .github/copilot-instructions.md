@@ -95,26 +95,31 @@ return { success: boolean, message?: string, data?: any, error?: string }
 ## Developer Workflows
 
 ```bash
-pnpm dev                  # Start dev server (http://localhost:3000)
+pnpm dev                  # Start dev server - auto-applies pending migrations on startup
 pnpm test                 # Unit tests (vitest)
 pnpm test:integration     # Integration tests against real DB containers
 pnpm test:ui              # Spin up 16 test DBs + seed local DB for manual testing
 pnpm run build            # Production build (validate before commit)
-npx prisma migrate dev    # Create DB migration
+npx prisma migrate dev    # Create a new DB migration (stop dev server first)
+pnpm run database:reset   # Reset dev DB from scratch (drops + recreates via all migrations)
 ```
 
 **Test Infrastructure**: See [docker-compose.test.yml](docker-compose.test.yml) for MySQL/PG/Mongo containers.
 
 ### Prisma Migrations - IMPORTANT
 
+`pnpm dev` automatically runs `prisma migrate deploy` on startup, so the local DB is always up to date with all pending migrations. No manual step needed after pulling changes that include new migrations.
+
 **Never run `prisma migrate dev` while `pnpm dev` is running.** The dev server holds an open SQLite connection. `migrate dev` can trigger an interactive DB reset (on drift), which conflicts with the file lock and crashes the Node process - and often VS Code with it.
+
+**Never use `prisma db push`.** It applies schema changes without creating a migration file, causing the local `_prisma_migrations` table to diverge from the actual schema. This breaks `database:deploy` in production and for other developers. Always create a proper migration.
 
 **Safe workflow for schema changes:**
 1. Stop the dev server first (Ctrl+C in the node terminal)
 2. Run `npx prisma migrate dev --name <migration-name>`
-3. Restart `pnpm dev`
+3. Restart `pnpm dev` - migrations apply automatically on startup
 
-**Alternative for local dev only:** `npx prisma db push` - applies schema changes without migration history, safe to run alongside the dev server, and never prompts for a reset.
+**Reset dev DB from scratch:** `pnpm run database:reset` (runs `prisma migrate reset` - drops and recreates from all migrations).
 
 ## Queue System (`src/lib/execution/queue-manager.ts`)
 

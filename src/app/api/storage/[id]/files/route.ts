@@ -25,9 +25,10 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
         const params = await props.params;
         const url = new URL(req.url);
         const typeFilter = url.searchParams.get("typeFilter") || undefined;
+        const bypassCache = url.searchParams.get("refresh") === "true";
 
         // Delegate logic to Service
-        const enrichedFiles = await storageService.listFilesWithMetadata(params.id, typeFilter);
+        const enrichedFiles = await storageService.listFilesWithMetadata(params.id, typeFilter, bypassCache);
 
         return NextResponse.json(enrichedFiles);
 

@@ -41,7 +41,8 @@ export const SYSTEM_TASKS = {
     SYNC_PERMISSIONS: "system.sync_permissions",
     CONFIG_BACKUP: "system.config_backup",
     INTEGRITY_CHECK: "system.integrity_check",
-    REFRESH_STORAGE_STATS: "system.refresh_storage_stats"
+    REFRESH_STORAGE_STATS: "system.refresh_storage_stats",
+    WARMUP_STORAGE_CACHE: "system.warmup_storage_cache"
 };
 
 export const DEFAULT_TASK_CONFIG = {
@@ -100,6 +101,13 @@ export const DEFAULT_TASK_CONFIG = {
         enabled: true,
         label: "Refresh Storage Statistics",
         description: "Queries all storage destinations to update file counts and total sizes displayed on the dashboard. Runs automatically after each backup."
+    },
+    [SYSTEM_TASKS.WARMUP_STORAGE_CACHE]: {
+        interval: "0 3 * * *", // Daily at 3 AM
+        runOnStartup: true,
+        enabled: true,
+        label: "Pre-warm Storage Cache",
+        description: "Fetches and caches file listings for all storage adapters so the first visit to Storage Explorer is instant. Runs on startup and daily."
     }
 };
 
@@ -290,6 +298,9 @@ export class SystemTaskService {
                 await refreshStorageStatsCache();
                 break;
             }
+            case SYSTEM_TASKS.WARMUP_STORAGE_CACHE:
+                await this.runWarmupStorageCache();
+                break;
             default:
                 log.warn("Unknown system task", { taskId });
         }
@@ -546,6 +557,23 @@ export class SystemTaskService {
 
             } catch (e: unknown) {
                 log.error("Failed health check for source", { sourceName: source.name }, wrapError(e));
+            }
+        }
+    }
+
+    private async runWarmupStorageCache() {
+        const adapters = await prisma.adapterConfig.findMany({
+            where: { type: "storage" },
+            select: { id: true, name: true },
+        });
+        log.info("Pre-warming storage cache", { count: adapters.length });
+        for (const adapter of adapters) {
+            try {
+                const { storageService } = await import("@/services/storage/storage-service");
+                await storageService.listFilesWithMetadata(adapter.id);
+                log.debug("Warmed storage cache", { adapterId: adapter.id, name: adapter.name });
+            } catch (e: unknown) {
+                log.warn("Failed to warm cache for adapter", { adapterId: adapter.id, name: adapter.name }, wrapError(e));
             }
         }
     }

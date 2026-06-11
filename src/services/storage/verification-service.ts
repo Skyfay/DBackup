@@ -89,7 +89,7 @@ export class VerificationService {
 
                 if (nativeResult !== 'unsupported') {
                     const passed = nativeResult === 'passed';
-                    await this.writeVerificationResult(adapter, config, metaPath, metadata, {
+                    await this.writeVerificationResult(adapterConfigId, adapter, config, metaPath, metadata, {
                         verifiedAt,
                         passed,
                         trigger,
@@ -116,7 +116,7 @@ export class VerificationService {
             const actual = await calculateFileChecksum(tempFile);
             const passed = actual === metadata.checksum;
 
-            await this.writeVerificationResult(adapter, config, metaPath, metadata, {
+            await this.writeVerificationResult(adapterConfigId, adapter, config, metaPath, metadata, {
                 verifiedAt,
                 passed,
                 trigger,
@@ -138,6 +138,7 @@ export class VerificationService {
     }
 
     private async writeVerificationResult(
+        adapterConfigId: string,
         adapter: StorageAdapter,
         config: any,
         metaPath: string,
@@ -152,6 +153,16 @@ export class VerificationService {
         } finally {
             await fs.unlink(tempPath).catch(() => {});
         }
+        const backupPath = metaPath.replace(/\.meta\.json$/, "");
+        import("@/services/storage/storage-service").then(({ storageService }) => {
+            storageService.updateStorageListCacheEntry(adapterConfigId, backupPath, {
+                verification: {
+                    verifiedAt: verification.verifiedAt,
+                    passed: verification.passed,
+                    trigger: verification.trigger,
+                },
+            }).catch(() => {});
+        });
     }
 }
 

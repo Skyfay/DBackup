@@ -221,6 +221,31 @@ export async function stepUpload(ctx: RunnerContext) {
 
             dest.uploadResult = { success: true, path: remotePath };
             ctx.log(`${destLabel} Upload complete: ${remotePath}`);
+            const dbCount = typeof metadata.databases === 'object' && 'count' in metadata.databases
+                ? (metadata.databases as { count: number }).count
+                : (Array.isArray(metadata.databases) ? metadata.databases.length : 0);
+            const richEntry = {
+                name: path.basename(remotePath),
+                path: remotePath,
+                size: ctx.dumpSize ?? 0,
+                lastModified: new Date(),
+                jobName: metadata.jobName,
+                sourceName: metadata.sourceName,
+                sourceType: metadata.sourceType,
+                engineVersion: metadata.engineVersion,
+                engineEdition: metadata.engineEdition,
+                dbInfo: { count: dbCount, label: dbCount <= 1 ? "Single DB" : `${dbCount} DBs` },
+                isEncrypted: metadata.encryption?.enabled,
+                encryptionProfileId: metadata.encryption?.profileId,
+                compression: metadata.compression,
+                locked: metadata.locked ?? false,
+                trigger: metadata.trigger as { type: string; actor?: string } | undefined,
+                checksum: metadata.checksum,
+                checksumMd5: metadata.checksumMd5,
+            };
+            import("@/services/storage/storage-service").then(({ storageService }) => {
+                storageService.appendStorageListCacheEntry(dest.configId, richEntry).catch(() => {});
+            });
 
         } catch (e: unknown) {
             const message = e instanceof Error ? e.message : String(e);

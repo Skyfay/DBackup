@@ -213,7 +213,8 @@ export default defineConfig({
             { text: 'Icon System', link: '/developer-guide/core/icons' },
             { text: 'Download Tokens', link: '/developer-guide/core/download-tokens' },
             { text: 'Rate Limiting', link: '/developer-guide/core/rate-limiting' },
-            { text: 'Update Service', link: '/developer-guide/core/updates' }
+            { text: 'Update Service', link: '/developer-guide/core/updates' },
+            { text: 'Storage List Cache', link: '/developer-guide/core/storage-cache' }
           ]
         },
         {

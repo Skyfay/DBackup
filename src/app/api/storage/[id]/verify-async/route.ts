@@ -61,6 +61,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
                     runner.logEntry(
                         "Checksum mismatch",
                         "error",
+                        "general",
                         `Expected: ${result.expectedChecksum ?? "unknown"}\nActual:   ${result.actualChecksum ?? "unknown"}`
                     );
                     await runner.finish("Failed");

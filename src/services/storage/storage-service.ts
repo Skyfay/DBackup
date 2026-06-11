@@ -40,6 +40,9 @@ export type RichFileInfo = FileInfo & {
     };
 };
 
+// After this many hours a cached listing is considered stale and triggers background reconciliation.
+const CACHE_STALENESS_HOURS = 2;
+
 export class StorageService {
     async toggleLock(adapterConfigId: string, filePath: string) {
         const adapterConfig = await prisma.adapterConfig.findUnique({
@@ -51,12 +54,10 @@ export class StorageService {
         const adapter = registry.get(adapterConfig.adapterId) as StorageAdapter;
         const config = await resolveAdapterConfig(adapterConfig);
 
-        // Define paths
         const metaPath = filePath + ".meta.json";
 
         let metadata: BackupMetadata;
 
-        // 1. Read existing metadata
         try {
             if (!adapter.read) throw new Error("Adapter does not support reading metadata");
             const content = await adapter.read(config, metaPath);
@@ -68,13 +69,8 @@ export class StorageService {
              throw new Error(`Could not read metadata for this backup: ${message}`);
         }
 
-        // 2. Toggle Lock
         metadata.locked = !metadata.locked;
 
-        // 3. Write back
-        // StorageAdapter interface usually only has 'upload' (from local file).
-        // We need 'write' (string content) or we create a temp file.
-        // Let's create a temp file.
         const tempPath = path.join(getTempDir(), `meta-${Date.now()}.json`);
         await fs.writeFile(tempPath, JSON.stringify(metadata, null, 2));
 
@@ -84,15 +80,14 @@ export class StorageService {
              await fs.unlink(tempPath).catch(() => {});
         }
 
+        await this.updateStorageListCacheEntry(adapterConfigId, filePath, { locked: metadata.locked });
+
         return metadata.locked;
     }
 
 
     /**
      * Lists files from a specific storage adapter configuration.
-     * @param adapterConfigId The ID of the AdapterConfig in the database.
-     * @param subPath Optional subpath to list.
-     * @param typeFilter Optional filter for source type (e.g. "SYSTEM")
      */
     async listFiles(adapterConfigId: string, subPath: string = "", _typeFilter?: string): Promise<FileInfo[]> {
         const adapterConfig = await prisma.adapterConfig.findUnique({
@@ -112,7 +107,6 @@ export class StorageService {
             throw new Error(`Storage adapter implementation '${adapterConfig.adapterId}' not found in registry.`);
         }
 
-        // Resolve config (merges credential profile if present)
         let config: any;
         try {
             config = await resolveAdapterConfig(adapterConfig);
@@ -123,10 +117,268 @@ export class StorageService {
         return await adapter.list(config, subPath);
     }
 
+    async invalidateStorageListCache(adapterConfigId: string): Promise<void> {
+        await prisma.storageListCache.deleteMany({ where: { adapterConfigId } });
+    }
+
+    async appendStorageListCacheEntry(adapterConfigId: string, entry: RichFileInfo): Promise<void> {
+        const cached = await prisma.storageListCache.findUnique({ where: { adapterConfigId } });
+        if (!cached) return;
+        const files = JSON.parse(cached.filesJson) as RichFileInfo[];
+        if (files.some(f => f.path === entry.path)) return;
+        files.push(entry);
+        await prisma.storageListCache.update({
+            where: { adapterConfigId },
+            data: { filesJson: JSON.stringify(files), cachedAt: new Date() },
+        });
+    }
+
+    async removeStorageListCacheEntry(adapterConfigId: string, filePath: string): Promise<void> {
+        const cached = await prisma.storageListCache.findUnique({ where: { adapterConfigId } });
+        if (!cached) return;
+        const files = JSON.parse(cached.filesJson) as RichFileInfo[];
+        const filtered = files.filter(f => f.path !== filePath);
+        if (filtered.length === files.length) return;
+        await prisma.storageListCache.update({
+            where: { adapterConfigId },
+            data: { filesJson: JSON.stringify(filtered), cachedAt: new Date() },
+        });
+    }
+
+    async updateStorageListCacheEntry(adapterConfigId: string, filePath: string, updates: Partial<RichFileInfo>): Promise<void> {
+        const cached = await prisma.storageListCache.findUnique({ where: { adapterConfigId } });
+        if (!cached) return;
+        const files = JSON.parse(cached.filesJson) as RichFileInfo[];
+        const idx = files.findIndex(f => f.path === filePath);
+        if (idx === -1) return;
+        files[idx] = { ...files[idx], ...updates };
+        await prisma.storageListCache.update({
+            where: { adapterConfigId },
+            data: { filesJson: JSON.stringify(files), cachedAt: new Date() },
+        });
+    }
+
+    private applyTypeFilter(files: RichFileInfo[], typeFilter?: string): RichFileInfo[] {
+        if (typeFilter === "SYSTEM")  return files.filter(f => f.sourceType === "SYSTEM");
+        if (typeFilter === "BACKUP")  return files.filter(f => f.sourceType !== "SYSTEM");
+        return files;
+    }
+
+    private enrichSingleFile(
+        file: FileInfo,
+        metadataMap: Map<string, BackupMetadata>,
+        jobMap: Map<string, any>,
+        executionMap: Map<string, any>
+    ): RichFileInfo {
+        const sidecar = metadataMap.get(file.name);
+        let isEncrypted = file.name.endsWith('.enc');
+        let encryptionProfileId: string | undefined = undefined;
+        let compression: string | undefined = undefined;
+
+        if (sidecar) {
+            let count = 0;
+            let label = "Unknown";
+            const isConfigBackup = sidecar.sourceType === "SYSTEM" || file.name.startsWith("config_backup_");
+
+            if (isConfigBackup) {
+                count = 1;
+                label = "System Config";
+            } else {
+                count = typeof sidecar.databases === 'object' ? (sidecar.databases as any).count : (typeof sidecar.databases === 'number' ? sidecar.databases : 0);
+                label = count === 0 ? "Unknown" : (count === 1 ? "Single DB" : `${count} DBs`);
+            }
+
+            if (sidecar.encryption?.enabled) isEncrypted = true;
+            encryptionProfileId = sidecar.encryption?.profileId;
+            compression = sidecar.compression;
+
+            return {
+                ...file,
+                jobName: sidecar.jobName || (isConfigBackup ? "Config Backup" : undefined),
+                sourceName: sidecar.sourceName || (isConfigBackup ? "System" : undefined),
+                sourceType: sidecar.sourceType || (isConfigBackup ? "SYSTEM" : undefined),
+                engineVersion: sidecar.engineVersion,
+                engineEdition: sidecar.engineEdition,
+                dbInfo: { count, label },
+                isEncrypted,
+                encryptionProfileId,
+                compression,
+                locked: sidecar.locked,
+                trigger: sidecar.trigger as { type: string; actor?: string } | undefined,
+                checksum: sidecar.checksum,
+                checksumMd5: sidecar.checksumMd5,
+                verification: sidecar.verification ? {
+                    verifiedAt: sidecar.verification.verifiedAt,
+                    passed: sidecar.verification.passed,
+                    trigger: sidecar.verification.trigger,
+                } : undefined,
+            };
+        }
+
+        if (file.name.endsWith('.gz')) compression = 'GZIP';
+        else if (file.name.endsWith('.br')) compression = 'BROTLI';
+
+        let potentialJobName = null;
+        const parts = file.path.split('/');
+        if (parts.length > 2 && parts[0] === 'backups') {
+            potentialJobName = parts[1];
+        } else if (parts.length > 1 && parts[0] !== 'backups') {
+            potentialJobName = parts[0];
+        } else {
+            const match = file.name.match(/^(.+?)_\d{4}-\d{2}-\d{2}/);
+            if (match) potentialJobName = match[1];
+        }
+
+        const job = potentialJobName ? jobMap.get(potentialJobName) : null;
+        let dbInfo: { count: string | number; label: string } = { count: 'Unknown', label: '' };
+
+        const metaStr = executionMap.get(file.path);
+        if (metaStr) {
+            try {
+                const meta = JSON.parse(metaStr);
+                if (meta.label) {
+                    dbInfo = { count: meta.count || '?', label: meta.label };
+                }
+                if (meta.jobName) {
+                    const realType = meta.adapterId || meta.sourceType;
+                    return {
+                        ...file,
+                        jobName: meta.jobName,
+                        sourceName: meta.sourceName,
+                        sourceType: realType,
+                        dbInfo,
+                        isEncrypted,
+                        encryptionProfileId,
+                        compression
+                    };
+                }
+            } catch {}
+        }
+
+        if (job) {
+            return {
+                ...file,
+                jobName: job.name,
+                sourceName: job.source.name,
+                sourceType: job.source.type,
+                dbInfo,
+                isEncrypted,
+                encryptionProfileId,
+                compression
+            };
+        }
+
+        const isConfigBackup = potentialJobName === "config-backups" || potentialJobName === "config_backup" || file.name.startsWith("config_backup_");
+
+        return {
+            ...file,
+            jobName: isConfigBackup ? "Config Backup" : (potentialJobName || 'Unknown'),
+            sourceName: isConfigBackup ? "System" : 'Unknown',
+            sourceType: isConfigBackup ? "SYSTEM" : 'unknown',
+            dbInfo: isConfigBackup ? { count: 1, label: "System Config" } : dbInfo,
+            isEncrypted,
+            encryptionProfileId,
+            compression
+        };
+    }
+
+    private async reconcileStorageListCache(adapterConfigId: string): Promise<void> {
+        const adapterConfig = await prisma.adapterConfig.findUnique({ where: { id: adapterConfigId } });
+        if (!adapterConfig || adapterConfig.type !== "storage") return;
+
+        const adapter = registry.get(adapterConfig.adapterId) as StorageAdapter;
+        if (!adapter) return;
+
+        let config: any;
+        try {
+            config = await resolveAdapterConfig(adapterConfig);
+        } catch { return; }
+
+        const allRemoteFiles = await adapter.list(config, "");
+        const remoteBackups = allRemoteFiles.filter(f => !f.name.endsWith('.meta.json'));
+        const remoteMetaFiles = allRemoteFiles.filter(f => f.name.endsWith('.meta.json'));
+        const remotePathSet = new Set(remoteBackups.map(f => f.path));
+
+        const cached = await prisma.storageListCache.findUnique({ where: { adapterConfigId } });
+        if (!cached) return;
+
+        const cachedFiles = JSON.parse(cached.filesJson) as RichFileInfo[];
+        const cachedPathSet = new Set(cachedFiles.map(f => f.path));
+
+        const removedPaths = new Set([...cachedPathSet].filter(p => !remotePathSet.has(p)));
+        const newFiles = remoteBackups.filter(f => !cachedPathSet.has(f.path));
+
+        if (removedPaths.size === 0 && newFiles.length === 0) {
+            await prisma.storageListCache.update({
+                where: { adapterConfigId },
+                data: { cachedAt: new Date() },
+            });
+            return;
+        }
+
+        let updatedFiles = cachedFiles.filter(f => !removedPaths.has(f.path));
+
+        if (newFiles.length > 0) {
+            const metadataMap = new Map<string, BackupMetadata>();
+            if (adapter.read) {
+                const newFileNames = new Set(newFiles.map(f => f.name));
+                const relevantMetaFiles = remoteMetaFiles.filter(mf => newFileNames.has(mf.name.slice(0, -10)));
+                await Promise.all(relevantMetaFiles.map(async (metaFile) => {
+                    try {
+                        const content = await adapter.read!(config, metaFile.path);
+                        if (content) metadataMap.set(metaFile.name.slice(0, -10), JSON.parse(content) as BackupMetadata);
+                    } catch { /* ignore */ }
+                }));
+            }
+
+            const allJobs = await prisma.job.findMany({ include: { source: true } });
+            const jobMap = new Map();
+            allJobs.forEach(j => {
+                jobMap.set(j.name.replace(/[^a-z0-9]/gi, '_'), j);
+                jobMap.set(j.name, j);
+            });
+
+            const executions = await prisma.execution.findMany({
+                where: { status: 'Success', path: { not: null } },
+                select: { path: true, metadata: true }
+            });
+            const executionMap = new Map();
+            executions.forEach(ex => {
+                if (ex.path) {
+                    executionMap.set(ex.path, ex.metadata);
+                    if (ex.path.startsWith('/')) executionMap.set(ex.path.substring(1), ex.metadata);
+                    else executionMap.set('/' + ex.path, ex.metadata);
+                }
+            });
+
+            const enrichedNew = newFiles.map(f => this.enrichSingleFile(f, metadataMap, jobMap, executionMap));
+            updatedFiles = [...updatedFiles, ...enrichedNew];
+        }
+
+        await prisma.storageListCache.update({
+            where: { adapterConfigId },
+            data: { filesJson: JSON.stringify(updatedFiles), cachedAt: new Date() },
+        });
+        log.debug("Reconciled storage cache", { adapterConfigId, removed: removedPaths.size, added: newFiles.length });
+    }
+
     /**
      * Lists files and enriches them with metadata from sidecars and database history.
+     * Results are cached in SQLite; pass bypassCache=true to force a live re-fetch.
+     * Stale caches (> CACHE_STALENESS_HOURS) trigger a background reconciliation.
      */
-    async listFilesWithMetadata(adapterConfigId: string, typeFilter?: string): Promise<RichFileInfo[]> {
+    async listFilesWithMetadata(adapterConfigId: string, typeFilter?: string, bypassCache = false): Promise<RichFileInfo[]> {
+        if (!bypassCache) {
+            const cached = await prisma.storageListCache.findUnique({ where: { adapterConfigId } });
+            if (cached) {
+                const ageHours = (Date.now() - cached.cachedAt.getTime()) / 3_600_000;
+                if (ageHours > CACHE_STALENESS_HOURS) {
+                    this.reconcileStorageListCache(adapterConfigId).catch(() => {});
+                }
+                return this.applyTypeFilter(JSON.parse(cached.filesJson) as RichFileInfo[], typeFilter);
+            }
+        }
+
         const adapterConfig = await prisma.adapterConfig.findUnique({
             where: { id: adapterConfigId }
         });
@@ -151,18 +403,13 @@ export class StorageService {
             throw new Error(`Failed to decrypt configuration for ${adapterConfigId}: ${(e as Error).message}`);
         }
 
-        // TODO: Pass typeFilter to adapter.list if adapters supported optimized filtering.
-        // For now, we fetch all and filter in memory.
         const allFiles = await adapter.list(config, "");
 
-        // Filter Backups vs Metadata
         const backups = allFiles.filter(f => !f.name.endsWith('.meta.json'));
         const metadataFiles = allFiles.filter(f => f.name.endsWith('.meta.json'));
 
-        // Load Sidecar Metadata
         const metadataMap = new Map<string, BackupMetadata>();
         if (adapter.read) {
-            // Parallel read
             const metaReads = metadataFiles.map(async (metaFile) => {
                 try {
                     const content = await adapter.read!(config, metaFile.path);
@@ -178,7 +425,6 @@ export class StorageService {
             await Promise.all(metaReads);
         }
 
-        // Fetch jobs for fallback logic
         const allJobs = await prisma.job.findMany({
              include: { source: true }
         });
@@ -190,7 +436,6 @@ export class StorageService {
              jobMap.set(j.name, j);
         });
 
-        // Fetch executions for metadata
         const executions = await prisma.execution.findMany({
             where: {
                 status: 'Success',
@@ -215,140 +460,17 @@ export class StorageService {
             }
         });
 
-        const results = backups.map(file => {
-             // 1. Check Sidecar Metadata (Primary Source of Truth)
-             const sidecar = metadataMap.get(file.name);
-             let isEncrypted = file.name.endsWith('.enc');
-             let encryptionProfileId: string | undefined = undefined;
-             let compression: string | undefined = undefined;
+        const results = backups.map(file => this.enrichSingleFile(file, metadataMap, jobMap, executionMap));
 
-             if (sidecar) {
-                 // Database Count from Metadata
-                 let count = 0;
-                 let label = "Unknown";
+        // Persist to cache (full list without typeFilter applied)
+        const jsonStr = JSON.stringify(results);
+        prisma.storageListCache.upsert({
+            where:  { adapterConfigId },
+            create: { adapterConfigId, filesJson: jsonStr },
+            update: { filesJson: jsonStr, cachedAt: new Date() },
+        }).catch(() => {});
 
-                 // Handle Config Backups
-                 const isConfigBackup = sidecar.sourceType === "SYSTEM" || file.name.startsWith("config_backup_");
-
-                 if (isConfigBackup) {
-                     count = 1; // It's one config
-                     label = "System Config";
-                 } else {
-                     count = typeof sidecar.databases === 'object' ? (sidecar.databases as any).count : (typeof sidecar.databases === 'number' ? sidecar.databases : 0);
-                     label = count === 0 ? "Unknown" : (count === 1 ? "Single DB" : `${count} DBs`);
-                 }
-
-
-                 if (sidecar.encryption?.enabled) isEncrypted = true;
-                 encryptionProfileId = sidecar.encryption?.profileId;
-                 compression = sidecar.compression;
-
-                 return {
-                     ...file,
-                     jobName: sidecar.jobName || (isConfigBackup ? "Config Backup" : undefined),
-                     sourceName: sidecar.sourceName || (isConfigBackup ? "System" : undefined),
-                     sourceType: sidecar.sourceType || (isConfigBackup ? "SYSTEM" : undefined),
-                     engineVersion: sidecar.engineVersion,
-                     engineEdition: sidecar.engineEdition,
-                     dbInfo: { count, label },
-                     isEncrypted,
-                     encryptionProfileId,
-                     compression,
-                     locked: sidecar.locked,
-                     trigger: sidecar.trigger as { type: string; actor?: string } | undefined,
-                     checksum: sidecar.checksum,
-                     checksumMd5: sidecar.checksumMd5,
-                     verification: sidecar.verification ? {
-                         verifiedAt: sidecar.verification.verifiedAt,
-                         passed: sidecar.verification.passed,
-                         trigger: sidecar.verification.trigger,
-                     } : undefined,
-                 };
-             }
-
-             // Check for compression by extension if not found in sidecar
-             if (file.name.endsWith('.gz')) compression = 'GZIP';
-             else if (file.name.endsWith('.br')) compression = 'BROTLI';
-
-             // 2. Fallback to Execution History / Regex Logic
-             let potentialJobName = null;
-             const parts = file.path.split('/');
-              if (parts.length > 2 && parts[0] === 'backups') {
-                 potentialJobName = parts[1];
-             } else if (parts.length > 1 && parts[0] !== 'backups') {
-                 potentialJobName = parts[0];
-             } else {
-                 const match = file.name.match(/^(.+?)_\d{4}-\d{2}-\d{2}/);
-                 if (match) potentialJobName = match[1];
-             }
-
-             const job = potentialJobName ? jobMap.get(potentialJobName) : null;
-
-             let dbInfo: { count: string | number; label: string } = { count: 'Unknown', label: '' };
-
-             // 1. Try to get metadata from Execution record
-             const metaStr = executionMap.get(file.path);
-             if (metaStr) {
-                 try {
-                     const meta = JSON.parse(metaStr);
-                     if (meta.label) {
-                         dbInfo = { count: meta.count || '?', label: meta.label };
-                     }
-                     if (meta.jobName) {
-                         const realType = meta.adapterId || meta.sourceType;
-                         return {
-                             ...file,
-                             jobName: meta.jobName,
-                             sourceName: meta.sourceName,
-                             sourceType: realType,
-                             dbInfo,
-                             isEncrypted,
-                             encryptionProfileId,
-                             compression
-                         }
-                     }
-                 } catch {}
-             }
-
-             // 2. Existing Job Fallback
-             if (job) {
-                 return {
-                     ...file,
-                     jobName: job.name,
-                     sourceName: job.source.name,
-                     sourceType: job.source.type, // e.g. 'database'
-                     dbInfo,
-                     isEncrypted,
-                     encryptionProfileId,
-                     compression
-                 }
-             }
-
-             // 3. Regex Fallback
-             const isConfigBackup = potentialJobName === "config-backups" || potentialJobName === "config_backup" || file.name.startsWith("config_backup_");
-
-             return {
-                 ...file,
-                 jobName: isConfigBackup ? "Config Backup" : (potentialJobName || 'Unknown'),
-                 sourceName: isConfigBackup ? "System" : 'Unknown',
-                 sourceType: isConfigBackup ? "SYSTEM" : 'unknown',
-                 dbInfo: isConfigBackup ? { count: 1, label: "System Config" } : dbInfo,
-                 isEncrypted,
-                 encryptionProfileId,
-                 compression
-             };
-        });
-
-        if (typeFilter) {
-            if (typeFilter === "SYSTEM") {
-                return results.filter(f => (f as any).sourceType === "SYSTEM");
-            }
-             if (typeFilter === "BACKUP") {
-                return results.filter(f => (f as any).sourceType !== "SYSTEM");
-            }
-        }
-
-        return results;
+        return this.applyTypeFilter(results, typeFilter);
     }
 
     /**
@@ -379,17 +501,16 @@ export class StorageService {
             throw new Error(`Failed to decrypt configuration for ${adapterConfigId}: ${(e as Error).message}`);
         }
 
-        // Attempt to delete the main file
         const mainDelete = await adapter.delete(config, filePath);
 
-        // Also try to delete potential sidecar files (.meta.json)
-        // We don't fail the operation if this fails, but it's good practice to clean up.
         try {
             const metaPath = filePath + ".meta.json";
             await adapter.delete(config, metaPath);
         } catch (e) {
             log.warn("Failed to delete associated metadata file", { filePath }, wrapError(e));
         }
+
+        await this.removeStorageListCacheEntry(adapterConfigId, filePath);
 
         return mainDelete;
     }
@@ -422,9 +543,7 @@ export class StorageService {
            throw new Error(`Failed to decrypt configuration for ${adapterConfigId}: ${(e as Error).message}`);
        }
 
-       // 1. Decrypt if requested (Explicit Decryption)
        if (decrypt) {
-            // Download basic file first
             const success = await adapter.download(config, remotePath, localDestination);
             if (!success) return { success: false };
 
@@ -432,10 +551,8 @@ export class StorageService {
             const tempMetaPath = path.join(getTempDir(), "dlmeta_" + Date.now() + ".json");
 
             try {
-                // Try to get metadata logic
                 let meta: any = null;
 
-                // If adapter supports read, use it (faster)
                 if (adapter.read) {
                     try {
                         const content = await adapter.read(config, metaRemotePath);
@@ -443,7 +560,6 @@ export class StorageService {
                     } catch {}
                 }
 
-                // Fallback to download if read failed or not supported
                 if (!meta) {
                      const metaSuccess = await adapter.download(config, metaRemotePath, tempMetaPath).catch(() => false);
                      if (metaSuccess) {
@@ -453,18 +569,15 @@ export class StorageService {
                      }
                 }
 
-                // Determine Encryption Params (Support both Standard Object and Flat Config Backup formats)
                 let encryptionParams: { profileId: string, iv: string, authTag: string } | null = null;
 
                 if (meta && meta.encryption && typeof meta.encryption === 'object' && meta.encryption.enabled) {
-                    // Standard Format
                     encryptionParams = {
                         profileId: meta.encryption.profileId,
                         iv: meta.encryption.iv,
                         authTag: meta.encryption.authTag
                     };
                 } else if (meta && meta.encryptionProfileId && meta.iv && meta.authTag) {
-                    // Legacy / Config Backup Flat Format
                      encryptionParams = {
                         profileId: meta.encryptionProfileId,
                         iv: meta.iv,
@@ -476,13 +589,10 @@ export class StorageService {
                     let masterKey: Buffer;
 
                     if (options?.rawKeyHex) {
-                        // Caller-supplied raw key (from manual key resolution UI, passed via POST body)
                         masterKey = Buffer.from(options.rawKeyHex, 'hex');
                     } else if (options?.profileIdOverride) {
-                        // Caller explicitly chose a different vault profile
                         masterKey = await getProfileMasterKey(options.profileIdOverride);
                     } else {
-                        // Auto-resolve: try the referenced profile first, then Smart Recovery
                         const encryptionMeta = {
                             enabled: true as const,
                             profileId: encryptionParams.profileId,
@@ -513,21 +623,18 @@ export class StorageService {
                     const decryptStream = createDecryptionStream(masterKey, iv, authTag);
                     const decryptedPath = localDestination + ".dec";
 
-                    // Decrypt to .dec file
                     await pipeline(
                         createReadStream(localDestination),
                         decryptStream,
                         createWriteStream(decryptedPath)
                     );
 
-                    // Replace Original with Decrypted
                     await fs.unlink(localDestination);
                     await fs.rename(decryptedPath, localDestination);
                 }
 
                 return { success: true, isZip: false };
             } catch (e: unknown) {
-                // Re-throw key-required errors unwrapped so the API route can detect them
                 if (e instanceof Error && e.message.startsWith("ENCRYPTION_KEY_REQUIRED:")) {
                     throw e;
                 }
@@ -536,7 +643,6 @@ export class StorageService {
             }
        }
 
-       // 2. Encrypted File Download (No Decryption) -> Bundle .meta.json if present
        if (remotePath.endsWith('.enc')) {
            const tempDir = path.dirname(localDestination);
            const baseName = path.basename(remotePath);
@@ -545,11 +651,9 @@ export class StorageService {
            const metaRemotePath = remotePath + ".meta.json";
 
            try {
-               // Download Main File to Temp
                const mainSuccess = await adapter.download(config, remotePath, tempMain);
                if (!mainSuccess) return { success: false };
 
-               // Try Download Meta
                let metaFound = false;
                try {
                    const metaSuccess = await adapter.download(config, metaRemotePath, tempMeta);
@@ -557,7 +661,6 @@ export class StorageService {
                } catch {}
 
                if (metaFound) {
-                   // Create ZIP
                    try {
                        const zip = new AdmZip();
                        zip.addLocalFile(tempMain, "", baseName);
@@ -567,16 +670,13 @@ export class StorageService {
                        return { success: true, isZip: true };
                    } catch (zipError) {
                        log.error("Zip creation failed", { remotePath }, wrapError(zipError));
-                       // Fallback: Return original file only
                        await fs.rename(tempMain, localDestination);
                        return { success: true, isZip: false };
                    } finally {
-                       // Cleanup temps
                        try { await fs.unlink(tempMain); } catch {}
                        try { await fs.unlink(tempMeta); } catch {}
                    }
                } else {
-                   // No metadata found, return original file
                    await fs.rename(tempMain, localDestination);
                    return { success: true, isZip: false };
                }
@@ -587,7 +687,6 @@ export class StorageService {
            }
        }
 
-       // 3. Normal File Download
        const success = await adapter.download(config, remotePath, localDestination);
        return { success, isZip: false };
     }

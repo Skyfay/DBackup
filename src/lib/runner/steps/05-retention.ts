@@ -40,6 +40,7 @@ export async function stepRetention(ctx: RunnerContext) {
     }
 }
 
+
 async function applyRetentionForDestination(ctx: RunnerContext, dest: DestinationContext, timezone: string): Promise<number> {
     const destLabel = `[${dest.configName}]`;
     const policy = dest.retention;
@@ -115,6 +116,9 @@ async function applyRetentionForDestination(ctx: RunnerContext, dest: Destinatio
                 const metaPath = file.path + ".meta.json";
                 await dest.adapter.delete(dest.config, metaPath).catch(() => {});
                 deletedCount++;
+                import("@/services/storage/storage-service").then(({ storageService }) => {
+                    storageService.removeStorageListCacheEntry(dest.configId, file.path).catch(() => {});
+                });
             }
         } catch (delError: unknown) {
             const message = delError instanceof Error ? delError.message : String(delError);

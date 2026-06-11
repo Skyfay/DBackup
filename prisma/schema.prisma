@@ -38,6 +38,7 @@ model AdapterConfig {
 
   healthLogs           HealthCheckLog[]
   versionHistory       DbVersionHistory[]
+  storageListCache     StorageListCache?
 }
 
 model CredentialProfile {
@@ -396,4 +397,11 @@ model NotificationLog {
   @@index([adapterId])
   @@index([sentAt])
   @@index([executionId])
+}
+
+model StorageListCache {
+  adapterConfigId String        @id
+  filesJson       String
+  cachedAt        DateTime      @default(now())
+  adapterConfig   AdapterConfig @relation(fields: [adapterConfigId], references: [id], onDelete: Cascade)
 }

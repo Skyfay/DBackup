@@ -3,7 +3,7 @@
   "version": "2.6.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "prisma migrate deploy && next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -24,6 +24,7 @@
     "version:bump": "./scripts/sync-version.sh",
     "changelog:next": "./scripts/sync-version.sh --changelog-init",
     "database:deploy": "prisma migrate deploy && prisma generate",
+    "database:reset": "prisma migrate reset",
     "docs:install": "cd docs && pnpm install",
     "docs:dev": "cd docs && pnpm dev",
     "docs:build": "cd docs && pnpm build",

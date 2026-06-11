@@ -122,11 +122,12 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
         }
     }, [selectedDestination, showSystemConfigs]);
 
-    const fetchFiles = async (destId: string, showSystem: boolean) => {
+    const fetchFiles = async (destId: string, showSystem: boolean, bypassCache = false) => {
         setLoading(true);
         try {
             const typeFilter = showSystem ? "SYSTEM" : "BACKUP";
-            const res = await fetch(`/api/storage/${destId}/files?typeFilter=${typeFilter}`);
+            const qs = bypassCache ? `typeFilter=${typeFilter}&refresh=true` : `typeFilter=${typeFilter}`;
+            const res = await fetch(`/api/storage/${destId}/files?${qs}`);
             if (res.ok) {
                 const fetchedFiles: FileInfo[] = await res.json();
                 setFiles(fetchedFiles);
@@ -330,7 +331,7 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
     const handleRefresh = useCallback(() => {
         switch (activeTab) {
             case "explorer":
-                fetchFiles(selectedDestination, showSystemConfigs);
+                fetchFiles(selectedDestination, showSystemConfigs, true);
                 break;
             case "history":
                 historyRef.current?.refresh();

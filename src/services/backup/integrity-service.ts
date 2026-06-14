@@ -1,5 +1,4 @@
 import prisma from "@/lib/prisma";
-import path from "path";
 import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters";
 import { StorageAdapter } from "@/lib/core/interfaces";

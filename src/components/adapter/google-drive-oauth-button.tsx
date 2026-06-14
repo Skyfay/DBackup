@@ -21,22 +21,27 @@ interface GoogleDriveOAuthButtonProps {
  */
 export function GoogleDriveOAuthButton({ credentialId, authorized, onAuthorized }: GoogleDriveOAuthButtonProps) {
     const [isLoading, setIsLoading] = useState(false);
-    const [tokenState, setTokenState] = useState<"checking" | "valid" | "expired" | null>(null);
+    const [tokenCheck, setTokenCheck] = useState<{ id: string; auth: boolean; result: "valid" | "expired" } | null>(null);
+
+    const tokenState: "checking" | "valid" | "expired" | null =
+        !authorized || !credentialId ? null
+        : tokenCheck?.id === credentialId && tokenCheck?.auth === authorized ? tokenCheck.result
+        : "checking";
 
     useEffect(() => {
         if (!authorized || !credentialId) {
-            setTokenState(null);
             return;
         }
-        setTokenState("checking");
+        let active = true;
         fetch("/api/adapters/google-drive/validate-token", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ credentialId }),
         })
             .then((r) => r.json())
-            .then((data) => setTokenState(data.valid ? "valid" : "expired"))
-            .catch(() => setTokenState("valid")); // Fail open - don't block UX on network error
+            .then((data) => { if (active) setTokenCheck({ id: credentialId, auth: !!authorized, result: data.valid ? "valid" : "expired" }); })
+            .catch(() => { if (active) setTokenCheck({ id: credentialId, auth: !!authorized, result: "valid" }); });
+        return () => { active = false; };
     }, [authorized, credentialId]);
 
     if (!credentialId) {

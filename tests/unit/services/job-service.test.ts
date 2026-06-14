@@ -59,6 +59,7 @@ describe('JobService', () => {
                     compression: "NONE",
                     pgCompression: "",
                     notificationEvents: "ALWAYS",
+                    skipVerification: false,
                     notifications: {
                         connect: [{ id: 'notif-1' }]
                     },

@@ -32,6 +32,8 @@ All notable changes to DBackup are documented here.
 ### 🧪 Tests
 
 - **tests**: Updated unit tests for integrity service, upload step, storage service, and system task service to match the refactored verification interfaces.
+- **tests**: Fixed integrity service tests to use destinations scan mode explicitly and added `skipVerification` field to job service create test.
+- **tests**: Added unit tests for `VerificationService` (all verification code paths), `SystemTaskRunner` (execution lifecycle), `logs/sanitize` (credential and IP redaction), and `logs/format` (log text export). Extended `IntegrityService` tests to cover the jobs-mode scan path.
 
 ### 🐳 Docker
 

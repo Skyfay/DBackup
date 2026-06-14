@@ -8,7 +8,11 @@ vi.mock('@/lib/prisma', () => ({
     default: {
         adapterConfig: { findMany: vi.fn() },
         job: { findMany: vi.fn() },
-        systemSetting: { findUnique: vi.fn().mockResolvedValue(null) },
+        systemSetting: {
+            findUnique: vi.fn().mockImplementation(({ where }: { where: { key: string } }) =>
+                Promise.resolve(where.key === 'integrity.scanMode' ? { value: 'destinations' } : null)
+            ),
+        },
     },
 }));
 
@@ -243,5 +247,203 @@ describe('IntegrityService', () => {
 
         expect(result.totalFiles).toBe(2);
         expect(result.passed).toBe(2);
+    });
+
+    describe('Jobs scan mode (gatherFilesFromJobs)', () => {
+        function makeJobWithDest(jobName: string, destConfigId: string, overrides: Record<string, unknown> = {}) {
+            return {
+                id: `job-${jobName}`,
+                name: jobName,
+                enabled: true,
+                skipVerification: false,
+                destinations: [
+                    {
+                        configId: destConfigId,
+                        config: {
+                            id: destConfigId,
+                            adapterId: 'local',
+                            name: `Storage for ${jobName}`,
+                            config: '{}',
+                            primaryCredentialId: null,
+                            sshCredentialId: null,
+                            metadata: null,
+                        },
+                    },
+                ],
+                ...overrides,
+            };
+        }
+
+        beforeEach(() => {
+            // Switch to jobs mode: no scanMode setting
+            vi.mocked(prisma.systemSetting.findUnique).mockResolvedValue(null);
+        });
+
+        it('scans job-linked files when scanMode is not set', async () => {
+            const adapter = makeStorageAdapter({
+                list: vi.fn().mockResolvedValue([
+                    { name: 'backup.sql', path: 'ProdJob/backup.sql' },
+                ]),
+            });
+            (prisma.job.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+                makeJobWithDest('ProdJob', 'dest-1'),
+            ]);
+            (registry.get as ReturnType<typeof vi.fn>).mockReturnValue(adapter);
+            vi.mocked(verificationService.verifyFile).mockResolvedValue({
+                status: 'passed',
+                verifiedAt: new Date().toISOString(),
+            });
+
+            const result = await integrityService.runFullIntegrityCheck();
+
+            expect(result.totalFiles).toBe(1);
+            expect(result.passed).toBe(1);
+        });
+
+        it('skips jobs with skipVerification flag', async () => {
+            const adapter = makeStorageAdapter({
+                list: vi.fn().mockResolvedValue([{ name: 'backup.sql', path: 'SkipJob/backup.sql' }]),
+            });
+            (prisma.job.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+                makeJobWithDest('SkipJob', 'dest-1', { skipVerification: true }),
+            ]);
+            (registry.get as ReturnType<typeof vi.fn>).mockReturnValue(adapter);
+
+            const result = await integrityService.runFullIntegrityCheck();
+
+            expect(result.totalFiles).toBe(0);
+        });
+
+        it('filters out files that do not start with the job name prefix', async () => {
+            const adapter = makeStorageAdapter({
+                list: vi.fn().mockResolvedValue([
+                    { name: 'mine.sql', path: 'ProdJob/mine.sql' },
+                    { name: 'other.sql', path: 'OtherJob/other.sql' },
+                ]),
+            });
+            (prisma.job.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+                makeJobWithDest('ProdJob', 'dest-1'),
+            ]);
+            (registry.get as ReturnType<typeof vi.fn>).mockReturnValue(adapter);
+            vi.mocked(verificationService.verifyFile).mockResolvedValue({
+                status: 'passed',
+                verifiedAt: new Date().toISOString(),
+            });
+
+            const result = await integrityService.runFullIntegrityCheck();
+
+            expect(result.totalFiles).toBe(1);
+        });
+
+        it('excludes .meta.json sidecar files from verification', async () => {
+            const adapter = makeStorageAdapter({
+                list: vi.fn().mockResolvedValue([
+                    { name: 'backup.sql', path: 'Job/backup.sql' },
+                    { name: 'backup.sql.meta.json', path: 'Job/backup.sql.meta.json' },
+                ]),
+            });
+            (prisma.job.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+                makeJobWithDest('Job', 'dest-1'),
+            ]);
+            (registry.get as ReturnType<typeof vi.fn>).mockReturnValue(adapter);
+            vi.mocked(verificationService.verifyFile).mockResolvedValue({
+                status: 'passed',
+                verifiedAt: new Date().toISOString(),
+            });
+
+            const result = await integrityService.runFullIntegrityCheck();
+
+            expect(result.totalFiles).toBe(1);
+        });
+
+        it('deduplicates files when two jobs share the same destination', async () => {
+            const adapter = makeStorageAdapter({
+                list: vi.fn().mockResolvedValue([
+                    { name: 'job1.sql', path: 'Job1/job1.sql' },
+                    { name: 'job2.sql', path: 'Job2/job2.sql' },
+                ]),
+            });
+            const sharedDestId = 'shared-dest';
+            (prisma.job.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+                makeJobWithDest('Job1', sharedDestId),
+                makeJobWithDest('Job2', sharedDestId),
+            ]);
+            (registry.get as ReturnType<typeof vi.fn>).mockReturnValue(adapter);
+            vi.mocked(verificationService.verifyFile).mockResolvedValue({
+                status: 'passed',
+                verifiedAt: new Date().toISOString(),
+            });
+
+            const result = await integrityService.runFullIntegrityCheck();
+
+            // list() called once despite two jobs sharing the destination
+            expect(adapter.list).toHaveBeenCalledTimes(1);
+            expect(result.totalFiles).toBe(2);
+        });
+
+        it('skips destinations with skipVerification set in metadata', async () => {
+            const adapter = makeStorageAdapter({
+                list: vi.fn().mockResolvedValue([{ name: 'backup.sql', path: 'Job/backup.sql' }]),
+            });
+            const job = {
+                ...makeJobWithDest('Job', 'dest-1'),
+                destinations: [
+                    {
+                        configId: 'dest-1',
+                        config: {
+                            id: 'dest-1',
+                            adapterId: 'local',
+                            name: 'Skipped Storage',
+                            config: '{}',
+                            primaryCredentialId: null,
+                            sshCredentialId: null,
+                            metadata: JSON.stringify({ skipVerification: true }),
+                        },
+                    },
+                ],
+            };
+            (prisma.job.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([job]);
+            (registry.get as ReturnType<typeof vi.fn>).mockReturnValue(adapter);
+
+            const result = await integrityService.runFullIntegrityCheck();
+
+            expect(result.totalFiles).toBe(0);
+        });
+
+        it('applies maxAgeDays filter in jobs mode', async () => {
+            const oldDate = new Date(Date.now() - 10 * 86_400_000).toISOString();
+            const recentDate = new Date(Date.now() - 1 * 86_400_000).toISOString();
+            const adapter = makeStorageAdapter({
+                list: vi.fn().mockResolvedValue([
+                    { name: 'old.sql', path: 'Job/old.sql', lastModified: oldDate, size: 100 },
+                    { name: 'new.sql', path: 'Job/new.sql', lastModified: recentDate, size: 100 },
+                ]),
+            });
+            (prisma.job.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+                makeJobWithDest('Job', 'dest-1'),
+            ]);
+            (registry.get as ReturnType<typeof vi.fn>).mockReturnValue(adapter);
+            // maxAgeDays = 5
+            vi.mocked(prisma.systemSetting.findUnique).mockImplementation(({ where }: { where: { key: string } }) => {
+                if (where.key === 'integrity.maxAgeDays') return Promise.resolve({ value: '5' } as any);
+                return Promise.resolve(null);
+            });
+            vi.mocked(verificationService.verifyFile).mockResolvedValue({
+                status: 'passed',
+                verifiedAt: new Date().toISOString(),
+            });
+
+            const result = await integrityService.runFullIntegrityCheck();
+
+            expect(result.totalFiles).toBe(1);
+        });
+
+        it('returns zero results when no jobs exist', async () => {
+            (prisma.job.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+            const result = await integrityService.runFullIntegrityCheck();
+
+            expect(result.totalFiles).toBe(0);
+        });
     });
 });

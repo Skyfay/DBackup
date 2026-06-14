@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
+import { compareVersions } from "@/lib/utils";
 
 const log = logger.child({ service: "DbVersionService" });
 
@@ -11,6 +12,8 @@ export interface RecordVersionResult {
     previousVersion: string | null;
     /** The version stored as `newVersion` on the latest entry. */
     newVersion: string;
+    /** True when the new version is numerically lower than the previous version. */
+    isDowngrade: boolean;
 }
 
 /**
@@ -38,7 +41,7 @@ export async function recordVersionIfChanged(
 ): Promise<RecordVersionResult> {
     const normalized = normalize(version);
     if (!normalized) {
-        return { changed: false, previousVersion: null, newVersion: version };
+        return { changed: false, previousVersion: null, newVersion: version, isDowngrade: false };
     }
 
     const latest = await prisma.dbVersionHistory.findFirst({
@@ -52,8 +55,10 @@ export async function recordVersionIfChanged(
 
     // No change when version (and edition, if present) match the last entry.
     if (latest && previousVersion === normalized && previousEdition === normalizedEdition) {
-        return { changed: false, previousVersion, newVersion: normalized };
+        return { changed: false, previousVersion, newVersion: normalized, isDowngrade: false };
     }
+
+    const isDowngrade = previousVersion !== null && compareVersions(previousVersion, normalized) > 0;
 
     try {
         await prisma.dbVersionHistory.create({
@@ -68,13 +73,14 @@ export async function recordVersionIfChanged(
             adapterConfigId,
             previousVersion,
             newVersion: normalized,
+            isDowngrade,
         });
     } catch (e: unknown) {
         log.error("Failed to record version history", { adapterConfigId }, wrapError(e));
-        return { changed: false, previousVersion, newVersion: normalized };
+        return { changed: false, previousVersion, newVersion: normalized, isDowngrade: false };
     }
 
-    return { changed: true, previousVersion, newVersion: normalized };
+    return { changed: true, previousVersion, newVersion: normalized, isDowngrade };
 }
 
 /**

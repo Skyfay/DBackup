@@ -8,8 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import type { ChartConfig } from "@/components/ui/chart";
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
-import { ArrowRight, History, AlertTriangle, Server } from "lucide-react";
+import { ArrowUp, ArrowDown, History, AlertTriangle, Server } from "lucide-react";
 import { useDateFormatter } from "@/hooks/use-date-formatter";
+import { compareVersions } from "@/lib/utils";
 
 interface VersionHistoryEntry {
     id: string;
@@ -72,12 +73,9 @@ export function SourceVersionHistory({ sourceId, currentVersion }: SourceVersion
     // Each unique `newVersion` is mapped to a numeric Y position (0..n-1)
     // because recharts cannot plot string values on a numeric axis.
     const ordered = [...history].reverse();
-    const versionOrder: string[] = [];
-    for (const entry of ordered) {
-        if (!versionOrder.includes(entry.newVersion)) {
-            versionOrder.push(entry.newVersion);
-        }
-    }
+    const versionSet = new Set<string>();
+    for (const entry of ordered) versionSet.add(entry.newVersion);
+    const versionOrder = [...versionSet].sort((a, b) => compareVersions(a, b));
     const chartData = ordered.map((entry) => ({
         detectedAt: entry.detectedAt,
         versionIndex: versionOrder.indexOf(entry.newVersion),
@@ -212,13 +210,22 @@ export function SourceVersionHistory({ sourceId, currentVersion }: SourceVersion
                                             </TableCell>
                                             <TableCell>
                                                 <div className="flex items-center gap-2">
-                                                    {entry.previousVersion ? (
-                                                        <>
-                                                            <Badge variant="outline">{entry.previousVersion}</Badge>
-                                                            <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
-                                                            <Badge>{entry.newVersion}</Badge>
-                                                        </>
-                                                    ) : (
+                                                    {entry.previousVersion ? (() => {
+                                                        const isDowngrade = compareVersions(entry.previousVersion, entry.newVersion) > 0;
+                                                        return isDowngrade ? (
+                                                            <>
+                                                                <Badge variant="outline">{entry.previousVersion}</Badge>
+                                                                <ArrowDown className="h-3.5 w-3.5 text-orange-500" />
+                                                                <Badge className="bg-orange-500 hover:bg-orange-500/90">{entry.newVersion}</Badge>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <Badge variant="outline">{entry.previousVersion}</Badge>
+                                                                <ArrowUp className="h-3.5 w-3.5 text-green-500" />
+                                                                <Badge>{entry.newVersion}</Badge>
+                                                            </>
+                                                        );
+                                                    })() : (
                                                         <>
                                                             <span className="text-xs text-muted-foreground">Initial:</span>
                                                             <Badge>{entry.newVersion}</Badge>

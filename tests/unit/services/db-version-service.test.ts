@@ -43,7 +43,7 @@ describe("db-version-service", () => {
 
             const result = await recordVersionIfChanged(SOURCE_ID, "8.0.36");
 
-            expect(result).toEqual({ changed: true, previousVersion: null, newVersion: "8.0.36" });
+            expect(result).toEqual({ changed: true, previousVersion: null, newVersion: "8.0.36", isDowngrade: false });
             expect(prismaMock.dbVersionHistory.create).toHaveBeenCalledWith({
                 data: {
                     adapterConfigId: SOURCE_ID,
@@ -59,7 +59,7 @@ describe("db-version-service", () => {
 
             const result = await recordVersionIfChanged(SOURCE_ID, "8.0.36");
 
-            expect(result).toEqual({ changed: false, previousVersion: "8.0.36", newVersion: "8.0.36" });
+            expect(result).toEqual({ changed: false, previousVersion: "8.0.36", newVersion: "8.0.36", isDowngrade: false });
             expect(prismaMock.dbVersionHistory.create).not.toHaveBeenCalled();
         });
 
@@ -69,7 +69,7 @@ describe("db-version-service", () => {
 
             const result = await recordVersionIfChanged(SOURCE_ID, "8.0.37");
 
-            expect(result).toEqual({ changed: true, previousVersion: "8.0.36", newVersion: "8.0.37" });
+            expect(result).toEqual({ changed: true, previousVersion: "8.0.36", newVersion: "8.0.37", isDowngrade: false });
             expect(prismaMock.dbVersionHistory.create).toHaveBeenCalledWith({
                 data: {
                     adapterConfigId: SOURCE_ID,

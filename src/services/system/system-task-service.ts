@@ -535,6 +535,7 @@ export class SystemTaskService {
                                     newVersion: change.newVersion,
                                     edition,
                                     timestamp: new Date().toISOString(),
+                                    isDowngrade: change.isDowngrade,
                                 },
                             });
                         }

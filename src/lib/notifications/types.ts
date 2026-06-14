@@ -181,6 +181,7 @@ export interface DbVersionChangedData {
   newVersion: string;
   edition?: string;
   timestamp: string;
+  isDowngrade: boolean;
 }
 
 /** Union of all event data types for type-safe template dispatch */

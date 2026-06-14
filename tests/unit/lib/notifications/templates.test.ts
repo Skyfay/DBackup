@@ -655,16 +655,17 @@ describe("Notification Templates", () => {
             newVersion: "15.0.4360.2",
             edition: "Enterprise Edition",
             timestamp: "2026-05-31T10:00:00Z",
+            isDowngrade: false,
           },
         });
 
-        expect(payload.title).toBe("Database Version Changed: prod-mssql");
+        expect(payload.title).toBe("Database Version Upgraded: prod-mssql");
         expect(payload.message).toContain("prod-mssql");
         expect(payload.message).toContain("15.0.4280.7");
         expect(payload.message).toContain("15.0.4360.2");
         expect(payload.success).toBe(true);
         expect(payload.color).toBe("#3b82f6");
-        expect(payload.badge).toBe("Version");
+        expect(payload.badge).toBe("Upgrade");
 
         const fieldNames = payload.fields?.map((f) => f.name) ?? [];
         expect(fieldNames).toEqual(
@@ -689,6 +690,7 @@ describe("Notification Templates", () => {
             previousVersion: null,
             newVersion: "8.0.31",
             timestamp: "2026-05-31T10:00:00Z",
+            isDowngrade: false,
           },
         });
 

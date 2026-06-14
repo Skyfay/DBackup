@@ -651,6 +651,7 @@ describe('SystemTaskService', () => {
                 changed: true,
                 previousVersion: '15.0.4280.7',
                 newVersion: '15.0.4360.2',
+                isDowngrade: false,
             });
 
             await service.runTask(SYSTEM_TASKS.UPDATE_DB_VERSIONS);
@@ -688,6 +689,7 @@ describe('SystemTaskService', () => {
                 changed: true,
                 previousVersion: null,
                 newVersion: '8.0.31',
+                isDowngrade: false,
             });
 
             await service.runTask(SYSTEM_TASKS.UPDATE_DB_VERSIONS);
@@ -715,6 +717,7 @@ describe('SystemTaskService', () => {
                 changed: false,
                 previousVersion: '16.2',
                 newVersion: '16.2',
+                isDowngrade: false,
             });
 
             await service.runTask(SYSTEM_TASKS.UPDATE_DB_VERSIONS);

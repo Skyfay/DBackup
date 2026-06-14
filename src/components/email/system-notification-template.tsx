@@ -74,14 +74,14 @@ function getStatusStyle(color: string | undefined, success: boolean, badge?: str
   // Color-based variations for success-type events
   switch (color) {
     case "#3b82f6": // blue – informational (login, etc.)
-      return { label: "Info", icon: "ℹ", accent: tokens.blue, bg: "#eff6ff", border: "#bfdbfe" };
+      return { label: badge ?? "Info", icon: "ℹ", accent: tokens.blue, bg: "#eff6ff", border: "#bfdbfe" };
     case "#8b5cf6": // purple – config backup
-      return { label: "Completed", icon: "✓", accent: tokens.purple, bg: "#f5f3ff", border: "#ddd6fe" };
+      return { label: badge ?? "Completed", icon: "✓", accent: tokens.purple, bg: "#f5f3ff", border: "#ddd6fe" };
     case "#f59e0b": // amber – warning
-      return { label: "Warning", icon: "⚠", accent: tokens.amber, bg: "#fffbeb", border: "#fde68a" };
+      return { label: badge ?? "Warning", icon: "⚠", accent: tokens.amber, bg: "#fffbeb", border: "#fde68a" };
     default: // green – success
       return {
-        label: "Success",
+        label: badge ?? "Success",
         icon: "✓",
         accent: tokens.success,
         bg: tokens.successBg,

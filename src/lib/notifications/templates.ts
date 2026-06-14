@@ -384,9 +384,28 @@ function dbVersionChangedTemplate(
   data: DbVersionChangedData
 ): NotificationPayload {
   const from = data.previousVersion ?? "unknown";
+  if (data.isDowngrade) {
+    return {
+      title: `Database Version Downgraded: ${data.sourceName}`,
+      message: `Source '${data.sourceName}' was downgraded (${from} → ${data.newVersion}).`,
+      fields: [
+        { name: "Source", value: data.sourceName, inline: true },
+        { name: "Adapter", value: data.adapterId, inline: true },
+        { name: "Previous Version", value: from, inline: true },
+        { name: "New Version", value: data.newVersion, inline: true },
+        ...(data.edition
+          ? [{ name: "Edition", value: data.edition, inline: true }]
+          : []),
+        { name: "Time", value: data.timestamp, inline: true },
+      ],
+      color: "#f59e0b", // amber - warning
+      success: false,
+      badge: "Downgrade",
+    };
+  }
   return {
-    title: `Database Version Changed: ${data.sourceName}`,
-    message: `Source '${data.sourceName}' reported a new engine version (${from} → ${data.newVersion}).`,
+    title: `Database Version Upgraded: ${data.sourceName}`,
+    message: `Source '${data.sourceName}' was upgraded (${from} → ${data.newVersion}).`,
     fields: [
       { name: "Source", value: data.sourceName, inline: true },
       { name: "Adapter", value: data.adapterId, inline: true },
@@ -399,7 +418,7 @@ function dbVersionChangedTemplate(
     ],
     color: "#3b82f6", // blue
     success: true,
-    badge: "Version",
+    badge: "Upgrade",
   };
 }
 

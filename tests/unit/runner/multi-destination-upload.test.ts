@@ -28,6 +28,11 @@ vi.mock('@/services/storage/verification-service', () => ({
         verifyFile: vi.fn().mockResolvedValue({ status: 'passed', verifiedAt: new Date().toISOString() }),
     },
 }));
+vi.mock('@/services/storage/storage-service', () => ({
+    storageService: {
+        appendStorageListCacheEntry: vi.fn().mockResolvedValue(undefined),
+    },
+}));
 vi.mock('@/lib/temp-dir', () => ({
     getTempDir: vi.fn().mockReturnValue('/tmp'),
 }));

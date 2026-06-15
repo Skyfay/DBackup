@@ -5,6 +5,10 @@ All notable changes to DBackup are documented here.
 ## vNEXT
 *Release: In Progress*
 
+### ✨ Features
+
+- **integrity**: System notifications are now sent when an integrity check (scheduled or manual) finds one or more checksum mismatches.
+
 ### 🐛 Bug Fixes
 
 - **audit**: Fixed Audit Log table resetting to page 1 after every page navigation.

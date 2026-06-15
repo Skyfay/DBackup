@@ -283,6 +283,19 @@ export class SystemTaskService {
                             failed: result.failed,
                             skipped: result.skipped,
                         });
+                        if (result.failed > 0) {
+                            await notify({
+                                eventType: NOTIFICATION_EVENTS.INTEGRITY_CHECK_FAILURE,
+                                data: {
+                                    totalFiles: result.totalFiles,
+                                    failed: result.failed,
+                                    passed: result.passed,
+                                    skipped: result.skipped,
+                                    triggerType: triggerType === "Manual" ? "Manual" : "Scheduler",
+                                    errors: result.errors,
+                                },
+                            });
+                        }
                     } catch (e: unknown) {
                         runner.logEntry(getErrorMessage(e), "error");
                         runner.setStage(INTEGRITY_CHECK_STAGES.FAILED);

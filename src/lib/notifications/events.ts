@@ -99,6 +99,15 @@ export const EVENT_DEFINITIONS: NotificationEventDefinition[] = [
     supportsReminder: true,
   },
 
+  // ── Backup Events ────────────────────────────────────────────
+  {
+    id: NOTIFICATION_EVENTS.INTEGRITY_CHECK_FAILURE,
+    name: "Integrity Check Failed",
+    description: "Triggered when a scheduled or manual integrity check finds one or more checksum mismatches.",
+    category: "backup",
+    defaultEnabled: true,
+  },
+
   // ── Health Check Events ──────────────────────────────────────
   {
     id: NOTIFICATION_EVENTS.CONNECTION_OFFLINE,

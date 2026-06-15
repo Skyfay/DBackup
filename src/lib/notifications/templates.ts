@@ -23,6 +23,7 @@ import {
   ConnectionOfflineData,
   ConnectionOnlineData,
   DbVersionChangedData,
+  IntegrityCheckFailureData,
 } from "./types";
 
 // ── Individual Template Functions ──────────────────────────────
@@ -422,6 +423,32 @@ function dbVersionChangedTemplate(
   };
 }
 
+function integrityCheckFailureTemplate(
+  data: IntegrityCheckFailureData
+): NotificationPayload {
+  const failedList = data.errors
+    .slice(0, 5)
+    .map((e) => e.file)
+    .join(", ");
+  const more = data.errors.length > 5 ? ` (+${data.errors.length - 5} more)` : "";
+  return {
+    title: `Integrity Check Failed: ${data.failed} file(s) corrupted`,
+    message: `The integrity check found ${data.failed} of ${data.totalFiles} file(s) with checksum mismatches.`,
+    fields: [
+      { name: "Total Checked", value: String(data.totalFiles), inline: true },
+      { name: "Failed", value: String(data.failed), inline: true },
+      { name: "Passed", value: String(data.passed), inline: true },
+      { name: "Trigger", value: data.triggerType, inline: true },
+      ...(data.errors.length > 0
+        ? [{ name: "Corrupted Files", value: failedList + more, inline: false }]
+        : []),
+    ],
+    color: "#ef4444", // red
+    success: false,
+    badge: "Alert",
+  };
+}
+
 // ── Template Dispatcher ────────────────────────────────────────
 
 /**
@@ -463,6 +490,8 @@ export function renderTemplate(
       return connectionOnlineTemplate(event.data);
     case NOTIFICATION_EVENTS.DB_VERSION_CHANGED:
       return dbVersionChangedTemplate(event.data);
+    case NOTIFICATION_EVENTS.INTEGRITY_CHECK_FAILURE:
+      return integrityCheckFailureTemplate(event.data);
     default:
       // Fallback for unknown events
       return {

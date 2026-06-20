@@ -22,7 +22,7 @@ features:
     details: Supports MySQL, MariaDB, PostgreSQL, MongoDB, SQLite, Redis, and Microsoft SQL Server.
   - icon: 🔒
     title: Backup Encryption
-    details: AES-256-GCM encryption for backup files with an Encryption Vault, key rotation, and offline Recovery Kits.
+    details: AES-256-GCM encryption for backup files with managed Encryption Profiles, key rotation, and offline Recovery Kits for manual decryption without DBackup.
   - icon: 🔓
     title: No Vendor Lock-In
     details: Backups are standard database dumps, no proprietary format. Decrypt with a standalone Node.js script and your Recovery Kit, even without DBackup.
@@ -37,34 +37,40 @@ features:
     details: Each backup job can target multiple storage destinations simultaneously for redundancy or off-site copies.
   - icon: 📅
     title: Scheduling & Retention
-    details: Cron-based job scheduling with GFS (Grandfather-Father-Son) retention policies for automatic rotation.
+    details: Cron-based job scheduling with reusable Retention Policy Templates (GFS), Naming Templates with date/time tokens, and Schedule Presets for consistent job configuration.
   - icon: 🔔
     title: Notifications
-    details: 9+ notification adapters including Discord, Slack, Teams, Telegram, Gotify, ntfy, Webhook, SMS, and Email (SMTP).
+    details: 9 notification adapters including Discord, Slack, Teams, Telegram, Gotify, ntfy, Webhook, SMS, and Email (SMTP).
   - icon: 🔄
     title: Restore
     details: Browse backup history, verify checksums, download files, or restore directly to a database. Supports database remapping and standalone offline recovery.
   - icon: 👥
     title: Multi-User & RBAC
-    details: Granular permission system with user groups, SSO/OIDC support (Authentik, PocketID), and audit logging.
+    details: Granular permission system with user groups, SSO/OIDC support (Authentik, PocketID, Keycloak, Generic), and audit logging.
   - icon: 🔗
     title: API & Webhooks
     details: Trigger backups via REST API with fine-grained API keys. Includes ready-made cURL, Bash, and Ansible examples.
   - icon: 📊
     title: Dashboard & Analytics
-    details: Interactive charts, real-time progress tracking, storage usage history, and auto-refreshing activity feeds.
+    details: Interactive charts, real-time progress tracking, 12-month Backup Calendar heatmap, storage usage history, and auto-refreshing activity feeds.
   - icon: 🗂️
     title: Database Explorer
-    details: Browse databases, tables, and live data directly from DBackup. Server-side pagination, full-text search, schema inspection, and deep-link URLs - for all 7 database engines.
+    details: Browse databases, tables, and live data directly from DBackup. Server-side pagination, full-text search, schema inspection, deep-link URLs, and database version history tracking - for all 7 database engines.
   - icon: 🔍
     title: Storage Explorer
     details: Browse backup files across all destinations, inspect metadata, download files, or generate direct download links.
   - icon: 🚨
     title: Storage Monitoring & Alerts
     details: Per-destination monitoring with configurable alerts for usage spikes, storage limit warnings, and missing backups within a defined time window.
+  - icon: ✅
+    title: Backup Integrity
+    details: Post-upload SHA-256/MD5 checksum verification after every backup, plus scheduled full integrity scans across all stored backups with Jobs mode or full storage scan.
+  - icon: 🔑
+    title: Credential Vault
+    details: Centralized encrypted storage for SSH keys, API tokens, OAuth credentials, SMTP accounts, and passwords. Reuse across adapters without re-entering secrets per job.
   - icon: 🐳
     title: Docker
-    details: Multi-arch images (AMD64/ARM64), built-in health checks, graceful shutdown, and SHA-256 integrity verification.
+    details: Multi-arch images (AMD64/ARM64), built-in health checks, graceful shutdown, and SHA-256 image verification.
 ---
 
 

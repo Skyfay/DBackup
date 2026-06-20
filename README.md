@@ -62,6 +62,7 @@ Whether you're running a single MySQL database or managing multiple PostgreSQL, 
 - **Multi-Database Jobs** - Back up multiple databases from a single source in one job with a unified TAR archive format
 - **AES-256-GCM Encryption** - Encrypt backups with managed Encryption Profiles, key rotation, and downloadable Recovery Kits for offline decryption
 - **GZIP & Brotli Compression** - Reduce backup size and storage costs with built-in compression
+- **SSH Remote Execution** - Run backup tools directly on the remote database host via SSH, eliminating the need to expose database ports to the DBackup server
 
 ### ☁️ Storage & Destinations
 
@@ -75,7 +76,7 @@ Whether you're running a single MySQL database or managing multiple PostgreSQL, 
 - **One-Click Restore** - Restore directly from the Storage Explorer to any configured database target
 - **Database Remapping** - Restore databases under different names or map multiple databases to new targets
 - **Version Compatibility Check** - Pre-restore validation warns about version mismatches before execution
-- **SHA-256 Integrity Verification** - Checksums generated on backup and verified before restore
+- **Integrity Verification** - Post-upload SHA-256/MD5 checksum validation after every backup, plus scheduled full integrity scans across all stored backups (Jobs mode or full storage scan)
 - **No Vendor Lock-In** - Backups are standard database dumps encrypted with open AES-256-GCM. Decrypt and import manually with just Node.js, no DBackup required
 - **Recovery Kit** - Downloadable ZIP with your encryption key and a standalone decryption script for disaster recovery without DBackup
 
@@ -83,7 +84,9 @@ Whether you're running a single MySQL database or managing multiple PostgreSQL, 
 
 - **Live Backup Progress** - Real-time progress tracking shows exactly what's happening during backup and restore operations
 - **Interactive Dashboard** - Activity charts, job status overview, KPI cards, and auto-refreshing activity feeds
+- **Backup Calendar** - GitHub-style 12-month heatmap showing backup activity and success/failure patterns at a glance
 - **Database Explorer** - Browse databases, tables, and live data directly from DBackup with server-side pagination, full-text search, schema inspection, and deep-link URL support across all 7 database engines
+- **Database Version History** - Automatic tracking of database engine version changes over time with a timeline chart and change log
 - **Storage Usage History** - Track storage growth over time with area charts and trend indicators
 - **Execution History** - Full log of every backup and restore with duration, file size, status, and error details
 
@@ -97,7 +100,8 @@ Whether you're running a single MySQL database or managing multiple PostgreSQL, 
 ### ⏰ Scheduling & Retention
 
 - **Cron-based Scheduling** - Flexible job scheduling with a visual Schedule Picker (Simple Mode + Cron Mode)
-- **GFS Retention Policies** - Grandfather-Father-Son rotation with per-destination retention settings
+- **Retention Policy Templates** - Reusable named GFS (Grandfather-Father-Son) retention policies with per-destination assignment
+- **Naming Templates & Schedule Presets** - Reusable filename patterns with tokens (`{job_name}`, `{db_name}`, date/time) and named cron presets for consistent scheduling across jobs
 - **Automated Config Backups** - Self-backup of the entire DBackup configuration to any storage adapter
 
 ### 👥 Access Control & Security
@@ -105,6 +109,8 @@ Whether you're running a single MySQL database or managing multiple PostgreSQL, 
 - **SSO / OIDC** - OpenID Connect with pre-built adapters for Authentik, PocketID, Keycloak, and a generic OIDC option
 - **RBAC** - User groups with granular permissions, protected SuperAdmin group, and audit logging
 - **2FA / Passkeys** - Two-factor authentication and WebAuthn passkey support
+- **Credential Vault** - Centralized encrypted storage for SSH keys, API tokens, OAuth credentials, SMTP accounts, and username/password pairs - reusable across all adapters without re-entering secrets per job
+- **HTTPS by Default** - Auto-generated self-signed certificates on first run with certificate upload UI for custom certificates and HSTS enforcement
 - **Configurable Rate Limits** - Per-category rate limiting (Auth, API Read, API Write) adjustable from the Settings UI
 
 ### 🔗 API & Automation
@@ -155,13 +161,13 @@ Open [https://localhost:3000](https://localhost:3000) and create your admin acco
 
 | Database | Versions | Connection Modes |
 | :--- | :--- | :--- |
-| PostgreSQL | 12 – 18 | Direct, SSH |
-| MySQL | 5.7, 8, 9 | Direct, SSH |
-| MariaDB | 10, 11 | Direct, SSH |
-| MongoDB | 4 – 8 | Direct, SSH |
+| PostgreSQL | 12, 13, 14, 15, 16, 17, 18 | Direct, SSH |
+| MySQL | 5.7, 8.x, 9.x | Direct, SSH |
+| MariaDB | 10.x, 11.x | Direct, SSH |
+| MongoDB | 4.x, 5.x, 6.x, 7.x, 8.x | Direct, SSH |
 | Redis | 6.x, 7.x, 8.x | Direct, SSH |
 | SQLite | 3.x | Local, SSH |
-| Microsoft SQL Server | 2017, 2019, 2022 | Direct (+ SSH for file transfer) |
+| Microsoft SQL Server | 2017, 2019, 2022, Azure SQL Edge | Direct (+ SSH for file transfer) |
 
 ## ☁️ Supported Destinations
 

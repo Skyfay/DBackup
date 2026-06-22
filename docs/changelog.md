@@ -9,6 +9,12 @@ All notable changes to DBackup are documented here.
 
 - **S3**: Fixed intermittent `ECONNRESET` errors on S3 uploads caused by HTTP connections not being closed after each operation. ([#115](https://github.com/Skyfay/DBackup/issues/115))
 
+### 🔒 Security
+
+- **nodemailer**: Updated to v9.0.1 to address an arbitrary file read and SSRF vulnerability via the `raw` message option ([GHSA-p6gq-j5cr-w38f](https://github.com/advisories/GHSA-p6gq-j5cr-w38f)).
+- **vite**: Updated to v7.3.5 to address a `server.fs.deny` bypass on Windows via alternate paths ([GHSA-fx2h-pf6j-xcff](https://github.com/advisories/GHSA-fx2h-pf6j-xcff)).
+- **deps**: Patched 7 transitive dependency vulnerabilities (`shell-quote` critical, `form-data`, `undici`, `js-yaml`, `esbuild`, `@babel/core`, `dompurify`) via pnpm overrides.
+
 ### 🐳 Docker
 
 - **Image**: `skyfay/dbackup:vNEXT`

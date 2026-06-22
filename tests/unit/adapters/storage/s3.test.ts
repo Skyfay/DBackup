@@ -18,6 +18,7 @@ const { mockSend, mockUploadDone, mockUploadOn, mockPipeline } = vi.hoisted(() =
 vi.mock("@aws-sdk/client-s3", () => {
     const MockS3Client = vi.fn(function (this: Record<string, unknown>) {
         this.send = mockSend;
+        this.destroy = vi.fn();
     });
     return {
         S3Client: MockS3Client,

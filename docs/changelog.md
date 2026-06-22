@@ -2,6 +2,28 @@
 
 All notable changes to DBackup are documented here.
 
+## v2.7.2 - Multiple Bug Fixes, S3 Connection Stability Improvements, and Security Updates
+*Released: June 22, 2026*
+
+### 🐛 Bug Fixes
+
+- **dashboard**: Fixed React "missing key prop" console warning on the dashboard bottom grid.
+- **S3**: Fixed intermittent `ECONNRESET` errors on S3 uploads caused by HTTP connections not being closed after each operation. ([#115](https://github.com/Skyfay/DBackup/issues/115))
+
+### 🔒 Security
+
+- **nodemailer**: Updated to v9.0.1 to address an arbitrary file read and SSRF vulnerability via the `raw` message option ([GHSA-p6gq-j5cr-w38f](https://github.com/advisories/GHSA-p6gq-j5cr-w38f)).
+- **vite**: Updated to v7.3.5 to address a `server.fs.deny` bypass on Windows via alternate paths ([GHSA-fx2h-pf6j-xcff](https://github.com/advisories/GHSA-fx2h-pf6j-xcff)).
+- **deps**: Patched 7 transitive dependency vulnerabilities (`shell-quote` critical, `form-data`, `undici`, `js-yaml`, `esbuild`, `@babel/core`, `dompurify`) via pnpm overrides.
+
+### 🐳 Docker
+
+- **Image**: `skyfay/dbackup:v2.7.2`
+- **Also tagged as**: `latest`, `v2`
+- **CI Image**: `skyfay/dbackup:ci`
+- **Platforms**: linux/amd64, linux/arm64
+
+
 ## v2.7.1 - Backup Calendar Heatmap, Partial Integrity Status, and Multiple Improvements
 *Released: June 20, 2026*
 

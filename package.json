@@ -1,6 +1,6 @@
 {
   "name": "dbackup",
-  "version": "2.7.1",
+  "version": "2.7.2",
   "private": true,
   "scripts": {
     "dev": "prisma migrate deploy && prisma generate && next dev",
@@ -59,7 +59,7 @@
     "@radix-ui/react-switch": "^1.2.6",
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-tooltip": "^1.2.8",
-    "@scalar/api-reference-react": "^0.9.31",
+    "@scalar/api-reference-react": "^0.9.47",
     "@tanstack/react-table": "^8.21.3",
     "adm-zip": "^0.5.17",
     "basic-ftp": "^6.0.1",
@@ -78,7 +78,7 @@
     "next": "16.2.6",
     "next-themes": "^0.4.6",
     "node-cron": "^4.2.1",
-    "nodemailer": "^8.0.10",
+    "nodemailer": "^9.0.1",
     "qrcode.react": "^4.2.0",
     "radix-ui": "^1.4.3",
     "rate-limiter-flexible": "^10.0.1",
@@ -107,7 +107,7 @@
     "@types/mssql": "^9.1.11",
     "@types/node": "^20.19.37",
     "@types/node-cron": "^3.0.11",
-    "@types/nodemailer": "^7.0.11",
+    "@types/nodemailer": "^8.0.1",
     "@types/react": "^19.2.15",
     "@types/react-dom": "^19.2.3",
     "@types/ssh2": "^1.15.5",
@@ -121,20 +121,26 @@
     "prisma": "^6.19.3",
     "tailwindcss": "^4.3.0",
     "typescript": "^5.9.3",
-    "vite": "^7.3.2",
+    "vite": "^7.3.5",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.1.7",
     "vitest-mock-extended": "^3.1.1"
   },
   "pnpm": {
     "overrides": {
-      "dompurify": ">=3.4.0",
+      "dompurify": ">=3.4.11",
       "postcss": ">=8.5.10",
       "fast-xml-builder": "^1.2.0",
       "brace-expansion@5": "5.0.6",
       "qs": "^6.15.2",
       "uuid": "^11.1.1",
-      "kysely": "0.28.17"
+      "kysely": "0.28.17",
+      "shell-quote": ">=1.8.4",
+      "form-data": ">=4.0.6",
+      "undici": "^7.28.0",
+      "js-yaml": ">=4.2.0",
+      "esbuild": ">=0.28.1",
+      "@babel/core": ">=7.29.6"
     },
     "onlyBuiltDependencies": [
       "@prisma/client",

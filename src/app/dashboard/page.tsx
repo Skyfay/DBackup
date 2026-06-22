@@ -47,8 +47,8 @@ export default async function DashboardPage() {
           left={<LatestJobs data={latestJobs} />}
           right={
             <>
-              <JobStatusChart data={statusData} />
-              <StorageVolumeChart data={storageData} cacheUpdatedAt={cacheUpdatedAt} />
+              <JobStatusChart key="job-status" data={statusData} />
+              <StorageVolumeChart key="storage-volume" data={storageData} cacheUpdatedAt={cacheUpdatedAt} />
             </>
           }
           bottomLeft={

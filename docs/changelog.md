@@ -7,6 +7,7 @@ All notable changes to DBackup are documented here.
 
 ### 🐛 Bug Fixes
 
+- **dashboard**: Fixed React "missing key prop" console warning on the dashboard bottom grid.
 - **S3**: Fixed intermittent `ECONNRESET` errors on S3 uploads caused by HTTP connections not being closed after each operation. ([#115](https://github.com/Skyfay/DBackup/issues/115))
 
 ### 🔒 Security

@@ -2,6 +2,21 @@
 
 All notable changes to DBackup are documented here.
 
+## vNEXT
+*Release: In Progress*
+
+### 🐛 Bug Fixes
+
+- **S3**: Fixed intermittent `ECONNRESET` errors on S3 uploads caused by HTTP connections not being closed after each operation. ([#115](https://github.com/Skyfay/DBackup/issues/115))
+
+### 🐳 Docker
+
+- **Image**: `skyfay/dbackup:vNEXT`
+- **Also tagged as**: `latest`, `vNEXT`
+- **CI Image**: `skyfay/dbackup:ci`
+- **Platforms**: linux/amd64, linux/arm64
+
+
 ## v2.7.1 - Backup Calendar Heatmap, Partial Integrity Status, and Multiple Improvements
 *Released: June 20, 2026*
 

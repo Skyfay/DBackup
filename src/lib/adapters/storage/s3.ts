@@ -75,6 +75,7 @@ async function s3Upload(internalConfig: S3InternalConfig, localPath: string, rem
         return false;
     } finally {
         fileStream.destroy();
+        client.destroy();
     }
 }
 
@@ -105,6 +106,8 @@ async function s3List(internalConfig: S3InternalConfig, dir: string = ""): Promi
     } catch (error) {
         log.error("S3 list failed", { bucket: internalConfig.bucket, prefix: listPrefix }, wrapError(error));
         throw error;
+    } finally {
+        client.destroy();
     }
 }
 
@@ -156,6 +159,8 @@ async function s3Download(
         }
         log.error("S3 download failed", { bucket: internalConfig.bucket, targetKey }, wrapError(error));
         return false;
+    } finally {
+        client.destroy();
     }
 }
 
@@ -178,6 +183,8 @@ async function s3Read(internalConfig: S3InternalConfig, remotePath: string): Pro
     } catch (_error) {
         // If file doesn't exist (e.g. meta.json missing), return null instead of throwing
         return null;
+    } finally {
+        client.destroy();
     }
 }
 
@@ -199,6 +206,8 @@ async function s3Delete(
     } catch (error) {
         log.error("S3 delete failed", { bucket: internalConfig.bucket, remotePath }, wrapError(error));
         return false;
+    } finally {
+        client.destroy();
     }
 }
 
@@ -217,6 +226,8 @@ async function s3VerifyChecksum(
         return stored === checksums.sha256 ? 'passed' : 'failed';
     } catch {
         return 'unsupported';
+    } finally {
+        client.destroy();
     }
 }
 
@@ -234,6 +245,8 @@ async function s3Ping(internalConfig: S3InternalConfig): Promise<{ success: bool
     } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         return { success: false, message: message || "Connection failed" };
+    } finally {
+        client.destroy();
     }
 }
 
@@ -266,6 +279,7 @@ async function s3Test(internalConfig: S3InternalConfig, adapterId: string): Prom
         return { success: false, message: message || "Connection failed" };
     } finally {
         if (uploaded) await client.send(new DeleteObjectCommand({ Bucket: internalConfig.bucket, Key: targetKey })).catch(() => {});
+        client.destroy();
     }
 }
 

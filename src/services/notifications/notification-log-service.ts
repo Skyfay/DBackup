@@ -35,6 +35,7 @@ export interface NotificationLogQuery {
   adapterId?: string;
   eventType?: string;
   status?: string;
+  executionId?: string;
 }
 
 // ── Write ──────────────────────────────────────────────────────
@@ -76,12 +77,13 @@ export async function recordNotificationLog(
  * Fetch notification logs with pagination and optional filters.
  */
 export async function getNotificationLogs(query: NotificationLogQuery = {}) {
-  const { page = 1, pageSize = 50, adapterId, eventType, status } = query;
+  const { page = 1, pageSize = 50, adapterId, eventType, status, executionId } = query;
 
   const where: Record<string, unknown> = {};
   if (adapterId) where.adapterId = adapterId;
   if (eventType) where.eventType = eventType;
   if (status) where.status = status;
+  if (executionId) where.executionId = executionId;
 
   const [data, total] = await Promise.all([
     prisma.notificationLog.findMany({

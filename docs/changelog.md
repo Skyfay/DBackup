@@ -8,6 +8,7 @@ All notable changes to DBackup are documented here.
 ### ✨ Features
 
 - **notifications**: Job notification triggers redesigned - select any combination of Success, Partial, and Failed outcomes per job instead of a fixed preset. ([#117](https://github.com/Skyfay/DBackup/issues/117))
+- **notifications**: Added Notification Templates - reusable templates with per-channel event filters (Success/Partial/Failed) that can be assigned to multiple backup jobs, replacing the per-job flat channel configuration.
 
 ### 🎨 Improvements
 

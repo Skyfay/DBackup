@@ -19,6 +19,7 @@ export interface CreateJobInput {
     databases?: string[];
     destinations: DestinationInput[];
     notificationIds?: string[];
+    notificationTemplateIds?: string[];
     encryptionProfileId?: string;
     compression?: string;
     pgCompression?: string;
@@ -36,6 +37,7 @@ export interface UpdateJobInput {
     databases?: string[];
     destinations?: DestinationInput[];
     notificationIds?: string[];
+    notificationTemplateIds?: string[];
     encryptionProfileId?: string;
     compression?: string;
     pgCompression?: string;
@@ -53,6 +55,14 @@ const jobInclude = {
         orderBy: { priority: 'asc' as const }
     },
     notifications: true,
+    notificationTemplates: {
+        include: {
+            template: {
+                include: { channels: { include: { config: true } } }
+            }
+        },
+        orderBy: { priority: 'asc' as const }
+    },
     encryptionProfile: { select: { id: true, name: true } },
     schedulePreset: { select: { id: true, name: true, schedule: true } },
     executions: {
@@ -86,7 +96,7 @@ export class JobService {
     }
 
     async createJob(input: CreateJobInput) {
-        const { name, schedule, sourceId, databases, destinations, notificationIds, enabled, encryptionProfileId, compression, pgCompression, notificationEvents, skipVerification } = input;
+        const { name, schedule, sourceId, databases, destinations, notificationIds, notificationTemplateIds, enabled, encryptionProfileId, compression, pgCompression, notificationEvents, skipVerification } = input;
 
         // Check name uniqueness
         const existingByName = await prisma.job.findFirst({ where: { name } });
@@ -111,6 +121,14 @@ export class JobService {
                 notifications: {
                     connect: notificationIds?.map((id) => ({ id })) || []
                 },
+                notificationTemplates: notificationTemplateIds?.length
+                    ? {
+                        create: notificationTemplateIds.map((templateId, i) => ({
+                            templateId,
+                            priority: i,
+                        }))
+                    }
+                    : undefined,
                 destinations: {
                     create: destinations.map((d) => ({
                         configId: d.configId,
@@ -129,7 +147,7 @@ export class JobService {
     }
 
     async updateJob(id: string, input: UpdateJobInput) {
-        const { name, schedule, sourceId, databases, destinations, notificationIds, enabled, encryptionProfileId, compression, pgCompression, notificationEvents, namingTemplateId, skipVerification } = input;
+        const { name, schedule, sourceId, databases, destinations, notificationIds, notificationTemplateIds, enabled, encryptionProfileId, compression, pgCompression, notificationEvents, namingTemplateId, skipVerification } = input;
 
         // Check name uniqueness (excluding current job)
         if (name) {
@@ -142,9 +160,7 @@ export class JobService {
         const updatedJob = await prisma.$transaction(async (tx) => {
             // Update destinations if provided
             if (destinations) {
-                // Remove existing destinations
                 await tx.jobDestination.deleteMany({ where: { jobId: id } });
-                // Create new ones
                 await tx.jobDestination.createMany({
                     data: destinations.map((d) => ({
                         jobId: id,
@@ -154,6 +170,20 @@ export class JobService {
                         retentionPolicyId: d.retentionPolicyId ?? null,
                     }))
                 });
+            }
+
+            // Update notification templates if provided
+            if (notificationTemplateIds !== undefined) {
+                await tx.jobNotificationTemplate.deleteMany({ where: { jobId: id } });
+                if (notificationTemplateIds.length > 0) {
+                    await tx.jobNotificationTemplate.createMany({
+                        data: notificationTemplateIds.map((templateId, i) => ({
+                            jobId: id,
+                            templateId,
+                            priority: i,
+                        }))
+                    });
+                }
             }
 
             return tx.job.update({
@@ -201,6 +231,7 @@ export class JobService {
             include: {
                 destinations: true,
                 notifications: true,
+                notificationTemplates: { orderBy: { priority: 'asc' as const } },
             }
         });
 
@@ -237,6 +268,14 @@ export class JobService {
                 notifications: {
                     connect: original.notifications.map((n) => ({ id: n.id }))
                 },
+                notificationTemplates: original.notificationTemplates.length > 0
+                    ? {
+                        create: original.notificationTemplates.map((nt) => ({
+                            templateId: nt.templateId,
+                            priority: nt.priority,
+                        }))
+                    }
+                    : undefined,
                 destinations: {
                     create: original.destinations.map((d) => ({
                         configId: d.configId,

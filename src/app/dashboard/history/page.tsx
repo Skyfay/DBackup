@@ -13,7 +13,8 @@ import { createColumns, createSystemTaskColumns, Execution } from "./columns";
 import { createNotificationLogColumns, NotificationLogRow } from "./notification-log-columns";
 import { NotificationPreview } from "./notification-preview";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Loader2, Square, Copy, Download } from "lucide-react";
+import { Loader2, Square, Copy, Download, Bell, CheckCircle2, XCircle } from "lucide-react";
+import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { Progress } from "@/components/ui/progress";
 import { DateDisplay } from "@/components/utils/date-display";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -43,6 +44,8 @@ function HistoryContent() {
     const [notificationLogs, setNotificationLogs] = useState<NotificationLogRow[]>([]);
     const [selectedNotification, setSelectedNotification] = useState<NotificationLogRow | null>(null);
     const [isCancelling, setIsCancelling] = useState(false);
+    // Per-execution notification results (shown in log dialog)
+    const [executionNotifications, setExecutionNotifications] = useState<NotificationLogRow[]>([]);
 
     const searchParams = useSearchParams();
     const router = useRouter();
@@ -124,6 +127,18 @@ function HistoryContent() {
             return () => clearInterval(interval);
         }
     }, [activeTab, fetchNotificationLogs]);
+
+    // Fetch per-execution notification results when a completed execution dialog opens
+    useEffect(() => {
+        if (!selectedLog || selectedLog.status === "Running" || selectedLog.status === "Pending") {
+            setExecutionNotifications([]);
+            return;
+        }
+        fetch(`/api/notification-logs?executionId=${encodeURIComponent(selectedLog.id)}&pageSize=50`)
+            .then(r => r.ok ? r.json() : null)
+            .then(result => { if (result) setExecutionNotifications(result.data); })
+            .catch(() => {});
+    }, [selectedLog?.id, selectedLog?.status]);
 
     const parseLogs = (json: string) => {
         try {
@@ -440,6 +455,29 @@ function HistoryContent() {
                                     </div>
                                 )
                             )}
+                        </div>
+                    )}
+
+                    {executionNotifications.length > 0 && (
+                        <div className="px-6 py-2.5 border-b border-border/50 shrink-0 bg-card/30">
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <Bell className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                {executionNotifications.map((n) => (
+                                    <button
+                                        key={n.id}
+                                        onClick={() => setSelectedNotification(n)}
+                                        className="flex items-center gap-1.5 rounded-md border border-border/60 bg-background/60 px-2 py-1 text-xs hover:bg-accent transition-colors"
+                                    >
+                                        {n.status === "Success" ? (
+                                            <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
+                                        ) : (
+                                            <XCircle className="h-3 w-3 text-destructive shrink-0" />
+                                        )}
+                                        <AdapterIcon adapterId={n.adapterId} className="h-3 w-3 shrink-0" />
+                                        <span className="text-muted-foreground">{n.channelName}</span>
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                     )}
 

@@ -19,6 +19,7 @@ export async function GET(req: NextRequest) {
     const adapterId = searchParams.get("adapterId") || undefined;
     const eventType = searchParams.get("eventType") || undefined;
     const status = searchParams.get("status") || undefined;
+    const executionId = searchParams.get("executionId") || undefined;
 
     const result = await getNotificationLogs({
       page,
@@ -26,6 +27,7 @@ export async function GET(req: NextRequest) {
       adapterId,
       eventType,
       status,
+      executionId,
     });
 
     return NextResponse.json(result);

@@ -15,6 +15,7 @@ import { Lock, History, ChevronsUpDown, Plus, Trash2, ChevronDown, ChevronRight,
 import { SchedulePicker } from "./schedule-picker";
 import { RetentionPolicyPicker, DEFAULT_RETENTION_SENTINEL } from "@/components/templates/retention-policy-picker";
 import { NamingTemplatePicker } from "@/components/templates/naming-template-picker";
+import { NotificationTemplatePicker } from "@/components/templates/notification-template-picker";
 import { getSchedulePresets } from "@/app/actions/templates";
 import type { SchedulePreset } from "@prisma/client";
 import { SchedulePresetDialog } from "@/components/settings/templates/schedule-preset-list";
@@ -79,6 +80,7 @@ export interface JobData {
     schedulePreset?: { id: string; name: string; schedule: string } | null;
     skipVerification?: boolean;
     notifications: { id: string, name: string }[];
+    notificationTemplates?: { templateId: string; priority: number }[];
     destinations: {
         configId: string;
         priority: number;
@@ -143,6 +145,7 @@ const jobSchema = z.object({
     pgCompressionLevel: z.coerce.number().int().min(0).max(22).default(6),
     notificationIds: z.array(z.string()).optional(),
     notificationEvents: z.array(z.enum(["SUCCESS", "PARTIAL", "FAILED"])).default(["SUCCESS", "PARTIAL", "FAILED"]),
+    notificationTemplateIds: z.array(z.string()).default([]),
     enabled: z.boolean().default(true),
     skipVerification: z.boolean().default(false),
 });
@@ -170,6 +173,7 @@ interface JobFormProps {
         schedulePreset?: { id: string; name: string; schedule: string } | null;
         skipVerification?: boolean;
         notifications: { id: string; name: string }[];
+        notificationTemplates?: { templateId: string; priority: number }[];
         destinations: { configId: string; priority: number; retention: string; retentionPolicyId?: string | null }[];
     } | null;
     onSuccess: () => void;
@@ -263,6 +267,7 @@ export function JobForm({ sources, destinations, notifications, encryptionProfil
             namingTemplateId: initialData?.namingTemplateId || undefined,
             notificationIds: initialData?.notifications?.map((n) => n.id) || [],
             notificationEvents: parseNotificationEvents(initialData?.notificationEvents),
+            notificationTemplateIds: initialData?.notificationTemplates?.map((t) => t.templateId) || [],
             enabled: initialData?.enabled ?? true,
             skipVerification: initialData?.skipVerification ?? false,
         }
@@ -385,6 +390,7 @@ export function JobForm({ sources, destinations, notifications, encryptionProfil
             const { pgCompressionAlgo: _algo, pgCompressionLevel: _level, ...rest } = data;
             const payload = {
                 ...rest,
+                notificationTemplateIds: data.notificationTemplateIds || [],
                 notificationEvents: data.notificationEvents.join("|") || "SUCCESS|PARTIAL|FAILED",
                 skipVerification: data.skipVerification,
                 pgCompression,
@@ -921,99 +927,64 @@ export function JobForm({ sources, destinations, notifications, encryptionProfil
 
                     {/* TAB 4: NOTIFICATIONS */}
                     <TabsContent value="notifications" className="pt-4 space-y-4">
-                        <FormField control={form.control} name="notificationEvents" render={({ field }) => (
-                            <FormItem>
-                                <FormLabel>Notify on</FormLabel>
-                                <div className="flex gap-4 pt-1">
-                                    {NOTIFICATION_EVENT_OPTIONS.map(opt => (
-                                        <label key={opt.value} className="flex items-center gap-2 cursor-pointer">
-                                            <Checkbox
-                                                checked={(field.value ?? []).includes(opt.value)}
-                                                onCheckedChange={(checked) => {
-                                                    const current: string[] = field.value ?? [];
-                                                    field.onChange(
-                                                        checked
-                                                            ? [...current, opt.value]
-                                                            : current.filter(v => v !== opt.value)
-                                                    );
-                                                }}
-                                            />
-                                            <span className="text-sm">{opt.label}</span>
-                                        </label>
-                                    ))}
-                                </div>
-                                <FormDescription>Select which outcomes trigger a notification.</FormDescription>
-                                <FormMessage />
-                            </FormItem>
-                        )} />
-
-                        <FormField control={form.control} name="notificationIds" render={({ field }) => (
+                        <FormField control={form.control} name="notificationTemplateIds" render={({ field }) => (
                             <FormItem className="flex flex-col">
-                                <FormLabel>Active Notification Channels</FormLabel>
-                                <Popover open={notifyOpen} onOpenChange={setNotifyOpen} modal={true}>
-                                    <PopoverTrigger asChild>
-                                        <FormControl>
-                                            <Button
-                                                variant="outline"
-                                                role="combobox"
-                                                aria-expanded={notifyOpen}
-                                                className="w-full justify-between"
-                                            >
-                                                Add Notification Channel
-                                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                            </Button>
-                                        </FormControl>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-                                        <Command>
-                                            <CommandInput placeholder="Search notifications..." />
-                                            <CommandList>
-                                                <CommandEmpty>No channel found.</CommandEmpty>
-                                                <CommandGroup>
-                                                    {notifications.map((n) => (
-                                                        <CommandItem
-                                                            value={n.name}
-                                                            key={n.id}
-                                                            onSelect={() => {
-                                                                const current = field.value || [];
-                                                                if (!current.includes(n.id)) {
-                                                                    field.onChange([...current, n.id]);
-                                                                } else {
-                                                                    field.onChange(current.filter(id => id !== n.id));
-                                                                }
-                                                                setNotifyOpen(false);
-                                                            }}
-                                                            className={cn((field.value || []).includes(n.id) && "bg-accent")}
-                                                        >
-                                                            <AdapterIcon adapterId={n.adapterId} className="h-4 w-4" />
-                                                            {n.name}
-                                                        </CommandItem>
-                                                    ))}
-                                                </CommandGroup>
-                                            </CommandList>
-                                        </Command>
-                                    </PopoverContent>
-                                </Popover>
-                                <div className="min-h-25 border rounded-md mt-2 p-2">
-                                    {field.value && field.value.length > 0 ? (
-                                        <div className="flex gap-2 flex-wrap">
-                                            {field.value.map((id: string) => {
-                                                const n = notifications.find((x) => x.id === id);
-                                                return (
-                                                    <div key={id} className="bg-secondary text-secondary-foreground px-3 py-1 rounded-full text-sm flex items-center shadow-sm">
-                                                        {n?.name}
-                                                        <button type="button" onClick={() => field.onChange((field.value || []).filter((x: string) => x !== id))} className="ml-2 hover:text-destructive font-bold">×</button>
-                                                    </div>
-                                                )
-                                            })}
+                                <div className="border rounded-lg p-4 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <FormLabel className="text-base">Notification Templates</FormLabel>
+                                            <p className="text-sm text-muted-foreground mt-0.5">
+                                                Backups send notifications to each template&apos;s configured channels.
+                                            </p>
                                         </div>
-                                    ) : (
-                                        <p className="text-sm text-muted-foreground p-2 italic">No notifications configured.</p>
+                                    </div>
+
+                                    {(field.value || []).length > 0 && (
+                                        <div className="space-y-2">
+                                            {(field.value || []).map((templateId: string, idx: number) => (
+                                                <div key={templateId} className="flex items-center gap-2">
+                                                    <span className="text-xs text-muted-foreground w-5 text-right shrink-0">#{idx + 1}</span>
+                                                    <div className="flex-1">
+                                                        <NotificationTemplatePicker
+                                                            value={templateId}
+                                                            onChange={(id) => {
+                                                                if (!id) return;
+                                                                const current = [...(field.value || [])];
+                                                                current[idx] = id;
+                                                                field.onChange(current);
+                                                            }}
+                                                            usedIds={(field.value || []).filter((_: string, i: number) => i !== idx)}
+                                                        />
+                                                    </div>
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="text-muted-foreground hover:text-destructive shrink-0"
+                                                        onClick={() => {
+                                                            field.onChange((field.value || []).filter((_: string, i: number) => i !== idx));
+                                                        }}
+                                                    >
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </Button>
+                                                </div>
+                                            ))}
+                                        </div>
                                     )}
+
+                                    <NotificationTemplatePicker
+                                        value={null}
+                                        onChange={(id) => {
+                                            if (!id) return;
+                                            const current = field.value || [];
+                                            if (!current.includes(id)) {
+                                                field.onChange([...current, id]);
+                                            }
+                                        }}
+                                        placeholder="Add Notification Template"
+                                        usedIds={field.value || []}
+                                    />
                                 </div>
-                                <FormDescription>
-                                    Selected channels will receive alerts on backup success/failure.
-                                </FormDescription>
                                 <FormMessage />
                             </FormItem>
                         )} />

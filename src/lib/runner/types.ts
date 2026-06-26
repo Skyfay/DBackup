@@ -1,5 +1,5 @@
 import { DatabaseAdapter, StorageAdapter } from "@/lib/core/interfaces";
-import { Job, AdapterConfig, Execution, JobDestination } from "@prisma/client";
+import { Job, AdapterConfig, Execution, JobDestination, NotificationTemplate, NotificationTemplateChannel, JobNotificationTemplate } from "@prisma/client";
 import { LogEntry, LogLevel, LogType, PipelineStage } from "@/lib/core/logs";
 import { RetentionConfiguration } from "@/lib/core/retention";
 
@@ -7,10 +7,23 @@ export type JobDestinationWithConfig = JobDestination & {
     config: AdapterConfig;
 };
 
+export type NotificationTemplateChannelWithConfig = NotificationTemplateChannel & {
+    config: AdapterConfig;
+};
+
+export type NotificationTemplateWithChannels = NotificationTemplate & {
+    channels: NotificationTemplateChannelWithConfig[];
+};
+
+export type JobNotificationTemplateWithTemplate = JobNotificationTemplate & {
+    template: NotificationTemplateWithChannels;
+};
+
 export type JobWithRelations = Job & {
     source: AdapterConfig;
     destinations: JobDestinationWithConfig[];
     notifications: AdapterConfig[];
+    notificationTemplates: JobNotificationTemplateWithTemplate[];
 };
 
 export interface DestinationContext {

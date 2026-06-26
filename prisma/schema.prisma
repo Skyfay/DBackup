@@ -19,6 +19,7 @@ model AdapterConfig {
   jobsSource       Job[]    @relation("Source")
   jobsNotification Job[]    @relation("Notifications")
   jobDestinations  JobDestination[]
+  notificationTemplateChannels NotificationTemplateChannel[]
 
   // Credential profile references (Phase 1: nullable; app enforces required-ness based on adapter type)
   primaryCredentialId String?
@@ -120,8 +121,43 @@ model Job {
   destinations        JobDestination[]
   source              AdapterConfig      @relation("Source", fields: [sourceId], references: [id])
   notifications       AdapterConfig[]    @relation("Notifications")
-  notificationEvents  String             @default("ALWAYS") // "ALWAYS", "FAILURE_ONLY", "SUCCESS_ONLY"
+  notificationEvents  String             @default("ALWAYS") // Legacy: "ALWAYS", "FAILURE_ONLY", "SUCCESS_ONLY" - kept for backward compat
+  notificationTemplates JobNotificationTemplate[]
   skipVerification    Boolean            @default(false)
+}
+
+model NotificationTemplate {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  isDefault   Boolean  @default(false)
+  isSystem    Boolean  @default(false)
+  channels    NotificationTemplateChannel[]
+  jobs        JobNotificationTemplate[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model NotificationTemplateChannel {
+  id         String               @id @default(cuid())
+  templateId String
+  configId   String
+  events     String               @default("SUCCESS|PARTIAL|FAILED") // Pipe-separated: SUCCESS, PARTIAL, FAILED
+  template   NotificationTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  config     AdapterConfig        @relation(fields: [configId], references: [id])
+
+  @@unique([templateId, configId])
+}
+
+model JobNotificationTemplate {
+  id         String               @id @default(cuid())
+  jobId      String
+  templateId String
+  priority   Int                  @default(0)
+  job        Job                  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  template   NotificationTemplate @relation(fields: [templateId], references: [id])
+
+  @@unique([jobId, templateId])
 }
 
 model JobDestination {

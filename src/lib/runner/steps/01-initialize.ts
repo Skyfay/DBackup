@@ -21,7 +21,15 @@ export async function stepInitialize(ctx: RunnerContext) {
                 include: { config: true },
                 orderBy: { priority: 'asc' }
             },
-            notifications: true
+            notifications: true,
+            notificationTemplates: {
+                include: {
+                    template: {
+                        include: { channels: { include: { config: true } } }
+                    }
+                },
+                orderBy: { priority: 'asc' }
+            }
         }
     });
 

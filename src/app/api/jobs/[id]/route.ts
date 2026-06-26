@@ -38,7 +38,7 @@ export async function PUT(
     const params = await props.params;
     try {
         const body = await req.json();
-        const { name, schedule, sourceId, databases, destinations, notificationIds, enabled, encryptionProfileId, compression, pgCompression, notificationEvents, namingTemplateId, schedulePresetId, skipVerification } = body;
+        const { name, schedule, sourceId, databases, destinations, notificationIds, notificationTemplateIds, enabled, encryptionProfileId, compression, pgCompression, notificationEvents, namingTemplateId, schedulePresetId, skipVerification } = body;
 
         const updatedJob = await jobService.updateJob(params.id, {
             name,
@@ -53,6 +53,7 @@ export async function PUT(
                 retentionPolicyId: d.retentionPolicyId ?? null,
             })) : undefined,
             notificationIds,
+            notificationTemplateIds: Array.isArray(notificationTemplateIds) ? notificationTemplateIds : undefined,
             encryptionProfileId,
             compression,
             pgCompression,

@@ -18,6 +18,7 @@ export interface IntegrityCheckResult {
   passed: number;
   failed: number;
   skipped: number;
+  scanFailed: number;
   errors: Array<{
     file: string;
     destination: string;
@@ -55,6 +56,7 @@ export class IntegrityService {
       passed: 0,
       failed: 0,
       skipped: 0,
+      scanFailed: 0,
       errors: [],
     };
 
@@ -99,11 +101,13 @@ export class IntegrityService {
 
     if (isJobsMode) {
       try {
-        const items = await this.gatherFilesFromJobs(filters, callbacks);
+        const { items, scanFailed } = await this.gatherFilesFromJobs(filters, callbacks);
         allWorkItems.push(...items);
+        result.scanFailed += scanFailed;
       } catch (e: unknown) {
         log.error("Failed to gather files from jobs", {}, wrapError(e));
         callbacks?.onLog("Failed to scan job-linked files", "error");
+        result.scanFailed++;
       }
     } else {
       const storageConfigs = await prisma.adapterConfig.findMany({
@@ -119,6 +123,7 @@ export class IntegrityService {
         } catch (e: unknown) {
           log.error("Failed to scan storage destination", { destination: storageConfig.name }, wrapError(e));
           callbacks?.onLog(`Failed to scan ${storageConfig.name}`, "error");
+          result.scanFailed++;
         }
       }
     }
@@ -201,7 +206,7 @@ export class IntegrityService {
   private async gatherFilesFromJobs(
     filters: IntegrityFilters,
     callbacks?: IntegrityProgressCallbacks
-  ): Promise<WorkItem[]> {
+  ): Promise<{ items: WorkItem[]; scanFailed: number }> {
     const jobs = await prisma.job.findMany({
       where: { enabled: true },
       include: {
@@ -222,6 +227,7 @@ export class IntegrityService {
 
     const seen = new Set<string>();
     const workItems: WorkItem[] = [];
+    let scanFailed = 0;
 
     // Track per-job file counts for logging
     const jobCounts = new Map<string, number>();
@@ -246,6 +252,7 @@ export class IntegrityService {
       const adapter = registry.get(dest.config.adapterId) as StorageAdapter;
       if (!adapter) {
         callbacks?.onLog(`${dest.config.name}: adapter '${dest.config.adapterId}' not found`, "error");
+        scanFailed++;
         continue;
       }
 
@@ -255,6 +262,7 @@ export class IntegrityService {
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
         callbacks?.onLog(`${dest.config.name}: config resolution failed - ${msg}`, "error");
+        scanFailed++;
         continue;
       }
 
@@ -265,6 +273,7 @@ export class IntegrityService {
         const msg = e instanceof Error ? e.message : String(e);
         log.warn("Could not list destination", { destination: dest.config.name }, wrapError(e));
         callbacks?.onLog(`${dest.config.name}: listing failed - ${msg}`, "error");
+        scanFailed++;
         continue;
       }
 
@@ -301,7 +310,7 @@ export class IntegrityService {
       callbacks?.onLog(`${jobName}: found ${count} file${count !== 1 ? "s" : ""} to verify`);
     }
 
-    return workItems;
+    return { items: workItems, scanFailed };
   }
 
   private async gatherFilesFromDestination(

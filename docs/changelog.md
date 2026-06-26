@@ -12,6 +12,7 @@ All notable changes to DBackup are documented here.
 
 ### 🎨 Improvements
 
+- **history**: Notification results (sent/failed per channel) are now shown directly in the execution log dialog, with a clickable pill per channel that opens the full notification preview.
 - **history**: Uploading step in the execution log viewer now shows orange instead of red for partial backup executions.
 
 ### 🐳 Docker

@@ -115,7 +115,8 @@ async function sendThroughChannel(
   channel: { id: string; name: string; adapterId: string; config: string; primaryCredentialId: string | null; sshCredentialId: string | null },
   payload: ReturnType<typeof renderTemplate>,
   eventType: string,
-  toOverride?: string
+  toOverride?: string,
+  opts?: { executionId?: string }
 ): Promise<void> {
   const adapter = registry.get(channel.adapterId) as
     | NotificationAdapter
@@ -217,6 +218,7 @@ async function sendThroughChannel(
       color: payload.color,
       renderedHtml,
       renderedPayload,
+      executionId: opts?.executionId,
     });
   } catch (err) {
     // Record failed send
@@ -231,6 +233,7 @@ async function sendThroughChannel(
       fields: payload.fields,
       color: payload.color,
       error: getErrorMessage(err),
+      executionId: opts?.executionId,
     });
     throw err; // Re-throw so the caller handles it
   }
@@ -256,7 +259,7 @@ async function sendThroughChannel(
  * Failures are logged but never thrown – callers should not be blocked by
  * notification delivery issues.
  */
-export async function notify(event: NotificationEventData): Promise<{ succeeded: number; failed: number } | undefined> {
+export async function notify(event: NotificationEventData, opts?: { executionId?: string }): Promise<{ succeeded: number; failed: number } | undefined> {
   let succeeded = 0;
   let failed = 0;
   try {
@@ -310,7 +313,7 @@ export async function notify(event: NotificationEventData): Promise<{ succeeded:
     if (notifyUser !== "only") {
       for (const channel of channels) {
         try {
-          await sendThroughChannel(channel, payload, event.eventType);
+          await sendThroughChannel(channel, payload, event.eventType, undefined, opts);
           succeeded++;
         } catch (err) {
           log.error(
@@ -342,7 +345,8 @@ export async function notify(event: NotificationEventData): Promise<{ succeeded:
             channel,
             payload,
             event.eventType,
-            userEmail
+            userEmail,
+            opts
           );
         } catch (err) {
           log.error(

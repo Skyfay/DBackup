@@ -5,6 +5,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import {
     Dialog,
     DialogContent,
+    DialogDescription,
     DialogFooter,
     DialogHeader,
     DialogTitle,
@@ -75,10 +76,13 @@ export function CreateGroupDialog() {
                 </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-4xl max-h-[90vh] p-0">
-                <DialogHeader className="p-6 pb-0">
+                <DialogHeader className="p-6 pb-0 shrink-0">
                     <DialogTitle>Create Group</DialogTitle>
+                    <DialogDescription className="sr-only">
+                        Create a new permission group and assign permissions.
+                    </DialogDescription>
                 </DialogHeader>
-                <ScrollArea className="max-h-[calc(90vh-8rem)] px-6">
+                <ScrollArea className="px-6 pb-4 *:data-radix-scroll-area-viewport:max-h-[calc(90vh-10rem)]">
                 <Form {...form}>
                     <form id="create-group-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                         <FormField
@@ -119,17 +123,15 @@ export function CreateGroupDialog() {
                     </form>
                 </Form>
                 </ScrollArea>
-                <div className="p-6 pt-0">
-                    <DialogFooter>
-                        <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-                            Cancel
-                        </Button>
-                        <Button type="submit" form="create-group-form" disabled={loading}>
-                            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            Create Group
-                        </Button>
-                    </DialogFooter>
-                </div>
+                <DialogFooter className="p-6 pt-0 shrink-0">
+                    <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                        Cancel
+                    </Button>
+                    <Button type="submit" form="create-group-form" disabled={loading}>
+                        {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Create Group
+                    </Button>
+                </DialogFooter>
             </DialogContent>
         </Dialog>
     )

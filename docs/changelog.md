@@ -12,6 +12,10 @@ All notable changes to DBackup are documented here.
 - **notifications**: Job notification triggers redesigned - select any combination of Success, Partial, and Failed outcomes per job instead of a fixed preset. ([#117](https://github.com/Skyfay/DBackup/issues/117))
 - **notifications**: Added Notification Templates - reusable templates with per-channel event filters (Success/Partial/Failed) that can be assigned to multiple backup jobs, replacing the per-job flat channel configuration.
 
+### 🐛 Bug Fixes
+
+- **users**: Fixed "Create Group" and "Create API Key" dialogs where the footer buttons were rendered inside the scroll area instead of being fixed at the bottom, and scrolling was broken. Added missing `DialogDescription` to resolve the `aria-describedby` accessibility warnings.
+
 ### 🎨 Improvements
 
 - **notifications**: New backup jobs now pre-select the default notification template (if one is marked as default), so it no longer has to be added manually each time. The selection can still be removed before saving.

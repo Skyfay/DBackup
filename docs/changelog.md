@@ -24,6 +24,10 @@ All notable changes to DBackup are documented here.
 - **notifications**: Fixed "Skipping notifications" not being logged when the event filter excludes the current backup status (legacy path).
 - **jobs**: Fixed cloning a job crashing when the source job has no notification templates assigned.
 
+### 🧪 Tests
+
+- **coverage**: Raised overall unit test coverage from 84% to 92% (statements) / 94% (lines) by adding 270+ new tests across notification templates, SSH key conversion, restore pipeline, backup dump, dashboard service, storage adapters (SFTP, S3/R2/Hetzner, Google Drive, OneDrive, FTP), SSH client PKCS#8 path, integrity service, encryption service, job service, and runner initialization steps.
+
 ### 🐳 Docker
 
 - **Image**: `skyfay/dbackup:vNEXT`

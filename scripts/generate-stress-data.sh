@@ -326,18 +326,18 @@ START_TIME=$(date +%s)
 
 # MySQL / MariaDB
 if [ "$DB_FILTER" = "all" ] || [ "$DB_FILTER" = "mysql" ]; then
-    populate_mysql "dbm-test-mysql-8" "MySQL 8.0" "mysql"
+    populate_mysql "dbm-test-mysql-9" "MySQL 9.1" "mysql"
     populate_mysql "dbm-test-mariadb-11" "MariaDB 11" "mariadb"
 fi
 
 # PostgreSQL
 if [ "$DB_FILTER" = "all" ] || [ "$DB_FILTER" = "postgres" ]; then
-    populate_postgres "dbm-test-pg-16" "PostgreSQL 16"
+    populate_postgres "dbm-test-pg-17" "PostgreSQL 17"
 fi
 
 # MongoDB
 if [ "$DB_FILTER" = "all" ] || [ "$DB_FILTER" = "mongodb" ]; then
-    populate_mongodb "dbm-test-mongo-7" "MongoDB 7.0"
+    populate_mongodb "dbm-test-mongo-8" "MongoDB 8.0"
 fi
 
 # MSSQL

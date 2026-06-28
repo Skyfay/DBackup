@@ -47,6 +47,6 @@ echo "🔧 Setting up MSSQL test databases..."
 # All MSSQL containers (script auto-detects sqlcmd path)
 create_testdb "dbm-test-mssql-2019"
 create_testdb "dbm-test-mssql-2022"
-create_testdb "dbm-test-mssql-edge"
+# create_testdb "dbm-test-mssql-edge"  # disabled to reduce RAM usage
 
 echo "✓ MSSQL setup complete"

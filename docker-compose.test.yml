@@ -21,20 +21,20 @@ services:
       timeout: 20s
       retries: 10
 
-  # MySQL 8.0 (Current Standard)
-  mysql-8:
-    image: mysql:8.0
-    container_name: dbm-test-mysql-8
-    command: --default-authentication-plugin=mysql_native_password
-    environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: testdb
-    ports:
-      - "33380:3306"
-    healthcheck:
-      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
-      timeout: 20s
-      retries: 10
+  # MySQL 8.0 (Current Standard) - disabled to reduce RAM usage, re-enable if needed
+  # mysql-8:
+  #   image: mysql:8.0
+  #   container_name: dbm-test-mysql-8
+  #   command: --default-authentication-plugin=mysql_native_password
+  #   environment:
+  #     MYSQL_ROOT_PASSWORD: rootpassword
+  #     MYSQL_DATABASE: testdb
+  #   ports:
+  #     - "33380:3306"
+  #   healthcheck:
+  #     test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
+  #     timeout: 20s
+  #     retries: 10
 
   # MySQL 9.1 (Innovation)
   mysql-9:
@@ -103,69 +103,69 @@ services:
       timeout: 5s
       retries: 5
 
-  # Postgres 13
-  postgres-13:
-    image: postgres:13-alpine
-    container_name: dbm-test-pg-13
-    environment:
-      POSTGRES_DB: testdb
-      POSTGRES_USER: testuser
-      POSTGRES_PASSWORD: testpassword
-    ports:
-      - "54413:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U testuser -d testdb"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+  # Postgres 13 - disabled to reduce RAM usage, re-enable if needed
+  # postgres-13:
+  #   image: postgres:13-alpine
+  #   container_name: dbm-test-pg-13
+  #   environment:
+  #     POSTGRES_DB: testdb
+  #     POSTGRES_USER: testuser
+  #     POSTGRES_PASSWORD: testpassword
+  #   ports:
+  #     - "54413:5432"
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U testuser -d testdb"]
+  #     interval: 5s
+  #     timeout: 5s
+  #     retries: 5
 
-  # Postgres 14
-  postgres-14:
-    image: postgres:14-alpine
-    container_name: dbm-test-pg-14
-    environment:
-      POSTGRES_DB: testdb
-      POSTGRES_USER: testuser
-      POSTGRES_PASSWORD: testpassword
-    ports:
-      - "54414:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U testuser -d testdb"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+  # Postgres 14 - disabled to reduce RAM usage, re-enable if needed
+  # postgres-14:
+  #   image: postgres:14-alpine
+  #   container_name: dbm-test-pg-14
+  #   environment:
+  #     POSTGRES_DB: testdb
+  #     POSTGRES_USER: testuser
+  #     POSTGRES_PASSWORD: testpassword
+  #   ports:
+  #     - "54414:5432"
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U testuser -d testdb"]
+  #     interval: 5s
+  #     timeout: 5s
+  #     retries: 5
 
-  # Postgres 15
-  postgres-15:
-    image: postgres:15-alpine
-    container_name: dbm-test-pg-15
-    environment:
-      POSTGRES_DB: testdb
-      POSTGRES_USER: testuser
-      POSTGRES_PASSWORD: testpassword
-    ports:
-      - "54415:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U testuser -d testdb"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+  # Postgres 15 - disabled to reduce RAM usage, re-enable if needed
+  # postgres-15:
+  #   image: postgres:15-alpine
+  #   container_name: dbm-test-pg-15
+  #   environment:
+  #     POSTGRES_DB: testdb
+  #     POSTGRES_USER: testuser
+  #     POSTGRES_PASSWORD: testpassword
+  #   ports:
+  #     - "54415:5432"
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U testuser -d testdb"]
+  #     interval: 5s
+  #     timeout: 5s
+  #     retries: 5
 
-  # Postgres 16
-  postgres-16:
-    image: postgres:16-alpine
-    container_name: dbm-test-pg-16
-    environment:
-      POSTGRES_DB: testdb
-      POSTGRES_USER: testuser
-      POSTGRES_PASSWORD: testpassword
-    ports:
-      - "54416:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U testuser -d testdb"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+  # Postgres 16 - disabled to reduce RAM usage, re-enable if needed
+  # postgres-16:
+  #   image: postgres:16-alpine
+  #   container_name: dbm-test-pg-16
+  #   environment:
+  #     POSTGRES_DB: testdb
+  #     POSTGRES_USER: testuser
+  #     POSTGRES_PASSWORD: testpassword
+  #   ports:
+  #     - "54416:5432"
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U testuser -d testdb"]
+  #     interval: 5s
+  #     timeout: 5s
+  #     retries: 5
 
   # Postgres 17 (Latest Stable)
   postgres-17:
@@ -206,59 +206,59 @@ services:
       timeout: 10s
       retries: 5
 
-  # MongoDB 5.0
-  mongo-5:
-    image: mongo:5.0
-    container_name: dbm-test-mongo-5
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: rootpassword
-      MONGO_INITDB_DATABASE: testdb
-    ports:
-      - "27705:27017"
-    volumes:
-      - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
-    healthcheck:
-      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
-      interval: 10s
-      timeout: 10s
-      retries: 5
+  # MongoDB 5.0 - disabled to reduce RAM usage, re-enable if needed
+  # mongo-5:
+  #   image: mongo:5.0
+  #   container_name: dbm-test-mongo-5
+  #   environment:
+  #     MONGO_INITDB_ROOT_USERNAME: root
+  #     MONGO_INITDB_ROOT_PASSWORD: rootpassword
+  #     MONGO_INITDB_DATABASE: testdb
+  #   ports:
+  #     - "27705:27017"
+  #   volumes:
+  #     - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+  #   healthcheck:
+  #     test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+  #     interval: 10s
+  #     timeout: 10s
+  #     retries: 5
 
-  # MongoDB 6.0
-  mongo-6:
-    image: mongo:6.0
-    container_name: dbm-test-mongo-6
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: rootpassword
-      MONGO_INITDB_DATABASE: testdb
-    ports:
-      - "27706:27017"
-    volumes:
-      - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
-    healthcheck:
-      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
-      interval: 10s
-      timeout: 10s
-      retries: 5
+  # MongoDB 6.0 - disabled to reduce RAM usage, re-enable if needed
+  # mongo-6:
+  #   image: mongo:6.0
+  #   container_name: dbm-test-mongo-6
+  #   environment:
+  #     MONGO_INITDB_ROOT_USERNAME: root
+  #     MONGO_INITDB_ROOT_PASSWORD: rootpassword
+  #     MONGO_INITDB_DATABASE: testdb
+  #   ports:
+  #     - "27706:27017"
+  #   volumes:
+  #     - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+  #   healthcheck:
+  #     test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+  #     interval: 10s
+  #     timeout: 10s
+  #     retries: 5
 
-  # MongoDB 7.0
-  mongo-7:
-    image: mongo:7.0
-    container_name: dbm-test-mongo-7
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: rootpassword
-      MONGO_INITDB_DATABASE: testdb
-    ports:
-      - "27707:27017"
-    volumes:
-      - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
-    healthcheck:
-      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
-      interval: 10s
-      timeout: 10s
-      retries: 5
+  # MongoDB 7.0 - disabled to reduce RAM usage, re-enable if needed
+  # mongo-7:
+  #   image: mongo:7.0
+  #   container_name: dbm-test-mongo-7
+  #   environment:
+  #     MONGO_INITDB_ROOT_USERNAME: root
+  #     MONGO_INITDB_ROOT_PASSWORD: rootpassword
+  #     MONGO_INITDB_DATABASE: testdb
+  #   ports:
+  #     - "27707:27017"
+  #   volumes:
+  #     - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+  #   healthcheck:
+  #     test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+  #     interval: 10s
+  #     timeout: 10s
+  #     retries: 5
 
   # MongoDB 8.0 (Latest)
   mongo-8:
@@ -324,23 +324,23 @@ services:
       retries: 10
       start_period: 30s
 
-  # Azure SQL Edge (ARM64 compatible - for M1/M2 Macs)
-  mssql-edge:
-    image: mcr.microsoft.com/azure-sql-edge:latest
-    container_name: dbm-test-mssql-edge
-    environment:
-      ACCEPT_EULA: "Y"
-      SA_PASSWORD: "YourStrong!Passw0rd"
-    ports:
-      - "14350:1433"
-    volumes:
-      - /tmp:/var/opt/mssql/backup
-    healthcheck:
-      test: /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P "YourStrong!Passw0rd" -Q "SELECT 1" -b -o /dev/null
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
+  # Azure SQL Edge (ARM64 compatible - for M1/M2 Macs) - disabled to reduce RAM usage, re-enable if needed
+  # mssql-edge:
+  #   image: mcr.microsoft.com/azure-sql-edge:latest
+  #   container_name: dbm-test-mssql-edge
+  #   environment:
+  #     ACCEPT_EULA: "Y"
+  #     SA_PASSWORD: "YourStrong!Passw0rd"
+  #   ports:
+  #     - "14350:1433"
+  #   volumes:
+  #     - /tmp:/var/opt/mssql/backup
+  #   healthcheck:
+  #     test: /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P "YourStrong!Passw0rd" -Q "SELECT 1" -b -o /dev/null
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 10
+  #     start_period: 30s
 
   # ==========================================
   # Redis Family
@@ -359,18 +359,18 @@ services:
       timeout: 5s
       retries: 5
 
-  # Redis 7 (Previous Stable)
-  redis-7:
-    image: redis:7-alpine
-    container_name: dbm-test-redis-7
-    command: redis-server --requirepass testpassword
-    ports:
-      - "63797:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "-a", "testpassword", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+  # Redis 7 (Previous Stable) - disabled to reduce RAM usage, re-enable if needed
+  # redis-7:
+  #   image: redis:7-alpine
+  #   container_name: dbm-test-redis-7
+  #   command: redis-server --requirepass testpassword
+  #   ports:
+  #     - "63797:6379"
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "-a", "testpassword", "ping"]
+  #     interval: 5s
+  #     timeout: 5s
+  #     retries: 5
 
   # Redis 8 (Current Stable)
   redis-8:

@@ -23,6 +23,14 @@ All notable changes to DBackup are documented here.
 - **history**: Notification results (sent/failed per channel) are now shown directly in the execution log dialog, with a clickable pill per channel that opens the full notification preview.
 - **history**: Uploading step in the execution log viewer now shows orange instead of red for partial backup executions.
 
+### 🧪 Tests
+
+- **test-infra**: Reduced active test containers in `docker-compose.test.yml` to oldest + newest version per database family (MySQL 5.7+9.1, MariaDB 10+11, PostgreSQL 12+17, MongoDB 4.4+8.0, MSSQL 2019+2022, Redis 6+8). Middle versions are commented out and can be re-enabled on demand.
+- **test-infra**: Updated `tests/integration/test-configs.ts` to match - middle versions commented out, `multiDbTestConfigs` updated to use the newest active containers (MySQL 9, PG 17, MongoDB 8). Azure SQL Edge entry commented out alongside its container.
+- **test-infra**: Updated `scripts/generate-stress-data.sh` container references to the remaining active containers (MySQL 9.1, PostgreSQL 17, MongoDB 8.0).
+- **test-infra**: Updated `scripts/setup-mssql-testdb.sh` to skip the disabled `mssql-edge` container.
+- **test-infra**: `scripts/seed-test-sources.ts` now cleans up previously seeded but now-disabled adapter configs from the dev DB on the next `pnpm test:seed` run (MySQL 8.0, PG 13-16, MongoDB 5-7, Redis 7, Azure SQL Edge).
+
 ### 🐛 Bug Fixes
 
 - **dashboard**: Fixed Backup Calendar "Last 12 months" view missing today's backups when the server runs in a non-UTC timezone.

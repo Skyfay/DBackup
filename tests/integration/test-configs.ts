@@ -39,10 +39,7 @@ export const testDatabases = [
         name: 'Test MySQL 5.7',
         config: { type: 'mysql', host: TEST_HOST, port: 33357, user: 'root', password: 'rootpassword', database: 'testdb' }
     },
-    {
-        name: 'Test MySQL 8.0',
-        config: { type: 'mysql', host: TEST_HOST, port: 33380, user: 'root', password: 'rootpassword', database: 'testdb' }
-    },
+    // { name: 'Test MySQL 8.0', config: { type: 'mysql', host: TEST_HOST, port: 33380, user: 'root', password: 'rootpassword', database: 'testdb' } }, // disabled to reduce RAM
     {
         name: 'Test MySQL 9.x',
         config: { type: 'mysql', host: TEST_HOST, port: 33390, user: 'root', password: 'rootpassword', database: 'testdb' }
@@ -61,22 +58,10 @@ export const testDatabases = [
         name: 'Test PostgreSQL 12',
         config: { type: 'postgres', host: TEST_HOST, port: 54412, user: 'testuser', password: 'testpassword', database: 'testdb' }
     },
-    {
-        name: 'Test PostgreSQL 13',
-        config: { type: 'postgres', host: TEST_HOST, port: 54413, user: 'testuser', password: 'testpassword', database: 'testdb' }
-    },
-    {
-        name: 'Test PostgreSQL 14',
-        config: { type: 'postgres', host: TEST_HOST, port: 54414, user: 'testuser', password: 'testpassword', database: 'testdb' }
-    },
-    {
-        name: 'Test PostgreSQL 15',
-        config: { type: 'postgres', host: TEST_HOST, port: 54415, user: 'testuser', password: 'testpassword', database: 'testdb' }
-    },
-    {
-        name: 'Test PostgreSQL 16',
-        config: { type: 'postgres', host: TEST_HOST, port: 54416, user: 'testuser', password: 'testpassword', database: 'testdb' }
-    },
+    // { name: 'Test PostgreSQL 13', config: { type: 'postgres', host: TEST_HOST, port: 54413, user: 'testuser', password: 'testpassword', database: 'testdb' } }, // disabled to reduce RAM
+    // { name: 'Test PostgreSQL 14', config: { type: 'postgres', host: TEST_HOST, port: 54414, user: 'testuser', password: 'testpassword', database: 'testdb' } }, // disabled to reduce RAM
+    // { name: 'Test PostgreSQL 15', config: { type: 'postgres', host: TEST_HOST, port: 54415, user: 'testuser', password: 'testpassword', database: 'testdb' } }, // disabled to reduce RAM
+    // { name: 'Test PostgreSQL 16', config: { type: 'postgres', host: TEST_HOST, port: 54416, user: 'testuser', password: 'testpassword', database: 'testdb' } }, // disabled to reduce RAM
     {
         name: 'Test PostgreSQL 17',
         config: { type: 'postgres', host: TEST_HOST, port: 54417, user: 'testuser', password: 'testpassword', database: 'testdb' }
@@ -86,18 +71,9 @@ export const testDatabases = [
         name: 'Test MongoDB 4.4',
         config: { type: 'mongodb', host: TEST_HOST, port: 27704, user: 'root', password: 'rootpassword', database: 'testdb' }
     },
-    {
-        name: 'Test MongoDB 5.0',
-        config: { type: 'mongodb', host: TEST_HOST, port: 27705, user: 'root', password: 'rootpassword', database: 'testdb' }
-    },
-    {
-        name: 'Test MongoDB 6.0',
-        config: { type: 'mongodb', host: TEST_HOST, port: 27706, user: 'root', password: 'rootpassword', database: 'testdb' }
-    },
-    {
-        name: 'Test MongoDB 7.0',
-        config: { type: 'mongodb', host: TEST_HOST, port: 27707, user: 'root', password: 'rootpassword', database: 'testdb' }
-    },
+    // { name: 'Test MongoDB 5.0', config: { type: 'mongodb', host: TEST_HOST, port: 27705, user: 'root', password: 'rootpassword', database: 'testdb' } }, // disabled to reduce RAM
+    // { name: 'Test MongoDB 6.0', config: { type: 'mongodb', host: TEST_HOST, port: 27706, user: 'root', password: 'rootpassword', database: 'testdb' } }, // disabled to reduce RAM
+    // { name: 'Test MongoDB 7.0', config: { type: 'mongodb', host: TEST_HOST, port: 27707, user: 'root', password: 'rootpassword', database: 'testdb' } }, // disabled to reduce RAM
     {
         name: 'Test MongoDB 8.0',
         config: { type: 'mongodb', host: TEST_HOST, port: 27708, user: 'root', password: 'rootpassword', database: 'testdb' }
@@ -135,21 +111,22 @@ export const testDatabases = [
             localBackupPath: '/tmp'
         }
     },
-    {
-        name: 'Test Azure SQL Edge',
-        config: {
-            type: 'mssql',
-            host: TEST_HOST,
-            port: 14350,
-            user: 'sa',
-            password: 'YourStrong!Passw0rd',
-            database: 'testdb',
-            encrypt: true,
-            trustServerCertificate: true,
-            backupPath: '/var/opt/mssql/backup',
-            localBackupPath: '/tmp'
-        }
-    },
+    // Test Azure SQL Edge - disabled to reduce RAM usage (also has ARM64 limitations)
+    // {
+    //     name: 'Test Azure SQL Edge',
+    //     config: {
+    //         type: 'mssql',
+    //         host: TEST_HOST,
+    //         port: 14350,
+    //         user: 'sa',
+    //         password: 'YourStrong!Passw0rd',
+    //         database: 'testdb',
+    //         encrypt: true,
+    //         trustServerCertificate: true,
+    //         backupPath: '/var/opt/mssql/backup',
+    //         localBackupPath: '/tmp'
+    //     }
+    // },
     // --- Redis ---
     {
         name: 'Test Redis 6',
@@ -161,16 +138,7 @@ export const testDatabases = [
             database: 0
         }
     },
-    {
-        name: 'Test Redis 7',
-        config: {
-            type: 'redis',
-            host: TEST_HOST,
-            port: 63797,
-            password: 'testpassword',
-            database: 0
-        }
-    },
+    // { name: 'Test Redis 7', config: { type: 'redis', host: TEST_HOST, port: 63797, password: 'testpassword', database: 0 } }, // disabled to reduce RAM
     {
         name: 'Test Redis 8',
         config: {
@@ -187,33 +155,33 @@ export const testDatabases = [
 // These test the TAR-based multi-DB backup/restore functionality
 export const multiDbTestConfigs = [
     {
-        name: 'MySQL 8 Multi-DB',
+        name: 'MySQL 9 Multi-DB',
         config: {
             type: 'mysql',
             host: TEST_HOST,
-            port: 33380,
+            port: 33390,
             user: 'root',
             password: 'rootpassword',
             database: ['testdb', 'mysql'] // Multiple databases
         }
     },
     {
-        name: 'PostgreSQL 16 Multi-DB',
+        name: 'PostgreSQL 17 Multi-DB',
         config: {
             type: 'postgres',
             host: TEST_HOST,
-            port: 54416,
+            port: 54417,
             user: 'testuser',
             password: 'testpassword',
             database: ['testdb', 'postgres'] // Multiple databases
         }
     },
     {
-        name: 'MongoDB 7 Multi-DB',
+        name: 'MongoDB 8 Multi-DB',
         config: {
             type: 'mongodb',
             host: TEST_HOST,
-            port: 27707,
+            port: 27708,
             user: 'root',
             password: 'rootpassword',
             database: ['testdb', 'admin'] // Multiple databases
@@ -221,8 +189,8 @@ export const multiDbTestConfigs = [
     }
 ];
 
-// Databases that are known to have limitations (e.g., Azure SQL Edge on ARM64)
-export const limitedDatabases = ['Test Azure SQL Edge'];
+// Databases that are known to have limitations (container currently disabled - re-enable mssql-edge in docker-compose.test.yml if needed)
+export const limitedDatabases: string[] = [];
 
 // Get list of databases to skip based on missing CLI tools
 export function shouldSkipDatabase(name: string, type: string): boolean {

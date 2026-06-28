@@ -106,7 +106,7 @@ function DiscordPreview({ entry }: NotificationPreviewProps) {
                           <div className="text-[#B5BAC1] text-xs font-bold">
                             {field.name}
                           </div>
-                          <div className="text-[#DBDEE1] text-sm mt-0.5 break-words">{field.value}</div>
+                          <div className="text-[#DBDEE1] text-sm mt-0.5 wrap-break-word">{field.value}</div>
                         </div>
                       ))}
                     </div>

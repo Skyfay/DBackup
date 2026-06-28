@@ -28,6 +28,7 @@ All notable changes to DBackup are documented here.
 - **dashboard**: Fixed Backup Calendar "Last 12 months" view missing today's backups when the server runs in a non-UTC timezone.
 - **notifications**: Fixed "Skipping notifications" not being logged when the event filter excludes the current backup status (legacy path).
 - **jobs**: Fixed cloning a job crashing when the source job has no notification templates assigned.
+- **notifications**: Fixed email preview not showing the logo because the URL pattern used for local replacement did not match the current `docs.dbackup.app` domain.
 
 ### 🧪 Tests
 

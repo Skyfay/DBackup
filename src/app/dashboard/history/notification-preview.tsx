@@ -179,7 +179,7 @@ function EmailPreview({ entry }: NotificationPreviewProps) {
   if (entry.renderedHtml) {
     // Replace external logo URL with local path for preview rendering
     const previewHtml = entry.renderedHtml.replace(
-      /https:\/\/dbackup\.app\/logo\.png/g,
+      /https:\/\/docs\.dbackup\.app\/logo\.png/g,
       "/logo.svg"
     );
     return (

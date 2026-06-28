@@ -351,9 +351,9 @@ describe('stepExecuteDump - string dbVal branch coverage (lines 125-165)', () =>
     // -------------------------------------------------------------------------
 
     it('logs error and continues to dump when metadata calculation throws unexpectedly', async () => {
-        const { wrapError } = await import('@/lib/logging/errors');
+        const { wrapError: _wrapError } = await import('@/lib/logging/errors');
         const { logger } = await import('@/lib/logging/logger');
-        const mockLog = (logger.child as ReturnType<typeof vi.fn>).mock.results[0]?.value ?? {
+        const _mockLog = (logger.child as ReturnType<typeof vi.fn>).mock.results[0]?.value ?? {
             error: vi.fn(),
         };
 
@@ -529,9 +529,9 @@ describe('stepExecuteDump - string dbVal branch coverage (lines 125-165)', () =>
         const ctx = makeCtx();
         (ctx.job as any).databases = JSON.stringify(['db']);
 
-        let callCount = 0;
+        let _callCount = 0;
         (ctx.log as ReturnType<typeof vi.fn>).mockImplementation((msg: string) => {
-            callCount++;
+            _callCount++;
             // Throw on the "Metadata calculated" log call (line 199) to trigger outer catch.
             if (typeof msg === 'string' && msg.startsWith('Metadata calculated')) {
                 throw new Error('log exploded');

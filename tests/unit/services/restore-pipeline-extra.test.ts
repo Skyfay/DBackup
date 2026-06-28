@@ -480,10 +480,10 @@ describe('runRestorePipeline (extra coverage)', () => {
     it('classifies adapter callback message as error when it contains "error"', async () => {
         const storageAdapter = makeStorageAdapter();
 
-        let capturedCallback: ((...args: any[]) => void) | null = null;
+        let _capturedCallback: ((...args: any[]) => void) | null = null;
         const dbAdapter = {
             restore: vi.fn().mockImplementation((_cfg: any, _file: any, onMsg: (...args: any[]) => void) => {
-                capturedCallback = onMsg;
+                _capturedCallback = onMsg;
                 // Emit a message that should be classified as error level.
                 onMsg('SQL error: unknown column', undefined, undefined, undefined);
                 return Promise.resolve({ success: true });

@@ -57,17 +57,17 @@ function makeCallbacks() {
 
 // Reset system settings to "destinations" scan mode by default.
 function mockSettingsDestinations() {
-    prismaMock.systemSetting.findUnique.mockImplementation(async ({ where }: any) => {
+    prismaMock.systemSetting.findUnique.mockImplementation((async ({ where }: any) => {
         if (where.key === 'integrity.scanMode') return { key: 'integrity.scanMode', value: 'destinations' } as any;
         return null;
-    });
+    }) as any);
 }
 
 function mockSettingsJobs() {
-    prismaMock.systemSetting.findUnique.mockImplementation(async ({ where }: any) => {
+    prismaMock.systemSetting.findUnique.mockImplementation((async ({ where }: any) => {
         if (where.key === 'integrity.scanMode') return null; // null = jobs mode
         return null;
-    });
+    }) as any);
 }
 
 // --- Tests for gatherFilesFromJobs paths (lines 224-313) ---
@@ -206,10 +206,10 @@ describe('IntegrityService - gatherFilesFromJobs additional paths', () => {
 
     it('filters files by maxAgeDays in jobs mode', async () => {
         // Make the setting return a maxAgeDays of 1.
-        prismaMock.systemSetting.findUnique.mockImplementation(async ({ where }: any) => {
+        prismaMock.systemSetting.findUnique.mockImplementation((async ({ where }: any) => {
             if (where.key === 'integrity.maxAgeDays') return { key: 'integrity.maxAgeDays', value: '1' } as any;
             return null;
-        });
+        }) as any);
 
         const oldDate = new Date(Date.now() - 2 * 86_400_000).toISOString(); // 2 days ago
         const recentDate = new Date(Date.now() - 0.5 * 86_400_000).toISOString(); // 12 h ago
@@ -343,11 +343,11 @@ describe('IntegrityService - gatherFilesFromDestination additional paths', () =>
     });
 
     it('applies maxFileSizeMb filter in destinations mode (line 371)', async () => {
-        prismaMock.systemSetting.findUnique.mockImplementation(async ({ where }: any) => {
+        prismaMock.systemSetting.findUnique.mockImplementation((async ({ where }: any) => {
             if (where.key === 'integrity.scanMode') return { key: 'integrity.scanMode', value: 'destinations' } as any;
             if (where.key === 'integrity.maxFileSizeMb') return { key: 'integrity.maxFileSizeMb', value: '1' } as any;
             return null;
-        });
+        }) as any);
 
         prismaMock.adapterConfig.findMany.mockResolvedValue([makeStorageConfig() as any]);
 

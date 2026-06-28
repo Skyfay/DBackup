@@ -74,7 +74,6 @@ describe("SshClient - PKCS#8 encrypted key handling (lines 43-53)", () => {
 
     it("wraps non-Error throws from normalizeSshPrivateKey into an Error", async () => {
         mockNormalize.mockImplementation(() => {
-            // eslint-disable-next-line @typescript-eslint/no-throw-literal
             throw "string error";
         });
 

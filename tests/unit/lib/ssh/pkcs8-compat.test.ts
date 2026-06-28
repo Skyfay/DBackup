@@ -11,14 +11,14 @@ let ed25519EncryptedPem: string;
 
 beforeAll(() => {
     const rsa = generateKeyPairSync("rsa", {
-        modulusLength: 1024,
+        modulusLength: 2048,
         privateKeyEncoding: {
             type: "pkcs8",
             format: "pem",
             cipher: "aes-256-cbc",
             passphrase: PASSPHRASE,
         },
-    } as Parameters<typeof generateKeyPairSync>[1]);
+    } as any);
     rsaEncryptedPem = rsa.privateKey as string;
 
     const ec = generateKeyPairSync("ec", {
@@ -29,7 +29,7 @@ beforeAll(() => {
             cipher: "aes-256-cbc",
             passphrase: PASSPHRASE,
         },
-    } as Parameters<typeof generateKeyPairSync>[1]);
+    } as any);
     ecEncryptedPem = ec.privateKey as string;
 
     const ed = generateKeyPairSync("ed25519", {
@@ -40,7 +40,7 @@ beforeAll(() => {
             passphrase: PASSPHRASE,
         },
     } as Parameters<typeof generateKeyPairSync>[1]);
-    ed25519EncryptedPem = ed.privateKey as string;
+    ed25519EncryptedPem = ed.privateKey as unknown as string;
 });
 
 // ─── RSA ─────────────────────────────────────────────────────────────────────

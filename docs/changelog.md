@@ -5,6 +5,8 @@ All notable changes to DBackup are documented here.
 ## vNEXT
 *Release: In Progress*
 
+> ⚠️ **Breaking:** The per-job notification configuration has been replaced by Notification Templates, and existing job notification settings are **not** migrated automatically. After updating, every backup job loses its notification setup and must be reconfigured: create a Notification Template under **Templates -> Notification Templates** (assign channels and pick the Success/Partial/Failed events per channel), then assign it to each job via the job edit form. You can mark one template as the default so it is pre-selected for new jobs.
+
 ### ✨ Features
 
 - **notifications**: Job notification triggers redesigned - select any combination of Success, Partial, and Failed outcomes per job instead of a fixed preset. ([#117](https://github.com/Skyfay/DBackup/issues/117))

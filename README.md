@@ -165,8 +165,8 @@ Open [https://localhost:3000](https://localhost:3000) and create your admin acco
 | MySQL | 5.7, 8.x, 9.x | Direct, SSH | Yes |
 | MariaDB | 10.x, 11.x | Direct, SSH | Yes |
 | MongoDB | 4.x, 5.x, 6.x, 7.x, 8.x | Direct, SSH | Yes |
-| Redis | 2.8+ | Direct, SSH | Manual |
-| Valkey | 7.2+ | Direct, SSH | Manual |
+| Redis | 2.8+ | Direct, SSH | Guided |
+| Valkey | 7.2+ | Direct, SSH | Guided |
 | SQLite | 3.x | Local, SSH | Yes |
 | Microsoft SQL Server | 2017, 2019, 2022, Azure SQL Edge | Direct (+ SSH for file transfer) | Yes |
 

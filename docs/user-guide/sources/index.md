@@ -4,15 +4,16 @@ DBackup supports a wide variety of database engines.
 
 ## Supported Databases
 
-| Database | Supported Versions | Backup Method |
-| :--- | :--- | :--- |
-| [MySQL](/user-guide/sources/mysql) | 5.7, 8.x, 9.x | `mysqldump` |
-| [MariaDB](/user-guide/sources/mysql) | 10.x, 11.x | `mariadb-dump` |
-| [PostgreSQL](/user-guide/sources/postgresql) | 12 – 18 | `pg_dump` |
-| [MongoDB](/user-guide/sources/mongodb) | 4.x – 8.x | `mongodump` |
-| [Redis](/user-guide/sources/redis) | 6.x, 7.x, 8.x | `redis-cli --rdb` |
-| [SQLite](/user-guide/sources/sqlite) | 3.x | `.dump` command |
-| [MSSQL](/user-guide/sources/mssql) | 2017, 2019, 2022 | `BACKUP DATABASE` |
+| Database | Supported Versions | Backup Method | Restore |
+| :--- | :--- | :--- | :--- |
+| [MySQL](/user-guide/sources/mysql) | 5.7, 8.x, 9.x | `mysqldump` | ✅ |
+| [MariaDB](/user-guide/sources/mysql) | 10.x, 11.x | `mariadb-dump` | ✅ |
+| [PostgreSQL](/user-guide/sources/postgresql) | 12 – 18 | `pg_dump` | ✅ |
+| [MongoDB](/user-guide/sources/mongodb) | 4.x – 8.x | `mongodump` | ✅ |
+| [Redis](/user-guide/sources/redis) | 2.8+ | `redis-cli --rdb` | Manual |
+| [Valkey](/user-guide/sources/valkey) | 7.2+ | `redis-cli --rdb` | Manual |
+| [SQLite](/user-guide/sources/sqlite) | 3.x | `.dump` command | ✅ |
+| [MSSQL](/user-guide/sources/mssql) | 2017, 2019, 2022 | `BACKUP DATABASE` | ✅ |
 
 ## Database Explorer
 
@@ -41,7 +42,7 @@ DBackup supports two connection modes for most database types:
 
 In SSH mode, DBackup connects to the remote server via SSH and executes database CLI tools (e.g., `mysqldump`, `pg_dump`) **directly on that server**. The backup output is streamed back to DBackup over the SSH connection. This is **not** an SSH tunnel - the database tools run remotely.
 
-**Supported adapters:** MySQL, MariaDB, PostgreSQL, MongoDB, Redis, SQLite
+**Supported adapters:** MySQL, MariaDB, PostgreSQL, MongoDB, Redis, Valkey, SQLite
 
 ::: warning Required: Database CLI Tools on Remote Host
 When using SSH mode, the required database client tools **must be installed on the remote SSH server**. DBackup does not transfer or install any tools - it only executes them. See the individual adapter pages for the specific tools required.

@@ -6,7 +6,11 @@ Redis is an in-memory data structure store used as a database, cache, message br
 
 | Versions |
 | :--- |
-| 6.x, 7.x, 8.x |
+| 2.8+ |
+
+::: info Valkey
+[Valkey](https://valkey.io) is a Redis-compatible fork supported from version 7.2+. Use the dedicated **Valkey** source type for correct version display in DBackup. Existing Redis sources also connect to Valkey servers without changes.
+:::
 
 ## Connection Modes
 

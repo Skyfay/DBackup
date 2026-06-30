@@ -100,7 +100,7 @@ export function RestoreClient() {
 
     const isSystemConfig = file?.sourceType === 'SYSTEM';
 
-    const SERVER_ADAPTERS = ['mysql', 'mariadb', 'postgres', 'mongodb', 'mssql', 'redis'];
+    const SERVER_ADAPTERS = ['mysql', 'mariadb', 'postgres', 'mongodb', 'mssql', 'redis', 'valkey'];
     const resolvedSourceType = backupSourceType || file?.sourceType || '';
     const isServerAdapter = SERVER_ADAPTERS.includes(resolvedSourceType.toLowerCase());
 
@@ -350,7 +350,7 @@ export function RestoreClient() {
         );
     }
 
-    const isRedisBackup = file.sourceType?.toLowerCase() === 'redis';
+    const isRedisBackup = ['redis', 'valkey'].includes(file.sourceType?.toLowerCase() ?? '');
 
     // Redis backups use a specialized step-by-step wizard
     if (isRedisBackup) {

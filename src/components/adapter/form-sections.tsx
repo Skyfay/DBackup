@@ -415,7 +415,7 @@ export function DatabaseFormContent({
                         </Badge>
                     </div>
                 )}
-                {adapter.id === 'redis' && (
+                {(adapter.id === 'redis' || adapter.id === 'valkey') && (
                     <RedisDatabaseSelect />
                 )}
                 <FieldList
@@ -544,7 +544,7 @@ function SshAwareTabLayout({
                     </TabsContent>
 
                     <TabsContent value="configuration" className="space-y-4 pt-4">
-                        {adapter.id === 'redis' && <RedisDatabaseSelect />}
+                        {(adapter.id === 'redis' || adapter.id === 'valkey') && <RedisDatabaseSelect />}
                         <FieldList
                             keys={[
                                 'authenticationDatabase', 'options', 'disableSsl',
@@ -587,7 +587,7 @@ function SshAwareTabLayout({
                     </TabsContent>
 
                     <TabsContent value="configuration" className="space-y-4 pt-4">
-                        {adapter.id === 'redis' && <RedisDatabaseSelect />}
+                        {(adapter.id === 'redis' || adapter.id === 'valkey') && <RedisDatabaseSelect />}
                         <FieldList
                             keys={[
                                 'authenticationDatabase', 'options', 'disableSsl',

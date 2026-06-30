@@ -5,6 +5,14 @@ All notable changes to DBackup are documented here.
 ## vNEXT
 *Release: In Progress*
 
+### ✨ Features
+
+- **Valkey**: Added Valkey as a supported database source. Uses the same RDB backup mechanism as Redis with correct version display.
+
+### 📝 Documentation
+
+- **Redis**: Updated supported version documentation from `6.x` to `2.8+` to reflect actual compatibility.
+
 ### 🐛 Bug Fixes
 
 - **storage alerts**: Fixed "Missing Backup" alert firing incorrectly when a retention policy keeps the file count stable, making the alert appear even though backups were completing successfully.

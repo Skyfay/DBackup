@@ -148,6 +148,17 @@ export const testDatabases = [
             password: 'testpassword',
             database: 0
         }
+    },
+    // --- Valkey ---
+    {
+        name: 'Test Valkey 8',
+        config: {
+            type: 'valkey',
+            host: TEST_HOST,
+            port: 63780,
+            password: 'testpassword',
+            database: 0
+        }
     }
 ];
 

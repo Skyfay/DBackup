@@ -145,6 +145,7 @@ export function AdapterManager({ type, title, description, canManage = true, per
                 case 'mongodb':
                     return <span className="text-muted-foreground">{config.user}@{config.host}:{config.port}</span>;
                 case 'redis':
+                case 'valkey':
                     return <span className="text-muted-foreground">{config.host}:{config.port} (DB {config.database ?? 0})</span>;
                 case 'local-filesystem':
                     return <span className="text-muted-foreground">{config.basePath}</span>;

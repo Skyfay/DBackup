@@ -73,6 +73,7 @@ interface DatabaseTableDataProps {
 }
 
 const REDIS_ADAPTER = "redis";
+const VALKEY_ADAPTER = "valkey";
 const MONGO_ADAPTER = "mongodb";
 
 const TYPE_COLORS: Record<string, string> = {
@@ -170,7 +171,7 @@ export function DatabaseTableData({ sourceId, database, table, adapterId }: Data
         return String(value);
     };
 
-    const isRedis = adapterId === REDIS_ADAPTER;
+    const isRedis = adapterId === REDIS_ADAPTER || adapterId === VALKEY_ADAPTER;
     const isMongo = adapterId === MONGO_ADAPTER;
 
     const visibleCols = columns.filter(col => !hiddenColumns.has(col.name));

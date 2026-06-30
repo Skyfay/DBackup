@@ -2,6 +2,21 @@
 
 All notable changes to DBackup are documented here.
 
+## vNEXT
+*Release: In Progress*
+
+### 🐛 Bug Fixes
+
+- **storage alerts**: Fixed "Missing Backup" alert firing incorrectly when a retention policy keeps the file count stable, making the alert appear even though backups were completing successfully.
+
+### 🐳 Docker
+
+- **Image**: `skyfay/dbackup:vNEXT`
+- **Also tagged as**: `latest`, `vNEXT`
+- **CI Image**: `skyfay/dbackup:ci`
+- **Platforms**: linux/amd64, linux/arm64
+
+
 ## v2.8.0 - Notification Templates, Per-Job Event Filters, and Multiple Bug Fixes
 *Released: June 28, 2026*
 

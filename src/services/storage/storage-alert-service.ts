@@ -366,7 +366,12 @@ async function checkStorageLimit(
 }
 
 /**
- * Check if too much time has passed since the last backup count increase.
+ * Check if too much time has passed since the last successful backup to this destination.
+ *
+ * Primary source: Execution table - reliable regardless of retention policy behavior.
+ * When retention deletes old files as new ones arrive, the net file count stays constant
+ * between hourly snapshots, making count-change detection unreliable as the sole signal.
+ * Fallback: snapshot count-change history for destinations with no execution records.
  */
 async function checkMissingBackup(
   entry: StorageVolumeEntry,
@@ -376,35 +381,51 @@ async function checkMissingBackup(
 ): Promise<void> {
   if (config.missingBackupHours <= 0) return;
 
-  // Find the most recent snapshot where count was different (a backup was added)
-  const snapshots = await prisma.storageSnapshot.findMany({
-    where: { adapterConfigId: entry.configId! },
-    orderBy: { createdAt: "desc" },
-    take: 100,
-    select: { count: true, createdAt: true },
+  let lastBackupAt: Date | null = null;
+
+  // Primary: most recent successful Backup execution for any job targeting this destination.
+  const latestExecution = await prisma.execution.findFirst({
+    where: {
+      type: "Backup",
+      status: { in: ["Success", "Partial"] },
+      job: {
+        destinations: { some: { configId: entry.configId! } },
+      },
+    },
+    orderBy: { startedAt: "desc" },
+    select: { startedAt: true, endedAt: true },
   });
 
-  if (snapshots.length < 2) return;
+  if (latestExecution) {
+    lastBackupAt = latestExecution.endedAt ?? latestExecution.startedAt;
+  } else {
+    // Fallback: snapshot count-change history (covers externally-created backups not tracked in Execution).
+    const snapshots = await prisma.storageSnapshot.findMany({
+      where: { adapterConfigId: entry.configId! },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      select: { count: true, createdAt: true },
+    });
 
-  // Find the first snapshot with a count change (i.e. the last time a new backup appeared)
-  const currentCount = snapshots[0].count;
-  let lastChangeAt: Date | null = null;
+    if (snapshots.length < 2) return;
 
-  for (let i = 1; i < snapshots.length; i++) {
-    if (snapshots[i].count !== currentCount) {
-      // The change happened between snapshot i and i-1
-      lastChangeAt = snapshots[i - 1].createdAt;
-      break;
+    const currentCount = snapshots[0].count;
+    for (let i = 1; i < snapshots.length; i++) {
+      if (snapshots[i].count !== currentCount) {
+        lastBackupAt = snapshots[i - 1].createdAt;
+        break;
+      }
+    }
+
+    if (!lastBackupAt) {
+      lastBackupAt = snapshots[snapshots.length - 1].createdAt;
     }
   }
 
-  // If no count change found in history, use the oldest snapshot as reference
-  if (!lastChangeAt) {
-    lastChangeAt = snapshots[snapshots.length - 1].createdAt;
-  }
+  if (!lastBackupAt) return;
 
   const hoursSinceLastBackup =
-    (Date.now() - lastChangeAt.getTime()) / (1000 * 60 * 60);
+    (Date.now() - lastBackupAt.getTime()) / (1000 * 60 * 60);
 
   if (hoursSinceLastBackup >= config.missingBackupHours) {
     if (shouldNotify(states.missingBackup, cooldownMs)) {
@@ -418,7 +439,7 @@ async function checkMissingBackup(
         eventType: NOTIFICATION_EVENTS.STORAGE_MISSING_BACKUP,
         data: {
           storageName: entry.name,
-          lastBackupAt: lastChangeAt.toISOString(),
+          lastBackupAt: lastBackupAt.toISOString(),
           thresholdHours: config.missingBackupHours,
           hoursSinceLastBackup: Math.round(hoursSinceLastBackup),
           timestamp: new Date().toISOString(),

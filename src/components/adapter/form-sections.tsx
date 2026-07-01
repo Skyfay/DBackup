@@ -310,23 +310,23 @@ export function DatabaseFormContent({
                         </TabsContent>
 
                         <TabsContent value="configuration" className="space-y-4 pt-4 mt-2">
-                             <div className="space-y-4">
+                            <div className="space-y-4">
                                 <FieldList keys={['path']} adapter={adapter} sshCredentialId={sshCredentialId} />
                                 <FieldList keys={['sqliteBinaryPath']} adapter={adapter} sshCredentialId={sshCredentialId} />
-                             </div>
-                             {onHealthNotificationsDisabledChange && (
-                                 <HealthCheckNotificationSwitch
-                                     type="database"
-                                     disabled={healthNotificationsDisabled ?? false}
-                                     onChange={onHealthNotificationsDisabledChange}
-                                 />
-                             )}
-                             {onIsRestoreExcludedChange && (
-                                 <RestoreExcludedSwitch
-                                     excluded={isRestoreExcluded ?? false}
-                                     onChange={onIsRestoreExcludedChange}
-                                 />
-                             )}
+                            </div>
+                            {onHealthNotificationsDisabledChange && (
+                                <HealthCheckNotificationSwitch
+                                    type="database"
+                                    disabled={healthNotificationsDisabled ?? false}
+                                    onChange={onHealthNotificationsDisabledChange}
+                                />
+                            )}
+                            {onIsRestoreExcludedChange && (
+                                <RestoreExcludedSwitch
+                                    excluded={isRestoreExcluded ?? false}
+                                    onChange={onIsRestoreExcludedChange}
+                                />
+                            )}
                         </TabsContent>
                     </Tabs>
                  )}

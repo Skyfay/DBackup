@@ -15,7 +15,7 @@ All notable changes to DBackup are documented here.
 
 ### 🎨 Improvements
 
-- **adapter form**: Configuration tab content is now wrapped in a scroll area, allowing users to scroll through long configuration fields without the content being cut off.
+- **adapter form**: The add/edit dialog is now scrollable when configuration fields exceed the available screen height, with action buttons always pinned at the bottom.
 
 ### 📝 Documentation
 

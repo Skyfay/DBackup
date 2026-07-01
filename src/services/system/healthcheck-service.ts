@@ -116,26 +116,22 @@ export class HealthCheckService {
             }
         }
 
-        // Retention Policy: Delete logs older than 48 hours
-        try {
-            const retentionDate = new Date();
-            retentionDate.setHours(retentionDate.getHours() - 48);
-
-            const deleted = await prisma.healthCheckLog.deleteMany({
-                where: {
-                    createdAt: {
-                        lt: retentionDate
-                    }
-                }
-            });
-            if (deleted.count > 0) {
-                log.info("Cleaned up old health check logs", { deletedCount: deleted.count });
-            }
-        } catch (e) {
-            log.error("Failed to run log retention", {}, wrapError(e));
-        }
-
         log.debug("Health check cycle completed");
+    }
+
+    /** Delete health check logs older than the given retention period (in days). */
+    async cleanOldLogs(retentionDays: number) {
+        const retentionDate = new Date();
+        retentionDate.setDate(retentionDate.getDate() - retentionDays);
+
+        const deleted = await prisma.healthCheckLog.deleteMany({
+            where: {
+                createdAt: {
+                    lt: retentionDate
+                }
+            }
+        });
+        return deleted.count;
     }
 
     /**

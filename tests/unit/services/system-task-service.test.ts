@@ -14,7 +14,10 @@ vi.mock('@/services/system/update-service', () => ({
     updateService: { checkForUpdates: vi.fn().mockResolvedValue({ updateAvailable: false }) },
 }));
 vi.mock('@/services/system/healthcheck-service', () => ({
-    healthCheckService: { performHealthCheck: vi.fn().mockResolvedValue(undefined) },
+    healthCheckService: {
+        performHealthCheck: vi.fn().mockResolvedValue(undefined),
+        cleanOldLogs: vi.fn().mockResolvedValue(0),
+    },
 }));
 vi.mock('@/services/audit-service', () => ({
     auditService: { cleanOldLogs: vi.fn().mockResolvedValue({ count: 0 }) },
@@ -232,6 +235,7 @@ describe('SystemTaskService', () => {
             prismaMock.systemSetting.findUnique
                 .mockResolvedValueOnce(null) // audit retention
                 .mockResolvedValueOnce(null) // snapshot retention
+                .mockResolvedValueOnce(null) // healthcheck retention
                 .mockResolvedValueOnce({ key: 'notification.logRetentionDays', value: '30' } as any);
             prismaMock.notificationLog.deleteMany.mockResolvedValue({ count: 5 });
 
@@ -240,6 +244,16 @@ describe('SystemTaskService', () => {
             expect(prismaMock.notificationLog.deleteMany).toHaveBeenCalledWith(
                 expect.objectContaining({ where: { sentAt: { lt: expect.any(Date) } } })
             );
+        });
+
+        it('calls healthCheckService.cleanOldLogs for CLEAN_OLD_LOGS', async () => {
+            const { healthCheckService } = await import('@/services/system/healthcheck-service');
+            prismaMock.systemSetting.findUnique.mockResolvedValue(null);
+            prismaMock.notificationLog.deleteMany.mockResolvedValue({ count: 0 });
+
+            await service.runTask(SYSTEM_TASKS.CLEAN_OLD_LOGS);
+
+            expect(healthCheckService.cleanOldLogs).toHaveBeenCalledWith(2);
         });
 
         it('calls updateService.checkForUpdates for CHECK_FOR_UPDATES', async () => {

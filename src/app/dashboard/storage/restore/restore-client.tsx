@@ -351,8 +351,9 @@ export function RestoreClient() {
     }
 
     const isRedisBackup = ['redis', 'valkey'].includes(file.sourceType?.toLowerCase() ?? '');
+    const redisEngineName = file.sourceType?.toLowerCase() === 'valkey' ? 'Valkey' : 'Redis';
 
-    // Redis backups use a specialized step-by-step wizard
+    // Redis/Valkey backups use a specialized step-by-step wizard
     if (isRedisBackup) {
         return (
             <div className="space-y-6">
@@ -364,7 +365,7 @@ export function RestoreClient() {
                             </Button>
                             <div>
                                 <h2 className="text-3xl font-bold tracking-tight">Restore Backup</h2>
-                                <p className="text-muted-foreground">Redis restore requires manual steps - follow the wizard below.</p>
+                                <p className="text-muted-foreground">{redisEngineName} restore requires manual steps - follow the wizard below.</p>
                             </div>
                         </div>
                     </div>
@@ -387,7 +388,7 @@ export function RestoreClient() {
                                         <DateDisplay date={file.lastModified} className="text-sm" />
                                     </span>
                                     <Badge variant="secondary" className="text-xs">
-                                        Redis {file.engineVersion || ""}
+                                        {redisEngineName} {file.engineVersion || ""}
                                     </Badge>
                                     {file.compression && (
                                         <Badge variant="outline" className="text-xs">{file.compression}</Badge>
@@ -405,6 +406,7 @@ export function RestoreClient() {
                     file={file}
                     destinationId={destinationId}
                     onCancel={handleCancel}
+                    engineName={redisEngineName}
                 />
             </div>
         );

@@ -39,7 +39,7 @@ export async function prepareRestore(config: RedisRestoreConfig, _databases: str
         await execFileAsync("redis-cli", [...args, "PING"]);
     } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
-        throw new Error(`Cannot connect to Redis: ${message}`);
+        throw new Error(`Cannot connect to Redis/Valkey: ${message}`);
     }
 
     // Check if we have admin permissions (needed for potential FLUSHALL)
@@ -93,19 +93,29 @@ export async function restore(
     };
 
     try {
-        log("Starting Redis restore preparation...", "info");
+        // Detect whether the target server is Redis or Valkey (both share this restore flow)
+        const args = buildConnectionArgs(config);
+        let engineName = "Redis";
+        try {
+            const { stdout: serverInfo } = await execFileAsync("redis-cli", [...args, "INFO", "server"]);
+            if (/valkey_version:/.test(serverInfo)) engineName = "Valkey";
+        } catch {
+            // Fall back to "Redis" if INFO server can't be queried
+        }
+        const engineLower = engineName.toLowerCase();
+
+        log(`Starting ${engineName} restore preparation...`, "info");
 
         // Verify the backup file exists
         const fs = await import("fs/promises");
         const stats = await fs.stat(sourcePath);
         log(`Backup file size: ${stats.size} bytes`, "info");
 
-        // Get Redis server info to provide instructions
-        const args = buildConnectionArgs(config);
+        // Get server info to provide instructions
         const { stdout: infoResult } = await execFileAsync("redis-cli", [...args, "CONFIG", "GET", "dir"]);
 
         const lines = infoResult.trim().split("\n");
-        const dataDir = lines[1] || "/var/lib/redis";
+        const dataDir = lines[1] || `/var/lib/${engineLower}`;
 
         const { stdout: dbFilename } = await execFileAsync("redis-cli", [...args, "CONFIG", "GET", "dbfilename"]);
         const dbLines = dbFilename.trim().split("\n");
@@ -113,31 +123,31 @@ export async function restore(
 
         log("", "info");
         log("═══════════════════════════════════════════════════════════", "info");
-        log("⚠️  REDIS RESTORE REQUIRES MANUAL STEPS", "warning");
+        log(`⚠️  ${engineName.toUpperCase()} RESTORE REQUIRES MANUAL STEPS`, "warning");
         log("═══════════════════════════════════════════════════════════", "info");
         log("", "info");
-        log("Redis does not support remote RDB restore.", "info");
+        log(`${engineName} does not support remote RDB restore.`, "info");
         log("To complete the restore, follow these steps:", "info");
         log("", "info");
-        log(`1. Stop the Redis server`, "info");
+        log(`1. Stop the ${engineName} server`, "info");
         log(`2. Copy the backup file to: ${dataDir}/${rdbFilename}`, "info");
-        log(`3. Ensure correct file permissions (redis:redis)`, "info");
-        log(`4. Start the Redis server`, "info");
+        log(`3. Ensure correct file permissions (${engineLower}:${engineLower})`, "info");
+        log(`4. Start the ${engineName} server`, "info");
         log("", "info");
 
         // Format manual commands as collapsible details
         const systemdCommands = [
-            `sudo systemctl stop redis`,
+            `sudo systemctl stop ${engineLower}`,
             `sudo cp "${sourcePath}" ${dataDir}/${rdbFilename}`,
-            `sudo chown redis:redis ${dataDir}/${rdbFilename}`,
-            `sudo systemctl start redis`,
+            `sudo chown ${engineLower}:${engineLower} ${dataDir}/${rdbFilename}`,
+            `sudo systemctl start ${engineLower}`,
         ].join("\n");
         log("Systemd commands", "info", "command", systemdCommands);
 
         const dockerCommands = [
-            `docker stop <redis-container>`,
-            `docker cp "${sourcePath}" <redis-container>:/data/${rdbFilename}`,
-            `docker start <redis-container>`,
+            `docker stop <${engineLower}-container>`,
+            `docker cp "${sourcePath}" <${engineLower}-container>:/data/${rdbFilename}`,
+            `docker start <${engineLower}-container>`,
         ].join("\n");
         log("Docker commands", "info", "command", dockerCommands);
 

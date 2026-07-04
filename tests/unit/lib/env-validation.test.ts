@@ -19,6 +19,7 @@ const MANAGED_ENV_VARS = [
     'BETTER_AUTH_SECRET', 'ENCRYPTION_KEY', 'BETTER_AUTH_URL',
     'PORT', 'LOG_LEVEL', 'TZ', 'DATABASE_URL', 'TMPDIR',
     'DISABLE_HTTPS', 'CERTS_DIR', 'DATA_DIR', 'TRUSTED_ORIGINS',
+    'SQLITE_WAL_MODE',
 ];
 
 describe('validateEnvironment', () => {
@@ -51,6 +52,7 @@ describe('validateEnvironment', () => {
         expect(env.TZ).toBe('UTC');
         expect(env.DATABASE_URL).toBe('file:./prisma/dev.db');
         expect(env.DISABLE_HTTPS).toBe('false');
+        expect(env.SQLITE_WAL_MODE).toBe('true');
     });
 
     it('respects overridden optional values', () => {

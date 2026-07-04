@@ -8,6 +8,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { ChevronsUpDown, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -276,7 +277,9 @@ export function AdapterForm({ type, adapters, onSuccess, initialData, onBack }: 
         <>
             <Form {...form}>
             <SecretStatusProvider value={initialData?.secretStatus ?? {}}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+            <form onSubmit={form.handleSubmit(onSubmit)}>
+            <ScrollArea className="*:data-[slot=scroll-area-viewport]:max-h-[calc(90vh-9rem)]">
+            <div className="space-y-6 px-6 py-4">
                 {/* Header: Name and Type */}
                 <div className="space-y-4">
                     <FormField
@@ -444,8 +447,10 @@ export function AdapterForm({ type, adapters, onSuccess, initialData, onBack }: 
                     <GenericFormContent adapter={selectedAdapter} detectedVersion={detectedVersion} />
                 )}
 
-                {/* Dialog Footer Actions */}
-                <div className="flex flex-col-reverse sm:flex-row sm:justify-between gap-2 pt-4">
+            </div>
+            </ScrollArea>
+            <div className="shrink-0 border-t px-6 py-4 bg-background">
+                <div className="flex flex-col-reverse sm:flex-row sm:justify-between gap-2">
                     <div>
                         {onBack && !initialData && (
                             <Button type="button" variant="ghost" onClick={onBack}>
@@ -471,6 +476,7 @@ export function AdapterForm({ type, adapters, onSuccess, initialData, onBack }: 
                         </Button>
                     </div>
                 </div>
+            </div>
             </form>
             </SecretStatusProvider>
         </Form>

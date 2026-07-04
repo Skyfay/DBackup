@@ -158,16 +158,18 @@ describe('HealthCheckService', () => {
         }));
     });
 
-    it('should clean up old logs', async () => {
+    it('should clean up old logs older than the given retention period', async () => {
         // Arrange
-        prismaMock.adapterConfig.findMany.mockResolvedValue([]);
         prismaMock.healthCheckLog.deleteMany.mockResolvedValue({ count: 10 } as any);
 
         // Act
-        await service.performHealthCheck();
+        const deletedCount = await service.cleanOldLogs(2);
 
         // Assert
-        expect(prismaMock.healthCheckLog.deleteMany).toHaveBeenCalled();
+        expect(prismaMock.healthCheckLog.deleteMany).toHaveBeenCalledWith({
+            where: { createdAt: { lt: expect.any(Date) } },
+        });
+        expect(deletedCount).toBe(10);
     });
 
     it('should handle adapter not found by setting status to OFFLINE via catch', async () => {
@@ -280,10 +282,8 @@ describe('HealthCheckService', () => {
         });
         prismaMock.adapterConfig.findMany.mockResolvedValue([]);
 
-        await service.performHealthCheck();
-
         // No assertion on behavior - just verify no crash when custom config is loaded
-        expect(prismaMock.healthCheckLog.deleteMany).toHaveBeenCalled();
+        await expect(service.performHealthCheck()).resolves.toBeUndefined();
     });
 
     it('should fall back to default cooldown when getNotificationConfig throws', async () => {

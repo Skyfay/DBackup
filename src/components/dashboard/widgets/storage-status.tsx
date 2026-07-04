@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import prisma from "@/lib/prisma";
 import { formatBytes } from "@/lib/utils";
-import { HardDrive } from "lucide-react";
+import { AdapterIcon } from "@/components/adapter/adapter-icon";
 
 export async function StorageStatus() {
     // 1. Get all configured storage adapters
@@ -61,7 +61,7 @@ export async function StorageStatus() {
                             <div key={adapter.id} className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
                                     <div className="flex h-8 w-8 items-center justify-center rounded-md border bg-muted">
-                                        <HardDrive className="h-4 w-4 text-foreground" />
+                                        <AdapterIcon adapterId={adapter.adapterId} className="h-4 w-4" />
                                     </div>
                                     <div className="flex flex-col">
                                         <span className="text-sm font-medium">{adapter.name}</span>

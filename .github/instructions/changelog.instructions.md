@@ -12,9 +12,12 @@ Every changelog entry uses a **bold component prefix** followed by a description
 - **component**: Description of the change (1-2 sentences max) ([#N](url))
 ```
 
-- **component**: Short, lowercase area/adapter name (e.g., `auth`, `MSSQL`, `dashboard`, `ui`, `backup`, `storage`, `SSO`, `Redis`). Must be a **name**, never a sentence or description.
+- **component**: Short, lowercase area/adapter name (e.g., `auth`, `MSSQL`, `dashboard`, `ui`, `backup`, `storage`, `SSO`, `Redis`). Must be a **single name or adapter**, never a sentence, never two areas joined together.
+  - ✅ `**storage**: ...` / ❌ `**storage alerts**: ...` (pick the more specific single area - `storage` or the alert subsystem's own tag, not a two-word compound)
+  - ✅ `**Valkey**: ...` / ❌ `**new Valkey adapter**: ...` (the "what happened" belongs in the description, not the component)
 - **Description**: One sentence - as short as possible while still making sense. Two sentences only if absolutely necessary. Write **what** was done, not why or how.
 - **Issue links**: Always at the **end** of the entry in the format `([#N](url))`. Never embed issue numbers in the component name.
+- **One entry per user-visible change** - if a single PR touches many files to deliver one behavior change, that is still **one** changelog line, not one per file/commit. Conversely, don't cram two unrelated changes into one bullet just because they landed in the same PR.
 
 ## Section Headings
 

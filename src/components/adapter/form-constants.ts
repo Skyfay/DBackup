@@ -38,6 +38,7 @@ export const PLACEHOLDERS: Record<string, string> = {
     "mongodb.port": "27017",
     "mssql.port": "1433",
     "redis.port": "6379",
+    "valkey.port": "6379",
     "email.port": "587",
     "mongodb.uri": "mongodb://user:password@localhost:27017/db?authSource=admin",
 

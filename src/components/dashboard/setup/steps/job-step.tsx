@@ -72,7 +72,7 @@ export function JobStep({ wizardData, onUpdate, onNext, onPrev }: JobStepProps) 
     const [isDbListOpen, setIsDbListOpen] = useState(false);
 
     const showDatabasePicker = wizardData.sourceAdapterId
-        && !["sqlite", "redis"].includes(wizardData.sourceAdapterId);
+        && !["sqlite", "redis", "valkey"].includes(wizardData.sourceAdapterId);
 
     const fetchDatabases = useCallback(async () => {
         if (!wizardData.sourceId) return;

@@ -384,3 +384,20 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  # ==========================================
+  # Valkey Family
+  # ==========================================
+
+  # Valkey 8 (Current Stable)
+  valkey-8:
+    image: valkey/valkey:8-alpine
+    container_name: dbm-test-valkey-8
+    command: valkey-server --requirepass testpassword
+    ports:
+      - "63780:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "-a", "testpassword", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5

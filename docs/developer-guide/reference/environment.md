@@ -18,6 +18,7 @@ Complete reference for all environment variables in DBackup.
 | :--- | :--- | :--- |
 | `TRUSTED_ORIGINS` | Additional URLs for accessing DBackup (comma-separated) | - |
 | `DATABASE_URL` | SQLite database file path | `file:/data/db/dbackup.db` |
+| `SQLITE_WAL_MODE` | Set to `false` to disable SQLite WAL mode | `true` |
 | `PORT` | Internal port the server listens on | `3000` |
 | `TZ` | Server timezone (for logs and cron scheduling) | `UTC` |
 | `TMPDIR` | Temporary directory for backup processing | `/tmp` |
@@ -38,6 +39,7 @@ Complete reference for all environment variables in DBackup.
   ```
 - **PORT** changes the internal port. When using custom ports, set both `PORT` and update your port mapping accordingly
 - **DATABASE_URL** has a sensible default and typically doesn't need to be set
+- **SQLITE_WAL_MODE** enables [WAL (Write-Ahead Logging)](https://www.sqlite.org/wal.html) mode by default so readers and the writer don't block each other. Set to `false` only if `/data` is on a filesystem that doesn't support WAL's shared-memory locking (e.g. some network shares/NFS mounts) - this falls back to SQLite's default rollback journal
 - **TMPDIR** is useful for mounting larger storage for temporary backup files (e.g., NFS)
 - **TZ** only affects server-side logs. User-facing dates use the timezone from user profile settings
 - **PUID/PGID** control which UID/GID the application process runs as. Set these to match your host user (e.g., `PUID=1000 PGID=1000`) to avoid volume permission issues. The entrypoint adjusts the internal user at startup

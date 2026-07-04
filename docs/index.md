@@ -19,7 +19,7 @@ hero:
 features:
   - icon: 🗄️
     title: Multi-Database Support
-    details: Supports MySQL, MariaDB, PostgreSQL, MongoDB, SQLite, Redis, and Microsoft SQL Server.
+    details: Supports MySQL, MariaDB, PostgreSQL, MongoDB, SQLite, Redis, Valkey, and Microsoft SQL Server.
   - icon: 🔒
     title: Backup Encryption
     details: AES-256-GCM encryption for backup files with managed Encryption Profiles, key rotation, and offline Recovery Kits for manual decryption without DBackup.
@@ -119,15 +119,16 @@ Then open [https://localhost:3000](https://localhost:3000) and create your first
 :::tabs
 == 🗄️ Databases
 
-| Database | Versions | Modes |
-| :--- | :--- | :--- |
-| **PostgreSQL** | 12, 13, 14, 15, 16, 17, 18 | Direct, SSH |
-| **MySQL** | 5.7, 8.x, 9.x | Direct, SSH |
-| **MariaDB** | 10.x, 11.x | Direct, SSH |
-| **MongoDB** | 4.x, 5.x, 6.x, 7.x, 8.x | Direct, SSH |
-| **Redis** | 6.x, 7.x, 8.x | Direct, SSH |
-| **SQLite** | 3.x | Local, SSH |
-| **Microsoft SQL Server** | 2017, 2019, 2022, Azure SQL Edge | Direct (+ SSH file transfer) |
+| Database | Versions | Connection Modes | Restore |
+| :--- | :--- | :--- | :--- |
+| **PostgreSQL** | 12, 13, 14, 15, 16, 17, 18 | Direct, SSH | Yes |
+| **MySQL** | 5.7, 8.x, 9.x | Direct, SSH | Yes |
+| **MariaDB** | 10.x, 11.x | Direct, SSH | Yes |
+| **MongoDB** | 4.x, 5.x, 6.x, 7.x, 8.x | Direct, SSH | Yes |
+| **Redis** | 2.8+ | Direct, SSH | Guided |
+| **Valkey** | 7.2+ | Direct, SSH | Guided |
+| **SQLite** | 3.x | Local, SSH | Yes |
+| **Microsoft SQL Server** | 2017, 2019, 2022, Azure SQL Edge | Direct (+ SSH file transfer) | Yes |
 
 == ☁️ Storage
 

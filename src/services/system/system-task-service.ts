@@ -347,6 +347,20 @@ export class SystemTaskService {
             log.error("Failed to clean storage snapshots", {}, wrapError(error));
         }
 
+        // Clean old health check logs
+        try {
+            const healthCheckSetting = await prisma.systemSetting.findUnique({ where: { key: "healthcheck.logRetentionDays" } });
+            const healthCheckRetentionDays = healthCheckSetting ? parseInt(healthCheckSetting.value) : 2;
+
+            log.info("Cleaning old health check logs", { retentionDays: healthCheckRetentionDays });
+            const healthCheckDeleted = await healthCheckService.cleanOldLogs(healthCheckRetentionDays);
+            if (healthCheckDeleted > 0) {
+                log.info("Health check log cleanup completed", { deletedCount: healthCheckDeleted });
+            }
+        } catch (error: unknown) {
+            log.error("Failed to clean health check logs", {}, wrapError(error));
+        }
+
         // Clean old notification logs
         try {
             const notifSetting = await prisma.systemSetting.findUnique({ where: { key: "notification.logRetentionDays" } });

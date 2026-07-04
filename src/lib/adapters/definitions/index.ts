@@ -28,6 +28,7 @@ export const ADAPTER_DEFINITIONS: AdapterDefinition[] = [
     { id: "sqlite", type: "database", name: "SQLite", configSchema: SQLiteSchema },
     { id: "mssql", type: "database", name: "Microsoft SQL Server", configSchema: MSSQLSchema },
     { id: "redis", type: "database", name: "Redis", configSchema: RedisSchema },
+    { id: "valkey", type: "database", name: "Valkey", configSchema: RedisSchema },
 
     { id: "local-filesystem", type: "storage", group: "Local", name: "Local Filesystem", configSchema: LocalStorageSchema },
     { id: "s3-aws", type: "storage", group: "Cloud Storage (S3)", name: "Amazon S3", configSchema: S3AWSSchema },

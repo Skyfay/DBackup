@@ -17,6 +17,7 @@
   <img src="https://img.shields.io/badge/MongoDB-47A248?logo=mongodb&logoColor=white" alt="MongoDB">
   <img src="https://img.shields.io/badge/SQLite-003B57?logo=sqlite&logoColor=white" alt="SQLite">
   <img src="https://img.shields.io/badge/Redis-DC382D?logo=redis&logoColor=white" alt="Redis">
+  <img src="https://img.shields.io/badge/Valkey-4B6BFB?logoColor=white" alt="Valkey">
   <img src="https://custom-icon-badges.demolab.com/badge/Microsoft%20SQL%20Server-CC2927?logo=mssqlserver-white&logoColor=white" alt="MSSQL">
   <br>
   <img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="License">
@@ -57,7 +58,7 @@ Whether you're running a single MySQL database or managing multiple PostgreSQL, 
 
 ### 🗄️ Database Backup
 
-- **7 Database Engines** - MySQL, MariaDB, PostgreSQL, MongoDB, SQLite, Redis, and Microsoft SQL Server
+- **8 Database Engines** - MySQL, MariaDB, PostgreSQL, MongoDB, SQLite, Redis, Valkey, and Microsoft SQL Server
 - **Selective Database Backup** - Choose exactly which databases to back up per job instead of creating separate sources for each database
 - **Multi-Database Jobs** - Back up multiple databases from a single source in one job with a unified TAR archive format
 - **AES-256-GCM Encryption** - Encrypt backups with managed Encryption Profiles, key rotation, and downloadable Recovery Kits for offline decryption
@@ -159,15 +160,16 @@ Open [https://localhost:3000](https://localhost:3000) and create your admin acco
 
 ## 🗄️ Supported Databases
 
-| Database | Versions | Connection Modes |
-| :--- | :--- | :--- |
-| PostgreSQL | 12, 13, 14, 15, 16, 17, 18 | Direct, SSH |
-| MySQL | 5.7, 8.x, 9.x | Direct, SSH |
-| MariaDB | 10.x, 11.x | Direct, SSH |
-| MongoDB | 4.x, 5.x, 6.x, 7.x, 8.x | Direct, SSH |
-| Redis | 6.x, 7.x, 8.x | Direct, SSH |
-| SQLite | 3.x | Local, SSH |
-| Microsoft SQL Server | 2017, 2019, 2022, Azure SQL Edge | Direct (+ SSH for file transfer) |
+| Database | Versions | Connection Modes | Restore |
+| :--- | :--- | :--- | :--- |
+| PostgreSQL | 12, 13, 14, 15, 16, 17, 18 | Direct, SSH | Yes |
+| MySQL | 5.7, 8.x, 9.x | Direct, SSH | Yes |
+| MariaDB | 10.x, 11.x | Direct, SSH | Yes |
+| MongoDB | 4.x, 5.x, 6.x, 7.x, 8.x | Direct, SSH | Yes |
+| Redis | 2.8+ | Direct, SSH | Guided |
+| Valkey | 7.2+ | Direct, SSH | Guided |
+| SQLite | 3.x | Local, SSH | Yes |
+| Microsoft SQL Server | 2017, 2019, 2022, Azure SQL Edge | Direct (+ SSH for file transfer) | Yes |
 
 ## ☁️ Supported Destinations
 

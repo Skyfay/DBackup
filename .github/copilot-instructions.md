@@ -5,7 +5,9 @@ applyTo: "**/*"
 # Database Backup Manager - AI Assistant Guidelines
 
 ## Project Overview
-Self-hosted web app for automating database backups (MySQL, PostgreSQL, MongoDB, MariaDB, SQLite, MSSQL, Redis) with encryption, compression, and retention policies. Built with **Next.js 16 (App Router)**, **TypeScript**, **Prisma** (SQLite), and **Shadcn UI**.
+Self-hosted web app for automating database backups (MySQL, PostgreSQL, MongoDB, MariaDB, SQLite, MSSQL, Redis, Valkey, and more) with encryption, compression, and retention policies. Built with **Next.js 16 (App Router)**, **TypeScript**, **Prisma** (SQLite), and **Shadcn UI**.
+
+Database, storage, and notification adapter lists grow frequently. Do not treat any hardcoded adapter list in these instructions as exhaustive - run `ls src/lib/adapters/{database,storage,notification}/` to get the current, authoritative list before making claims about supported adapters.
 
 ## Language & Commands
 - **Code/Comments**: English
@@ -19,6 +21,19 @@ Self-hosted web app for automating database backups (MySQL, PostgreSQL, MongoDB,
 - `page.tsx`: Fetch via Services → pass to Client Components
 - `actions/*.ts`: Server Actions - thin wrappers (Auth → Zod Validation → Service call → Revalidate)
 
+```typescript
+// src/app/actions/jobs.ts - canonical Server Action shape
+"use server";
+
+export async function updateJob(id: string, input: UpdateJobInput) {
+  await checkPermission(PERMISSIONS.JOBS.WRITE); // 1. Auth
+  const data = UpdateJobSchema.parse(input);      // 2. Zod validation
+  const job = await jobService.update(id, data);  // 3. Service call (all logic lives there)
+  revalidatePath("/jobs");                        // 4. Revalidate
+  return { success: true, data: job };
+}
+```
+
 ### 2. Service Layer (`src/services`) ⭐ CORE
 All business logic lives here, organized by domain:
 ```
@@ -31,8 +46,8 @@ src/services/
   storage/       → storage-service.ts, verification-service.ts, storage-alert-service.ts
   notifications/ → notification-log-service.ts, system-notification-service.ts
   system/        → healthcheck-service.ts, system-task-service.ts, update-service.ts, db-version-service.ts, certificate-service.ts
-  config/        → config-service.ts, export.ts, import.ts
-  templates/     → naming-template-service.ts, retention-policy-service.ts, schedule-preset-service.ts
+  config/        → config-service.ts, export.ts, import.ts, parse.ts, restore-pipeline.ts
+  templates/     → naming-template-service.ts, notification-template-service.ts, retention-policy-service.ts, schedule-preset-service.ts
   user/          → user-service.ts
   dashboard-service.ts (flat, no subdirectory)
   audit-service.ts     (flat, no subdirectory)
@@ -51,7 +66,18 @@ registry.register(MySQLAdapter);
 registry.get("mysql") // Retrieve by ID
 ```
 
-**Adding a new adapter**: Create folder in `src/lib/adapters/{database|storage|notification}/`, implement interface, register in `src/lib/adapters/index.ts`.
+**Adding a new adapter** - a full adapter touches ~8-11 files, not just the adapter class. Missing any of these is the most common source of "half-registered adapter" bugs:
+
+1. `src/lib/adapters/{database|storage|notification}/<name>.ts` (or `<name>/index.ts` if the adapter needs sub-modules) - implement the interface (`dump`/`restore`/`test` for database, `upload`/`download`/`list`/`delete` for storage, `send` for notification)
+2. `src/lib/adapters/definitions/{database|storage|notification}.ts` - add the Zod config schema (`NewAdapterSchema`)
+3. `src/lib/adapters/definitions/index.ts` - add an entry to `ADAPTER_DEFINITIONS` (`id`, `type`, `name`, `configSchema`, `group` for storage)
+4. `src/lib/adapters/index.ts` - import the adapter class and call `registry.register(...)` in `registerAdapters()`
+5. `src/lib/core/credential-requirements.ts` - if the adapter uses a credential profile, add an entry to `ADAPTER_CREDENTIAL_REQUIREMENTS[id]`
+6. `src/components/adapter/utils.ts` - add the adapter to `ADAPTER_ICON_MAP` (and `ADAPTER_COLOR_MAP` if applicable), otherwise it renders with a generic fallback icon in the UI
+7. `src/components/adapter/form-constants.ts` - add field keys to the relevant `*_CONNECTION_KEYS`/`*_CONFIG_KEYS` and `PLACEHOLDERS` if the adapter needs custom form field grouping/placeholders
+8. Database adapters only: `src/lib/backup-extensions.ts` - add the dump file extension and description
+9. Tests (if the adapter is testable in CI): `docker-compose.test.yml` (service definition) and `tests/integration/test-configs.ts` (`testDatabases`/`CLI_REQUIREMENTS`)
+10. Docs (per `docs.instructions.md` template): a new page under `docs/user-guide/{sources|destinations|notifications}/<name>.md`, plus a row in the relevant `docs/developer-guide/adapters/*.md` table
 
 **Adapter connectivity methods:**
 - `test()` – full write/delete verification (~15 s timeout). Used for manual connection tests.
@@ -334,18 +360,21 @@ Reusable named credential sets encrypted with the system `ENCRYPTION_KEY`:
 
 ## Notification Events
 
-16 configurable event types (enable/disable per event, set reminder interval, target recipient):
+Two distinct event scopes, both defined in `src/lib/notifications/` (`types.ts` for the `NOTIFICATION_EVENTS` map, `events.ts` for `EVENT_DEFINITIONS`):
 
-| Category | Events |
-|----------|--------|
-| Auth | `USER_LOGIN`, `USER_CREATED` |
-| Backup | `BACKUP_SUCCESS`, `BACKUP_FAILURE` |
-| Restore | `RESTORE_COMPLETE`, `RESTORE_FAILURE` |
-| System | `CONFIG_BACKUP`, `SYSTEM_ERROR`, `UPDATE_AVAILABLE` |
-| Storage | `STORAGE_USAGE_SPIKE`, `STORAGE_LIMIT_WARNING`, `STORAGE_MISSING_BACKUP` |
-| Connectivity | `CONNECTION_OFFLINE`, `CONNECTION_ONLINE` |
-| Database | `DB_VERSION_CHANGED` |
-| Integrity | `INTEGRITY_CHECK_FAILURE` |
+- **Global events** (`EVENT_DEFINITIONS` in `events.ts`, ~14 entries) - configurable system-wide (enable/disable, reminder interval, target recipient) via Settings > Notifications:
+
+  | Category | Events |
+  |----------|--------|
+  | Auth | `USER_LOGIN`, `USER_CREATED` |
+  | Restore | `RESTORE_COMPLETE`, `RESTORE_FAILURE` |
+  | System | `CONFIG_BACKUP`, `SYSTEM_ERROR` |
+  | Storage | `STORAGE_USAGE_SPIKE`, `STORAGE_LIMIT_WARNING`, `STORAGE_MISSING_BACKUP` |
+  | Updates | `UPDATE_AVAILABLE` |
+  | Backup | `INTEGRITY_CHECK_FAILURE` |
+  | Health | `CONNECTION_OFFLINE`, `CONNECTION_ONLINE`, `DB_VERSION_CHANGED` |
+
+- **Per-job backup events** (`BACKUP_SUCCESS`, `BACKUP_PARTIAL`, `BACKUP_FAILURE`) are intentionally **not** in `EVENT_DEFINITIONS` - they are configured per-job (Job → Notify tab), not globally. Their message templates live in `src/lib/notifications/templates.ts` and are triggered by the runner pipeline (`04-completion.ts`).
 
 Notification log: `src/services/notifications/notification-log-service.ts`.
 
@@ -390,8 +419,9 @@ catch (e: unknown) {
 - `PermissionError`, `AuthenticationError`
 - `BackupError`, `RestoreError`, `EncryptionError`, `QueueError`
 
-### Environment Variable
+### Environment Variables
 - `LOG_LEVEL`: `debug` | `info` (default) | `warn` | `error`
+- `SQLITE_WAL_MODE`: `true` (default) | `false`. WAL mode is on by default for the Prisma SQLite DB. Set to `false` to opt out. See `src/lib/prisma.ts`.
 
 ## Quick Reference
 

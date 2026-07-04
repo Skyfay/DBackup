@@ -302,7 +302,7 @@ export function JobForm({ sources, destinations, notifications: _notifications, 
     // Determine whether to show database picker based on selected source adapter
     const selectedSourceId = form.watch("sourceId");
     const selectedSource = sources.find(s => s.id === selectedSourceId);
-    const showDatabasePicker = selectedSource && !["sqlite", "redis"].includes(selectedSource.adapterId);
+    const showDatabasePicker = selectedSource && !["sqlite", "redis", "valkey"].includes(selectedSource.adapterId);
     const isPgSource = selectedSource?.adapterId === "postgres";
     const pgMajorVersion = isPgSource ? parsePgMajorVersion(selectedSource?.metadata) : null;
 

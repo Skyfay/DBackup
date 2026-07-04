@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { StorageVolumeEntry } from "@/services/dashboard-service";
 import { formatBytes } from "@/lib/utils";
-import { HardDrive } from "lucide-react";
+import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { DateDisplay } from "@/components/utils/date-display";
 import {
     Tooltip,
@@ -82,7 +82,7 @@ export function StorageVolumeChart({ data, cacheUpdatedAt }: StorageVolumeChartP
             >
               <div className="flex items-center gap-3">
                 <div className="flex h-8 w-8 items-center justify-center rounded-md border bg-muted">
-                  <HardDrive className="h-4 w-4 text-foreground" />
+                  <AdapterIcon adapterId={entry.adapterId} className="h-4 w-4" />
                 </div>
                 <div className="flex flex-col items-start">
                   <span className="text-sm font-medium">{entry.name}</span>

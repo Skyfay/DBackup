@@ -24,18 +24,21 @@ interface RedisRestoreWizardProps {
     file: FileInfo;
     destinationId: string;
     onCancel: () => void;
+    engineName?: "Redis" | "Valkey";
 }
 
 type WizardStep = "intro" | "download" | "stop" | "replace" | "start" | "verify";
 
-const STEPS: { id: WizardStep; title: string; description: string }[] = [
-    { id: "intro", title: "Overview", description: "Understand the restore process" },
-    { id: "download", title: "Download Backup", description: "Get the RDB file" },
-    { id: "stop", title: "Stop Redis", description: "Safely shut down the server" },
-    { id: "replace", title: "Replace RDB", description: "Copy the backup file" },
-    { id: "start", title: "Start Redis", description: "Restart the server" },
-    { id: "verify", title: "Verify", description: "Confirm data restored" },
-];
+function buildSteps(engineName: string): { id: WizardStep; title: string; description: string }[] {
+    return [
+        { id: "intro", title: "Overview", description: "Understand the restore process" },
+        { id: "download", title: "Download Backup", description: "Get the RDB file" },
+        { id: "stop", title: `Stop ${engineName}`, description: "Safely shut down the server" },
+        { id: "replace", title: "Replace RDB", description: "Copy the backup file" },
+        { id: "start", title: `Start ${engineName}`, description: "Restart the server" },
+        { id: "verify", title: "Verify", description: "Confirm data restored" },
+    ];
+}
 
 function CommandBlock({ command, label }: { command: string; label?: string }) {
     const copyToClipboard = () => {
@@ -63,7 +66,10 @@ function CommandBlock({ command, label }: { command: string; label?: string }) {
     );
 }
 
-export function RedisRestoreWizard({ file, destinationId, onCancel }: RedisRestoreWizardProps) {
+export function RedisRestoreWizard({ file, destinationId, onCancel, engineName = "Redis" }: RedisRestoreWizardProps) {
+    const engineLower = engineName.toLowerCase();
+    const cliBin = `${engineLower}-cli`;
+    const STEPS = buildSteps(engineName);
     const [currentStep, setCurrentStep] = useState<WizardStep>("intro");
     const [completedSteps, setCompletedSteps] = useState<Set<WizardStep>>(new Set());
     const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
@@ -126,9 +132,9 @@ export function RedisRestoreWizard({ file, destinationId, onCancel }: RedisResto
                 <CardContent className="flex items-center gap-3 py-4">
                     <Server className="h-5 w-5 text-red-500 shrink-0" />
                     <div>
-                        <p className="font-semibold leading-none">Redis Restore Wizard</p>
+                        <p className="font-semibold leading-none">{engineName} Restore Wizard</p>
                         <p className="text-sm text-muted-foreground mt-1">
-                            Redis requires manual steps to restore. Follow this wizard carefully.
+                            {engineName} requires manual steps to restore. Follow this wizard carefully.
                         </p>
                     </div>
                 </CardContent>
@@ -182,10 +188,10 @@ export function RedisRestoreWizard({ file, destinationId, onCancel }: RedisResto
                         <div className="space-y-4">
                             <Alert>
                                 <AlertTriangle className="h-4 w-4" />
-                                <AlertTitle>Why is Redis restore different?</AlertTitle>
+                                <AlertTitle>Why is {engineName} restore different?</AlertTitle>
                                 <AlertDescription className="mt-2 text-sm">
-                                    Unlike SQL databases, Redis cannot load RDB files remotely via network commands.
-                                    The RDB file must be physically placed on the Redis server and the server restarted.
+                                    Unlike SQL databases, {engineName} cannot load RDB files remotely via network commands.
+                                    The RDB file must be physically placed on the {engineName} server and the server restarted.
                                 </AlertDescription>
                             </Alert>
 
@@ -198,7 +204,7 @@ export function RedisRestoreWizard({ file, destinationId, onCancel }: RedisResto
                                     </li>
                                     <li className="flex items-center gap-2">
                                         <Circle className="h-2 w-2 fill-current" />
-                                        Safely stopping your Redis server
+                                        Safely stopping your {engineName} server
                                     </li>
                                     <li className="flex items-center gap-2">
                                         <Circle className="h-2 w-2 fill-current" />
@@ -206,7 +212,7 @@ export function RedisRestoreWizard({ file, destinationId, onCancel }: RedisResto
                                     </li>
                                     <li className="flex items-center gap-2">
                                         <Circle className="h-2 w-2 fill-current" />
-                                        Restarting Redis to load the data
+                                        Restarting {engineName} to load the data
                                     </li>
                                 </ul>
                             </div>
@@ -215,7 +221,7 @@ export function RedisRestoreWizard({ file, destinationId, onCancel }: RedisResto
                                 <AlertTriangle className="h-4 w-4" />
                                 <AlertTitle>Data Loss Warning</AlertTitle>
                                 <AlertDescription className="text-sm">
-                                    This will completely replace all data in your Redis server.
+                                    This will completely replace all data in your {engineName} server.
                                     The current data will be permanently lost.
                                 </AlertDescription>
                             </Alert>
@@ -272,22 +278,22 @@ export function RedisRestoreWizard({ file, destinationId, onCancel }: RedisResto
 
                     {currentStep === "stop" && (
                         <div className="space-y-4">
-                            <h4 className="font-medium">Step 2: Stop the Redis Server</h4>
+                            <h4 className="font-medium">Step 2: Stop the {engineName} Server</h4>
                             <p className="text-sm text-muted-foreground">
-                                Before replacing the RDB file, you must stop the Redis server to prevent data corruption.
+                                Before replacing the RDB file, you must stop the {engineName} server to prevent data corruption.
                             </p>
 
                             <div className="space-y-3">
-                                <CommandBlock label="Systemd (Linux):" command="sudo systemctl stop redis" />
-                                <CommandBlock label="Docker:" command="docker stop <redis-container>" />
-                                <CommandBlock label="Redis CLI (Graceful shutdown):" command="redis-cli -a <password> SHUTDOWN SAVE" />
+                                <CommandBlock label="Systemd (Linux):" command={`sudo systemctl stop ${engineLower}`} />
+                                <CommandBlock label="Docker:" command={`docker stop <${engineLower}-container>`} />
+                                <CommandBlock label={`${engineName} CLI (Graceful shutdown):`} command={`${cliBin} -a <password> SHUTDOWN SAVE`} />
                             </div>
 
                             <Alert>
                                 <AlertTriangle className="h-4 w-4" />
                                 <AlertDescription className="text-sm">
-                                    Make sure Redis is completely stopped before proceeding.
-                                    You can verify by running: <code className="bg-muted px-1 rounded">redis-cli ping</code> (should fail)
+                                    Make sure {engineName} is completely stopped before proceeding.
+                                    You can verify by running: <code className="bg-muted px-1 rounded">{cliBin} ping</code> (should fail)
                                 </AlertDescription>
                             </Alert>
                         </div>
@@ -297,13 +303,13 @@ export function RedisRestoreWizard({ file, destinationId, onCancel }: RedisResto
                         <div className="space-y-4">
                             <h4 className="font-medium">Step 3: Replace the RDB File</h4>
                             <p className="text-sm text-muted-foreground">
-                                Copy the downloaded backup file to your Redis data directory, replacing the existing dump.rdb.
+                                Copy the downloaded backup file to your {engineName} data directory, replacing the existing dump.rdb.
                             </p>
 
                             <div className="space-y-3">
                                 <CommandBlock
                                     label="Linux (default path):"
-                                    command={`sudo cp ~/Downloads/${file.name} /var/lib/redis/dump.rdb\nsudo chown redis:redis /var/lib/redis/dump.rdb`}
+                                    command={`sudo cp ~/Downloads/${file.name} /var/lib/${engineLower}/dump.rdb\nsudo chown ${engineLower}:${engineLower} /var/lib/${engineLower}/dump.rdb`}
                                 />
                                 <CommandBlock
                                     label="Docker:"
@@ -315,7 +321,7 @@ export function RedisRestoreWizard({ file, destinationId, onCancel }: RedisResto
                                 <AlertTriangle className="h-4 w-4" />
                                 <AlertDescription className="text-sm">
                                     <strong>Important:</strong> The file must be named exactly <code className="bg-muted px-1 rounded">dump.rdb</code>
-                                    (or whatever is configured in your redis.conf as <code className="bg-muted px-1 rounded">dbfilename</code>).
+                                    (or whatever is configured in your {engineLower}.conf as <code className="bg-muted px-1 rounded">dbfilename</code>).
                                 </AlertDescription>
                             </Alert>
                         </div>
@@ -323,19 +329,19 @@ export function RedisRestoreWizard({ file, destinationId, onCancel }: RedisResto
 
                     {currentStep === "start" && (
                         <div className="space-y-4">
-                            <h4 className="font-medium">Step 4: Start the Redis Server</h4>
+                            <h4 className="font-medium">Step 4: Start the {engineName} Server</h4>
                             <p className="text-sm text-muted-foreground">
-                                Start Redis again. It will automatically load the new RDB file on startup.
+                                Start {engineName} again. It will automatically load the new RDB file on startup.
                             </p>
 
                             <div className="space-y-3">
-                                <CommandBlock label="Systemd (Linux):" command="sudo systemctl start redis" />
-                                <CommandBlock label="Docker:" command="docker start <redis-container>" />
+                                <CommandBlock label="Systemd (Linux):" command={`sudo systemctl start ${engineLower}`} />
+                                <CommandBlock label="Docker:" command={`docker start <${engineLower}-container>`} />
                             </div>
 
                             <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-md">
                                 <p className="text-sm text-green-600 dark:text-green-400">
-                                    Check the Redis logs to ensure no errors occurred during startup and RDB loading.
+                                    Check the {engineName} logs to ensure no errors occurred during startup and RDB loading.
                                 </p>
                             </div>
                         </div>
@@ -351,11 +357,11 @@ export function RedisRestoreWizard({ file, destinationId, onCancel }: RedisResto
                             <div className="space-y-3">
                                 <CommandBlock
                                     label="Check connection and key count:"
-                                    command="redis-cli -a <password> INFO keyspace"
+                                    command={`${cliBin} -a <password> INFO keyspace`}
                                 />
                                 <CommandBlock
                                     label="Sample some keys:"
-                                    command='redis-cli -a <password> KEYS "*" | head -20'
+                                    command={`${cliBin} -a <password> KEYS "*" | head -20`}
                                 />
                             </div>
 

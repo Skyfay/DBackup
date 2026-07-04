@@ -2,6 +2,38 @@
 
 All notable changes to DBackup are documented here.
 
+## v2.9.0 - Valkey Support, Storage Alert Fix, and Multiple Improvements
+*Released: July 4, 2026*
+
+### ✨ Features
+
+- **Valkey**: Added Valkey as a supported database source. Uses the same RDB backup mechanism as Redis with correct version display.
+
+### 🐛 Bug Fixes
+
+- **storage alerts**: Fixed "Missing Backup" alert firing incorrectly when a retention policy keeps the file count stable, making the alert appear even though backups were completing successfully.
+
+### 🎨 Improvements
+
+- **dashboard**: The Storage Usage widget now shows the adapter-specific brand icon for each destination (matching the Destinations page) instead of a generic hard drive icon.
+- **adapter form**: The add/edit dialog is now scrollable when configuration fields exceed the available screen height, with action buttons always pinned at the bottom.
+- **system tasks**: Health check log cleanup now runs once a day via the "Clean Old Data" task instead of on every health check run, reducing unnecessary database load.
+- **system tasks**: Removed a redundant hourly storage snapshot cleanup that duplicated the daily "Clean Old Data" cleanup.
+- **database**: The internal SQLite database now runs in WAL mode with a busy timeout, so readers no longer block writers and concurrent writes wait briefly instead of failing instantly with "database is locked". Configurable via the new `SQLITE_WAL_MODE` environment variable (default: `true`).
+
+### 📝 Documentation
+
+- **Redis**: Updated supported version documentation from `6.x` to `2.8+` to reflect actual compatibility.
+- **installation**: Documented the `-wal`/`-shm` companion files created by the internal database's WAL mode.
+
+### 🐳 Docker
+
+- **Image**: `skyfay/dbackup:v2.9.0`
+- **Also tagged as**: `latest`, `v2`
+- **CI Image**: `skyfay/dbackup:ci`
+- **Platforms**: linux/amd64, linux/arm64
+
+
 ## v2.8.0 - Notification Templates, Per-Job Event Filters, and Multiple Bug Fixes
 *Released: June 28, 2026*
 

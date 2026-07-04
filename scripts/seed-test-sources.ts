@@ -68,6 +68,7 @@ const CREDENTIAL_PROFILE_FOR: Record<string, string> = {
     mongodb: 'Test MongoDB Credentials',
     mssql: 'Test MSSQL Credentials',
     redis: 'Test Redis Credentials',
+    valkey: 'Test Redis Credentials',
 };
 
 // Inline config fields that the credential profile now owns

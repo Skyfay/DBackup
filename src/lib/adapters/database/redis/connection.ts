@@ -73,8 +73,9 @@ export async function test(config: RedisConfig): Promise<{ success: boolean; mes
             const infoResult = await ssh.exec(`${redisBin} ${args.join(" ")} INFO server`);
             let version: string | undefined;
             if (infoResult.code === 0) {
-                const versionMatch = infoResult.stdout.match(/redis_version:([^\r\n]+)/);
-                version = versionMatch ? versionMatch[1].trim() : undefined;
+                const valkeyMatch = infoResult.stdout.match(/valkey_version:([^\r\n]+)/);
+                const redisMatch = infoResult.stdout.match(/redis_version:([^\r\n]+)/);
+                version = (valkeyMatch ?? redisMatch)?.[1]?.trim();
             }
 
             return { success: true, message: "Connection successful (via SSH)", version };
@@ -101,9 +102,10 @@ export async function test(config: RedisConfig): Promise<{ success: boolean; mes
         const infoArgs = [...args, "INFO", "server"];
         const { stdout: infoResult } = await execFileAsync("redis-cli", infoArgs);
 
-        // Parse redis_version from INFO output
-        const versionMatch = infoResult.match(/redis_version:([^\r\n]+)/);
-        const version = versionMatch ? versionMatch[1].trim() : undefined;
+        // Prefer valkey_version when present (Valkey servers), fall back to redis_version
+        const valkeyMatch = infoResult.match(/valkey_version:([^\r\n]+)/);
+        const redisMatch = infoResult.match(/redis_version:([^\r\n]+)/);
+        const version = (valkeyMatch ?? redisMatch)?.[1]?.trim();
 
         return {
             success: true,

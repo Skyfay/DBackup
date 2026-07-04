@@ -468,14 +468,6 @@ export async function refreshStorageStatsCache(): Promise<StorageVolumeEntry[]> 
   // Save historical snapshots for storage usage over time charts
   await saveStorageSnapshots(results);
 
-  // Clean up old snapshots based on configured retention period
-  const snapshotSetting = await prisma.systemSetting.findUnique({ where: { key: "storage.snapshotRetentionDays" } });
-  const snapshotRetentionDays = snapshotSetting ? parseInt(snapshotSetting.value) : 90;
-  const cleaned = await cleanupOldSnapshots(snapshotRetentionDays);
-  if (cleaned > 0) {
-    log.info("Cleaned up old storage snapshots", { deleted: cleaned });
-  }
-
   log.info("Storage statistics cache refreshed", {
     destinations: results.length,
     totalSize: results.reduce((sum, r) => sum + r.size, 0),

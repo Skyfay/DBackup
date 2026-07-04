@@ -22,6 +22,10 @@ const envSchema = z.object({
         .string()
         .default("file:./prisma/dev.db"),
 
+    SQLITE_WAL_MODE: z
+        .enum(["true", "false"])
+        .default("true"),
+
     BETTER_AUTH_URL: z
         .string()
         .url("BETTER_AUTH_URL must be a valid URL (e.g. http://localhost:3000)")

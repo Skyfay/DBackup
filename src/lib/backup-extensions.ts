@@ -23,6 +23,7 @@ export function getBackupFileExtension(adapterId: string): string {
         // NoSQL and special formats
         mongodb: "archive",  // mongodump --archive format
         redis: "rdb",        // Redis RDB snapshot format
+        valkey: "rdb",       // Valkey RDB snapshot format (same as Redis)
         sqlite: "db",        // SQLite database file copy
     };
 
@@ -45,6 +46,7 @@ export function getBackupFormatDescription(adapterId: string): string {
         mssql: "SQL Server Native Backup",
         mongodb: "MongoDB Archive",
         redis: "Redis RDB Snapshot",
+        valkey: "Valkey RDB Snapshot",
         sqlite: "SQLite Database Copy",
     };
 

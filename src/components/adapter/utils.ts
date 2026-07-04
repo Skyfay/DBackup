@@ -33,6 +33,13 @@ import mssqlIcon from "@iconify-icons/simple-icons/microsoftsqlserver";
 import minioIcon from "@iconify-icons/simple-icons/minio";
 import hetznerIcon from "@iconify-icons/simple-icons/hetzner";
 
+// - Inline bundled icons (no npm package available; data fetched from Iconify API) -
+const valkeyIcon: IconifyIcon = {
+    body: '<path fill="#123678" fill-rule="evenodd" d="m126.1 431.2l-91.7-57.4V128.6L258.7 0l218.9 128.8v258L255.2 512L178 463.7V346.2L136.2 320V187l121.2-69.5l118.4 69.7v139.4L282 379.4v-56.1c28.1-10.8 48.3-38.6 48.3-71.5c0-42.3-33.5-76.3-74.3-76.3s-74.3 34-74.3 76.3c0 32.8 20.2 60.6 48.3 71.5v106.3l26.8 16.8l164.4-92.6V161.1L258.3 65.3l-167.5 96v181.3l35.3 22.1zM256 216.7c18.5 0 33.1 15.9 33.1 35.1c0 19.1-14.6 35.1-33.1 35.1s-33.1-15.9-33.1-35.1s14.6-35.1 33.1-35.1"/>',
+    width: 512,
+    height: 512,
+};
+
 // - Material Design Icons (protocol, storage & generic icons) -
 import harddiskIcon from "@iconify-icons/mdi/harddisk";
 import sshIcon from "@iconify-icons/mdi/ssh";
@@ -56,6 +63,7 @@ const ADAPTER_ICON_MAP: Record<string, IconifyIcon> = {
     "mongodb": mongodbIcon,
     "sqlite": sqliteIcon,
     "redis": redisIcon,
+    "valkey": valkeyIcon,
     "mssql": mssqlIcon,
 
     // Storage - Local

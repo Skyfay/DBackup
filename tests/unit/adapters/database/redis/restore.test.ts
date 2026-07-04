@@ -180,6 +180,11 @@ describe("restore()", () => {
     it("returns success with manual-steps metadata when all steps succeed", async () => {
         mockExecFileCb
             .mockImplementationOnce((...args: unknown[]) => {
+                // INFO server (engine detection)
+                const cb = args[args.length - 1] as (err: null, r: { stdout: string; stderr: string }) => void;
+                cb(null, { stdout: "redis_version:7.0.0\n", stderr: "" });
+            })
+            .mockImplementationOnce((...args: unknown[]) => {
                 // CONFIG GET dir
                 const cb = args[args.length - 1] as (err: null, r: { stdout: string; stderr: string }) => void;
                 cb(null, { stdout: "dir\n/var/lib/redis\n", stderr: "" });
@@ -201,6 +206,11 @@ describe("restore()", () => {
     it("uses fallback dataDir and rdbFilename when CONFIG GET returns only the key line", async () => {
         // Simulates "dir\n" with no second line (lines[1] is empty -> fallback).
         mockExecFileCb
+            .mockImplementationOnce((...args: unknown[]) => {
+                // INFO server (engine detection)
+                const cb = args[args.length - 1] as (err: null, r: { stdout: string; stderr: string }) => void;
+                cb(null, { stdout: "redis_version:7.0.0\n", stderr: "" });
+            })
             .mockImplementationOnce((...args: unknown[]) => {
                 const cb = args[args.length - 1] as (err: null, r: { stdout: string; stderr: string }) => void;
                 cb(null, { stdout: "dir\n", stderr: "" });
@@ -245,10 +255,16 @@ describe("restore()", () => {
     });
 
     it("returns failure when CONFIG GET dir command fails", async () => {
-        mockExecFileCb.mockImplementationOnce((...args: unknown[]) => {
-            const cb = args[args.length - 1] as (err: Error) => void;
-            cb(new Error("ERR CONFIG disabled"));
-        });
+        mockExecFileCb
+            .mockImplementationOnce((...args: unknown[]) => {
+                // INFO server (engine detection)
+                const cb = args[args.length - 1] as (err: null, r: { stdout: string; stderr: string }) => void;
+                cb(null, { stdout: "redis_version:7.0.0\n", stderr: "" });
+            })
+            .mockImplementationOnce((...args: unknown[]) => {
+                const cb = args[args.length - 1] as (err: Error) => void;
+                cb(new Error("ERR CONFIG disabled"));
+            });
 
         const result = await restore(buildConfig(), "/tmp/backup.rdb");
 

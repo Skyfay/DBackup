@@ -106,7 +106,7 @@ if (success) {
 
 ### Retention
 
-The service automatically deletes logs older than 48 hours to control database size.
+Logs are automatically deleted once a day by the `CLEAN_OLD_LOGS` system task, not on every health check run. Default retention is 2 days, configurable via the `healthcheck.logRetentionDays` system setting.
 
 ## System Task Integration
 
@@ -237,5 +237,5 @@ const HEALTHCHECK_CRON = '*/1 * * * *';
 
 For high-availability setups, consider:
 - Reducing interval to 30 seconds
-- Increasing retention beyond 48 hours
+- Increasing `healthcheck.logRetentionDays` beyond the default 2 days
 - Adding external monitoring integration

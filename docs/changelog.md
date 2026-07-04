@@ -15,6 +15,7 @@ All notable changes to DBackup are documented here.
 
 ### 🎨 Improvements
 
+- **dashboard**: The Storage Usage widget now shows the adapter-specific brand icon for each destination (matching the Destinations page) instead of a generic hard drive icon.
 - **adapter form**: The add/edit dialog is now scrollable when configuration fields exceed the available screen height, with action buttons always pinned at the bottom.
 - **system tasks**: Health check log cleanup now runs once a day via the "Clean Old Data" task instead of on every health check run, reducing unnecessary database load.
 - **system tasks**: Removed a redundant hourly storage snapshot cleanup that duplicated the daily "Clean Old Data" cleanup.

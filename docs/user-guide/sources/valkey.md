@@ -39,4 +39,4 @@ If you previously configured a Redis source pointing to a Valkey server, it will
 
 - [Redis source guide](/user-guide/sources/redis) - Full configuration reference
 - [Encryption](/user-guide/security/encryption) - Encrypting your backups
-- [Retention Policies](/user-guide/features/retention) - Managing backup storage
+- [Retention Policies](/user-guide/jobs/retention) - Managing backup storage

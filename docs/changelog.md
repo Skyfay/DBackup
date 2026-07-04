@@ -19,10 +19,12 @@ All notable changes to DBackup are documented here.
 - **adapter form**: The add/edit dialog is now scrollable when configuration fields exceed the available screen height, with action buttons always pinned at the bottom.
 - **system tasks**: Health check log cleanup now runs once a day via the "Clean Old Data" task instead of on every health check run, reducing unnecessary database load.
 - **system tasks**: Removed a redundant hourly storage snapshot cleanup that duplicated the daily "Clean Old Data" cleanup.
+- **database**: The internal SQLite database now runs in WAL mode with a busy timeout, so readers no longer block writers and concurrent writes wait briefly instead of failing instantly with "database is locked".
 
 ### 📝 Documentation
 
 - **Redis**: Updated supported version documentation from `6.x` to `2.8+` to reflect actual compatibility.
+- **installation**: Documented the `-wal`/`-shm` companion files created by the internal database's WAL mode.
 
 ### 🐳 Docker
 

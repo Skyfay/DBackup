@@ -196,6 +196,10 @@ secrets:
 | `/data` | ✅ | All persistent data (database, uploads, certificates) |
 | `/backups` | ❌ | Optional: used for local backups |
 
+::: info SQLite WAL mode
+DBackup runs its internal SQLite database in [WAL (Write-Ahead Logging)](https://www.sqlite.org/wal.html) mode for better read/write concurrency. This creates two extra files next to the database, `dbackup.db-wal` and `dbackup.db-shm`, inside `/data/db`. They are normal and required while the app is running - do not delete them manually. Back up or copy the whole `db` folder together (not just the `.db` file) to avoid losing uncommitted writes.
+:::
+
 ## Health Check
 
 DBackup includes a built-in Docker health check that verifies both the application and database are running:

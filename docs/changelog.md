@@ -19,7 +19,7 @@ All notable changes to DBackup are documented here.
 - **adapter form**: The add/edit dialog is now scrollable when configuration fields exceed the available screen height, with action buttons always pinned at the bottom.
 - **system tasks**: Health check log cleanup now runs once a day via the "Clean Old Data" task instead of on every health check run, reducing unnecessary database load.
 - **system tasks**: Removed a redundant hourly storage snapshot cleanup that duplicated the daily "Clean Old Data" cleanup.
-- **database**: The internal SQLite database now runs in WAL mode with a busy timeout, so readers no longer block writers and concurrent writes wait briefly instead of failing instantly with "database is locked".
+- **database**: The internal SQLite database now runs in WAL mode with a busy timeout, so readers no longer block writers and concurrent writes wait briefly instead of failing instantly with "database is locked". Configurable via the new `SQLITE_WAL_MODE` environment variable (default: `true`).
 
 ### 📝 Documentation
 

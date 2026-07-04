@@ -18,6 +18,11 @@ BigInt.prototype.toJSON = function () {
 // need to change their DATABASE_URL - the hardening is transparent to the setup.
 const SQLITE_BUSY_TIMEOUT_MS = 5000
 
+// WAL mode is on by default (recommended). Set SQLITE_WAL_MODE=false to opt out,
+// e.g. when the /data volume lives on a filesystem that doesn't support WAL's
+// shared-memory locking (some network shares/NFS mounts).
+const isWalModeEnabled = process.env.SQLITE_WAL_MODE !== 'false'
+
 function withSqliteHardening(url: string): string {
   const [base, query = ''] = url.split('?')
   const params = new URLSearchParams(query)
@@ -36,9 +41,21 @@ const prismaClientSingleton = () => {
   // migrate deploy` or the `sqlite3` CLI touching the file at the same time).
   // Both PRAGMAs return a result row, so SQLite rejects them via $executeRawUnsafe
   // ("Execute returned results, which is not allowed in SQLite") - use $queryRawUnsafe instead.
-  baseClient.$queryRawUnsafe('PRAGMA journal_mode = WAL;')
-    .then(() => log.info('SQLite WAL mode enabled'))
-    .catch((err) => log.warn('Failed to enable SQLite WAL mode', {}, wrapError(err)))
+  //
+  // journal_mode is persisted inside the database file itself, not just for the
+  // current connection. Once a file has been switched to WAL it stays in WAL
+  // forever until something explicitly switches it back - so the "false" branch
+  // must actively set journal_mode=DELETE, otherwise the -wal/-shm files keep
+  // reappearing from a previous run even with SQLITE_WAL_MODE=false.
+  if (isWalModeEnabled) {
+    baseClient.$queryRawUnsafe('PRAGMA journal_mode = WAL;')
+      .then(() => log.info('SQLite WAL mode enabled'))
+      .catch((err) => log.warn('Failed to enable SQLite WAL mode', {}, wrapError(err)))
+  } else {
+    baseClient.$queryRawUnsafe('PRAGMA journal_mode = DELETE;')
+      .then(() => log.info('SQLite WAL mode disabled via SQLITE_WAL_MODE=false'))
+      .catch((err) => log.warn('Failed to disable SQLite WAL mode', {}, wrapError(err)))
+  }
 
   baseClient.$queryRawUnsafe(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS};`)
     .catch((err) => log.warn('Failed to set SQLite busy_timeout', {}, wrapError(err)))

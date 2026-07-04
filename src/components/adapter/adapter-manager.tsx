@@ -146,6 +146,10 @@ export function AdapterManager({ type, title, description, canManage = true, per
                 case 'redis':
                 case 'valkey':
                     return <span className="text-muted-foreground">{config.host}:{config.port} (DB {config.database ?? 0})</span>;
+                case 'firebird': {
+                    const aliasCount = Array.isArray(config.databases) ? config.databases.length : 0;
+                    return <span className="text-muted-foreground">{config.host}:{config.port} ({aliasCount} database{aliasCount === 1 ? '' : 's'})</span>;
+                }
                 case 'local-filesystem':
                     return <span className="text-muted-foreground">{config.basePath}</span>;
                 case 'smb':

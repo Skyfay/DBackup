@@ -412,8 +412,11 @@ services:
   # known open risk. Databases are created under /firebird/data on first boot.
 
   # Firebird 3.0
+  # Platform: linux/amd64 required - Firebird only ships official arm64 images from 5.x onward,
+  # so 3.x/4.x run under Rosetta/QEMU emulation on Apple Silicon (slower, but fine for testing).
   firebird-30:
-    image: firebirdsql/firebird-arm64:3.0.11
+    image: firebirdsql/firebird:3.0.11
+    platform: linux/amd64
     container_name: dbm-test-firebird-30
     environment:
       FIREBIRD_ROOT_PASSWORD: masterkey
@@ -430,8 +433,10 @@ services:
       start_period: 20s
 
   # Firebird 4.0
+  # Platform: linux/amd64 required for Apple Silicon (see note on firebird-30)
   firebird-40:
-    image: firebirdsql/firebird-arm64:4.0.7
+    image: firebirdsql/firebird:4.0.7
+    platform: linux/amd64
     container_name: dbm-test-firebird-40
     environment:
       FIREBIRD_ROOT_PASSWORD: masterkey
@@ -448,7 +453,7 @@ services:
 
   # Firebird 5.0 (Current)
   firebird-50:
-    image: firebirdsql/firebird-arm64:5.0.3
+    image: firebirdsql/firebird:5.0.3
     container_name: dbm-test-firebird-50
     environment:
       FIREBIRD_ROOT_PASSWORD: masterkey

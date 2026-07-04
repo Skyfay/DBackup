@@ -75,7 +75,7 @@ import {
     test as testConnection,
 } from "@/lib/adapters/database/firebird/connection";
 import { dump } from "@/lib/adapters/database/firebird/dump";
-import { restore, prepareRestore } from "@/lib/adapters/database/firebird/restore";
+import { restore } from "@/lib/adapters/database/firebird/restore";
 import { analyzeDump } from "@/lib/adapters/database/firebird/analyze";
 import * as tarUtils from "@/lib/adapters/database/common/tar-utils";
 
@@ -150,9 +150,12 @@ describe("Firebird connection - getDatabases / getDatabasesWithStats", () => {
         expect(mockSpawn).not.toHaveBeenCalled();
     });
 
-    it("returns alias entries with undefined size/table count", async () => {
+    it("returns alias entries with their path and undefined size/table count", async () => {
         const result = await getDatabasesWithStats(baseConfig as any);
-        expect(result).toEqual([{ name: "erp" }, { name: "crm" }]);
+        expect(result).toEqual([
+            { name: "erp", path: "/data/erp.fdb" },
+            { name: "crm", path: "/data/crm.fdb" },
+        ]);
         expect(mockSpawn).not.toHaveBeenCalled();
     });
 });
@@ -254,22 +257,27 @@ describe("Firebird restore - direct mode", () => {
         expect((options as any).env.ISC_PASSWORD).toBe("masterkey");
     });
 
-    it("fails with a clear error when the target alias is not configured on the target source", async () => {
+    it("fails with a clear error when leaving the field empty resolves to an unconfigured alias", async () => {
         const result = await restore({ ...baseConfig, database: "unknown" } as any, "/tmp/erp.fbk");
         expect(result.success).toBe(false);
         expect(result.error).toMatch(/Unknown Firebird database alias "unknown"/);
     });
-});
 
-describe("Firebird restore - prepareRestore", () => {
-    it("resolves when every target alias is configured", async () => {
-        await expect(prepareRestore(baseConfig as any, ["erp", "crm"])).resolves.toBeUndefined();
-    });
+    it("treats an explicit targetDatabaseName as a literal path, bypassing alias resolution", async () => {
+        mockSpawn.mockImplementation(() => {
+            const proc = createFakeProcess();
+            setImmediate(() => proc.emit("close", 0));
+            return proc;
+        });
 
-    it("rejects when a target alias is not configured (enforces alias-only restore)", async () => {
-        await expect(prepareRestore(baseConfig as any, ["erp", "does-not-exist"])).rejects.toThrow(
-            /Unknown Firebird database alias "does-not-exist"/
+        const result = await restore(
+            { ...baseConfig, database: "erp", targetDatabaseName: "/custom/new-location.fdb" } as any,
+            "/tmp/erp.fbk"
         );
+
+        expect(result.success).toBe(true);
+        const [, args] = mockSpawn.mock.calls[0];
+        expect(args).toEqual(["-rep", "-user", "SYSDBA", "/tmp/erp.fbk", "192.168.1.10:/custom/new-location.fdb"]);
     });
 });
 

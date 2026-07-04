@@ -45,7 +45,9 @@ export async function getDatabases(config: FirebirdConfig): Promise<string[]> {
 export async function getDatabasesWithStats(config: FirebirdConfig): Promise<DatabaseInfo[]> {
     // No live server query - direct mode can't stat a remote path by filesystem,
     // so sizes are intentionally left undefined. The restore UI tolerates this.
-    return (config.databases || []).map((d) => ({ name: d.name }));
+    // `path` is included so the restore UI can prefill the target field with the
+    // real path instead of just the alias name.
+    return (config.databases || []).map((d) => ({ name: d.name, path: d.path }));
 }
 
 const VERSION_QUERY = "SELECT rdb$get_context('SYSTEM','ENGINE_VERSION') FROM rdb$database;";

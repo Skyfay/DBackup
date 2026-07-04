@@ -29,47 +29,37 @@ import {
 /** Extended config with runtime fields for restore operations */
 type FirebirdRestoreConfig = FirebirdConfig & {
     detectedVersion?: string;
+    /** Literal target path, set by the restore pipeline when the user typed one into the target field. */
+    targetDatabaseName?: string;
     databaseMapping?: { originalName: string; targetName: string; selected: boolean }[];
 };
 
 /**
- * Preflight check: every target alias must already be configured on the target
- * source (Phase 1 scope - restore can only land on a pre-configured alias, not
- * a brand-new name/path). resolveAliasPath throws a clear error otherwise.
- * Phase 2 TODO (out of scope): allow restoring under a brand-new alias by
- * auto-appending {name, path} to the target source's `databases` config.
- */
-export async function prepareRestore(config: FirebirdRestoreConfig, databases: string[]): Promise<void> {
-    for (const aliasName of databases) {
-        resolveAliasPath(config, aliasName);
-    }
-}
-
-/**
- * Restore a single .fbk file to a target alias.
- * gbak -rep creates the database if the alias path doesn't exist yet, or
- * replaces it in place if it does - so no separate create-vs-replace branch
- * is needed (confirmed default: always replace, no extra confirmation).
+ * Restore a single .fbk file to a target path.
+ * gbak -rep creates the database if the path doesn't exist yet, or replaces
+ * it in place if it does - so no separate create-vs-replace branch is needed
+ * (confirmed default: always replace, no extra confirmation). The target is
+ * always a literal filesystem path here - see restore() for how it's derived
+ * (either the user-provided target field, or the originally configured alias).
  */
 async function restoreSingleFile(
     config: FirebirdRestoreConfig,
     sourcePath: string,
-    targetAlias: string,
+    targetPath: string,
     onLog: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void,
     onProgress?: (percentage: number, detail?: string) => void
 ): Promise<void> {
     if (isSSHMode(config)) {
-        return restoreSingleFileSSH(config, sourcePath, targetAlias, onLog, onProgress);
+        return restoreSingleFileSSH(config, sourcePath, targetPath, onLog, onProgress);
     }
 
-    const dbPath = resolveAliasPath(config, targetAlias);
-    const connStr = buildConnectionString(config, dbPath);
+    const connStr = buildConnectionString(config, targetPath);
 
     const args = ["-rep"];
     if (config.options) args.push(...config.options.split(" ").filter((s) => s.trim().length > 0));
     args.push("-user", config.user, sourcePath, connStr);
 
-    onLog(`Restoring to database alias: ${targetAlias}`, "info", "command", `${getGbakCommand()} ${args.join(" ")}`);
+    onLog(`Restoring to: ${targetPath}`, "info", "command", `${getGbakCommand()} ${args.join(" ")}`);
 
     const env = { ...process.env, ISC_PASSWORD: config.password };
     const proc = spawn(getGbakCommand(), args, { env });
@@ -87,7 +77,7 @@ async function restoreSingleFile(
 async function restoreSingleFileSSH(
     config: FirebirdRestoreConfig,
     sourcePath: string,
-    targetAlias: string,
+    targetPath: string,
     onLog: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void,
     onProgress?: (percentage: number, detail?: string) => void
 ): Promise<void> {
@@ -102,8 +92,7 @@ async function restoreSingleFileSSH(
 
     try {
         const gbakBin = await remoteBinaryCheck(ssh, "gbak");
-        const dbPath = resolveAliasPath(config, targetAlias);
-        const connStr = buildConnectionString(config, dbPath);
+        const connStr = buildConnectionString(config, targetPath);
 
         onLog(`Uploading dump to remote server via SFTP (${(totalSize / 1024 / 1024).toFixed(1)} MB)...`, "info");
         const uploadStart = Date.now();
@@ -123,7 +112,7 @@ async function restoreSingleFileSSH(
         argParts.push("-user", shellEscape(config.user), shellEscape(remoteTempFile), shellEscape(connStr));
 
         const cmd = remoteEnv({ ISC_PASSWORD: config.password }, `${gbakBin} ${argParts.join(" ")}`);
-        onLog(`Restoring to database alias (SSH): ${targetAlias}`, "info", "command", `${gbakBin} ${argParts.join(" ")}`);
+        onLog(`Restoring to (SSH): ${targetPath}`, "info", "command", `${gbakBin} ${argParts.join(" ")}`);
         onProgress?.(95, "Executing restore command...");
 
         await new Promise<void>((resolve, reject) => {
@@ -195,15 +184,18 @@ export async function restore(
                         continue;
                     }
 
-                    const targetAlias = getTargetDatabaseName(dbEntry.name, dbMapping);
+                    // targetName is a literal filesystem path here, not an alias name - the
+                    // restore UI prefills it with the source alias's configured path, but the
+                    // user can edit it to any path (no live server query to verify against).
+                    const targetPath = getTargetDatabaseName(dbEntry.name, dbMapping);
                     const dbFile = files.find((f) => path.basename(f) === dbEntry.filename);
 
                     if (!dbFile) {
                         throw new Error(`Database file not found in archive: ${dbEntry.filename}`);
                     }
 
-                    await restoreSingleFile(config, dbFile, targetAlias, log, onProgress);
-                    log(`Restored database: ${dbEntry.name} → ${targetAlias}`);
+                    await restoreSingleFile(config, dbFile, targetPath, log, onProgress);
+                    log(`Restored database: ${dbEntry.name} → ${targetPath}`);
                     restoredCount++;
                 }
 
@@ -215,22 +207,28 @@ export async function restore(
             }
         }
 
-        // Single-DB restore
-        let targetAlias: string;
+        // Single-DB restore. `config.targetDatabaseName` is set by the restore pipeline
+        // only when the user typed something into the target field - and that's always a
+        // literal path now (the field is prefilled with one, not an alias name). When the
+        // field was left empty, fall back to resolving the originally configured alias.
+        let targetPath: string;
 
         if (dbMapping && dbMapping.length > 0) {
             const selected = dbMapping.filter((m) => m.selected);
             if (selected.length === 0) {
                 throw new Error("No databases selected for restore");
             }
-            targetAlias = selected[0].targetName || selected[0].originalName;
+            targetPath = selected[0].targetName || selected[0].originalName;
+        } else if (config.targetDatabaseName) {
+            targetPath = config.targetDatabaseName;
         } else if (config.database) {
-            targetAlias = Array.isArray(config.database) ? config.database[0] : config.database;
+            const aliasName = Array.isArray(config.database) ? config.database[0] : config.database;
+            targetPath = resolveAliasPath(config, aliasName);
         } else {
-            throw new Error("No target database alias specified for restore");
+            throw new Error("No target database specified for restore");
         }
 
-        await restoreSingleFile(config, sourcePath, targetAlias, log, onProgress);
+        await restoreSingleFile(config, sourcePath, targetPath, log, onProgress);
 
         return { success: true, logs, startedAt, completedAt: new Date() };
     } catch (error: unknown) {

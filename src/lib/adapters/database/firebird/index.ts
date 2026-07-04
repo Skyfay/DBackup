@@ -1,7 +1,7 @@
 import { DatabaseAdapter } from "@/lib/core/interfaces";
 import { FirebirdSchema } from "@/lib/adapters/definitions";
 import { dump } from "./dump";
-import { restore, prepareRestore } from "./restore";
+import { restore } from "./restore";
 import { test, ping, getDatabases, getDatabasesWithStats } from "./connection";
 import { analyzeDump } from "./analyze";
 
@@ -13,7 +13,6 @@ export const FirebirdAdapter: DatabaseAdapter = {
     credentials: { primary: "USERNAME_PASSWORD", ssh: "SSH_KEY" },
     dump,
     restore,
-    prepareRestore,
     test,
     ping,
     getDatabases,

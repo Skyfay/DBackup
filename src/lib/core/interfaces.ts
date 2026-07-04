@@ -75,6 +75,8 @@ export interface DatabaseInfo {
     sizeInBytes?: number;
     /** Number of tables/collections in the database. Undefined if not available. */
     tableCount?: number;
+    /** Firebird only: filesystem path for this alias, used to prefill the restore target field. */
+    path?: string;
 }
 
 /**

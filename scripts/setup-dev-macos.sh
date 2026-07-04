@@ -43,6 +43,55 @@ brew install mongosh
 echo -e "${GREEN}Installing Redis CLI (redis-cli)...${NC}"
 brew install redis
 
+echo -e "${GREEN}Installing Firebird client tools (gbak, isql)...${NC}"
+echo -e "${YELLOW}Homebrew has no Firebird formula, so this downloads the official client${NC}"
+echo -e "${YELLOW}binaries directly instead of running the full server .pkg installer${NC}"
+echo -e "${YELLOW}(which requires sudo and sets up a local Firebird server/daemon we don't need).${NC}"
+
+FIREBIRD_TAG="5.0.3"
+FIREBIRD_ASSET_VERSION="5.0.3.1683-0"
+case "$(uname -m)" in
+    arm64) FB_MAC_ARCH="arm64" ;;
+    x86_64) FB_MAC_ARCH="x64" ;;
+    *) FB_MAC_ARCH="" ;;
+esac
+
+if [ -z "$FB_MAC_ARCH" ]; then
+    echo -e "${RED}Unsupported architecture for Firebird client install: $(uname -m). Skipping.${NC}"
+else
+    FB_PREFIX="$(brew --prefix)/firebird-client"
+    if [ -x "$FB_PREFIX/bin/gbak" ]; then
+        echo -e "${YELLOW}Firebird client tools already present at $FB_PREFIX - skipping.${NC}"
+    else
+        FB_PKG_URL="https://github.com/FirebirdSQL/firebird/releases/download/v${FIREBIRD_TAG}/Firebird-${FIREBIRD_ASSET_VERSION}-macos-${FB_MAC_ARCH}.pkg"
+        FB_TMP_DIR=$(mktemp -d)
+        echo -e "${GREEN}Downloading $FB_PKG_URL ...${NC}"
+        if curl -fsSL "$FB_PKG_URL" -o "$FB_TMP_DIR/firebird.pkg"; then
+            pkgutil --expand "$FB_TMP_DIR/firebird.pkg" "$FB_TMP_DIR/expanded"
+            mkdir -p "$FB_TMP_DIR/payload"
+            (cd "$FB_TMP_DIR/payload" && gunzip -dc "$FB_TMP_DIR/expanded/Firebird.pkg/Payload" | cpio -id) &> /dev/null
+
+            mkdir -p "$FB_PREFIX/bin" "$FB_PREFIX/lib"
+            cp "$FB_TMP_DIR/payload/Versions/A/Resources/bin/gbak" "$FB_PREFIX/bin/"
+            cp "$FB_TMP_DIR/payload/Versions/A/Resources/bin/isql" "$FB_PREFIX/bin/"
+            # gbak/isql use a relative rpath (@loader_path/..), so keeping this
+            # bin/ + lib/ layout side by side is what makes them find these dylibs.
+            cp "$FB_TMP_DIR/payload/Versions/A/Resources/lib/libfbclient.dylib" \
+               "$FB_TMP_DIR/payload/Versions/A/Resources/lib/libtommath.dylib" \
+               "$FB_TMP_DIR/payload/Versions/A/Resources/lib/libtomcrypt.dylib" \
+               "$FB_PREFIX/lib/"
+            # firebird.msg provides human-readable status/error text; isql/gbak look
+            # for it at "../firebird.msg" relative to bin/, i.e. directly in $FB_PREFIX.
+            cp "$FB_TMP_DIR/payload/Versions/A/Resources/firebird.msg" "$FB_PREFIX/"
+
+            echo -e "${GREEN}Firebird client tools installed to $FB_PREFIX/bin${NC}"
+        else
+            echo -e "${RED}Failed to download Firebird client package - skipping. Install manually from https://github.com/FirebirdSQL/firebird/releases if needed.${NC}"
+        fi
+        rm -rf "$FB_TMP_DIR"
+    fi
+fi
+
 echo -e "${GREEN}Installing SMB Client (smbclient for Samba storage adapter)...${NC}"
 brew install samba
 
@@ -62,10 +111,10 @@ echo -e "${RED}IMPORTANT: postgresql@XX must come BEFORE /opt/homebrew/bin in PA
 echo -e "${YELLOW}The 'libpq' package installs a pg_dump WITHOUT LZ4/ZSTD support into${NC}"
 echo -e "${YELLOW}/opt/homebrew/opt/libpq/bin - if that comes first, native compression fails.${NC}"
 echo ""
-echo 'export PATH="/opt/homebrew/opt/mysql-client/bin:/opt/homebrew/opt/postgresql@18/bin:/opt/homebrew/opt/postgresql@16/bin:/opt/homebrew/opt/postgresql@14/bin:$PATH"'
+echo 'export PATH="/opt/homebrew/opt/mysql-client/bin:/opt/homebrew/opt/postgresql@18/bin:/opt/homebrew/opt/postgresql@16/bin:/opt/homebrew/opt/postgresql@14/bin:/opt/homebrew/firebird-client/bin:$PATH"'
 echo ""
 echo -e "${YELLOW}Add to ~/.zshrc permanently:${NC}"
-echo 'echo '\''export PATH="/opt/homebrew/opt/mysql-client/bin:/opt/homebrew/opt/postgresql@18/bin:/opt/homebrew/opt/postgresql@16/bin:/opt/homebrew/opt/postgresql@14/bin:$PATH"'\'' >> ~/.zshrc'
+echo 'echo '\''export PATH="/opt/homebrew/opt/mysql-client/bin:/opt/homebrew/opt/postgresql@18/bin:/opt/homebrew/opt/postgresql@16/bin:/opt/homebrew/opt/postgresql@14/bin:/opt/homebrew/firebird-client/bin:$PATH"'\'' >> ~/.zshrc'
 echo 'source ~/.zshrc'
 echo ""
 echo -e "${GREEN}Version-matching uses nearest lower version (PG13 server uses pg_dump 14, works perfectly!).${NC}"

@@ -17,6 +17,7 @@ Complete guide to setting up DBackup for development.
   - `mysql` / `mysqldump` (MySQL/MariaDB)
   - `psql` / `pg_dump` (PostgreSQL)
   - `mongodump` / `mongorestore` (MongoDB)
+  - `gbak` / `isql` (Firebird) - see [`scripts/setup-dev-macos.sh`](https://github.com/Skyfay/DBackup/blob/main/scripts/setup-dev-macos.sh) for a scripted macOS install (no Homebrew formula exists)
 
 ### macOS Installation
 

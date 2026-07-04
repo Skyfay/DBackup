@@ -172,7 +172,7 @@ export const testDatabases = [
             port: 31530,
             user: 'SYSDBA',
             password: 'masterkey',
-            databases: [{ name: 'testdb', path: '/firebird/data/testdb.fdb' }],
+            databases: [{ name: 'testdb', path: '/var/lib/firebird/data/testdb.fdb' }],
             database: 'testdb',
             connectionMode: 'direct',
         }
@@ -185,7 +185,7 @@ export const testDatabases = [
             port: 31540,
             user: 'SYSDBA',
             password: 'masterkey',
-            databases: [{ name: 'testdb', path: '/firebird/data/testdb.fdb' }],
+            databases: [{ name: 'testdb', path: '/var/lib/firebird/data/testdb.fdb' }],
             database: 'testdb',
             connectionMode: 'direct',
         }
@@ -198,7 +198,7 @@ export const testDatabases = [
             port: 31550,
             user: 'SYSDBA',
             password: 'masterkey',
-            databases: [{ name: 'testdb', path: '/firebird/data/testdb.fdb' }],
+            databases: [{ name: 'testdb', path: '/var/lib/firebird/data/testdb.fdb' }],
             database: 'testdb',
             connectionMode: 'direct',
         }

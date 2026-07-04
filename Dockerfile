@@ -59,22 +59,39 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Debian 12's apt repos only carry a 3.0 client, not 5.x, and the 5.x gbak/isql
 # can talk to 3.x/4.x servers over the wire protocol - so download the official
 # Firebird release tarball and extract just the client binaries + shared library.
-# NOTE: FIREBIRD_VERSION and the release asset filename must be verified against
-# https://github.com/FirebirdSQL/firebird/releases before relying on this in
-# production - flagged as an open risk in the Firebird adapter implementation plan.
-ARG FIREBIRD_VERSION=5.0.1
-RUN case "${TARGETARCH:-amd64}" in \
+#
+# Verified against the actual GitHub release assets (2026-07-04):
+# - Release tag (v${FIREBIRD_RELEASE_TAG}) and asset filename version
+#   (${FIREBIRD_ASSET_VERSION}) differ - assets embed a build number, e.g.
+#   "Firebird-5.0.3.1683-0-linux-x64.tar.gz" for tag "v5.0.3". Bump both when
+#   upgrading.
+# - The top-level tarball only contains an install.sh + a nested
+#   buildroot.tar.gz - the actual bin/lib payload lives at
+#   buildroot.tar.gz:./opt/firebird/{bin,lib}, not at the tarball root.
+# - gbak/isql depend on libtommath.so.1 and gbak also needs libz.so.1, neither
+#   of which ship inside buildroot.tar.gz - installed via apt below.
+#   libicuuc/libicui18n are dlopen'd at runtime for extended collations only
+#   (soft dependency) - omitted here since backup/restore doesn't need them.
+ARG FIREBIRD_RELEASE_TAG=5.0.3
+ARG FIREBIRD_ASSET_VERSION=5.0.3.1683-0
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libtommath1 \
+    zlib1g && \
+    rm -rf /var/lib/apt/lists/* && \
+    case "${TARGETARCH:-amd64}" in \
         amd64) FB_ARCH="x64" ;; \
         arm64) FB_ARCH="arm64" ;; \
         *) echo "Unsupported architecture: ${TARGETARCH}"; exit 1 ;; \
     esac && \
-    curl -fsSL "https://github.com/FirebirdSQL/firebird/releases/download/v${FIREBIRD_VERSION}/Firebird-${FIREBIRD_VERSION}-linux-${FB_ARCH}.tar.gz" -o /tmp/firebird.tar.gz && \
+    curl -fsSL "https://github.com/FirebirdSQL/firebird/releases/download/v${FIREBIRD_RELEASE_TAG}/Firebird-${FIREBIRD_ASSET_VERSION}-linux-${FB_ARCH}.tar.gz" -o /tmp/firebird.tar.gz && \
     mkdir -p /tmp/firebird-extract && \
     tar -xzf /tmp/firebird.tar.gz -C /tmp/firebird-extract --strip-components=1 && \
+    tar -xzf /tmp/firebird-extract/buildroot.tar.gz -C /tmp/firebird-extract && \
     mkdir -p /opt/firebird/bin /opt/firebird/lib && \
-    cp /tmp/firebird-extract/bin/gbak /opt/firebird/bin/ && \
-    cp /tmp/firebird-extract/bin/isql /opt/firebird/bin/ && \
-    cp -P /tmp/firebird-extract/lib/libfbclient.so* /opt/firebird/lib/ && \
+    cp /tmp/firebird-extract/opt/firebird/bin/gbak /opt/firebird/bin/ && \
+    cp /tmp/firebird-extract/opt/firebird/bin/isql /opt/firebird/bin/ && \
+    cp -a /tmp/firebird-extract/opt/firebird/lib/. /opt/firebird/lib/ && \
+    cp /tmp/firebird-extract/opt/firebird/firebird.msg /opt/firebird/ && \
     ln -sf /opt/firebird/bin/gbak /usr/local/bin/gbak && \
     ln -sf /opt/firebird/bin/isql /usr/local/bin/isql && \
     echo "/opt/firebird/lib" > /etc/ld.so.conf.d/firebird.conf && \

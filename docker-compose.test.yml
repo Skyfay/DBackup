@@ -401,3 +401,64 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  # ==========================================
+  # Firebird Family
+  # ==========================================
+  # Image: official firebirdsql/firebird (https://github.com/FirebirdSQL/docker-firebird)
+  # NOTE: env var names below (FIREBIRD_ROOT_PASSWORD, FIREBIRD_DATABASE,
+  # FIREBIRD_USE_LEGACY_AUTH) are the documented ones as of this writing - verify
+  # against Docker Hub before relying on these services, per the adapter plan's
+  # known open risk. Databases are created under /firebird/data on first boot.
+
+  # Firebird 3.0
+  firebird-30:
+    image: firebirdsql/firebird-arm64:3.0.11
+    container_name: dbm-test-firebird-30
+    environment:
+      FIREBIRD_ROOT_PASSWORD: masterkey
+      ISC_PASSWORD: masterkey
+      FIREBIRD_DATABASE: testdb.fdb
+      FIREBIRD_USE_LEGACY_AUTH: "true"
+    ports:
+      - "31530:3050"
+    healthcheck:
+      test: ["CMD-SHELL", "isql-fb -user sysdba -password masterkey /firebird/data/testdb.fdb -i /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # Firebird 4.0
+  firebird-40:
+    image: firebirdsql/firebird-arm64:4.0.7
+    container_name: dbm-test-firebird-40
+    environment:
+      FIREBIRD_ROOT_PASSWORD: masterkey
+      ISC_PASSWORD: masterkey
+      FIREBIRD_DATABASE: testdb.fdb
+    ports:
+      - "31540:3050"
+    healthcheck:
+      test: ["CMD-SHELL", "isql-fb -user sysdba -password masterkey /firebird/data/testdb.fdb -i /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # Firebird 5.0 (Current)
+  firebird-50:
+    image: firebirdsql/firebird-arm64:5.0.3
+    container_name: dbm-test-firebird-50
+    environment:
+      FIREBIRD_ROOT_PASSWORD: masterkey
+      ISC_PASSWORD: masterkey
+      FIREBIRD_DATABASE: testdb.fdb
+    ports:
+      - "31550:3050"
+    healthcheck:
+      test: ["CMD-SHELL", "isql-fb -user sysdba -password masterkey /firebird/data/testdb.fdb -i /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s

@@ -2,7 +2,7 @@ import { ADAPTER_CREDENTIAL_REQUIREMENTS } from "@/lib/core/credential-requireme
 import type { AdapterDefinition } from "./shared";
 import {
     MySQLSchema, MariaDBSchema, PostgresSchema, MongoDBSchema,
-    SQLiteSchema, MSSQLSchema, RedisSchema,
+    SQLiteSchema, MSSQLSchema, RedisSchema, FirebirdSchema,
 } from "./database";
 import {
     LocalStorageSchema, S3GenericSchema, S3AWSSchema, S3R2Schema, S3HetznerSchema,
@@ -29,6 +29,7 @@ export const ADAPTER_DEFINITIONS: AdapterDefinition[] = [
     { id: "mssql", type: "database", name: "Microsoft SQL Server", configSchema: MSSQLSchema },
     { id: "redis", type: "database", name: "Redis", configSchema: RedisSchema },
     { id: "valkey", type: "database", name: "Valkey", configSchema: RedisSchema },
+    { id: "firebird", type: "database", name: "Firebird", configSchema: FirebirdSchema },
 
     { id: "local-filesystem", type: "storage", group: "Local", name: "Local Filesystem", configSchema: LocalStorageSchema },
     { id: "s3-aws", type: "storage", group: "Cloud Storage (S3)", name: "Amazon S3", configSchema: S3AWSSchema },

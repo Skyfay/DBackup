@@ -21,6 +21,7 @@ const CLI_REQUIREMENTS: Record<string, string> = {
     mongodb: 'mongodump',
     mssql: 'sqlcmd',
     redis: 'redis-cli',
+    firebird: 'gbak',
 };
 
 // Check which CLI tools are missing
@@ -158,6 +159,48 @@ export const testDatabases = [
             port: 63780,
             password: 'testpassword',
             database: 0
+        }
+    },
+    // --- Firebird ---
+    // Note config shape differs from other adapters: `databases` is the admin-defined
+    // alias registry ({name, path}), `database` is the job-selected alias name(s).
+    {
+        name: 'Test Firebird 3.0',
+        config: {
+            type: 'firebird',
+            host: TEST_HOST,
+            port: 31530,
+            user: 'SYSDBA',
+            password: 'masterkey',
+            databases: [{ name: 'testdb', path: '/firebird/data/testdb.fdb' }],
+            database: 'testdb',
+            connectionMode: 'direct',
+        }
+    },
+    {
+        name: 'Test Firebird 4.0',
+        config: {
+            type: 'firebird',
+            host: TEST_HOST,
+            port: 31540,
+            user: 'SYSDBA',
+            password: 'masterkey',
+            databases: [{ name: 'testdb', path: '/firebird/data/testdb.fdb' }],
+            database: 'testdb',
+            connectionMode: 'direct',
+        }
+    },
+    {
+        name: 'Test Firebird 5.0',
+        config: {
+            type: 'firebird',
+            host: TEST_HOST,
+            port: 31550,
+            user: 'SYSDBA',
+            password: 'masterkey',
+            databases: [{ name: 'testdb', path: '/firebird/data/testdb.fdb' }],
+            database: 'testdb',
+            connectionMode: 'direct',
         }
     }
 ];

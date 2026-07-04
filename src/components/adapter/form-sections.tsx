@@ -32,6 +32,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AdapterDefinition } from "@/lib/adapters/definitions";
 import { SchemaField } from "./schema-field";
 import { EmailTagField } from "./email-tag-field";
+import { FirebirdAliasFields } from "./firebird-alias-fields";
 import { STORAGE_CONFIG_KEYS, STORAGE_CONNECTION_KEYS, NOTIFICATION_CONNECTION_KEYS, NOTIFICATION_CONFIG_KEYS } from "./form-constants";
 import { GoogleDriveOAuthButton } from "./google-drive-oauth-button";
 import { GoogleDriveFolderBrowser } from "./google-drive-folder-browser";
@@ -545,10 +546,12 @@ function SshAwareTabLayout({
 
                     <TabsContent value="configuration" className="space-y-4 pt-4">
                         {(adapter.id === 'redis' || adapter.id === 'valkey') && <RedisDatabaseSelect />}
+                        {adapter.id === 'firebird' && <FirebirdAliasFields />}
                         <FieldList
                             keys={[
                                 'authenticationDatabase', 'options', 'disableSsl',
                                 'mode', 'tls', 'sentinelMasterName', 'sentinelNodes',
+                                'firebirdBinaryPath',
                             ]}
                             adapter={adapter}
                         />
@@ -588,10 +591,12 @@ function SshAwareTabLayout({
 
                     <TabsContent value="configuration" className="space-y-4 pt-4">
                         {(adapter.id === 'redis' || adapter.id === 'valkey') && <RedisDatabaseSelect />}
+                        {adapter.id === 'firebird' && <FirebirdAliasFields />}
                         <FieldList
                             keys={[
                                 'authenticationDatabase', 'options', 'disableSsl',
                                 'mode', 'tls', 'sentinelMasterName', 'sentinelNodes',
+                                'firebirdBinaryPath',
                             ]}
                             adapter={adapter}
                         />

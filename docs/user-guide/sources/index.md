@@ -14,6 +14,7 @@ DBackup supports a wide variety of database engines.
 | [Valkey](/user-guide/sources/valkey) | 7.2+ | `redis-cli --rdb` | Manual |
 | [SQLite](/user-guide/sources/sqlite) | 3.x | `.dump` command | ✅ |
 | [MSSQL](/user-guide/sources/mssql) | 2017, 2019, 2022 | `BACKUP DATABASE` | ✅ |
+| [Firebird](/user-guide/sources/firebird) | 3.x, 4.x, 5.x | `gbak` | ✅ (pre-configured aliases) |
 
 ## Database Explorer
 

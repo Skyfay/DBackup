@@ -13,6 +13,7 @@ Database adapters handle the dump and restore operations for different database 
 | SQLite | `sqlite` | None (file copy) | ✅ | `.db` |
 | MSSQL | `mssql` | None (TDS protocol) | ❌ (uses SFTP) | `.bak` |
 | Redis | `redis` | `redis-cli` | ✅ | `.rdb` |
+| Firebird | `firebird` | `gbak`, `isql` | ✅ | `.fbk` |
 
 ## Backup File Extensions
 
@@ -27,6 +28,7 @@ getBackupFileExtension("redis");    // "rdb"
 getBackupFileExtension("mongodb");  // "archive"
 getBackupFileExtension("sqlite");   // "db"
 getBackupFileExtension("mssql");    // "bak"
+getBackupFileExtension("firebird"); // "fbk"
 ```
 
 ### Extension Mapping
@@ -39,6 +41,7 @@ getBackupFileExtension("mssql");    // "bak"
 | MongoDB | `.archive` | mongodump `--archive` format |
 | Redis | `.rdb` | Redis Database snapshot format |
 | SQLite | `.db` | Direct database file copy |
+| Firebird | `.fbk` | Native `gbak` backup format |
 
 ### Final Filename Examples
 

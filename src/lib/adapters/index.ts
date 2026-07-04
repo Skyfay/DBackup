@@ -7,6 +7,7 @@ import { SQLiteAdapter } from "./database/sqlite";
 import { MSSQLAdapter } from "./database/mssql";
 import { RedisAdapter } from "./database/redis";
 import { ValkeyAdapter } from "./database/valkey";
+import { FirebirdAdapter } from "./database/firebird";
 import { LocalFileSystemAdapter } from "./storage/local";
 import { S3GenericAdapter, S3AWSAdapter, S3R2Adapter, S3HetznerAdapter } from "./storage/s3";
 import { SFTPAdapter } from "./storage/sftp";
@@ -27,6 +28,7 @@ import { TelegramAdapter } from "./notification/telegram";
 import { TwilioSmsAdapter } from "./notification/twilio-sms";
 import { EmailAdapter } from "./notification/email";
 import { initMysqlTools } from "./database/mysql/tools";
+import { initFirebirdTools } from "./database/firebird/tools";
 import { logger } from "@/lib/logging/logger";
 
 const log = logger.child({ module: "Adapters" });
@@ -37,8 +39,9 @@ let initialized = false;
 export function registerAdapters() {
     if (initialized) return;
 
-    // Pre-detect MySQL/MariaDB commands asynchronously (non-blocking)
+    // Pre-detect binary commands asynchronously (non-blocking)
     initMysqlTools().catch(() => { /* fallback to defaults */ });
+    initFirebirdTools().catch(() => { /* fallback to defaults */ });
 
     registry.register(MySQLAdapter);
     registry.register(MariaDBAdapter);
@@ -48,6 +51,7 @@ export function registerAdapters() {
     registry.register(MSSQLAdapter);
     registry.register(RedisAdapter);
     registry.register(ValkeyAdapter);
+    registry.register(FirebirdAdapter);
 
     registry.register(LocalFileSystemAdapter);
     registry.register(S3GenericAdapter);

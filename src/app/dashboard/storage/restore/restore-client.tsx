@@ -100,9 +100,12 @@ export function RestoreClient() {
 
     const isSystemConfig = file?.sourceType === 'SYSTEM';
 
-    const SERVER_ADAPTERS = ['mysql', 'mariadb', 'postgres', 'mongodb', 'mssql', 'redis', 'valkey'];
+    const SERVER_ADAPTERS = ['mysql', 'mariadb', 'postgres', 'mongodb', 'mssql', 'redis', 'valkey', 'firebird'];
     const resolvedSourceType = backupSourceType || file?.sourceType || '';
     const isServerAdapter = SERVER_ADAPTERS.includes(resolvedSourceType.toLowerCase());
+    // Firebird can't create a database alias on the fly - restore is scoped to
+    // the target source's pre-configured aliases (dropdown), not a free-text name.
+    const isFirebird = resolvedSourceType.toLowerCase() === 'firebird';
 
     const [restoreOptions, setRestoreOptions] = useState<RestoreOptions>({
         settings: true,
@@ -285,7 +288,11 @@ export function RestoreClient() {
             const payload = {
                 file: file.path,
                 targetSourceId: targetSource,
-                targetDatabaseName: restoreMode === 'rename' && targetDbName ? targetDbName : undefined,
+                // Note: restoreMode only gates the non-server-adapter RadioGroup UI (which
+                // clears targetDbName on "overwrite"); the server-adapter Input/Select paths
+                // (including Firebird's alias dropdown) set targetDbName directly, so its
+                // truthiness alone is the correct signal here.
+                targetDatabaseName: targetDbName || undefined,
                 databaseMapping: mapping,
                 privilegedAuth: auth
             };
@@ -649,13 +656,32 @@ export function RestoreClient() {
                                                                         <ArrowRight className="h-4 w-4 text-muted-foreground" />
                                                                     </TableCell>
                                                                     <TableCell className="py-2.5">
-                                                                        <Input
-                                                                            value={db.targetName}
-                                                                            onChange={(e) => handleRenameDb(db.id, e.target.value)}
-                                                                            className="h-8 text-sm"
-                                                                            placeholder="Target Name"
-                                                                            disabled={!db.selected}
-                                                                        />
+                                                                        {isFirebird ? (
+                                                                            <Select
+                                                                                value={db.targetName}
+                                                                                onValueChange={(v) => handleRenameDb(db.id, v)}
+                                                                                disabled={!db.selected || targetDatabases.length === 0}
+                                                                            >
+                                                                                <SelectTrigger className="h-8 text-sm">
+                                                                                    <SelectValue placeholder="Select alias..." />
+                                                                                </SelectTrigger>
+                                                                                <SelectContent>
+                                                                                    {targetDatabases.map((tdb) => (
+                                                                                        <SelectItem key={tdb.name} value={tdb.name}>
+                                                                                            {tdb.name}
+                                                                                        </SelectItem>
+                                                                                    ))}
+                                                                                </SelectContent>
+                                                                            </Select>
+                                                                        ) : (
+                                                                            <Input
+                                                                                value={db.targetName}
+                                                                                onChange={(e) => handleRenameDb(db.id, e.target.value)}
+                                                                                className="h-8 text-sm"
+                                                                                placeholder="Target Name"
+                                                                                disabled={!db.selected}
+                                                                            />
+                                                                        )}
                                                                     </TableCell>
                                                                     <TableCell className="py-2.5 text-center">
                                                                         {db.selected && willOverwrite ? (
@@ -683,6 +709,42 @@ export function RestoreClient() {
                                                         })}
                                                     </TableBody>
                                                 </Table>
+                                            </div>
+                                        ) : isServerAdapter && isFirebird ? (
+                                            <div className="space-y-3">
+                                                <p className="text-sm text-muted-foreground">
+                                                    Firebird cannot create a new database alias automatically. Select which
+                                                    configured alias on the target source to restore into - its file will be replaced.
+                                                </p>
+                                                <div className="space-y-1.5">
+                                                    <Label className="text-sm">Target Database Alias</Label>
+                                                    {targetDatabases.length === 0 ? (
+                                                        <>
+                                                            <Select disabled>
+                                                                <SelectTrigger className="h-8">
+                                                                    <SelectValue placeholder="No aliases configured" />
+                                                                </SelectTrigger>
+                                                                <SelectContent />
+                                                            </Select>
+                                                            <p className="text-xs text-destructive">
+                                                                The target source has no configured database aliases. Add one in the source settings first.
+                                                            </p>
+                                                        </>
+                                                    ) : (
+                                                        <Select value={targetDbName} onValueChange={setTargetDbName}>
+                                                            <SelectTrigger className="h-8">
+                                                                <SelectValue placeholder="Select alias..." />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                {targetDatabases.map((tdb) => (
+                                                                    <SelectItem key={tdb.name} value={tdb.name}>
+                                                                        {tdb.name}
+                                                                    </SelectItem>
+                                                                ))}
+                                                            </SelectContent>
+                                                        </Select>
+                                                    )}
+                                                </div>
                                             </div>
                                         ) : isServerAdapter ? (
                                             <div className="space-y-3">

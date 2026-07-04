@@ -88,6 +88,23 @@ export const MSSQLSchema = z.object({
     options: z.string().optional().describe("Additional backup options"),
 });
 
+export const FirebirdSchema = z.object({
+    host: z.string().default("localhost"),
+    port: z.coerce.number().default(3050),
+    user: z.string().min(1, "User is required").default("SYSDBA"),
+    password: z.string().optional(),
+    // Admin-defined alias registry (Firebird has no "list databases" server command).
+    databases: z.array(z.object({
+        name: z.string().min(1, "Alias name is required"),
+        path: safePath("Database path"),
+    })).min(1, "At least one database alias is required"),
+    // Job-selected alias name(s), mirrors the `database` field of every other adapter.
+    database: z.union([z.string(), z.array(z.string())]).default(""),
+    firebirdBinaryPath: safeBinaryPath.default("gbak").optional().describe("Path to gbak binary (default: gbak)"),
+    options: z.string().optional().describe("Additional gbak options"),
+    ...sshFields,
+});
+
 export const RedisSchema = z.object({
     mode: z.enum(["standalone", "sentinel"]).default("standalone").describe("Connection mode"),
     host: z.string().default("localhost"),
@@ -110,8 +127,9 @@ export type MongoDBConfig = z.infer<typeof MongoDBSchema>;
 export type SQLiteConfig = z.infer<typeof SQLiteSchema>;
 export type MSSQLConfig = z.infer<typeof MSSQLSchema>;
 export type RedisConfig = z.infer<typeof RedisSchema>;
+export type FirebirdConfig = z.infer<typeof FirebirdSchema>;
 
-export type DatabaseConfig = MySQLConfig | MariaDBConfig | PostgresConfig | MongoDBConfig | SQLiteConfig | MSSQLConfig | RedisConfig;
+export type DatabaseConfig = MySQLConfig | MariaDBConfig | PostgresConfig | MongoDBConfig | SQLiteConfig | MSSQLConfig | RedisConfig | FirebirdConfig;
 
 // Generic type alias for dialect base class (accepts any database config)
 export type AnyDatabaseConfig = DatabaseConfig;

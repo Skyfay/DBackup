@@ -2,6 +2,21 @@
 
 All notable changes to DBackup are documented here.
 
+## vNEXT
+*Release: In Progress*
+
+### ✨ Features
+
+- **Firebird**: Added Firebird (3.x/4.x/5.x) as a supported database source, with direct and SSH connection modes.
+
+### 🐳 Docker
+
+- **Image**: `skyfay/dbackup:vNEXT`
+- **Also tagged as**: `latest`, `vNEXT`
+- **CI Image**: `skyfay/dbackup:ci`
+- **Platforms**: linux/amd64, linux/arm64
+
+
 ## v2.9.0 - Valkey Support, Storage Alert Fix, and Multiple Improvements
 *Released: July 4, 2026*
 

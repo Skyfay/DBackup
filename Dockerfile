@@ -55,6 +55,32 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rm /tmp/mongo-tools.deb && \
     rm -rf /var/lib/apt/lists/*
 
+# Step 5: Firebird 5.x client tools (gbak, isql) for the Firebird adapter.
+# Debian 12's apt repos only carry a 3.0 client, not 5.x, and the 5.x gbak/isql
+# can talk to 3.x/4.x servers over the wire protocol - so download the official
+# Firebird release tarball and extract just the client binaries + shared library.
+# NOTE: FIREBIRD_VERSION and the release asset filename must be verified against
+# https://github.com/FirebirdSQL/firebird/releases before relying on this in
+# production - flagged as an open risk in the Firebird adapter implementation plan.
+ARG FIREBIRD_VERSION=5.0.1
+RUN case "${TARGETARCH:-amd64}" in \
+        amd64) FB_ARCH="x64" ;; \
+        arm64) FB_ARCH="arm64" ;; \
+        *) echo "Unsupported architecture: ${TARGETARCH}"; exit 1 ;; \
+    esac && \
+    curl -fsSL "https://github.com/FirebirdSQL/firebird/releases/download/v${FIREBIRD_VERSION}/Firebird-${FIREBIRD_VERSION}-linux-${FB_ARCH}.tar.gz" -o /tmp/firebird.tar.gz && \
+    mkdir -p /tmp/firebird-extract && \
+    tar -xzf /tmp/firebird.tar.gz -C /tmp/firebird-extract --strip-components=1 && \
+    mkdir -p /opt/firebird/bin /opt/firebird/lib && \
+    cp /tmp/firebird-extract/bin/gbak /opt/firebird/bin/ && \
+    cp /tmp/firebird-extract/bin/isql /opt/firebird/bin/ && \
+    cp -P /tmp/firebird-extract/lib/libfbclient.so* /opt/firebird/lib/ && \
+    ln -sf /opt/firebird/bin/gbak /usr/local/bin/gbak && \
+    ln -sf /opt/firebird/bin/isql /usr/local/bin/isql && \
+    echo "/opt/firebird/lib" > /etc/ld.so.conf.d/firebird.conf && \
+    ldconfig && \
+    rm -rf /tmp/firebird.tar.gz /tmp/firebird-extract
+
 # Enable corepack for pnpm support and symlink PostgreSQL 18 binaries
 # On Debian with PGDG, pg binaries live under /usr/lib/postgresql/18/bin/
 RUN corepack enable && corepack prepare pnpm@10.29.3 --activate && \

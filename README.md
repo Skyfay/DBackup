@@ -58,7 +58,7 @@ Whether you're running a single MySQL database or managing multiple PostgreSQL, 
 
 ### 🗄️ Database Backup
 
-- **7 Database Engines** - MySQL, MariaDB, PostgreSQL, MongoDB, SQLite, Redis, and Microsoft SQL Server
+- **8 Database Engines** - MySQL, MariaDB, PostgreSQL, MongoDB, SQLite, Redis, Valkey, and Microsoft SQL Server
 - **Selective Database Backup** - Choose exactly which databases to back up per job instead of creating separate sources for each database
 - **Multi-Database Jobs** - Back up multiple databases from a single source in one job with a unified TAR archive format
 - **AES-256-GCM Encryption** - Encrypt backups with managed Encryption Profiles, key rotation, and downloadable Recovery Kits for offline decryption

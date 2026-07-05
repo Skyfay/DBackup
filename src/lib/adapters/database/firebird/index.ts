@@ -4,6 +4,7 @@ import { dump } from "./dump";
 import { restore } from "./restore";
 import { test, ping, getDatabases, getDatabasesWithStats } from "./connection";
 import { analyzeDump } from "./analyze";
+import { getTables, getTableData } from "./browser";
 
 export const FirebirdAdapter: DatabaseAdapter = {
     id: "firebird",
@@ -18,4 +19,6 @@ export const FirebirdAdapter: DatabaseAdapter = {
     getDatabases,
     getDatabasesWithStats,
     analyzeDump,
+    getTables,
+    getTableData,
 };

@@ -8,6 +8,9 @@ All notable changes to DBackup are documented here.
 ### ✨ Features
 
 - **Firebird**: Added Firebird (3.x/4.x/5.x) as a supported database source, with direct and SSH connection modes.
+### 🔧 CI/CD
+
+- **scripts**: `generate-stress-data.sh` now also populates Redis and Firebird test containers.
 
 ### 🐳 Docker
 

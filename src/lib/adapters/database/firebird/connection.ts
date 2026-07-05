@@ -57,7 +57,7 @@ function parseEngineVersion(raw: string): string | undefined {
     return match ? match[1] : undefined;
 }
 
-function runIsqlQuery(
+export function runIsqlQuery(
     bin: string,
     args: string[],
     sql: string,

@@ -1,15 +1,6 @@
 import { FirebirdConfig } from "@/lib/adapters/definitions";
 import { TableInfo, ColumnInfo, TableDataOptions, TableDataResult } from "@/lib/core/interfaces";
-import {
-    SshClient,
-    isSSHMode,
-    extractSshConfig,
-    remoteEnv,
-    remoteBinaryCheck,
-    shellEscape,
-} from "@/lib/ssh";
-import { getIsqlCommand } from "./tools";
-import { resolveAliasPath, buildConnectionString, runIsqlQuery } from "./connection";
+import { runQuery } from "./connection";
 
 /** Sanitize a Firebird identifier (table/column name) for use in double-quoted SQL. */
 function escapeFirebirdIdentifier(name: string): string {
@@ -138,33 +129,6 @@ function parseListRows(stdout: string, columnNames: string[]): Record<string, un
     }
     if (Object.keys(current).length > 0) rows.push(current);
     return rows;
-}
-
-async function runQuery(config: FirebirdConfig, database: string, sql: string): Promise<string> {
-    const dbPath = resolveAliasPath(config, database);
-    const connStr = buildConnectionString(config, dbPath);
-
-    if (isSSHMode(config)) {
-        const ssh = new SshClient();
-        try {
-            await ssh.connect(extractSshConfig(config)!);
-            const isqlBin = await remoteBinaryCheck(ssh, "isql", "isql-fb");
-            const cmd = remoteEnv(
-                { ISC_PASSWORD: config.password },
-                `echo ${shellEscape(sql)} | ${isqlBin} -q ${shellEscape(connStr)} -user ${shellEscape(config.user)}`
-            );
-            const result = await ssh.exec(cmd);
-            if (result.code !== 0) throw new Error(result.stderr.trim() || result.stdout.trim() || "Query failed");
-            return result.stdout;
-        } finally {
-            ssh.end();
-        }
-    }
-
-    const env = { ...process.env, ISC_PASSWORD: config.password };
-    const result = await runIsqlQuery(getIsqlCommand(), ["-q", connStr, "-user", config.user], sql, env);
-    if (result.code !== 0) throw new Error(result.stderr.trim() || result.stdout.trim() || "Query failed");
-    return result.stdout;
 }
 
 export async function getTables(config: FirebirdConfig, database: string): Promise<TableInfo[]> {

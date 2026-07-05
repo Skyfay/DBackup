@@ -42,12 +42,25 @@ export async function getDatabases(config: FirebirdConfig): Promise<string[]> {
     return (config.databases || []).map((d) => d.name);
 }
 
+const TABLE_COUNT_QUERY =
+    "SET HEADING OFF;\nSELECT COUNT(*) FROM RDB$RELATIONS WHERE RDB$SYSTEM_FLAG = 0 OR RDB$SYSTEM_FLAG IS NULL;";
+
 export async function getDatabasesWithStats(config: FirebirdConfig): Promise<DatabaseInfo[]> {
-    // No live server query - direct mode can't stat a remote path by filesystem,
-    // so sizes are intentionally left undefined. The restore UI tolerates this.
-    // `path` is included so the restore UI can prefill the target field with the
-    // real path instead of just the alias name.
-    return (config.databases || []).map((d) => ({ name: d.name, path: d.path }));
+    // Firebird has no filesystem-level size query reachable over the wire protocol
+    // (no gstat bundled - see tools.ts), so sizeInBytes is intentionally left
+    // undefined. `path` is included so the restore UI can prefill the target field
+    // with the real path instead of just the alias name.
+    return Promise.all(
+        (config.databases || []).map(async (d) => {
+            try {
+                const stdout = await runQuery(config, d.name, TABLE_COUNT_QUERY);
+                const tableCount = parseInt(stdout.trim(), 10);
+                return { name: d.name, path: d.path, tableCount: Number.isNaN(tableCount) ? undefined : tableCount };
+            } catch {
+                return { name: d.name, path: d.path };
+            }
+        })
+    );
 }
 
 const VERSION_QUERY = "SELECT rdb$get_context('SYSTEM','ENGINE_VERSION') FROM rdb$database;";
@@ -74,6 +87,34 @@ export function runIsqlQuery(
         proc.stdin.write(sql + "\n");
         proc.stdin.end();
     });
+}
+
+/** Runs a single SQL statement against a database alias via isql, returning raw stdout. */
+export async function runQuery(config: FirebirdConfig, database: string, sql: string): Promise<string> {
+    const dbPath = resolveAliasPath(config, database);
+    const connStr = buildConnectionString(config, dbPath);
+
+    if (isSSHMode(config)) {
+        const ssh = new SshClient();
+        try {
+            await ssh.connect(extractSshConfig(config)!);
+            const isqlBin = await remoteBinaryCheck(ssh, "isql", "isql-fb");
+            const cmd = remoteEnv(
+                { ISC_PASSWORD: config.password },
+                `echo ${shellEscape(sql)} | ${isqlBin} -q ${shellEscape(connStr)} -user ${shellEscape(config.user)}`
+            );
+            const result = await ssh.exec(cmd);
+            if (result.code !== 0) throw new Error(result.stderr.trim() || result.stdout.trim() || "Query failed");
+            return result.stdout;
+        } finally {
+            ssh.end();
+        }
+    }
+
+    const env = { ...process.env, ISC_PASSWORD: config.password };
+    const result = await runIsqlQuery(getIsqlCommand(), ["-q", connStr, "-user", config.user], sql, env);
+    if (result.code !== 0) throw new Error(result.stderr.trim() || result.stdout.trim() || "Query failed");
+    return result.stdout;
 }
 
 export async function test(config: FirebirdConfig): Promise<{ success: boolean; message: string; version?: string }> {

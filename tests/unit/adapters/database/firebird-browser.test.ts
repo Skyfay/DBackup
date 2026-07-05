@@ -1,27 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock SSH helpers so tests never open real connections.
-vi.mock("@/lib/ssh", () => ({
-    SshClient: vi.fn(),
-    isSSHMode: vi.fn(() => false),
-    extractSshConfig: vi.fn(),
-    remoteEnv: vi.fn((_vars: unknown, cmd: string) => cmd),
-    remoteBinaryCheck: vi.fn(),
-    shellEscape: vi.fn((s: string) => s),
-}));
-
-vi.mock("@/lib/adapters/database/firebird/tools", () => ({
-    getIsqlCommand: vi.fn(() => "isql"),
-}));
-
 vi.mock("@/lib/adapters/database/firebird/connection", () => ({
-    resolveAliasPath: vi.fn(() => "/var/lib/firebird/data/testdb.fdb"),
-    buildConnectionString: vi.fn(() => "localhost:/var/lib/firebird/data/testdb.fdb"),
-    runIsqlQuery: vi.fn(),
+    runQuery: vi.fn(),
 }));
 
 import { getTables, getTableData } from "@/lib/adapters/database/firebird/browser";
-import { runIsqlQuery } from "@/lib/adapters/database/firebird/connection";
+import { runQuery } from "@/lib/adapters/database/firebird/connection";
 
 const baseConfig = {
     host: "localhost",
@@ -33,8 +17,8 @@ const baseConfig = {
 };
 
 function mockOutputs(...stdouts: string[]) {
-    const mocked = vi.mocked(runIsqlQuery);
-    stdouts.forEach((stdout) => mocked.mockResolvedValueOnce({ code: 0, stdout, stderr: "" }));
+    const mocked = vi.mocked(runQuery);
+    stdouts.forEach((stdout) => mocked.mockResolvedValueOnce(stdout));
 }
 
 describe("Firebird browser - getTables", () => {
@@ -74,7 +58,7 @@ describe("Firebird browser - getTables", () => {
     });
 
     it("surfaces isql failures as errors", async () => {
-        vi.mocked(runIsqlQuery).mockResolvedValueOnce({ code: 1, stdout: "", stderr: "connection refused" });
+        vi.mocked(runQuery).mockRejectedValueOnce(new Error("connection refused"));
 
         await expect(getTables(baseConfig as any, "testdb")).rejects.toThrow("connection refused");
     });
@@ -138,7 +122,7 @@ describe("Firebird browser - getTableData", () => {
 
         await getTableData(baseConfig as any, { ...options, page: 3, pageSize: 20 } as any);
 
-        const dataCall = vi.mocked(runIsqlQuery).mock.calls[2];
+        const dataCall = vi.mocked(runQuery).mock.calls[2];
         expect(dataCall[2]).toContain("ROWS 41 TO 60");
     });
 
@@ -147,7 +131,7 @@ describe("Firebird browser - getTableData", () => {
 
         await getTableData(baseConfig as any, { ...options, sortBy: "NAME", sortDir: "desc" } as any);
 
-        const dataCall = vi.mocked(runIsqlQuery).mock.calls[2];
+        const dataCall = vi.mocked(runQuery).mock.calls[2];
         expect(dataCall[2]).toContain('ORDER BY "NAME" DESC');
     });
 });
@@ -165,7 +149,7 @@ describe("Firebird browser - SQL escaping", () => {
             pageSize: 10,
         } as any);
 
-        const colCall = vi.mocked(runIsqlQuery).mock.calls[0];
+        const colCall = vi.mocked(runQuery).mock.calls[0];
         expect(colCall[2]).toContain("O''REILLY");
     });
 
@@ -179,7 +163,7 @@ describe("Firebird browser - SQL escaping", () => {
             pageSize: 10,
         } as any);
 
-        const dataCall = vi.mocked(runIsqlQuery).mock.calls[2];
+        const dataCall = vi.mocked(runQuery).mock.calls[2];
         expect(dataCall[2]).toContain('"WEIRD""NAME"');
     });
 });

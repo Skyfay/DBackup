@@ -150,13 +150,42 @@ describe("Firebird connection - getDatabases / getDatabasesWithStats", () => {
         expect(mockSpawn).not.toHaveBeenCalled();
     });
 
-    it("returns alias entries with their path and undefined size/table count", async () => {
+    it("returns alias entries with path, table count from a live query, and undefined size", async () => {
+        const stdouts = ["3\n", "0\n"];
+        let call = 0;
+        mockSpawn.mockImplementation(() => {
+            const proc = createFakeProcess();
+            const stdout = stdouts[call++];
+            setImmediate(() => {
+                proc.stdout.emit("data", Buffer.from(stdout));
+                proc.emit("close", 0);
+            });
+            return proc;
+        });
+
+        const result = await getDatabasesWithStats(baseConfig as any);
+        expect(result).toEqual([
+            { name: "erp", path: "/data/erp.fdb", tableCount: 3 },
+            { name: "crm", path: "/data/crm.fdb", tableCount: 0 },
+        ]);
+        expect(mockSpawn).toHaveBeenCalledTimes(2);
+    });
+
+    it("falls back to path-only entry when the live table count query fails", async () => {
+        mockSpawn.mockImplementation(() => {
+            const proc = createFakeProcess();
+            setImmediate(() => {
+                proc.stderr.emit("data", Buffer.from("connection refused"));
+                proc.emit("close", 1);
+            });
+            return proc;
+        });
+
         const result = await getDatabasesWithStats(baseConfig as any);
         expect(result).toEqual([
             { name: "erp", path: "/data/erp.fdb" },
             { name: "crm", path: "/data/crm.fdb" },
         ]);
-        expect(mockSpawn).not.toHaveBeenCalled();
     });
 });
 

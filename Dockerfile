@@ -94,6 +94,8 @@ RUN --mount=type=cache,id=next-cache,target=/app/.next/cache \
 FROM base AS runner
 WORKDIR /app
 
+COPY --from=builder --link --chown=1001:1001 scripts ./scripts
+
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PNPM_HOME="/pnpm"

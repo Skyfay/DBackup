@@ -12,10 +12,14 @@ All notable changes to DBackup are documented here.
 ### 🐛 Bug Fixes
 
 - **Redis**: Database Explorer now shows a key count per database instead of always blank.
+- **rsync**: Fixed SSH private-key destinations failing with "Too many authentication failures" when the local SSH agent has other keys loaded.
 
 ### 🔧 CI/CD
 
 - **scripts**: `generate-stress-data.sh` now also populates Redis and Firebird test containers.
+- **scripts**: Added `test-vm-up.sh` / `test-vm-down.sh` / `seed-ssh-test-config.ts` and a `test:vm:delete` shortcut to test SSH-mode adapters against a real remote host via a Multipass VM.
+- **scripts**: `test-vm-up.sh` now starts one container per database family instead of the full test matrix, to reduce VM memory usage.
+- **scripts**: `test-vm-up.sh`/`seed-ssh-test-config.ts` now install MongoDB's client tools and seed MongoDB and Firebird SSH sources; MSSQL is left out for now as the heaviest container.
 
 ### 🐳 Docker
 

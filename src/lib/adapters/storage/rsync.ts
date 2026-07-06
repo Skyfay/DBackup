@@ -85,7 +85,11 @@ function buildSshCommand(config: RsyncConfig, keyFile?: string): string {
     }
 
     if (config.authType === "privateKey" && keyFile) {
-        parts.push(`-i ${keyFile}`);
+        // IdentitiesOnly forces ssh to use only this key, not every key offered by
+        // a running ssh-agent - without it, an agent with several keys loaded can
+        // exhaust the server's MaxAuthTries before this key is ever tried, causing
+        // "Too many authentication failures".
+        parts.push(`-i ${keyFile}`, "-o IdentitiesOnly=yes");
     }
 
     return parts.join(" ");
@@ -106,7 +110,8 @@ function buildSshArgArray(config: RsyncConfig, keyFile?: string): string[] {
     }
 
     if (config.authType === "privateKey" && keyFile) {
-        args.push("-i", keyFile);
+        // See buildSshCommand() above for why IdentitiesOnly is required here.
+        args.push("-i", keyFile, "-o", "IdentitiesOnly=yes");
     }
 
     return args;

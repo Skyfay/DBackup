@@ -27,13 +27,16 @@ export function resolveAliasPath(config: FirebirdConfig, aliasName: string): str
 }
 
 /**
- * Build the connection string gbak/isql use to reach a database.
- * Direct mode: the tool runs in the DBackup container and connects over the
- * Firebird wire protocol to the remote server ("host[/port]:path").
- * SSH mode: the tool runs on the target itself, so the bare local path is used.
+ * Build the connection string gbak/isql use to reach a database, always via
+ * the Firebird wire protocol ("host[/port]:path"). Used in both direct mode
+ * (tool runs in the DBackup container) and SSH mode (tool runs on the SSH
+ * target, with `host`/`port` reachable from there - e.g. 127.0.0.1 plus a
+ * container's published port). A bare local path was tried previously for
+ * SSH mode, but Firebird's "local" provider still requires an actual service
+ * listener on that same host/network namespace - it fails outright against a
+ * containerized server, which the wire protocol handles correctly instead.
  */
 export function buildConnectionString(config: FirebirdConfig, dbPath: string): string {
-    if (isSSHMode(config)) return dbPath;
     const portSegment = config.port && config.port !== 3050 ? `/${config.port}` : "";
     return `${config.host}${portSegment}:${dbPath}`;
 }

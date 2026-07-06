@@ -88,7 +88,7 @@ async function dumpSingleDatabaseSSH(
     try {
         const gbakBin = await remoteBinaryCheck(ssh, "gbak");
         const dbPath = resolveAliasPath(config, aliasName);
-        const connStr = buildConnectionString(config, dbPath); // bare local path in SSH mode
+        const connStr = buildConnectionString(config, dbPath); // host/port as reachable from the SSH target
 
         const argParts = ["-b"];
         if (config.options) argParts.push(...config.options.split(" ").filter((s) => s.trim().length > 0));

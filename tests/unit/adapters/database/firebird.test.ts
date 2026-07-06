@@ -136,10 +136,10 @@ describe("Firebird connection - buildConnectionString", () => {
         );
     });
 
-    it("returns the bare local path in SSH mode regardless of host/port", () => {
+    it("builds the same host/port connection string in SSH mode, as reachable from the SSH target", () => {
         expect(
             buildConnectionString({ ...baseConfig, connectionMode: "ssh", port: 3051 } as any, "/data/erp.fdb")
-        ).toBe("/data/erp.fdb");
+        ).toBe("192.168.1.10/3051:/data/erp.fdb");
     });
 });
 
@@ -264,7 +264,7 @@ describe("Firebird dump - SSH mode", () => {
 
         const [cmd] = execStreamMock.mock.calls[0];
         expect(cmd).toContain("export ISC_PASSWORD='masterkey'");
-        expect(cmd).toContain("gbak -b -user 'SYSDBA' '/data/erp.fdb' stdout");
+        expect(cmd).toContain("gbak -b -user 'SYSDBA' '192.168.1.10:/data/erp.fdb' stdout");
     });
 });
 
@@ -327,7 +327,7 @@ describe("Firebird restore - SSH mode", () => {
         const [cmd] = execStreamMock.mock.calls[0];
         expect(cmd).toContain("export ISC_PASSWORD='masterkey'");
         expect(cmd).toContain("gbak -rep -user 'SYSDBA'");
-        expect(cmd).toContain("'/data/erp.fdb'");
+        expect(cmd).toContain("'192.168.1.10:/data/erp.fdb'");
     });
 });
 

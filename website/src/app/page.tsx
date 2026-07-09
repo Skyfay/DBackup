@@ -2,6 +2,7 @@ import { Hero } from "@/components/site/hero";
 import { StatsBand } from "@/components/site/stats-band";
 import { FeatureGrid } from "@/components/site/feature-grid";
 import { NoLockInSection } from "@/components/site/no-lockin-section";
+import { AutomationSection } from "@/components/site/automation-section";
 import { ProductTour } from "@/components/site/product-tour";
 import { Integrations } from "@/components/site/integrations";
 import { QuickStart } from "@/components/site/quick-start";
@@ -16,6 +17,7 @@ export default function Home() {
       <StatsBand />
       <FeatureGrid />
       <NoLockInSection />
+      <AutomationSection />
       <ProductTour />
       <Integrations />
       <QuickStart />

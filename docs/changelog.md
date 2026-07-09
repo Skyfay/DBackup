@@ -8,7 +8,7 @@ All notable changes to DBackup are documented here.
 ### ✨ Features
 
 - **Firebird**: Added Firebird (3.x/4.x/5.x) as a supported database source, with direct and SSH connection modes.
-- **website**: Added a standalone marketing website with a blog under /website, independent from the main app.
+- **website**: Added a standalone marketing website with a blog, light/dark theme, and an auto-advancing product tour under /website, independent from the main app.
 
 ### 🐛 Bug Fixes
 

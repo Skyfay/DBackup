@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { PostCard } from "@/components/site/post-card";
+import { SectionHeading } from "@/components/site/section-heading";
 import { getAllPosts } from "@/lib/blog";
 
 export function BlogTeaser() {
@@ -6,9 +8,9 @@ export function BlogTeaser() {
   if (posts.length === 0) return null;
 
   return (
-    <section className="mx-auto max-w-6xl px-6 py-20">
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">From the blog</h2>
+    <section className="mx-auto max-w-6xl px-6 py-20 sm:py-24">
+      <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <SectionHeading title="From the blog" align="left" className="max-w-none" />
         <Link
           href="/blog"
           className="text-sm text-muted-foreground transition-colors hover:text-foreground"
@@ -19,23 +21,7 @@ export function BlogTeaser() {
 
       <div className="mt-10 grid gap-6 sm:grid-cols-2">
         {posts.map((post) => (
-          <Link
-            key={post.slug}
-            href={`/blog/${post.slug}`}
-            className="group rounded-xl border border-border p-6 transition-colors hover:border-primary/50"
-          >
-            <p className="text-sm text-muted-foreground">
-              {new Date(post.date).toLocaleDateString("en-US", {
-                year: "numeric",
-                month: "long",
-                day: "numeric",
-              })}
-            </p>
-            <h3 className="mt-2 text-lg font-semibold transition-colors group-hover:text-primary">
-              {post.title}
-            </h3>
-            <p className="mt-2 text-sm text-muted-foreground">{post.excerpt}</p>
-          </Link>
+          <PostCard key={post.slug} post={post} />
         ))}
       </div>
     </section>

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Star } from "lucide-react";
+import { fetchWithCache } from "@/lib/github";
 import { GITHUB_REPO } from "@/lib/content";
 
 const CACHE_KEY = "dbackup-gh-stars";
@@ -16,36 +17,14 @@ export function GithubStarsWidget() {
   const [state, setState] = useState<State>({ status: "loading" });
 
   useEffect(() => {
-    try {
-      const cached = sessionStorage.getItem(CACHE_KEY);
-      if (cached) {
-        const { stars, ts } = JSON.parse(cached) as { stars: number; ts: number };
-        if (Date.now() - ts < CACHE_TTL_MS) {
-          setState({ status: "ready", stars });
-          return;
-        }
-      }
-    } catch {
-      // sessionStorage unavailable - fall through to fetch
-    }
-
     let cancelled = false;
-    fetch(`https://api.github.com/repos/${GITHUB_REPO}`)
-      .then((res) => {
-        if (!res.ok) throw new Error(String(res.status));
-        return res.json();
-      })
-      .then((data: { stargazers_count: number }) => {
-        if (cancelled) return;
-        setState({ status: "ready", stars: data.stargazers_count });
-        try {
-          sessionStorage.setItem(
-            CACHE_KEY,
-            JSON.stringify({ stars: data.stargazers_count, ts: Date.now() })
-          );
-        } catch {
-          // sessionStorage unavailable - skip caching
-        }
+    fetchWithCache<{ stargazers_count: number }>(
+      CACHE_KEY,
+      `https://api.github.com/repos/${GITHUB_REPO}`,
+      CACHE_TTL_MS
+    )
+      .then((data) => {
+        if (!cancelled) setState({ status: "ready", stars: data.stargazers_count });
       })
       .catch(() => {
         if (!cancelled) setState({ status: "error" });

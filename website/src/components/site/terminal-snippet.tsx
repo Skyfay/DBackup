@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Check, Copy } from "lucide-react";
+import { TrafficLights } from "@/components/site/traffic-lights";
 import { cn } from "@/lib/utils";
 
 export function TerminalSnippet({
@@ -27,11 +28,7 @@ export function TerminalSnippet({
       )}
     >
       <div className="flex items-center justify-between border-b border-border px-4 py-2">
-        <div className="flex gap-1.5">
-          <span className="size-2.5 rounded-full bg-red-500/70" />
-          <span className="size-2.5 rounded-full bg-yellow-500/70" />
-          <span className="size-2.5 rounded-full bg-green-500/70" />
-        </div>
+        <TrafficLights />
         <button
           onClick={handleCopy}
           className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"

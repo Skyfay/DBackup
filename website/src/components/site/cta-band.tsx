@@ -1,19 +1,22 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { GithubIcon } from "@/components/site/github-icon";
+import { SectionHeading } from "@/components/site/section-heading";
 import { GETTING_STARTED_URL, GITHUB_REPO } from "@/lib/content";
 
 export function CtaBand() {
   return (
-    <section className="mx-auto max-w-6xl px-6 py-20 text-center">
-      <h2 className="text-3xl font-bold tracking-tight">
-        Back up your databases the way you actually want to
-      </h2>
-      <p className="mx-auto mt-3 max-w-xl text-muted-foreground">
-        Self-hosted, open source, and yours to run - free of charge, forever.
-      </p>
+    <section className="mx-auto max-w-6xl px-6 py-20 text-center sm:py-24">
+      <SectionHeading
+        title="Back up your databases the way you actually want to"
+        description="Self-hosted, open source, and yours to run - free of charge, forever."
+      />
       <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-        <Button asChild size="lg">
+        <Button
+          asChild
+          size="lg"
+          className="transition-all hover:-translate-y-0.5 hover:shadow-lg"
+        >
           <Link href={GETTING_STARTED_URL} target="_blank" rel="noreferrer">
             Get Started
           </Link>

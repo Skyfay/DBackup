@@ -1,5 +1,9 @@
 import Link from "next/link";
 import Image from "next/image";
+import { buttonVariants } from "@/components/ui/button";
+import { GithubStarsWidget } from "@/components/site/github-stars-widget";
+import { GithubIcon } from "@/components/site/github-icon";
+import { DiscordIcon } from "@/components/site/discord-icon";
 import { DOCS_URL, API_DOCS_URL, DISCORD_URL, GITHUB_REPO } from "@/lib/content";
 
 const FOOTER_COLUMNS = [
@@ -32,9 +36,11 @@ const FOOTER_COLUMNS = [
 
 export function Footer() {
   return (
-    <footer className="border-t border-border/60">
+    <footer className="relative isolate overflow-hidden">
+      <div className="h-px w-full bg-gradient-to-r from-transparent via-border to-transparent" />
+      <div className="bg-dot-grid absolute inset-0 -z-10 opacity-40" />
       <div className="mx-auto max-w-6xl px-6 py-12">
-        <div className="grid gap-10 sm:grid-cols-2 md:grid-cols-4">
+        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
           <div>
             <div className="flex items-center gap-2">
               <Image src="/logo.svg" alt="DBackup" width={24} height={24} />
@@ -44,6 +50,27 @@ export function Footer() {
               Self-hosted database backup automation with encryption,
               compression, and smart retention.
             </p>
+            <div className="mt-4 flex items-center gap-2">
+              <GithubStarsWidget />
+              <a
+                href={`https://github.com/${GITHUB_REPO}`}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="DBackup on GitHub"
+                className={buttonVariants({ variant: "ghost", size: "icon" })}
+              >
+                <GithubIcon className="size-4" />
+              </a>
+              <a
+                href={DISCORD_URL}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Join our Discord"
+                className={buttonVariants({ variant: "ghost", size: "icon" })}
+              >
+                <DiscordIcon className="size-4" />
+              </a>
+            </div>
           </div>
 
           {FOOTER_COLUMNS.map((column) => (
@@ -68,7 +95,10 @@ export function Footer() {
         </div>
 
         <div className="mt-10 flex flex-col items-start justify-between gap-4 border-t border-border/60 pt-6 text-xs text-muted-foreground sm:flex-row sm:items-center">
-          <p>Licensed under GPL-3.0.</p>
+          <p className="flex items-center gap-2">
+            <Image src="/logo.svg" alt="" width={16} height={16} aria-hidden="true" />
+            &copy; {new Date().getFullYear()} DBackup. Licensed under GPL-3.0.
+          </p>
           <p>Self-hosted. Open source. No vendor lock-in.</p>
         </div>
       </div>

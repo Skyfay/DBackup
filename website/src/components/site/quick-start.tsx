@@ -1,17 +1,16 @@
 import Link from "next/link";
 import { TerminalSnippet } from "@/components/site/terminal-snippet";
+import { SectionHeading } from "@/components/site/section-heading";
 import { QUICK_START_SNIPPET, GETTING_STARTED_URL } from "@/lib/content";
 
 export function QuickStart() {
   return (
-    <section className="mx-auto max-w-4xl px-6 py-20">
-      <div className="mx-auto max-w-2xl text-center">
-        <h2 className="text-3xl font-bold tracking-tight">Quick start</h2>
-        <p className="mt-3 text-muted-foreground">
-          Save this as docker-compose.yml, generate two secrets, and run
-          docker-compose up -d.
-        </p>
-      </div>
+    <section className="mx-auto max-w-4xl px-6 py-20 sm:py-24">
+      <SectionHeading
+        eyebrow="Quick start"
+        title="Running in under five minutes"
+        description="Save this as docker-compose.yml, generate two secrets, and run docker-compose up -d."
+      />
 
       <TerminalSnippet code={QUICK_START_SNIPPET} className="mt-10" />
 

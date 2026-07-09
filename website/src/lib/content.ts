@@ -16,98 +16,94 @@ export const STATS = [
 
 export const FEATURES = [
   {
-    emoji: "🗄️",
     title: "Database Backup",
     description:
       "8 database engines, selective per-database backup, multi-database jobs with a unified TAR format, AES-256-GCM encryption, GZIP/Brotli compression, and SSH remote execution.",
   },
   {
-    emoji: "☁️",
     title: "Storage & Destinations",
     description:
       "13+ storage adapters, multi-destination jobs for redundancy, a Storage Explorer to browse and download backups, and alerts for usage spikes or missing backups.",
   },
   {
-    emoji: "🔄",
     title: "Restore & Recovery",
     description:
       "One-click restore, database remapping, version compatibility checks, SHA-256/MD5 integrity verification, and a Recovery Kit for restoring without DBackup itself.",
   },
   {
-    emoji: "📊",
     title: "Monitoring & Visibility",
     description:
       "Live progress tracking, an interactive dashboard, a GitHub-style backup calendar, a Database Explorer, and full execution history.",
   },
   {
-    emoji: "🔔",
     title: "Notifications",
     description:
       "9 notification channels, per-job notification settings, system event notifications, and configurable reminder intervals.",
   },
   {
-    emoji: "⏰",
     title: "Scheduling & Retention",
     description:
       "Cron-based scheduling with a visual picker, reusable GFS retention policy templates, naming templates, and automated config backups.",
   },
   {
-    emoji: "👥",
     title: "Access Control & Security",
     description:
       "SSO/OIDC, RBAC with granular permissions, 2FA and passkeys, a credential vault, and HTTPS by default.",
   },
   {
-    emoji: "🔗",
     title: "API & Automation",
     description:
       "A full REST API, fine-grained API keys with expiration, and ready-made cURL, Bash, and Ansible examples.",
   },
   {
-    emoji: "🎨",
     title: "Designed for Simplicity",
     description:
       "A clean, modern UI, a guided setup wizard, and deep configurability without getting in your way.",
   },
 ];
 
-export const DATABASES = [
-  "MySQL",
-  "MariaDB",
-  "PostgreSQL",
-  "MongoDB",
-  "SQLite",
-  "Redis",
-  "Valkey",
-  "Microsoft SQL Server",
+export interface AdapterItem {
+  id: string;
+  label: string;
+}
+
+export const DATABASES: AdapterItem[] = [
+  { id: "mysql", label: "MySQL" },
+  { id: "mariadb", label: "MariaDB" },
+  { id: "postgres", label: "PostgreSQL" },
+  { id: "mongodb", label: "MongoDB" },
+  { id: "sqlite", label: "SQLite" },
+  { id: "redis", label: "Redis" },
+  { id: "valkey", label: "Valkey" },
+  { id: "mssql", label: "Microsoft SQL Server" },
 ];
 
-export const STORAGE_ADAPTERS = [
-  "Local Filesystem",
-  "Amazon S3",
-  "S3 Compatible",
-  "Cloudflare R2",
-  "Hetzner Object Storage",
-  "Google Drive",
-  "Dropbox",
-  "Microsoft OneDrive",
-  "SFTP",
-  "FTP/FTPS",
-  "WebDAV",
-  "SMB/Samba",
-  "Rsync",
+export const STORAGE_ADAPTERS: AdapterItem[] = [
+  { id: "local-filesystem", label: "Local Filesystem" },
+  { id: "s3-aws", label: "Amazon S3" },
+  { id: "s3-generic", label: "S3 Compatible" },
+  { id: "s3-r2", label: "Cloudflare R2" },
+  { id: "s3-hetzner", label: "Hetzner Object Storage" },
+  { id: "google-drive", label: "Google Drive" },
+  { id: "dropbox", label: "Dropbox" },
+  { id: "onedrive", label: "Microsoft OneDrive" },
+  { id: "sftp", label: "SFTP" },
+  { id: "ftp", label: "FTP/FTPS" },
+  { id: "webdav", label: "WebDAV" },
+  { id: "smb", label: "SMB/Samba" },
+  { id: "rsync", label: "Rsync" },
 ];
 
-export const NOTIFICATION_CHANNELS = [
-  "Discord",
-  "Slack",
-  "Microsoft Teams",
-  "Telegram",
-  "Gotify",
-  "ntfy",
-  "Webhook",
-  "SMS (Twilio)",
-  "Email (SMTP)",
+export const NOTIFICATION_CHANNELS: AdapterItem[] = [
+  { id: "discord", label: "Discord" },
+  { id: "slack", label: "Slack" },
+  { id: "teams", label: "Microsoft Teams" },
+  { id: "telegram", label: "Telegram" },
+  { id: "gotify", label: "Gotify" },
+  { id: "ntfy", label: "ntfy" },
+  { id: "generic-webhook", label: "Webhook" },
+  { id: "twilio-sms", label: "SMS (Twilio)" },
+  { id: "email", label: "Email (SMTP)" },
 ];
 
 export const QUICK_START_SNIPPET = `# docker-compose.yml

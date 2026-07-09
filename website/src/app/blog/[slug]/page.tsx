@@ -29,7 +29,7 @@ export default async function BlogPostPage({
   const post = getPostBySlug(slug);
 
   return (
-    <article className="mx-auto max-w-3xl px-6 py-16">
+    <article className="mx-auto max-w-3xl px-6 py-20 sm:py-24">
       <p className="text-sm text-muted-foreground">
         {new Date(post.date).toLocaleDateString("en-US", {
           year: "numeric",
@@ -38,8 +38,10 @@ export default async function BlogPostPage({
         })}{" "}
         · {post.author}
       </p>
-      <h1 className="mt-2 text-3xl font-bold tracking-tight">{post.title}</h1>
-      <div className="prose prose-invert prose-neutral mt-8 max-w-none">
+      <h1 className="mt-2 text-3xl font-bold leading-[1.1] tracking-tight sm:text-4xl">
+        {post.title}
+      </h1>
+      <div className="prose prose-neutral dark:prose-invert prose-headings:font-semibold prose-headings:tracking-tight prose-a:text-primary prose-code:text-primary prose-pre:rounded-xl prose-pre:border prose-pre:border-border mt-8 max-w-none">
         <MDXRemote source={post.content} />
       </div>
     </article>

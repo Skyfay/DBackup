@@ -4,14 +4,13 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { SectionHeading } from "@/components/site/section-heading";
 import { FAQS } from "@/lib/content";
 
 export function Faq() {
   return (
-    <section className="mx-auto max-w-3xl px-6 py-20">
-      <h2 className="text-center text-3xl font-bold tracking-tight">
-        Frequently asked questions
-      </h2>
+    <section id="faq" className="mx-auto max-w-3xl px-6 py-20 sm:py-24">
+      <SectionHeading eyebrow="FAQ" title="Frequently asked questions" />
 
       <Accordion type="single" collapsible className="mt-10">
         {FAQS.map((faq, index) => (

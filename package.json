@@ -33,6 +33,10 @@
     "docs:dev": "cd docs && pnpm dev",
     "docs:build": "cd docs && pnpm build",
     "docs:preview": "cd docs && pnpm preview",
+    "website:install": "cd website && pnpm install",
+    "website:dev": "cd website && pnpm dev",
+    "website:build": "cd website && pnpm build",
+    "website:preview": "cd website && pnpm preview",
     "update:check": "pnpm outdated --recursive 2>&1"
   },
   "dependencies": {

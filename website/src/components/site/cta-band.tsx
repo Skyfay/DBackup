@@ -1,0 +1,30 @@
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { GithubIcon } from "@/components/site/github-icon";
+import { GETTING_STARTED_URL, GITHUB_REPO } from "@/lib/content";
+
+export function CtaBand() {
+  return (
+    <section className="mx-auto max-w-6xl px-6 py-20 text-center">
+      <h2 className="text-3xl font-bold tracking-tight">
+        Back up your databases the way you actually want to
+      </h2>
+      <p className="mx-auto mt-3 max-w-xl text-muted-foreground">
+        Self-hosted, open source, and yours to run - free of charge, forever.
+      </p>
+      <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+        <Button asChild size="lg">
+          <Link href={GETTING_STARTED_URL} target="_blank" rel="noreferrer">
+            Get Started
+          </Link>
+        </Button>
+        <Button asChild variant="outline" size="lg">
+          <Link href={`https://github.com/${GITHUB_REPO}`} target="_blank" rel="noreferrer">
+            <GithubIcon className="size-4" />
+            Star on GitHub
+          </Link>
+        </Button>
+      </div>
+    </section>
+  );
+}

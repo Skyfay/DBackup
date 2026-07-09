@@ -1,9 +1,9 @@
 import { Hero } from "@/components/site/hero";
 import { StatsBand } from "@/components/site/stats-band";
+import { ProductTour } from "@/components/site/product-tour";
 import { FeatureGrid } from "@/components/site/feature-grid";
 import { NoLockInSection } from "@/components/site/no-lockin-section";
 import { AutomationSection } from "@/components/site/automation-section";
-import { ProductTour } from "@/components/site/product-tour";
 import { Integrations } from "@/components/site/integrations";
 import { QuickStart } from "@/components/site/quick-start";
 import { Faq } from "@/components/site/faq";
@@ -15,10 +15,10 @@ export default function Home() {
     <>
       <Hero />
       <StatsBand />
+      <ProductTour />
       <FeatureGrid />
       <NoLockInSection />
       <AutomationSection />
-      <ProductTour />
       <Integrations />
       <QuickStart />
       <Faq />

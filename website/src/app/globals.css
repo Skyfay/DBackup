@@ -7,49 +7,49 @@
 :root {
   --radius: 0.75rem;
 
-  --background: oklch(0.985 0.004 279);
-  --foreground: oklch(0.17 0.015 279);
+  --background: oklch(0.985 0.004 235);
+  --foreground: oklch(0.17 0.015 235);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.17 0.015 279);
+  --card-foreground: oklch(0.17 0.015 235);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.17 0.015 279);
-  --primary: oklch(0.56 0.23 279);
+  --popover-foreground: oklch(0.17 0.015 235);
+  --primary: oklch(0.58 0.19 235);
   --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.95 0.006 279);
-  --secondary-foreground: oklch(0.25 0.012 279);
-  --muted: oklch(0.95 0.006 279);
-  --muted-foreground: oklch(0.48 0.014 279);
-  --accent: oklch(0.94 0.03 279);
-  --accent-foreground: oklch(0.3 0.05 279);
+  --secondary: oklch(0.95 0.006 235);
+  --secondary-foreground: oklch(0.25 0.012 235);
+  --muted: oklch(0.95 0.006 235);
+  --muted-foreground: oklch(0.48 0.014 235);
+  --accent: oklch(0.94 0.03 235);
+  --accent-foreground: oklch(0.3 0.05 235);
   --destructive: oklch(0.577 0.245 27.325);
   --success: oklch(0.6 0.14 154);
   --success-foreground: oklch(0.99 0 0);
-  --border: oklch(0.9 0.008 279);
-  --input: oklch(0.9 0.008 279);
-  --ring: oklch(0.56 0.23 279);
+  --border: oklch(0.9 0.008 235);
+  --input: oklch(0.9 0.008 235);
+  --ring: oklch(0.58 0.19 235);
 }
 
 .dark {
-  --background: oklch(0.145 0.008 279);
-  --foreground: oklch(0.96 0.004 279);
-  --card: oklch(0.19 0.012 279);
-  --card-foreground: oklch(0.96 0.004 279);
-  --popover: oklch(0.17 0.01 279);
-  --popover-foreground: oklch(0.96 0.004 279);
-  --primary: oklch(0.66 0.21 279);
+  --background: oklch(0.145 0.008 235);
+  --foreground: oklch(0.96 0.004 235);
+  --card: oklch(0.19 0.012 235);
+  --card-foreground: oklch(0.96 0.004 235);
+  --popover: oklch(0.17 0.01 235);
+  --popover-foreground: oklch(0.96 0.004 235);
+  --primary: oklch(0.68 0.17 235);
   --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.24 0.014 279);
-  --secondary-foreground: oklch(0.96 0.004 279);
-  --muted: oklch(0.22 0.012 279);
-  --muted-foreground: oklch(0.65 0.014 279);
-  --accent: oklch(0.26 0.03 279);
-  --accent-foreground: oklch(0.96 0.004 279);
+  --secondary: oklch(0.24 0.014 235);
+  --secondary-foreground: oklch(0.96 0.004 235);
+  --muted: oklch(0.22 0.012 235);
+  --muted-foreground: oklch(0.65 0.014 235);
+  --accent: oklch(0.26 0.03 235);
+  --accent-foreground: oklch(0.96 0.004 235);
   --destructive: oklch(0.6 0.22 25);
   --success: oklch(0.72 0.17 154);
   --success-foreground: oklch(0.15 0 0);
   --border: oklch(1 0 0 / 0.09);
   --input: oklch(1 0 0 / 0.16);
-  --ring: oklch(0.66 0.21 279);
+  --ring: oklch(0.68 0.17 235);
 }
 
 @theme inline {
@@ -105,7 +105,7 @@
   .bg-hero-glow {
     background-image: radial-gradient(
         60% 55% at 50% -10%,
-        oklch(0.62 0.22 279 / 0.35),
+        oklch(0.6 0.19 235 / 0.35),
         transparent 70%
       ),
       radial-gradient(

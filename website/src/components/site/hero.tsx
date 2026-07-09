@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GithubIcon } from "@/components/site/github-icon";
 import { TerminalSnippet } from "@/components/site/terminal-snippet";
@@ -21,13 +20,8 @@ export function Hero() {
 
       <div className="mx-auto max-w-6xl px-6 pt-20 pb-16 text-center">
         <h1 className="mx-auto max-w-3xl text-3xl font-bold leading-[1.05] tracking-tight sm:text-4xl md:text-5xl lg:text-6xl">
-          Encrypted backups,{" "}
-          <span className="inline-flex items-center gap-1.5 align-middle">
-            <span className="inline-flex size-9 items-center justify-center rounded-md bg-primary/15 ring-1 ring-primary/20 sm:size-10">
-              <KeyRound className="size-5 text-primary" />
-            </span>
-            zero lock-in.
-          </span>
+          Self-hosted database backups,{" "}
+          <span className="text-primary">without the lock-in.</span>
         </h1>
         <p className="mx-auto mt-4 max-w-2xl text-lg text-muted-foreground">
           Self-hosted, multi-database backups with Direct or SSH connection

@@ -9,7 +9,7 @@ export const GETTING_STARTED_URL = `${DOCS_URL}/user-guide/getting-started`;
 
 export const STATS = [
   { value: "8", label: "Database Engines" },
-  { value: "13+", label: "Storage Adapters" },
+  { value: "13", label: "Storage Adapters" },
   { value: "9", label: "Notification Channels" },
   { value: "GPL-3.0", label: "Open Source" },
 ];
@@ -23,7 +23,7 @@ export const FEATURES = [
   {
     title: "Storage & Destinations",
     description:
-      "13+ storage adapters, multi-destination jobs for redundancy, a Storage Explorer to browse and download backups, and alerts for usage spikes or missing backups.",
+      "13 storage adapters, multi-destination jobs for redundancy, a Storage Explorer to browse and download backups, and alerts for usage spikes or missing backups.",
   },
   {
     title: "Restore & Recovery",
@@ -58,7 +58,7 @@ export const FEATURES = [
   {
     title: "Designed for Simplicity",
     description:
-      "A clean, modern UI, a guided setup wizard, and deep configurability without getting in your way.",
+      "Configure almost everything from the UI instead of environment variables - a guided setup for beginners, deep configurability for power users.",
   },
 ];
 

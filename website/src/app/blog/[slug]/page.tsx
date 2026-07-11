@@ -4,11 +4,11 @@ import { notFound } from "next/navigation";
 import rehypePrettyCode from "rehype-pretty-code";
 import { CodeBlock } from "@/components/site/code-block";
 
-// Tailwind Typography's `prose-pre` box is a fixed dark background regardless
-// of the site's light/dark toggle, so the code theme must be fixed dark too -
-// pairing a light-optimized theme with that box would make plain tokens
-// (near-black text) unreadable in light mode.
-const CODE_THEME = "github-dark-default";
+// CodeBlock renders its own theme-aware `bg-card` box (not Typography's fixed
+// dark `prose-pre` background), so a light/dark theme pair here tracks the
+// site's toggle correctly instead of being paired with a background that
+// doesn't change.
+const CODE_THEME = { light: "github-light-default", dark: "github-dark-default" };
 
 export function generateStaticParams() {
   return getAllSlugs().map((slug) => ({ slug }));
@@ -49,7 +49,7 @@ export default async function BlogPostPage({
       <h1 className="mt-2 text-3xl font-bold leading-[1.1] tracking-tight sm:text-4xl">
         {post.title}
       </h1>
-      <div className="prose prose-neutral dark:prose-invert prose-headings:font-semibold prose-headings:tracking-tight prose-a:text-primary prose-code:text-primary prose-pre:rounded-xl prose-pre:border prose-pre:border-border mt-8 max-w-none">
+      <div className="prose prose-neutral dark:prose-invert prose-headings:font-semibold prose-headings:tracking-tight prose-a:text-primary prose-code:rounded-md prose-code:bg-muted prose-code:px-1.5 prose-code:py-0.5 prose-code:font-normal prose-code:before:content-none prose-code:after:content-none prose-pre:rounded-xl prose-pre:border prose-pre:border-border prose-pre:bg-card [&_pre_code]:rounded-none [&_pre_code]:bg-transparent [&_pre_code]:p-0 mt-8 max-w-none">
         <MDXRemote
           source={post.content}
           options={{

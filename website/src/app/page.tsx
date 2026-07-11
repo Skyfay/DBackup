@@ -15,11 +15,11 @@ export default function Home() {
     <>
       <Hero />
       <StatsBand />
+      <Integrations />
       <ProductTour />
+      <AutomationSection />
       <FeatureGrid />
       <NoLockInSection />
-      <AutomationSection />
-      <Integrations />
       <QuickStart />
       <Faq />
       <BlogTeaser />

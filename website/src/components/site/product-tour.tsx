@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { useTheme } from "next-themes";
-import { AmbientGlow } from "@/components/site/ambient-glow";
 import { BrowserFrame } from "@/components/site/browser-frame";
 import { SectionHeading } from "@/components/site/section-heading";
 import { cn } from "@/lib/utils";
@@ -75,8 +74,6 @@ export function ProductTour() {
 
   return (
     <section ref={sectionRef} className="relative mx-auto max-w-7xl px-6 py-24">
-      <AmbientGlow className="h-[320px] opacity-60" />
-
       <SectionHeading
         eyebrow="Product tour"
         title="See it in action"

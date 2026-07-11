@@ -25,7 +25,7 @@ const POINTS = [
 
 export function NoLockInSection() {
   return (
-    <section className="border-y border-border/60 bg-card/40">
+    <section className="border-y border-border/60 bg-card/40 dark:border-transparent dark:bg-card/20">
       <div className="mx-auto max-w-6xl px-6 py-20 sm:py-24">
         <SectionHeading
           eyebrow="No lock-in"

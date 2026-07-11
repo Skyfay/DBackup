@@ -133,19 +133,6 @@
   }
 }
 
-@keyframes tour-progress {
-  from {
-    width: 0%;
-  }
-  to {
-    width: 100%;
-  }
-}
-
-.animate-tour-progress {
-  animation: tour-progress var(--tour-duration, 5s) linear forwards;
-}
-
 [data-reveal] {
   opacity: 0;
   transform: translateY(12px);

@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useTheme } from "next-themes";
 import { BrowserFrame } from "@/components/site/browser-frame";
 import { SectionHeading } from "@/components/site/section-heading";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
 // Only the overview/dashboard screenshot currently has a light-theme capture
@@ -70,10 +71,11 @@ export function ProductTour() {
     return () => clearInterval(id);
   }, [index, paused, reducedMotion, inView]);
 
-  const autoAdvancing = !paused && !reducedMotion && inView;
-
   return (
-    <section ref={sectionRef} className="relative mx-auto max-w-7xl px-6 py-24">
+    <section
+      ref={sectionRef}
+      className="relative mx-auto hidden max-w-7xl px-6 py-24 sm:block"
+    >
       <SectionHeading
         eyebrow="Product tour"
         title="See it in action"
@@ -89,44 +91,22 @@ export function ProductTour() {
           if (!e.currentTarget.contains(e.relatedTarget as Node)) setPaused(false);
         }}
       >
-        <div className="relative z-10 mx-auto mb-4 hidden max-w-2xl items-center gap-1 rounded-full border border-border bg-card/90 px-3 py-2 shadow-lg backdrop-blur sm:flex">
-          {SCREENSHOTS.map((shot, i) => (
-            <button
-              key={shot.id}
-              type="button"
-              onClick={() => goTo(i)}
-              aria-label={`Show ${shot.label} screenshot`}
-              aria-current={i === index}
-              className="flex-1 py-1"
-            >
-              <span className="block h-1 overflow-hidden rounded-full bg-border">
-                <span
-                  className={cn(
-                    "block h-full rounded-full bg-primary",
-                    i === index
-                      ? autoAdvancing
-                        ? "animate-tour-progress"
-                        : "w-full"
-                      : "w-0"
-                  )}
-                  style={
-                    i === index
-                      ? ({ "--tour-duration": `${AUTO_ADVANCE_MS}ms` } as React.CSSProperties)
-                      : undefined
-                  }
-                />
-              </span>
-              <span
-                className={cn(
-                  "mt-1.5 block text-center text-xs transition-colors",
-                  i === index ? "font-medium text-foreground" : "text-muted-foreground"
-                )}
-              >
+        <Tabs
+          value={SCREENSHOTS[index].id}
+          onValueChange={(value) => {
+            const i = SCREENSHOTS.findIndex((shot) => shot.id === value);
+            if (i !== -1) goTo(i);
+          }}
+          className="mx-auto mb-4 w-fit max-w-full"
+        >
+          <TabsList className="flex-wrap justify-center">
+            {SCREENSHOTS.map((shot) => (
+              <TabsTrigger key={shot.id} value={shot.id} aria-label={`Show ${shot.label} screenshot`}>
                 {shot.label}
-              </span>
-            </button>
-          ))}
-        </div>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
 
         <BrowserFrame>
           <div className="relative aspect-[2/1] overflow-hidden">
@@ -147,33 +127,6 @@ export function ProductTour() {
             ))}
           </div>
         </BrowserFrame>
-
-        <div
-          role="group"
-          aria-label="Product screenshots"
-          className="mt-4 flex flex-wrap items-center justify-center gap-2 sm:hidden"
-        >
-          {SCREENSHOTS.map((shot, i) => (
-            <button
-              key={shot.id}
-              type="button"
-              onClick={() => goTo(i)}
-              aria-label={`Show ${shot.label} screenshot`}
-              aria-current={i === index}
-              className="flex size-8 items-center justify-center"
-            >
-              <span
-                className={cn(
-                  "size-2.5 rounded-full transition-colors",
-                  i === index ? "bg-primary" : "bg-muted-foreground/30"
-                )}
-              />
-            </button>
-          ))}
-        </div>
-        <p className="mt-1 text-center text-sm font-medium text-muted-foreground sm:hidden">
-          {SCREENSHOTS[index].label}
-        </p>
       </div>
     </section>
   );

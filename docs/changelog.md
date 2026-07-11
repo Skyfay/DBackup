@@ -15,6 +15,10 @@ All notable changes to DBackup are documented here.
 - **Redis**: Database Explorer now shows a key count per database instead of always blank.
 - **rsync**: Fixed SSH private-key destinations failing with "Too many authentication failures" when the local SSH agent has other keys loaded.
 
+### 🎨 Improvements
+
+- **website**: Reordered homepage sections and redesigned the Product Tour screenshot switcher as rounded segmented buttons; the section is now hidden on mobile, where the dashboard screenshots weren't legible.
+
 ### 🔧 CI/CD
 
 - **scripts**: `generate-stress-data.sh` now also populates Redis and Firebird test containers.

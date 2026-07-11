@@ -8,21 +8,12 @@ All notable changes to DBackup are documented here.
 ### ✨ Features
 
 - **Firebird**: Added Firebird (3.x/4.x/5.x) as a supported database source, with direct and SSH connection modes.
-- **website**: Added a standalone marketing website with a blog, light/dark theme, and an auto-advancing product tour under /website, independent from the main app.
-- **website**: Added a /roadmap page showing active roadmap items by status, GitHub star milestones, and shipped feature history.
+- **website**: Launched a new website at dbackup.app with a blog, roadmap page, and product tour.
 
 ### 🐛 Bug Fixes
 
 - **Redis**: Database Explorer now shows a key count per database instead of always blank.
 - **rsync**: Fixed SSH private-key destinations failing with "Too many authentication failures" when the local SSH agent has other keys loaded.
-
-### 🎨 Improvements
-
-- **website**: Reordered homepage sections and redesigned the Product Tour screenshot switcher as rounded segmented buttons; the section is now hidden on mobile, where the dashboard screenshots weren't legible.
-
-### 🗑️ Removed
-
-- **docs**: Removed the standalone roadmap page; the website's /roadmap page is now the single source of truth for roadmap status.
 
 ### 🔧 CI/CD
 

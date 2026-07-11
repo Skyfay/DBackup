@@ -24,6 +24,7 @@ const NAV_LINKS = [
   { href: "/#features", label: "Features" },
   { href: "/#faq", label: "FAQ" },
   { href: "/blog", label: "Blog" },
+  { href: "/roadmap", label: "Roadmap" },
   { href: DOCS_URL, label: "Docs", external: true },
   { href: API_DOCS_URL, label: "API", external: true },
 ];

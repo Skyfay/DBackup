@@ -9,6 +9,7 @@ All notable changes to DBackup are documented here.
 
 - **Firebird**: Added Firebird (3.x/4.x/5.x) as a supported database source, with direct and SSH connection modes.
 - **website**: Added a standalone marketing website with a blog, light/dark theme, and an auto-advancing product tour under /website, independent from the main app.
+- **website**: Added a /roadmap page showing active roadmap items by status, GitHub star milestones, and shipped feature history.
 
 ### 🐛 Bug Fixes
 
@@ -18,6 +19,10 @@ All notable changes to DBackup are documented here.
 ### 🎨 Improvements
 
 - **website**: Reordered homepage sections and redesigned the Product Tour screenshot switcher as rounded segmented buttons; the section is now hidden on mobile, where the dashboard screenshots weren't legible.
+
+### 🗑️ Removed
+
+- **docs**: Removed the standalone roadmap page; the website's /roadmap page is now the single source of truth for roadmap status.
 
 ### 🔧 CI/CD
 

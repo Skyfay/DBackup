@@ -22,7 +22,7 @@ export function Integrations() {
         />
 
         <Reveal>
-          <Tabs defaultValue="databases" className="mt-12">
+          <Tabs defaultValue="databases" className="mt-16 gap-8">
             <TabsList className="mx-auto">
               {GROUPS.map((group) => (
                 <TabsTrigger key={group.value} value={group.value}>

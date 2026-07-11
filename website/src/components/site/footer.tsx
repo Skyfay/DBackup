@@ -21,7 +21,7 @@ const FOOTER_COLUMNS = [
       { href: DOCS_URL, label: "Documentation", external: true },
       { href: API_DOCS_URL, label: "API Reference", external: true },
       { href: `${DOCS_URL}/changelog`, label: "Changelog", external: true },
-      { href: `${DOCS_URL}/roadmap`, label: "Roadmap", external: true },
+      { href: "/roadmap", label: "Roadmap" },
     ],
   },
   {

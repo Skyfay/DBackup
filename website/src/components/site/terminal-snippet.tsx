@@ -7,9 +7,11 @@ import { cn } from "@/lib/utils";
 
 export function TerminalSnippet({
   code,
+  highlightedHtml,
   className,
 }: {
   code: string;
+  highlightedHtml?: string;
   className?: string;
 }) {
   const [copied, setCopied] = useState(false);
@@ -37,8 +39,12 @@ export function TerminalSnippet({
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
-      <pre className="overflow-x-auto p-4 leading-relaxed">
-        <code>{code}</code>
+      <pre className="code-highlight overflow-x-auto p-4 leading-relaxed">
+        {highlightedHtml ? (
+          <code dangerouslySetInnerHTML={{ __html: highlightedHtml }} />
+        ) : (
+          <code>{code}</code>
+        )}
       </pre>
     </div>
   );

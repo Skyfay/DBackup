@@ -52,6 +52,13 @@
   --ring: oklch(0.6 0.1 257);
 }
 
+.code-highlight span {
+  color: var(--shiki-light);
+}
+.dark .code-highlight span {
+  color: var(--shiki-dark);
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

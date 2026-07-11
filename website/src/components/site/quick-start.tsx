@@ -2,8 +2,11 @@ import Link from "next/link";
 import { TerminalSnippet } from "@/components/site/terminal-snippet";
 import { SectionHeading } from "@/components/site/section-heading";
 import { QUICK_START_SNIPPET, GETTING_STARTED_URL } from "@/lib/content";
+import { highlightCode } from "@/lib/highlight";
 
-export function QuickStart() {
+export async function QuickStart() {
+  const highlightedHtml = await highlightCode(QUICK_START_SNIPPET, "yaml");
+
   return (
     <section className="mx-auto max-w-4xl px-6 py-20 sm:py-24">
       <SectionHeading
@@ -12,7 +15,11 @@ export function QuickStart() {
         description="Save this as docker-compose.yml, generate two secrets, and run docker-compose up -d."
       />
 
-      <TerminalSnippet code={QUICK_START_SNIPPET} className="mt-10" />
+      <TerminalSnippet
+        code={QUICK_START_SNIPPET}
+        highlightedHtml={highlightedHtml}
+        className="mt-10"
+      />
 
       <p className="mt-4 text-center text-sm text-muted-foreground">
         <Link

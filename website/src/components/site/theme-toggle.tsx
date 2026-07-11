@@ -14,6 +14,9 @@ export function ThemeToggle() {
   // guarantees the first client render always matches the server.
   const [mounted, setMounted] = useState(false);
 
+  // Intentional client-only mount flag (the documented next-themes
+  // hydration-mismatch fix), not a derived-state anti-pattern.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setMounted(true), []);
 
   if (!mounted) {

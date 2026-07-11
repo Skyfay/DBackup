@@ -32,16 +32,16 @@ export function Integrations() {
             </TabsList>
             {GROUPS.map((group) => (
               <TabsContent key={group.value} value={group.value}>
-                <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
+                <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-6">
                   {group.items.map((item) => (
                     <div
                       key={item.id}
-                      className="flex flex-col items-center gap-2 rounded-xl border border-border bg-card/50 p-4 text-center transition-all hover:border-primary/40 hover:bg-card"
+                      className="group flex flex-col items-center gap-3 rounded-xl border border-border bg-card/50 p-5 text-center transition-all hover:-translate-y-1 hover:border-primary/30 hover:bg-card hover:shadow-lg sm:p-6"
                     >
-                      <div className="flex size-8 items-center justify-center rounded-lg bg-muted sm:size-10">
-                        <AdapterIcon adapterId={item.id} className="size-5 sm:size-6" />
+                      <div className="flex size-12 items-center justify-center rounded-full bg-primary/10 transition-colors group-hover:bg-primary/15 sm:size-14 dark:bg-primary/15 dark:group-hover:bg-primary/20">
+                        <AdapterIcon adapterId={item.id} className="size-6 sm:size-7" />
                       </div>
-                      <span className="text-xs font-medium text-muted-foreground">
+                      <span className="text-sm font-medium text-muted-foreground">
                         {item.label}
                       </span>
                     </div>

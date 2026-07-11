@@ -1,17 +1,22 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 export function ThemeToggle() {
-  // next-themes returns `undefined` for resolvedTheme until after its own
-  // mount effect runs, which is the hydration-safe "not mounted yet" signal -
-  // using it directly avoids needing a local mounted useState/useEffect pair.
   const { resolvedTheme, setTheme } = useTheme();
+  // next-themes can resolve `resolvedTheme` synchronously on the client's
+  // first render (before hydration completes), which no longer matches the
+  // server-rendered placeholder. A dedicated `mounted` flag set in an effect
+  // guarantees the first client render always matches the server.
+  const [mounted, setMounted] = useState(false);
 
-  if (resolvedTheme === undefined) {
+  useEffect(() => setMounted(true), []);
+
+  if (!mounted) {
     return (
       <Button variant="outline" size="icon" disabled aria-hidden className="opacity-0" />
     );

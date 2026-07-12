@@ -9,6 +9,7 @@ const ADAPTER_PERMISSIONS: Record<string, Permission> = {
     mssql: PERMISSIONS.SOURCES.VIEW,
     redis: PERMISSIONS.SOURCES.VIEW,
     valkey: PERMISSIONS.SOURCES.VIEW,
+    firebird: PERMISSIONS.SOURCES.VIEW,
 
     "local-filesystem": PERMISSIONS.DESTINATIONS.READ,
     "s3-generic": PERMISSIONS.DESTINATIONS.READ,

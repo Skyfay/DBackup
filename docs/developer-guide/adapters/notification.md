@@ -943,7 +943,6 @@ docs/
 ├── .vitepress/config.mts   ← Sidebar entry
 ├── changelog.md            ← Release notes
 ├── index.md                ← Feature card + table
-├── roadmap.md              ← Mark as implemented (if listed)
 └── developer-guide/
     └── adapters/
         └── notification.md ← Available Adapters table (this file)

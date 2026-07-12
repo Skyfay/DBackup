@@ -2,6 +2,35 @@
 
 All notable changes to DBackup are documented here.
 
+## v2.10.0 - Firebird Support, New Website, and Multiple Bug Fixes
+*Released: July 12, 2026*
+
+### ✨ Features
+
+- **Firebird**: Added Firebird (3.x/4.x/5.x) as a supported database source, with direct and SSH connection modes. Marked as Beta in the source type picker.
+- **website**: Launched a new website at dbackup.app with a blog, roadmap page, and product tour.
+
+### 🐛 Bug Fixes
+
+- **Redis**: Database Explorer now shows a key count per database instead of always blank.
+- **rsync**: Fixed SSH private-key destinations failing with "Too many authentication failures" when the local SSH agent has other keys loaded.
+- **vault**: Recovery Kit downloads now include `decrypt_backup.js` instead of a missing-script warning. Thanks @jpb0418 ([#120](https://github.com/Skyfay/DBackup/issues/120))
+
+### 🔧 CI/CD
+
+- **scripts**: `generate-stress-data.sh` now also populates Redis and Firebird test containers.
+- **scripts**: Added `test-vm-up.sh` / `test-vm-down.sh` / `seed-ssh-test-config.ts` and a `test:vm:delete` shortcut to test SSH-mode adapters against a real remote host via a Multipass VM.
+- **scripts**: `test-vm-up.sh` now starts one container per database family instead of the full test matrix, to reduce VM memory usage.
+- **scripts**: `test-vm-up.sh`/`seed-ssh-test-config.ts` now install MongoDB's client tools and seed MongoDB and Firebird SSH sources, MSSQL is left out for now as the heaviest container.
+
+### 🐳 Docker
+
+- **Image**: `skyfay/dbackup:v2.10.0`
+- **Also tagged as**: `latest`, `v2`
+- **CI Image**: `skyfay/dbackup:ci`
+- **Platforms**: linux/amd64, linux/arm64
+
+
 ## v2.9.0 - Valkey Support, Storage Alert Fix, and Multiple Improvements
 *Released: July 4, 2026*
 

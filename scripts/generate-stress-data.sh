@@ -11,6 +11,8 @@
 #   pnpm run test:stress:generate postgres  # Only PostgreSQL
 #   pnpm run test:stress:generate mongodb   # Only MongoDB
 #   pnpm run test:stress:generate mssql     # Only MSSQL
+#   pnpm run test:stress:generate redis     # Only Redis
+#   pnpm run test:stress:generate firebird  # Only Firebird
 #
 # Environment:
 #   TARGET_SIZE_MB=1500  # Target size per database (default: 1500)
@@ -320,6 +322,112 @@ WHERE t.name = 'stress_data';
     echo -e "   ${GREEN}✅ Done! Table size: ${SIZE} MB${NC}"
 }
 
+# ==================== Redis ====================
+populate_redis() {
+    local CONTAINER=$1
+    local NAME=$2
+    local PASSWORD="testpassword"
+    # 4x the target keyspace so random SET keys land close to TOTAL_ROWS unique entries
+    # (redis-benchmark's -r picks random keys with replacement, so some collisions are expected).
+    local KEYSPACE=$((TOTAL_ROWS * 4))
+
+    echo -e "\n${YELLOW}📊 Populating ${NAME}...${NC}"
+
+    docker exec ${CONTAINER} redis-cli -a ${PASSWORD} --no-auth-warning FLUSHALL >/dev/null 2>&1
+
+    # redis-benchmark's own SET test generates ~1KB random-keyed values much faster
+    # than a scripted loop of individual SET commands.
+    docker exec ${CONTAINER} redis-benchmark -a ${PASSWORD} \
+        -t set -n ${TOTAL_ROWS} -r ${KEYSPACE} -d 1000 -P 50 -q 2>/dev/null
+
+    # Show size
+    KEYS=$(docker exec ${CONTAINER} redis-cli -a ${PASSWORD} --no-auth-warning DBSIZE 2>/dev/null)
+    SIZE_BYTES=$(docker exec ${CONTAINER} redis-cli -a ${PASSWORD} --no-auth-warning INFO memory 2>/dev/null | grep "^used_memory:" | tr -d '\r' | cut -d: -f2)
+    SIZE_MB=$(( ${SIZE_BYTES:-0} / 1024 / 1024 ))
+    echo -e "   ${GREEN}✅ Done! ${KEYS} keys, used memory: ${SIZE_MB} MB${NC}"
+}
+
+# ==================== Firebird ====================
+populate_firebird() {
+    local CONTAINER=$1
+    local NAME=$2
+    local DB_PATH="/var/lib/firebird/data/testdb.fdb"
+    local ISQL_CMD="ISC_PASSWORD=masterkey isql -user sysdba ${DB_PATH}"
+    local BATCH=50000
+
+    echo -e "\n${YELLOW}📊 Populating ${NAME}...${NC}"
+
+    # Drop (if present) and recreate the table. Firebird's client binaries live inside
+    # the container itself (see docker-compose.test.yml), so isql runs via docker exec
+    # rather than a host-installed client.
+    docker exec -i ${CONTAINER} bash -c "${ISQL_CMD}" <<EOF 2>/dev/null
+SET TERM ^ ;
+EXECUTE BLOCK AS
+BEGIN
+  IF (EXISTS(SELECT 1 FROM RDB\$RELATIONS WHERE RDB\$RELATION_NAME = 'STRESS_DATA')) THEN
+    EXECUTE STATEMENT 'DROP TABLE stress_data';
+END^
+SET TERM ; ^
+COMMIT;
+
+CREATE TABLE stress_data (
+    id INTEGER NOT NULL PRIMARY KEY,
+    uuid VARCHAR(40) NOT NULL,
+    name VARCHAR(200) NOT NULL,
+    email VARCHAR(200) NOT NULL,
+    description VARCHAR(500),
+    data_blob VARCHAR(1000),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    status VARCHAR(20),
+    amount DECIMAL(10,2)
+);
+CREATE INDEX idx_uuid ON stress_data(uuid);
+CREATE INDEX idx_status ON stress_data(status);
+COMMIT;
+EOF
+
+    # Generate data in batches via EXECUTE BLOCK. Firebird PSQL has no mid-block COMMIT
+    # (and no set-based generate_series equivalent), so each batch is its own isql call/transaction.
+    local inserted=0
+    while [ ${inserted} -lt ${TOTAL_ROWS} ]; do
+        local remaining=$((TOTAL_ROWS - inserted))
+        local count=$(( remaining < BATCH ? remaining : BATCH ))
+        local stop=$((inserted + count))
+
+        docker exec -i ${CONTAINER} bash -c "${ISQL_CMD}" <<EOF 2>/dev/null
+SET TERM ^ ;
+EXECUTE BLOCK AS
+DECLARE VARIABLE i INTEGER = ${inserted};
+BEGIN
+  WHILE (i < ${stop}) DO
+  BEGIN
+    INSERT INTO stress_data (id, uuid, name, email, description, data_blob, status, amount)
+    VALUES (
+      :i,
+      UUID_TO_CHAR(GEN_UUID()),
+      'User ' || :i || ' - ' || RPAD('', 50, 'A'),
+      'user' || :i || '@stress-test-' || RPAD('', 10, 'B') || '.com',
+      RPAD('', 200, 'C'),
+      RPAD('', 500, 'D'),
+      CASE TRUNC(RAND()*3) WHEN 0 THEN 'active' WHEN 1 THEN 'pending' ELSE 'inactive' END,
+      CAST(RAND()*10000 AS DECIMAL(10,2))
+    );
+    i = i + 1;
+  END
+END^
+SET TERM ; ^
+COMMIT;
+EOF
+        inserted=$((inserted + count))
+        echo "  Progress: $(( inserted * 100 / TOTAL_ROWS ))% (${inserted} rows)"
+    done
+
+    # Show size (approximate via the .fdb file size on disk - the database only holds this one table)
+    SIZE=$(docker exec ${CONTAINER} stat -c%s ${DB_PATH} 2>/dev/null)
+    SIZE_MB=$(( ${SIZE:-0} / 1024 / 1024 ))
+    echo -e "   ${GREEN}✅ Done! Database file size: ${SIZE_MB} MB${NC}"
+}
+
 # ==================== Main ====================
 
 START_TIME=$(date +%s)
@@ -343,6 +451,16 @@ fi
 # MSSQL
 if [ "$DB_FILTER" = "all" ] || [ "$DB_FILTER" = "mssql" ]; then
     populate_mssql "dbm-test-mssql-2022" "MSSQL 2022"
+fi
+
+# Redis
+if [ "$DB_FILTER" = "all" ] || [ "$DB_FILTER" = "redis" ]; then
+    populate_redis "dbm-test-redis-8" "Redis 8"
+fi
+
+# Firebird
+if [ "$DB_FILTER" = "all" ] || [ "$DB_FILTER" = "firebird" ]; then
+    populate_firebird "dbm-test-firebird-50" "Firebird 5.0"
 fi
 
 END_TIME=$(date +%s)

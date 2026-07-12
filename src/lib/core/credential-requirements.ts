@@ -23,6 +23,7 @@ export const ADAPTER_CREDENTIAL_REQUIREMENTS: Record<
     mssql: { primary: "USERNAME_PASSWORD", ssh: "SSH_KEY" },
     redis: { primary: "USERNAME_PASSWORD", ssh: "SSH_KEY" },
     valkey: { primary: "USERNAME_PASSWORD", ssh: "SSH_KEY" },
+    firebird: { primary: "USERNAME_PASSWORD", ssh: "SSH_KEY" },
     sqlite: { ssh: "SSH_KEY" }, // local mode has no primary; SSH mode uses the slot
 
     // SSH-native storage (key-or-password auth as the primary identity)

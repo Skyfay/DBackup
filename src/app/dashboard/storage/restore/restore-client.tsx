@@ -12,11 +12,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { ArrowRight, ArrowLeft, FileIcon, AlertTriangle, ShieldAlert, Loader2, HardDrive, ChevronDown, ChevronUp, Server, ShieldCheck } from "lucide-react";
+import { ArrowRight, ArrowLeft, FileIcon, AlertTriangle, ShieldAlert, Loader2, HardDrive, ChevronDown, ChevronUp, Server, ShieldCheck, HelpCircle } from "lucide-react";
 import { toast } from "sonner";
 import { FileInfo } from "@/app/dashboard/storage/columns";
 import { useRouter, useSearchParams } from "next/navigation";
-import { formatBytes, compareVersions } from "@/lib/utils";
+import { formatBytes, compareVersions, cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { DateDisplay } from "@/components/utils/date-display";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
@@ -31,6 +31,8 @@ interface DatabaseInfo {
     name: string;
     sizeInBytes?: number;
     tableCount?: number;
+    /** Firebird only: filesystem path for this alias. */
+    path?: string;
 }
 
 interface AdapterConfig {
@@ -100,9 +102,13 @@ export function RestoreClient() {
 
     const isSystemConfig = file?.sourceType === 'SYSTEM';
 
-    const SERVER_ADAPTERS = ['mysql', 'mariadb', 'postgres', 'mongodb', 'mssql', 'redis', 'valkey'];
+    const SERVER_ADAPTERS = ['mysql', 'mariadb', 'postgres', 'mongodb', 'mssql', 'redis', 'valkey', 'firebird'];
     const resolvedSourceType = backupSourceType || file?.sourceType || '';
     const isServerAdapter = SERVER_ADAPTERS.includes(resolvedSourceType.toLowerCase());
+    // Firebird's target field holds a filesystem path, not a database name - and since
+    // Firebird has no way to list existing databases, the Overwrite/New badge is replaced
+    // with a neutral "Unverified" indicator for this adapter.
+    const isFirebird = resolvedSourceType.toLowerCase() === 'firebird';
 
     const [restoreOptions, setRestoreOptions] = useState<RestoreOptions>({
         settings: true,
@@ -168,6 +174,17 @@ export function RestoreClient() {
             if (data.success && data.databases) {
                 setTargetDatabases(data.databases);
                 setShowTargetDbs(true);
+
+                // Firebird: the target field holds a path, not an alias name - prefill it
+                // with the real path of the matching alias once we know it (skip rows the
+                // user already edited away from the default name).
+                if (isFirebird) {
+                    setDbConfig(prev => prev.map(db => {
+                        if (db.targetName !== db.name) return db;
+                        const match = (data.databases as DatabaseInfo[]).find(d => d.name === db.name);
+                        return match?.path ? { ...db, targetName: match.path } : db;
+                    }));
+                }
             }
 
             if (data.serverVersion) setTargetServerVersion(data.serverVersion);
@@ -202,7 +219,7 @@ export function RestoreClient() {
         } finally {
             setIsLoadingTargetDbs(false);
         }
-    }, [file]);
+    }, [file, isFirebird]);
 
     // Trigger fetch when target source changes
     useEffect(() => {
@@ -285,7 +302,10 @@ export function RestoreClient() {
             const payload = {
                 file: file.path,
                 targetSourceId: targetSource,
-                targetDatabaseName: restoreMode === 'rename' && targetDbName ? targetDbName : undefined,
+                // Note: restoreMode only gates the non-server-adapter RadioGroup UI (which
+                // clears targetDbName on "overwrite"); the server-adapter Input paths set
+                // targetDbName directly, so its truthiness alone is the correct signal here.
+                targetDatabaseName: targetDbName || undefined,
                 databaseMapping: mapping,
                 privilegedAuth: auth
             };
@@ -652,13 +672,27 @@ export function RestoreClient() {
                                                                         <Input
                                                                             value={db.targetName}
                                                                             onChange={(e) => handleRenameDb(db.id, e.target.value)}
-                                                                            className="h-8 text-sm"
-                                                                            placeholder="Target Name"
+                                                                            className={cn("h-8 text-sm", isFirebird && "font-mono")}
+                                                                            placeholder={isFirebird ? "/path/to/database.fdb" : "Target Name"}
                                                                             disabled={!db.selected}
                                                                         />
                                                                     </TableCell>
                                                                     <TableCell className="py-2.5 text-center">
-                                                                        {db.selected && willOverwrite ? (
+                                                                        {!db.selected ? null : isFirebird ? (
+                                                                            <TooltipProvider>
+                                                                                <Tooltip>
+                                                                                    <TooltipTrigger>
+                                                                                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
+                                                                                            <HelpCircle className="h-3 w-3 mr-1" />
+                                                                                            Unverified
+                                                                                        </Badge>
+                                                                                    </TooltipTrigger>
+                                                                                    <TooltipContent>
+                                                                                        <p>DBackup cannot check whether a database already exists at this path - Firebird has no way to list databases. Existing files at this path will be overwritten.</p>
+                                                                                    </TooltipContent>
+                                                                                </Tooltip>
+                                                                            </TooltipProvider>
+                                                                        ) : willOverwrite ? (
                                                                             <TooltipProvider>
                                                                                 <Tooltip>
                                                                                     <TooltipTrigger>
@@ -672,11 +706,11 @@ export function RestoreClient() {
                                                                                     </TooltipContent>
                                                                                 </Tooltip>
                                                                             </TooltipProvider>
-                                                                        ) : db.selected ? (
+                                                                        ) : (
                                                                             <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
                                                                                 New
                                                                             </Badge>
-                                                                        ) : null}
+                                                                        )}
                                                                     </TableCell>
                                                                 </TableRow>
                                                             );
@@ -687,19 +721,22 @@ export function RestoreClient() {
                                         ) : isServerAdapter ? (
                                             <div className="space-y-3">
                                                 <p className="text-sm text-muted-foreground">
-                                                    The database names in this backup could not be determined automatically.
-                                                    Leave empty to restore into the original database, or specify a target name.
+                                                    {isFirebird
+                                                        ? "The database alias in this backup could not be determined automatically. Leave empty to restore into the original database, or specify a target path."
+                                                        : "The database names in this backup could not be determined automatically. Leave empty to restore into the original database, or specify a target name."}
                                                 </p>
                                                 <div className="space-y-1.5">
-                                                    <Label className="text-sm">Target Database Name</Label>
+                                                    <Label className="text-sm">{isFirebird ? "Target Database Path" : "Target Database Name"}</Label>
                                                     <Input
-                                                        placeholder="Leave empty for original database..."
+                                                        placeholder={isFirebird ? "Leave empty for original database, or enter a path..." : "Leave empty for original database..."}
                                                         value={targetDbName}
                                                         onChange={(e) => setTargetDbName(e.target.value)}
-                                                        className="h-8"
+                                                        className={cn("h-8", isFirebird && "font-mono")}
                                                     />
                                                     <p className="text-xs text-muted-foreground">
-                                                        If empty, the backup will be restored into its original database. Existing data will be overwritten.
+                                                        {isFirebird
+                                                            ? "If empty, the backup is restored into its original database. If you enter a path, DBackup cannot verify whether a database already exists there - existing files at that path will be overwritten."
+                                                            : "If empty, the backup will be restored into its original database. Existing data will be overwritten."}
                                                     </p>
                                                 </div>
                                             </div>

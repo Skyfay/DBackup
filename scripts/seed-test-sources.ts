@@ -58,6 +58,12 @@ const CREDENTIAL_PROFILES: CredentialProfileDef[] = [
         data: { username: 'default', password: 'testpassword' },
         description: 'Credentials for Redis test containers',
     },
+    {
+        name: 'Test Firebird Credentials',
+        type: 'USERNAME_PASSWORD',
+        data: { username: 'SYSDBA', password: 'masterkey' },
+        description: 'SYSDBA credentials for Firebird test containers',
+    },
 ];
 
 // Maps adapter type -> credential profile name
@@ -69,6 +75,7 @@ const CREDENTIAL_PROFILE_FOR: Record<string, string> = {
     mssql: 'Test MSSQL Credentials',
     redis: 'Test Redis Credentials',
     valkey: 'Test Redis Credentials',
+    firebird: 'Test Firebird Credentials',
 };
 
 // Inline config fields that the credential profile now owns

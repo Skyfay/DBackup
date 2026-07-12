@@ -50,7 +50,14 @@ function AdapterCard({ adapter, onSelect }: {
             )}
         >
             <AdapterIcon adapterId={adapter.id} className="h-8 w-8" />
-            <span className="text-sm font-medium leading-tight">{adapter.name}</span>
+            <span className="inline-flex items-center gap-1.5 text-sm font-medium leading-tight">
+                {adapter.name}
+                {adapter.beta && (
+                    <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-primary">
+                        Beta
+                    </span>
+                )}
+            </span>
         </button>
     );
 }

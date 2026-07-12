@@ -55,6 +55,49 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rm /tmp/mongo-tools.deb && \
     rm -rf /var/lib/apt/lists/*
 
+# Step 5: Firebird 5.x client tools (gbak, isql) for the Firebird adapter.
+# Debian 12's apt repos only carry a 3.0 client, not 5.x, and the 5.x gbak/isql
+# can talk to 3.x/4.x servers over the wire protocol - so download the official
+# Firebird release tarball and extract just the client binaries + shared library.
+#
+# Verified against the actual GitHub release assets (2026-07-04):
+# - Release tag (v${FIREBIRD_RELEASE_TAG}) and asset filename version
+#   (${FIREBIRD_ASSET_VERSION}) differ - assets embed a build number, e.g.
+#   "Firebird-5.0.3.1683-0-linux-x64.tar.gz" for tag "v5.0.3". Bump both when
+#   upgrading.
+# - The top-level tarball only contains an install.sh + a nested
+#   buildroot.tar.gz - the actual bin/lib payload lives at
+#   buildroot.tar.gz:./opt/firebird/{bin,lib}, not at the tarball root.
+# - gbak/isql depend on libtommath.so.1 and gbak also needs libz.so.1, neither
+#   of which ship inside buildroot.tar.gz - installed via apt below.
+#   libicuuc/libicui18n are dlopen'd at runtime for extended collations only
+#   (soft dependency) - omitted here since backup/restore doesn't need them.
+ARG FIREBIRD_RELEASE_TAG=5.0.3
+ARG FIREBIRD_ASSET_VERSION=5.0.3.1683-0
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libtommath1 \
+    zlib1g && \
+    rm -rf /var/lib/apt/lists/* && \
+    case "${TARGETARCH:-amd64}" in \
+        amd64) FB_ARCH="x64" ;; \
+        arm64) FB_ARCH="arm64" ;; \
+        *) echo "Unsupported architecture: ${TARGETARCH}"; exit 1 ;; \
+    esac && \
+    curl -fsSL "https://github.com/FirebirdSQL/firebird/releases/download/v${FIREBIRD_RELEASE_TAG}/Firebird-${FIREBIRD_ASSET_VERSION}-linux-${FB_ARCH}.tar.gz" -o /tmp/firebird.tar.gz && \
+    mkdir -p /tmp/firebird-extract && \
+    tar -xzf /tmp/firebird.tar.gz -C /tmp/firebird-extract --strip-components=1 && \
+    tar -xzf /tmp/firebird-extract/buildroot.tar.gz -C /tmp/firebird-extract && \
+    mkdir -p /opt/firebird/bin /opt/firebird/lib && \
+    cp /tmp/firebird-extract/opt/firebird/bin/gbak /opt/firebird/bin/ && \
+    cp /tmp/firebird-extract/opt/firebird/bin/isql /opt/firebird/bin/ && \
+    cp -a /tmp/firebird-extract/opt/firebird/lib/. /opt/firebird/lib/ && \
+    cp /tmp/firebird-extract/opt/firebird/firebird.msg /opt/firebird/ && \
+    ln -sf /opt/firebird/bin/gbak /usr/local/bin/gbak && \
+    ln -sf /opt/firebird/bin/isql /usr/local/bin/isql && \
+    echo "/opt/firebird/lib" > /etc/ld.so.conf.d/firebird.conf && \
+    ldconfig && \
+    rm -rf /tmp/firebird.tar.gz /tmp/firebird-extract
+
 # Enable corepack for pnpm support and symlink PostgreSQL 18 binaries
 # On Debian with PGDG, pg binaries live under /usr/lib/postgresql/18/bin/
 RUN corepack enable && corepack prepare pnpm@10.29.3 --activate && \
@@ -93,6 +136,8 @@ RUN --mount=type=cache,id=next-cache,target=/app/.next/cache \
 # 3. Runner Phase (The actual image)
 FROM base AS runner
 WORKDIR /app
+
+COPY --from=builder --link --chown=1001:1001 /app/scripts/decrypt_backup.js ./scripts/decrypt_backup.js
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1

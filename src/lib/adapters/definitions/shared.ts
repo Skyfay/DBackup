@@ -6,6 +6,8 @@ export type AdapterDefinition = {
     type: 'database' | 'storage' | 'notification';
     name: string;
     group?: string;
+    /** Marks the adapter as Beta in adapter-picker UI (e.g. newly added, not yet fully battle-tested). */
+    beta?: boolean;
     configSchema: z.ZodObject<any>;
     /**
      * `primary` declares the credential type for the primary slot.

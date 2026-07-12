@@ -3,6 +3,7 @@ import util from "util";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { RedisConfig } from "@/lib/adapters/definitions";
+import { DatabaseInfo } from "@/lib/core/interfaces";
 import {
     SshClient,
     isSSHMode,
@@ -175,6 +176,55 @@ export async function getDatabases(config: RedisConfig): Promise<string[]> {
         log.error("Failed to get databases", {}, wrapError(error));
         // Return default 16 databases on error
         return Array.from({ length: 16 }, (_, i) => String(i));
+    }
+}
+
+/** Parses `INFO keyspace` output ("db0:keys=N,expires=..." lines) into a per-db key count map. */
+function parseKeyspaceInfo(stdout: string): Record<string, number> {
+    const counts: Record<string, number> = {};
+    for (const line of stdout.split("\n")) {
+        const match = line.trim().match(/^db(\d+):keys=(\d+)/);
+        if (match) counts[match[1]] = parseInt(match[2], 10);
+    }
+    return counts;
+}
+
+/**
+ * Get database list with key counts (surfaced as `tableCount` - Redis has no notion of
+ * tables, but this is the most useful "how much is in here" signal available in one
+ * round trip). Redis doesn't expose per-database memory usage, so sizeInBytes stays undefined.
+ */
+export async function getDatabasesWithStats(config: RedisConfig): Promise<DatabaseInfo[]> {
+    const databases = await getDatabases(config);
+
+    if (isSSHMode(config)) {
+        const sshConfig = extractSshConfig(config)!;
+        const ssh = new SshClient();
+        try {
+            await ssh.connect(sshConfig);
+            const redisBin = await remoteBinaryCheck(ssh, "redis-cli");
+            const args = buildRedisArgs(config);
+            if (config.tls) args.push("--tls");
+
+            const result = await ssh.exec(`${redisBin} ${args.join(" ")} INFO keyspace`);
+            const keyCounts = result.code === 0 ? parseKeyspaceInfo(result.stdout) : {};
+            return databases.map((name) => ({ name, tableCount: keyCounts[name] ?? 0 }));
+        } catch (error: unknown) {
+            log.error("Failed to get database stats via SSH", {}, wrapError(error));
+            return databases.map((name) => ({ name }));
+        } finally {
+            ssh.end();
+        }
+    }
+
+    try {
+        const args = buildConnectionArgs({ ...config, database: 0 });
+        const { stdout } = await execFileAsync("redis-cli", [...args, "INFO", "keyspace"]);
+        const keyCounts = parseKeyspaceInfo(stdout);
+        return databases.map((name) => ({ name, tableCount: keyCounts[name] ?? 0 }));
+    } catch (error: unknown) {
+        log.error("Failed to get database stats", {}, wrapError(error));
+        return databases.map((name) => ({ name }));
     }
 }
 

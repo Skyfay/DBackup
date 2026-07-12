@@ -38,7 +38,7 @@
   <a href="https://docs.dbackup.app/user-guide/getting-started">Quick Start</a> •
   <a href="https://api.dbackup.app">API Reference</a> •
   <a href="https://docs.dbackup.app/changelog">Changelog</a> •
-  <a href="https://docs.dbackup.app/roadmap">Roadmap</a>
+  <a href="https://dbackup.app/roadmap">Roadmap</a>
 </p>
 
 
@@ -211,7 +211,7 @@ Full documentation is available at **[docs.dbackup.app](https://docs.dbackup.app
 - [API Reference](https://api.dbackup.app) - Interactive REST API documentation
 - [Developer Guide](https://docs.dbackup.app/developer-guide/) - Architecture, adapters, contributing
 - [Changelog](https://docs.dbackup.app/changelog) - Release history
-- [Roadmap](https://docs.dbackup.app/roadmap) - Planned features
+- [Roadmap](https://dbackup.app/roadmap) - Planned features
 
 ## 🛠️ Development
 

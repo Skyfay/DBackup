@@ -108,7 +108,8 @@ export default defineConfig({
             { text: 'Redis', link: '/user-guide/sources/redis' },
             { text: 'Valkey', link: '/user-guide/sources/valkey' },
             { text: 'SQLite', link: '/user-guide/sources/sqlite' },
-            { text: 'Microsoft SQL Server', link: '/user-guide/sources/mssql' }
+            { text: 'Microsoft SQL Server', link: '/user-guide/sources/mssql' },
+            { text: 'Firebird', link: '/user-guide/sources/firebird' }
           ]
         },
         {

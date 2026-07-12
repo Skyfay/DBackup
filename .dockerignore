@@ -47,8 +47,10 @@ pnpm-debug.log*
 docs
 tests
 scripts
+!scripts/decrypt_backup.js
 coverage
 wiki
 api-docs
+website
 README.md
 LICENSE

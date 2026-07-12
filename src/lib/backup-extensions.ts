@@ -25,6 +25,7 @@ export function getBackupFileExtension(adapterId: string): string {
         redis: "rdb",        // Redis RDB snapshot format
         valkey: "rdb",       // Valkey RDB snapshot format (same as Redis)
         sqlite: "db",        // SQLite database file copy
+        firebird: "fbk",     // Firebird gbak native backup format
     };
 
     return extensions[adapterId.toLowerCase()] || "sql";
@@ -48,6 +49,7 @@ export function getBackupFormatDescription(adapterId: string): string {
         redis: "Redis RDB Snapshot",
         valkey: "Valkey RDB Snapshot",
         sqlite: "SQLite Database Copy",
+        firebird: "Firebird gbak Backup",
     };
 
     return descriptions[adapterId.toLowerCase()] || "Database Backup";

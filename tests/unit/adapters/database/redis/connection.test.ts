@@ -52,6 +52,7 @@ vi.mock("@/lib/logging/errors", () => ({
 import {
     test,
     getDatabases,
+    getDatabasesWithStats,
     buildConnectionArgs,
 } from "@/lib/adapters/database/redis/connection";
 
@@ -399,5 +400,88 @@ describe("getDatabases() - SSH", () => {
         const result = await getDatabases(buildConfig());
 
         expect(result).toHaveLength(16);
+    });
+});
+
+// -------------------------------------------------------------------------
+// getDatabasesWithStats() - local
+// -------------------------------------------------------------------------
+
+describe("getDatabasesWithStats() - local", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mockIsSSHMode.mockReturnValue(false);
+    });
+
+    it("maps INFO keyspace output to per-db key counts, defaulting empty dbs to 0", async () => {
+        mockExecFileCb
+            .mockImplementationOnce((...args: unknown[]) => {
+                const cb = args[args.length - 1] as (err: null, r: { stdout: string; stderr: string }) => void;
+                cb(null, { stdout: "databases\n4\n", stderr: "" });
+            })
+            .mockImplementationOnce((...args: unknown[]) => {
+                const cb = args[args.length - 1] as (err: null, r: { stdout: string; stderr: string }) => void;
+                cb(null, { stdout: "# Keyspace\r\ndb0:keys=1234,expires=0,avg_ttl=0\r\ndb2:keys=5,expires=1,avg_ttl=0\r\n", stderr: "" });
+            });
+
+        const result = await getDatabasesWithStats(buildConfig());
+
+        expect(result).toEqual([
+            { name: "0", tableCount: 1234 },
+            { name: "1", tableCount: 0 },
+            { name: "2", tableCount: 5 },
+            { name: "3", tableCount: 0 },
+        ]);
+        expect(result.every((db) => db.sizeInBytes === undefined)).toBe(true);
+    });
+
+    it("returns bare names without tableCount when the INFO command fails", async () => {
+        mockExecFileCb
+            .mockImplementationOnce((...args: unknown[]) => {
+                const cb = args[args.length - 1] as (err: null, r: { stdout: string; stderr: string }) => void;
+                cb(null, { stdout: "databases\n2\n", stderr: "" });
+            })
+            .mockImplementationOnce((...args: unknown[]) => {
+                const cb = args[args.length - 1] as (err: Error) => void;
+                cb(new Error("NOAUTH"));
+            });
+
+        const result = await getDatabasesWithStats(buildConfig());
+
+        expect(result).toEqual([{ name: "0" }, { name: "1" }]);
+    });
+});
+
+// -------------------------------------------------------------------------
+// getDatabasesWithStats() - SSH
+// -------------------------------------------------------------------------
+
+describe("getDatabasesWithStats() - SSH", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mockIsSSHMode.mockReturnValue(true);
+        mockRemoteBinaryCheck.mockResolvedValue("redis-cli");
+    });
+
+    it("maps INFO keyspace output to per-db key counts via SSH", async () => {
+        mockSshExec
+            .mockResolvedValueOnce({ code: 0, stdout: "databases\n2\n", stderr: "" })
+            .mockResolvedValueOnce({ code: 0, stdout: "db1:keys=42,expires=0,avg_ttl=0\r\n", stderr: "" });
+
+        const result = await getDatabasesWithStats(buildConfig());
+
+        expect(result).toEqual([
+            { name: "0", tableCount: 0 },
+            { name: "1", tableCount: 42 },
+        ]);
+    });
+
+    it("returns bare names when the SSH operation throws", async () => {
+        mockSshExec.mockResolvedValueOnce({ code: 0, stdout: "databases\n2\n", stderr: "" });
+        mockRemoteBinaryCheck.mockResolvedValueOnce("redis-cli").mockRejectedValueOnce(new Error("SSH disconnected"));
+
+        const result = await getDatabasesWithStats(buildConfig());
+
+        expect(result).toEqual([{ name: "0" }, { name: "1" }]);
     });
 });

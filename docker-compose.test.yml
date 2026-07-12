@@ -401,3 +401,67 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  # ==========================================
+  # Firebird Family
+  # ==========================================
+  # Image: official firebirdsql/firebird (https://github.com/FirebirdSQL/firebird-docker)
+  # Verified against the project's README (2026-07-04): FIREBIRD_ROOT_PASSWORD sets
+  # SYSDBA's password, FIREBIRD_DATABASE creates the file under FIREBIRD_DATA
+  # (/var/lib/firebird/data), and the client binaries on PATH are named plain
+  # "isql"/"gbak" (not "isql-fb"). Firebird only ships official arm64 images from
+  # 5.x onward - 3.x/4.x are linux/amd64 only, hence the `platform:` overrides below.
+
+  # Firebird 3.0
+  # Platform: linux/amd64 required - Firebird only ships official arm64 images from 5.x onward,
+  # so 3.x/4.x run under Rosetta/QEMU emulation on Apple Silicon (slower, but fine for testing).
+  firebird-30:
+    image: firebirdsql/firebird:3.0.11
+    platform: linux/amd64
+    container_name: dbm-test-firebird-30
+    environment:
+      FIREBIRD_ROOT_PASSWORD: masterkey
+      FIREBIRD_DATABASE: testdb.fdb
+      FIREBIRD_USE_LEGACY_AUTH: "true"
+    ports:
+      - "31530:3050"
+    healthcheck:
+      test: ["CMD-SHELL", "isql -user sysdba -password masterkey /var/lib/firebird/data/testdb.fdb -i /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # Firebird 4.0
+  # Platform: linux/amd64 required for Apple Silicon (see note on firebird-30)
+  firebird-40:
+    image: firebirdsql/firebird:4.0.7
+    platform: linux/amd64
+    container_name: dbm-test-firebird-40
+    environment:
+      FIREBIRD_ROOT_PASSWORD: masterkey
+      FIREBIRD_DATABASE: testdb.fdb
+    ports:
+      - "31540:3050"
+    healthcheck:
+      test: ["CMD-SHELL", "isql -user sysdba -password masterkey /var/lib/firebird/data/testdb.fdb -i /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # Firebird 5.0 (Current)
+  firebird-50:
+    image: firebirdsql/firebird:5.0.3
+    container_name: dbm-test-firebird-50
+    environment:
+      FIREBIRD_ROOT_PASSWORD: masterkey
+      FIREBIRD_DATABASE: testdb.fdb
+    ports:
+      - "31550:3050"
+    healthcheck:
+      test: ["CMD-SHELL", "isql -user sysdba -password masterkey /var/lib/firebird/data/testdb.fdb -i /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s

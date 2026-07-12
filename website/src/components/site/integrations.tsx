@@ -20,7 +20,7 @@ export function Integrations() {
         <SectionHeading
           eyebrow="Integrations"
           title="Connects to what you already run"
-          description="8 database engines, 13 storage destinations, and 9 notification channels - out of the box."
+          description="9 database engines, 13 storage destinations, and 9 notification channels - out of the box."
         />
 
         <Reveal>

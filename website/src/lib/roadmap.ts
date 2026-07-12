@@ -28,14 +28,6 @@ export interface RoadmapItem {
 
 export const ROADMAP_ITEMS: RoadmapItem[] = [
   {
-    slug: "firebird-support",
-    title: "Firebird Support",
-    description:
-      "Firebird (3.x/4.x/5.x) as a new database source, with direct and SSH connection modes.",
-    status: "in-progress",
-    category: "backup-engine",
-  },
-  {
     slug: "file-based-linked-backup-restore",
     title: "File-Based & Linked Backup and Restore",
     description:

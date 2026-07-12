@@ -164,6 +164,16 @@ RESTORE DATABASE [dbname] FROM DISK = '/path/backup.bak'
 - Requires shared volume
 - Uses T-SQL commands
 
+### Firebird
+
+```bash
+gbak -rep -user sysdba -password *** backup.fbk database.fdb
+```
+
+- Restore target is limited to the source's pre-configured database aliases
+- Always replaces the target file's contents (no separate create-only step)
+- See [Firebird source](/user-guide/sources/firebird) for alias configuration
+
 ## Safety Features
 
 ### Version Guard

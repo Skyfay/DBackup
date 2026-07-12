@@ -12,6 +12,7 @@ This document lists the database engines and versions supported by DBackup.
 | **MongoDB** | 4.x, 5.x, 6.x, 7.x, 8.x | `mongodump` | Standard operations |
 | **SQLite** | 3.x | `sqlite3` | File-based |
 | **Microsoft SQL Server** | 2017, 2019, 2022 | `mssql` npm | T-SQL commands |
+| **Firebird** | 3.x, 4.x, 5.x | `gbak` | Beta, alias-based database list |
 
 ## Docker Container Tools
 
@@ -173,6 +174,26 @@ WITH COMPRESSION, INIT;
 - Shared volume between SQL Server and DBackup
 - `sa` credentials or appropriate backup permissions
 - Network access to SQL Server port (1433)
+
+## Firebird
+
+### Supported Versions
+
+- Firebird 3.x
+- Firebird 4.x
+- Firebird 5.x
+
+::: info Beta
+The Firebird adapter is marked as Beta in the source type picker.
+:::
+
+### Implementation
+
+Uses `gbak`/`isql` for backup, restore, and version detection. Unlike other adapters, Firebird has no server-side database registry - each source is configured with a fixed list of `{ name, path }` aliases instead of a discoverable database list.
+
+```bash
+gbak -b -user sysdba -password *** database.fdb backup.fbk
+```
 
 ## Dialect System
 

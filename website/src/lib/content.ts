@@ -8,7 +8,7 @@ export const DISCORD_URL = "https://discord.com/invite/YvgPyky";
 export const GETTING_STARTED_URL = `${DOCS_URL}/user-guide/getting-started`;
 
 export const STATS = [
-  { value: "8", label: "Database Engines" },
+  { value: "9", label: "Database Engines" },
   { value: "13", label: "Storage Adapters" },
   { value: "9", label: "Notification Channels" },
   { value: "GPL-3.0", label: "Open Source" },
@@ -18,7 +18,7 @@ export const FEATURES = [
   {
     title: "Database Backup",
     description:
-      "8 database engines, selective per-database backup, multi-database jobs with a unified TAR format, AES-256-GCM encryption, GZIP/Brotli compression, and SSH remote execution.",
+      "9 database engines, selective per-database backup, multi-database jobs with a unified TAR format, AES-256-GCM encryption, GZIP/Brotli compression, and SSH remote execution.",
   },
   {
     title: "Storage & Destinations",
@@ -76,6 +76,7 @@ export const DATABASES: AdapterItem[] = [
   { id: "redis", label: "Redis" },
   { id: "valkey", label: "Valkey" },
   { id: "mssql", label: "Microsoft SQL Server" },
+  { id: "firebird", label: "Firebird (Beta)" },
 ];
 
 export const STORAGE_ADAPTERS: AdapterItem[] = [
@@ -131,7 +132,7 @@ export const FAQS = [
   {
     question: "Which databases are supported?",
     answer:
-      "MySQL, MariaDB, PostgreSQL, MongoDB, SQLite, Redis, Valkey, and Microsoft SQL Server, with more engines added regularly.",
+      "MySQL, MariaDB, PostgreSQL, MongoDB, SQLite, Redis, Valkey, Microsoft SQL Server, and Firebird (beta), with more engines added regularly.",
   },
   {
     question: "Is there a hosted or cloud version?",

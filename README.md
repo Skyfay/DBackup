@@ -19,6 +19,7 @@
   <img src="https://img.shields.io/badge/Redis-DC382D?logo=redis&logoColor=white" alt="Redis">
   <img src="https://img.shields.io/badge/Valkey-4B6BFB?logoColor=white" alt="Valkey">
   <img src="https://custom-icon-badges.demolab.com/badge/Microsoft%20SQL%20Server-CC2927?logo=mssqlserver-white&logoColor=white" alt="MSSQL">
+  <img src="https://img.shields.io/badge/Firebird-F62817?logo=firebird&logoColor=white" alt="Firebird">
   <br>
   <img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="License">
   <img src="https://img.shields.io/docker/pulls/skyfay/dbackup?logo=docker&logoColor=white" alt="Docker Pulls">
@@ -58,7 +59,7 @@ Whether you're running a single MySQL database or managing multiple PostgreSQL, 
 
 ### 🗄️ Database Backup
 
-- **8 Database Engines** - MySQL, MariaDB, PostgreSQL, MongoDB, SQLite, Redis, Valkey, and Microsoft SQL Server
+- **9 Database Engines** - MySQL, MariaDB, PostgreSQL, MongoDB, SQLite, Redis, Valkey, Microsoft SQL Server, and Firebird (beta)
 - **Selective Database Backup** - Choose exactly which databases to back up per job instead of creating separate sources for each database
 - **Multi-Database Jobs** - Back up multiple databases from a single source in one job with a unified TAR archive format
 - **AES-256-GCM Encryption** - Encrypt backups with managed Encryption Profiles, key rotation, and downloadable Recovery Kits for offline decryption
@@ -86,7 +87,7 @@ Whether you're running a single MySQL database or managing multiple PostgreSQL, 
 - **Live Backup Progress** - Real-time progress tracking shows exactly what's happening during backup and restore operations
 - **Interactive Dashboard** - Activity charts, job status overview, KPI cards, and auto-refreshing activity feeds
 - **Backup Calendar** - GitHub-style 12-month heatmap showing backup activity and success/failure patterns at a glance
-- **Database Explorer** - Browse databases, tables, and live data directly from DBackup with server-side pagination, full-text search, schema inspection, and deep-link URL support across all 7 database engines
+- **Database Explorer** - Browse databases, tables, and live data directly from DBackup with server-side pagination, full-text search, schema inspection, and deep-link URL support across all 8 database engines
 - **Database Version History** - Automatic tracking of database engine version changes over time with a timeline chart and change log
 - **Storage Usage History** - Track storage growth over time with area charts and trend indicators
 - **Execution History** - Full log of every backup and restore with duration, file size, status, and error details
@@ -170,6 +171,7 @@ Open [https://localhost:3000](https://localhost:3000) and create your admin acco
 | Valkey | 7.2+ | Direct, SSH | Guided |
 | SQLite | 3.x | Local, SSH | Yes |
 | Microsoft SQL Server | 2017, 2019, 2022, Azure SQL Edge | Direct (+ SSH for file transfer) | Yes |
+| Firebird (beta) | 3.x, 4.x, 5.x | Direct, SSH | Yes (pre-configured aliases) |
 
 ## ☁️ Supported Destinations
 

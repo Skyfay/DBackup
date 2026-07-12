@@ -19,7 +19,7 @@ hero:
 features:
   - icon: 🗄️
     title: Multi-Database Support
-    details: Supports MySQL, MariaDB, PostgreSQL, MongoDB, SQLite, Redis, Valkey, and Microsoft SQL Server.
+    details: Supports MySQL, MariaDB, PostgreSQL, MongoDB, SQLite, Redis, Valkey, Microsoft SQL Server, and Firebird (beta).
   - icon: 🔒
     title: Backup Encryption
     details: AES-256-GCM encryption for backup files with managed Encryption Profiles, key rotation, and offline Recovery Kits for manual decryption without DBackup.
@@ -55,7 +55,7 @@ features:
     details: Interactive charts, real-time progress tracking, 12-month Backup Calendar heatmap, storage usage history, and auto-refreshing activity feeds.
   - icon: 🗂️
     title: Database Explorer
-    details: Browse databases, tables, and live data directly from DBackup. Server-side pagination, full-text search, schema inspection, deep-link URLs, and database version history tracking - for all 7 database engines.
+    details: Browse databases, tables, and live data directly from DBackup. Server-side pagination, full-text search, schema inspection, deep-link URLs, and database version history tracking - for all 8 database engines.
   - icon: 🔍
     title: Storage Explorer
     details: Browse backup files across all destinations, inspect metadata, download files, or generate direct download links.
@@ -129,6 +129,7 @@ Then open [https://localhost:3000](https://localhost:3000) and create your first
 | **Valkey** | 7.2+ | Direct, SSH | Guided |
 | **SQLite** | 3.x | Local, SSH | Yes |
 | **Microsoft SQL Server** | 2017, 2019, 2022, Azure SQL Edge | Direct (+ SSH file transfer) | Yes |
+| **Firebird** (Beta) | 3.x, 4.x, 5.x | Direct, SSH | Yes (pre-configured aliases) |
 
 == ☁️ Storage
 

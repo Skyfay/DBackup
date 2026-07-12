@@ -7,7 +7,7 @@ All notable changes to DBackup are documented here.
 
 ### ✨ Features
 
-- **Firebird**: Added Firebird (3.x/4.x/5.x) as a supported database source, with direct and SSH connection modes.
+- **Firebird**: Added Firebird (3.x/4.x/5.x) as a supported database source, with direct and SSH connection modes. Marked as Beta in the source type picker.
 - **website**: Launched a new website at dbackup.app with a blog, roadmap page, and product tour.
 
 ### 🐛 Bug Fixes

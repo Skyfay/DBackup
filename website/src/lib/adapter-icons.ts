@@ -95,3 +95,13 @@ const ADAPTER_COLOR_MAP: Record<string, string> = {
 export function getAdapterColor(adapterId: string): string | undefined {
   return ADAPTER_COLOR_MAP[adapterId];
 }
+
+// These logos bake in dark navy/teal fills with no light variant, so they nearly
+// disappear against the dark tinted circle used in dark mode. Brighten them via
+// a CSS filter rather than swapping backgrounds, to keep the same circle look
+// as every other icon.
+const LOW_DARK_MODE_CONTRAST = new Set(["mysql", "mariadb", "sqlite"]);
+
+export function needsDarkModeBoost(adapterId: string): boolean {
+  return LOW_DARK_MODE_CONTRAST.has(adapterId);
+}

@@ -137,7 +137,7 @@ RUN --mount=type=cache,id=next-cache,target=/app/.next/cache \
 FROM base AS runner
 WORKDIR /app
 
-COPY --from=builder --link --chown=1001:1001 scripts ./scripts
+COPY --from=builder --link --chown=1001:1001 /app/scripts/decrypt_backup.js ./scripts/decrypt_backup.js
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1

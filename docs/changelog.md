@@ -14,6 +14,7 @@ All notable changes to DBackup are documented here.
 
 - **Redis**: Database Explorer now shows a key count per database instead of always blank.
 - **rsync**: Fixed SSH private-key destinations failing with "Too many authentication failures" when the local SSH agent has other keys loaded.
+- **vault**: Recovery Kit downloads now include `decrypt_backup.js` instead of a missing-script warning. ([#120](https://github.com/Skyfay/DBackup/issues/120))
 
 ### 🔧 CI/CD
 

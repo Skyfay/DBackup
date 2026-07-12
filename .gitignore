@@ -61,6 +61,9 @@ storage/avatars/*
 # Jetbrains
 .idea
 
+# Claude Code local config
+.claude
+
 # VSCode
 .vscode
 

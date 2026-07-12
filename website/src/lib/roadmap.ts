@@ -214,6 +214,15 @@ export interface ShippedItem {
 
 export const SHIPPED_ITEMS: ShippedItem[] = [
   {
+    slug: "firebird-support",
+    title: "Firebird Support",
+    description:
+      "Firebird (3.x/4.x/5.x) as a supported database source, with direct and SSH connection modes.",
+    version: "v2.10.0",
+    releaseDate: "2026-07-12",
+    changelogAnchor: "v2-10-0-firebird-support-new-website-and-multiple-bug-fixes",
+  },
+  {
     slug: "valkey-support",
     title: "Valkey Database Support",
     description: "Valkey as a database source, using the same RDB backup mechanism as Redis.",

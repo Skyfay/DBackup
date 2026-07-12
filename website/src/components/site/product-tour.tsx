@@ -8,21 +8,67 @@ import { SectionHeading } from "@/components/site/section-heading";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
-// Only the overview/dashboard screenshot currently has a light-theme capture
-// (docs/public/screenshots/dashboard-light-theme.png) - the rest are dark-only
-// until matching light-mode captures exist for them too.
 const SCREENSHOTS = [
   {
     id: "overview",
     label: "Overview",
-    src: "/screenshots/overview.png",
-    lightSrc: "/screenshots/dashboard-light-theme.png",
+    src: "/screenshots/dashboard.png",
+    lightSrc: "/screenshots/dashboard-light.png",
   },
-  { id: "jobs", label: "Jobs", src: "/screenshots/jobs.png" },
-  { id: "storage", label: "Storage Explorer", src: "/screenshots/storage-explorer.png" },
-  { id: "database", label: "Database Explorer", src: "/screenshots/database-explorer.png" },
-  { id: "vault", label: "Vault", src: "/screenshots/vault.png" },
-  { id: "security", label: "Security", src: "/screenshots/security.png" },
+  {
+    id: "sources",
+    label: "Sources",
+    src: "/screenshots/sources.png",
+    lightSrc: "/screenshots/sources-light.png",
+  },
+  {
+    id: "jobs",
+    label: "Jobs",
+    src: "/screenshots/edit-job.png",
+    lightSrc: "/screenshots/edit-job-light.png",
+  },
+  {
+    id: "storage",
+    label: "Storage Explorer",
+    src: "/screenshots/storage-explorer.png",
+    lightSrc: "/screenshots/storage-explorer-light.png",
+  },
+  {
+    id: "database",
+    label: "Database Explorer",
+    src: "/screenshots/database-explorer.png",
+    lightSrc: "/screenshots/database-explorer-light.png",
+  },
+  {
+    id: "history",
+    label: "History",
+    src: "/screenshots/history-live-log.png",
+    lightSrc: "/screenshots/history-live-log-light.png",
+  },
+  {
+    id: "templates",
+    label: "Templates",
+    src: "/screenshots/templates.png",
+    lightSrc: "/screenshots/templates-light.png",
+  },
+  {
+    id: "users",
+    label: "Users & Groups",
+    src: "/screenshots/user-groups.png",
+    lightSrc: "/screenshots/user-groups-light.png",
+  },
+  {
+    id: "settings",
+    label: "Settings",
+    src: "/screenshots/settings.png",
+    lightSrc: "/screenshots/settings-light.png",
+  },
+  {
+    id: "profile",
+    label: "Profile",
+    src: "/screenshots/profile.png",
+    lightSrc: "/screenshots/profile-light.png",
+  },
 ];
 
 const AUTO_ADVANCE_MS = 5000;
@@ -120,7 +166,9 @@ export function ProductTour() {
                 priority={i === 0}
                 loading={i === 0 ? undefined : "eager"}
                 className={cn(
-                  "object-cover object-top transition-opacity duration-500 motion-reduce:transition-none",
+                  // Scaled up slightly to mask sub-pixel rounding gaps that object-cover
+                  // can leave at certain viewport widths (e.g. exactly 1920px).
+                  "scale-[1.02] object-cover object-top transition-opacity duration-500 motion-reduce:transition-none",
                   i === index ? "opacity-100" : "opacity-0"
                 )}
               />

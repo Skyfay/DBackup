@@ -1,20 +1,36 @@
 import type { MetadataRoute } from "next";
-import { getAllSlugs } from "@/lib/blog";
-
-const BASE_URL = "https://dbackup.app";
+import { getAllPosts } from "@/lib/blog";
+import { SITE_URL } from "@/lib/site";
 
 export const dynamic = "force-static";
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const posts = getAllSlugs().map((slug) => ({
-    url: `${BASE_URL}/blog/${slug}`,
-    lastModified: new Date(),
+  const posts = getAllPosts().map((post) => ({
+    url: `${SITE_URL}/blog/${post.slug}`,
+    lastModified: new Date(post.date),
+    changeFrequency: "monthly" as const,
+    priority: 0.6,
   }));
 
   return [
-    { url: BASE_URL, lastModified: new Date() },
-    { url: `${BASE_URL}/blog`, lastModified: new Date() },
-    { url: `${BASE_URL}/roadmap`, lastModified: new Date() },
+    {
+      url: SITE_URL,
+      lastModified: new Date(),
+      changeFrequency: "weekly",
+      priority: 1.0,
+    },
+    {
+      url: `${SITE_URL}/blog`,
+      lastModified: new Date(),
+      changeFrequency: "daily",
+      priority: 0.8,
+    },
+    {
+      url: `${SITE_URL}/roadmap`,
+      lastModified: new Date(),
+      changeFrequency: "daily",
+      priority: 0.8,
+    },
     ...posts,
   ];
 }

@@ -7,6 +7,9 @@ export const metadata = {
   title: "Roadmap",
   description:
     "What's shipped, what's actively being built, and what's on the wishlist for DBackup.",
+  alternates: {
+    canonical: "/roadmap",
+  },
 };
 
 export default function RoadmapPage() {
@@ -14,6 +17,7 @@ export default function RoadmapPage() {
     <div>
       <div className="mx-auto max-w-6xl px-6 pt-20 pb-16 sm:pt-24">
         <SectionHeading
+          as="h1"
           eyebrow="Roadmap"
           title="What's next for DBackup"
           description="Ideas, active work, and shipped history - no promised dates, just an honest status."

@@ -4,6 +4,9 @@ import { ThemeProvider } from "@/components/theme/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Nav } from "@/components/site/nav";
 import { Footer } from "@/components/site/footer";
+import { JsonLd } from "@/components/site/json-ld";
+import { SITE_URL } from "@/lib/site";
+import { GITHUB_REPO, DISCORD_URL } from "@/lib/content";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -20,7 +23,7 @@ const TAGLINE =
   "Self-hosted database backup automation with encryption, compression, and smart retention.";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://dbackup.app"),
+  metadataBase: new URL(SITE_URL),
   title: {
     default: "DBackup - Database Backup Automation",
     template: "%s | DBackup",
@@ -33,7 +36,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "DBackup - Database Backup Automation",
     description: TAGLINE,
-    url: "https://dbackup.app",
+    url: SITE_URL,
     siteName: "DBackup",
     type: "website",
   },
@@ -42,6 +45,22 @@ export const metadata: Metadata = {
     title: "DBackup - Database Backup Automation",
     description: TAGLINE,
   },
+};
+
+const ORGANIZATION_JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  name: "DBackup",
+  url: SITE_URL,
+  logo: `${SITE_URL}/logo.png`,
+  sameAs: [`https://github.com/${GITHUB_REPO}`, DISCORD_URL],
+};
+
+const WEBSITE_JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: "DBackup",
+  url: SITE_URL,
 };
 
 export default function RootLayout({
@@ -54,6 +73,8 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased flex min-h-screen flex-col`}
       >
+        <JsonLd data={ORGANIZATION_JSON_LD} />
+        <JsonLd data={WEBSITE_JSON_LD} />
         <ThemeProvider
           attribute="class"
           defaultTheme="system"

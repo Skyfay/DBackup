@@ -6,12 +6,14 @@ export function SectionHeading({
   description,
   align = "center",
   className,
+  as: Heading = "h2",
 }: {
   eyebrow?: string;
   title: string;
   description?: string;
   align?: "center" | "left";
   className?: string;
+  as?: "h1" | "h2";
 }) {
   return (
     <div
@@ -26,14 +28,14 @@ export function SectionHeading({
           {eyebrow}
         </p>
       )}
-      <h2
+      <Heading
         className={cn(
           "text-3xl font-bold leading-[1.1] tracking-tight sm:text-4xl",
           eyebrow && "mt-2"
         )}
       >
         {title}
-      </h2>
+      </Heading>
       {description && (
         <p className="mt-3 text-base leading-relaxed text-muted-foreground sm:text-lg">
           {description}

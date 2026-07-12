@@ -6,6 +6,9 @@ export const metadata = {
   title: "Blog",
   description:
     "Announcements, tutorials, and behind-the-scenes posts from the DBackup team.",
+  alternates: {
+    canonical: "/blog",
+  },
 };
 
 export default function BlogIndexPage() {
@@ -14,6 +17,7 @@ export default function BlogIndexPage() {
   return (
     <div className="mx-auto max-w-3xl px-6 py-20 sm:py-24">
       <SectionHeading
+        as="h1"
         eyebrow="Blog"
         title="Announcements & tutorials"
         description="Notes on what we're building and how to get the most out of DBackup."

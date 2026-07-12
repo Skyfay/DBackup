@@ -3,6 +3,8 @@ import { MDXRemote } from "next-mdx-remote/rsc";
 import { notFound } from "next/navigation";
 import rehypePrettyCode from "rehype-pretty-code";
 import { CodeBlock } from "@/components/site/code-block";
+import { JsonLd } from "@/components/site/json-ld";
+import { SITE_URL } from "@/lib/site";
 
 // CodeBlock renders its own theme-aware `bg-card` box (not Typography's fixed
 // dark `prose-pre` background), so a light/dark theme pair here tracks the
@@ -24,7 +26,13 @@ export async function generateMetadata({
   const { slug } = await params;
   if (!getAllSlugs().includes(slug)) return {};
   const post = getPostBySlug(slug);
-  return { title: post.title, description: post.excerpt };
+  return {
+    title: post.title,
+    description: post.excerpt,
+    alternates: {
+      canonical: `/blog/${slug}`,
+    },
+  };
 }
 
 export default async function BlogPostPage({
@@ -36,8 +44,19 @@ export default async function BlogPostPage({
   if (!getAllSlugs().includes(slug)) notFound();
   const post = getPostBySlug(slug);
 
+  const blogPostingJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "BlogPosting",
+    headline: post.title,
+    description: post.excerpt,
+    datePublished: post.date,
+    author: { "@type": "Person", name: post.author },
+    url: `${SITE_URL}/blog/${slug}`,
+  };
+
   return (
     <article className="mx-auto max-w-3xl px-6 py-20 sm:py-24">
+      <JsonLd data={blogPostingJsonLd} />
       <p className="text-sm text-muted-foreground">
         {new Date(post.date).toLocaleDateString("en-US", {
           year: "numeric",

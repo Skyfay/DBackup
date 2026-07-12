@@ -81,7 +81,7 @@ export default defineConfig({
         items: [
           { text: 'Screenshots', link: '/screenshots' },
           { text: 'Changelog', link: '/changelog' },
-          { text: 'Roadmap', link: '/roadmap' },
+          { text: 'Roadmap', link: 'https://dbackup.app/roadmap' },
           { text: 'GitHub', link: 'https://github.com/Skyfay/DBackup' }
         ]
       }

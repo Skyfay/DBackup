@@ -214,7 +214,7 @@ export async function stepFinalize(ctx: RunnerContext) {
                         });
                     }
 
-                    await notifyWithTimeout(() => notifyAdapter.send(channelConfig, payload.message, {
+                    const sent = await notifyWithTimeout(() => notifyAdapter.send(channelConfig, payload.message, {
                         success: payload.success,
                         eventType,
                         title: payload.title,
@@ -222,6 +222,9 @@ export async function stepFinalize(ctx: RunnerContext) {
                         color: payload.color,
                         badge: payload.badge,
                     }));
+                    if (sent === false) {
+                        throw new Error("Notification delivery failed (adapter returned false)");
+                    }
 
                     await recordNotificationLog({
                         eventType,

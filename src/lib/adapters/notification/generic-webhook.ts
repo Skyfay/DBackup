@@ -58,11 +58,12 @@ export const GenericWebhookAdapter: NotificationAdapter = {
                       fields: [],
                   });
 
-            const response = await fetch(config.webhookUrl, {
-                method: config.method || "POST",
-                headers,
-                body,
-            });
+            const method = (config.method || "POST").toUpperCase();
+            const fetchOpts: RequestInit = { method, headers };
+            if (method !== "GET" && method !== "HEAD") {
+                fetchOpts.body = body;
+            }
+            const response = await fetch(config.webhookUrl, fetchOpts);
 
             if (response.ok) {
                 return { success: true, message: `Webhook returned ${response.status}` };
@@ -114,11 +115,12 @@ export const GenericWebhookAdapter: NotificationAdapter = {
                 });
             }
 
-            const response = await fetch(config.webhookUrl, {
-                method: config.method || "POST",
-                headers,
-                body,
-            });
+            const method = (config.method || "POST").toUpperCase();
+            const fetchOpts: RequestInit = { method, headers };
+            if (method !== "GET" && method !== "HEAD") {
+                fetchOpts.body = body;
+            }
+            const response = await fetch(config.webhookUrl, fetchOpts);
 
             if (!response.ok) {
                 const responseBody = await response.text().catch(() => "");

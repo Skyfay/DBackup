@@ -213,6 +213,7 @@ export interface ShippedItem {
   releaseDate: string;
   changelogAnchor?: string;
   link?: { href: string; label: string };
+  star?: boolean;
 }
 
 export const SHIPPED_ITEMS: ShippedItem[] = [
@@ -222,6 +223,7 @@ export const SHIPPED_ITEMS: ShippedItem[] = [
     description: "DBackup crossed 200 stars on GitHub, thanks to everyone in the community.",
     releaseDate: "2026-07-14",
     link: { href: `https://github.com/${GITHUB_REPO}/stargazers`, label: "View on GitHub" },
+    star: true,
   },
   {
     slug: "firebird-support",
@@ -298,6 +300,7 @@ export const SHIPPED_ITEMS: ShippedItem[] = [
     description: "DBackup crossed 100 stars on GitHub.",
     releaseDate: "2026-05-04",
     link: { href: `https://github.com/${GITHUB_REPO}/stargazers`, label: "View on GitHub" },
+    star: true,
   },
   {
     slug: "credential-profile-system",

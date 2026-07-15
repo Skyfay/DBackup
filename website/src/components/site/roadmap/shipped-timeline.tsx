@@ -32,9 +32,9 @@ export function ShippedTimeline() {
               </div>
               <h3 className="relative mt-2 font-semibold">
                 {item.star ? (
-                  <Star className="absolute top-1/2 -left-[1.85rem] size-4 -translate-y-1/2 fill-amber-400 text-amber-400" />
+                  <Star className="absolute top-1/2 -left-[32px] size-4 -translate-y-1/2 fill-amber-400 text-amber-400" />
                 ) : (
-                  <span className="absolute top-1/2 -left-[1.6rem] size-2.5 -translate-y-1/2 rounded-full bg-primary" />
+                  <span className="absolute top-1/2 -left-[29px] size-2.5 -translate-y-1/2 rounded-full bg-primary" />
                 )}
                 {item.title}
               </h3>

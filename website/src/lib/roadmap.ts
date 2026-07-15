@@ -1,3 +1,5 @@
+import { GITHUB_REPO } from "@/lib/content";
+
 export type RoadmapStatus = "idea" | "planned" | "in-progress";
 
 export type RoadmapCategory =
@@ -207,12 +209,20 @@ export interface ShippedItem {
   slug: string;
   title: string;
   description: string;
-  version: string;
+  version?: string;
   releaseDate: string;
   changelogAnchor?: string;
+  link?: { href: string; label: string };
 }
 
 export const SHIPPED_ITEMS: ShippedItem[] = [
+  {
+    slug: "200-github-stars",
+    title: "200 GitHub Stars",
+    description: "DBackup crossed 200 stars on GitHub, thanks to everyone in the community.",
+    releaseDate: "2026-07-14",
+    link: { href: `https://github.com/${GITHUB_REPO}/stargazers`, label: "View on GitHub" },
+  },
   {
     slug: "firebird-support",
     title: "Firebird Support",
@@ -283,6 +293,13 @@ export const SHIPPED_ITEMS: ShippedItem[] = [
     changelogAnchor: "v2-2-0-templates-system-docker-image-update-and-bug-fixes",
   },
   {
+    slug: "100-github-stars",
+    title: "100 GitHub Stars",
+    description: "DBackup crossed 100 stars on GitHub.",
+    releaseDate: "2026-05-04",
+    link: { href: `https://github.com/${GITHUB_REPO}/stargazers`, label: "View on GitHub" },
+  },
+  {
     slug: "credential-profile-system",
     title: "Credential Profile System",
     description:
@@ -339,10 +356,10 @@ export interface Milestone {
 
 export const MILESTONES: Milestone[] = [
   {
-    slug: "200-github-stars",
-    title: "200 GitHub Stars",
+    slug: "300-github-stars",
+    title: "300 GitHub Stars",
     description: "Help DBackup reach its next community milestone.",
-    target: 200,
+    target: 300,
     unit: "stars",
     liveSource: "github-stars",
     fallbackCurrent: 0,

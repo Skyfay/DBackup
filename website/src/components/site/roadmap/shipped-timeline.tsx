@@ -22,7 +22,7 @@ export function ShippedTimeline() {
             <li key={item.slug} className="relative">
               <span className="absolute top-1.5 -left-[1.6rem] size-2.5 rounded-full bg-primary" />
               <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline">{item.version}</Badge>
+                {item.version && <Badge variant="outline">{item.version}</Badge>}
                 <span className="text-xs text-muted-foreground">
                   {new Date(item.releaseDate).toLocaleDateString("en-US", {
                     year: "numeric",
@@ -37,15 +37,17 @@ export function ShippedTimeline() {
               </p>
               <a
                 href={
-                  item.changelogAnchor
-                    ? `${DOCS_URL}/changelog#${item.changelogAnchor}`
-                    : `${DOCS_URL}/changelog`
+                  item.link
+                    ? item.link.href
+                    : item.changelogAnchor
+                      ? `${DOCS_URL}/changelog#${item.changelogAnchor}`
+                      : `${DOCS_URL}/changelog`
                 }
                 target="_blank"
                 rel="noreferrer"
                 className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
               >
-                View in changelog
+                {item.link ? item.link.label : "View in changelog"}
                 <ArrowUpRight className="size-3" />
               </a>
             </li>

@@ -20,11 +20,6 @@ export function ShippedTimeline() {
         <ol className="mt-10 flex flex-col gap-8 border-l border-border pl-6">
           {SHIPPED_ITEMS.map((item) => (
             <li key={item.slug} className="relative">
-              {item.star ? (
-                <Star className="absolute top-0.5 -left-[1.85rem] size-4 fill-amber-400 text-amber-400" />
-              ) : (
-                <span className="absolute top-1.5 -left-[1.6rem] size-2.5 rounded-full bg-primary" />
-              )}
               <div className="flex flex-wrap items-center gap-2">
                 {item.version && <Badge variant="outline">{item.version}</Badge>}
                 <span className="text-xs text-muted-foreground">
@@ -35,7 +30,14 @@ export function ShippedTimeline() {
                   })}
                 </span>
               </div>
-              <h3 className="mt-2 font-semibold">{item.title}</h3>
+              <h3 className="relative mt-2 font-semibold">
+                {item.star ? (
+                  <Star className="absolute top-1/2 -left-[1.85rem] size-4 -translate-y-1/2 fill-amber-400 text-amber-400" />
+                ) : (
+                  <span className="absolute top-1/2 -left-[1.6rem] size-2.5 -translate-y-1/2 rounded-full bg-primary" />
+                )}
+                {item.title}
+              </h3>
               <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
                 {item.description}
               </p>

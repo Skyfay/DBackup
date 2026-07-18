@@ -7,11 +7,11 @@ All notable changes to DBackup are documented here.
 
 ### ✨ Features
 
-- **webhooks**: Generic Webhook notification channels now support `GET` and `HEAD` HTTP methods, for compatibility with heartbeat/push-monitoring services like Uptime Kuma and Healthchecks.io. ([#123](https://github.com/Skyfay/DBackup/issues/123))
+- **webhooks**: Generic Webhook notification channels now support `GET` and `HEAD` HTTP methods, for compatibility with heartbeat/push-monitoring services like Uptime Kuma and Healthchecks.io. Thanks @Shlok-Zanwar ([#123](https://github.com/Skyfay/DBackup/issues/123))
 
 ### 🐛 Bug Fixes
 
-- **notifications**: Fixed webhook and notification deliveries being logged as "Success" even when the adapter failed to send (e.g. DNS errors, timeouts). ([#123](https://github.com/Skyfay/DBackup/issues/123))
+- **notifications**: Fixed webhook and notification deliveries being logged as "Success" even when the adapter failed to send (e.g. DNS errors, timeouts). Thanks @Shlok-Zanwar ([#123](https://github.com/Skyfay/DBackup/issues/123))
 
 ### 🐳 Docker
 

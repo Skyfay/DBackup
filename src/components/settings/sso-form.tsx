@@ -249,8 +249,8 @@ export function SsoForm({ canManageSso }: SsoFormProps) {
 
                         {connections.length === 0 && connectableProviders.length === 0 && (
                             <p className="text-sm text-muted-foreground">
-                                No SSO providers are configured for this instance yet. Ask your administrator to set one
-                                up under Settings &gt; Identity Providers.
+                                No SSO provider is currently available to connect. Ask your administrator if you think
+                                this is unexpected.
                             </p>
                         )}
                     </>

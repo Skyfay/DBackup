@@ -44,6 +44,17 @@ export default async function ProfilePage() {
         }
     }).then(acc => !!acc);
 
+    // Hide the SSO tab entirely when there's nothing to show or manage: no
+    // provider is configured system-wide, and this user has no (possibly
+    // orphaned) SSO account linked either.
+    const [hasAnySsoProvider, hasLinkedSsoAccount] = await Promise.all([
+        prisma.ssoProvider.count().then(count => count > 0),
+        prisma.account.count({
+            where: { userId: session.user.id, NOT: { providerId: "credential" } }
+        }).then(count => count > 0),
+    ]);
+    const showSsoTab = hasAnySsoProvider || hasLinkedSsoAccount;
+
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
@@ -57,7 +68,7 @@ export default async function ProfilePage() {
                     <TabsTrigger value="preferences">Preferences</TabsTrigger>
                     <TabsTrigger value="security">Security</TabsTrigger>
                     <TabsTrigger value="sessions">Sessions</TabsTrigger>
-                    <TabsTrigger value="sso">SSO</TabsTrigger>
+                    {showSsoTab && <TabsTrigger value="sso">SSO</TabsTrigger>}
                 </TabsList>
 
                 <TabsContent value="profile" className="space-y-4">
@@ -97,9 +108,11 @@ export default async function ProfilePage() {
                 <TabsContent value="sessions" className="space-y-4">
                     <SessionsForm />
                 </TabsContent>
-                <TabsContent value="sso" className="space-y-4">
-                    <SsoForm canManageSso={canManageSso} />
-                </TabsContent>
+                {showSsoTab && (
+                    <TabsContent value="sso" className="space-y-4">
+                        <SsoForm canManageSso={canManageSso} />
+                    </TabsContent>
+                )}
             </ProfileTabsRoot>
         </div>
     );

@@ -8,13 +8,18 @@ All notable changes to DBackup are documented here.
 ### ✨ Features
 
 - **webhooks**: Generic Webhook notification channels now support `GET` and `HEAD` HTTP methods, for compatibility with heartbeat/push-monitoring services like Uptime Kuma and Healthchecks.io. Thanks @Shlok-Zanwar ([#123](https://github.com/Skyfay/DBackup/issues/123))
-- **SSO**: Added a new Profile > SSO tab where users can view, disconnect, and manually connect their linked identity provider accounts. ([#128](https://github.com/Skyfay/DBackup/issues/128))
+- **SSO**: Added a new Profile > SSO tab where users can view, disconnect, and manually connect their linked identity provider accounts.
 
 ### 🐛 Bug Fixes
 
 - **notifications**: Fixed webhook and notification deliveries being logged as "Success" even when the adapter failed to send (e.g. DNS errors, timeouts). Thanks @Shlok-Zanwar ([#123](https://github.com/Skyfay/DBackup/issues/123))
 - **explorer**: Fixed Database Explorer UI not updating when navigating with the browser's back/forward buttons. Thanks @Shlok-Zanwar ([#126](https://github.com/Skyfay/DBackup/issues/126))
 - **SSO**: Fixed dashboard-created users failing to link to a matching SSO identity on first login, shown as "Unknown Error". ([#128](https://github.com/Skyfay/DBackup/issues/128))
+- **SSO**: Deleting an identity provider now also removes every user's linked account for it, instead of leaving a permanently stale "Provider no longer available" connection behind.
+
+### 🎨 Improvements
+
+- **SSO**: Deleting an identity provider now warns how many users are connected and lists which of them have no other login method and would be locked out entirely.
 
 ### 🐳 Docker
 

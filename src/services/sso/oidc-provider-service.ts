@@ -190,9 +190,63 @@ export class OidcProviderService {
         });
     }
 
+    /**
+     * Reports who would be affected by deleting a provider, before the delete
+     * actually happens: how many users are linked to it, and which of those
+     * have no other login method (no password, no other SSO account) and
+     * would therefore be completely locked out. Used to warn an admin before
+     * they confirm OidcProviderService.deleteProvider().
+     */
+    static async getDeletionImpact(id: string) {
+        const provider = await prisma.ssoProvider.findUnique({ where: { id } });
+        if (!provider) {
+            return { totalAffectedUsers: 0, usersWithNoOtherLogin: [] as { id: string; name: string; email: string }[] };
+        }
+
+        const linkedAccounts = await prisma.account.findMany({
+            where: { providerId: provider.providerId },
+            select: { userId: true },
+        });
+        const affectedUserIds = linkedAccounts.map((a) => a.userId);
+        if (affectedUserIds.length === 0) {
+            return { totalAffectedUsers: 0, usersWithNoOtherLogin: [] as { id: string; name: string; email: string }[] };
+        }
+
+        // Users whose ONLY account row is this provider's - deleting it would leave them with zero.
+        const accountCounts = await prisma.account.groupBy({
+            by: ["userId"],
+            where: { userId: { in: affectedUserIds } },
+            _count: { id: true },
+        });
+        const lockedOutUserIds = accountCounts.filter((c) => c._count.id <= 1).map((c) => c.userId);
+
+        const usersWithNoOtherLogin = lockedOutUserIds.length > 0
+            ? await prisma.user.findMany({
+                where: { id: { in: lockedOutUserIds } },
+                select: { id: true, name: true, email: true },
+            })
+            : [];
+
+        return { totalAffectedUsers: affectedUserIds.length, usersWithNoOtherLogin };
+    }
+
+    /**
+     * Deletes a provider and any accounts users have linked to it.
+     *
+     * providerId normally gets a random per-creation suffix (see
+     * add-sso-provider-dialog.tsx), but that field is editable - an admin can
+     * manually reuse an old providerId for a brand new provider. We cascade
+     * the delete regardless: a removed provider should never leave old links
+     * that could silently reactivate under a reused id without a fresh SSO
+     * login re-verifying the connection. Affected users just re-link the
+     * next time they sign in via that provider (see account-linking config
+     * in src/lib/auth/index.ts).
+     */
     static async deleteProvider(id: string) {
-        return prisma.ssoProvider.delete({
-            where: { id }
+        return prisma.$transaction(async (tx) => {
+            const provider = await tx.ssoProvider.findUniqueOrThrow({ where: { id } });
+            await tx.account.deleteMany({ where: { providerId: provider.providerId } });
+            return tx.ssoProvider.delete({ where: { id } });
         });
     }
 

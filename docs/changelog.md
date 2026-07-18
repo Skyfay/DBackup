@@ -33,6 +33,10 @@ All notable changes to DBackup are documented here.
 - **deps**: Bumped `@aws-sdk/client-s3` and `@aws-sdk/lib-storage` to v3.1090.0, `node-cron` to v4.6.0, `radix-ui` to v1.6.2, and `react-hook-form` to v7.82.0.
 - **deps**: Bumped `googleapis` to v173.0.0, `rate-limiter-flexible` to v11.2.0, and `react-day-picker` to v10.0.1 (app); `next-mdx-remote` to v6.0.0 (website); `vitepress-plugin-tabs` to v0.9.1 (docs).
 
+### 📝 Documentation
+
+- **api-docs**: Synced the standalone API reference deployment with the in-app spec, which was missing the entire Credentials/Vault section, and documented 8 previously-undocumented endpoints (version history, database table browsing, dashboard calendar, storage verification, and cloud storage OAuth authorization).
+
 ### 🐳 Docker
 
 - **Image**: `skyfay/dbackup:vNEXT`

@@ -2,6 +2,25 @@
 
 All notable changes to DBackup are documented here.
 
+## vNEXT
+*Release: In Progress*
+
+### ✨ Features
+
+- **webhooks**: Generic Webhook notification channels now support `GET` and `HEAD` HTTP methods, for compatibility with heartbeat/push-monitoring services like Uptime Kuma and Healthchecks.io. ([#123](https://github.com/Skyfay/DBackup/issues/123))
+
+### 🐛 Bug Fixes
+
+- **notifications**: Fixed webhook and notification deliveries being logged as "Success" even when the adapter failed to send (e.g. DNS errors, timeouts). ([#123](https://github.com/Skyfay/DBackup/issues/123))
+
+### 🐳 Docker
+
+- **Image**: `skyfay/dbackup:vNEXT`
+- **Also tagged as**: `latest`, `vNEXT`
+- **CI Image**: `skyfay/dbackup:ci`
+- **Platforms**: linux/amd64, linux/arm64
+
+
 ## v2.10.0 - Firebird Support, New Website, and Multiple Bug Fixes
 *Released: July 12, 2026*
 

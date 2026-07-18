@@ -25,6 +25,10 @@ All notable changes to DBackup are documented here.
 
 - **SSO**: Deleting an identity provider now warns how many users are connected and lists which of them have no other login method and would be locked out entirely.
 
+### 🔄 Changed
+
+- **deps**: Bumped minor/patch versions for `better-auth`, `@better-auth/sso`, `@better-auth/passkey`, `next`, `react`, `react-dom`, `nodemailer`, `tailwindcss`, `@tailwindcss/postcss`, `vitest`, `@vitest/coverage-v8`, `vue`, and 11 `@radix-ui/react-*` packages.
+
 ### 🐳 Docker
 
 - **Image**: `skyfay/dbackup:vNEXT`

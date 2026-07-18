@@ -21,26 +21,26 @@
     "clsx": "^2.1.1",
     "gray-matter": "^4.0.3",
     "lucide-react": "^1.17.0",
-    "next": "16.2.6",
+    "next": "16.2.10",
     "next-mdx-remote": "^5.0.0",
     "next-themes": "^0.4.6",
     "radix-ui": "^1.6.2",
-    "react": "19.2.6",
-    "react-dom": "19.2.6",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
     "rehype-pretty-code": "^0.14.4",
     "shiki": "^4.3.1",
     "tailwind-merge": "^3.6.0",
     "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.3.0",
+    "@tailwindcss/postcss": "^4.3.3",
     "@tailwindcss/typography": "^0.5.16",
     "@types/node": "^20.19.37",
     "@types/react": "^19.2.15",
     "@types/react-dom": "^19.2.3",
     "eslint": "^9.39.4",
-    "eslint-config-next": "16.2.6",
-    "tailwindcss": "^4.3.0",
+    "eslint-config-next": "16.2.10",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3"
   }
 }

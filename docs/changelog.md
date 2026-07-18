@@ -12,6 +12,7 @@ All notable changes to DBackup are documented here.
 ### 🐛 Bug Fixes
 
 - **notifications**: Fixed webhook and notification deliveries being logged as "Success" even when the adapter failed to send (e.g. DNS errors, timeouts). Thanks @Shlok-Zanwar ([#123](https://github.com/Skyfay/DBackup/issues/123))
+- **explorer**: Fixed Database Explorer UI not updating when navigating with the browser's back/forward buttons. Thanks @Shlok-Zanwar ([#126](https://github.com/Skyfay/DBackup/issues/126))
 
 ### 🐳 Docker
 

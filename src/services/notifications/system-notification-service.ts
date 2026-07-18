@@ -196,7 +196,7 @@ async function sendThroughChannel(
   }
 
   try {
-    await notifyWithTimeout(() => adapter.send(channelConfig, payload.message, {
+    const sent = await notifyWithTimeout(() => adapter.send(channelConfig, payload.message, {
       success: payload.success,
       eventType,
       title: payload.title,
@@ -204,6 +204,9 @@ async function sendThroughChannel(
       color: payload.color,
       badge: payload.badge,
     }));
+    if (sent === false) {
+      throw new Error("Notification delivery failed (adapter returned false)");
+    }
 
     // Record successful send
     await recordNotificationLog({

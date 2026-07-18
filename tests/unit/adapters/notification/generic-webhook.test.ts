@@ -280,5 +280,28 @@ describe("Generic Webhook Adapter", () => {
 
             expect(result).toBe(false);
         });
+
+        it("should omit body when method is GET or HEAD", async () => {
+            mockFetch.mockResolvedValue({ ok: true });
+
+            await GenericWebhookAdapter.send({ ...baseConfig, method: "GET" as any }, "Test message");
+            expect(mockFetch.mock.calls[0][1].method).toBe("GET");
+            expect(mockFetch.mock.calls[0][1].body).toBeUndefined();
+
+            await GenericWebhookAdapter.send({ ...baseConfig, method: "HEAD" as any }, "Test message");
+            expect(mockFetch.mock.calls[1][1].method).toBe("HEAD");
+            expect(mockFetch.mock.calls[1][1].body).toBeUndefined();
+        });
+    });
+
+    describe("test() with GET/HEAD", () => {
+        it("should omit body when method is GET in test()", async () => {
+            mockFetch.mockResolvedValue({ ok: true, status: 200 });
+
+            const result = await GenericWebhookAdapter.test!({ ...baseConfig, method: "GET" as any });
+            expect(result.success).toBe(true);
+            expect(mockFetch.mock.calls[0][1].method).toBe("GET");
+            expect(mockFetch.mock.calls[0][1].body).toBeUndefined();
+        });
     });
 });

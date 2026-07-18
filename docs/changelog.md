@@ -34,6 +34,10 @@ All notable changes to DBackup are documented here.
 
 - **api-docs**: Synced the standalone API reference deployment with the in-app spec, which was missing the entire Credentials/Vault section, and documented 8 previously-undocumented endpoints (version history, database table browsing, dashboard calendar, storage verification, and cloud storage OAuth authorization).
 
+### 🧪 Tests
+
+- **SSO**: Updated the `deleteProvider()` unit test to match the transactional delete (provider + linked accounts) introduced alongside the SSO provider deletion warning.
+
 ### 🐳 Docker
 
 - **Image**: `skyfay/dbackup:vNEXT`

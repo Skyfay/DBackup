@@ -17,6 +17,10 @@ All notable changes to DBackup are documented here.
 - **SSO**: Fixed dashboard-created users failing to link to a matching SSO identity on first login, shown as "Unknown Error". ([#128](https://github.com/Skyfay/DBackup/issues/128))
 - **SSO**: Deleting an identity provider now also removes every user's linked account for it, instead of leaving a permanently stale "Provider no longer available" connection behind.
 
+### 🔒 Security
+
+- **dependencies**: Updated `adm-zip` to v0.6.0, fixing a high-severity vulnerability where a crafted ZIP file could trigger a 4GB memory allocation ([GHSA-xcpc-8h2w-3j85](https://github.com/advisories/GHSA-xcpc-8h2w-3j85)).
+
 ### 🎨 Improvements
 
 - **SSO**: Deleting an identity provider now warns how many users are connected and lists which of them have no other login method and would be locked out entirely.

@@ -135,11 +135,16 @@ describe('OidcProviderService', () => {
     });
 
     describe('deleteProvider()', () => {
-        it('deletes the provider by id', async () => {
+        it('deletes the provider and its linked accounts inside a transaction', async () => {
+            prismaMock.$transaction.mockImplementation((cb: any) => cb(prismaMock));
+            prismaMock.ssoProvider.findUniqueOrThrow.mockResolvedValue(mockProvider as any);
+            prismaMock.account.deleteMany.mockResolvedValue({ count: 1 } as any);
             prismaMock.ssoProvider.delete.mockResolvedValue(mockProvider as any);
 
             await OidcProviderService.deleteProvider('prov-1');
 
+            expect(prismaMock.ssoProvider.findUniqueOrThrow).toHaveBeenCalledWith({ where: { id: 'prov-1' } });
+            expect(prismaMock.account.deleteMany).toHaveBeenCalledWith({ where: { providerId: mockProvider.providerId } });
             expect(prismaMock.ssoProvider.delete).toHaveBeenCalledWith({ where: { id: 'prov-1' } });
         });
     });

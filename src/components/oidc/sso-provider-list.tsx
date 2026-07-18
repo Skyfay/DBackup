@@ -5,8 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { Trash2, ShieldCheck, Box, Settings2, Globe, CheckCircle2, UserPlus, UserX, Copy } from "lucide-react";
-import { deleteSsoProvider, toggleSsoProvider } from "@/app/actions/auth/oidc";
+import { Trash2, ShieldCheck, Box, Settings2, Globe, CheckCircle2, UserPlus, UserX, Copy, Loader2, AlertTriangle } from "lucide-react";
+import { deleteSsoProvider, toggleSsoProvider, getSsoProviderDeletionImpact } from "@/app/actions/auth/oidc";
 import { toast } from "sonner";
 import { EditSsoProviderDialog } from "./edit-sso-provider-dialog";
 import {
@@ -48,8 +48,31 @@ export function SsoProviderList({ providers }: SsoProviderListProps) {
     );
 }
 
+interface DeletionImpact {
+    totalAffectedUsers: number;
+    usersWithNoOtherLogin: { id: string; name: string; email: string }[];
+}
+
 function ProviderCard({ provider }: { provider: SsoProvider }) {
     const [isDeleting, setIsDeleting] = useState(false);
+    const [impact, setImpact] = useState<DeletionImpact | null>(null);
+    const [loadingImpact, setLoadingImpact] = useState(false);
+
+    const handleDialogOpenChange = async (open: boolean) => {
+        if (!open) {
+            setImpact(null);
+            return;
+        }
+        setLoadingImpact(true);
+        try {
+            const result = await getSsoProviderDeletionImpact(provider.id);
+            setImpact(result);
+        } catch (_e) {
+            setImpact({ totalAffectedUsers: 0, usersWithNoOtherLogin: [] });
+        } finally {
+            setLoadingImpact(false);
+        }
+    };
 
     const handleDelete = async () => {
         setIsDeleting(true);
@@ -158,7 +181,7 @@ function ProviderCard({ provider }: { provider: SsoProvider }) {
             <CardFooter className="bg-muted/20 p-3 flex justify-end gap-2">
                  <EditSsoProviderDialog provider={provider} />
 
-                <AlertDialog>
+                <AlertDialog onOpenChange={handleDialogOpenChange}>
                     <AlertDialogTrigger asChild>
                          <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10">
                             <Trash2 className="h-4 w-4 mr-2" />
@@ -169,10 +192,39 @@ function ProviderCard({ provider }: { provider: SsoProvider }) {
                         <AlertDialogHeader>
                             <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
                             <AlertDialogDescription>
-                                This will permanently remove the <b>{provider.name}</b> SSO provider.
-                                Users who authenticated via this provider may lose access if they don&apos;t have a password set.
+                                This will permanently remove the <b>{provider.name}</b> SSO provider and disconnect every
+                                user linked to it - they can re-link by signing in via this provider again, as long as
+                                they have another login method in the meantime.
                             </AlertDialogDescription>
                         </AlertDialogHeader>
+
+                        {loadingImpact ? (
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                Checking affected users...
+                            </div>
+                        ) : impact && impact.totalAffectedUsers > 0 ? (
+                            <div className="space-y-2 text-sm">
+                                <p className="text-muted-foreground">
+                                    {impact.totalAffectedUsers} user{impact.totalAffectedUsers === 1 ? "" : "s"} currently
+                                    connected via this provider will be disconnected.
+                                </p>
+                                {impact.usersWithNoOtherLogin.length > 0 && (
+                                    <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 space-y-1.5">
+                                        <p className="flex items-center gap-1.5 font-medium text-destructive">
+                                            <AlertTriangle className="h-4 w-4 shrink-0" />
+                                            These users have no other login method and will be locked out entirely:
+                                        </p>
+                                        <ul className="list-disc pl-6 text-destructive">
+                                            {impact.usersWithNoOtherLogin.map((u) => (
+                                                <li key={u.id}>{u.name} ({u.email})</li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+                            </div>
+                        ) : null}
+
                         <AlertDialogFooter>
                             <AlertDialogCancel>Cancel</AlertDialogCancel>
                             <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">

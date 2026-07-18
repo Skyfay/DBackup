@@ -208,6 +208,11 @@ export async function updateSsoProvider(input: z.infer<typeof updateProviderSche
 }
 
 
+export async function getSsoProviderDeletionImpact(id: string) {
+    await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    return OidcProviderService.getDeletionImpact(id);
+}
+
 export async function deleteSsoProvider(id: string) {
     await checkPermission(PERMISSIONS.SETTINGS.WRITE);
     try {

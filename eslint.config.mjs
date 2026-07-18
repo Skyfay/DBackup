@@ -15,7 +15,19 @@ const eslintConfig = defineConfig([
           "varsIgnorePattern": "^_",
           "caughtErrorsIgnorePattern": "^_"
         }
-      ]
+      ],
+      // React Compiler correctness rules (eslint-plugin-react-hooks v7, pulled in by
+      // eslint-config-next 16.2.10). We don't enable React Compiler (no `reactCompiler`
+      // flag in next.config.ts), so these are advisory-only here and produce a large
+      // number of false positives against standard fetch-in-effect patterns. Keep
+      // exhaustive-deps and the other stable react-hooks rules enabled.
+      "react-hooks/set-state-in-effect": "off",
+      "react-hooks/purity": "off",
+      "react-hooks/static-components": "off",
+      "react-hooks/immutability": "off",
+      "react-hooks/refs": "off",
+      "react-hooks/incompatible-library": "off",
+      "react-hooks/preserve-manual-memoization": "off"
     },
   },
   // Override default ignores of eslint-config-next.

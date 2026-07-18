@@ -52,6 +52,14 @@ const ERROR_MESSAGES: Record<string, { title: string; description: string }> = {
         title: "Access denied",
         description: "You do not have permission to sign in."
     },
+    sso_account_not_linked: {
+        title: "Account not linked",
+        description: "An account with this email already exists but isn't linked to this SSO provider yet. Contact your administrator to link the accounts."
+    },
+    sso_link_mismatch: {
+        title: "Account not connected",
+        description: "This identity belongs to a different account. Make sure you're signed in to the identity provider with the same email as your DBackup account, then try again."
+    },
     sso_error: {
         title: "SSO Error",
         description: "An error occurred during sign-in. Please try again."

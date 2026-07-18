@@ -184,8 +184,30 @@ export const auth = betterAuth({
         // Default expiry; dynamically overridden per-session via databaseHooks
         expiresIn: DEFAULT_SESSION_DURATION,
         updateAge: 60 * 60 * 24, // Refresh session every 24h
+        // Disable the "fresh session" requirement (better-auth default: 24h).
+        // Sessions here last up to 7 days and no other self-service action in this
+        // app (password change, passkey/2FA management) requires re-authentication,
+        // so unlinkAccount would otherwise fail with SESSION_NOT_FRESH for most users.
+        freshAge: 0,
     },
     databaseHooks: {
+        user: {
+            create: {
+                before: async (user) => {
+                    // Email verification is not used as a feature anywhere in DBackup
+                    // (no verification emails are sent, no login gating on this flag).
+                    // Its only remaining effect is better-auth's SSO account-linking check
+                    // (requireLocalEmailVerified, defaults to true), which otherwise blocks
+                    // linking a dashboard-created user to a matching SSO identity.
+                    return {
+                        data: {
+                            ...user,
+                            emailVerified: true,
+                        },
+                    };
+                },
+            },
+        },
         session: {
             create: {
                 before: async (session) => {

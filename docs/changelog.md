@@ -2,6 +2,50 @@
 
 All notable changes to DBackup are documented here.
 
+## v2.10.1 - Webhook GET/HEAD Support, SSO Improvements, and Multiple Bug Fixes
+*Released: July 18, 2026*
+
+### ✨ Features
+
+- **webhooks**: Generic Webhook notification channels now support `GET` and `HEAD` HTTP methods, for compatibility with heartbeat/push-monitoring services like Uptime Kuma and Healthchecks.io. Thanks @Shlok-Zanwar ([#123](https://github.com/Skyfay/DBackup/issues/123))
+- **SSO**: Added a new Profile > SSO tab where users can view, disconnect, and manually connect their linked identity provider accounts.
+
+### 🐛 Bug Fixes
+
+- **notifications**: Fixed webhook and notification deliveries being logged as "Success" even when the adapter failed to send (e.g. DNS errors, timeouts). Thanks @Shlok-Zanwar ([#123](https://github.com/Skyfay/DBackup/issues/123))
+- **explorer**: Fixed Database Explorer UI not updating when navigating with the browser's back/forward buttons. Thanks @Shlok-Zanwar ([#126](https://github.com/Skyfay/DBackup/issues/126))
+- **SSO**: Fixed dashboard-created users failing to link to a matching SSO identity on first login, shown as "Unknown Error". ([#128](https://github.com/Skyfay/DBackup/issues/128))
+- **SSO**: Deleting an identity provider now also removes every user's linked account for it, instead of leaving a permanently stale "Provider no longer available" connection behind.
+
+### 🔒 Security
+
+- **dependencies**: Updated `adm-zip` to v0.6.0, fixing a high-severity vulnerability where a crafted ZIP file could trigger a 4GB memory allocation ([GHSA-xcpc-8h2w-3j85](https://github.com/advisories/GHSA-xcpc-8h2w-3j85)).
+- **vault**: The Dropbox, Google Drive, and OneDrive OAuth token validation endpoints now require the `credentials:read` permission, closing a gap where any authenticated API key could probe the validity of a stored OAuth credential profile.
+
+### 🎨 Improvements
+
+- **SSO**: Deleting an identity provider now warns how many users are connected and lists which of them have no other login method and would be locked out entirely.
+
+### 🔄 Changed
+
+- **deps**: Bumped minor/patch versions across app, website, and docs, including `better-auth`, `@better-auth/sso`, `@better-auth/passkey`, `next`, `react`, `react-dom`, `nodemailer`, `tailwindcss`, `@tailwindcss/postcss`, `vitest`, `@vitest/coverage-v8`, `vue`, `dropbox` (v10.37.1), `mongodb` (v7.5.0), `mssql` (v12.7.0), `@aws-sdk/client-s3` and `@aws-sdk/lib-storage` (v3.1090.0), `node-cron` (v4.6.0), `radix-ui` (v1.6.2), `react-hook-form` (v7.82.0), `googleapis` (v173.0.0), `rate-limiter-flexible` (v11.2.0), `react-day-picker` (v10.0.1), `next-mdx-remote` (v6.0.0), `vitepress-plugin-tabs` (v0.9.1), `lucide-react` (v1.25.0), and 16 `@radix-ui/react-*` packages.
+
+### 📝 Documentation
+
+- **api-docs**: Synced the standalone API reference deployment with the in-app spec, which was missing the entire Credentials/Vault section, and documented 8 previously-undocumented endpoints (version history, database table browsing, dashboard calendar, storage verification, and cloud storage OAuth authorization).
+
+### 🧪 Tests
+
+- **SSO**: Updated the `deleteProvider()` unit test to match the transactional delete (provider + linked accounts) introduced alongside the SSO provider deletion warning.
+
+### 🐳 Docker
+
+- **Image**: `skyfay/dbackup:v2.10.1`
+- **Also tagged as**: `latest`, `v2`
+- **CI Image**: `skyfay/dbackup:ci`
+- **Platforms**: linux/amd64, linux/arm64
+
+
 ## v2.10.0 - Firebird Support, New Website, and Multiple Bug Fixes
 *Released: July 12, 2026*
 

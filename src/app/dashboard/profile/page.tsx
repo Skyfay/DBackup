@@ -1,12 +1,14 @@
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { headers } from "next/headers";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ProfileTabsRoot } from "@/components/settings/profile-tabs-root";
 import { AppearanceForm } from "@/components/settings/appearance-form";
 import { ProfileForm } from "@/components/settings/profile-form";
 import { SecurityForm } from "@/components/settings/security-form";
 import { PreferencesForm } from "@/components/settings/preferences-form";
 import { SessionsForm } from "@/components/settings/sessions-form";
+import { SsoForm } from "@/components/settings/sso-form";
 import { redirect } from "next/navigation";
 import { getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
@@ -27,6 +29,7 @@ export default async function ProfilePage() {
     const canUpdatePassword = permissions.includes(PERMISSIONS.PROFILE.UPDATE_PASSWORD);
     const canManage2FA = permissions.includes(PERMISSIONS.PROFILE.MANAGE_2FA);
     const canManagePasskeys = permissions.includes(PERMISSIONS.PROFILE.MANAGE_PASSKEYS);
+    const canManageSso = permissions.includes(PERMISSIONS.PROFILE.MANAGE_SSO);
 
     // Fetch user preferences directly from DB (session doesn't include all fields)
     const userPreferences = await prisma.user.findUnique({
@@ -41,19 +44,31 @@ export default async function ProfilePage() {
         }
     }).then(acc => !!acc);
 
+    // Hide the SSO tab entirely when there's nothing to show or manage: no
+    // provider is configured system-wide, and this user has no (possibly
+    // orphaned) SSO account linked either.
+    const [hasAnySsoProvider, hasLinkedSsoAccount] = await Promise.all([
+        prisma.ssoProvider.count().then(count => count > 0),
+        prisma.account.count({
+            where: { userId: session.user.id, NOT: { providerId: "credential" } }
+        }).then(count => count > 0),
+    ]);
+    const showSsoTab = hasAnySsoProvider || hasLinkedSsoAccount;
+
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
                 <h2 className="text-3xl font-bold tracking-tight">Profile</h2>
             </div>
 
-            <Tabs defaultValue="profile" className="space-y-4">
+            <ProfileTabsRoot>
                 <TabsList>
                     <TabsTrigger value="profile">Profile</TabsTrigger>
                     <TabsTrigger value="appearance">Appearance</TabsTrigger>
                     <TabsTrigger value="preferences">Preferences</TabsTrigger>
                     <TabsTrigger value="security">Security</TabsTrigger>
                     <TabsTrigger value="sessions">Sessions</TabsTrigger>
+                    {showSsoTab && <TabsTrigger value="sso">SSO</TabsTrigger>}
                 </TabsList>
 
                 <TabsContent value="profile" className="space-y-4">
@@ -93,7 +108,12 @@ export default async function ProfilePage() {
                 <TabsContent value="sessions" className="space-y-4">
                     <SessionsForm />
                 </TabsContent>
-            </Tabs>
+                {showSsoTab && (
+                    <TabsContent value="sso" className="space-y-4">
+                        <SsoForm canManageSso={canManageSso} />
+                    </TabsContent>
+                )}
+            </ProfileTabsRoot>
         </div>
     );
 }

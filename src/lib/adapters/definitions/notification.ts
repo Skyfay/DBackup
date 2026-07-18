@@ -19,7 +19,7 @@ export const TeamsSchema = z.object({
 
 export const GenericWebhookSchema = z.object({
     webhookUrl: z.string().url("Valid URL is required"),
-    method: z.enum(["POST", "PUT", "PATCH"]).default("POST").describe("HTTP method"),
+    method: z.enum(["POST", "PUT", "PATCH", "GET", "HEAD"]).default("POST").describe("HTTP method"),
     contentType: z.string().default("application/json").describe("Content-Type header"),
     authHeader: z.string().optional().describe("Authorization header value (e.g. Bearer token)"),
     customHeaders: z.string().optional().describe("Additional headers (one per line, Key: Value)"),

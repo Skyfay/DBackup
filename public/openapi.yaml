@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: DBackup API
-  version: 2.10.0
+  version: 2.10.1
   description: |
     REST API for DBackup - a self-hosted database backup automation platform with encryption, compression, and smart retention.
 
@@ -51,6 +51,8 @@ tags:
     description: Poll execution status for running or completed backups/restores
   - name: History
     description: View execution history and notification logs
+  - name: Dashboard
+    description: Dashboard summary and calendar heatmap data
   - name: Adapters
     description: "Manage database sources, storage destinations, and notification channels"
   - name: Connection Testing
@@ -427,6 +429,59 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  # ─── Dashboard ──────────────────────────────────────────────────
+  /dashboard/calendar:
+    get:
+      tags: [Dashboard]
+      summary: Calendar Heatmap Data
+      description: |
+        Returns per-day execution counts for the dashboard calendar heatmap. Without
+        `year`, returns a rolling window of the last 12 months. With `year`, returns
+        every day of that calendar year.
+      operationId: getCalendarData
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: year
+          in: query
+          schema:
+            type: integer
+            minimum: 2000
+            maximum: 2100
+          description: Calendar year (omit for rolling last-12-months view)
+      responses:
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "200":
+          description: Calendar day data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        date:
+                          type: string
+                          format: date
+                        total:
+                          type: integer
+                        completed:
+                          type: integer
+                        failed:
+                          type: integer
+                        partial:
+                          type: integer
+
   # ─── Adapters ──────────────────────────────────────────────────
   /adapters:
     get:
@@ -667,6 +722,55 @@ paths:
                         type: integer
                         example: 1440
 
+  /adapters/{id}/version-history:
+    get:
+      tags: [Adapters]
+      summary: Version History
+      description: Returns detected database version/edition changes over time for a database source.
+      operationId: getVersionHistory
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+          description: Maximum entries to return
+      responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "200":
+          description: Version history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  history:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        previousVersion:
+                          type: [string, "null"]
+                        newVersion:
+                          type: string
+                          example: "8.0.35"
+                        edition:
+                          type: [string, "null"]
+                          example: "MySQL Community Server"
+                        detectedAt:
+                          type: string
+                          format: date-time
+
   # ─── Connection Testing ────────────────────────────────────────
   /adapters/test-connection:
     post:
@@ -848,6 +952,140 @@ paths:
                   message:
                     type: string
                     example: "Backup path is readable and writable"
+
+  /adapters/database-tables:
+    post:
+      tags: [Connection Testing]
+      summary: List Tables
+      description: |
+        Lists tables/collections inside a database for a given source. Provide either
+        `sourceId` (existing adapter) or `adapterId` + `config` (ad-hoc connection).
+      operationId: listDatabaseTables
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [database]
+              properties:
+                sourceId:
+                  type: string
+                  description: Existing source adapter ID (alternative to adapterId + config)
+                adapterId:
+                  type: string
+                  description: Required if no `sourceId`
+                config:
+                  type: object
+                  description: Required if no `sourceId`
+                database:
+                  type: string
+                  example: app_production
+      responses:
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "200":
+          description: Table list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  tables:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/TableInfo"
+
+  /adapters/database-table-data:
+    post:
+      tags: [Connection Testing]
+      summary: Get Table Data
+      description: |
+        Returns paginated row data from a table or collection for a given source. Provide
+        either `sourceId` (existing adapter) or `adapterId` + `config` (ad-hoc connection).
+      operationId: getDatabaseTableData
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [database, table]
+              properties:
+                sourceId:
+                  type: string
+                  description: Existing source adapter ID (alternative to adapterId + config)
+                adapterId:
+                  type: string
+                  description: Required if no `sourceId`
+                config:
+                  type: object
+                  description: Required if no `sourceId`
+                database:
+                  type: string
+                table:
+                  type: string
+                page:
+                  type: integer
+                  default: 1
+                pageSize:
+                  type: integer
+                  default: 50
+                  maximum: 200
+                search:
+                  type: string
+                  description: Optional text search term
+                searchColumn:
+                  type: string
+                  description: Restrict search to this column
+                matchMode:
+                  type: string
+                  enum: [contains, equals, starts, ends]
+                sortBy:
+                  type: string
+                sortDir:
+                  type: string
+                  enum: [asc, desc]
+      responses:
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "200":
+          description: Paginated table row data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  rows:
+                    type: array
+                    items:
+                      type: object
+                  totalCount:
+                    type: integer
+                  columns:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ColumnInfo"
 
   # ─── Storage Explorer ──────────────────────────────────────────
   /storage/{id}/files:
@@ -1108,6 +1346,100 @@ paths:
                     items:
                       type: string
                     example: ["mydb", "app_production"]
+
+  /storage/{id}/verify:
+    post:
+      tags: [Storage Explorer]
+      summary: Verify Backup Checksum
+      description: |
+        Synchronously downloads (or uses native provider verification for S3, Google Drive,
+        OneDrive) a backup file and validates its stored SHA-256/MD5 checksum.
+      operationId: verifyBackup
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  description: Backup file path
+                  example: "backups/mydb_2025-01-15.sql.gz.enc"
+      responses:
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "200":
+          description: Verification result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      status:
+                        type: string
+                        enum: [passed, failed, no_metadata, no_checksum, download_error, skipped]
+                      expectedChecksum:
+                        type: string
+                      actualChecksum:
+                        type: string
+
+  /storage/{id}/verify-async:
+    post:
+      tags: [Storage Explorer]
+      summary: Verify Backup Checksum (Async)
+      description: |
+        Starts an asynchronous checksum verification. Poll the returned `executionId` (or
+        `/executions/{id}`) to track progress, same as `/storage/{id}/restore`.
+      operationId: verifyBackupAsync
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  description: Backup file path
+                  example: "backups/mydb_2025-01-15.sql.gz.enc"
+      responses:
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "200":
+          description: Verification started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  executionId:
+                    type: string
 
   /storage/{id}/history:
     get:
@@ -1409,6 +1741,250 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+
+  # ─── OAuth Authorization (Vault) ────────────────────────────────
+  /adapters/dropbox/auth:
+    post:
+      tags: [Vault]
+      summary: Generate Dropbox OAuth URL
+      description: |
+        Generates a Dropbox OAuth authorization URL for an `OAUTH` credential profile.
+        This starts a browser-based consent flow - opening the returned `authUrl` and
+        completing consent writes the resulting refresh token back into the profile.
+      operationId: dropboxAuth
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [credentialId]
+              properties:
+                credentialId:
+                  type: string
+                  description: OAUTH credential profile ID to authorize
+      responses:
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "200":
+          description: Authorization URL generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      authUrl:
+                        type: string
+                        format: uri
+
+  /adapters/dropbox/validate-token:
+    post:
+      tags: [Vault]
+      summary: Validate Dropbox OAuth Token
+      description: Checks whether the stored refresh token for an OAUTH credential profile is still accepted by Dropbox.
+      operationId: dropboxValidateToken
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [credentialId]
+              properties:
+                credentialId:
+                  type: string
+      responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "200":
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                  message:
+                    type: string
+                    example: "Authorization expired. Please re-authorize with Dropbox."
+
+  /adapters/google-drive/auth:
+    post:
+      tags: [Vault]
+      summary: Generate Google Drive OAuth URL
+      description: |
+        Generates a Google OAuth authorization URL for an `OAUTH` credential profile.
+        This starts a browser-based consent flow - opening the returned `authUrl` and
+        completing consent writes the resulting refresh token back into the profile.
+      operationId: googleDriveAuth
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [credentialId]
+              properties:
+                credentialId:
+                  type: string
+                  description: OAUTH credential profile ID to authorize
+      responses:
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "200":
+          description: Authorization URL generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      authUrl:
+                        type: string
+                        format: uri
+
+  /adapters/google-drive/validate-token:
+    post:
+      tags: [Vault]
+      summary: Validate Google Drive OAuth Token
+      description: Checks whether the stored refresh token for an OAUTH credential profile is still accepted by Google.
+      operationId: googleDriveValidateToken
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [credentialId]
+              properties:
+                credentialId:
+                  type: string
+      responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "200":
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                  message:
+                    type: string
+                    example: "Authorization expired. Please re-authorize with Google."
+
+  /adapters/onedrive/auth:
+    post:
+      tags: [Vault]
+      summary: Generate OneDrive OAuth URL
+      description: |
+        Generates a Microsoft OAuth authorization URL for an `OAUTH` credential profile.
+        This starts a browser-based consent flow - opening the returned `authUrl` and
+        completing consent writes the resulting refresh token back into the profile.
+      operationId: onedriveAuth
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [credentialId]
+              properties:
+                credentialId:
+                  type: string
+                  description: OAUTH credential profile ID to authorize
+      responses:
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "200":
+          description: Authorization URL generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      authUrl:
+                        type: string
+                        format: uri
+
+  /adapters/onedrive/validate-token:
+    post:
+      tags: [Vault]
+      summary: Validate OneDrive OAuth Token
+      description: Checks whether the stored refresh token for an OAUTH credential profile is still accepted by Microsoft.
+      operationId: onedriveValidateToken
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [credentialId]
+              properties:
+                credentialId:
+                  type: string
+      responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "200":
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                  message:
+                    type: string
+                    example: "Authorization expired. Please re-authorize with Microsoft."
 
   # ─── Settings ──────────────────────────────────────────────────
   /settings/system-tasks:
@@ -2078,6 +2654,40 @@ components:
         tableCount:
           type: integer
           example: 42
+
+    TableInfo:
+      type: object
+      description: A table, view, or collection inside a database.
+      properties:
+        name:
+          type: string
+          example: users
+        rowCount:
+          type: integer
+          description: Approximate row/document count. Omitted if not available.
+        sizeInBytes:
+          type: integer
+          description: Omitted if not available.
+        type:
+          type: string
+          enum: [table, view, collection, materialized_view]
+          default: table
+
+    ColumnInfo:
+      type: object
+      description: Metadata for a single column (or document field) in a table/collection.
+      properties:
+        name:
+          type: string
+        dataType:
+          type: string
+          example: varchar(255)
+        nullable:
+          type: boolean
+        primaryKey:
+          type: boolean
+        defaultValue:
+          type: string
 
     HealthCheckEntry:
       type: object

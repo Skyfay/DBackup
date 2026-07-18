@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { getAuthContext } from "@/lib/auth/access-control";
+import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getDecryptedCredentialData } from "@/services/auth/credential-service";
 import type { OAuthData } from "@/lib/core/credentials";
 import { Dropbox } from "dropbox";
@@ -18,6 +19,13 @@ export async function POST(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (!ctx.isSuperAdmin && !ctx.permissions.includes(PERMISSIONS.CREDENTIALS.READ)) {
+        return NextResponse.json(
+            { valid: false, message: "Permission denied: credentials:read required" },
+            { status: 403 }
+        );
     }
 
     try {

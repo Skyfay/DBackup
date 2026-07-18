@@ -1,6 +1,6 @@
 {
   "name": "dbackup-docs",
-  "version": "2.10.0",
+  "version": "2.10.1",
   "private": true,
   "scripts": {
     "dev": "vitepress dev",
@@ -10,7 +10,7 @@
   },
   "devDependencies": {
     "vitepress": "^1.6.0",
-    "vitepress-plugin-tabs": "^0.7.3",
-    "vue": "^3.5.35"
+    "vitepress-plugin-tabs": "^0.9.1",
+    "vue": "^3.5.40"
   }
 }

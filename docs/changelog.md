@@ -20,6 +20,7 @@ All notable changes to DBackup are documented here.
 ### 🔒 Security
 
 - **dependencies**: Updated `adm-zip` to v0.6.0, fixing a high-severity vulnerability where a crafted ZIP file could trigger a 4GB memory allocation ([GHSA-xcpc-8h2w-3j85](https://github.com/advisories/GHSA-xcpc-8h2w-3j85)).
+- **vault**: The Dropbox, Google Drive, and OneDrive OAuth token validation endpoints now require the `credentials:read` permission, closing a gap where any authenticated API key could probe the validity of a stored OAuth credential profile.
 
 ### 🎨 Improvements
 

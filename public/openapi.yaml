@@ -1809,6 +1809,8 @@ paths:
       responses:
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "200":
           description: Validation result
           content:
@@ -1888,6 +1890,8 @@ paths:
       responses:
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "200":
           description: Validation result
           content:
@@ -1967,6 +1971,8 @@ paths:
       responses:
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "200":
           description: Validation result
           content:

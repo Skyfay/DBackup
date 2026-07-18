@@ -28,6 +28,7 @@ All notable changes to DBackup are documented here.
 ### 🔄 Changed
 
 - **deps**: Bumped minor/patch versions for `better-auth`, `@better-auth/sso`, `@better-auth/passkey`, `next`, `react`, `react-dom`, `nodemailer`, `tailwindcss`, `@tailwindcss/postcss`, `vitest`, `@vitest/coverage-v8`, `vue`, and 11 `@radix-ui/react-*` packages.
+- **deps**: Bumped `dropbox` to v10.37.1, `mongodb` to v7.5.0, and `mssql` to v12.7.0.
 
 ### 🐳 Docker
 

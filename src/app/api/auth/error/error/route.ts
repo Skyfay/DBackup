@@ -14,6 +14,8 @@ export async function GET(request: NextRequest) {
         "signup_disabled": "sso_signup_disabled",
         "user_not_found": "sso_user_not_found",
         "access_denied": "sso_access_denied",
+        "account not linked": "sso_account_not_linked",
+        "account_not_linked": "sso_account_not_linked",
     };
 
     const errorCode = errorMessages[error.toLowerCase()] || "sso_error";

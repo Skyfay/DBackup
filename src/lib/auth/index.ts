@@ -186,6 +186,23 @@ export const auth = betterAuth({
         updateAge: 60 * 60 * 24, // Refresh session every 24h
     },
     databaseHooks: {
+        user: {
+            create: {
+                before: async (user) => {
+                    // Email verification is not used as a feature anywhere in DBackup
+                    // (no verification emails are sent, no login gating on this flag).
+                    // Its only remaining effect is better-auth's SSO account-linking check
+                    // (requireLocalEmailVerified, defaults to true), which otherwise blocks
+                    // linking a dashboard-created user to a matching SSO identity.
+                    return {
+                        data: {
+                            ...user,
+                            emailVerified: true,
+                        },
+                    };
+                },
+            },
+        },
         session: {
             create: {
                 before: async (session) => {

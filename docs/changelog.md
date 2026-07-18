@@ -28,11 +28,7 @@ All notable changes to DBackup are documented here.
 
 ### 🔄 Changed
 
-- **deps**: Bumped minor/patch versions for `better-auth`, `@better-auth/sso`, `@better-auth/passkey`, `next`, `react`, `react-dom`, `nodemailer`, `tailwindcss`, `@tailwindcss/postcss`, `vitest`, `@vitest/coverage-v8`, `vue`, and 11 `@radix-ui/react-*` packages.
-- **deps**: Bumped `dropbox` to v10.37.1, `mongodb` to v7.5.0, and `mssql` to v12.7.0.
-- **deps**: Bumped `@radix-ui/react-avatar`, `@radix-ui/react-radio-group`, `@radix-ui/react-select`, `@radix-ui/react-slot`, and `@radix-ui/react-switch` to their latest minor versions, and `lucide-react` to v1.25.0 (app and website).
-- **deps**: Bumped `@aws-sdk/client-s3` and `@aws-sdk/lib-storage` to v3.1090.0, `node-cron` to v4.6.0, `radix-ui` to v1.6.2, and `react-hook-form` to v7.82.0.
-- **deps**: Bumped `googleapis` to v173.0.0, `rate-limiter-flexible` to v11.2.0, and `react-day-picker` to v10.0.1 (app); `next-mdx-remote` to v6.0.0 (website); `vitepress-plugin-tabs` to v0.9.1 (docs).
+- **deps**: Bumped minor/patch versions across app, website, and docs, including `better-auth`, `@better-auth/sso`, `@better-auth/passkey`, `next`, `react`, `react-dom`, `nodemailer`, `tailwindcss`, `@tailwindcss/postcss`, `vitest`, `@vitest/coverage-v8`, `vue`, `dropbox` (v10.37.1), `mongodb` (v7.5.0), `mssql` (v12.7.0), `@aws-sdk/client-s3` and `@aws-sdk/lib-storage` (v3.1090.0), `node-cron` (v4.6.0), `radix-ui` (v1.6.2), `react-hook-form` (v7.82.0), `googleapis` (v173.0.0), `rate-limiter-flexible` (v11.2.0), `react-day-picker` (v10.0.1), `next-mdx-remote` (v6.0.0), `vitepress-plugin-tabs` (v0.9.1), `lucide-react` (v1.25.0), and 16 `@radix-ui/react-*` packages.
 
 ### 📝 Documentation
 

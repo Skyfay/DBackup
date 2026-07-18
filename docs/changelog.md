@@ -29,6 +29,7 @@ All notable changes to DBackup are documented here.
 
 - **deps**: Bumped minor/patch versions for `better-auth`, `@better-auth/sso`, `@better-auth/passkey`, `next`, `react`, `react-dom`, `nodemailer`, `tailwindcss`, `@tailwindcss/postcss`, `vitest`, `@vitest/coverage-v8`, `vue`, and 11 `@radix-ui/react-*` packages.
 - **deps**: Bumped `dropbox` to v10.37.1, `mongodb` to v7.5.0, and `mssql` to v12.7.0.
+- **deps**: Bumped `@radix-ui/react-avatar`, `@radix-ui/react-radio-group`, `@radix-ui/react-select`, `@radix-ui/react-slot`, and `@radix-ui/react-switch` to their latest minor versions, and `lucide-react` to v1.25.0 (app and website).
 
 ### 🐳 Docker
 

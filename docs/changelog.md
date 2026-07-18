@@ -8,6 +8,7 @@ All notable changes to DBackup are documented here.
 ### ✨ Features
 
 - **webhooks**: Generic Webhook notification channels now support `GET` and `HEAD` HTTP methods, for compatibility with heartbeat/push-monitoring services like Uptime Kuma and Healthchecks.io. Thanks @Shlok-Zanwar ([#123](https://github.com/Skyfay/DBackup/issues/123))
+- **SSO**: Added a new Profile > SSO tab where users can view, disconnect, and manually connect their linked identity provider accounts. ([#128](https://github.com/Skyfay/DBackup/issues/128))
 
 ### 🐛 Bug Fixes
 

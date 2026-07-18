@@ -184,6 +184,11 @@ export const auth = betterAuth({
         // Default expiry; dynamically overridden per-session via databaseHooks
         expiresIn: DEFAULT_SESSION_DURATION,
         updateAge: 60 * 60 * 24, // Refresh session every 24h
+        // Disable the "fresh session" requirement (better-auth default: 24h).
+        // Sessions here last up to 7 days and no other self-service action in this
+        // app (password change, passkey/2FA management) requires re-authentication,
+        // so unlinkAccount would otherwise fail with SESSION_NOT_FRESH for most users.
+        freshAge: 0,
     },
     databaseHooks: {
         user: {

@@ -55,6 +55,14 @@ export function DatabaseExplorer({ sources, canBrowse }: DatabaseExplorerProps) 
     const [selectedSource, setSelectedSource] = useState<string>(initialSourceId);
     const [selectedDatabase, setSelectedDatabase] = useState<string>(initialDatabase);
     const [selectedTable, setSelectedTable] = useState<string>(initialTable);
+
+    // Sync state with URL when navigating via browser back/forward buttons
+    useEffect(() => {
+        setSelectedSource(searchParams.get("sourceId") ?? "");
+        setSelectedDatabase(searchParams.get("database") ?? "");
+        setSelectedTable(searchParams.get("table") ?? "");
+    }, [searchParams]);
+
     const [databases, setDatabases] = useState<DatabaseInfo[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);

@@ -321,4 +321,97 @@ describe('preflightRestore()', () => {
             ['restore_db'],
         );
     });
+
+    describe('directory entries (combined v2 archives)', () => {
+        it('skips the database branch entirely when targetSourceId is omitted (directory-only restore)', async () => {
+            // Only the (unrelated, always-run) storage-config lookup happens - no database
+            // target is ever queried since targetSourceId was not provided.
+            prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(null);
+
+            await expect(
+                preflightRestore({
+                    storageConfigId: 'st-1',
+                    file: '/backup.tar',
+                    directoryMapping: [],
+                })
+            ).resolves.toBeUndefined();
+
+            expect(prismaMock.adapterConfig.findUnique).toHaveBeenCalledTimes(1);
+            expect(prismaMock.adapterConfig.findUnique).toHaveBeenCalledWith({ where: { id: 'st-1' } });
+        });
+
+        it('verifies each selected directory restore target is writable', async () => {
+            const testFn = vi.fn().mockResolvedValue({ success: true, message: 'ok' });
+            prismaMock.adapterConfig.findUnique.mockResolvedValueOnce({
+                ...mockStorageConfig,
+                id: 'dest-local',
+                adapterId: 'local-filesystem',
+            } as any);
+            vi.mocked(registry.get).mockReturnValueOnce({ test: testFn } as any);
+
+            await expect(
+                preflightRestore({
+                    storageConfigId: 'st-1',
+                    file: '/backup.tar',
+                    directoryMapping: [
+                        { entryId: 'src-1', targetConfigId: 'dest-local', targetPath: '/restore', selected: true },
+                    ],
+                })
+            ).resolves.toBeUndefined();
+
+            expect(testFn).toHaveBeenCalled();
+        });
+
+        it('throws when a selected directory restore target is not writable', async () => {
+            const testFn = vi.fn().mockResolvedValue({ success: false, message: 'permission denied' });
+            prismaMock.adapterConfig.findUnique.mockResolvedValueOnce({
+                ...mockStorageConfig,
+                id: 'dest-local',
+                adapterId: 'local-filesystem',
+            } as any);
+            vi.mocked(registry.get).mockReturnValueOnce({ test: testFn } as any);
+
+            await expect(
+                preflightRestore({
+                    storageConfigId: 'st-1',
+                    file: '/backup.tar',
+                    directoryMapping: [
+                        { entryId: 'src-1', targetConfigId: 'dest-local', targetPath: '/restore', selected: true },
+                    ],
+                })
+            ).rejects.toThrow('not writable');
+        });
+
+        it('throws when a directory restore target config cannot be found', async () => {
+            prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(null);
+
+            await expect(
+                preflightRestore({
+                    storageConfigId: 'st-1',
+                    file: '/backup.tar',
+                    directoryMapping: [
+                        { entryId: 'src-1', targetConfigId: 'missing-dest', targetPath: '/restore', selected: true },
+                    ],
+                })
+            ).rejects.toThrow('not found');
+        });
+
+        it('ignores unselected directory mapping entries', async () => {
+            prismaMock.adapterConfig.findUnique.mockResolvedValueOnce(null);
+
+            await expect(
+                preflightRestore({
+                    storageConfigId: 'st-1',
+                    file: '/backup.tar',
+                    directoryMapping: [
+                        { entryId: 'src-1', targetConfigId: 'dest-local', targetPath: '/restore', selected: false },
+                    ],
+                })
+            ).resolves.toBeUndefined();
+
+            // Only the unrelated storage-config lookup happened - the unselected mapping
+            // entry's target adapter was never queried.
+            expect(prismaMock.adapterConfig.findUnique).toHaveBeenCalledTimes(1);
+        });
+    });
 });

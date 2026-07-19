@@ -76,6 +76,7 @@ vi.mock('@/lib/crypto/compression', () => ({
 vi.mock('@/lib/adapters/database/common/tar-utils', () => ({
     isMultiDbTar: vi.fn().mockResolvedValue(false),
     readTarManifest: vi.fn().mockResolvedValue(null),
+    readManifestVersion: vi.fn().mockResolvedValue(1),
 }));
 
 vi.mock('@/services/notifications/system-notification-service', () => ({

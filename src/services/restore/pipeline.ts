@@ -12,7 +12,7 @@ import { Transform } from "stream";
 import { createDecryptionStream } from "@/lib/crypto/stream";
 import { getDecompressionStream, CompressionType } from "@/lib/crypto/compression";
 import { LogEntry, LogLevel, LogType } from "@/lib/core/logs";
-import { isMultiDbTar, readTarManifest } from "@/lib/adapters/database/common/tar-utils";
+import { isMultiDbTar, readTarManifest, readManifestVersion } from "@/lib/adapters/database/common/tar-utils";
 import { logger } from "@/lib/logging/logger";
 import { wrapError, getErrorMessage } from "@/lib/logging/errors";
 import { verifyFileChecksum } from "@/lib/crypto/checksum";
@@ -22,6 +22,7 @@ import { registerExecution, unregisterExecution } from "@/lib/execution/abort";
 import { processQueue } from "@/lib/execution/queue-manager";
 import type { RestoreInput } from "./types";
 import { resolveDecryptionKey } from "./smart-recovery";
+import { restoreCombinedArchive } from "./combined-restore";
 
 const svcLog = logger.child({ service: "RestoreService" });
 
@@ -118,8 +119,8 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
     let resolvedStorageName: string | undefined;
 
     try {
-        if (!file || !targetSourceId) {
-            throw new Error("Missing file or targetSourceId");
+        if (!file) {
+            throw new Error("Missing file");
         }
 
         log(`Initiating restore process...`, 'info');
@@ -136,17 +137,24 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
             throw new Error("Storage impl missing");
         }
 
-        // 2. Get Source Adapter
-        const sourceConfig = await prisma.adapterConfig.findUnique({ where: { id: targetSourceId } });
-        if (!sourceConfig || sourceConfig.type !== "database") {
-            throw new Error("Source adapter not found");
-        }
-        resolvedSourceName = sourceConfig.name;
-        resolvedSourceType = sourceConfig.adapterId;
+        // 2. Get Source Adapter (optional - a directory-only archive has no database target;
+        // the combined-restore path resolves its own target when the archive turns out to
+        // contain database entries. Kept here too since v1 archives - the vast majority -
+        // still expect it resolved up front, and it doubles as the version-compat check below.)
+        let sourceConfig: Awaited<ReturnType<typeof prisma.adapterConfig.findUnique>> | null = null;
+        let sourceAdapter: DatabaseAdapter | undefined;
+        if (targetSourceId) {
+            sourceConfig = await prisma.adapterConfig.findUnique({ where: { id: targetSourceId } });
+            if (!sourceConfig || sourceConfig.type !== "database") {
+                throw new Error("Source adapter not found");
+            }
+            resolvedSourceName = sourceConfig.name;
+            resolvedSourceType = sourceConfig.adapterId;
 
-        const sourceAdapter = registry.get(sourceConfig.adapterId) as DatabaseAdapter;
-        if (!sourceAdapter) {
-            throw new Error("Source impl missing");
+            sourceAdapter = registry.get(sourceConfig.adapterId) as DatabaseAdapter;
+            if (!sourceAdapter) {
+                throw new Error("Source impl missing");
+            }
         }
 
         // 3. Download File
@@ -187,8 +195,9 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                     log(`Checksum found in metadata (SHA-256).`, 'info');
                 }
 
-                // Version Check (informational - hard guard already done in preflight)
-                if (metadata.engineVersion) {
+                // Version Check (informational - hard guard already done in preflight).
+                // Only meaningful when a database target was actually resolved above.
+                if (metadata.engineVersion && sourceConfig && sourceAdapter) {
                     const usageConfig = { ...(await resolveAdapterConfig(sourceConfig) as any) };
                     if (privilegedAuth) {
                         usageConfig.privilegedAuth = privilegedAuth;
@@ -372,7 +381,55 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
         }
         // --- END DECOMPRESSION EXECUTION ---
 
-        // --- MULTI-DB TAR DETECTION ---
+        // --- COMBINED (v2) ARCHIVE DETECTION & RESTORE ---
+        // A v2 manifest can only ever come from the combined dump path (JobSource feature),
+        // which only runs for jobs with directory sources - so every v2 archive necessarily
+        // contains at least one directory entry. There is no "v2 but actually pure-database"
+        // case to handle; v1 archives (everything else, forever) fall through unchanged below.
+        const manifestVersion = await readManifestVersion(tempFile);
+        if (manifestVersion === 2) {
+            setStage("Restoring Database");
+            const combinedResult = await restoreCombinedArchive(tempFile, input, { log, updateDetail });
+
+            if (combinedResult.status === "Failed") {
+                log(`Combined restore failed: no entries could be restored (${combinedResult.errors.map(e => e.error).join('; ')})`, 'error');
+                setStage("Failed");
+                await prisma.execution.update({
+                    where: { id: executionId },
+                    data: { status: 'Failed', endedAt: new Date(), logs: JSON.stringify(internalLogs) }
+                });
+            } else {
+                if (combinedResult.status === "Partial") {
+                    log(`Combined restore completed with some failures: ${combinedResult.errors.map(e => e.entry).join(', ')}`, 'warning');
+                } else {
+                    log(`Combined restore completed successfully.`, 'success');
+                }
+                setStage("Completed");
+                await prisma.execution.update({
+                    where: { id: executionId },
+                    data: { status: combinedResult.status, endedAt: new Date(), logs: JSON.stringify(internalLogs) }
+                });
+
+                notify({
+                    eventType: NOTIFICATION_EVENTS.RESTORE_COMPLETE,
+                    data: {
+                        sourceName: resolvedSourceName ?? "Combined archive",
+                        databaseType: resolvedSourceType,
+                        targetDatabase: targetDatabaseName,
+                        backupFile: path.basename(file),
+                        storageName: resolvedStorageName,
+                        duration: Date.now() - restoreStartTime,
+                        executionId,
+                        timestamp: new Date().toISOString(),
+                    },
+                }).catch(() => {});
+            }
+            return;
+        }
+        // --- END COMBINED (v2) ARCHIVE DETECTION & RESTORE ---
+
+        // --- MULTI-DB TAR DETECTION (v1, cosmetic - the actual selective restore logic lives
+        // inside each adapter's own restore(), see mysql/restore.ts etc.) ---
         try {
             if (await isMultiDbTar(tempFile)) {
                 const manifest = await readTarManifest(tempFile);
@@ -389,7 +446,10 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
         }
         // --- END MULTI-DB TAR DETECTION ---
 
-        // 4. Restore
+        // 4. Restore (v1 archives only, by construction - see above)
+        if (!sourceConfig || !sourceAdapter) {
+            throw new Error("Missing targetSourceId");
+        }
         setStage("Restoring Database");
         log(`Starting database restore on ${sourceConfig.name}...`, 'info');
 

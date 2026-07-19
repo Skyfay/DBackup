@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Terminal,
+  FolderInput,
   ChevronRight,
   ChevronDown,
   ArrowDown,
@@ -281,6 +282,7 @@ function LogItem({ entry, systemTimezone = "UTC" }: { entry: LogEntry; systemTim
   const [isOpen, setIsOpen] = React.useState(false);
   const hasDetails = !!entry.details || !!entry.context;
   const isCommand = entry.type === "command";
+  const isStorage = entry.type === "storage";
 
   const LevelIcon = {
     info: Info,
@@ -311,7 +313,7 @@ function LogItem({ entry, systemTimezone = "UTC" }: { entry: LogEntry; systemTim
             onClick={() => hasDetails && setIsOpen(!isOpen)}
           >
             <div className={cn("shrink-0 pt-0.5", levelColor)}>
-               {isCommand ? <Terminal className="w-3.5 h-3.5" /> : <LevelIcon className="w-3.5 h-3.5" />}
+               {isCommand ? <Terminal className="w-3.5 h-3.5" /> : isStorage ? <FolderInput className="w-3.5 h-3.5" /> : <LevelIcon className="w-3.5 h-3.5" />}
             </div>
 
             <div className="flex-1">

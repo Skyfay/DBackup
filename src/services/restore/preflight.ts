@@ -19,12 +19,16 @@ const svcLog = logger.child({ service: "RestoreService" });
  * Throws on incompatibility so the caller fails fast before logging an Execution.
  */
 export async function preflightRestore(input: RestoreInput): Promise<void> {
-    const { file, storageConfigId, targetSourceId, targetDatabaseName, databaseMapping, privilegedAuth } = input;
+    const { file, storageConfigId, targetSourceId, targetDatabaseName, databaseMapping, directoryMapping, privilegedAuth } = input;
 
-    const targetConfig = await prisma.adapterConfig.findUnique({ where: { id: targetSourceId } });
-    if (!targetConfig) throw new Error("Target source not found");
+    // A directory-only restore has no database target at all - only run the database branch
+    // when the caller actually provided one.
+    const targetConfig = targetSourceId
+        ? await prisma.adapterConfig.findUnique({ where: { id: targetSourceId } })
+        : null;
+    if (targetSourceId && !targetConfig) throw new Error("Target source not found");
 
-    if (targetConfig.type === 'database') {
+    if (targetConfig && targetConfig.type === 'database') {
         const targetAdapter = registry.get(targetConfig.adapterId) as DatabaseAdapter;
         if (targetAdapter && targetAdapter.prepareRestore) {
             let dbsToCheck: string[] = [];
@@ -50,9 +54,38 @@ export async function preflightRestore(input: RestoreInput): Promise<void> {
         }
     }
 
+    // Directory-entry restore targets (combined v2 archives) - verify each selected target is
+    // reachable and writable before starting, the same "permission probe" spirit as the
+    // database branch above. Unlike that branch, there's no disk-space check here: the archive's
+    // manifest (which holds the per-entry size) isn't available yet at this point - the file is
+    // only downloaded and parsed later in the pipeline itself.
+    if (directoryMapping && directoryMapping.length > 0) {
+        const selectedTargetConfigIds = [...new Set(
+            directoryMapping.filter((m) => m.selected).map((m) => m.targetConfigId)
+        )];
+
+        for (const targetConfigId of selectedTargetConfigIds) {
+            const dirTargetConfig = await prisma.adapterConfig.findUnique({ where: { id: targetConfigId } });
+            if (!dirTargetConfig || dirTargetConfig.type !== 'storage') {
+                throw new Error(`Invalid restore target for a directory entry: adapter '${targetConfigId}' not found`);
+            }
+            const dirTargetAdapter = registry.get(dirTargetConfig.adapterId) as StorageAdapter;
+            if (!dirTargetAdapter) {
+                throw new Error(`Restore target adapter implementation missing: '${dirTargetConfig.adapterId}'`);
+            }
+            if (dirTargetAdapter.test) {
+                const conf = await resolveAdapterConfig(dirTargetConfig) as any;
+                const testResult = await dirTargetAdapter.test(conf);
+                if (!testResult.success) {
+                    throw new Error(`Restore target '${dirTargetConfig.name}' is not writable: ${testResult.message}`);
+                }
+            }
+        }
+    }
+
     // Version Compatibility Check
     const storageConfig = await prisma.adapterConfig.findUnique({ where: { id: storageConfigId } });
-    if (storageConfig && targetConfig.type === 'database') {
+    if (storageConfig && targetConfig && targetConfig.type === 'database') {
         const storageAdapter = registry.get(storageConfig.adapterId) as StorageAdapter;
         const targetAdapter = registry.get(targetConfig.adapterId) as DatabaseAdapter;
 

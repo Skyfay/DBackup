@@ -66,6 +66,7 @@ describe('Runner Step: Finalize & Notifications', () => {
             updateStageProgress: vi.fn(),
             execution: { id: 'exec-1' } as any,
             destinations: [],
+            sources: [],
             job: {
                 id: 'job-1',
                 name: 'Test Job',

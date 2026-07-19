@@ -91,6 +91,7 @@ describe('Backup Pipeline Integration', () => {
             destinations: [
                 { id: 'jd1', configId: 'd1', priority: 0, retention: '{}', config: { id: 'd1', adapterId: 'mock-storage', config: '{}', name: 'Mock Dest', type: 'storage' } }
             ],
+            sources: [],
             notifications: [],
             notificationEvents: 'ALWAYS'
         };

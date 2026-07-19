@@ -80,6 +80,7 @@ function makeJobWithDest(destOverrides: Record<string, unknown> = {}) {
                 ...destOverrides,
             },
         ],
+        sources: [],
         notifications: [],
         notificationEvents: 'ALWAYS',
         notificationTemplates: [],

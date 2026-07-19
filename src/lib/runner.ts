@@ -280,6 +280,7 @@ export async function performExecution(executionId: string, jobId: string) {
         startedAt: new Date(),
         execution: initialExe as any,
         destinations: [],
+        sources: [],
         abortSignal: abortController.signal,
         triggerInfo: initialExe.triggerType ? {
             type: initialExe.triggerType,

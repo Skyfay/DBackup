@@ -7,7 +7,7 @@ All notable changes to DBackup are documented here.
 
 ### ✨ Features
 
-- **storage**: Storage adapters can now be flagged as directory backup sources in addition to backup destinations, shown as a new "Directory Sources" section on the Sources page and as role badges on the Destinations page. Foundational groundwork for upcoming directory/file backup support - not yet usable from job creation.
+- **storage**: Storage adapters can now be flagged as directory backup sources in addition to backup destinations, shown as a new "Directory Sources" section on the Sources page and as role badges on the Destinations page. Foundational groundwork for upcoming directory/file backup support - the backup engine can now execute combined database + directory backups into a single archive internally, but job creation doesn't yet expose this.
 
 ### 🐳 Docker
 

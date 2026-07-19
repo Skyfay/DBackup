@@ -1,9 +1,13 @@
 import { DatabaseAdapter, StorageAdapter } from "@/lib/core/interfaces";
-import { Job, AdapterConfig, Execution, JobDestination, NotificationTemplate, NotificationTemplateChannel, JobNotificationTemplate } from "@prisma/client";
+import { Job, AdapterConfig, Execution, JobDestination, JobSource, NotificationTemplate, NotificationTemplateChannel, JobNotificationTemplate } from "@prisma/client";
 import { LogEntry, LogLevel, LogType, PipelineStage } from "@/lib/core/logs";
 import { RetentionConfiguration } from "@/lib/core/retention";
 
 export type JobDestinationWithConfig = JobDestination & {
+    config: AdapterConfig;
+};
+
+export type JobSourceWithConfig = JobSource & {
     config: AdapterConfig;
 };
 
@@ -20,8 +24,9 @@ export type JobNotificationTemplateWithTemplate = JobNotificationTemplate & {
 };
 
 export type JobWithRelations = Job & {
-    source: AdapterConfig;
+    source: AdapterConfig | null;
     destinations: JobDestinationWithConfig[];
+    sources: JobSourceWithConfig[];
     notifications: AdapterConfig[];
     notificationTemplates: JobNotificationTemplateWithTemplate[];
 };
@@ -43,6 +48,18 @@ export interface DestinationContext {
     };
 }
 
+/** A resolved directory-backup source (JobSource), ready for the combined dump step to read from. */
+export interface DirectorySourceContext {
+    jobSourceId: string;
+    configId: string;
+    configName: string;
+    adapter: StorageAdapter;
+    config: Record<string, unknown>; // decrypted adapter config
+    remotePath: string;
+    excludePatterns: string[];
+    priority: number;
+}
+
 export interface RunnerContext {
     jobId: string;
     job?: JobWithRelations;
@@ -58,7 +75,11 @@ export interface RunnerContext {
     updateDetail: (detail: string) => void;
     updateStageProgress: (internalPercent: number) => void;
 
+    // UNCHANGED meaning - the optional single database source. Its presence/absence is what
+    // routes 02-dump.ts between the untouched single-adapter path and the new combined path.
     sourceAdapter?: DatabaseAdapter;
+    // NEW, additive - empty array for every job without directory sources (the 99% case today).
+    sources: DirectorySourceContext[];
     destinations: DestinationContext[];
 
     // File paths

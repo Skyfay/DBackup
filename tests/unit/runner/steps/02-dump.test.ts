@@ -33,6 +33,11 @@ vi.mock('@/lib/logging/errors', () => ({
     wrapError: vi.fn((e) => e),
 }));
 
+const mockExecuteCombinedDump = vi.fn().mockResolvedValue(undefined);
+vi.mock('@/lib/runner/steps/combined-dump', () => ({
+    executeCombinedDump: (...args: unknown[]) => mockExecuteCombinedDump(...args),
+}));
+
 vi.mock('@/lib/prisma', () => ({
     default: {
         systemSetting: {
@@ -257,10 +262,38 @@ describe('stepExecuteDump', () => {
         await expect(stepExecuteDump(ctx)).rejects.toThrow('Context not initialized');
     });
 
-    it('throws when context is not initialized (no sourceAdapter)', async () => {
-        const ctx = makeCtx({ sourceAdapter: undefined });
+    it('throws when neither a source adapter nor directory sources are configured', async () => {
+        const ctx = makeCtx({ sourceAdapter: undefined, sources: [] });
 
-        await expect(stepExecuteDump(ctx)).rejects.toThrow('Context not initialized');
+        await expect(stepExecuteDump(ctx)).rejects.toThrow('Job has no source configured');
+    });
+
+    describe('combined dump routing (ctx.sources.length > 0)', () => {
+        it('delegates to executeCombinedDump when the job has directory sources', async () => {
+            const ctx = makeCtx({ sources: [{ jobSourceId: 'jsrc-1' } as any] });
+
+            await stepExecuteDump(ctx);
+
+            expect(mockExecuteCombinedDump).toHaveBeenCalledWith(ctx);
+            expect(ctx.sourceAdapter!.dump).not.toHaveBeenCalled();
+        });
+
+        it('delegates to executeCombinedDump for a directory-only job (no sourceAdapter at all)', async () => {
+            const ctx = makeCtx({ sourceAdapter: undefined, sources: [{ jobSourceId: 'jsrc-1' } as any] });
+
+            await stepExecuteDump(ctx);
+
+            expect(mockExecuteCombinedDump).toHaveBeenCalledWith(ctx);
+        });
+
+        it('does not delegate to executeCombinedDump for a DB-only job (unchanged path)', async () => {
+            const ctx = makeCtx({ sources: [] });
+
+            await stepExecuteDump(ctx);
+
+            expect(mockExecuteCombinedDump).not.toHaveBeenCalled();
+            expect(ctx.sourceAdapter!.dump).toHaveBeenCalled();
+        });
     });
 
     it('uses All DBs label and fetches DB list when --all-databases option is set', async () => {

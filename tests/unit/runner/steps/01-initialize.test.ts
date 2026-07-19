@@ -73,6 +73,7 @@ function makeJob(overrides: Record<string, unknown> = {}) {
                 },
             },
         ],
+        sources: [],
         notifications: [],
         notificationEvents: 'ALWAYS',
         ...overrides,
@@ -97,7 +98,7 @@ describe('stepInitialize', () => {
         const prisma = (await import('@/lib/prisma')).default;
         (prisma.job.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(makeJob({ source: null }));
 
-        await expect(stepInitialize(makeCtx())).rejects.toThrow('missing source linkage');
+        await expect(stepInitialize(makeCtx())).rejects.toThrow('has no source configured');
     });
 
     it('throws when job has no destinations', async () => {
@@ -240,5 +241,115 @@ describe('stepInitialize', () => {
         expect(ctx.destinations).toHaveLength(1);
         expect(ctx.destinations[0].configName).toBe('Local');
         expect(ctx.destinations[0].priority).toBe(0);
+    });
+
+    describe('directory sources (JobSource)', () => {
+        it('resolves job.sources into ctx.sources', async () => {
+            const prisma = (await import('@/lib/prisma')).default;
+            const { registry } = await import('@/lib/core/registry');
+            (prisma.job.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(makeJob({
+                sources: [
+                    {
+                        id: 'jsrc-1', configId: 'storage-1', priority: 0, path: '/data', excludePatterns: '["*.tmp"]',
+                        config: { id: 'storage-1', adapterId: 'sftp', config: '{}', name: 'SFTP Server', type: 'storage' },
+                    },
+                ],
+            }));
+            (registry.get as ReturnType<typeof vi.fn>).mockImplementation((id: string) => {
+                if (id === 'mysql') return { type: 'database', dump: vi.fn() };
+                if (id === 'local-filesystem') return { type: 'storage', upload: vi.fn() };
+                if (id === 'sftp') return { type: 'storage', upload: vi.fn(), download: vi.fn() };
+                return null;
+            });
+
+            const ctx = makeCtx({ execution: { id: 'exec-1' } as any });
+            await stepInitialize(ctx);
+
+            expect(ctx.sources).toHaveLength(1);
+            expect(ctx.sources[0]).toMatchObject({
+                jobSourceId: 'jsrc-1',
+                configId: 'storage-1',
+                configName: 'SFTP Server',
+                remotePath: '/data',
+                excludePatterns: ['*.tmp'],
+                priority: 0,
+            });
+        });
+
+        it('warns and skips a directory source whose adapter is missing, keeps the rest', async () => {
+            const prisma = (await import('@/lib/prisma')).default;
+            const { registry } = await import('@/lib/core/registry');
+            (prisma.job.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(makeJob({
+                sources: [
+                    {
+                        id: 'jsrc-1', configId: 'ghost-1', priority: 0, path: '/data', excludePatterns: '[]',
+                        config: { id: 'ghost-1', adapterId: 'ghost-adapter', config: '{}', name: 'Ghost', type: 'storage' },
+                    },
+                    {
+                        id: 'jsrc-2', configId: 'storage-1', priority: 1, path: '/other', excludePatterns: '[]',
+                        config: { id: 'storage-1', adapterId: 'sftp', config: '{}', name: 'SFTP Server', type: 'storage' },
+                    },
+                ],
+            }));
+            (registry.get as ReturnType<typeof vi.fn>).mockImplementation((id: string) => {
+                if (id === 'mysql') return { type: 'database', dump: vi.fn() };
+                if (id === 'local-filesystem') return { type: 'storage', upload: vi.fn() };
+                if (id === 'sftp') return { type: 'storage', upload: vi.fn(), download: vi.fn() };
+                return null;
+            });
+
+            const ctx = makeCtx({ execution: { id: 'exec-1' } as any });
+            await stepInitialize(ctx);
+
+            expect(ctx.log).toHaveBeenCalledWith(expect.stringContaining('Warning'), 'warning');
+            expect(ctx.sources).toHaveLength(1);
+            expect(ctx.sources[0].configId).toBe('storage-1');
+        });
+
+        it('throws when every directory source adapter is missing', async () => {
+            const prisma = (await import('@/lib/prisma')).default;
+            const { registry } = await import('@/lib/core/registry');
+            (prisma.job.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(makeJob({
+                sources: [
+                    {
+                        id: 'jsrc-1', configId: 'ghost-1', priority: 0, path: '/data', excludePatterns: '[]',
+                        config: { id: 'ghost-1', adapterId: 'ghost-adapter', config: '{}', name: 'Ghost', type: 'storage' },
+                    },
+                ],
+            }));
+            (registry.get as ReturnType<typeof vi.fn>).mockImplementation((id: string) => {
+                if (id === 'mysql') return { type: 'database', dump: vi.fn() };
+                if (id === 'local-filesystem') return { type: 'storage', upload: vi.fn() };
+                return null;
+            });
+
+            const ctx = makeCtx({ execution: { id: 'exec-1' } as any });
+            await expect(stepInitialize(ctx)).rejects.toThrow('No valid directory source adapters could be resolved');
+        });
+
+        it('does not require a database source when the job has directory sources (directory-only job)', async () => {
+            const prisma = (await import('@/lib/prisma')).default;
+            const { registry } = await import('@/lib/core/registry');
+            (prisma.job.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(makeJob({
+                source: null,
+                sources: [
+                    {
+                        id: 'jsrc-1', configId: 'storage-1', priority: 0, path: '/data', excludePatterns: '[]',
+                        config: { id: 'storage-1', adapterId: 'sftp', config: '{}', name: 'SFTP Server', type: 'storage' },
+                    },
+                ],
+            }));
+            (registry.get as ReturnType<typeof vi.fn>).mockImplementation((id: string) => {
+                if (id === 'local-filesystem') return { type: 'storage', upload: vi.fn() };
+                if (id === 'sftp') return { type: 'storage', upload: vi.fn(), download: vi.fn() };
+                return null;
+            });
+
+            const ctx = makeCtx({ execution: { id: 'exec-1' } as any });
+            await stepInitialize(ctx);
+
+            expect(ctx.sourceAdapter).toBeUndefined();
+            expect(ctx.sources).toHaveLength(1);
+        });
     });
 });

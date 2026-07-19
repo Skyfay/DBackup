@@ -10,16 +10,29 @@ import { getBackupFileExtension } from "@/lib/backup-extensions";
 import { formatBytes } from "@/lib/utils";
 import prisma from "@/lib/prisma";
 import { applyNamingPattern } from "@/lib/templates/naming-template-engine";
+import { executeCombinedDump } from "./combined-dump";
 
 const log = logger.child({ step: "02-dump" });
 
 export async function stepExecuteDump(ctx: RunnerContext) {
-    if (!ctx.job || !ctx.sourceAdapter) throw new Error("Context not initialized");
+    if (!ctx.job) throw new Error("Context not initialized");
+    if (!ctx.sourceAdapter && (!ctx.sources || ctx.sources.length === 0)) {
+        throw new Error("Job has no source configured");
+    }
+
+    // Combined path (DB + directory sources, or directory-only) - only ever taken when a job
+    // actually has JobSource rows. Every DB-only job (ctx.sources.length === 0, the 99% case)
+    // falls through to the existing single-adapter path below, completely unchanged.
+    if (ctx.sources && ctx.sources.length > 0) {
+        return executeCombinedDump(ctx);
+    }
+
+    if (!ctx.sourceAdapter) throw new Error("Context not initialized");
 
     const job = ctx.job;
     const sourceAdapter = ctx.sourceAdapter;
 
-    ctx.log(`Starting Dump from ${job.source.name} (${job.source.type})...`);
+    ctx.log(`Starting Dump from ${job.source!.name} (${job.source!.type})...`);
 
     // 1. Prepare Settings (timezone and filename pattern)
     const [tzSetting, patternSetting, namingTemplate] = await Promise.all([
@@ -34,9 +47,9 @@ export async function stepExecuteDump(ctx: RunnerContext) {
     const pattern = namingTemplate?.pattern ?? patternSetting?.value ?? "{job_name}_yyyy-MM-dd_HH-mm-ss";
 
     // 2. Prepare Config & Metadata
-    const sourceConfig = await resolveAdapterConfig(job.source) as any;
+    const sourceConfig = await resolveAdapterConfig(job.source!) as any;
     // Inject adapterId as type for Dialect selection (e.g. 'mariadb')
-    sourceConfig.type = job.source.adapterId;
+    sourceConfig.type = job.source!.adapterId;
 
     // Inject databases from Job (always takes precedence over source config).
     // An empty job selection means "backup all" - clear the source's default database
@@ -55,7 +68,7 @@ export async function stepExecuteDump(ctx: RunnerContext) {
 
     const sanitizedName = job.name.replace(/[^a-z0-9]/gi, '_');
 
-    const ext = getBackupFileExtension(job.source.adapterId);
+    const ext = getBackupFileExtension(job.source!.adapterId);
     const fileName = applyNamingPattern(pattern, sanitizedName, dbNameRaw, new Date(), timezone) + `.${ext}`;
     const tempDir = getTempDir();
     const tempFile = path.join(tempDir, fileName);
@@ -189,9 +202,9 @@ export async function stepExecuteDump(ctx: RunnerContext) {
             count,
             names,
             jobName: job.name,
-            sourceName: job.source.name,
-            sourceType: job.source.type,
-            adapterId: job.source.adapterId,
+            sourceName: job.source!.name,
+            sourceType: job.source!.type,
+            adapterId: job.source!.adapterId,
             engineVersion,
             engineEdition
         };

@@ -140,9 +140,9 @@ export async function stepUpload(ctx: RunnerContext) {
         version: 1,
         jobId: job.id,
         jobName: job.name,
-        sourceName: job.source.name,
-        sourceType: job.source.adapterId,
-        sourceId: job.source.id,
+        sourceName: job.source?.name ?? (ctx.sources.length > 0 ? `${ctx.sources.length} directory source(s)` : 'Unknown'),
+        sourceType: job.source?.adapterId ?? 'directory-only',
+        sourceId: job.source?.id ?? '',
         databases: {
             count: typeof ctx.metadata?.count === 'number' ? ctx.metadata.count : 0,
             names: Array.isArray(ctx.metadata?.names) ? ctx.metadata.names : undefined

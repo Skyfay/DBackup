@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma";
-import { RunnerContext, DestinationContext } from "../types";
+import { RunnerContext, DestinationContext, DirectorySourceContext } from "../types";
 import { registry } from "@/lib/core/registry";
 import { DatabaseAdapter, StorageAdapter } from "@/lib/core/interfaces";
 import { registerAdapters } from "@/lib/adapters";
@@ -21,6 +21,10 @@ export async function stepInitialize(ctx: RunnerContext) {
                 include: { config: true },
                 orderBy: { priority: 'asc' }
             },
+            sources: {
+                include: { config: true },
+                orderBy: { priority: 'asc' }
+            },
             notifications: true,
             notificationTemplates: {
                 include: {
@@ -37,8 +41,11 @@ export async function stepInitialize(ctx: RunnerContext) {
         throw new Error(`Job ${ctx.jobId} not found`);
     }
 
-    if (!job.source) {
-        throw new Error(`Job ${ctx.jobId} is missing source linkage`);
+    // A job needs at least one source: a database source, or one or more directory sources.
+    // Mirrors the JobService.createJob/updateJob validation (defense in depth for jobs created
+    // before that validation existed, or edited directly in the DB).
+    if (!job.source && (!job.sources || job.sources.length === 0)) {
+        throw new Error(`Job ${ctx.jobId} has no source configured (neither a database source nor directory sources)`);
     }
 
     if (!job.destinations || job.destinations.length === 0) {
@@ -60,10 +67,38 @@ export async function stepInitialize(ctx: RunnerContext) {
         ctx.execution = execution;
     }
 
-    // 3. Resolve Source Adapter
-    const sourceAdapter = registry.get(job.source.adapterId) as DatabaseAdapter;
-    if (!sourceAdapter) throw new Error(`Source adapter '${job.source.adapterId}' not found`);
-    ctx.sourceAdapter = sourceAdapter;
+    // 3. Resolve Source Adapter (optional - a directory-only job has no database source)
+    if (job.source) {
+        const sourceAdapter = registry.get(job.source.adapterId) as DatabaseAdapter;
+        if (!sourceAdapter) throw new Error(`Source adapter '${job.source.adapterId}' not found`);
+        ctx.sourceAdapter = sourceAdapter;
+    }
+
+    // 3b. Resolve Directory Sources (JobSource[]) - empty array for every job without one
+    ctx.sources = [];
+    for (const src of job.sources) {
+        const adapter = registry.get(src.config.adapterId) as StorageAdapter;
+        if (!adapter) {
+            ctx.log(`Warning: Directory source adapter '${src.config.adapterId}' for '${src.config.name}' not found. Skipping.`, 'warning');
+            continue;
+        }
+
+        const sourceCtx: DirectorySourceContext = {
+            jobSourceId: src.id,
+            configId: src.config.id,
+            configName: src.config.name,
+            adapter,
+            config: await resolveAdapterConfig(src.config) as any,
+            remotePath: src.path,
+            excludePatterns: JSON.parse(src.excludePatterns || "[]"),
+            priority: src.priority,
+        };
+        ctx.sources.push(sourceCtx);
+    }
+
+    if (job.sources.length > 0 && ctx.sources.length === 0) {
+        throw new Error(`Job ${ctx.jobId}: No valid directory source adapters could be resolved`);
+    }
 
     // 4. Resolve Destination Adapters
     ctx.destinations = [];
@@ -121,5 +156,6 @@ export async function stepInitialize(ctx: RunnerContext) {
     }
 
     const destNames = ctx.destinations.map(d => d.configName).join(', ');
-    ctx.log(`Initialization complete. Source: ${job.source.name}, Destinations: [${destNames}] (${ctx.destinations.length})`);
+    const sourceLabel = job.source?.name ?? (ctx.sources.length > 0 ? `${ctx.sources.length} directory source(s)` : 'none');
+    ctx.log(`Initialization complete. Source: ${sourceLabel}, Destinations: [${destNames}] (${ctx.destinations.length})`);
 }

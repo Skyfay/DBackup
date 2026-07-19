@@ -32,6 +32,10 @@ export interface AdapterListItemDTO {
     lastStatus: string;
     lastError: string | null;
     consecutiveFailures: number;
+    /** Storage adapters only: whether this config can be picked as a directory-backup source. */
+    usableAsSource: boolean;
+    /** Storage adapters only: whether this config can be picked as a backup destination. */
+    usableAsDestination: boolean;
 }
 
 /**
@@ -54,6 +58,8 @@ export interface AdapterRowInput {
     lastStatus: string;
     lastError: string | null;
     consecutiveFailures: number;
+    usableAsSource: boolean;
+    usableAsDestination: boolean;
 }
 
 /**
@@ -101,5 +107,7 @@ export function toAdapterListItem(row: AdapterRowInput): AdapterListItemDTO {
         lastStatus: row.lastStatus,
         lastError: row.lastError,
         consecutiveFailures: row.consecutiveFailures,
+        usableAsSource: row.usableAsSource,
+        usableAsDestination: row.usableAsDestination,
     };
 }

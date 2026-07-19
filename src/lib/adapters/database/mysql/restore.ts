@@ -405,6 +405,24 @@ async function restoreSingleFileSSH(
     }
 }
 
+/**
+ * Capability export for combined DB+directory restores (JobSource): restores a single plain
+ * dump file into a single target database. Thin wrapper around restoreSingleFile, the same
+ * per-database logic restore() already uses internally for its own multi-DB case. Unlike
+ * restore(), this does not create the target database - callers must ensure it exists first
+ * (e.g. via ensureDatabase/prepareRestore).
+ */
+export async function restoreOne(
+    config: MySQLRestoreConfig,
+    filePath: string,
+    targetDbName: string,
+    onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void,
+    onProgress?: (percentage: number, detail?: string) => void,
+    originalDbName?: string
+): Promise<void> {
+    await restoreSingleFile(config, filePath, targetDbName, onLog ?? (() => {}), onProgress, originalDbName);
+}
+
 export async function restore(config: MySQLRestoreConfig, sourcePath: string, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void, onProgress?: (percentage: number, detail?: string) => void): Promise<BackupResult> {
     const startedAt = new Date();
     const logs: string[] = [];

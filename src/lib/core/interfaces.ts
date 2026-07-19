@@ -227,6 +227,36 @@ export interface DatabaseAdapter extends BaseAdapter {
      * Returns rows, total count, and column definitions.
      */
     getTableData?: (config: AdapterConfig, options: TableDataOptions) => Promise<TableDataResult>;
+
+    /**
+     * Optional: dumps a single named database to a plain local file, without any
+     * TAR/manifest wrapping. Adapters that implement this expose the same per-database
+     * logic `dump()` already uses internally for its own multi-DB case - it is a capability
+     * export, not new dump logic. Presence of this method is what makes a database source
+     * combinable with directory sources (JobSource) in one backup job.
+     */
+    dumpOne?(
+        config: AdapterConfig,
+        dbName: string,
+        destinationPath: string,
+        onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void
+    ): Promise<{ size: number }>;
+
+    /**
+     * Optional: restores a single plain dump file (as produced by dumpOne) into a single
+     * target database. Counterpart to dumpOne - required for the same combined-backup
+     * capability during restore.
+     * @param originalDbName The database's original name at backup time (needed by adapters
+     * that must rewrite embedded USE/CREATE DATABASE statements when restoring to a renamed target).
+     */
+    restoreOne?(
+        config: AdapterConfig,
+        filePath: string,
+        targetDbName: string,
+        onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void,
+        onProgress?: (percentage: number, detail?: string) => void,
+        originalDbName?: string
+    ): Promise<void>;
 }
 
 export type FileInfo = {
@@ -261,6 +291,22 @@ export interface StorageSession {
         options?: UploadOptions
     ): Promise<boolean>;
     close(): Promise<void>;
+}
+
+/** A single file discovered while downloading a directory tree. */
+export interface DirectoryFileEntry {
+    /** Path relative to the directory source root, POSIX separators. */
+    relativePath: string;
+    size: number;
+    lastModified: Date;
+}
+
+/** Result of downloading an entire remote directory tree to a local directory. */
+export interface DirectoryDownloadResult {
+    files: number;
+    bytes: number;
+    /** Per-file index - becomes the manifest's searchable file list (path/size/mtime). */
+    entries: DirectoryFileEntry[];
 }
 
 export interface StorageAdapter extends BaseAdapter {
@@ -320,6 +366,22 @@ export interface StorageAdapter extends BaseAdapter {
      * Deletes a file
      */
     delete(config: AdapterConfig, remotePath: string): Promise<boolean>;
+
+    /**
+     * Optional: downloads an entire remote directory tree to a local directory, used by
+     * directory-source (JobSource) backups. Adapters that don't implement this are handled
+     * via a generic fallback (list() + per-file download()) - see
+     * src/lib/adapters/storage/common/download-directory.ts. Rsync implements this natively
+     * to preserve its delta-transfer advantage.
+     */
+    downloadDirectory?(
+        config: AdapterConfig,
+        remotePath: string,
+        localPath: string,
+        excludePatterns?: string[],
+        onProgress?: (processedBytes: number, totalBytes: number, processedFiles: number, totalFiles: number) => void,
+        onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void
+    ): Promise<DirectoryDownloadResult>;
 }
 
 /**

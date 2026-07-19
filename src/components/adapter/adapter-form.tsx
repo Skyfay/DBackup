@@ -54,7 +54,7 @@ function seedSchemaDefaults(schema: z.ZodTypeAny, form: any) {
     }
 }
 
-export function AdapterForm({ type, adapters, onSuccess, initialData, onBack }: { type: string, adapters: AdapterDefinition[], onSuccess: () => void, initialData?: AdapterConfig, onBack?: () => void }) {
+export function AdapterForm({ type, adapters, onSuccess, initialData, onBack, defaultRoles }: { type: string, adapters: AdapterDefinition[], onSuccess: () => void, initialData?: AdapterConfig, onBack?: () => void, defaultRoles?: { usableAsSource: boolean; usableAsDestination: boolean } }) {
     const [selectedAdapterId, setSelectedAdapterId] = useState<string>(initialData?.adapterId || "");
 
     // Health check notification opt-out (database & storage only)
@@ -66,6 +66,17 @@ export function AdapterForm({ type, adapters, onSuccess, initialData, onBack }: 
 
     // Exclude from restore (database only)
     const [isRestoreExcluded, setIsRestoreExcluded] = useState<boolean>(initialMeta.isRestoreExcluded === true);
+
+    // Source/destination role flags (storage only) - real AdapterConfig columns, not metadata.
+    // Editing an existing adapter: seed from its stored values. Creating new: seed from the
+    // role the manager instance was opened with (e.g. the "Directory Sources" section defaults
+    // to source-only), falling back to the column default (destination-only) otherwise.
+    const [usableAsSource, setUsableAsSource] = useState<boolean>(
+        initialData ? (initialData.usableAsSource ?? false) : (defaultRoles?.usableAsSource ?? false)
+    );
+    const [usableAsDestination, setUsableAsDestination] = useState<boolean>(
+        initialData ? (initialData.usableAsDestination ?? true) : (defaultRoles?.usableAsDestination ?? true)
+    );
 
     // Credential profile assignments (Phase 4 - Generic Credential Profile System)
     const [primaryCredentialId, setPrimaryCredentialId] = useState<string | null>(initialData?.primaryCredentialId ?? null);
@@ -222,6 +233,7 @@ export function AdapterForm({ type, adapters, onSuccess, initialData, onBack }: 
                 metadata,
                 primaryCredentialId,
                 sshCredentialId,
+                ...(type === 'storage' ? { usableAsSource, usableAsDestination } : {}),
             };
 
             const res = await fetch(url, {
@@ -428,6 +440,10 @@ export function AdapterForm({ type, adapters, onSuccess, initialData, onBack }: 
                         onHealthNotificationsDisabledChange={setHealthNotificationsDisabled}
                         skipVerification={skipVerification}
                         onSkipVerificationChange={setSkipVerification}
+                        usableAsSource={usableAsSource}
+                        onUsableAsSourceChange={setUsableAsSource}
+                        usableAsDestination={usableAsDestination}
+                        onUsableAsDestinationChange={setUsableAsDestination}
                         primaryCredentialId={primaryCredentialId}
                         sshCredentialId={sshCredentialId}
                         onPrimaryChange={setPrimaryCredentialId}

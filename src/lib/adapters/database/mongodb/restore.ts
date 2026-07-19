@@ -260,6 +260,24 @@ async function restoreSingleDatabaseSSH(
     }
 }
 
+/**
+ * Capability export for combined DB+directory restores (JobSource): restores a single archive
+ * file into a single target database. Thin wrapper around restoreSingleDatabase, the same
+ * per-database logic restore() already uses internally for its own multi-DB case. Unlike
+ * restore(), this does not run the permission check - callers must ensure the target
+ * database is writable first (e.g. via prepareRestore).
+ */
+export async function restoreOne(
+    config: MongoDBRestoreConfig,
+    filePath: string,
+    targetDbName: string,
+    onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void,
+    _onProgress?: (percentage: number, detail?: string) => void,
+    originalDbName?: string
+): Promise<void> {
+    await restoreSingleDatabase(filePath, targetDbName, originalDbName, config, onLog ?? (() => {}), false);
+}
+
 export async function restore(
     config: MongoDBRestoreConfig,
     sourcePath: string,

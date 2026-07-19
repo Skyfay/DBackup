@@ -38,7 +38,7 @@ export async function PUT(
     const params = await props.params;
     try {
         const body = await req.json();
-        const { name, schedule, sourceId, databases, destinations, notificationIds, notificationTemplateIds, enabled, encryptionProfileId, compression, pgCompression, notificationEvents, namingTemplateId, schedulePresetId, skipVerification } = body;
+        const { name, schedule, sourceId, databases, destinations, sources, notificationIds, notificationTemplateIds, enabled, encryptionProfileId, compression, pgCompression, notificationEvents, namingTemplateId, schedulePresetId, skipVerification } = body;
 
         const updatedJob = await jobService.updateJob(params.id, {
             name,
@@ -51,6 +51,12 @@ export async function PUT(
                 priority: d.priority ?? i,
                 retention: d.retention ? JSON.stringify(d.retention) : "{}",
                 retentionPolicyId: d.retentionPolicyId ?? null,
+            })) : undefined,
+            sources: sources ? sources.map((s: { configId: string; priority?: number; path: string; excludePatterns?: string[] }, i: number) => ({
+                configId: s.configId,
+                priority: s.priority ?? i,
+                path: s.path,
+                excludePatterns: Array.isArray(s.excludePatterns) ? s.excludePatterns : [],
             })) : undefined,
             notificationIds,
             notificationTemplateIds: Array.isArray(notificationTemplateIds) ? notificationTemplateIds : undefined,

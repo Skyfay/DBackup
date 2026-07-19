@@ -199,6 +199,24 @@ async function dumpSingleDatabaseSSH(
     }
 }
 
+/**
+ * Capability export for combined DB+directory backups (JobSource): dumps exactly one
+ * database to a plain file, without any TAR/manifest wrapping. Thin wrapper around the
+ * same per-database logic dump() already uses internally for its own multi-DB case.
+ */
+export async function dumpOne(
+    config: PostgresDumpConfig,
+    dbName: string,
+    destinationPath: string,
+    onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void
+): Promise<{ size: number }> {
+    const env = { ...process.env };
+    if (config.password) env.PGPASSWORD = config.password;
+    await dumpSingleDatabase(dbName, destinationPath, config, env, onLog ?? (() => {}));
+    const stats = await fs.stat(destinationPath);
+    return { size: stats.size };
+}
+
 export async function dump(
     config: PostgresDumpConfig,
     destinationPath: string,

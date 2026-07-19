@@ -59,16 +59,16 @@ export async function POST(req: NextRequest) {
         checkPermissionWithContext(ctx, PERMISSIONS.JOBS.WRITE);
 
         const body = await req.json();
-        const { name, schedule, sourceId, databases, destinations, notificationIds, notificationTemplateIds, enabled, encryptionProfileId, compression, pgCompression, notificationEvents, namingTemplateId, schedulePresetId, skipVerification } = body;
+        const { name, schedule, sourceId, databases, destinations, sources, notificationIds, notificationTemplateIds, enabled, encryptionProfileId, compression, pgCompression, notificationEvents, namingTemplateId, schedulePresetId, skipVerification } = body;
 
-        if (!name || !schedule || !sourceId || !destinations || !Array.isArray(destinations) || destinations.length === 0) {
-            return NextResponse.json({ error: "Missing required fields (name, schedule, sourceId, destinations)" }, { status: 400 });
+        if (!name || !schedule || !destinations || !Array.isArray(destinations) || destinations.length === 0) {
+            return NextResponse.json({ error: "Missing required fields (name, schedule, destinations)" }, { status: 400 });
         }
 
         const newJob = await jobService.createJob({
             name,
             schedule,
-            sourceId,
+            sourceId: sourceId || undefined,
             databases: Array.isArray(databases) ? databases : [],
             destinations: destinations.map((d: { configId: string; priority?: number; retention?: any; retentionPolicyId?: string | null }, i: number) => ({
                 configId: d.configId,
@@ -76,6 +76,12 @@ export async function POST(req: NextRequest) {
                 retention: d.retention ? JSON.stringify(d.retention) : "{}",
                 retentionPolicyId: d.retentionPolicyId ?? null,
             })),
+            sources: Array.isArray(sources) ? sources.map((s: { configId: string; priority?: number; path: string; excludePatterns?: string[] }, i: number) => ({
+                configId: s.configId,
+                priority: s.priority ?? i,
+                path: s.path,
+                excludePatterns: Array.isArray(s.excludePatterns) ? s.excludePatterns : [],
+            })) : undefined,
             notificationIds,
             notificationTemplateIds: Array.isArray(notificationTemplateIds) ? notificationTemplateIds : undefined,
             enabled,

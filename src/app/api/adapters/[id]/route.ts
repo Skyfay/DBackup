@@ -120,7 +120,7 @@ export async function PUT(
         checkPermissionWithContext(ctx, getWritePermissionForType(existingAdapter.type));
 
         const body = await req.json();
-        const { name, config, metadata, primaryCredentialId, sshCredentialId } = body;
+        const { name, config, metadata, primaryCredentialId, sshCredentialId, usableAsSource, usableAsDestination } = body;
 
         // Validate credential profile assignments (if provided)
         if (primaryCredentialId !== undefined || sshCredentialId !== undefined) {
@@ -170,6 +170,30 @@ export async function PUT(
             configString = JSON.stringify(encryptConfig(mergedConfig));
         }
 
+        // Guard against silently breaking jobs that already depend on this adapter's current role.
+        if (usableAsDestination === false) {
+            const linkedDestinations = await prisma.jobDestination.findMany({
+                where: { configId: params.id },
+                select: { job: { select: { name: true } } },
+            });
+            if (linkedDestinations.length > 0) {
+                return NextResponse.json({
+                    error: `Cannot disable the destination role: this adapter is used as a destination in ${linkedDestinations.map(d => d.job.name).join(', ')}.`
+                }, { status: 400 });
+            }
+        }
+        if (usableAsSource === false) {
+            const linkedSources = await prisma.jobSource.findMany({
+                where: { configId: params.id },
+                select: { job: { select: { name: true } } },
+            });
+            if (linkedSources.length > 0) {
+                return NextResponse.json({
+                    error: `Cannot disable the source role: this adapter is used as a directory source in ${linkedSources.map(s => s.job.name).join(', ')}.`
+                }, { status: 400 });
+            }
+        }
+
         const updatedAdapter = await prisma.adapterConfig.update({
             where: { id: params.id },
             data: {
@@ -178,6 +202,8 @@ export async function PUT(
                 ...(primaryCredentialId !== undefined ? { primaryCredentialId: primaryCredentialId ?? null } : {}),
                 ...(sshCredentialId !== undefined ? { sshCredentialId: sshCredentialId ?? null } : {}),
                 ...(metadata !== undefined ? { metadata: JSON.stringify(metadata) } : {}),
+                ...(usableAsSource !== undefined ? { usableAsSource } : {}),
+                ...(usableAsDestination !== undefined ? { usableAsDestination } : {}),
                 // Clear the "No credential profile assigned" OFFLINE/DEGRADED flag when a profile is now assigned.
                 ...(primaryCredentialId && existingAdapter.lastError === "No credential profile assigned"
                     ? { lastStatus: "ONLINE", lastError: null, consecutiveFailures: 0 }

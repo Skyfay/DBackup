@@ -97,7 +97,7 @@ vi.mock("fs", () => {
     };
 });
 
-import { dump } from "@/lib/adapters/database/mongodb/dump";
+import { dump, dumpOne } from "@/lib/adapters/database/mongodb/dump";
 
 function buildConfig(overrides: Partial<MongoDBConfig> = {}): MongoDBConfig {
     return {
@@ -350,5 +350,34 @@ describe("MongoDB Dump - dump()", () => {
 
             expect(result.success).toBe(false);
         });
+    });
+});
+
+// -------------------------------------------------------------------------
+// dumpOne() - capability export for combined DB+directory backups (JobSource)
+// -------------------------------------------------------------------------
+
+describe("MongoDB Dump - dumpOne()", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mockIsSSHMode.mockReturnValue(false);
+        mockWaitForProcess.mockResolvedValue(undefined);
+        mockFsStat.mockResolvedValue({ size: 512000 });
+        mockSpawnProcess.mockReturnValue(makeSpawnProcess());
+    });
+
+    it("dumps the given database directly, without TAR wrapping", async () => {
+        const result = await dumpOne(buildConfig(), "otherdb", "/tmp/otherdb.archive");
+
+        expect(result).toEqual({ size: 512000 });
+        expect(mockSpawnProcess).toHaveBeenCalledWith(
+            "mongodump",
+            expect.arrayContaining(["--db", "otherdb"])
+        );
+        expect(mockCreateMultiDbTar).not.toHaveBeenCalled();
+    });
+
+    it("works without an onLog callback", async () => {
+        await expect(dumpOne(buildConfig(), "otherdb", "/tmp/otherdb.archive")).resolves.toEqual({ size: 512000 });
     });
 });

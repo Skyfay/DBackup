@@ -81,6 +81,7 @@
     "dropbox": "^10.37.1",
     "googleapis": "^173.0.0",
     "lucide-react": "^1.25.0",
+    "minimatch": "^10.2.5",
     "mongodb": "^7.5.0",
     "mssql": "^12.7.0",
     "next": "16.2.10",

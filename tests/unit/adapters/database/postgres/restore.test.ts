@@ -90,7 +90,7 @@ vi.mock("crypto", () => ({
     default: { randomUUID: vi.fn(() => "test-uuid-1234") },
 }));
 
-import { prepareRestore, restore } from "@/lib/adapters/database/postgres/restore";
+import { prepareRestore, restore, restoreOne } from "@/lib/adapters/database/postgres/restore";
 
 // -------------------------------------------------------------------------
 // Helpers
@@ -284,6 +284,45 @@ describe("prepareRestore()", () => {
 // -------------------------------------------------------------------------
 // restore() - single custom-format backup
 // -------------------------------------------------------------------------
+
+// -------------------------------------------------------------------------
+// restoreOne() - capability export for combined DB+directory restores (JobSource)
+// -------------------------------------------------------------------------
+
+describe("restoreOne()", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mockIsSSHMode.mockReturnValue(false);
+        mockSpawnProcess.mockImplementation(() => makeRestoreProcess(0));
+    });
+
+    it("restores the given file into the given target database directly", async () => {
+        await expect(restoreOne(buildConfig(), "/tmp/db.dump", "targetdb")).resolves.toBeUndefined();
+
+        expect(mockSpawnProcess).toHaveBeenCalledWith(
+            "pg_restore",
+            expect.arrayContaining(["-d", "targetdb"]),
+            expect.any(Object)
+        );
+        // Unlike restore(), restoreOne does not check/create the target database itself.
+        expect(mockExecFileAsync).not.toHaveBeenCalled();
+    });
+
+    it("works without an onLog callback", async () => {
+        await expect(restoreOne(buildConfig(), "/tmp/db.dump", "targetdb")).resolves.toBeUndefined();
+    });
+
+    it("uses privilegedAuth credentials when provided", async () => {
+        await restoreOne(
+            buildConfig({ privilegedAuth: { user: "admin", password: "adminpw" } }),
+            "/tmp/db.dump",
+            "targetdb"
+        );
+
+        const [, , spawnOptions] = mockSpawnProcess.mock.calls[0] as any[];
+        expect(spawnOptions.env.PGPASSWORD).toBe("adminpw");
+    });
+});
 
 describe("restore() - single custom format", () => {
     beforeEach(() => {

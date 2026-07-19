@@ -144,6 +144,21 @@ async function restoreSingleFileSSH(
     }
 }
 
+/**
+ * Capability export for combined DB+directory restores (JobSource): restores a single .fbk
+ * file into a single target path. Thin wrapper around restoreSingleFile, the same per-alias
+ * logic restore() already uses internally for its own multi-DB case.
+ */
+export async function restoreOne(
+    config: FirebirdRestoreConfig,
+    filePath: string,
+    targetDbName: string,
+    onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void,
+    onProgress?: (percentage: number, detail?: string) => void
+): Promise<void> {
+    await restoreSingleFile(config, filePath, targetDbName, onLog ?? (() => {}), onProgress);
+}
+
 export async function restore(
     config: FirebirdRestoreConfig,
     sourcePath: string,

@@ -1,4 +1,4 @@
-import { StorageAdapter, StorageSession, FileInfo } from "@/lib/core/interfaces";
+import { StorageAdapter, StorageSession, FileInfo, DirectoryDownloadResult, DirectoryFileEntry } from "@/lib/core/interfaces";
 import { RsyncSchema } from "@/lib/adapters/definitions";
 import Rsync from "rsync";
 import { exec, execFile } from "child_process";
@@ -9,6 +9,7 @@ import os from "os";
 import { LogLevel, LogType } from "@/lib/core/logs";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
+import { matchesAnyExcludePattern, toRelativePath } from "./common/download-directory";
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -395,6 +396,89 @@ export const RsyncAdapter: StorageAdapter = {
             log.error("Rsync download failed", { host: config.host, remotePath }, wrapError(error));
             if (onLog) onLog(`Rsync download failed: ${sanitizeError(error)}`, "error", "storage");
             return false;
+        } finally {
+            if (keyFile) await fs.unlink(keyFile).catch(() => {});
+        }
+    },
+
+    /**
+     * Native directory download: unlike upload/download (single file each), this syncs an
+     * entire remote directory tree in one native `rsync -a` transfer, preserving rsync's
+     * delta-transfer advantage (kept for directory-source (JobSource) backups). Exclude
+     * patterns map to rsync's native --exclude flag, so excluded files are never transferred
+     * at all. The file index (for the manifest's Tier-A searchable listing) comes from the
+     * existing recursive list() (a fast SSH `find`), not parsed from rsync's own output.
+     */
+    async downloadDirectory(
+        config: RsyncConfig,
+        remotePath: string,
+        localPath: string,
+        excludePatterns?: string[],
+        onProgress?: (processedBytes: number, totalBytes: number, processedFiles: number, totalFiles: number) => void,
+        onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void
+    ): Promise<DirectoryDownloadResult> {
+        let keyFile: string | undefined;
+        try {
+            if (config.authType === "privateKey" && config.privateKey) {
+                keyFile = await writeTempKey(config.privateKey);
+            }
+
+            if (onLog) onLog(`Listing remote directory: ${config.host}:${remotePath}`, "info", "storage");
+
+            const allFiles = await RsyncAdapter.list(config, remotePath);
+            const entries: DirectoryFileEntry[] = allFiles
+                .map((f) => ({
+                    relativePath: toRelativePath(f.path, remotePath),
+                    size: f.size,
+                    lastModified: f.lastModified,
+                }))
+                .filter((e) => !matchesAnyExcludePattern(e.relativePath, excludePatterns));
+
+            const totalBytes = entries.reduce((sum, e) => sum + e.size, 0);
+            const totalFiles = entries.length;
+
+            if (totalFiles === 0) {
+                if (onLog) onLog(`No files found under ${remotePath}`, "info", "storage");
+                return { files: 0, bytes: 0, entries: [] };
+            }
+
+            await fs.mkdir(localPath, { recursive: true });
+
+            if (onLog) onLog(`Starting rsync directory download from: ${config.host}:${remotePath} (${totalFiles} file(s))`, "info", "storage");
+
+            const rsync = await createRsyncInstance(config, keyFile);
+            rsync.set("info", "progress2");
+            if (excludePatterns && excludePatterns.length > 0) {
+                rsync.exclude(excludePatterns);
+            }
+
+            // Trailing slash: sync the directory's CONTENTS into localPath, not the directory itself
+            const source = `${buildRemotePath(config, remotePath)}/`;
+            rsync.source(source);
+            rsync.destination(localPath);
+
+            await executeRsync(rsync, (msg, level, type, details) => {
+                // Aggregate progress line from --info=progress2, e.g.
+                // " 1,234,567  45%   12.34MB/s    0:00:05  (xfr#12, to-chk=34/56)"
+                const match = msg.match(/^\s*([\d,]+)\s+(\d+)%.*to-chk=(\d+)\/(\d+)\)/);
+                if (match && onProgress) {
+                    const bytes = parseInt(match[1].replace(/,/g, ""), 10);
+                    const remaining = parseInt(match[3], 10);
+                    const totalToCheck = parseInt(match[4], 10);
+                    const processedFiles = Math.max(0, totalToCheck - remaining);
+                    onProgress(bytes, totalBytes, Math.min(processedFiles, totalFiles), totalFiles);
+                }
+                if (onLog) onLog(msg, level, type, details);
+            });
+
+            if (onProgress) onProgress(totalBytes, totalBytes, totalFiles, totalFiles);
+            if (onLog) onLog(`Rsync directory download completed: ${totalFiles} file(s), ${totalBytes} bytes`, "info", "storage");
+
+            return { files: totalFiles, bytes: totalBytes, entries };
+        } catch (error: unknown) {
+            log.error("Rsync directory download failed", { host: config.host, remotePath }, wrapError(error));
+            if (onLog) onLog(`Rsync directory download failed: ${sanitizeError(error)}`, "error", "storage");
+            throw error;
         } finally {
             if (keyFile) await fs.unlink(keyFile).catch(() => {});
         }

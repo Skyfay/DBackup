@@ -115,7 +115,7 @@ vi.mock("fs", () => {
     };
 });
 
-import { dump } from "@/lib/adapters/database/mysql/dump";
+import { dump, dumpOne } from "@/lib/adapters/database/mysql/dump";
 
 // -------------------------------------------------------------------------
 // Helpers
@@ -175,6 +175,32 @@ describe("MySQL Dump - dump()", () => {
         await dump(buildConfig({ database: "mydb" }), "/tmp/output.sql");
 
         expect(mockSpawnProcess).toHaveBeenCalledWith("mysqldump", expect.any(Array));
+    });
+
+    // -------------------------------------------------------------------------
+    // dumpOne() - capability export for combined DB+directory backups (JobSource)
+    // -------------------------------------------------------------------------
+
+    it("dumpOne() dumps the given database directly, without TAR wrapping", async () => {
+        const result = await dumpOne(buildConfig(), "otherdb", "/tmp/otherdb.sql");
+
+        expect(result).toEqual({ size: 1024 * 100 });
+        expect(mockSpawnProcess).toHaveBeenCalledWith(
+            "mysqldump",
+            expect.arrayContaining(["otherdb"])
+        );
+        expect(mockCreateMultiDbTar).not.toHaveBeenCalled();
+    });
+
+    it("dumpOne() works without an onLog callback", async () => {
+        await expect(dumpOne(buildConfig(), "otherdb", "/tmp/otherdb.sql")).resolves.toEqual({ size: 1024 * 100 });
+    });
+
+    it("dumpOne() forwards log messages when onLog is provided", async () => {
+        const logs: string[] = [];
+        await dumpOne(buildConfig(), "otherdb", "/tmp/otherdb.sql", (msg) => logs.push(msg));
+
+        expect(logs.some((l) => l.includes("otherdb"))).toBe(true);
     });
 
     it("returns failure when dump file is empty after process exit", async () => {

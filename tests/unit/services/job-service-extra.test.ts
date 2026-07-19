@@ -141,6 +141,7 @@ describe('JobService (extra coverage)', () => {
                 schedulePresetId: null,
                 notifications: [],
                 destinations: [{ configId: 'dest-1', priority: 0, retention: '{}' }],
+                sources: [],
                 notificationTemplates: [],
             };
 
@@ -174,6 +175,7 @@ describe('JobService (extra coverage)', () => {
                 schedulePresetId: null,
                 notifications: [],
                 destinations: [{ configId: 'dest-1', priority: 0, retention: '{}' }],
+                sources: [],
                 notificationTemplates: [
                     { templateId: 'tmpl-1', priority: 0 },
                     { templateId: 'tmpl-2', priority: 1 },

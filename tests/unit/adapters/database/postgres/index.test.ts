@@ -9,7 +9,9 @@ describe("PostgresAdapter", () => {
 
     it("has required adapter functions", () => {
         expect(typeof PostgresAdapter.dump).toBe("function");
+        expect(typeof PostgresAdapter.dumpOne).toBe("function");
         expect(typeof PostgresAdapter.restore).toBe("function");
+        expect(typeof PostgresAdapter.restoreOne).toBe("function");
         expect(typeof PostgresAdapter.test).toBe("function");
         expect(typeof PostgresAdapter.getDatabases).toBe("function");
         expect(typeof PostgresAdapter.getDatabasesWithStats).toBe("function");

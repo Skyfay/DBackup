@@ -2,9 +2,11 @@ import { describe, it, expect, vi } from "vitest";
 
 vi.mock("@/lib/adapters/database/mongodb/dump", () => ({
     dump: vi.fn(),
+    dumpOne: vi.fn(),
 }));
 vi.mock("@/lib/adapters/database/mongodb/restore", () => ({
     restore: vi.fn(),
+    restoreOne: vi.fn(),
     prepareRestore: vi.fn(),
 }));
 vi.mock("@/lib/adapters/database/mongodb/connection", () => ({
@@ -26,7 +28,9 @@ describe("MongoDBAdapter", () => {
 
     it("exposes all required adapter methods", () => {
         expect(typeof MongoDBAdapter.dump).toBe("function");
+        expect(typeof MongoDBAdapter.dumpOne).toBe("function");
         expect(typeof MongoDBAdapter.restore).toBe("function");
+        expect(typeof MongoDBAdapter.restoreOne).toBe("function");
         expect(typeof MongoDBAdapter.test).toBe("function");
         expect(typeof MongoDBAdapter.getDatabases).toBe("function");
         expect(typeof MongoDBAdapter.getDatabasesWithStats).toBe("function");

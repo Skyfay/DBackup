@@ -146,6 +146,9 @@ importers:
       lucide-react:
         specifier: ^1.25.0
         version: 1.25.0(react@19.2.7)
+      minimatch:
+        specifier: ^10.2.5
+        version: 10.2.5
       mongodb:
         specifier: ^7.5.0
         version: 7.5.0

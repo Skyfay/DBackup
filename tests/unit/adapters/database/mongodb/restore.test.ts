@@ -132,7 +132,7 @@ vi.mock("crypto", () => ({
     default: { randomUUID: vi.fn(() => "test-uuid-1234") },
 }));
 
-import { prepareRestore, restore } from "@/lib/adapters/database/mongodb/restore";
+import { prepareRestore, restore, restoreOne } from "@/lib/adapters/database/mongodb/restore";
 
 function buildConfig(overrides: Record<string, any> = {}): MongoDBConfig & Record<string, any> {
     return {
@@ -501,5 +501,40 @@ describe("restore() - SSH TAR archive restore", () => {
         );
 
         expect(result.success).toBe(false);
+    });
+});
+
+// -------------------------------------------------------------------------
+// restoreOne() - capability export for combined DB+directory restores (JobSource)
+// -------------------------------------------------------------------------
+
+describe("restoreOne()", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mockIsSSHMode.mockReturnValue(false);
+        mockWaitForProcess.mockResolvedValue(undefined);
+        mockSpawnProcess.mockReturnValue(makeSpawnProcess());
+    });
+
+    it("restores the given file into the given target database directly", async () => {
+        await expect(restoreOne(buildConfig(), "/tmp/db.archive", "targetdb")).resolves.toBeUndefined();
+
+        expect(mockSpawnProcess).toHaveBeenCalledWith(
+            "mongorestore",
+            expect.arrayContaining([`--archive=/tmp/db.archive`, "--gzip", "--drop"])
+        );
+    });
+
+    it("works without an onLog callback", async () => {
+        await expect(restoreOne(buildConfig(), "/tmp/db.archive", "targetdb")).resolves.toBeUndefined();
+    });
+
+    it("adds nsFrom/nsTo args when the original database name differs from the target", async () => {
+        await restoreOne(buildConfig(), "/tmp/db.archive", "renamed_db", undefined, undefined, "original_db");
+
+        expect(mockSpawnProcess).toHaveBeenCalledWith(
+            "mongorestore",
+            expect.arrayContaining(["--nsFrom", "original_db.*", "--nsTo", "renamed_db.*"])
+        );
     });
 });

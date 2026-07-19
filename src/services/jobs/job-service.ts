@@ -2,6 +2,11 @@ import prisma from "@/lib/prisma";
 import { scheduler } from "@/lib/server/scheduler";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
+import { registry } from "@/lib/core/registry";
+import { registerAdapters } from "@/lib/adapters";
+import type { DatabaseAdapter } from "@/lib/core/interfaces";
+
+registerAdapters();
 
 const log = logger.child({ service: "JobService" });
 
@@ -12,12 +17,20 @@ export interface DestinationInput {
     retentionPolicyId?: string | null;
 }
 
+export interface SourceInput {
+    configId: string;
+    priority: number;
+    path: string;
+    excludePatterns?: string[];
+}
+
 export interface CreateJobInput {
     name: string;
     schedule: string;
-    sourceId: string;
+    sourceId?: string;
     databases?: string[];
     destinations: DestinationInput[];
+    sources?: SourceInput[];
     notificationIds?: string[];
     notificationTemplateIds?: string[];
     encryptionProfileId?: string;
@@ -36,6 +49,7 @@ export interface UpdateJobInput {
     sourceId?: string;
     databases?: string[];
     destinations?: DestinationInput[];
+    sources?: SourceInput[];
     notificationIds?: string[];
     notificationTemplateIds?: string[];
     encryptionProfileId?: string;
@@ -51,6 +65,10 @@ export interface UpdateJobInput {
 const jobInclude = {
     source: true,
     destinations: {
+        include: { config: true },
+        orderBy: { priority: 'asc' as const }
+    },
+    sources: {
         include: { config: true },
         orderBy: { priority: 'asc' as const }
     },
@@ -89,14 +107,82 @@ export class JobService {
                     include: { config: true },
                     orderBy: { priority: 'asc' }
                 },
+                sources: {
+                    include: { config: true },
+                    orderBy: { priority: 'asc' }
+                },
                 notifications: true,
                 encryptionProfile: true
             }
         });
     }
 
+    /**
+     * Resolves the effective (post-update) source state for validation. When sourceId/sources
+     * aren't part of this call (undefined), falls back to the job's current stored state -
+     * only fetched from the DB when actually needed (jobId set and a field is unspecified).
+     */
+    private async resolveEffectiveSourceState(jobId: string | null, sourceId: string | null | undefined, sources: SourceInput[] | undefined) {
+        let effectiveSourceId = sourceId;
+        let effectiveSourceCount = sources?.length;
+
+        if (jobId && (effectiveSourceId === undefined || effectiveSourceCount === undefined)) {
+            const current = await prisma.job.findUnique({
+                where: { id: jobId },
+                select: { sourceId: true, sources: { select: { id: true } } }
+            });
+            if (!current) {
+                throw new Error(`Job with id "${jobId}" not found.`);
+            }
+            if (effectiveSourceId === undefined) effectiveSourceId = current.sourceId;
+            if (effectiveSourceCount === undefined) effectiveSourceCount = current.sources.length;
+        }
+
+        return { effectiveSourceId: effectiveSourceId || null, effectiveSourceCount: effectiveSourceCount ?? 0 };
+    }
+
+    /**
+     * Enforces the "a job needs at least one source" invariant and validates that:
+     * - every directory source points at a storage adapter enabled with the source role
+     * - a database source combined with directory sources actually supports combination (dumpOne)
+     * This mirrors the destinations.length===0 guard already enforced at runner init time
+     * (defense in depth), plus the new source-role/combinability checks this feature introduces.
+     */
+    private async validateJobSources(jobId: string | null, sourceId: string | null | undefined, sources: SourceInput[] | undefined) {
+        const { effectiveSourceId, effectiveSourceCount } = await this.resolveEffectiveSourceState(jobId, sourceId, sources);
+
+        if (!effectiveSourceId && effectiveSourceCount === 0) {
+            throw new Error("Job must have at least one source: a database source or one or more directory sources.");
+        }
+
+        if (sources && sources.length > 0) {
+            const configIds = [...new Set(sources.map((s) => s.configId))];
+            const configs = await prisma.adapterConfig.findMany({ where: { id: { in: configIds } } });
+            for (const configId of configIds) {
+                const config = configs.find((c) => c.id === configId);
+                if (!config) {
+                    throw new Error(`Directory source references unknown adapter "${configId}".`);
+                }
+                if (config.type !== "storage" || !config.usableAsSource) {
+                    throw new Error(`Adapter "${config.name}" is not enabled as a directory source.`);
+                }
+            }
+        }
+
+        if (effectiveSourceId && effectiveSourceCount > 0) {
+            const sourceConfig = await prisma.adapterConfig.findUnique({ where: { id: effectiveSourceId } });
+            if (!sourceConfig) {
+                throw new Error(`Source adapter "${effectiveSourceId}" not found.`);
+            }
+            const adapter = registry.get(sourceConfig.adapterId) as DatabaseAdapter | undefined;
+            if (!adapter?.dumpOne) {
+                throw new Error(`Database adapter "${sourceConfig.adapterId}" does not support combined backups with directory sources.`);
+            }
+        }
+    }
+
     async createJob(input: CreateJobInput) {
-        const { name, schedule, sourceId, databases, destinations, notificationIds, notificationTemplateIds, enabled, encryptionProfileId, compression, pgCompression, notificationEvents, skipVerification } = input;
+        const { name, schedule, sourceId, databases, destinations, sources, notificationIds, notificationTemplateIds, enabled, encryptionProfileId, compression, pgCompression, notificationEvents, skipVerification } = input;
 
         // Check name uniqueness
         const existingByName = await prisma.job.findFirst({ where: { name } });
@@ -104,11 +190,13 @@ export class JobService {
             throw new Error(`A job with the name "${name}" already exists.`);
         }
 
+        await this.validateJobSources(null, sourceId || null, sources);
+
         const newJob = await prisma.job.create({
             data: {
                 name,
                 schedule,
-                sourceId,
+                sourceId: sourceId || null,
                 databases: JSON.stringify(databases || []),
                 enabled: enabled !== undefined ? enabled : true,
                 encryptionProfileId: encryptionProfileId || null,
@@ -136,7 +224,17 @@ export class JobService {
                         retention: d.retention || "{}",
                         retentionPolicyId: d.retentionPolicyId ?? null,
                     }))
-                }
+                },
+                sources: sources?.length
+                    ? {
+                        create: sources.map((s) => ({
+                            configId: s.configId,
+                            priority: s.priority,
+                            path: s.path,
+                            excludePatterns: JSON.stringify(s.excludePatterns || []),
+                        }))
+                    }
+                    : undefined
             },
             include: jobInclude
         });
@@ -147,7 +245,7 @@ export class JobService {
     }
 
     async updateJob(id: string, input: UpdateJobInput) {
-        const { name, schedule, sourceId, databases, destinations, notificationIds, notificationTemplateIds, enabled, encryptionProfileId, compression, pgCompression, notificationEvents, namingTemplateId, skipVerification } = input;
+        const { name, schedule, sourceId, databases, destinations, sources, notificationIds, notificationTemplateIds, enabled, encryptionProfileId, compression, pgCompression, notificationEvents, namingTemplateId, skipVerification } = input;
 
         // Check name uniqueness (excluding current job)
         if (name) {
@@ -155,6 +253,10 @@ export class JobService {
             if (existingByName) {
                 throw new Error(`A job with the name "${name}" already exists.`);
             }
+        }
+
+        if (sourceId !== undefined || sources !== undefined) {
+            await this.validateJobSources(id, sourceId !== undefined ? (sourceId || null) : undefined, sources);
         }
 
         const updatedJob = await prisma.$transaction(async (tx) => {
@@ -170,6 +272,22 @@ export class JobService {
                         retentionPolicyId: d.retentionPolicyId ?? null,
                     }))
                 });
+            }
+
+            // Update directory sources if provided
+            if (sources) {
+                await tx.jobSource.deleteMany({ where: { jobId: id } });
+                if (sources.length > 0) {
+                    await tx.jobSource.createMany({
+                        data: sources.map((s) => ({
+                            jobId: id,
+                            configId: s.configId,
+                            priority: s.priority,
+                            path: s.path,
+                            excludePatterns: JSON.stringify(s.excludePatterns || []),
+                        }))
+                    });
+                }
             }
 
             // Update notification templates if provided
@@ -192,7 +310,7 @@ export class JobService {
                     name,
                     schedule,
                     enabled,
-                    sourceId,
+                    sourceId: sourceId !== undefined ? (sourceId || null) : undefined,
                     databases: databases !== undefined ? JSON.stringify(databases) : undefined,
                     compression,
                     pgCompression,
@@ -230,6 +348,7 @@ export class JobService {
             where: { id },
             include: {
                 destinations: true,
+                sources: true,
                 notifications: true,
                 notificationTemplates: { orderBy: { priority: 'asc' as const } },
             }
@@ -282,7 +401,17 @@ export class JobService {
                         priority: d.priority,
                         retention: d.retention
                     }))
-                }
+                },
+                sources: original.sources.length
+                    ? {
+                        create: original.sources.map((s) => ({
+                            configId: s.configId,
+                            priority: s.priority,
+                            path: s.path,
+                            excludePatterns: s.excludePatterns,
+                        }))
+                    }
+                    : undefined
             },
             include: jobInclude
         });

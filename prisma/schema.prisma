@@ -19,7 +19,13 @@ model AdapterConfig {
   jobsSource       Job[]    @relation("Source")
   jobsNotification Job[]    @relation("Notifications")
   jobDestinations  JobDestination[]
+  jobSources       JobSource[]                   @relation("JobSourceConfig")
   notificationTemplateChannels NotificationTemplateChannel[]
+
+  // Directory-source/destination role flags (storage adapters only; app enforces this).
+  // Defaults preserve today's behavior for every pre-existing storage adapter: destination-only.
+  usableAsSource      Boolean @default(false)
+  usableAsDestination Boolean @default(true)
 
   // Credential profile references (Phase 1: nullable; app enforces required-ness based on adapter type)
   primaryCredentialId String?
@@ -105,7 +111,7 @@ model Job {
   name                String
   schedule            String
   enabled             Boolean            @default(true)
-  sourceId            String
+  sourceId            String?
   databases           String             @default("[]") // JSON array of database names to back up (e.g. ["db1","db2"])
   encryptionProfileId String?
   encryptionProfile   EncryptionProfile? @relation(fields: [encryptionProfileId], references: [id])
@@ -119,7 +125,8 @@ model Job {
   updatedAt           DateTime           @updatedAt
   executions          Execution[]
   destinations        JobDestination[]
-  source              AdapterConfig      @relation("Source", fields: [sourceId], references: [id])
+  source              AdapterConfig?     @relation("Source", fields: [sourceId], references: [id], onDelete: Restrict)
+  sources             JobSource[]
   notifications       AdapterConfig[]    @relation("Notifications")
   notificationEvents  String             @default("ALWAYS") // Legacy: "ALWAYS", "FAILURE_ONLY", "SUCCESS_ONLY" - kept for backward compat
   notificationTemplates JobNotificationTemplate[]
@@ -175,6 +182,23 @@ model JobDestination {
   config     AdapterConfig @relation(fields: [configId], references: [id])
 
   @@unique([jobId, configId])
+}
+
+model JobSource {
+  id              String   @id @default(uuid())
+  jobId           String
+  configId        String
+  priority        Int      @default(0) // Collection/manifest ordering
+  path            String   // Remote path on the storage adapter to pull from
+  excludePatterns String   @default("[]") // JSON array of glob patterns
+  useStagingCache Boolean  @default(false) // Reserved for a later phase (persistent rsync mirror); unused for now
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  job    Job           @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  config AdapterConfig @relation("JobSourceConfig", fields: [configId], references: [id], onDelete: Restrict)
+
+  @@unique([jobId, configId, path])
 }
 
 model Execution {

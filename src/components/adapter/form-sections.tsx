@@ -159,6 +159,49 @@ function DisableVerificationSwitch({
     );
 }
 
+function AdapterRoleSwitches({
+    usableAsSource,
+    usableAsDestination,
+    onUsableAsSourceChange,
+    onUsableAsDestinationChange,
+}: {
+    usableAsSource: boolean;
+    usableAsDestination: boolean;
+    onUsableAsSourceChange: (enabled: boolean) => void;
+    onUsableAsDestinationChange: (enabled: boolean) => void;
+}) {
+    return (
+        <>
+            <div className="flex items-center justify-between rounded-lg border p-4">
+                <div className="space-y-0.5">
+                    <Label htmlFor="usable-as-destination">Usable as Backup Destination</Label>
+                    <p className="text-sm text-muted-foreground">
+                        Can be selected as a storage destination when creating or editing a job.
+                    </p>
+                </div>
+                <Switch
+                    id="usable-as-destination"
+                    checked={usableAsDestination}
+                    onCheckedChange={onUsableAsDestinationChange}
+                />
+            </div>
+            <div className="flex items-center justify-between rounded-lg border p-4">
+                <div className="space-y-0.5">
+                    <Label htmlFor="usable-as-source">Usable as Directory Source</Label>
+                    <p className="text-sm text-muted-foreground">
+                        Can be selected as a directory backup source when creating or editing a job.
+                    </p>
+                </div>
+                <Switch
+                    id="usable-as-source"
+                    checked={usableAsSource}
+                    onCheckedChange={onUsableAsSourceChange}
+                />
+            </div>
+        </>
+    );
+}
+
 function RestoreExcludedSwitch({
     excluded,
     onChange,
@@ -697,18 +740,22 @@ export function StorageFormContent({
     onHealthNotificationsDisabledChange,
     skipVerification,
     onSkipVerificationChange,
+    usableAsSource,
+    onUsableAsSourceChange,
+    usableAsDestination,
+    onUsableAsDestinationChange,
     primaryCredentialId,
     sshCredentialId: _sshCredentialId,
     onPrimaryChange,
     onSshChange: _onSshChange,
-}: { adapter: AdapterDefinition; initialData?: AdapterConfig; healthNotificationsDisabled?: boolean; onHealthNotificationsDisabledChange?: (disabled: boolean) => void; skipVerification?: boolean; onSkipVerificationChange?: (disabled: boolean) => void } & CredentialPickerHostProps) {
+}: { adapter: AdapterDefinition; initialData?: AdapterConfig; healthNotificationsDisabled?: boolean; onHealthNotificationsDisabledChange?: (disabled: boolean) => void; skipVerification?: boolean; onSkipVerificationChange?: (disabled: boolean) => void; usableAsSource?: boolean; onUsableAsSourceChange?: (enabled: boolean) => void; usableAsDestination?: boolean; onUsableAsDestinationChange?: (enabled: boolean) => void } & CredentialPickerHostProps) {
     const { watch } = useFormContext();
     const authType = watch("config.authType");
     const storageClass = watch("config.storageClass");
     const isArchivedStorageClass = storageClass === "GLACIER" || storageClass === "DEEP_ARCHIVE";
     const hasRealConfigKeys = hasFields(adapter, STORAGE_CONFIG_KEYS);
-    // Always show Configuration tab for storage adapters (health check and verification switches live there)
-    const hasConfigKeys = hasRealConfigKeys || !!onHealthNotificationsDisabledChange || !!onSkipVerificationChange;
+    // Always show Configuration tab for storage adapters (health check, verification and role switches live there)
+    const hasConfigKeys = hasRealConfigKeys || !!onHealthNotificationsDisabledChange || !!onSkipVerificationChange || !!onUsableAsSourceChange;
     const isGoogleDrive = adapter.id === 'google-drive';
     const isDropbox = adapter.id === 'dropbox';
     const isOneDrive = adapter.id === 'onedrive';
@@ -834,6 +881,14 @@ export function StorageFormContent({
                         <DisableVerificationSwitch
                             disabled={skipVerification ?? false}
                             onChange={onSkipVerificationChange}
+                        />
+                    )}
+                    {onUsableAsSourceChange && onUsableAsDestinationChange && (
+                        <AdapterRoleSwitches
+                            usableAsSource={usableAsSource ?? false}
+                            usableAsDestination={usableAsDestination ?? true}
+                            onUsableAsSourceChange={onUsableAsSourceChange}
+                            onUsableAsDestinationChange={onUsableAsDestinationChange}
                         />
                     )}
                 </TabsContent>

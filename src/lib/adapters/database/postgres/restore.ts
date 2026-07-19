@@ -302,6 +302,28 @@ async function restoreSingleDatabaseSSH(
     }
 }
 
+/**
+ * Capability export for combined DB+directory restores (JobSource): restores a single plain
+ * dump file into a single target database. Thin wrapper around restoreSingleDatabase, the
+ * same per-database logic restore() already uses internally for its own multi-DB case.
+ * Unlike restore(), this does not create the target database - callers must ensure it exists
+ * first (e.g. via prepareRestore).
+ */
+export async function restoreOne(
+    config: PostgresRestoreConfig,
+    filePath: string,
+    targetDbName: string,
+    onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void
+): Promise<void> {
+    const env = { ...process.env };
+    const priv = config.privilegedAuth;
+    const user = (priv && priv.user) ? priv.user : config.user;
+    const password = (priv && priv.password) ? priv.password : config.password;
+    if (password) env.PGPASSWORD = password;
+    const usageConfig = { ...config, user };
+    await restoreSingleDatabase(filePath, targetDbName, usageConfig, env, onLog ?? (() => {}));
+}
+
 export async function restore(
     config: PostgresRestoreConfig,
     sourcePath: string,

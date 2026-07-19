@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
 
     try {
         const body = await req.json();
-        const { name, type, adapterId, config, metadata, primaryCredentialId, sshCredentialId } = body;
+        const { name, type, adapterId, config, metadata, primaryCredentialId, sshCredentialId, usableAsSource, usableAsDestination } = body;
 
         // Permission Check
         if (type === 'database') {
@@ -122,6 +122,11 @@ export async function POST(req: NextRequest) {
                 primaryCredentialId: primaryCredentialId ?? null,
                 sshCredentialId: sshCredentialId ?? null,
                 ...(metadata ? { metadata: JSON.stringify(metadata) } : {}),
+                // Role flags only make sense for storage adapters - other types keep the column defaults.
+                ...(type === 'storage' ? {
+                    usableAsSource: usableAsSource ?? false,
+                    usableAsDestination: usableAsDestination ?? true,
+                } : {}),
             },
         });
 

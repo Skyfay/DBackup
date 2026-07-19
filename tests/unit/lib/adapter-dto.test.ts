@@ -35,6 +35,8 @@ describe("toAdapterListItem (adapter list DTO)", () => {
             lastStatus: "ONLINE",
             lastError: null,
             consecutiveFailures: 0,
+            usableAsSource: false,
+            usableAsDestination: true,
         };
     }
 

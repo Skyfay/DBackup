@@ -84,7 +84,7 @@ vi.mock("fs", () => {
     };
 });
 
-import { dump } from "@/lib/adapters/database/postgres/dump";
+import { dump, dumpOne } from "@/lib/adapters/database/postgres/dump";
 
 // -------------------------------------------------------------------------
 // Helpers
@@ -358,6 +358,42 @@ describe("PostgreSQL Dump - single database", () => {
             expect.arrayContaining(["--schema=public"]),
             expect.any(Object)
         );
+    });
+});
+
+// -------------------------------------------------------------------------
+// dumpOne() - capability export for combined DB+directory backups (JobSource)
+// -------------------------------------------------------------------------
+
+describe("PostgreSQL Dump - dumpOne()", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mockIsSSHMode.mockReturnValue(false);
+        mockFsStat.mockResolvedValue({ size: 1024 * 100 });
+        mockSpawnProcess.mockImplementation(() => makeSpawnProcess(0));
+    });
+
+    it("dumps the given database directly, without TAR wrapping", async () => {
+        const result = await dumpOne(buildConfig(), "otherdb", "/tmp/otherdb.dump");
+
+        expect(result).toEqual({ size: 1024 * 100 });
+        expect(mockSpawnProcess).toHaveBeenCalledWith(
+            "pg_dump",
+            expect.arrayContaining(["-d", "otherdb"]),
+            expect.any(Object)
+        );
+        expect(mockCreateMultiDbTar).not.toHaveBeenCalled();
+    });
+
+    it("works without an onLog callback", async () => {
+        await expect(dumpOne(buildConfig(), "otherdb", "/tmp/otherdb.dump")).resolves.toEqual({ size: 1024 * 100 });
+    });
+
+    it("injects PGPASSWORD into the environment when a password is set", async () => {
+        await dumpOne(buildConfig({ password: "hunter2" }), "otherdb", "/tmp/otherdb.dump");
+
+        const [, , spawnOptions] = mockSpawnProcess.mock.calls[0] as any[];
+        expect(spawnOptions.env.PGPASSWORD).toBe("hunter2");
     });
 });
 

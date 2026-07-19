@@ -28,7 +28,7 @@ import { StorageHistoryModal } from "@/components/dashboard/widgets/storage-hist
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { CloneDialog } from "@/components/ui/clone-dialog";
 
-export function AdapterManager({ type, title, description, canManage = true, permissions = [] }: AdapterManagerProps) {
+export function AdapterManager({ type, title, description, canManage = true, permissions = [], roleFilter, defaultRoles }: AdapterManagerProps) {
     const [configs, setConfigs] = useState<AdapterConfig[]>([]);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [isPickerOpen, setIsPickerOpen] = useState(false);
@@ -42,13 +42,21 @@ export function AdapterManager({ type, title, description, canManage = true, per
     const [historyAdapter, setHistoryAdapter] = useState<{ id: string; name: string } | null>(null);
     const router = useRouter();
 
+    // Storage adapters can serve as a source and/or a destination; a manager instance
+    // scoped to one role (e.g. the "Directory Sources" section) only shows configs
+    // enabled for that role - filtered client-side against the single type=storage fetch.
+    const applyRoleFilter = useCallback((data: AdapterConfig[]) => {
+        if (!roleFilter || type !== 'storage') return data;
+        return data.filter((c) => roleFilter === 'source' ? c.usableAsSource : c.usableAsDestination);
+    }, [roleFilter, type]);
+
     const fetchConfigs = useCallback(async () => {
         setIsLoading(true);
         try {
             const res = await fetch(`/api/adapters?type=${type}`);
             if (res.ok) {
                 const data = await res.json();
-                setConfigs(data);
+                setConfigs(applyRoleFilter(data));
             } else {
                  const data = await res.json();
                  toast.error(data.error || "Failed to load configurations");
@@ -58,7 +66,7 @@ export function AdapterManager({ type, title, description, canManage = true, per
         } finally {
             setIsLoading(false);
         }
-    }, [type]);
+    }, [type, applyRoleFilter]);
 
     // Silent polling refresh (no loading spinner, no error toasts)
     const silentRefresh = useCallback(async () => {
@@ -66,12 +74,12 @@ export function AdapterManager({ type, title, description, canManage = true, per
             const res = await fetch(`/api/adapters?type=${type}`);
             if (res.ok) {
                 const data = await res.json();
-                setConfigs(data);
+                setConfigs(applyRoleFilter(data));
             }
         } catch {
             // Silent - don't disturb the user on background poll failures
         }
-    }, [type]);
+    }, [type, applyRoleFilter]);
 
     useEffect(() => {
         // Filter definitions by type
@@ -248,6 +256,23 @@ export function AdapterManager({ type, title, description, canManage = true, per
                 );
             }
         },
+        // Roles column (storage adapters only) - shows both role badges regardless of
+        // which page (Sources/Destinations) is used to manage the adapter, so a glance
+        // at either page shows its full role set without cross-referencing the other.
+        ...(type === 'storage' ? [{
+            id: "roles",
+            header: "Roles",
+            cell: ({ row }: { row: any }) => (
+                <div className="flex gap-1">
+                    <Badge variant={row.original.usableAsSource ? "default" : "outline"} className={row.original.usableAsSource ? "" : "opacity-40"}>
+                        Source
+                    </Badge>
+                    <Badge variant={row.original.usableAsDestination ? "default" : "outline"} className={row.original.usableAsDestination ? "" : "opacity-40"}>
+                        Destination
+                    </Badge>
+                </div>
+            )
+        }] as ColumnDef<AdapterConfig>[] : []),
         // Database Version Column
         ...(type === 'database' ? [{
             id: "version",
@@ -433,6 +458,7 @@ export function AdapterManager({ type, title, description, canManage = true, per
                             onSuccess={() => { setIsDialogOpen(false); setSelectedAdapterForNew(null); fetchConfigs(); }}
                             initialData={editingId ? configs.find(c => c.id === editingId) : undefined}
                             onBack={!editingId ? () => { setIsDialogOpen(false); setSelectedAdapterForNew(null); setIsPickerOpen(true); } : undefined}
+                            defaultRoles={defaultRoles}
                         />
                     )}
                 </DialogContent>

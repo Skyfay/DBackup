@@ -127,7 +127,7 @@ vi.mock("crypto", () => ({
     default: { randomUUID: vi.fn(() => "test-uuid-1234") },
 }));
 
-import { prepareRestore, restore } from "@/lib/adapters/database/mysql/restore";
+import { prepareRestore, restore, restoreOne } from "@/lib/adapters/database/mysql/restore";
 
 // -------------------------------------------------------------------------
 // Helpers
@@ -389,6 +389,44 @@ describe("restore() - single database", () => {
 // -------------------------------------------------------------------------
 // restore() - Multi-DB TAR archive
 // -------------------------------------------------------------------------
+
+// -------------------------------------------------------------------------
+// restoreOne() - capability export for combined DB+directory restores (JobSource)
+// -------------------------------------------------------------------------
+
+describe("restoreOne()", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mockIsSSHMode.mockReturnValue(false);
+        mockFsStat.mockResolvedValue({ size: 1024 });
+        mockWaitForProcess.mockResolvedValue(undefined);
+        mockCreateReadStream.mockImplementation(() => {
+            const stream = new PassThrough();
+            process.nextTick(() => stream.end(Buffer.from("sql-content")));
+            return stream;
+        });
+        mockSpawnProcess.mockImplementation(() => makeSpawnProcess());
+    });
+
+    it("restores the given file into the given target database directly", async () => {
+        await expect(restoreOne(buildConfig(), "/tmp/db.sql", "targetdb")).resolves.toBeUndefined();
+
+        expect(mockSpawnProcess).toHaveBeenCalledWith("mysql", expect.any(Array), expect.any(Object));
+        // Unlike restore(), restoreOne does not create the target database itself.
+        expect(mockEnsureDatabase).not.toHaveBeenCalled();
+    });
+
+    it("works without onLog/onProgress callbacks", async () => {
+        await expect(restoreOne(buildConfig(), "/tmp/db.sql", "targetdb")).resolves.toBeUndefined();
+    });
+
+    it("passes the original database name through for USE/CREATE DATABASE rewriting", async () => {
+        const logs: string[] = [];
+        await restoreOne(buildConfig(), "/tmp/db.sql", "renamed_db", (msg) => logs.push(msg), undefined, "original_db");
+
+        expect(logs.some((l) => l.includes("renamed_db"))).toBe(true);
+    });
+});
 
 describe("restore() - Multi-DB TAR archive", () => {
     beforeEach(() => {

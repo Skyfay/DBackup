@@ -28,6 +28,7 @@ vi.mock("rsync", () => {
         env() { return this; }
         source() { return this; }
         destination() { return this; }
+        exclude() { return this; }
         execute = mockRsyncExecute;
     }
     return { default: MockRsync };
@@ -549,6 +550,72 @@ describe("RsyncAdapter", () => {
             const result = await freshRsync.upload(passwordConfig, "/tmp/backup.sql", "Job/backup.sql");
 
             expect(result).toBe(false);
+        });
+    });
+
+    // ===== downloadDirectory() =====
+    // Native directory-sync capability used by directory-source (JobSource) backups.
+
+    describe("downloadDirectory()", () => {
+        beforeEach(() => {
+            mockFsMkdir.mockResolvedValue(undefined);
+        });
+
+        it("lists the remote directory, syncs it with rsync, and returns the file index", async () => {
+            sshSucceeds(
+                "/backups/Job/a.txt\t100\t1700000000.0\n/backups/Job/sub/b.txt\t200\t1700000100.0"
+            );
+            rsyncSucceeds();
+
+            const result = await RsyncAdapter.downloadDirectory!(agentConfig, "Job", "/local/job");
+
+            expect(result.files).toBe(2);
+            expect(result.bytes).toBe(300);
+            expect(result.entries.map((e) => e.relativePath).sort()).toEqual(["a.txt", "sub/b.txt"]);
+            expect(mockFsMkdir).toHaveBeenCalledWith("/local/job", { recursive: true });
+        });
+
+        it("returns an empty result without invoking rsync when the directory has no files", async () => {
+            sshSucceeds("");
+
+            const result = await RsyncAdapter.downloadDirectory!(agentConfig, "Job", "/local/job");
+
+            expect(result).toEqual({ files: 0, bytes: 0, entries: [] });
+            expect(mockRsyncExecute).not.toHaveBeenCalled();
+        });
+
+        it("excludes files matching the given glob patterns before transfer", async () => {
+            sshSucceeds(
+                "/backups/Job/keep.txt\t100\t1700000000.0\n/backups/Job/cache.tmp\t50\t1700000000.0"
+            );
+            rsyncSucceeds();
+
+            const result = await RsyncAdapter.downloadDirectory!(agentConfig, "Job", "/local/job", ["*.tmp"]);
+
+            expect(result.files).toBe(1);
+            expect(result.entries[0].relativePath).toBe("keep.txt");
+        });
+
+        it("reports aggregate progress parsed from rsync --info=progress2 output", async () => {
+            sshSucceeds("/backups/Job/a.txt\t100\t1700000000.0\n");
+            mockRsyncExecute.mockImplementation(
+                (callback: (err: null, code: number, cmd: string) => void, stdoutCb: (data: Buffer) => void) => {
+                    stdoutCb(Buffer.from(" 100  100%   1.00MB/s    0:00:00  (xfr#1, to-chk=0/1)\n"));
+                    callback(null, 0, "rsync ...");
+                }
+            );
+
+            const onProgress = vi.fn();
+            await RsyncAdapter.downloadDirectory!(agentConfig, "Job", "/local/job", undefined, onProgress);
+
+            expect(onProgress).toHaveBeenCalledWith(100, 100, 1, 1);
+        });
+
+        it("propagates rsync failure", async () => {
+            sshSucceeds("/backups/Job/a.txt\t100\t1700000000.0\n");
+            rsyncFails("rsync connection reset");
+
+            await expect(RsyncAdapter.downloadDirectory!(agentConfig, "Job", "/local/job")).rejects.toThrow();
         });
     });
 });

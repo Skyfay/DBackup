@@ -8,7 +8,7 @@
 import { createReadStream, createWriteStream, existsSync } from "fs";
 import fs from "fs/promises";
 import path from "path";
-import { pack, extract } from "tar-stream";
+import { pack, extract, Pack } from "tar-stream";
 import { pipeline } from "stream/promises";
 import { getTempDir } from "@/lib/temp-dir";
 import {
@@ -17,10 +17,46 @@ import {
     ExtractResult,
     CreateTarOptions,
     DatabaseEntry,
+    TarManifestV2,
+    DbEntryV2,
+    DirectoryEntryV2,
+    ManifestEntryV2,
+    CombinedTarFileEntry,
+    CombinedExtractSelection,
+    CombinedExtractResult,
 } from "./types";
 
 /** Manifest filename inside the TAR archive */
 export const MANIFEST_FILENAME = "manifest.json";
+
+/** Metadata member name (relative to a directory entry's pathPrefix) holding its per-file index. Not real backup data - skipped on extraction. */
+export const DIRECTORY_INDEX_FILENAME = ".dbackup-index.json";
+
+/** Tar member filename extension per dump format, used for "databases/<name>.<ext>" entries in combined (v2) archives. */
+const EXTENSION_BY_FORMAT: Record<DbEntryV2["format"], string> = {
+    sql: "sql",
+    custom: "dump",
+    archive: "archive",
+    fbk: "fbk",
+};
+
+/** Streams a local file into a new tar entry under the given member name. */
+async function addFileToTar(tarPack: Pack, tarName: string, localPath: string): Promise<void> {
+    const stats = await fs.stat(localPath);
+    const entry = tarPack.entry({ name: tarName, size: stats.size });
+    const fileStream = createReadStream(localPath);
+    await new Promise<void>((resolve, reject) => {
+        fileStream.on("error", (err) => {
+            fileStream.destroy();
+            reject(err);
+        });
+        fileStream.on("end", () => {
+            entry.end();
+            resolve();
+        });
+        fileStream.pipe(entry);
+    });
+}
 
 /**
  * Create a TAR archive containing multiple database dumps
@@ -450,4 +486,280 @@ export function getTargetDatabaseName(
 
     const entry = mapping.find((m) => m.originalName === dbName);
     return entry?.targetName || dbName;
+}
+
+// ── Manifest v2 (combined DB + directory-source archives) ──────────────────
+//
+// Additive to everything above - createMultiDbTar/readTarManifest/extractSelectedDatabases
+// are never modified and remain the correct tools for pure-database (v1) archives, which is
+// what every DB-only job produces forever. The functions below are only ever exercised by the
+// combined dump/restore path (JobSource feature), which only runs for jobs that actually have
+// directory sources.
+
+/**
+ * Create a combined TAR archive containing database dumps and/or directory-source file
+ * trees. Generalization of createMultiDbTar() - database entries land under
+ * "databases/<name>.<ext>" exactly as in a v1 archive; each directory entry's files land
+ * under "sources/<jobSourceId>/<relativePath>", namespaced by a UUID so they can never
+ * collide with a database entry's filename or another directory entry's files. A per-file
+ * index is written alongside each directory entry's files (see DIRECTORY_INDEX_FILENAME) for
+ * future searchable-file-browsing use - it is metadata, not backup data.
+ *
+ * @param entries - Database dump files and/or directory roots to include
+ * @param destinationPath - Path where the TAR archive will be created
+ * @param options - sourceType/engineVersion for the manifest
+ * @returns The created v2 manifest
+ */
+export async function createCombinedTar(
+    entries: CombinedTarFileEntry[],
+    destinationPath: string,
+    options: CreateTarOptions
+): Promise<TarManifestV2> {
+    const tarPack = pack();
+    const outputStream = createWriteStream(destinationPath);
+    const pipelinePromise = pipeline(tarPack, outputStream);
+
+    const manifestEntries: ManifestEntryV2[] = [];
+    let totalSize = 0;
+
+    for (const entry of entries) {
+        if (entry.kind === "database") {
+            const stats = await fs.stat(entry.path);
+            manifestEntries.push({
+                kind: "database",
+                name: entry.dbName,
+                filename: `databases/${entry.dbName}.${EXTENSION_BY_FORMAT[entry.format]}`,
+                size: stats.size,
+                format: entry.format,
+            });
+            totalSize += stats.size;
+        } else {
+            const dirTotalSize = entry.files.reduce((sum, f) => sum + f.size, 0);
+            manifestEntries.push({
+                kind: "directory",
+                jobSourceId: entry.jobSourceId,
+                label: entry.label,
+                pathPrefix: `sources/${entry.jobSourceId}`,
+                fileCount: entry.files.length,
+                totalSize: dirTotalSize,
+                excludePatterns: entry.excludePatterns,
+            });
+            totalSize += dirTotalSize;
+        }
+    }
+
+    const manifest: TarManifestV2 = {
+        version: 2,
+        createdAt: new Date().toISOString(),
+        sourceType: options.sourceType,
+        engineVersion: options.engineVersion,
+        entries: manifestEntries,
+        totalSize,
+    };
+
+    const manifestJson = JSON.stringify(manifest, null, 2);
+    const manifestBuffer = Buffer.from(manifestJson, "utf-8");
+    const manifestEntryHandle = tarPack.entry({ name: MANIFEST_FILENAME, size: manifestBuffer.length });
+    manifestEntryHandle.end(manifestBuffer);
+
+    for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
+        if (entry.kind === "database") {
+            const manifestEntry = manifestEntries[i] as DbEntryV2;
+            await addFileToTar(tarPack, manifestEntry.filename, entry.path);
+        } else {
+            const manifestEntry = manifestEntries[i] as DirectoryEntryV2;
+
+            const indexBuffer = Buffer.from(JSON.stringify(entry.files), "utf-8");
+            const indexEntryHandle = tarPack.entry({
+                name: `${manifestEntry.pathPrefix}/${DIRECTORY_INDEX_FILENAME}`,
+                size: indexBuffer.length,
+            });
+            indexEntryHandle.end(indexBuffer);
+
+            for (const file of entry.files) {
+                const localFilePath = path.join(entry.localPath, file.path);
+                await addFileToTar(tarPack, `${manifestEntry.pathPrefix}/${file.path}`, localFilePath);
+            }
+        }
+    }
+
+    tarPack.finalize();
+    await pipelinePromise;
+
+    return manifest;
+}
+
+/**
+ * Read only the archive format version from a TAR's manifest.json, without fully typing the
+ * result. Reuses readTarManifest()'s existing stream-until-manifest-found logic (correct for
+ * both v1 and v2 shapes, since it's a plain JSON.parse), rather than duplicating it.
+ *
+ * @param filePath - Path to the TAR archive
+ * @returns The manifest's `version` field, or null if no valid manifest.json is present
+ */
+export async function readManifestVersion(filePath: string): Promise<number | null> {
+    const manifest = await readTarManifest(filePath);
+    if (!manifest) return null;
+    return (manifest as unknown as { version: number }).version;
+}
+
+/**
+ * Read only the v2 manifest from a combined TAR archive, without extracting files.
+ * v2-typed equivalent of readTarManifest() - returns null (rather than a wrongly-typed v1
+ * object) when the archive's manifest is not version 2.
+ *
+ * @param filePath - Path to the TAR archive
+ * @returns The v2 manifest, or null if not found/invalid/not version 2
+ */
+export async function readCombinedManifest(filePath: string): Promise<TarManifestV2 | null> {
+    const manifest = await readTarManifest(filePath);
+    if (!manifest) return null;
+    if ((manifest as unknown as { version: number }).version !== 2) return null;
+    return manifest as unknown as TarManifestV2;
+}
+
+/**
+ * Extract selected database and/or directory entries from a combined (v2) TAR archive.
+ * Generalization of extractSelectedDatabases() - database entries are matched by exact
+ * filename (as in a v1 archive); directory entries are matched by path-prefix, since one
+ * directory entry spans many tar members. The per-file index member
+ * (sources/<jobSourceId>/.dbackup-index.json) is metadata, not backup data - it is never
+ * written to extractDir. Unselected/unknown entries (including manifest.json itself) are
+ * skipped via stream.resume() without I/O.
+ *
+ * @param sourcePath - Path to the combined TAR archive
+ * @param extractDir - Directory to extract files into
+ * @param selection - Which database/directory entries to extract. Omitting this argument
+ * entirely extracts everything; once provided, each field is explicit on its own - a field
+ * left undefined (or an empty array) means "none of this kind", not "all". See
+ * CombinedExtractSelection for the full explanation.
+ * @returns The manifest, extracted database dump file paths, and extracted directory roots
+ */
+export async function extractCombinedArchive(
+    sourcePath: string,
+    extractDir: string,
+    selection?: CombinedExtractSelection
+): Promise<CombinedExtractResult> {
+    await fs.mkdir(extractDir, { recursive: true });
+
+    const manifest = await readCombinedManifest(sourcePath);
+    if (!manifest) {
+        throw new Error("TAR archive does not contain a valid v2 manifest.json");
+    }
+
+    const isDbWanted = (name: string): boolean =>
+        !selection ? true : (selection.databaseNames?.includes(name) ?? false);
+    const isDirWanted = (jobSourceId: string): boolean =>
+        !selection ? true : (selection.directoryJobSourceIds?.includes(jobSourceId) ?? false);
+
+    const wantedDbFilenames = new Map<string, DbEntryV2>();
+    for (const entry of manifest.entries) {
+        if (entry.kind !== "database") continue;
+        if (isDbWanted(entry.name)) {
+            wantedDbFilenames.set(entry.filename, entry);
+        }
+    }
+
+    // Keyed by prefix WITH trailing slash, so a directory entry's prefix can never
+    // accidentally match another entry whose prefix is merely a string-prefix of it
+    // (e.g. "sources/abc" must not match members under "sources/abcdef/").
+    const wantedDirPrefixes = new Map<string, DirectoryEntryV2>();
+    for (const entry of manifest.entries) {
+        if (entry.kind !== "directory") continue;
+        if (isDirWanted(entry.jobSourceId)) {
+            wantedDirPrefixes.set(`${entry.pathPrefix}/`, entry);
+        }
+    }
+
+    const databaseFiles: CombinedExtractResult["databaseFiles"] = [];
+    const directoryRoots: CombinedExtractResult["directoryRoots"] = [];
+    const seenDirectoryRoots = new Set<string>();
+
+    await new Promise<void>((resolve, reject) => {
+        const extractor = extract();
+
+        extractor.on("entry", (header, stream, next) => {
+            const dbEntry = wantedDbFilenames.get(header.name);
+            if (dbEntry) {
+                const outputPath = path.join(extractDir, header.name);
+                fs.mkdir(path.dirname(outputPath), { recursive: true })
+                    .then(() => {
+                        const writeStream = createWriteStream(outputPath);
+                        writeStream.on("finish", () => {
+                            databaseFiles.push({ entry: dbEntry, path: outputPath });
+                            next();
+                        });
+                        /* v8 ignore start */
+                        writeStream.on("error", (err) => reject(err));
+                        /* v8 ignore end */
+                        stream.pipe(writeStream);
+                    })
+                    /* v8 ignore next */
+                    .catch(reject);
+                return;
+            }
+
+            const matchedPrefix = [...wantedDirPrefixes.keys()].find((prefix) => header.name.startsWith(prefix));
+            if (matchedPrefix) {
+                const dirEntry = wantedDirPrefixes.get(matchedPrefix)!;
+                const rootPath = path.join(extractDir, "sources", dirEntry.jobSourceId);
+
+                if (!seenDirectoryRoots.has(dirEntry.jobSourceId)) {
+                    seenDirectoryRoots.add(dirEntry.jobSourceId);
+                    directoryRoots.push({ entry: dirEntry, path: rootPath });
+                }
+
+                const suffix = header.name.slice(matchedPrefix.length);
+
+                // The per-file index is metadata, not backup data - skip it without I/O.
+                if (suffix === DIRECTORY_INDEX_FILENAME) {
+                    stream.resume();
+                    next();
+                    return;
+                }
+
+                const outputPath = path.join(rootPath, suffix);
+                if (!outputPath.startsWith(rootPath)) {
+                    reject(new Error(`Zip Slip detected: ${header.name}`));
+                    return;
+                }
+
+                fs.mkdir(path.dirname(outputPath), { recursive: true })
+                    .then(() => {
+                        const writeStream = createWriteStream(outputPath);
+                        writeStream.on("finish", () => next());
+                        /* v8 ignore start */
+                        writeStream.on("error", (err) => reject(err));
+                        /* v8 ignore end */
+                        stream.pipe(writeStream);
+                    })
+                    /* v8 ignore next */
+                    .catch(reject);
+                return;
+            }
+
+            // manifest.json and any unselected/unknown entry
+            stream.resume();
+            next();
+        });
+
+        extractor.on("finish", () => resolve());
+
+        const readStream = createReadStream(sourcePath);
+        /* v8 ignore start */
+        extractor.on("error", (err) => {
+            readStream.destroy();
+            reject(err);
+        });
+        readStream.on("error", (err) => {
+            extractor.destroy(err);
+            reject(err);
+        });
+        /* v8 ignore end */
+
+        readStream.pipe(extractor);
+    });
+
+    return { manifest, databaseFiles, directoryRoots };
 }

@@ -9,7 +9,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { stepInitialize } from '@/lib/runner/steps/01-initialize';
 import { stepExecuteDump } from '@/lib/runner/steps/02-dump';
-import { readManifestVersion, extractSelectedDatabases, createMultiDbTar, createTempDir, cleanupTempDir } from '@/lib/adapters/database/common/tar-utils';
+import { readManifestVersion, extractSelectedDatabases, createMultiDbTar, createTempDir } from '@/lib/adapters/database/common/tar-utils';
 import type { RunnerContext } from '@/lib/runner/types';
 import type { TarFileEntry } from '@/lib/adapters/database/common/types';
 

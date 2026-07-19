@@ -15,7 +15,7 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Edit, Play, Trash2, Clock, Lock, Webhook, Copy, FolderOpen } from "lucide-react";
+import { Edit, Play, Trash2, Clock, Lock, Webhook, Copy, FolderOpen, FolderInput } from "lucide-react";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -23,7 +23,7 @@ import {
     DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
-import { JobForm, JobData, AdapterOption, EncryptionOption } from "@/components/dashboard/jobs/job-form";
+import { JobForm, JobData, JobSourceData, AdapterOption, EncryptionOption } from "@/components/dashboard/jobs/job-form";
 import { ApiTriggerDialog } from "@/components/dashboard/jobs/api-trigger-dialog";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { Badge } from "@/components/ui/badge";
@@ -49,7 +49,8 @@ interface JobDestinationWithConfig {
 
 // Extended Job type for display (includes related entity names)
 interface Job extends Omit<JobData, 'destinations'> {
-    source: { name: string, type: string, adapterId: string };
+    source: { name: string, type: string, adapterId: string } | null;
+    sources?: (JobSourceData & { config: { id: string; name: string; adapterId: string } })[];
     destinations: JobDestinationWithConfig[];
     createdAt: string;
     encryptionProfile?: { name: string };
@@ -69,6 +70,7 @@ export function JobsClient({ canManage, canExecute }: JobsClientProps) {
     const [destinations, setDestinations] = useState<AdapterOption[]>([]);
     const [notificationChannels, setNotificationChannels] = useState<AdapterOption[]>([]);
     const [encryptionProfiles, setEncryptionProfiles] = useState<EncryptionOption[]>([]);
+    const directorySourceOptions = useMemo(() => destinations.filter((d) => d.usableAsSource), [destinations]);
     const [isLoading, setIsLoading] = useState(true);
 
     const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -202,12 +204,30 @@ export function JobsClient({ canManage, canExecute }: JobsClientProps) {
         {
             accessorKey: "source.name",
             header: "Source",
-            cell: ({ row }) => (
-                <div className="flex items-center gap-1.5">
-                    <AdapterIcon adapterId={row.original.source.adapterId} className="h-3.5 w-3.5" />
-                    {row.original.source.name}
-                </div>
-            )
+            cell: ({ row }) => {
+                const source = row.original.source;
+                const dirSources = row.original.sources || [];
+                if (!source && dirSources.length === 0) {
+                    return <span className="text-muted-foreground text-sm">-</span>;
+                }
+                return (
+                    <div className="flex flex-col gap-0.5">
+                        {source && (
+                            <div className="flex items-center gap-1.5 text-sm">
+                                <AdapterIcon adapterId={source.adapterId} className="h-3.5 w-3.5" />
+                                {source.name}
+                            </div>
+                        )}
+                        {dirSources.map((s, i) => (
+                            <div key={`${s.configId}-${s.path}-${i}`} className="flex items-center gap-1.5 text-sm">
+                                <FolderInput className="h-3.5 w-3.5" />
+                                {s.config?.name || s.configId}
+                                <span className="text-muted-foreground truncate max-w-40">{s.path}</span>
+                            </div>
+                        ))}
+                    </div>
+                );
+            }
         },
         {
             id: "destinations",
@@ -417,6 +437,7 @@ export function JobsClient({ canManage, canExecute }: JobsClientProps) {
                                 <JobForm
                                     sources={sources}
                                     destinations={destinations}
+                                    directorySourceOptions={directorySourceOptions}
                                     notifications={notificationChannels}
                                     encryptionProfiles={encryptionProfiles}
                                     initialData={editingJob}

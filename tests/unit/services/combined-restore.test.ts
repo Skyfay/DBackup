@@ -4,7 +4,7 @@ import path from 'path';
 import { prismaMock } from '@/lib/testing/prisma-mock';
 import { registry } from '@/lib/core/registry';
 import { restoreCombinedArchive } from '@/services/restore/combined-restore';
-import { createCombinedTar, createTempDir, cleanupTempDir, createMultiDbTar } from '@/lib/adapters/database/common/tar-utils';
+import { createCombinedTar, createTempDir, createMultiDbTar } from '@/lib/adapters/database/common/tar-utils';
 import type { CombinedTarFileEntry, DirectoryFileIndexEntry } from '@/lib/adapters/database/common/types';
 import type { RestoreInput } from '@/services/restore/types';
 

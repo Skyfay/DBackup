@@ -185,7 +185,15 @@ export class StorageService {
                 label = "System Config";
             } else {
                 count = typeof sidecar.databases === 'object' ? (sidecar.databases as any).count : (typeof sidecar.databases === 'number' ? sidecar.databases : 0);
-                label = count === 0 ? "Unknown" : (count === 1 ? "Single DB" : `${count} DBs`);
+                if (sidecar.combined) {
+                    const { databases: dbCount, directorySources: dirCount } = sidecar.combined;
+                    count = dbCount;
+                    label = dbCount > 0
+                        ? `${dbCount} DB${dbCount === 1 ? '' : 's'} + ${dirCount} Dir${dirCount === 1 ? '' : 's'}`
+                        : `${dirCount} Directory Source${dirCount === 1 ? '' : 's'}`;
+                } else {
+                    label = count === 0 ? "Unknown" : (count === 1 ? "Single DB" : `${count} DBs`);
+                }
             }
 
             if (sidecar.encryption?.enabled) isEncrypted = true;

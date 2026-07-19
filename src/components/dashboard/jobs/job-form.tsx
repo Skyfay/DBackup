@@ -7,10 +7,11 @@ import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { Lock, History, ChevronsUpDown, Plus, Trash2, ChevronDown, ChevronRight, Database, Info, Loader2, FileText, CalendarClock, Pencil } from "lucide-react";
+import { Lock, History, ChevronsUpDown, Plus, Trash2, ChevronDown, ChevronRight, Database, Info, Loader2, FileText, CalendarClock, Pencil, Filter, FolderInput } from "lucide-react";
 import { SchedulePicker } from "./schedule-picker";
 import { RetentionPolicyPicker, DEFAULT_RETENTION_SENTINEL } from "@/components/templates/retention-policy-picker";
 import { NamingTemplatePicker } from "@/components/templates/naming-template-picker";
@@ -43,6 +44,10 @@ import {
   Collapsible,
   CollapsibleContent,
 } from "@/components/ui/collapsible"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+
+/** Database adapters whose dumpOne()/restoreOne() capability supports combining with directory sources in one job. */
+const COMBINABLE_DB_ADAPTERS = ["mysql", "mariadb", "postgres", "mongodb", "firebird"];
 
 const retentionSchema = z.object({
     mode: z.enum(["NONE", "SIMPLE", "SMART"]),
@@ -63,12 +68,25 @@ const destinationSchema = z.object({
     retentionPolicyId: z.string().optional(),
 });
 
+const directorySourceSchema = z.object({
+    configId: z.string().min(1, "Storage adapter is required"),
+    path: z.string().min(1, "Path is required"),
+    excludePatterns: z.array(z.string()).default([]),
+});
+
+export interface JobSourceData {
+    configId: string;
+    priority: number;
+    path: string;
+    excludePatterns: string[];
+}
+
 export interface JobData {
     id: string;
     name: string;
     schedule: string;
     enabled: boolean;
-    sourceId: string;
+    sourceId: string | null;
     databases?: string;
     encryptionProfileId?: string;
     compression: string;
@@ -86,6 +104,7 @@ export interface JobData {
         retention: string;
         retentionPolicyId?: string | null;
     }[];
+    sources?: JobSourceData[];
 }
 
 export interface AdapterOption {
@@ -93,6 +112,8 @@ export interface AdapterOption {
     name: string;
     adapterId: string;
     metadata?: string | null;
+    usableAsSource?: boolean;
+    usableAsDestination?: boolean;
 }
 
 export interface EncryptionOption {
@@ -134,8 +155,9 @@ function parsePgCompression(pgCompression: string | undefined): { algo: PgCompre
 const jobSchema = z.object({
     name: z.string().min(1, "Name is required"),
     schedule: z.string().min(1, "Cron schedule is required"),
-    sourceId: z.string().min(1, "Source is required"),
+    sourceId: z.string().optional().default(""),
     databases: z.array(z.string()).default([]),
+    directorySources: z.array(directorySourceSchema).default([]),
     destinations: z.array(destinationSchema).min(1, "At least one destination is required"),
     encryptionProfileId: z.string().optional(),
     namingTemplateId: z.string().optional(),
@@ -147,6 +169,29 @@ const jobSchema = z.object({
     notificationTemplateIds: z.array(z.string()).default([]),
     enabled: z.boolean().default(true),
     skipVerification: z.boolean().default(false),
+}).superRefine((data, ctx) => {
+    if (!data.sourceId && data.directorySources.length === 0) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["sourceId"],
+            message: "Select a database source or add at least one directory source",
+        });
+    }
+    // Same adapter + same path twice is a foot-gun (not a hard conflict like destinations'
+    // unique-configId constraint, since one adapter legitimately backing up two different
+    // paths is fine) - block only the exact duplicate.
+    const seen = new Set<string>();
+    data.directorySources.forEach((s, i) => {
+        const key = `${s.configId}::${s.path}`;
+        if (s.configId && s.path && seen.has(key)) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ["directorySources", i, "path"],
+                message: "This adapter + path combination is already added",
+            });
+        }
+        seen.add(key);
+    });
 });
 
 const defaultRetentionValue = { mode: "NONE" as const, simple: { keepCount: 10 }, smart: { daily: 7, weekly: 4, monthly: 12, yearly: 2 } };
@@ -154,6 +199,8 @@ const defaultRetentionValue = { mode: "NONE" as const, simple: { keepCount: 10 }
 interface JobFormProps {
     sources: AdapterOption[];
     destinations: AdapterOption[];
+    /** Storage adapters enabled with the source role (usableAsSource) - pre-filtered by the caller from the same /api/adapters?type=storage fetch used for `destinations`, no extra request needed. */
+    directorySourceOptions: AdapterOption[];
     notifications: AdapterOption[];
     encryptionProfiles: EncryptionOption[];
     initialData: {
@@ -161,7 +208,7 @@ interface JobFormProps {
         name: string;
         schedule: string;
         enabled: boolean;
-        sourceId: string;
+        sourceId: string | null;
         databases?: string;
         encryptionProfileId?: string;
         compression: string;
@@ -174,6 +221,7 @@ interface JobFormProps {
         notifications: { id: string; name: string }[];
         notificationTemplates?: { templateId: string; priority: number }[];
         destinations: { configId: string; priority: number; retention: string; retentionPolicyId?: string | null }[];
+        sources?: JobSourceData[];
     } | null;
     onSuccess: () => void;
 }
@@ -212,9 +260,10 @@ function resolveInitialRetentionPolicyId(d: { retentionPolicyId?: string | null;
     return undefined;
 }
 
-export function JobForm({ sources, destinations, notifications: _notifications, encryptionProfiles, initialData, onSuccess }: JobFormProps) {
+export function JobForm({ sources, destinations, directorySourceOptions, notifications: _notifications, encryptionProfiles, initialData, onSuccess }: JobFormProps) {
     const [sourceOpen, setSourceOpen] = useState(false);
     const [expandedDests, setExpandedDests] = useState<Set<number>>(new Set());
+    const [expandedSources, setExpandedSources] = useState<Set<number>>(new Set());
     const [availableDatabases, setAvailableDatabases] = useState<string[]>([]);
     const [isLoadingDbs, setIsLoadingDbs] = useState(false);
     const [isDbListOpen, setIsDbListOpen] = useState(false);
@@ -244,6 +293,12 @@ export function JobForm({ sources, destinations, notifications: _notifications, 
         }))
         : [{ configId: "", retention: { ...defaultRetentionValue }, retentionPolicyId: DEFAULT_RETENTION_SENTINEL }];
 
+    const defaultDirectorySources = (initialData?.sources ?? []).map(s => ({
+        configId: s.configId,
+        path: s.path,
+        excludePatterns: s.excludePatterns || [],
+    }));
+
     const form = useForm({
         resolver: zodResolver(jobSchema),
         defaultValues: {
@@ -251,6 +306,7 @@ export function JobForm({ sources, destinations, notifications: _notifications, 
             schedule: initialData?.schedule || "0 0 * * *",
             sourceId: initialData?.sourceId || "",
             databases: parseInitialDatabases(),
+            directorySources: defaultDirectorySources,
             destinations: defaultDestinations,
             encryptionProfileId: initialData?.encryptionProfileId || "no-encryption",
             compression: (initialData?.compression as "NONE" | "GZIP" | "BROTLI") || "NONE",
@@ -270,8 +326,22 @@ export function JobForm({ sources, destinations, notifications: _notifications, 
         name: "destinations",
     });
 
+    const { fields: sourceFields, append: appendSource, remove: removeSource } = useFieldArray({
+        control: form.control,
+        name: "directorySources",
+    });
+
     const toggleExpanded = (index: number) => {
         setExpandedDests(prev => {
+            const next = new Set(prev);
+            if (next.has(index)) next.delete(index);
+            else next.add(index);
+            return next;
+        });
+    };
+
+    const toggleSourceExpanded = (index: number) => {
+        setExpandedSources(prev => {
             const next = new Set(prev);
             if (next.has(index)) next.delete(index);
             else next.add(index);
@@ -303,6 +373,12 @@ export function JobForm({ sources, destinations, notifications: _notifications, 
     const selectedSourceId = form.watch("sourceId");
     const selectedSource = sources.find(s => s.id === selectedSourceId);
     const showDatabasePicker = selectedSource && !["sqlite", "redis", "valkey"].includes(selectedSource.adapterId);
+    const directorySourcesValue = form.watch("directorySources") || [];
+    // Combining a DB source with directory sources requires the adapter's dumpOne()/restoreOne()
+    // capability (mysql/mariadb/postgres/mongodb/firebird only in v1) - enforced here for UX and
+    // again server-side in JobService as the authoritative check.
+    const dbBlocksCombination = !!selectedSourceId && !!selectedSource && !COMBINABLE_DB_ADAPTERS.includes(selectedSource.adapterId);
+    const hasDirectorySourcesBlockingDb = dbBlocksCombination && directorySourcesValue.length > 0;
     const isPgSource = selectedSource?.adapterId === "postgres";
     const pgMajorVersion = isPgSource ? parsePgMajorVersion(selectedSource?.metadata) : null;
 
@@ -392,7 +468,7 @@ export function JobForm({ sources, destinations, notifications: _notifications, 
                 }
             }
 
-            const { pgCompressionAlgo: _algo, pgCompressionLevel: _level, ...rest } = data;
+            const { pgCompressionAlgo: _algo, pgCompressionLevel: _level, directorySources: _directorySources, ...rest } = data;
             const payload = {
                 ...rest,
                 notificationTemplateIds: data.notificationTemplateIds || [],
@@ -403,6 +479,12 @@ export function JobForm({ sources, destinations, notifications: _notifications, 
                 namingTemplateId: data.namingTemplateId || null,
                 schedulePresetId: linkedPresetId ?? null,
                 databases: data.databases || [],
+                sources: data.directorySources.map((s, i) => ({
+                    configId: s.configId,
+                    priority: i,
+                    path: s.path,
+                    excludePatterns: s.excludePatterns || [],
+                })),
                 destinations: data.destinations.map((d, i) => ({
                     configId: d.configId,
                     priority: i,
@@ -449,116 +531,31 @@ export function JobForm({ sources, destinations, notifications: _notifications, 
                 </div>
 
                 <Tabs defaultValue="config" className="w-full">
-                    <TabsList className="grid w-full grid-cols-4">
+                    <TabsList className="grid w-full grid-cols-5">
                         <TabsTrigger value="config">General</TabsTrigger>
+                        <TabsTrigger value="sources">Sources</TabsTrigger>
                         <TabsTrigger value="destinations">Destinations</TabsTrigger>
                         <TabsTrigger value="advanced">Advanced</TabsTrigger>
                         <TabsTrigger value="notifications">Notify</TabsTrigger>
                     </TabsList>
 
-                    {/* TAB 1: GENERAL (Source, Active Status, Schedule) */}
+                    {/* TAB 1: GENERAL (Active Status, Schedule) */}
                     <TabsContent value="config" className="space-y-4 pt-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <FormField control={form.control} name="sourceId" render={({ field }) => (
-                                <FormItem className="flex flex-col">
-                                    <FormLabel>Source</FormLabel>
-                                    <Popover open={sourceOpen} onOpenChange={setSourceOpen} modal={true}>
-                                        <PopoverTrigger asChild>
-                                            <FormControl>
-                                                <Button
-                                                    variant="outline"
-                                                    role="combobox"
-                                                    aria-expanded={sourceOpen}
-                                                    className={cn("w-full justify-between", !field.value && "text-muted-foreground")}
-                                                >
-                                                    {field.value ? (
-                                                        <span className="flex items-center gap-2 min-w-0">
-                                                            <AdapterIcon adapterId={sources.find((s) => s.id === field.value)?.adapterId ?? ""} className="h-4 w-4 shrink-0" />
-                                                            <span className="truncate">{sources.find((s) => s.id === field.value)?.name}</span>
-                                                        </span>
-                                                    ) : "Select Source"}
-                                                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                                </Button>
-                                            </FormControl>
-                                        </PopoverTrigger>
-                                        <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-                                            <Command>
-                                                <CommandInput placeholder="Search source..." />
-                                                <CommandList>
-                                                    <CommandEmpty>No source found.</CommandEmpty>
-                                                    <CommandGroup>
-                                                        {sources.map((s) => (
-                                                            <CommandItem
-                                                                value={s.name}
-                                                                key={s.id}
-                                                                onSelect={() => {
-                                                                    const prevSourceId = form.getValues("sourceId");
-                                                                    form.setValue("sourceId", s.id);
-                                                                    setSourceOpen(false);
-                                                                    // Reset databases when source changes
-                                                                    if (prevSourceId !== s.id) {
-                                                                        form.setValue("databases", []);
-                                                                        setAvailableDatabases([]);
-                                                                    }
-                                                                }}
-                                                                className={cn(field.value === s.id && "bg-accent")}
-                                                            >
-                                                                <AdapterIcon adapterId={s.adapterId} className="h-4 w-4" />
-                                                                {s.name}
-                                                            </CommandItem>
-                                                        ))}
-                                                    </CommandGroup>
-                                                </CommandList>
-                                            </Command>
-                                        </PopoverContent>
-                                    </Popover>
-                                    <FormMessage />
-                                </FormItem>
-                            )} />
-
-                            <FormField control={form.control} name="enabled" render={({ field }) => (
-                                <FormItem className="flex flex-col">
-                                    <FormLabel>Active Status</FormLabel>
-                                    <div className="flex h-10 items-center justify-between rounded-md border border-input bg-transparent px-3 py-2">
-                                        <span className="text-sm text-muted-foreground">
-                                            {field.value ? "Enabled" : "Disabled"}
-                                        </span>
-                                        <FormControl>
-                                            <Switch checked={field.value} onCheckedChange={field.onChange} />
-                                        </FormControl>
-                                    </div>
-                                    <FormDescription>Enable automatic execution</FormDescription>
-                                    <FormMessage />
-                                </FormItem>
-                            )} />
-                        </div>
-
-                        {/* Database Picker (hidden for SQLite/Redis) */}
-                        {showDatabasePicker && (
-                            <FormField control={form.control} name="databases" render={({ field }) => (
-                                <FormItem>
-                                    <FormLabel className="flex items-center gap-2">
-                                        <Database className="h-3 w-3" />
-                                        Databases
-                                    </FormLabel>
+                        <FormField control={form.control} name="enabled" render={({ field }) => (
+                            <FormItem className="flex flex-col">
+                                <FormLabel>Active Status</FormLabel>
+                                <div className="flex h-10 items-center justify-between rounded-md border border-input bg-transparent px-3 py-2">
+                                    <span className="text-sm text-muted-foreground">
+                                        {field.value ? "Enabled" : "Disabled"}
+                                    </span>
                                     <FormControl>
-                                        <DatabasePicker
-                                            value={field.value}
-                                            onChange={field.onChange}
-                                            availableDatabases={availableDatabases}
-                                            isLoading={isLoadingDbs}
-                                            onLoad={fetchDatabases}
-                                            isOpen={isDbListOpen}
-                                            setIsOpen={setIsDbListOpen}
-                                        />
+                                        <Switch checked={field.value} onCheckedChange={field.onChange} />
                                     </FormControl>
-                                    <FormDescription>
-                                        Select specific databases to back up. Leave empty to back up all databases.
-                                    </FormDescription>
-                                    <FormMessage />
-                                </FormItem>
-                            )} />
-                        )}
+                                </div>
+                                <FormDescription>Enable automatic execution</FormDescription>
+                                <FormMessage />
+                            </FormItem>
+                        )} />
 
                         <FormField control={form.control} name="schedule" render={({ field }) => (
                             <FormItem>
@@ -685,6 +682,200 @@ export function JobForm({ sources, destinations, notifications: _notifications, 
                             </FormItem>
                         )} />
 
+                    </TabsContent>
+
+                    {/* TAB: SOURCES (Database source + directory sources) */}
+                    <TabsContent value="sources" className="space-y-4 pt-4">
+                        <FormField control={form.control} name="sourceId" render={({ field }) => (
+                            <FormItem className="flex flex-col">
+                                <FormLabel>Database Source</FormLabel>
+                                <Popover open={sourceOpen} onOpenChange={setSourceOpen} modal={true}>
+                                    <PopoverTrigger asChild>
+                                        <FormControl>
+                                            <Button
+                                                variant="outline"
+                                                role="combobox"
+                                                aria-expanded={sourceOpen}
+                                                className={cn("w-full justify-between", !field.value && "text-muted-foreground")}
+                                            >
+                                                {field.value ? (
+                                                    <span className="flex items-center gap-2 min-w-0">
+                                                        <AdapterIcon adapterId={sources.find((s) => s.id === field.value)?.adapterId ?? ""} className="h-4 w-4 shrink-0" />
+                                                        <span className="truncate">{sources.find((s) => s.id === field.value)?.name}</span>
+                                                    </span>
+                                                ) : "None (directory sources only)"}
+                                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                            </Button>
+                                        </FormControl>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+                                        <Command>
+                                            <CommandInput placeholder="Search source..." />
+                                            <CommandList>
+                                                <CommandEmpty>No source found.</CommandEmpty>
+                                                <CommandGroup>
+                                                    {field.value && (
+                                                        <CommandItem
+                                                            value="__none__"
+                                                            onSelect={() => {
+                                                                form.setValue("sourceId", "");
+                                                                setSourceOpen(false);
+                                                                form.setValue("databases", []);
+                                                                setAvailableDatabases([]);
+                                                            }}
+                                                        >
+                                                            <span className="text-muted-foreground">None (directory sources only)</span>
+                                                        </CommandItem>
+                                                    )}
+                                                    {sources.map((s) => (
+                                                        <CommandItem
+                                                            value={s.name}
+                                                            key={s.id}
+                                                            onSelect={() => {
+                                                                const prevSourceId = form.getValues("sourceId");
+                                                                form.setValue("sourceId", s.id);
+                                                                setSourceOpen(false);
+                                                                // Reset databases when source changes
+                                                                if (prevSourceId !== s.id) {
+                                                                    form.setValue("databases", []);
+                                                                    setAvailableDatabases([]);
+                                                                }
+                                                            }}
+                                                            className={cn(field.value === s.id && "bg-accent")}
+                                                        >
+                                                            <AdapterIcon adapterId={s.adapterId} className="h-4 w-4" />
+                                                            {s.name}
+                                                        </CommandItem>
+                                                    ))}
+                                                </CommandGroup>
+                                            </CommandList>
+                                        </Command>
+                                    </PopoverContent>
+                                </Popover>
+                                <FormDescription>
+                                    A job needs a database source, one or more directory sources below, or both.
+                                </FormDescription>
+                                <FormMessage />
+                            </FormItem>
+                        )} />
+
+                        {/* Database Picker (hidden for SQLite/Redis/Valkey) */}
+                        {showDatabasePicker && (
+                            <FormField control={form.control} name="databases" render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel className="flex items-center gap-2">
+                                        <Database className="h-3 w-3" />
+                                        Databases
+                                    </FormLabel>
+                                    <FormControl>
+                                        <DatabasePicker
+                                            value={field.value}
+                                            onChange={field.onChange}
+                                            availableDatabases={availableDatabases}
+                                            isLoading={isLoadingDbs}
+                                            onLoad={fetchDatabases}
+                                            isOpen={isDbListOpen}
+                                            setIsOpen={setIsDbListOpen}
+                                        />
+                                    </FormControl>
+                                    <FormDescription>
+                                        Select specific databases to back up. Leave empty to back up all databases.
+                                    </FormDescription>
+                                    <FormMessage />
+                                </FormItem>
+                            )} />
+                        )}
+
+                        <Card className="border-border">
+                            <CardHeader className="pb-3">
+                                <div className="flex items-center justify-between">
+                                    <CardTitle className="text-base flex items-center gap-2">
+                                        <FolderInput className="h-4 w-4" />
+                                        Directory Sources
+                                    </CardTitle>
+                                    {hasDirectorySourcesBlockingDb ? (
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <span tabIndex={0}>
+                                                    <Button type="button" variant="outline" size="sm" disabled>
+                                                        <Plus className="h-4 w-4 mr-1" />
+                                                        Add Directory Source
+                                                    </Button>
+                                                </span>
+                                            </TooltipTrigger>
+                                            <TooltipContent>
+                                                {selectedSource?.name} does not yet support combined directory backups. Remove the database source to add directory-only sources instead.
+                                            </TooltipContent>
+                                        </Tooltip>
+                                    ) : (
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <span tabIndex={dbBlocksCombination ? 0 : -1}>
+                                                    <Button
+                                                        type="button"
+                                                        variant="outline"
+                                                        size="sm"
+                                                        disabled={dbBlocksCombination}
+                                                        onClick={() => appendSource({ configId: "", path: "", excludePatterns: [] })}
+                                                    >
+                                                        <Plus className="h-4 w-4 mr-1" />
+                                                        Add Directory Source
+                                                    </Button>
+                                                </span>
+                                            </TooltipTrigger>
+                                            {dbBlocksCombination && (
+                                                <TooltipContent>
+                                                    {selectedSource?.name} does not yet support combined directory backups.
+                                                </TooltipContent>
+                                            )}
+                                        </Tooltip>
+                                    )}
+                                </div>
+                                <p className="text-sm text-muted-foreground">
+                                    Back up files and directories alongside (or instead of) the database above, using any storage adapter enabled as a source.
+                                </p>
+                            </CardHeader>
+                            <CardContent className="space-y-3">
+                                {sourceFields.length === 0 && (
+                                    <div className="bg-muted p-4 rounded-md text-sm text-muted-foreground text-center">
+                                        No directory sources configured.
+                                    </div>
+                                )}
+                                {sourceFields.length > 0 && (
+                                    <ScrollArea className="*:data-[slot=scroll-area-viewport]:max-h-100">
+                                        <div className="space-y-3 pr-3">
+                                            {sourceFields.map((field, index) => (
+                                                <DirectorySourceRow
+                                                    key={field.id}
+                                                    index={index}
+                                                    form={form}
+                                                    directorySourceOptions={directorySourceOptions}
+                                                    isExpanded={expandedSources.has(index)}
+                                                    onToggleExpand={() => toggleSourceExpanded(index)}
+                                                    onRemove={() => {
+                                                        removeSource(index);
+                                                        setExpandedSources(prev => {
+                                                            const next = new Set<number>();
+                                                            prev.forEach(i => {
+                                                                if (i < index) next.add(i);
+                                                                else if (i > index) next.add(i - 1);
+                                                            });
+                                                            return next;
+                                                        });
+                                                    }}
+                                                />
+                                            ))}
+                                        </div>
+                                    </ScrollArea>
+                                )}
+                                {directorySourceOptions.length === 0 && (
+                                    <p className="text-xs text-muted-foreground flex items-start gap-1.5">
+                                        <Info className="h-3 w-3 mt-0.5 shrink-0" />
+                                        No storage adapters are enabled as directory sources yet. Enable one from the Sources page.
+                                    </p>
+                                )}
+                            </CardContent>
+                        </Card>
                     </TabsContent>
 
                     {/* TAB 2: DESTINATIONS */}
@@ -1153,6 +1344,137 @@ function DestinationRow({ index, form, destinations, usedDestIds, isExpanded, on
                         />
                         <p className="text-xs text-muted-foreground">
                             Select a retention policy to automatically clean up old backups at this destination.
+                        </p>
+                    </div>
+                </CollapsibleContent>
+            </Collapsible>
+        </div>
+    );
+}
+
+interface DirectorySourceRowProps {
+    index: number;
+    form: any;
+    directorySourceOptions: AdapterOption[];
+    isExpanded: boolean;
+    onToggleExpand: () => void;
+    onRemove: () => void;
+}
+
+function DirectorySourceRow({ index, form, directorySourceOptions, isExpanded, onToggleExpand, onRemove }: DirectorySourceRowProps) {
+    const [adapterOpen, setAdapterOpen] = useState(false);
+    const currentConfigId = form.watch(`directorySources.${index}.configId`);
+    const currentAdapter = directorySourceOptions.find(d => d.id === currentConfigId);
+    const excludePatterns: string[] = form.watch(`directorySources.${index}.excludePatterns`) || [];
+
+    return (
+        <div className="border rounded-lg">
+            <div className="flex items-center gap-2 p-3">
+                <span className="text-xs text-muted-foreground font-mono w-5 shrink-0">#{index + 1}</span>
+
+                <FormField control={form.control} name={`directorySources.${index}.configId`} render={({ field }) => (
+                    <FormItem className="w-56 shrink-0 space-y-0">
+                        <Popover open={adapterOpen} onOpenChange={setAdapterOpen} modal={true}>
+                            <PopoverTrigger asChild>
+                                <FormControl>
+                                    <Button
+                                        variant="outline"
+                                        role="combobox"
+                                        aria-expanded={adapterOpen}
+                                        className={cn("w-full justify-between h-9", !field.value && "text-muted-foreground")}
+                                    >
+                                        {currentAdapter ? (
+                                            <span className="flex items-center gap-2 min-w-0">
+                                                <AdapterIcon adapterId={currentAdapter.adapterId} className="h-4 w-4 shrink-0" />
+                                                <span className="truncate">{currentAdapter.name}</span>
+                                            </span>
+                                        ) : "Select Adapter"}
+                                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                    </Button>
+                                </FormControl>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+                                <Command>
+                                    <CommandInput placeholder="Search adapter..." />
+                                    <CommandList>
+                                        <CommandEmpty>No adapter found.</CommandEmpty>
+                                        <CommandGroup>
+                                            {directorySourceOptions.map((d) => (
+                                                <CommandItem
+                                                    value={d.name}
+                                                    key={d.id}
+                                                    onSelect={() => {
+                                                        form.setValue(`directorySources.${index}.configId`, d.id);
+                                                        setAdapterOpen(false);
+                                                    }}
+                                                    className={cn(field.value === d.id && "bg-accent")}
+                                                >
+                                                    <AdapterIcon adapterId={d.adapterId} className="h-4 w-4" />
+                                                    {d.name}
+                                                </CommandItem>
+                                            ))}
+                                        </CommandGroup>
+                                    </CommandList>
+                                </Command>
+                            </PopoverContent>
+                        </Popover>
+                        <FormMessage />
+                    </FormItem>
+                )} />
+
+                <FormField control={form.control} name={`directorySources.${index}.path`} render={({ field }) => (
+                    <FormItem className="flex-1 space-y-0">
+                        <FormControl>
+                            <Input placeholder="/path/to/directory" className="h-9" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                    </FormItem>
+                )} />
+
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-9 px-2"
+                    onClick={onToggleExpand}
+                    title="Exclude patterns"
+                >
+                    <Filter className="h-4 w-4 mr-1" />
+                    {excludePatterns.length > 0 && <span className="text-xs">{excludePatterns.length}</span>}
+                    {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                </Button>
+
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-9 px-2 text-muted-foreground hover:text-destructive"
+                    onClick={onRemove}
+                >
+                    <Trash2 className="h-4 w-4" />
+                </Button>
+            </div>
+
+            {/* Inline Exclude Patterns Config */}
+            <Collapsible open={isExpanded}>
+                <CollapsibleContent>
+                    <div className="border-t px-3 py-3 bg-muted/30 space-y-2">
+                        <div className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                            <Filter className="h-3 w-3" />
+                            Exclude patterns for {currentAdapter?.name || `Source #${index + 1}`}
+                        </div>
+                        <Textarea
+                            rows={3}
+                            placeholder={"*.tmp\nnode_modules/\n.cache/"}
+                            value={excludePatterns.join("\n")}
+                            onChange={(e) => form.setValue(
+                                `directorySources.${index}.excludePatterns`,
+                                e.target.value.split("\n").map(l => l.trim()).filter(Boolean),
+                                { shouldValidate: true }
+                            )}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                            One glob pattern per line. Files and directories matching any pattern are skipped.
                         </p>
                     </div>
                 </CollapsibleContent>

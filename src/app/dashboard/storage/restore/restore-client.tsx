@@ -12,7 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { ArrowRight, ArrowLeft, FileIcon, AlertTriangle, ShieldAlert, Loader2, HardDrive, ChevronDown, ChevronUp, Server, ShieldCheck, HelpCircle } from "lucide-react";
+import { ArrowRight, ArrowLeft, FileIcon, AlertTriangle, ShieldAlert, Loader2, HardDrive, ChevronDown, ChevronUp, Server, ShieldCheck, HelpCircle, FolderInput, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { FileInfo } from "@/app/dashboard/storage/columns";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -49,6 +49,23 @@ interface DbConfig {
     selected: boolean;
 }
 
+interface DirectoryAnalysis {
+    jobSourceId: string;
+    label: string;
+    fileCount: number;
+    totalSize: number;
+    excludePatterns: string[];
+}
+
+interface DirConfig {
+    entryId: string;
+    label: string;
+    targetConfigId: string;
+    targetPath: string;
+    selected: boolean;
+    checkStatus?: 'checking' | 'empty' | 'occupied' | 'unverified';
+}
+
 export function RestoreClient() {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -78,6 +95,11 @@ export function RestoreClient() {
     const [analyzedDbs, setAnalyzedDbs] = useState<string[]>([]);
     const [dbConfig, setDbConfig] = useState<DbConfig[]>([]);
     const [backupSourceType, setBackupSourceType] = useState<string>("");
+
+    // Directory Restore State (combined manifest v2 archives)
+    const [directories, setDirectories] = useState<DirectoryAnalysis[]>([]);
+    const [dirConfig, setDirConfig] = useState<DirConfig[]>([]);
+    const [storageDestinations, setStorageDestinations] = useState<AdapterConfig[]>([]);
 
     // Execution State
     const [restoring, setRestoring] = useState(false);
@@ -109,6 +131,22 @@ export function RestoreClient() {
     // Firebird has no way to list existing databases, the Overwrite/New badge is replaced
     // with a neutral "Unverified" indicator for this adapter.
     const isFirebird = resolvedSourceType.toLowerCase() === 'firebird';
+    // Combined (manifest v2) archive with no database source at all - the "Target Database"
+    // section is meaningless for these and is hidden entirely.
+    const isDirectoryOnly = resolvedSourceType.toLowerCase() === 'directory-only';
+    const hasDirectories = directories.length > 0;
+
+    // Combined-restore validity: a database target is only required when this backup
+    // actually has a database component; directories only need target adapter + path
+    // filled in on the rows the user left selected.
+    const dbSelectionValid = isDirectoryOnly || !!targetSource;
+    const dbListValid = isDirectoryOnly || analyzedDbs.length === 0 || dbConfig.some(d => d.selected);
+    const dirSelectionValid = !hasDirectories || dirConfig
+        .filter(d => d.selected)
+        .every(d => d.targetConfigId && d.targetPath.trim().length > 0);
+    const atLeastOneSelected =
+        (!isDirectoryOnly && (analyzedDbs.length === 0 || dbConfig.some(d => d.selected))) ||
+        (hasDirectories && dirConfig.some(d => d.selected));
 
     const [restoreOptions, setRestoreOptions] = useState<RestoreOptions>({
         settings: true,
@@ -133,6 +171,21 @@ export function RestoreClient() {
             }
         };
         fetchSources();
+    }, []);
+
+    // Fetch storage destinations (restore targets for directory entries)
+    useEffect(() => {
+        const fetchDestinations = async () => {
+            try {
+                const res = await fetch("/api/adapters?type=storage");
+                if (res.ok) {
+                    setStorageDestinations(await res.json());
+                }
+            } catch {
+                // Non-critical
+            }
+        };
+        fetchDestinations();
     }, []);
 
     const handleConfigRestore = async () => {
@@ -257,6 +310,17 @@ export function RestoreClient() {
                         selected: true
                     })));
                 }
+                if (data.directories && data.directories.length > 0) {
+                    setDirectories(data.directories);
+                    setDirConfig(data.directories.map((d: DirectoryAnalysis) => ({
+                        entryId: d.jobSourceId,
+                        label: d.label,
+                        // Default restore target: the same storage adapter the backup lives on.
+                        targetConfigId: destinationId,
+                        targetPath: "",
+                        selected: true
+                    })));
+                }
             }
         } catch {
             // Analysis failed silently
@@ -280,8 +344,42 @@ export function RestoreClient() {
         setDbConfig(prev => prev.map(db => db.id === id ? { ...db, targetName: newName } : db));
     };
 
+    const handleToggleDir = (entryId: string) => {
+        setDirConfig(prev => prev.map(d => d.entryId === entryId ? { ...d, selected: !d.selected } : d));
+    };
+
+    const handleDirTargetConfigChange = (entryId: string, targetConfigId: string) => {
+        setDirConfig(prev => prev.map(d => d.entryId === entryId ? { ...d, targetConfigId, checkStatus: undefined } : d));
+    };
+
+    const handleDirTargetPathChange = (entryId: string, targetPath: string) => {
+        setDirConfig(prev => prev.map(d => d.entryId === entryId ? { ...d, targetPath, checkStatus: undefined } : d));
+    };
+
+    // Debounced conflict check: does the chosen restore target already contain files?
+    useEffect(() => {
+        const timers = dirConfig
+            .filter(d => d.selected && d.targetConfigId && d.targetPath.trim() && d.checkStatus === undefined)
+            .map(d => setTimeout(async () => {
+                setDirConfig(prev => prev.map(p => p.entryId === d.entryId ? { ...p, checkStatus: 'checking' } : p));
+                try {
+                    const res = await fetch(`/api/storage/${d.targetConfigId}/check-path`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ path: d.targetPath.trim() })
+                    });
+                    const data = await res.json();
+                    setDirConfig(prev => prev.map(p => p.entryId === d.entryId ? { ...p, checkStatus: data.status || 'unverified' } : p));
+                } catch {
+                    setDirConfig(prev => prev.map(p => p.entryId === d.entryId ? { ...p, checkStatus: 'unverified' } : p));
+                }
+            }, 500));
+        return () => timers.forEach(clearTimeout);
+    }, [dirConfig]);
+
     const handleRestore = async (usePrivileged = false) => {
-        if (!file || !targetSource) return;
+        if (!file) return;
+        if (!isDirectoryOnly && !targetSource) return;
 
         setRestoring(true);
         setRestoreLogs(null);
@@ -299,14 +397,24 @@ export function RestoreClient() {
                 auth = { user: privUser, password: privPass };
             }
 
+            const directoryMapping = hasDirectories
+                ? dirConfig.map(d => ({
+                    entryId: d.entryId,
+                    targetConfigId: d.targetConfigId,
+                    targetPath: d.targetPath.trim(),
+                    selected: d.selected,
+                }))
+                : undefined;
+
             const payload = {
                 file: file.path,
-                targetSourceId: targetSource,
+                targetSourceId: targetSource || undefined,
                 // Note: restoreMode only gates the non-server-adapter RadioGroup UI (which
                 // clears targetDbName on "overwrite"); the server-adapter Input paths set
                 // targetDbName directly, so its truthiness alone is the correct signal here.
                 targetDatabaseName: targetDbName || undefined,
                 databaseMapping: mapping,
+                directoryMapping,
                 privilegedAuth: auth
             };
 
@@ -528,7 +636,7 @@ export function RestoreClient() {
                     )}
 
                     {/* Database Restore */}
-                    {!isSystemConfig && !restoreLogs && (
+                    {!isSystemConfig && !isDirectoryOnly && !restoreLogs && (
                         <>
                             {/* Target Selection Card */}
                             <Card>
@@ -780,6 +888,121 @@ export function RestoreClient() {
                         </>
                     )}
 
+                    {/* Directory Restore */}
+                    {hasDirectories && !restoreLogs && (
+                        <Card>
+                            <CardHeader>
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <CardTitle className="flex items-center gap-2">
+                                            <FolderInput className="h-4 w-4" />
+                                            Directory Restore
+                                        </CardTitle>
+                                        <CardDescription>
+                                            Select which directory sources to restore and where to write them.
+                                        </CardDescription>
+                                    </div>
+                                    <Badge variant="outline" className="text-xs font-normal">
+                                        {dirConfig.filter(d => d.selected).length} of {directories.length} Selected
+                                    </Badge>
+                                </div>
+                            </CardHeader>
+                            <CardContent className="space-y-3">
+                                {dirConfig.map(d => {
+                                    const meta = directories.find(x => x.jobSourceId === d.entryId);
+                                    return (
+                                        <div key={d.entryId} className={cn("border rounded-md p-3 space-y-2", !d.selected && "opacity-50 bg-muted/20")}>
+                                            <div className="flex items-center gap-2">
+                                                <Checkbox
+                                                    id={`dir-${d.entryId}`}
+                                                    checked={d.selected}
+                                                    onCheckedChange={() => handleToggleDir(d.entryId)}
+                                                />
+                                                <Label htmlFor={`dir-${d.entryId}`} className="cursor-pointer font-medium text-sm flex-1 truncate">
+                                                    {d.label}
+                                                </Label>
+                                                {meta && (
+                                                    <span className="text-xs text-muted-foreground shrink-0">
+                                                        {meta.fileCount} file{meta.fileCount === 1 ? '' : 's'}, {formatBytes(meta.totalSize)}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-6">
+                                                <Select
+                                                    value={d.targetConfigId}
+                                                    onValueChange={(v) => handleDirTargetConfigChange(d.entryId, v)}
+                                                    disabled={!d.selected}
+                                                >
+                                                    <SelectTrigger className="h-8 text-sm">
+                                                        <SelectValue placeholder="Target Adapter..." />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {storageDestinations.map(sd => (
+                                                            <SelectItem key={sd.id} value={sd.id}>
+                                                                <span className="flex items-center gap-2">
+                                                                    <AdapterIcon adapterId={sd.adapterId} className="h-4 w-4" />
+                                                                    {sd.name}
+                                                                </span>
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                                <div className="flex items-center gap-1.5">
+                                                    <Input
+                                                        value={d.targetPath}
+                                                        onChange={(e) => handleDirTargetPathChange(d.entryId, e.target.value)}
+                                                        placeholder="/restore/path"
+                                                        className="h-8 text-sm"
+                                                        disabled={!d.selected}
+                                                    />
+                                                    {d.selected && d.checkStatus === 'checking' && (
+                                                        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
+                                                    )}
+                                                    {d.selected && d.checkStatus === 'occupied' && (
+                                                        <TooltipProvider>
+                                                            <Tooltip>
+                                                                <TooltipTrigger>
+                                                                    <Badge variant="destructive" className="text-[10px] px-1.5 py-0 shrink-0">
+                                                                        <AlertTriangle className="h-3 w-3 mr-1" />
+                                                                        Occupied
+                                                                    </Badge>
+                                                                </TooltipTrigger>
+                                                                <TooltipContent>
+                                                                    <p>This path already contains files - matching filenames will be overwritten</p>
+                                                                </TooltipContent>
+                                                            </Tooltip>
+                                                        </TooltipProvider>
+                                                    )}
+                                                    {d.selected && d.checkStatus === 'empty' && (
+                                                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 shrink-0">
+                                                            <CheckCircle2 className="h-3 w-3 mr-1" />
+                                                            Empty
+                                                        </Badge>
+                                                    )}
+                                                    {d.selected && d.checkStatus === 'unverified' && (
+                                                        <TooltipProvider>
+                                                            <Tooltip>
+                                                                <TooltipTrigger>
+                                                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0 text-muted-foreground">
+                                                                        <HelpCircle className="h-3 w-3 mr-1" />
+                                                                        Unverified
+                                                                    </Badge>
+                                                                </TooltipTrigger>
+                                                                <TooltipContent>
+                                                                    <p>DBackup could not check this path in advance - existing files at this path may be overwritten.</p>
+                                                                </TooltipContent>
+                                                            </Tooltip>
+                                                        </TooltipProvider>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </CardContent>
+                        </Card>
+                    )}
+
                     {/* Restore Failed Logs */}
                     {restoreLogs && (
                         <Card className="border-destructive/50">
@@ -946,7 +1169,7 @@ export function RestoreClient() {
                                     ) : (
                                         <Button
                                             onClick={() => handleRestore(false)}
-                                            disabled={restoring || !targetSource || isLoadingTargetDbs || isAnalyzing || (analyzedDbs.length > 0 && !dbConfig.some(d => d.selected)) || compatibilityIssues.length > 0}
+                                            disabled={restoring || isLoadingTargetDbs || isAnalyzing || !dbSelectionValid || !dbListValid || !dirSelectionValid || !atLeastOneSelected || compatibilityIssues.length > 0}
                                             className="w-full"
                                         >
                                             {restoring && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

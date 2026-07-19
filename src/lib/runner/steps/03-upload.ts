@@ -156,6 +156,7 @@ export async function stepUpload(ctx: RunnerContext) {
         checksum,
         checksumMd5,
         multiDb: ctx.metadata?.multiDb,
+        combined: ctx.metadata?.combined,
         trigger,
         locked: ctx.lock === true,
     };
@@ -224,6 +225,11 @@ export async function stepUpload(ctx: RunnerContext) {
             const dbCount = typeof metadata.databases === 'object' && 'count' in metadata.databases
                 ? (metadata.databases as { count: number }).count
                 : (Array.isArray(metadata.databases) ? metadata.databases.length : 0);
+            const dbInfoLabel = metadata.combined
+                ? (metadata.combined.databases > 0
+                    ? `${metadata.combined.databases} DB${metadata.combined.databases === 1 ? '' : 's'} + ${metadata.combined.directorySources} Dir${metadata.combined.directorySources === 1 ? '' : 's'}`
+                    : `${metadata.combined.directorySources} Directory Source${metadata.combined.directorySources === 1 ? '' : 's'}`)
+                : (dbCount <= 1 ? "Single DB" : `${dbCount} DBs`);
             const richEntry = {
                 name: path.basename(remotePath),
                 path: remotePath,
@@ -234,7 +240,7 @@ export async function stepUpload(ctx: RunnerContext) {
                 sourceType: metadata.sourceType,
                 engineVersion: metadata.engineVersion,
                 engineEdition: metadata.engineEdition,
-                dbInfo: { count: dbCount, label: dbCount <= 1 ? "Single DB" : `${dbCount} DBs` },
+                dbInfo: { count: dbCount, label: dbInfoLabel },
                 isEncrypted: metadata.encryption?.enabled,
                 encryptionProfileId: metadata.encryption?.profileId,
                 compression: metadata.compression,

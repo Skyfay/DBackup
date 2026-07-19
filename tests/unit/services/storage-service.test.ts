@@ -428,6 +428,58 @@ describe('StorageService', () => {
             expect(result[0].dbInfo?.count).toBe(5);
         });
 
+        it('should label a combined (DB + directory sources) archive using the combined metadata', async () => {
+            const mockFiles: FileInfo[] = [
+                { name: 'backup.tar', path: 'backup.tar', size: 1024, lastModified: new Date() },
+                { name: 'backup.tar.meta.json', path: 'backup.tar.meta.json', size: 100, lastModified: new Date() }
+            ];
+            const sidecarData = {
+                jobName: 'CombinedJob',
+                sourceName: 'MyDB + 2 directory source(s)',
+                sourceType: 'mysql',
+                databases: { count: 2, names: [] },
+                combined: { databases: 2, directorySources: 2 },
+            };
+            const adapter = makeAdapter({
+                list: vi.fn().mockResolvedValue(mockFiles),
+                read: vi.fn().mockResolvedValue(JSON.stringify(sidecarData)),
+            });
+            prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig({ config: '{}' }));
+            prismaMock.job.findMany.mockResolvedValue([]);
+            prismaMock.execution.findMany.mockResolvedValue([]);
+            vi.mocked(registry.get).mockReturnValue(adapter);
+
+            const result = await service.listFilesWithMetadata('conf-123');
+
+            expect(result[0].dbInfo).toEqual({ count: 2, label: '2 DBs + 2 Dirs' });
+        });
+
+        it('should label a directory-only combined archive without a misleading DB count', async () => {
+            const mockFiles: FileInfo[] = [
+                { name: 'backup.tar', path: 'backup.tar', size: 1024, lastModified: new Date() },
+                { name: 'backup.tar.meta.json', path: 'backup.tar.meta.json', size: 100, lastModified: new Date() }
+            ];
+            const sidecarData = {
+                jobName: 'DirOnlyJob',
+                sourceName: '1 directory source(s)',
+                sourceType: 'directory-only',
+                databases: { count: 0, names: [] },
+                combined: { databases: 0, directorySources: 1 },
+            };
+            const adapter = makeAdapter({
+                list: vi.fn().mockResolvedValue(mockFiles),
+                read: vi.fn().mockResolvedValue(JSON.stringify(sidecarData)),
+            });
+            prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig({ config: '{}' }));
+            prismaMock.job.findMany.mockResolvedValue([]);
+            prismaMock.execution.findMany.mockResolvedValue([]);
+            vi.mocked(registry.get).mockReturnValue(adapter);
+
+            const result = await service.listFilesWithMetadata('conf-123');
+
+            expect(result[0].dbInfo).toEqual({ count: 0, label: '1 Directory Source' });
+        });
+
         it('should enrich file from execution metadata when no sidecar exists', async () => {
             const file: FileInfo = { name: 'backup.sql', path: 'backups/MyJob/backup.sql', size: 1024, lastModified: new Date() };
             const adapter = makeAdapter({

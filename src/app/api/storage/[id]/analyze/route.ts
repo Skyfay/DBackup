@@ -11,6 +11,8 @@ import fs from "fs";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { readManifestVersion, readCombinedManifest } from "@/lib/adapters/database/common/tar-utils";
+import type { DbEntryV2, DirectoryEntryV2 } from "@/lib/adapters/database/common/types";
 
 registerAdapters();
 
@@ -62,30 +64,35 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         tempFile = path.join(tempDir, path.basename(file));
         const sConf = await resolveAdapterConfig(storageConfig);
 
-        // OPTIMIZATION: Try to read sidecar metadata first
+        // OPTIMIZATION: Try to read sidecar metadata first - but combined (manifest v2)
+        // archives carry directory sources that the sidecar can't describe (no per-directory
+        // jobSourceId/label/fileCount), so this shortcut is skipped (falls through to a full
+        // manifest read below) whenever the sidecar itself reports directory sources.
         if (storageAdapter.read) {
             try {
                 const metaPath = file + ".meta.json";
                 const metaContent = await storageAdapter.read(sConf, metaPath);
                 if (metaContent) {
                     const meta = JSON.parse(metaContent);
-                    if (meta.databases) {
-                         if (Array.isArray(meta.databases.names) && meta.databases.names.length > 0) {
-                              return NextResponse.json({ databases: meta.databases.names });
-                         }
-                         if (Array.isArray(meta.databases) && meta.databases.length > 0) {
-                              return NextResponse.json({ databases: meta.databases });
-                         }
-                    }
-                    // For multi-DB TAR archives, return the embedded database list
-                    if (meta.multiDb?.databases?.length > 0) {
-                        return NextResponse.json({ databases: meta.multiDb.databases });
-                    }
-                    // For server-based adapters (not sqlite) with empty names,
-                    // use the source type to signal the frontend that this is a DB restore
-                    const serverAdapters = ['mysql', 'mariadb', 'postgres', 'mongodb', 'mssql', 'redis', 'valkey'];
-                    if (meta.sourceType && serverAdapters.includes(meta.sourceType.toLowerCase())) {
-                        return NextResponse.json({ databases: [], sourceType: meta.sourceType });
+                    if (!(meta.combined?.directorySources > 0)) {
+                        if (meta.databases) {
+                             if (Array.isArray(meta.databases.names) && meta.databases.names.length > 0) {
+                                  return NextResponse.json({ databases: meta.databases.names });
+                             }
+                             if (Array.isArray(meta.databases) && meta.databases.length > 0) {
+                                  return NextResponse.json({ databases: meta.databases });
+                             }
+                        }
+                        // For multi-DB TAR archives, return the embedded database list
+                        if (meta.multiDb?.databases?.length > 0) {
+                            return NextResponse.json({ databases: meta.multiDb.databases });
+                        }
+                        // For server-based adapters (not sqlite) with empty names,
+                        // use the source type to signal the frontend that this is a DB restore
+                        const serverAdapters = ['mysql', 'mariadb', 'postgres', 'mongodb', 'mssql', 'redis', 'valkey'];
+                        if (meta.sourceType && serverAdapters.includes(meta.sourceType.toLowerCase())) {
+                            return NextResponse.json({ databases: [], sourceType: meta.sourceType });
+                        }
                     }
                 }
             } catch (_e) {
@@ -95,6 +102,33 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
 
         const downloadSuccess = await storageAdapter.download(sConf, file, tempFile);
         if (!downloadSuccess) return NextResponse.json({ error: "Download failed" }, { status: 500 });
+
+        // Combined (manifest v2) archive - read the full manifest for the database AND
+        // directory entries it contains. Directory entries can only come from here, never
+        // from the sidecar shortcut above (see comment there).
+        const manifestVersion = await readManifestVersion(tempFile);
+        if (manifestVersion === 2) {
+            const manifest = await readCombinedManifest(tempFile);
+            if (manifest) {
+                const databases = manifest.entries
+                    .filter((e): e is DbEntryV2 => e.kind === "database")
+                    .map((e) => e.name);
+                const directories = manifest.entries
+                    .filter((e): e is DirectoryEntryV2 => e.kind === "directory")
+                    .map((e) => ({
+                        jobSourceId: e.jobSourceId,
+                        label: e.label,
+                        fileCount: e.fileCount,
+                        totalSize: e.totalSize,
+                        excludePatterns: e.excludePatterns,
+                    }));
+                return NextResponse.json({
+                    databases,
+                    directories,
+                    sourceType: manifest.sourceType !== "directory-only" ? manifest.sourceType : undefined,
+                });
+            }
+        }
 
         let databases: string[] = [];
 

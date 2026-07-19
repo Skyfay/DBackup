@@ -44,6 +44,11 @@ export interface BackupMetadata {
         /** Database names contained in the archive */
         databases: string[];
     };
+    /** Present only for combined (manifest v2) archives - job had directory sources in addition to (or instead of) a database source. */
+    combined?: {
+        databases: number;
+        directorySources: number;
+    };
     /** SHA-256 checksum of the final backup file (after compression/encryption) */
     checksum?: string;
     /** MD5 checksum of the final backup file - enables native verification for Google Drive and OneDrive */

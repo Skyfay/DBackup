@@ -7,7 +7,12 @@ All notable changes to DBackup are documented here.
 
 ### ✨ Features
 
-- **storage**: Storage adapters can now be flagged as directory backup sources in addition to backup destinations, shown as a new "Directory Sources" section on the Sources page and as role badges on the Destinations page. Foundational groundwork for upcoming directory/file backup support - the backup engine can now execute combined database + directory backups into a single archive internally, but job creation doesn't yet expose this.
+- **jobs**: Backup jobs can now include one or more directory sources (SFTP, SMB, WebDAV, Rsync, or Local Filesystem) alongside or instead of a database source, backed up into a single combined archive per execution. Configure them in the new "Sources" tab of the job form. Storage adapters can be flagged as directory backup sources in addition to backup destinations, shown as a new "Directory Sources" section on the Sources page and as role badges on the Destinations page.
+- **restore**: Combined database + directory archives can be restored in one pass from the same restore dialog - select which databases and directory sources to restore, each with its own restore target and a conflict check against existing files at the destination path.
+
+### 🎨 Improvements
+
+- **storage**: The Storage Explorer's backup count badge now reflects combined database + directory archives (e.g. "2 DBs + 2 Dirs") instead of a misleading database-only count.
 
 ### 🐳 Docker
 

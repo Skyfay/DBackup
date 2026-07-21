@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Loader2, Plus, Filter, ChevronsUpDown, Check, Pencil, Save } from "lucide-react";
+import { Loader2, Plus, Filter, ChevronsUpDown, Check, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -34,22 +34,22 @@ function parsePatterns(patterns: string): string[] {
 }
 
 interface Props {
-  /** This row's own job-specific extra patterns - independent of the linked preset's patterns. */
-  patterns: string[];
-  onPatternsChange: (patterns: string[]) => void;
-  /** Live-linked preset id, if any - editing the preset elsewhere retroactively applies here. */
-  presetId: string | null | undefined;
-  onPresetIdChange: (id: string | null) => void;
+  value: string | null;
+  onChange: (id: string | null) => void;
+  placeholder?: string;
+  /** Preset ids already linked by sibling rows - disabled here to prevent picking the same preset twice. */
+  usedIds?: string[];
 }
 
 /**
- * Live-linked template picker (matches NamingTemplatePicker/SchedulePreset semantics): selecting
- * a preset only sets the reference - it never copies patterns into the row's own list. The
- * preset's current patterns are shown read-only below and re-fetch on every mount, so editing the
- * preset in Settings -> Templates and coming back here reflects the update. Job-specific patterns
- * stay a fully independent, always-editable field.
+ * Single-preset row picker (matches NotificationTemplatePicker's semantics): a job source can link
+ * several of these presets at once, rendered as a list of rows by the caller (see job-form.tsx's
+ * exclude-patterns panel) - add a row, remove a row, same pattern as the Notify tab's templates.
+ * Selecting a preset only sets the reference - it never copies patterns into the row's own
+ * job-specific list. The preset's current patterns are shown read-only below and re-fetch on every
+ * mount, so editing the preset in Settings -> Templates and coming back here reflects the update.
  */
-export function ExcludePatternPresetPicker({ patterns, onPatternsChange, presetId, onPresetIdChange }: Props) {
+export function ExcludePatternPresetPicker({ value, onChange, placeholder = "Add exclude pattern preset...", usedIds = [] }: Props) {
   const [presets, setPresets] = useState<ExcludePatternPreset[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -72,59 +72,61 @@ export function ExcludePatternPresetPicker({ patterns, onPatternsChange, presetI
     fetchPresets();
   }, [fetchPresets]);
 
-  const selected = presets.find((p) => p.id === presetId);
+  const selected = presets.find((p) => p.id === value);
   const selectedPatterns = selected ? parsePatterns(selected.patterns) : [];
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-1.5">
-        <Popover open={open} onOpenChange={setOpen}>
-          <PopoverTrigger asChild>
-            <Button
-              type="button"
-              variant="outline"
-              role="combobox"
-              size="sm"
-              aria-expanded={open}
-              disabled={loading}
-              className="h-8 justify-between font-normal flex-1 min-w-0"
-            >
-              {loading ? (
-                <span className="flex items-center gap-2 text-muted-foreground text-xs">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  Loading...
-                </span>
-              ) : selected ? (
-                <span className="flex items-center gap-1.5 min-w-0 text-xs">
-                  <Filter className="h-3 w-3 text-muted-foreground shrink-0" />
-                  <span className="truncate">{selected.name}</span>
-                </span>
-              ) : (
-                <span className="flex items-center gap-1.5 min-w-0 text-xs text-muted-foreground">
-                  <Filter className="h-3 w-3 shrink-0" />
-                  No template linked
-                </span>
-              )}
-              <ChevronsUpDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-            <Command>
-              <CommandInput placeholder="Search presets..." />
-              <CommandList>
-                <CommandEmpty>No presets found.</CommandEmpty>
-                <CommandGroup>
-                  {presets.map((preset) => (
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            role="combobox"
+            size="sm"
+            aria-expanded={open}
+            disabled={loading}
+            className="w-full justify-between font-normal h-8"
+          >
+            {loading ? (
+              <span className="flex items-center gap-2 text-muted-foreground text-xs">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Loading...
+              </span>
+            ) : selected ? (
+              <span className="flex items-center gap-1.5 min-w-0 text-xs">
+                <Filter className="h-3 w-3 text-muted-foreground shrink-0" />
+                <span className="truncate">{selected.name}</span>
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 min-w-0 text-xs text-muted-foreground">
+                <Filter className="h-3 w-3 shrink-0" />
+                {placeholder}
+              </span>
+            )}
+            <ChevronsUpDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+          <Command>
+            <CommandInput placeholder="Search presets..." />
+            <CommandList>
+              <CommandEmpty>No presets found.</CommandEmpty>
+              <CommandGroup>
+                {presets.map((preset) => {
+                  const isUsed = usedIds.includes(preset.id) && preset.id !== value;
+                  return (
                     <CommandItem
                       key={preset.id}
                       value={preset.name}
+                      disabled={isUsed}
                       className="group pr-1"
                       onSelect={() => {
-                        onPresetIdChange(preset.id);
+                        onChange(preset.id);
                         setOpen(false);
                       }}
                     >
-                      <Check className={cn("mr-2 h-4 w-4", presetId === preset.id ? "opacity-100" : "opacity-0")} />
+                      <Check className={cn("mr-2 h-4 w-4", value === preset.id ? "opacity-100" : "opacity-0")} />
                       <span className="flex-1">{preset.name}</span>
                       {!preset.isSystem && (
                         <button
@@ -141,56 +143,27 @@ export function ExcludePatternPresetPicker({ patterns, onPatternsChange, presetI
                         </button>
                       )}
                     </CommandItem>
-                  ))}
-                </CommandGroup>
-                {presetId && (
-                  <>
-                    <CommandSeparator />
-                    <CommandGroup>
-                      <CommandItem
-                        value="__clear__"
-                        onSelect={() => {
-                          onPresetIdChange(null);
-                          setOpen(false);
-                        }}
-                      >
-                        <Check className="mr-2 h-4 w-4 opacity-0" />
-                        <span className="text-muted-foreground">No template</span>
-                      </CommandItem>
-                    </CommandGroup>
-                  </>
-                )}
-                <CommandSeparator />
-                <CommandGroup>
-                  <CommandItem
-                    value="__create__"
-                    onSelect={() => {
-                      setOpen(false);
-                      setCreateOpen(true);
-                    }}
-                    className="font-medium"
-                  >
-                    <Plus className="mr-2 h-3.5 w-3.5" />
-                    Create new preset...
-                  </CommandItem>
-                </CommandGroup>
-              </CommandList>
-            </Command>
-          </PopoverContent>
-        </Popover>
-
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-8 px-2 shrink-0"
-          title="Save this job's extra patterns as a new preset"
-          disabled={patterns.length === 0}
-          onClick={() => setCreateOpen(true)}
-        >
-          <Save className="h-3.5 w-3.5" />
-        </Button>
-      </div>
+                  );
+                })}
+              </CommandGroup>
+              <CommandSeparator />
+              <CommandGroup>
+                <CommandItem
+                  value="__create__"
+                  onSelect={() => {
+                    setOpen(false);
+                    setCreateOpen(true);
+                  }}
+                  className="font-medium"
+                >
+                  <Plus className="mr-2 h-3.5 w-3.5" />
+                  Create new preset...
+                </CommandItem>
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
 
       {selected && (
         <div className="flex flex-wrap items-center gap-1 text-xs">
@@ -208,11 +181,9 @@ export function ExcludePatternPresetPicker({ patterns, onPatternsChange, presetI
       <ExcludePatternPresetDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        initialPatterns={patterns}
         onSuccess={(preset) => {
           setPresets((prev) => [...prev.filter((p) => p.id !== preset.id), preset].sort((a, b) => a.name.localeCompare(b.name)));
-          onPresetIdChange(preset.id);
-          onPatternsChange([]);
+          onChange(preset.id);
           setCreateOpen(false);
         }}
       />

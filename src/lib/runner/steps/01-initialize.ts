@@ -22,7 +22,7 @@ export async function stepInitialize(ctx: RunnerContext) {
                 orderBy: { priority: 'asc' }
             },
             sources: {
-                include: { config: true, excludePatternPreset: true },
+                include: { config: true, excludePatternPresets: true },
                 orderBy: { priority: 'asc' }
             },
             notifications: true,
@@ -83,10 +83,10 @@ export async function stepInitialize(ctx: RunnerContext) {
             continue;
         }
 
-        // Exclude patterns are the union of the live-linked preset's current patterns (if any -
-        // re-read fresh here so editing the preset later applies retroactively, same as naming
+        // Exclude patterns are the union of every live-linked preset's current patterns (if any -
+        // re-read fresh here so editing a preset later applies retroactively, same as naming
         // templates/schedule presets) and this source's own job-specific patterns.
-        const presetPatterns: string[] = src.excludePatternPreset ? JSON.parse(src.excludePatternPreset.patterns || "[]") : [];
+        const presetPatterns: string[] = src.excludePatternPresets.flatMap((p) => JSON.parse(p.patterns || "[]"));
         const ownPatterns: string[] = JSON.parse(src.excludePatterns || "[]");
         const excludePatterns = [...new Set([...presetPatterns, ...ownPatterns])];
 

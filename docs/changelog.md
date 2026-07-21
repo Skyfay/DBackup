@@ -13,10 +13,14 @@ All notable changes to DBackup are documented here.
 - **jobs**: Creating and editing a backup job now opens a dedicated full page instead of a modal, giving the Sources tab room for the new folder tree.
 - **storage**: Directory sources can now be picked via an always-visible Synology-style checkbox folder tree (Local, SFTP, Rsync, Google Drive, Dropbox, OneDrive), editable at any time directly in the Sources tab instead of a one-shot picker dialog.
 - **templates**: Added Exclude Pattern Presets, reusable templates of glob patterns that can be linked to any directory source - editing a preset later retroactively applies to every source that references it, same as naming templates and schedule presets.
+- **jobs**: The directory source folder browser now reflects every row already configured for that adapter, no matter which row's "Browse" button opened it - checking a new folder adds a row, unchecking one removes it, instead of only ever appending rows.
+- **jobs**: Added a "Back up everything" option to the directory source folder browser, backing up an entire adapter's root as a single source instead of requiring one row per folder.
+- **templates**: A directory source can now link multiple Exclude Pattern Presets at once, matching the multi-template picker already used for notifications.
 
 ### 🐛 Bug Fixes
 
 - **jobs**: Fixed a crash when expanding a directory source's exclude-pattern filter while editing an existing job.
+- **jobs**: Fixed linked Exclude Pattern Presets being silently dropped when creating or updating a job, so the link never actually applied.
 
 ### 🎨 Improvements
 

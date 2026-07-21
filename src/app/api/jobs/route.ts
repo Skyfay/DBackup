@@ -76,11 +76,12 @@ export async function POST(req: NextRequest) {
                 retention: d.retention ? JSON.stringify(d.retention) : "{}",
                 retentionPolicyId: d.retentionPolicyId ?? null,
             })),
-            sources: Array.isArray(sources) ? sources.map((s: { configId: string; priority?: number; path: string; excludePatterns?: string[] }, i: number) => ({
+            sources: Array.isArray(sources) ? sources.map((s: { configId: string; priority?: number; path: string; excludePatterns?: string[]; excludePatternPresetIds?: string[] }, i: number) => ({
                 configId: s.configId,
                 priority: s.priority ?? i,
                 path: s.path,
                 excludePatterns: Array.isArray(s.excludePatterns) ? s.excludePatterns : [],
+                excludePatternPresetIds: Array.isArray(s.excludePatternPresetIds) ? s.excludePatternPresetIds : [],
             })) : undefined,
             notificationIds,
             notificationTemplateIds: Array.isArray(notificationTemplateIds) ? notificationTemplateIds : undefined,

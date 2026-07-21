@@ -22,7 +22,7 @@ type NodeState = "checked" | "unchecked" | "indeterminate";
 export interface DirectoryTreeRow {
     path: string;
     excludePatterns: string[];
-    excludePatternPresetId?: string | null;
+    excludePatternPresetIds?: string[];
 }
 
 interface DirectoryTreeProps {
@@ -188,7 +188,7 @@ export function DirectoryTree({ configId, rows, onRowsChange, renderRootPanel }:
             const owningRow = findOwningRow(path);
             if (!owningRow) {
                 const filtered = rows.filter((r) => !isAtOrUnder(r.path, path));
-                onRowsChange([...filtered, { path, excludePatterns: [], excludePatternPresetId: null }]);
+                onRowsChange([...filtered, { path, excludePatterns: [], excludePatternPresetIds: [] }]);
             } else {
                 const relative = path === owningRow.path ? "" : relativeTo(path, owningRow.path);
                 const newExcludes = owningRow.excludePatterns.filter((p) => {

@@ -22,7 +22,7 @@ export interface SourceInput {
     priority: number;
     path: string;
     excludePatterns?: string[];
-    excludePatternPresetId?: string | null;
+    excludePatternPresetIds?: string[];
 }
 
 export interface CreateJobInput {
@@ -70,7 +70,7 @@ const jobInclude = {
         orderBy: { priority: 'asc' as const }
     },
     sources: {
-        include: { config: true, excludePatternPreset: true },
+        include: { config: true, excludePatternPresets: true },
         orderBy: { priority: 'asc' as const }
     },
     notifications: true,
@@ -92,14 +92,16 @@ const jobInclude = {
 };
 
 /**
- * JobSource.excludePatterns is stored as a JSON-encoded string column. Parses it back into a
- * real string[] for every source before handing job data to API/UI consumers, mirroring the
- * JSON.parse already performed by the runner (src/lib/runner/steps/01-initialize.ts).
+ * JobSource.excludePatterns is stored as a JSON-encoded string column - parsed back into a real
+ * string[] for every source before handing job data to API/UI consumers, mirroring the JSON.parse
+ * already performed by the runner (src/lib/runner/steps/01-initialize.ts). excludePatternPresets
+ * (the linked-preset relation, fully hydrated by jobInclude) is likewise flattened down to just the
+ * id list the form actually needs.
  */
-function parseSourceExcludePatterns<T extends { excludePatterns: string }>(
+function parseSourceExcludePatterns<T extends { excludePatterns: string; excludePatternPresets: { id: string }[] }>(
     sources: T[]
-): (Omit<T, "excludePatterns"> & { excludePatterns: string[] })[] {
-    return sources.map(({ excludePatterns, ...rest }) => {
+): (Omit<T, "excludePatterns" | "excludePatternPresets"> & { excludePatterns: string[]; excludePatternPresetIds: string[] })[] {
+    return sources.map(({ excludePatterns, excludePatternPresets, ...rest }) => {
         let parsed: string[] = [];
         try {
             const p = JSON.parse(excludePatterns);
@@ -107,7 +109,7 @@ function parseSourceExcludePatterns<T extends { excludePatterns: string }>(
         } catch {
             // malformed/legacy data - fall back to no exclusions
         }
-        return { ...rest, excludePatterns: parsed };
+        return { ...rest, excludePatterns: parsed, excludePatternPresetIds: excludePatternPresets.map((p) => p.id) };
     });
 }
 
@@ -244,7 +246,9 @@ export class JobService {
                             priority: s.priority,
                             path: s.path,
                             excludePatterns: JSON.stringify(s.excludePatterns || []),
-                            excludePatternPresetId: s.excludePatternPresetId ?? null,
+                            excludePatternPresets: {
+                                connect: (s.excludePatternPresetIds || []).map((id) => ({ id })),
+                            },
                         }))
                     }
                     : undefined
@@ -287,21 +291,24 @@ export class JobService {
                 });
             }
 
-            // Update directory sources if provided
+            // Update directory sources if provided. createMany() can't set the excludePatternPresets
+            // m2m relation, so each source is created individually instead.
             if (sources) {
                 await tx.jobSource.deleteMany({ where: { jobId: id } });
-                if (sources.length > 0) {
-                    await tx.jobSource.createMany({
-                        data: sources.map((s) => ({
+                await Promise.all(sources.map((s) =>
+                    tx.jobSource.create({
+                        data: {
                             jobId: id,
                             configId: s.configId,
                             priority: s.priority,
                             path: s.path,
                             excludePatterns: JSON.stringify(s.excludePatterns || []),
-                            excludePatternPresetId: s.excludePatternPresetId ?? null,
-                        }))
-                    });
-                }
+                            excludePatternPresets: {
+                                connect: (s.excludePatternPresetIds || []).map((presetId) => ({ id: presetId })),
+                            },
+                        }
+                    })
+                ));
             }
 
             // Update notification templates if provided
@@ -362,7 +369,7 @@ export class JobService {
             where: { id },
             include: {
                 destinations: true,
-                sources: true,
+                sources: { include: { excludePatternPresets: { select: { id: true } } } },
                 notifications: true,
                 notificationTemplates: { orderBy: { priority: 'asc' as const } },
             }
@@ -423,7 +430,9 @@ export class JobService {
                             priority: s.priority,
                             path: s.path,
                             excludePatterns: s.excludePatterns,
-                            excludePatternPresetId: s.excludePatternPresetId,
+                            excludePatternPresets: {
+                                connect: s.excludePatternPresets.map((p) => ({ id: p.id })),
+                            },
                         }))
                     }
                     : undefined

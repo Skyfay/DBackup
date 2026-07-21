@@ -84,7 +84,7 @@ const directorySourceSchema = z.object({
     configId: z.string().min(1, "Storage adapter is required"),
     path: z.string().min(1, "Path is required"),
     excludePatterns: z.array(z.string()).default([]),
-    excludePatternPresetId: z.string().nullable().optional(),
+    excludePatternPresetIds: z.array(z.string()).default([]),
 });
 
 export interface JobSourceData {
@@ -93,7 +93,7 @@ export interface JobSourceData {
     priority?: number;
     path: string;
     excludePatterns: string[];
-    excludePatternPresetId?: string | null;
+    excludePatternPresetIds?: string[];
 }
 
 export interface JobData {
@@ -338,7 +338,7 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
         configId: s.configId,
         path: s.path,
         excludePatterns: normalizeExcludePatterns(s.excludePatterns),
-        excludePatternPresetId: s.excludePatternPresetId ?? null,
+        excludePatternPresetIds: s.excludePatternPresetIds ?? [],
     }));
 
     const form = useForm({
@@ -391,10 +391,11 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
             const matchIdx = remainingNew.findIndex((r) => r.path === entry.path);
             if (matchIdx === -1) continue;
             const [match] = remainingNew.splice(matchIdx, 1);
-            result.push({ ...entry, excludePatterns: match.excludePatterns, excludePatternPresetId: match.excludePatternPresetId ?? null });
+            // Presets aren't editable from the browse dialog - keep the entry's own current links.
+            result.push({ ...entry, excludePatterns: match.excludePatterns, excludePatternPresetIds: entry.excludePatternPresetIds ?? [] });
         }
         for (const added of remainingNew) {
-            result.push({ configId, path: added.path, excludePatterns: added.excludePatterns, excludePatternPresetId: added.excludePatternPresetId ?? null });
+            result.push({ configId, path: added.path, excludePatterns: added.excludePatterns, excludePatternPresetIds: [] });
         }
         replaceSource(result);
         setExpandedSources(new Set());
@@ -584,7 +585,7 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
                     priority: i,
                     path: s.path,
                     excludePatterns: s.excludePatterns || [],
-                    excludePatternPresetId: s.excludePatternPresetId ?? null,
+                    excludePatternPresetIds: s.excludePatternPresetIds || [],
                 })),
                 destinations: data.destinations.map((d, i) => ({
                     configId: d.configId,
@@ -925,7 +926,7 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
                                         type="button"
                                         variant="outline"
                                         size="sm"
-                                        onClick={() => appendSource({ configId: "", path: "", excludePatterns: [], excludePatternPresetId: null })}
+                                        onClick={() => appendSource({ configId: "", path: "", excludePatterns: [], excludePatternPresetIds: [] })}
                                         disabled={directorySourceOptions.length === 0}
                                     >
                                         <Plus className="h-4 w-4 mr-1" />
@@ -1475,7 +1476,7 @@ function DirectorySourceRow({ index, form, directorySourceOptions, isExpanded, o
     const currentAdapter = directorySourceOptions.find(d => d.id === currentConfigId);
     const allDirectorySources: JobSourceData[] = form.watch("directorySources") || [];
     const excludePatterns: string[] = form.watch(`directorySources.${index}.excludePatterns`) || [];
-    const excludePatternPresetId: string | null = form.watch(`directorySources.${index}.excludePatternPresetId`) ?? null;
+    const excludePatternPresetIds: string[] = form.watch(`directorySources.${index}.excludePatternPresetIds`) || [];
 
     return (
         <div className="border rounded-lg">
@@ -1585,12 +1586,46 @@ function DirectorySourceRow({ index, form, directorySourceOptions, isExpanded, o
                             <Filter className="h-3 w-3" />
                             Exclude patterns for {currentAdapter?.name || `Source #${index + 1}`}
                         </div>
-                        <ExcludePatternPresetPicker
-                            patterns={excludePatterns}
-                            onPatternsChange={(p) => form.setValue(`directorySources.${index}.excludePatterns`, p, { shouldValidate: true })}
-                            presetId={excludePatternPresetId}
-                            onPresetIdChange={(id) => form.setValue(`directorySources.${index}.excludePatternPresetId`, id)}
-                        />
+                        <div className="space-y-1.5">
+                            {excludePatternPresetIds.map((presetId, i) => (
+                                <div key={presetId} className="flex items-center gap-2">
+                                    <div className="flex-1 min-w-0">
+                                        <ExcludePatternPresetPicker
+                                            value={presetId}
+                                            onChange={(id) => {
+                                                if (!id) return;
+                                                const current = [...excludePatternPresetIds];
+                                                current[i] = id;
+                                                form.setValue(`directorySources.${index}.excludePatternPresetIds`, current, { shouldValidate: true });
+                                            }}
+                                            usedIds={excludePatternPresetIds.filter((_, j) => j !== i)}
+                                        />
+                                    </div>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 px-2 text-muted-foreground hover:text-destructive shrink-0"
+                                        onClick={() => form.setValue(
+                                            `directorySources.${index}.excludePatternPresetIds`,
+                                            excludePatternPresetIds.filter((_, j) => j !== i),
+                                            { shouldValidate: true }
+                                        )}
+                                    >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                </div>
+                            ))}
+                            <ExcludePatternPresetPicker
+                                value={null}
+                                onChange={(id) => {
+                                    if (!id || excludePatternPresetIds.includes(id)) return;
+                                    form.setValue(`directorySources.${index}.excludePatternPresetIds`, [...excludePatternPresetIds, id], { shouldValidate: true });
+                                }}
+                                placeholder="Add exclude pattern preset..."
+                                usedIds={excludePatternPresetIds}
+                            />
+                        </div>
                         <Textarea
                             rows={3}
                             placeholder={"*.tmp\nnode_modules/**\n.cache/**"}
@@ -1616,7 +1651,7 @@ function DirectorySourceRow({ index, form, directorySourceOptions, isExpanded, o
                     adapterName={currentAdapter.name}
                     initialRows={allDirectorySources
                         .filter((s) => s.configId === currentAdapter.id)
-                        .map((s) => ({ path: s.path, excludePatterns: s.excludePatterns ?? [], excludePatternPresetId: s.excludePatternPresetId ?? null }))}
+                        .map((s) => ({ path: s.path, excludePatterns: s.excludePatterns ?? [], excludePatternPresetIds: s.excludePatternPresetIds ?? [] }))}
                     onConfirm={(rows) => onSync(currentAdapter.id, rows)}
                 />
             )}

@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { Lock, History, ChevronsUpDown, Plus, Trash2, ChevronDown, ChevronRight, Database, Info, Loader2, FileText, CalendarClock, Pencil, FolderInput } from "lucide-react";
+import { Lock, History, ChevronsUpDown, Plus, Trash2, ChevronDown, ChevronRight, Database, Info, Loader2, FileText, CalendarClock, Pencil, FolderInput, FolderOpen, Filter } from "lucide-react";
 import { SchedulePicker } from "./schedule-picker";
 import { RetentionPolicyPicker, DEFAULT_RETENTION_SENTINEL } from "@/components/templates/retention-policy-picker";
 import { NamingTemplatePicker } from "@/components/templates/naming-template-picker";
@@ -46,6 +46,14 @@ import {
   Collapsible,
   CollapsibleContent,
 } from "@/components/ui/collapsible"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog"
 
 /** Database adapters whose dumpOne()/restoreOne() capability supports combining with directory sources in one job. */
 const COMBINABLE_DB_ADAPTERS = ["mysql", "mariadb", "postgres", "mongodb", "firebird"];
@@ -300,9 +308,7 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
     const [presetCreateOpen, setPresetCreateOpen] = useState(false);
     const [presetEditTarget, setPresetEditTarget] = useState<SchedulePreset | null>(null);
     const [presetEditOpen, setPresetEditOpen] = useState(false);
-    const [directoryAdapterIds, setDirectoryAdapterIds] = useState<string[]>(() => [
-        ...new Set((initialData?.sources ?? []).map((s) => s.configId)),
-    ]);
+    const [expandedSources, setExpandedSources] = useState<Set<number>>(new Set());
     const [sourceMode, setSourceMode] = useState<SourceMode>(() => {
         const hasDb = !!initialData?.sourceId;
         const hasDirs = (initialData?.sources?.length ?? 0) > 0;
@@ -362,6 +368,11 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
         name: "destinations",
     });
 
+    const { fields: sourceFields, append: appendSource, remove: removeSource } = useFieldArray({
+        control: form.control,
+        name: "directorySources",
+    });
+
     // Clears (rather than hides-and-preserves) fields that become irrelevant to the new mode, since
     // onSubmit unconditionally maps sourceId/directorySources into the payload - a hidden-but-populated
     // field would otherwise still get submitted.
@@ -370,7 +381,7 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
 
         if (nextMode === "db") {
             form.setValue("directorySources", [], { shouldDirty: true, shouldValidate: true });
-            setDirectoryAdapterIds([]);
+            setExpandedSources(new Set());
         }
 
         if (nextMode === "dirs") {
@@ -396,6 +407,15 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
 
     const toggleExpanded = (index: number) => {
         setExpandedDests(prev => {
+            const next = new Set(prev);
+            if (next.has(index)) next.delete(index);
+            else next.add(index);
+            return next;
+        });
+    };
+
+    const toggleSourceExpanded = (index: number) => {
+        setExpandedSources(prev => {
             const next = new Set(prev);
             if (next.has(index)) next.delete(index);
             else next.add(index);
@@ -567,13 +587,6 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
 
     // Get used destination IDs to prevent duplicates
     const usedDestIds = form.watch("destinations").map(d => d.configId).filter(Boolean);
-
-    // Normalized (excludePatterns always a real array) view of the directorySources field, used by
-    // the per-adapter directory source sections below.
-    const currentDirectorySources: JobSourceData[] = (form.watch("directorySources") || []).map((s) => ({
-        ...s,
-        excludePatterns: s.excludePatterns ?? [],
-    }));
 
     return (
         <>
@@ -874,47 +887,70 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
                         )}
 
                         {(sourceMode === "dirs" || sourceMode === "both") && (
-                        <div className="space-y-3">
-                            <div>
-                                <FormLabel className="flex items-center gap-2">
-                                    <FolderInput className="h-4 w-4" />
-                                    Directory Sources
-                                </FormLabel>
-                                <p className="text-sm text-muted-foreground mt-1">
-                                    Back up files and directories alongside (or instead of) the database above. Pick a storage adapter, then check the folders you want to back up.
+                        <Card className="border-border">
+                            <CardHeader className="pb-3">
+                                <div className="flex items-center justify-between">
+                                    <CardTitle className="text-base flex items-center gap-2">
+                                        <FolderInput className="h-4 w-4" />
+                                        Directory Sources
+                                    </CardTitle>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => appendSource({ configId: "", path: "", excludePatterns: [], excludePatternPresetId: null })}
+                                        disabled={directorySourceOptions.length === 0}
+                                    >
+                                        <Plus className="h-4 w-4 mr-1" />
+                                        Add Directory Source
+                                    </Button>
+                                </div>
+                                <p className="text-sm text-muted-foreground">
+                                    Back up files and directories alongside (or instead of) the database above, using any storage adapter enabled as a source. The same adapter can be used in more than one row.
                                 </p>
-                            </div>
-
-                            {directoryAdapterIds.map((configId) => (
-                                <DirectoryAdapterSection
-                                    key={configId}
-                                    configId={configId}
-                                    adapter={directorySourceOptions.find((d) => d.id === configId)}
-                                    directorySources={currentDirectorySources}
-                                    onDirectorySourcesChange={(rows) => form.setValue("directorySources", rows, { shouldValidate: true })}
-                                    onRemoveAdapter={() => {
-                                        setDirectoryAdapterIds((prev) => prev.filter((id) => id !== configId));
-                                        form.setValue(
-                                            "directorySources",
-                                            currentDirectorySources.filter((s) => s.configId !== configId),
-                                            { shouldValidate: true }
-                                        );
-                                    }}
-                                />
-                            ))}
-
-                            {directorySourceOptions.length === 0 ? (
-                                <p className="text-xs text-muted-foreground flex items-start gap-1.5">
-                                    <Info className="h-3 w-3 mt-0.5 shrink-0" />
-                                    No storage adapters are enabled as directory sources yet. Enable one from the Sources page.
-                                </p>
-                            ) : (
-                                <AddDirectoryAdapterControl
-                                    options={directorySourceOptions.filter((d) => !directoryAdapterIds.includes(d.id))}
-                                    onAdd={(configId) => setDirectoryAdapterIds((prev) => [...prev, configId])}
-                                />
-                            )}
-                        </div>
+                            </CardHeader>
+                            <CardContent className="space-y-3">
+                                {sourceFields.length === 0 && (
+                                    <div className="bg-muted p-4 rounded-md text-sm text-muted-foreground text-center">
+                                        No directory sources configured.
+                                    </div>
+                                )}
+                                {sourceFields.length > 0 && (
+                                    <ScrollArea className="*:data-[slot=scroll-area-viewport]:max-h-100">
+                                        <div className="space-y-3 pr-3">
+                                            {sourceFields.map((field, index) => (
+                                                <DirectorySourceRow
+                                                    key={field.id}
+                                                    index={index}
+                                                    form={form}
+                                                    directorySourceOptions={directorySourceOptions}
+                                                    isExpanded={expandedSources.has(index)}
+                                                    onToggleExpand={() => toggleSourceExpanded(index)}
+                                                    onRemove={() => {
+                                                        removeSource(index);
+                                                        setExpandedSources(prev => {
+                                                            const next = new Set<number>();
+                                                            prev.forEach(i => {
+                                                                if (i < index) next.add(i);
+                                                                else if (i > index) next.add(i - 1);
+                                                            });
+                                                            return next;
+                                                        });
+                                                    }}
+                                                    onAppendRows={(rows) => rows.forEach((r) => appendSource(r))}
+                                                />
+                                            ))}
+                                        </div>
+                                    </ScrollArea>
+                                )}
+                                {directorySourceOptions.length === 0 && (
+                                    <p className="text-xs text-muted-foreground flex items-start gap-1.5">
+                                        <Info className="h-3 w-3 mt-0.5 shrink-0" />
+                                        No storage adapters are enabled as directory sources yet. Enable one from the Sources page.
+                                    </p>
+                                )}
+                            </CardContent>
+                        </Card>
                         )}
                     </TabsContent>
 
@@ -1392,175 +1428,237 @@ function DestinationRow({ index, form, destinations, usedDestIds, isExpanded, on
     );
 }
 
-// --- Directory Sources (folder tree per adapter, always visible - see directory-tree.tsx) ---
+// --- Directory Sources (Destinations-style row list; each row browses its own adapter via a dialog) ---
 
-function DirectoryRootExcludePanel({ row, onChange }: { row: DirectoryTreeRow; onChange: (patch: Partial<DirectoryTreeRow>) => void }) {
-    return (
-        <div className="border rounded-md p-3 bg-muted/30 space-y-2">
-            <ExcludePatternPresetPicker
-                patterns={row.excludePatterns}
-                onPatternsChange={(p) => onChange({ excludePatterns: p })}
-                presetId={row.excludePatternPresetId ?? null}
-                onPresetIdChange={(id) => onChange({ excludePatternPresetId: id })}
-            />
-            <Textarea
-                rows={3}
-                placeholder={"*.tmp\nnode_modules/**\n.cache/**"}
-                value={row.excludePatterns.join("\n")}
-                onChange={(e) => onChange({ excludePatterns: e.target.value.split("\n").map((l) => l.trim()).filter(Boolean) })}
-            />
-            <p className="text-xs text-muted-foreground">
-                One glob pattern per line. Unchecking a subfolder above adds a matching pattern here automatically.
-            </p>
-        </div>
-    );
+interface DirectorySourceRowProps {
+    index: number;
+    form: any;
+    directorySourceOptions: AdapterOption[];
+    isExpanded: boolean;
+    onToggleExpand: () => void;
+    onRemove: () => void;
+    onAppendRows: (rows: { configId: string; path: string; excludePatterns: string[]; excludePatternPresetId: string | null }[]) => void;
 }
 
-function ManualDirectorySourceList({ configId, rows, onRowsChange }: { configId: string; rows: JobSourceData[]; onRowsChange: (rows: JobSourceData[]) => void }) {
-    const updateRow = (index: number, patch: Partial<JobSourceData>) => {
-        onRowsChange(rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
-    };
-    const removeRow = (index: number) => {
-        onRowsChange(rows.filter((_, i) => i !== index));
-    };
+function DirectorySourceRow({ index, form, directorySourceOptions, isExpanded, onToggleExpand, onRemove, onAppendRows }: DirectorySourceRowProps) {
+    const [adapterOpen, setAdapterOpen] = useState(false);
+    const [browseOpen, setBrowseOpen] = useState(false);
+    const currentConfigId = form.watch(`directorySources.${index}.configId`);
+    const currentAdapter = directorySourceOptions.find(d => d.id === currentConfigId);
+    const currentPath: string = form.watch(`directorySources.${index}.path`) || "";
+    const excludePatterns: string[] = form.watch(`directorySources.${index}.excludePatterns`) || [];
+    const excludePatternPresetId: string | null = form.watch(`directorySources.${index}.excludePatternPresetId`) ?? null;
+
     return (
-        <div className="space-y-3">
-            {rows.length === 0 && (
-                <p className="text-sm text-muted-foreground">This adapter doesn&apos;t support folder browsing - add paths manually.</p>
-            )}
-            {rows.map((row, index) => (
-                <div key={index} className="border rounded-md p-3 space-y-2">
-                    <div className="flex items-center gap-2">
-                        <Input
-                            className="h-9 flex-1"
-                            placeholder="/path/to/directory"
-                            value={row.path}
-                            onChange={(e) => updateRow(index, { path: e.target.value })}
+        <div className="border rounded-lg">
+            <div className="flex items-center gap-2 p-3">
+                <span className="text-xs text-muted-foreground font-mono w-5 shrink-0">#{index + 1}</span>
+
+                <FormField control={form.control} name={`directorySources.${index}.configId`} render={({ field }) => (
+                    <FormItem className="w-56 shrink-0 space-y-0">
+                        <Popover open={adapterOpen} onOpenChange={setAdapterOpen} modal={true}>
+                            <PopoverTrigger asChild>
+                                <FormControl>
+                                    <Button
+                                        variant="outline"
+                                        role="combobox"
+                                        aria-expanded={adapterOpen}
+                                        className={cn("w-full justify-between h-9", !field.value && "text-muted-foreground")}
+                                    >
+                                        {currentAdapter ? (
+                                            <span className="flex items-center gap-2 min-w-0">
+                                                <AdapterIcon adapterId={currentAdapter.adapterId} className="h-4 w-4 shrink-0" />
+                                                <span className="truncate">{currentAdapter.name}</span>
+                                            </span>
+                                        ) : "Select Adapter"}
+                                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                    </Button>
+                                </FormControl>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+                                <Command>
+                                    <CommandInput placeholder="Search adapter..." />
+                                    <CommandList>
+                                        <CommandEmpty>No adapter found.</CommandEmpty>
+                                        <CommandGroup>
+                                            {directorySourceOptions.map((d) => (
+                                                <CommandItem
+                                                    value={d.name}
+                                                    key={d.id}
+                                                    onSelect={() => {
+                                                        form.setValue(`directorySources.${index}.configId`, d.id);
+                                                        setAdapterOpen(false);
+                                                    }}
+                                                    className={cn(field.value === d.id && "bg-accent")}
+                                                >
+                                                    <AdapterIcon adapterId={d.adapterId} className="h-4 w-4" />
+                                                    {d.name}
+                                                </CommandItem>
+                                            ))}
+                                        </CommandGroup>
+                                    </CommandList>
+                                </Command>
+                            </PopoverContent>
+                        </Popover>
+                        <FormMessage />
+                    </FormItem>
+                )} />
+
+                <FormField control={form.control} name={`directorySources.${index}.path`} render={({ field }) => (
+                    <FormItem className="flex-1 space-y-0">
+                        <FormControl>
+                            <Input placeholder="/path/to/directory" className="h-9" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                    </FormItem>
+                )} />
+
+                <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-9 px-2"
+                    title={currentAdapter?.supportsBrowse ? "Browse folders" : "Select an adapter that supports browsing first"}
+                    disabled={!currentAdapter?.supportsBrowse}
+                    onClick={() => setBrowseOpen(true)}
+                >
+                    <FolderOpen className="h-4 w-4" />
+                </Button>
+
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-9 px-2"
+                    onClick={onToggleExpand}
+                    title="Exclude patterns"
+                >
+                    <Filter className="h-4 w-4 mr-1" />
+                    {excludePatterns.length > 0 && <span className="text-xs">{excludePatterns.length}</span>}
+                    {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                </Button>
+
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-9 px-2 text-muted-foreground hover:text-destructive"
+                    onClick={onRemove}
+                >
+                    <Trash2 className="h-4 w-4" />
+                </Button>
+            </div>
+
+            {/* Inline Exclude Patterns Config */}
+            <Collapsible open={isExpanded}>
+                <CollapsibleContent>
+                    <div className="border-t px-3 py-3 bg-muted/30 space-y-2">
+                        <div className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                            <Filter className="h-3 w-3" />
+                            Exclude patterns for {currentAdapter?.name || `Source #${index + 1}`}
+                        </div>
+                        <ExcludePatternPresetPicker
+                            patterns={excludePatterns}
+                            onPatternsChange={(p) => form.setValue(`directorySources.${index}.excludePatterns`, p, { shouldValidate: true })}
+                            presetId={excludePatternPresetId}
+                            onPresetIdChange={(id) => form.setValue(`directorySources.${index}.excludePatternPresetId`, id)}
                         />
-                        <Button type="button" variant="ghost" size="sm" onClick={() => removeRow(index)}>
-                            <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
-                        </Button>
+                        <Textarea
+                            rows={3}
+                            placeholder={"*.tmp\nnode_modules/**\n.cache/**"}
+                            value={excludePatterns.join("\n")}
+                            onChange={(e) => form.setValue(
+                                `directorySources.${index}.excludePatterns`,
+                                e.target.value.split("\n").map(l => l.trim()).filter(Boolean),
+                                { shouldValidate: true }
+                            )}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                            One glob pattern per line. Files and directories matching any pattern are skipped.
+                        </p>
                     </div>
-                    <ExcludePatternPresetPicker
-                        patterns={row.excludePatterns}
-                        onPatternsChange={(p) => updateRow(index, { excludePatterns: p })}
-                        presetId={row.excludePatternPresetId ?? null}
-                        onPresetIdChange={(id) => updateRow(index, { excludePatternPresetId: id })}
-                    />
-                    <Textarea
-                        rows={2}
-                        placeholder={"*.tmp\nnode_modules/**\n.cache/**"}
-                        value={row.excludePatterns.join("\n")}
-                        onChange={(e) => updateRow(index, { excludePatterns: e.target.value.split("\n").map((l) => l.trim()).filter(Boolean) })}
-                    />
-                </div>
-            ))}
-            <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => onRowsChange([...rows, { configId, priority: 0, path: "", excludePatterns: [], excludePatternPresetId: null }])}
-            >
-                <Plus className="h-4 w-4 mr-1" /> Add Path
-            </Button>
+                </CollapsibleContent>
+            </Collapsible>
+
+            {currentAdapter?.supportsBrowse && (
+                <DirectoryBrowseDialog
+                    open={browseOpen}
+                    onOpenChange={setBrowseOpen}
+                    configId={currentAdapter.id}
+                    adapterName={currentAdapter.name}
+                    initialPath={currentPath}
+                    onConfirm={(rows) => {
+                        if (rows.length === 0) return;
+                        const [first, ...rest] = rows;
+                        form.setValue(`directorySources.${index}.path`, first.path, { shouldValidate: true });
+                        form.setValue(`directorySources.${index}.excludePatterns`, first.excludePatterns, { shouldValidate: true });
+                        if (rest.length > 0) {
+                            onAppendRows(rest.map((r) => ({
+                                configId: currentAdapter.id,
+                                path: r.path,
+                                excludePatterns: r.excludePatterns,
+                                excludePatternPresetId: null,
+                            })));
+                        }
+                    }}
+                />
+            )}
         </div>
     );
 }
 
-interface DirectoryAdapterSectionProps {
+interface DirectoryBrowseDialogProps {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
     configId: string;
-    adapter: AdapterOption | undefined;
-    directorySources: JobSourceData[];
-    onDirectorySourcesChange: (rows: JobSourceData[]) => void;
-    onRemoveAdapter: () => void;
+    adapterName?: string;
+    initialPath: string;
+    onConfirm: (rows: DirectoryTreeRow[]) => void;
 }
 
-function DirectoryAdapterSection({ configId, adapter, directorySources, onDirectorySourcesChange, onRemoveAdapter }: DirectoryAdapterSectionProps) {
-    const rowsForAdapter = directorySources.filter((s) => s.configId === configId);
-    const otherRows = directorySources.filter((s) => s.configId !== configId);
+/**
+ * Scoped to a single row: hydrates only that row's own current path (not sibling rows on the
+ * same adapter), and on confirm hands back one entry per checked top-level folder - the row
+ * takes the first, the rest become new appended rows (see DirectorySourceRow.onAppendRows).
+ */
+function DirectoryBrowseDialog({ open, onOpenChange, configId, adapterName, initialPath, onConfirm }: DirectoryBrowseDialogProps) {
+    const [rows, setRows] = useState<DirectoryTreeRow[]>([]);
 
-    const treeRows: DirectoryTreeRow[] = rowsForAdapter.map((r) => ({
-        path: r.path,
-        excludePatterns: r.excludePatterns,
-        excludePatternPresetId: r.excludePatternPresetId ?? null,
-    }));
-
-    const handleTreeRowsChange = (newRows: DirectoryTreeRow[]) => {
-        const merged: JobSourceData[] = newRows.map((r) => ({
-            configId,
-            priority: 0,
-            path: r.path,
-            excludePatterns: r.excludePatterns,
-            excludePatternPresetId: r.excludePatternPresetId ?? null,
-        }));
-        onDirectorySourcesChange([...otherRows, ...merged]);
-    };
+    useEffect(() => {
+        if (open) {
+            setRows(initialPath ? [{ path: initialPath, excludePatterns: [], excludePatternPresetId: null }] : []);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open]);
 
     return (
-        <Card className="border-border">
-            <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
-                <CardTitle className="text-base flex items-center gap-2">
-                    <AdapterIcon adapterId={adapter?.adapterId ?? ""} className="h-4 w-4" />
-                    {adapter?.name ?? "Unknown adapter"}
-                </CardTitle>
-                <Button type="button" variant="ghost" size="sm" onClick={onRemoveAdapter} title="Remove this adapter">
-                    <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
-                </Button>
-            </CardHeader>
-            <CardContent>
-                {adapter?.supportsBrowse ? (
-                    <DirectoryTree
-                        configId={configId}
-                        rows={treeRows}
-                        onRowsChange={handleTreeRowsChange}
-                        renderRootPanel={(row, onChange) => <DirectoryRootExcludePanel row={row} onChange={onChange} />}
-                    />
-                ) : (
-                    <ManualDirectorySourceList
-                        configId={configId}
-                        rows={rowsForAdapter}
-                        onRowsChange={(rows) => onDirectorySourcesChange([...otherRows, ...rows])}
-                    />
-                )}
-            </CardContent>
-        </Card>
-    );
-}
-
-function AddDirectoryAdapterControl({ options, onAdd }: { options: AdapterOption[]; onAdd: (configId: string) => void }) {
-    const [open, setOpen] = useState(false);
-    if (options.length === 0) return null;
-    return (
-        <Popover open={open} onOpenChange={setOpen}>
-            <PopoverTrigger asChild>
-                <Button type="button" variant="outline" size="sm">
-                    <Plus className="h-4 w-4 mr-1" /> Add Storage Adapter
-                </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-64 p-0" align="start">
-                <Command>
-                    <CommandInput placeholder="Search adapter..." />
-                    <CommandList>
-                        <CommandEmpty>No adapter found.</CommandEmpty>
-                        <CommandGroup>
-                            {options.map((d) => (
-                                <CommandItem
-                                    key={d.id}
-                                    value={d.name}
-                                    onSelect={() => {
-                                        onAdd(d.id);
-                                        setOpen(false);
-                                    }}
-                                >
-                                    <AdapterIcon adapterId={d.adapterId} className="h-4 w-4" />
-                                    {d.name}
-                                </CommandItem>
-                            ))}
-                        </CommandGroup>
-                    </CommandList>
-                </Command>
-            </PopoverContent>
-        </Popover>
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="max-w-3xl sm:max-w-3xl h-[80vh] flex flex-col p-0 gap-0">
+                <DialogHeader className="p-4 pb-3 border-b shrink-0">
+                    <DialogTitle>Browse {adapterName ?? "Adapter"}</DialogTitle>
+                    <DialogDescription>
+                        Check the folders you want to back up. Checking more than one folder adds an extra directory source row for each.
+                    </DialogDescription>
+                </DialogHeader>
+                <ScrollArea className="flex-1 min-h-0">
+                    <div className="p-4">
+                        {open && (
+                            <DirectoryTree key={configId} configId={configId} rows={rows} onRowsChange={setRows} />
+                        )}
+                    </div>
+                </ScrollArea>
+                <DialogFooter className="p-4 border-t shrink-0">
+                    <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+                    <Button
+                        type="button"
+                        onClick={() => { onConfirm(rows); onOpenChange(false); }}
+                        disabled={rows.length === 0}
+                    >
+                        {rows.length > 1 ? `Use ${rows.length} Selected Folders` : "Use Selected Folder"}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     );
 }
 

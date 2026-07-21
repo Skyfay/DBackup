@@ -404,7 +404,7 @@ export function JobsClient({ canManage, canExecute, sources, destinations, notif
 
 
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                <DialogContent className="max-w-4xl">
+                <DialogContent className="max-w-4xl sm:max-w-4xl">
                     <DialogHeader>
                         <DialogTitle>{editingJob ? "Edit Backup Job" : "Create New Backup Job"}</DialogTitle>
                         <DialogDescription>

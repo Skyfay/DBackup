@@ -29,7 +29,6 @@ import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { Badge } from "@/components/ui/badge";
 import { Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { getEncryptionProfiles } from "@/app/actions/backup/encryption";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable } from "@/components/ui/data-table";
 import { ColumnDef } from "@tanstack/react-table";
@@ -62,16 +61,16 @@ interface Job extends Omit<JobData, 'destinations'> {
 interface JobsClientProps {
     canManage: boolean;
     canExecute: boolean;
+    sources: AdapterOption[];
+    destinations: AdapterOption[];
+    notificationChannels: AdapterOption[];
+    encryptionProfiles: EncryptionOption[];
 }
 
-export function JobsClient({ canManage, canExecute }: JobsClientProps) {
+export function JobsClient({ canManage, canExecute, sources, destinations, notificationChannels, encryptionProfiles }: JobsClientProps) {
     const [jobs, setJobs] = useState<Job[]>([]);
-    const [sources, setSources] = useState<AdapterOption[]>([]);
-    const [destinations, setDestinations] = useState<AdapterOption[]>([]);
-    const [notificationChannels, setNotificationChannels] = useState<AdapterOption[]>([]);
-    const [encryptionProfiles, setEncryptionProfiles] = useState<EncryptionOption[]>([]);
-    const directorySourceOptions = useMemo(() => destinations.filter((d) => d.usableAsSource), [destinations]);
     const [isLoading, setIsLoading] = useState(true);
+    const directorySourceOptions = useMemo(() => destinations.filter((d) => d.usableAsSource), [destinations]);
 
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editingJob, setEditingJob] = useState<Job | null>(null);
@@ -94,29 +93,10 @@ export function JobsClient({ canManage, canExecute }: JobsClientProps) {
         } catch { toast.error("Failed to fetch jobs"); }
     };
 
-    const fetchAdapters = async () => {
-        try {
-            const [s, d, n] = await Promise.all([
-                fetch("/api/adapters?type=database").then(r => r.json()),
-                fetch("/api/adapters?type=storage").then(r => r.json()),
-                fetch("/api/adapters?type=notification").then(r => r.json())
-            ]);
-            setSources(s);
-            setDestinations(d);
-            setNotificationChannels(n);
-
-            const encRes = await getEncryptionProfiles();
-            if (encRes.success && encRes.data) {
-                setEncryptionProfiles(encRes.data.map((p: any) => ({ id: p.id, name: p.name })));
-            }
-        } catch { toast.error("Failed to fetch adapters"); }
-    };
-
     useEffect(() => {
-        // Wrap in IIFE or just call them, but ensure async pattern is clean
         const init = async () => {
              setIsLoading(true);
-             await Promise.all([fetchJobs(), fetchAdapters()]);
+             await fetchJobs();
              setIsLoading(false);
         };
         init();
@@ -424,7 +404,7 @@ export function JobsClient({ canManage, canExecute }: JobsClientProps) {
 
 
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                <DialogContent className="max-w-175">
+                <DialogContent className="max-w-4xl">
                     <DialogHeader>
                         <DialogTitle>{editingJob ? "Edit Backup Job" : "Create New Backup Job"}</DialogTitle>
                         <DialogDescription>

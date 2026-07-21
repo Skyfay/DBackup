@@ -201,8 +201,8 @@ model JobSource {
   configId               String
   priority               Int                   @default(0) // Collection/manifest ordering
   path                   String                // Remote path on the storage adapter to pull from
-  excludePatterns        String                @default("[]") // JSON array of glob patterns
-  excludePatternPresetId String?               // Provenance only ("seeded from X") - never dereferenced at runtime, see ExcludePatternPreset
+  excludePatterns        String                @default("[]") // JSON array of job-specific extra glob patterns (in addition to any linked preset's patterns)
+  excludePatternPresetId String?               // Live-linked template - re-read fresh at execution time (see 01-initialize.ts), same as Job.namingTemplateId/schedulePresetId
   excludePatternPreset   ExcludePatternPreset? @relation(fields: [excludePatternPresetId], references: [id], onDelete: SetNull)
   useStagingCache        Boolean               @default(false) // Reserved for a later phase (persistent rsync mirror); unused for now
   createdAt              DateTime              @default(now())

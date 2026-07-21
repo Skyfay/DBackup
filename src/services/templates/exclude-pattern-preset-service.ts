@@ -72,9 +72,10 @@ export async function updateExcludePatternPreset(
 }
 
 /**
- * Unlike RetentionPolicy/NamingTemplate, deletion is never blocked by usage - the FK on
- * JobSource is provenance-only (never dereferenced at runtime), so removing a preset just
- * SetNulls any job sources that reference it (see JobSource.excludePatternPresetId).
+ * Unlike NamingTemplate, deletion is never blocked by usage - a removed preset just SetNulls
+ * any job sources that reference it (see JobSource.excludePatternPresetId), falling back to
+ * only their own job-specific patterns. Safe direction: losing the link means fewer exclusions
+ * apply next run (backs up more, not less), unlike losing a naming pattern or schedule.
  */
 export async function deleteExcludePatternPreset(id: string) {
   const preset = await prisma.excludePatternPreset.findUnique({ where: { id } });

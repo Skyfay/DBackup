@@ -10,8 +10,9 @@ All notable changes to DBackup are documented here.
 - **jobs**: Backup jobs can now include one or more directory sources (SFTP, SMB, WebDAV, Rsync, or Local Filesystem) alongside or instead of a database source, backed up into a single combined archive per execution. Configure them in the new "Sources" tab of the job form. Storage adapters can be flagged as directory backup sources in addition to backup destinations, shown as a new "Directory Sources" section on the Sources page and as role badges on the Destinations page.
 - **restore**: Combined database + directory archives can be restored in one pass from the same restore dialog - select which databases and directory sources to restore, each with its own restore target and a conflict check against existing files at the destination path.
 - **jobs**: Added an explicit "Backup Type" selector (Database Only / Directories Only / Database + Directories) to the Sources tab, replacing reactive disabled-button hints with upfront guidance.
-- **storage**: Directory sources can now be picked via a Synology-style checkbox folder tree (Local, SFTP, Rsync, Google Drive, Dropbox, OneDrive) instead of typing a path by hand.
-- **templates**: Added Exclude Pattern Presets, reusable sets of glob patterns that can be loaded into any directory source's exclude list.
+- **jobs**: Creating and editing a backup job now opens a dedicated full page instead of a modal, giving the Sources tab room for the new folder tree.
+- **storage**: Directory sources can now be picked via an always-visible Synology-style checkbox folder tree (Local, SFTP, Rsync, Google Drive, Dropbox, OneDrive), editable at any time directly in the Sources tab instead of a one-shot picker dialog.
+- **templates**: Added Exclude Pattern Presets, reusable templates of glob patterns that can be linked to any directory source - editing a preset later retroactively applies to every source that references it, same as naming templates and schedule presets.
 
 ### 🐛 Bug Fixes
 

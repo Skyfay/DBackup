@@ -1,8 +1,9 @@
 "use client";
 
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { ChevronRight, ChevronDown, Folder, Loader2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 interface BrowseEntry {
@@ -18,40 +19,48 @@ interface TreeNodeInfo {
 
 type NodeState = "checked" | "unchecked" | "indeterminate";
 
-export interface DirectorySourceSelection {
+export interface DirectoryTreeRow {
     path: string;
     excludePatterns: string[];
-}
-
-export interface DirectoryTreeHandle {
-    getSelection: () => DirectorySourceSelection[];
+    excludePatternPresetId?: string | null;
 }
 
 interface DirectoryTreeProps {
     configId: string;
-    /** Fires whenever the number of included top-level folders changes, so the host dialog can enable/disable its confirm button. */
-    onSelectionCountChange?: (count: number) => void;
+    /** Current directory-source rows for this one adapter - the tree's checked state is always derived from this, never stored independently. */
+    rows: DirectoryTreeRow[];
+    /** Called with the full replacement row list for this adapter on every toggle - no separate confirm step. */
+    onRowsChange: (rows: DirectoryTreeRow[]) => void;
+    /** Renders the per-root panel (exclude pattern editing) below a checked/indeterminate root-level row. */
+    renderRootPanel?: (row: DirectoryTreeRow, onChange: (patch: Partial<DirectoryTreeRow>) => void) => ReactNode;
+}
+
+function isAtOrUnder(candidate: string, base: string): boolean {
+    if (base === "") return true;
+    return candidate === base || candidate.startsWith(`${base}/`);
 }
 
 /**
  * Synology-style checkbox folder tree, lazily loaded one level at a time via
  * GET /api/adapters/[id]/browse. Node identity uses whatever opaque `path` the browse
  * API returns for that adapter (a real path string for most adapters, a folder ID for
- * Google Drive) - hierarchy and final path reconstruction are derived from the
- * parent/child relationships recorded as each level is fetched, not from string
- * parsing of that identifier, so the same logic works for both cases.
+ * Google Drive) - hierarchy and the human-readable path are derived from the parent/child
+ * relationships recorded as each level is fetched (via `reconstructPath`), not from string
+ * parsing of that identifier, so the same logic works uniformly for both cases.
+ *
+ * Controlled component: `rows` is the single source of truth. Checked/indeterminate state is
+ * computed fresh each render from `rows`, and every toggle immediately calls `onRowsChange`
+ * with a new row list - there is no separate "confirm" step and no internal selection state,
+ * so this same mechanism handles both hydrating an existing job's selection and every
+ * subsequent live edit.
  */
-export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>(function DirectoryTree(
-    { configId, onSelectionCountChange },
-    ref
-) {
+export function DirectoryTree({ configId, rows, onRowsChange, renderRootPanel }: DirectoryTreeProps) {
     const [nodesByKey, setNodesByKey] = useState<Map<string, TreeNodeInfo>>(new Map());
     const [childrenByKey, setChildrenByKey] = useState<Map<string, string[] | "loading">>(new Map());
     const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
-    const [includedRoots, setIncludedRoots] = useState<Set<string>>(new Set());
-    const [excludedSubpaths, setExcludedSubpaths] = useState<Map<string, Set<string>>>(new Map());
+    const [expandedPanels, setExpandedPanels] = useState<Set<string>>(new Set());
 
-    const fetchChildren = useCallback(async (parentKey: string) => {
+    const fetchChildren = useCallback(async (parentKey: string): Promise<BrowseEntry[]> => {
         setChildrenByKey((prev) => new Map(prev).set(parentKey, "loading"));
         try {
             const res = await fetch(`/api/adapters/${encodeURIComponent(configId)}/browse?path=${encodeURIComponent(parentKey)}`);
@@ -59,12 +68,12 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
             if (!json.success) {
                 toast.error(json.error || "Failed to load folders");
                 setChildrenByKey((prev) => new Map(prev).set(parentKey, []));
-                return;
+                return [];
             }
             if (json.supported === false) {
                 toast.error("This adapter does not support folder browsing");
                 setChildrenByKey((prev) => new Map(prev).set(parentKey, []));
-                return;
+                return [];
             }
             const entries: BrowseEntry[] = json.data?.entries ?? [];
             setNodesByKey((prev) => {
@@ -73,129 +82,59 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
                 return next;
             });
             setChildrenByKey((prev) => new Map(prev).set(parentKey, entries.map((e) => e.path)));
+            return entries;
         } catch {
             toast.error("Network error while browsing folders");
             setChildrenByKey((prev) => new Map(prev).set(parentKey, []));
+            return [];
         }
     }, [configId]);
 
+    // On mount: load the root level, then auto-expand down to every existing row's path (and to
+    // each of its structural exclude entries) so an existing selection renders checked immediately.
     useEffect(() => {
-        fetchChildren("");
+        let cancelled = false;
+        const levelCache = new Map<string, Promise<BrowseEntry[]>>();
+        const getLevel = (parentKey: string) => {
+            if (!levelCache.has(parentKey)) levelCache.set(parentKey, fetchChildren(parentKey));
+            return levelCache.get(parentKey)!;
+        };
+
+        async function hydratePath(segments: string[], keysToExpand: Set<string>) {
+            let parentKey = "";
+            for (const seg of segments) {
+                const entries = await getLevel(parentKey);
+                if (cancelled) return;
+                const match = entries.find((e) => e.name === seg);
+                if (!match) return;
+                keysToExpand.add(parentKey);
+                parentKey = match.path;
+            }
+        }
+
+        async function run() {
+            await getLevel("");
+            if (cancelled) return;
+            const keysToExpand = new Set<string>();
+            for (const row of rows) {
+                const rootSegments = row.path.split("/").filter(Boolean);
+                await hydratePath(rootSegments, keysToExpand);
+                for (const pattern of row.excludePatterns) {
+                    if (!pattern.endsWith("/**")) continue;
+                    const relSegments = pattern.slice(0, -3).split("/").filter(Boolean);
+                    await hydratePath([...rootSegments, ...relSegments], keysToExpand);
+                }
+            }
+            if (!cancelled && keysToExpand.size > 0) {
+                setExpandedKeys((prev) => new Set([...prev, ...keysToExpand]));
+            }
+        }
+        run();
+        return () => { cancelled = true; };
+        // Intentionally only re-runs when the adapter changes - re-hydrating on every row edit
+        // would re-fetch and fight with the user's own expand/collapse state.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [configId]);
-
-    useEffect(() => {
-        onSelectionCountChange?.(includedRoots.size);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [includedRoots]);
-
-    const getAncestorKeys = useCallback((key: string): string[] => {
-        const result: string[] = [];
-        let currentParent = nodesByKey.get(key)?.parentKey;
-        while (currentParent !== undefined) {
-            result.push(currentParent);
-            if (currentParent === "") break;
-            currentParent = nodesByKey.get(currentParent)?.parentKey;
-        }
-        return result;
-    }, [nodesByKey]);
-
-    const isDescendant = useCallback((key: string, ancestorKey: string): boolean => {
-        return getAncestorKeys(key).includes(ancestorKey);
-    }, [getAncestorKeys]);
-
-    const getIncludedRootFor = useCallback((key: string): string | null => {
-        if (includedRoots.has(key)) return key;
-        for (const a of getAncestorKeys(key)) {
-            if (a === "") continue;
-            if (includedRoots.has(a)) return a;
-        }
-        return null;
-    }, [includedRoots, getAncestorKeys]);
-
-    const getNodeState = useCallback((key: string): NodeState => {
-        const root = getIncludedRootFor(key);
-        if (!root) return "unchecked";
-        const excludes = excludedSubpaths.get(root) ?? new Set<string>();
-        if (root === key) {
-            return excludes.size > 0 ? "indeterminate" : "checked";
-        }
-        if (excludes.has(key)) return "unchecked";
-        for (const a of getAncestorKeys(key)) {
-            if (a === root) break;
-            if (excludes.has(a)) return "unchecked";
-        }
-        for (const e of excludes) {
-            if (e !== key && isDescendant(e, key)) return "indeterminate";
-        }
-        return "checked";
-    }, [getIncludedRootFor, excludedSubpaths, getAncestorKeys, isDescendant]);
-
-    const setChecked = useCallback((key: string) => {
-        const root = getIncludedRootFor(key);
-        if (root) {
-            setExcludedSubpaths((prev) => {
-                const next = new Map(prev);
-                const excludes = new Set(next.get(root) ?? []);
-                for (const e of Array.from(excludes)) {
-                    if (e === key || isDescendant(e, key)) excludes.delete(e);
-                }
-                if (excludes.size > 0) next.set(root, excludes); else next.delete(root);
-                return next;
-            });
-        } else {
-            setIncludedRoots((prev) => {
-                const next = new Set(prev);
-                for (const r of Array.from(next)) {
-                    if (r !== key && isDescendant(r, key)) next.delete(r);
-                }
-                next.add(key);
-                return next;
-            });
-            setExcludedSubpaths((prev) => {
-                const next = new Map(prev);
-                next.delete(key);
-                for (const rootKey of Array.from(next.keys())) {
-                    if (rootKey !== key && isDescendant(rootKey, key)) next.delete(rootKey);
-                }
-                return next;
-            });
-        }
-    }, [getIncludedRootFor, isDescendant]);
-
-    const setUnchecked = useCallback((key: string) => {
-        const root = getIncludedRootFor(key);
-        if (!root) return;
-        if (root === key) {
-            setIncludedRoots((prev) => { const next = new Set(prev); next.delete(key); return next; });
-            setExcludedSubpaths((prev) => { const next = new Map(prev); next.delete(key); return next; });
-        } else {
-            setExcludedSubpaths((prev) => {
-                const next = new Map(prev);
-                const excludes = new Set(next.get(root) ?? []);
-                for (const e of Array.from(excludes)) {
-                    if (isDescendant(e, key)) excludes.delete(e);
-                }
-                excludes.add(key);
-                next.set(root, excludes);
-                return next;
-            });
-        }
-    }, [getIncludedRootFor, isDescendant]);
-
-    const toggleNode = useCallback((key: string) => {
-        const state = getNodeState(key);
-        if (state === "checked") setUnchecked(key); else setChecked(key);
-    }, [getNodeState, setUnchecked, setChecked]);
-
-    const handleExpandToggle = useCallback((key: string) => {
-        setExpandedKeys((prev) => {
-            const next = new Set(prev);
-            if (next.has(key)) next.delete(key); else next.add(key);
-            return next;
-        });
-        if (!childrenByKey.has(key)) fetchChildren(key);
-    }, [childrenByKey, fetchChildren]);
 
     const reconstructPath = useCallback((key: string): string => {
         const segments: string[] = [];
@@ -209,56 +148,131 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
         return segments.join("/");
     }, [nodesByKey]);
 
-    useImperativeHandle(ref, () => ({
-        getSelection: () => {
-            return Array.from(includedRoots).map((rootKey) => {
-                const rootPath = reconstructPath(rootKey);
-                const excludes = excludedSubpaths.get(rootKey) ?? new Set<string>();
-                const excludePatterns = Array.from(excludes).map((excludedKey) => {
-                    const excludedPath = reconstructPath(excludedKey);
-                    const relative = excludedPath.startsWith(`${rootPath}/`)
-                        ? excludedPath.slice(rootPath.length + 1)
-                        : excludedPath;
-                    return `${relative}/**`;
+    const findOwningRow = useCallback((path: string): DirectoryTreeRow | undefined => {
+        return rows.find((r) => isAtOrUnder(path, r.path));
+    }, [rows]);
+
+    const getNodeState = useCallback((path: string): NodeState => {
+        const owningRow = findOwningRow(path);
+        if (!owningRow) return "unchecked";
+        const relative = path === owningRow.path ? "" : path.slice(owningRow.path.length + 1);
+        const structuralExcludes = owningRow.excludePatterns.filter((p) => p.endsWith("/**")).map((p) => p.slice(0, -3));
+        if (relative && structuralExcludes.some((ex) => isAtOrUnder(relative, ex))) return "unchecked";
+        const prefix = relative ? `${relative}/` : "";
+        const hasExcludedDescendant = structuralExcludes.some((ex) => ex !== relative && ex.startsWith(prefix));
+        return hasExcludedDescendant ? "indeterminate" : "checked";
+    }, [findOwningRow]);
+
+    const toggleNode = useCallback((key: string) => {
+        const path = reconstructPath(key);
+        if (!path) return;
+        const state = getNodeState(path);
+
+        if (state === "checked") {
+            const owningRow = findOwningRow(path);
+            if (!owningRow) return;
+            if (path === owningRow.path) {
+                onRowsChange(rows.filter((r) => r !== owningRow));
+            } else {
+                const relative = path.slice(owningRow.path.length + 1);
+                const newExcludes = owningRow.excludePatterns
+                    .filter((p) => !(p.endsWith("/**") && isAtOrUnder(p.slice(0, -3), relative)))
+                    .concat(`${relative}/**`);
+                onRowsChange(rows.map((r) => (r === owningRow ? { ...r, excludePatterns: newExcludes } : r)));
+            }
+        } else {
+            const owningRow = findOwningRow(path);
+            if (!owningRow) {
+                const filtered = rows.filter((r) => !isAtOrUnder(r.path, path));
+                onRowsChange([...filtered, { path, excludePatterns: [], excludePatternPresetId: null }]);
+            } else {
+                const relative = path === owningRow.path ? "" : path.slice(owningRow.path.length + 1);
+                const newExcludes = owningRow.excludePatterns.filter((p) => {
+                    if (!p.endsWith("/**")) return true;
+                    return !isAtOrUnder(p.slice(0, -3), relative);
                 });
-                return { path: rootPath, excludePatterns };
-            });
-        },
-    }), [includedRoots, excludedSubpaths, reconstructPath]);
+                onRowsChange(rows.map((r) => (r === owningRow ? { ...r, excludePatterns: newExcludes } : r)));
+            }
+        }
+    }, [reconstructPath, getNodeState, findOwningRow, rows, onRowsChange]);
+
+    const handleExpandToggle = useCallback((key: string) => {
+        setExpandedKeys((prev) => {
+            const next = new Set(prev);
+            if (next.has(key)) next.delete(key); else next.add(key);
+            return next;
+        });
+        if (!childrenByKey.has(key)) fetchChildren(key);
+    }, [childrenByKey, fetchChildren]);
+
+    const togglePanel = useCallback((path: string) => {
+        setExpandedPanels((prev) => {
+            const next = new Set(prev);
+            if (next.has(path)) next.delete(path); else next.add(path);
+            return next;
+        });
+    }, []);
 
     const renderNode = (key: string, depth: number) => {
         const info = nodesByKey.get(key);
         if (!info) return null;
-        const state = getNodeState(key);
+        const path = reconstructPath(key);
+        const state = getNodeState(path);
         const expanded = expandedKeys.has(key);
         const kids = childrenByKey.get(key);
+        const owningRow = state !== "unchecked" ? findOwningRow(path) : undefined;
+        const isRoot = owningRow?.path === path;
+        const panelOpen = isRoot && expandedPanels.has(path);
 
         return (
             <div key={key}>
-                <div className="flex items-center gap-1.5 py-1" style={{ paddingLeft: depth * 20 }}>
+                <div
+                    className={cn(
+                        "flex items-center gap-2 py-2 px-2 rounded-md",
+                        state !== "unchecked" && "bg-accent/40"
+                    )}
+                    style={{ paddingLeft: depth * 24 + 8 }}
+                >
                     <button
                         type="button"
                         className="p-0.5 rounded hover:bg-muted shrink-0"
                         onClick={() => handleExpandToggle(key)}
                     >
-                        {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                        {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                     </button>
                     <Checkbox
+                        className="size-4.5"
                         checked={state === "indeterminate" ? "indeterminate" : state === "checked"}
                         onCheckedChange={() => toggleNode(key)}
                     />
-                    <Folder className="h-4 w-4 text-amber-500 shrink-0" />
-                    <span className="text-sm truncate">{info.name}</span>
+                    <Folder className="h-4.5 w-4.5 text-amber-500 shrink-0" />
+                    <span className="text-sm truncate flex-1">{info.name}</span>
+                    {isRoot && renderRootPanel && (
+                        <button
+                            type="button"
+                            className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-muted shrink-0"
+                            onClick={() => togglePanel(path)}
+                        >
+                            Excludes{owningRow!.excludePatterns.length > 0 ? ` (${owningRow!.excludePatterns.length})` : ""}
+                        </button>
+                    )}
                 </div>
+                {panelOpen && owningRow && renderRootPanel && (
+                    <div style={{ paddingLeft: depth * 24 + 40 }} className="pb-2 pr-3">
+                        {renderRootPanel(owningRow, (patch) => {
+                            onRowsChange(rows.map((r) => (r === owningRow ? { ...r, ...patch } : r)));
+                        })}
+                    </div>
+                )}
                 {expanded && (
                     kids === "loading" ? (
-                        <div style={{ paddingLeft: (depth + 1) * 20 }} className="py-1">
-                            <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                        <div style={{ paddingLeft: (depth + 1) * 24 + 8 }} className="py-1.5">
+                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                         </div>
                     ) : kids && kids.length > 0 ? (
                         kids.map((childKey) => renderNode(childKey, depth + 1))
                     ) : (
-                        <div style={{ paddingLeft: (depth + 1) * 20 }} className="py-1 text-xs text-muted-foreground">
+                        <div style={{ paddingLeft: (depth + 1) * 24 + 8 }} className="py-1.5 text-xs text-muted-foreground">
                             No subfolders
                         </div>
                     )
@@ -286,4 +300,4 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
     }
 
     return <div>{rootKeys.map((key) => renderNode(key, 0))}</div>;
-});
+}

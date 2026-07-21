@@ -2,6 +2,7 @@ import { decryptConfig, redactSecrets, getSecretStatus } from "@/lib/crypto";
 import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters";
 import type { StorageAdapter } from "@/lib/core/interfaces";
+import prisma from "@/lib/prisma";
 
 registerAdapters();
 
@@ -118,4 +119,16 @@ export function toAdapterListItem(row: AdapterRowInput): AdapterListItemDTO {
         usableAsDestination: row.usableAsDestination,
         supportsBrowse: row.type === "storage" && typeof (registry.get(row.adapterId) as StorageAdapter | undefined)?.browseDirectories === "function",
     };
+}
+
+/**
+ * Server-side helper for pages that need adapter option lists without a client round-trip
+ * (mirrors the query `GET /api/adapters?type=...` runs, kept in sync by sharing this function).
+ */
+export async function getAdapterOptions(type: "database" | "storage" | "notification"): Promise<AdapterListItemDTO[]> {
+    const adapters = await prisma.adapterConfig.findMany({
+        where: { type },
+        orderBy: { createdAt: "desc" },
+    });
+    return adapters.map(toAdapterListItem);
 }

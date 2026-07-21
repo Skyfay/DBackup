@@ -70,7 +70,7 @@ const jobInclude = {
         orderBy: { priority: 'asc' as const }
     },
     sources: {
-        include: { config: true },
+        include: { config: true, excludePatternPreset: true },
         orderBy: { priority: 'asc' as const }
     },
     notifications: true,
@@ -123,19 +123,7 @@ export class JobService {
     async getJobById(id: string) {
         const job = await prisma.job.findUnique({
             where: { id },
-            include: {
-                source: true,
-                destinations: {
-                    include: { config: true },
-                    orderBy: { priority: 'asc' }
-                },
-                sources: {
-                    include: { config: true },
-                    orderBy: { priority: 'asc' }
-                },
-                notifications: true,
-                encryptionProfile: true
-            }
+            include: jobInclude
         });
         if (!job) return job;
         return { ...job, sources: parseSourceExcludePatterns(job.sources) };

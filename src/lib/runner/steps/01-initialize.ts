@@ -96,7 +96,9 @@ export async function stepInitialize(ctx: RunnerContext) {
             configName: src.config.name,
             adapter,
             config: await resolveAdapterConfig(src.config) as any,
-            remotePath: src.path,
+            // "/" is the form's sentinel for "the whole adapter" (see DirectoryBrowseDialog in job-form.tsx);
+            // "" is what every storage adapter's list()/download() actually treats as its own root.
+            remotePath: src.path === "/" ? "" : src.path,
             excludePatterns,
             priority: src.priority,
         };

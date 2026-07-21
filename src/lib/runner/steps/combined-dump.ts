@@ -114,8 +114,9 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
 
         // ── Directory sources (each entirely independent - order doesn't matter) ──
         for (const source of ctx.sources) {
-            const label = `${source.configName}: ${source.remotePath}`;
-            const logPrefix = `[Directory: ${source.remotePath} via ${source.configName}]`;
+            const displayPath = source.remotePath || "/";
+            const label = `${source.configName}: ${displayPath}`;
+            const logPrefix = `[Directory: ${displayPath} via ${source.configName}]`;
             ctx.log(`${logPrefix} Starting collection...`, 'info', 'storage');
 
             const localDir = path.join(workDir, "sources", source.jobSourceId);

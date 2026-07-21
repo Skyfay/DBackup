@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { ChevronRight, ChevronDown, Folder, Loader2 } from "lucide-react";
+import { ChevronRight, ChevronDown, Folder, HardDrive, Loader2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -38,6 +38,11 @@ interface DirectoryTreeProps {
 function isAtOrUnder(candidate: string, base: string): boolean {
     if (base === "") return true;
     return candidate === base || candidate.startsWith(`${base}/`);
+}
+
+/** path's segment(s) below base, e.g. relativeTo("a/b/c", "a") === "b/c". base === "" (the adapter root) has no separator to strip. */
+function relativeTo(path: string, base: string): string {
+    return base === "" ? path : path.slice(base.length + 1);
 }
 
 /**
@@ -155,7 +160,7 @@ export function DirectoryTree({ configId, rows, onRowsChange, renderRootPanel }:
     const getNodeState = useCallback((path: string): NodeState => {
         const owningRow = findOwningRow(path);
         if (!owningRow) return "unchecked";
-        const relative = path === owningRow.path ? "" : path.slice(owningRow.path.length + 1);
+        const relative = path === owningRow.path ? "" : relativeTo(path, owningRow.path);
         const structuralExcludes = owningRow.excludePatterns.filter((p) => p.endsWith("/**")).map((p) => p.slice(0, -3));
         if (relative && structuralExcludes.some((ex) => isAtOrUnder(relative, ex))) return "unchecked";
         const prefix = relative ? `${relative}/` : "";
@@ -163,9 +168,8 @@ export function DirectoryTree({ configId, rows, onRowsChange, renderRootPanel }:
         return hasExcludedDescendant ? "indeterminate" : "checked";
     }, [findOwningRow]);
 
-    const toggleNode = useCallback((key: string) => {
-        const path = reconstructPath(key);
-        if (!path) return;
+    /** Core toggle logic keyed by an already-resolved path - shared by real tree nodes and the synthetic root row (path=""). */
+    const toggleAtPath = useCallback((path: string) => {
         const state = getNodeState(path);
 
         if (state === "checked") {
@@ -174,7 +178,7 @@ export function DirectoryTree({ configId, rows, onRowsChange, renderRootPanel }:
             if (path === owningRow.path) {
                 onRowsChange(rows.filter((r) => r !== owningRow));
             } else {
-                const relative = path.slice(owningRow.path.length + 1);
+                const relative = relativeTo(path, owningRow.path);
                 const newExcludes = owningRow.excludePatterns
                     .filter((p) => !(p.endsWith("/**") && isAtOrUnder(p.slice(0, -3), relative)))
                     .concat(`${relative}/**`);
@@ -186,7 +190,7 @@ export function DirectoryTree({ configId, rows, onRowsChange, renderRootPanel }:
                 const filtered = rows.filter((r) => !isAtOrUnder(r.path, path));
                 onRowsChange([...filtered, { path, excludePatterns: [], excludePatternPresetId: null }]);
             } else {
-                const relative = path === owningRow.path ? "" : path.slice(owningRow.path.length + 1);
+                const relative = path === owningRow.path ? "" : relativeTo(path, owningRow.path);
                 const newExcludes = owningRow.excludePatterns.filter((p) => {
                     if (!p.endsWith("/**")) return true;
                     return !isAtOrUnder(p.slice(0, -3), relative);
@@ -194,7 +198,15 @@ export function DirectoryTree({ configId, rows, onRowsChange, renderRootPanel }:
                 onRowsChange(rows.map((r) => (r === owningRow ? { ...r, excludePatterns: newExcludes } : r)));
             }
         }
-    }, [reconstructPath, getNodeState, findOwningRow, rows, onRowsChange]);
+    }, [getNodeState, findOwningRow, rows, onRowsChange]);
+
+    const toggleNode = useCallback((key: string) => {
+        const path = reconstructPath(key);
+        if (!path) return;
+        toggleAtPath(path);
+    }, [reconstructPath, toggleAtPath]);
+
+    const toggleRoot = useCallback(() => toggleAtPath(""), [toggleAtPath]);
 
     const handleExpandToggle = useCallback((key: string) => {
         setExpandedKeys((prev) => {
@@ -281,23 +293,55 @@ export function DirectoryTree({ configId, rows, onRowsChange, renderRootPanel }:
         );
     };
 
+    const rootState = getNodeState("");
+    const rootRow = (
+        <div
+            className={cn(
+                "flex items-center gap-2 py-2 px-2 rounded-md",
+                rootState !== "unchecked" && "bg-accent/40"
+            )}
+            style={{ paddingLeft: 8 }}
+        >
+            <span className="w-5 h-4 shrink-0" />
+            <Checkbox
+                className="size-4.5"
+                checked={rootState === "indeterminate" ? "indeterminate" : rootState === "checked"}
+                onCheckedChange={toggleRoot}
+            />
+            <HardDrive className="h-4.5 w-4.5 text-muted-foreground shrink-0" />
+            <span className="text-sm font-medium flex-1">Back up everything (this adapter&apos;s root)</span>
+        </div>
+    );
+
     const rootKeys = childrenByKey.get("");
 
     if (rootKeys === "loading" || rootKeys === undefined) {
         return (
-            <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <div>
+                {rootRow}
+                <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
             </div>
         );
     }
 
     if (rootKeys.length === 0) {
         return (
-            <div className="text-center text-sm text-muted-foreground py-8">
-                No folders found at this adapter&apos;s configured root.
+            <div>
+                {rootRow}
+                <div className="text-center text-sm text-muted-foreground py-8">
+                    No folders found at this adapter&apos;s configured root.
+                </div>
             </div>
         );
     }
 
-    return <div>{rootKeys.map((key) => renderNode(key, 0))}</div>;
+    return (
+        <div>
+            {rootRow}
+            <div className="my-1 border-t" />
+            {rootKeys.map((key) => renderNode(key, 0))}
+        </div>
+    );
 }

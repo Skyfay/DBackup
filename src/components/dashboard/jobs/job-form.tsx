@@ -368,10 +368,37 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
         name: "destinations",
     });
 
-    const { fields: sourceFields, append: appendSource, remove: removeSource } = useFieldArray({
+    const { fields: sourceFields, append: appendSource, remove: removeSource, replace: replaceSource } = useFieldArray({
         control: form.control,
         name: "directorySources",
     });
+
+    /**
+     * Reconciles every directorySources row for one adapter against what the browse dialog says
+     * should exist now (matched by path), regardless of which row's "Browse" button opened it -
+     * rows for other adapters are left untouched. A path missing from newRows was unchecked and
+     * gets dropped; a path with no existing row was newly checked and gets appended.
+     */
+    const syncDirectorySourcesForAdapter = (configId: string, newRows: DirectoryTreeRow[]) => {
+        const current = form.getValues("directorySources") as JobSourceData[];
+        const remainingNew = [...newRows];
+        const result: JobSourceData[] = [];
+        for (const entry of current) {
+            if (entry.configId !== configId) {
+                result.push(entry);
+                continue;
+            }
+            const matchIdx = remainingNew.findIndex((r) => r.path === entry.path);
+            if (matchIdx === -1) continue;
+            const [match] = remainingNew.splice(matchIdx, 1);
+            result.push({ ...entry, excludePatterns: match.excludePatterns, excludePatternPresetId: match.excludePatternPresetId ?? null });
+        }
+        for (const added of remainingNew) {
+            result.push({ configId, path: added.path, excludePatterns: added.excludePatterns, excludePatternPresetId: added.excludePatternPresetId ?? null });
+        }
+        replaceSource(result);
+        setExpandedSources(new Set());
+    };
 
     // Clears (rather than hides-and-preserves) fields that become irrelevant to the new mode, since
     // onSubmit unconditionally maps sourceId/directorySources into the payload - a hidden-but-populated
@@ -937,7 +964,7 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
                                                             return next;
                                                         });
                                                     }}
-                                                    onAppendRows={(rows) => rows.forEach((r) => appendSource(r))}
+                                                    onSync={syncDirectorySourcesForAdapter}
                                                 />
                                             ))}
                                         </div>
@@ -1437,15 +1464,16 @@ interface DirectorySourceRowProps {
     isExpanded: boolean;
     onToggleExpand: () => void;
     onRemove: () => void;
-    onAppendRows: (rows: { configId: string; path: string; excludePatterns: string[]; excludePatternPresetId: string | null }[]) => void;
+    /** Reconciles all directorySources rows for the given adapter against the browse dialog's confirmed selection. */
+    onSync: (configId: string, rows: DirectoryTreeRow[]) => void;
 }
 
-function DirectorySourceRow({ index, form, directorySourceOptions, isExpanded, onToggleExpand, onRemove, onAppendRows }: DirectorySourceRowProps) {
+function DirectorySourceRow({ index, form, directorySourceOptions, isExpanded, onToggleExpand, onRemove, onSync }: DirectorySourceRowProps) {
     const [adapterOpen, setAdapterOpen] = useState(false);
     const [browseOpen, setBrowseOpen] = useState(false);
     const currentConfigId = form.watch(`directorySources.${index}.configId`);
     const currentAdapter = directorySourceOptions.find(d => d.id === currentConfigId);
-    const currentPath: string = form.watch(`directorySources.${index}.path`) || "";
+    const allDirectorySources: JobSourceData[] = form.watch("directorySources") || [];
     const excludePatterns: string[] = form.watch(`directorySources.${index}.excludePatterns`) || [];
     const excludePatternPresetId: string | null = form.watch(`directorySources.${index}.excludePatternPresetId`) ?? null;
 
@@ -1586,21 +1614,10 @@ function DirectorySourceRow({ index, form, directorySourceOptions, isExpanded, o
                     onOpenChange={setBrowseOpen}
                     configId={currentAdapter.id}
                     adapterName={currentAdapter.name}
-                    initialPath={currentPath}
-                    onConfirm={(rows) => {
-                        if (rows.length === 0) return;
-                        const [first, ...rest] = rows;
-                        form.setValue(`directorySources.${index}.path`, first.path, { shouldValidate: true });
-                        form.setValue(`directorySources.${index}.excludePatterns`, first.excludePatterns, { shouldValidate: true });
-                        if (rest.length > 0) {
-                            onAppendRows(rest.map((r) => ({
-                                configId: currentAdapter.id,
-                                path: r.path,
-                                excludePatterns: r.excludePatterns,
-                                excludePatternPresetId: null,
-                            })));
-                        }
-                    }}
+                    initialRows={allDirectorySources
+                        .filter((s) => s.configId === currentAdapter.id)
+                        .map((s) => ({ path: s.path, excludePatterns: s.excludePatterns ?? [], excludePatternPresetId: s.excludePatternPresetId ?? null }))}
+                    onConfirm={(rows) => onSync(currentAdapter.id, rows)}
                 />
             )}
         </div>
@@ -1612,24 +1629,33 @@ interface DirectoryBrowseDialogProps {
     onOpenChange: (open: boolean) => void;
     configId: string;
     adapterName?: string;
-    initialPath: string;
+    /** Every directorySources row currently configured for this adapter, regardless of which row's "Browse" button opened the dialog. */
+    initialRows: DirectoryTreeRow[];
     onConfirm: (rows: DirectoryTreeRow[]) => void;
 }
 
 /**
- * Scoped to a single row: hydrates only that row's own current path (not sibling rows on the
- * same adapter), and on confirm hands back one entry per checked top-level folder - the row
- * takes the first, the rest become new appended rows (see DirectorySourceRow.onAppendRows).
+ * Scoped to the whole adapter, not just the row that opened it: hydrates every directorySources
+ * row already configured for this adapter, and on confirm hands back the full replacement set -
+ * a path that got unchecked disappears, a newly checked one is added (see
+ * JobForm.syncDirectorySourcesForAdapter, which reconciles this against the form's full row list).
+ *
+ * "" is DirectoryTree's own convention for the adapter root (matches its browse-API root query and
+ * its isAtOrUnder("", ...) === true fast path); the form instead stores root selections as "/" so
+ * the path field renders something meaningful and passes the required-path validation. Translated
+ * at this boundary only.
  */
-function DirectoryBrowseDialog({ open, onOpenChange, configId, adapterName, initialPath, onConfirm }: DirectoryBrowseDialogProps) {
+function DirectoryBrowseDialog({ open, onOpenChange, configId, adapterName, initialRows, onConfirm }: DirectoryBrowseDialogProps) {
     const [rows, setRows] = useState<DirectoryTreeRow[]>([]);
 
     useEffect(() => {
         if (open) {
-            setRows(initialPath ? [{ path: initialPath, excludePatterns: [], excludePatternPresetId: null }] : []);
+            setRows(initialRows.map((r) => (r.path === "/" ? { ...r, path: "" } : r)));
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open]);
+
+    const isEverything = rows.length === 1 && rows[0].path === "";
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1637,7 +1663,9 @@ function DirectoryBrowseDialog({ open, onOpenChange, configId, adapterName, init
                 <DialogHeader className="p-4 pb-3 border-b shrink-0">
                     <DialogTitle>Browse {adapterName ?? "Adapter"}</DialogTitle>
                     <DialogDescription>
-                        Check the folders you want to back up. Checking more than one folder adds an extra directory source row for each.
+                        Check the folders you want to back up, or pick &quot;Back up everything&quot; for the whole adapter. This
+                        reflects every directory source row already configured for {adapterName ?? "this adapter"} - unchecking a
+                        folder removes its row, checking a new one adds one.
                     </DialogDescription>
                 </DialogHeader>
                 <ScrollArea className="flex-1 min-h-0">
@@ -1651,10 +1679,13 @@ function DirectoryBrowseDialog({ open, onOpenChange, configId, adapterName, init
                     <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
                     <Button
                         type="button"
-                        onClick={() => { onConfirm(rows); onOpenChange(false); }}
+                        onClick={() => {
+                            onConfirm(rows.map((r) => (r.path === "" ? { ...r, path: "/" } : r)));
+                            onOpenChange(false);
+                        }}
                         disabled={rows.length === 0}
                     >
-                        {rows.length > 1 ? `Use ${rows.length} Selected Folders` : "Use Selected Folder"}
+                        {isEverything ? "Use Entire Adapter" : rows.length > 1 ? `Use ${rows.length} Selected Folders` : "Use Selected Folder"}
                     </Button>
                 </DialogFooter>
             </DialogContent>

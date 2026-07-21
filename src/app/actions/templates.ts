@@ -8,6 +8,7 @@ import * as retentionPolicyService from "@/services/templates/retention-policy-s
 import * as namingTemplateService from "@/services/templates/naming-template-service";
 import * as schedulePresetService from "@/services/templates/schedule-preset-service";
 import * as notificationTemplateService from "@/services/templates/notification-template-service";
+import * as excludePatternPresetService from "@/services/templates/exclude-pattern-preset-service";
 import type { NotificationTemplateChannelInput } from "@/services/templates/notification-template-service";
 import { revalidatePath } from "next/cache";
 import { scheduler } from "@/lib/server/scheduler";
@@ -556,6 +557,121 @@ export async function unsetDefaultNotificationTemplate() {
   try {
     await notificationTemplateService.unsetDefaultNotificationTemplate();
     revalidatePath("/dashboard/templates");
+    return { success: true as const };
+  } catch (e: unknown) {
+    return { success: false as const, error: getErrorMessage(e) };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Exclude Pattern Presets
+// ---------------------------------------------------------------------------
+
+export async function getExcludePatternPresets() {
+  const headersList = await headers();
+  const session = await auth.api.getSession({ headers: headersList });
+  if (!session) return { success: false as const, error: "Unauthorized" };
+
+  const permissions = await getUserPermissions();
+  const hasAccess =
+    permissions.includes(PERMISSIONS.TEMPLATES.READ) ||
+    permissions.includes(PERMISSIONS.TEMPLATES.WRITE) ||
+    permissions.includes(PERMISSIONS.JOBS.READ) ||
+    permissions.includes(PERMISSIONS.JOBS.WRITE) ||
+    permissions.includes(PERMISSIONS.SETTINGS.READ);
+  if (!hasAccess) return { success: false as const, error: "Insufficient permissions" };
+
+  try {
+    const data = await excludePatternPresetService.getExcludePatternPresets();
+    return { success: true as const, data };
+  } catch (e: unknown) {
+    return { success: false as const, error: getErrorMessage(e) };
+  }
+}
+
+export async function createExcludePatternPreset(input: {
+  name: string;
+  description?: string;
+  patterns: string[];
+}) {
+  const headersList = await headers();
+  const session = await auth.api.getSession({ headers: headersList });
+  if (!session) return { success: false as const, error: "Unauthorized" };
+
+  await checkPermission(PERMISSIONS.TEMPLATES.WRITE);
+
+  try {
+    const preset = await excludePatternPresetService.createExcludePatternPreset(input);
+    if (session.user) {
+      await auditService.log(
+        session.user.id,
+        AUDIT_ACTIONS.CREATE,
+        AUDIT_RESOURCES.TEMPLATE,
+        { type: "ExcludePatternPreset", name: input.name },
+        preset.id
+      );
+    }
+    revalidatePath("/dashboard/templates");
+    revalidatePath("/dashboard/jobs");
+    return { success: true as const, data: preset };
+  } catch (e: unknown) {
+    return { success: false as const, error: getErrorMessage(e) };
+  }
+}
+
+export async function updateExcludePatternPreset(
+  id: string,
+  input: {
+    name?: string;
+    description?: string;
+    patterns?: string[];
+  }
+) {
+  const headersList = await headers();
+  const session = await auth.api.getSession({ headers: headersList });
+  if (!session) return { success: false as const, error: "Unauthorized" };
+
+  await checkPermission(PERMISSIONS.TEMPLATES.WRITE);
+
+  try {
+    const preset = await excludePatternPresetService.updateExcludePatternPreset(id, input);
+    if (session.user) {
+      await auditService.log(
+        session.user.id,
+        AUDIT_ACTIONS.UPDATE,
+        AUDIT_RESOURCES.TEMPLATE,
+        { type: "ExcludePatternPreset" },
+        id
+      );
+    }
+    revalidatePath("/dashboard/templates");
+    revalidatePath("/dashboard/jobs");
+    return { success: true as const, data: preset };
+  } catch (e: unknown) {
+    return { success: false as const, error: getErrorMessage(e) };
+  }
+}
+
+export async function deleteExcludePatternPreset(id: string) {
+  const headersList = await headers();
+  const session = await auth.api.getSession({ headers: headersList });
+  if (!session) return { success: false as const, error: "Unauthorized" };
+
+  await checkPermission(PERMISSIONS.TEMPLATES.WRITE);
+
+  try {
+    await excludePatternPresetService.deleteExcludePatternPreset(id);
+    if (session.user) {
+      await auditService.log(
+        session.user.id,
+        AUDIT_ACTIONS.DELETE,
+        AUDIT_RESOURCES.TEMPLATE,
+        { type: "ExcludePatternPreset" },
+        id
+      );
+    }
+    revalidatePath("/dashboard/templates");
+    revalidatePath("/dashboard/jobs");
     return { success: true as const };
   } catch (e: unknown) {
     return { success: false as const, error: getErrorMessage(e) };

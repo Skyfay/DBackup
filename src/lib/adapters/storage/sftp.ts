@@ -1,4 +1,4 @@
-import { StorageAdapter, StorageSession, FileInfo } from "@/lib/core/interfaces";
+import { StorageAdapter, StorageSession, FileInfo, DirectoryBrowseEntry } from "@/lib/core/interfaces";
 import { normalizeSshPrivateKey } from "@/lib/ssh/pkcs8-compat";
 import { SFTPSchema } from "@/lib/adapters/definitions";
 import Client from "ssh2-sftp-client";
@@ -192,6 +192,32 @@ export const SFTPAdapter: StorageAdapter = {
 
         } catch (error) {
             log.error("SFTP list failed", { host: config.host, dir }, wrapError(error));
+            throw error;
+        } finally {
+            if (sftp) await sftp.end();
+        }
+    },
+
+    async browseDirectories(config: SFTPConfig, subPath: string = ""): Promise<DirectoryBrowseEntry[]> {
+        let sftp: Client | null = null;
+        try {
+            sftp = await connectSFTP(config);
+            const startDir = config.pathPrefix
+                ? path.posix.join(config.pathPrefix, subPath)
+                : (subPath || ".");
+
+            const type = await sftp.exists(startDir);
+            if (type !== 'd') return [];
+
+            const items = await sftp.list(startDir);
+            return items
+                .filter((item) => item.type === 'd')
+                .map((item) => ({
+                    name: item.name,
+                    path: subPath ? `${subPath}/${item.name}` : item.name,
+                }));
+        } catch (error) {
+            log.error("SFTP browseDirectories failed", { host: config.host, subPath }, wrapError(error));
             throw error;
         } finally {
             if (sftp) await sftp.end();

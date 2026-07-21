@@ -1,4 +1,9 @@
 import { decryptConfig, redactSecrets, getSecretStatus } from "@/lib/crypto";
+import { registry } from "@/lib/core/registry";
+import { registerAdapters } from "@/lib/adapters";
+import type { StorageAdapter } from "@/lib/core/interfaces";
+
+registerAdapters();
 
 /**
  * Adapter-list Data Transfer Object.
@@ -36,6 +41,8 @@ export interface AdapterListItemDTO {
     usableAsSource: boolean;
     /** Storage adapters only: whether this config can be picked as a backup destination. */
     usableAsDestination: boolean;
+    /** Storage adapters only: whether the folder tree picker (directory sources) can browse this adapter. */
+    supportsBrowse: boolean;
 }
 
 /**
@@ -109,5 +116,6 @@ export function toAdapterListItem(row: AdapterRowInput): AdapterListItemDTO {
         consecutiveFailures: row.consecutiveFailures,
         usableAsSource: row.usableAsSource,
         usableAsDestination: row.usableAsDestination,
+        supportsBrowse: row.type === "storage" && typeof (registry.get(row.adapterId) as StorageAdapter | undefined)?.browseDirectories === "function",
     };
 }

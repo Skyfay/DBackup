@@ -314,6 +314,14 @@ export interface DirectoryDownloadResult {
     entries: DirectoryFileEntry[];
 }
 
+/** A single child directory returned by browseDirectories(), one tree level at a time. */
+export interface DirectoryBrowseEntry {
+    name: string;
+    /** Path relative to the adapter's configured root, POSIX separators, no leading slash.
+     *  For ID-based adapters (Google Drive) this is the folder ID, not a path string. */
+    path: string;
+}
+
 export interface StorageAdapter extends BaseAdapter {
     type: 'storage';
     /**
@@ -387,6 +395,14 @@ export interface StorageAdapter extends BaseAdapter {
         onProgress?: (processedBytes: number, totalBytes: number, processedFiles: number, totalFiles: number) => void,
         onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void
     ): Promise<DirectoryDownloadResult>;
+
+    /**
+     * Optional: lists the immediate child directories of subPath (non-recursive), scoped to this
+     * adapter's configured root. Used for lazy expansion in the directory-source folder tree picker
+     * (job form). Adapters that don't implement this are treated as "browse unsupported" by the
+     * picker, which falls back to plain manual path entry.
+     */
+    browseDirectories?(config: AdapterConfig, subPath: string): Promise<DirectoryBrowseEntry[]>;
 }
 
 /**

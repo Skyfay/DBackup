@@ -1,4 +1,4 @@
-import { StorageAdapter, FileInfo } from "@/lib/core/interfaces";
+import { StorageAdapter, FileInfo, DirectoryBrowseEntry } from "@/lib/core/interfaces";
 import { calculateFileChecksum } from "@/lib/crypto/checksum";
 import { LogLevel, LogType } from "@/lib/core/logs";
 import { LocalStorageSchema } from "@/lib/adapters/definitions";
@@ -173,6 +173,25 @@ export const LocalFileSystemAdapter: StorageAdapter = {
             log.error("Local list failed", { remotePath }, wrapError(error));
             throw error;
         }
+    },
+
+    async browseDirectories(config: { basePath: string }, subPath: string = ""): Promise<DirectoryBrowseEntry[]> {
+        const dirPath = resolveSafePath(config.basePath, subPath);
+        let entries;
+        try {
+            entries = await fs.readdir(dirPath, { withFileTypes: true });
+        } catch (error) {
+            const nodeErr = error as NodeJS.ErrnoException;
+            if (nodeErr.code === "ENOENT") return [];
+            log.error("Local browseDirectories failed", { subPath }, wrapError(error));
+            throw error;
+        }
+        return entries
+            .filter((entry) => entry.isDirectory())
+            .map((entry) => ({
+                name: entry.name,
+                path: subPath ? `${subPath}/${entry.name}` : entry.name,
+            }));
     },
 
     async delete(config: { basePath: string }, remotePath: string): Promise<boolean> {

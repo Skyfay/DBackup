@@ -1,4 +1,4 @@
-import { StorageAdapter, FileInfo } from "@/lib/core/interfaces";
+import { StorageAdapter, FileInfo, DirectoryBrowseEntry } from "@/lib/core/interfaces";
 import { DropboxSchema } from "@/lib/adapters/definitions";
 import { Dropbox } from "dropbox";
 import fs from "fs/promises";
@@ -295,6 +295,36 @@ export const DropboxAdapter: StorageAdapter = {
             return await listFilesRecursive(dbx, listPath, basePath);
         } catch (error: unknown) {
             log.error("Dropbox list failed", { dir }, wrapError(error));
+            throw error;
+        }
+    },
+
+    async browseDirectories(config: DropboxConfig, subPath: string = ""): Promise<DirectoryBrowseEntry[]> {
+        try {
+            const dbx = createDropboxClient(config);
+            const basePath = config.folderPath?.replace(/\/+$/, "") || "";
+            const listPath = subPath ? buildDropboxPath(config.folderPath, subPath) : basePath;
+
+            const entries: DirectoryBrowseEntry[] = [];
+            let result = await dbx.filesListFolder({ path: listPath, recursive: false, limit: 2000 });
+
+            const processEntries = (items: typeof result.result.entries) => {
+                for (const entry of items) {
+                    if (entry[".tag"] === "folder") {
+                        entries.push({ name: entry.name, path: subPath ? `${subPath}/${entry.name}` : entry.name });
+                    }
+                }
+            };
+            processEntries(result.result.entries);
+
+            while (result.result.has_more) {
+                result = await dbx.filesListFolderContinue({ cursor: result.result.cursor });
+                processEntries(result.result.entries);
+            }
+
+            return entries;
+        } catch (error: unknown) {
+            log.error("Dropbox browseDirectories failed", { subPath }, wrapError(error));
             throw error;
         }
     },

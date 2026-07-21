@@ -1,4 +1,4 @@
-import { StorageAdapter, StorageSession, FileInfo } from "@/lib/core/interfaces";
+import { StorageAdapter, StorageSession, FileInfo, DirectoryBrowseEntry } from "@/lib/core/interfaces";
 import { OneDriveSchema } from "@/lib/adapters/definitions";
 import { Client } from "@microsoft/microsoft-graph-client";
 import fs from "fs/promises";
@@ -400,6 +400,44 @@ export const OneDriveAdapter: StorageAdapter = {
             return await listFilesRecursive(client, listPath, dir || "");
         } catch (error: unknown) {
             log.error("OneDrive list failed", { dir }, wrapError(error));
+            throw error;
+        }
+    },
+
+    async browseDirectories(config: OneDriveConfig, subPath: string = ""): Promise<DirectoryBrowseEntry[]> {
+        try {
+            const accessToken = await getAccessToken(config);
+            const client = createGraphClient(accessToken);
+            const basePath = config.folderPath?.replace(/^\/+|\/+$/g, "") || "";
+            const listPath = subPath ? (basePath ? `${basePath}/${subPath}` : subPath) : basePath;
+
+            const apiPath = listPath
+                ? `/me/drive/root:/${listPath}:/children`
+                : "/me/drive/root/children";
+
+            const entries: DirectoryBrowseEntry[] = [];
+            let url: string | null = apiPath;
+
+            while (url) {
+                const res = await client.api(url)
+                    .select("id,name,folder")
+                    .filter("folder ne null")
+                    .top(200)
+                    .orderby("name")
+                    .get();
+
+                for (const item of res.value || []) {
+                    if (item.folder) {
+                        entries.push({ name: item.name, path: subPath ? `${subPath}/${item.name}` : item.name });
+                    }
+                }
+
+                url = res["@odata.nextLink"] || null;
+            }
+
+            return entries;
+        } catch (error: unknown) {
+            log.error("OneDrive browseDirectories failed", { subPath }, wrapError(error));
             throw error;
         }
     },

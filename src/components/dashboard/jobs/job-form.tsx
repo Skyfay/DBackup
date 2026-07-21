@@ -16,11 +16,13 @@ import { SchedulePicker } from "./schedule-picker";
 import { RetentionPolicyPicker, DEFAULT_RETENTION_SENTINEL } from "@/components/templates/retention-policy-picker";
 import { NamingTemplatePicker } from "@/components/templates/naming-template-picker";
 import { NotificationTemplatePicker } from "@/components/templates/notification-template-picker";
+import { ExcludePatternPresetPicker } from "@/components/templates/exclude-pattern-preset-picker";
 import { getSchedulePresets, getNotificationTemplates } from "@/app/actions/templates";
 import type { SchedulePreset } from "@prisma/client";
 import { SchedulePresetDialog } from "@/components/settings/templates/schedule-preset-list";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { DatabasePicker } from "@/components/adapter/database-picker";
+import { DirectorySourcePickerDialog, type DirectorySourceEntry } from "./directory-source-picker-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -44,10 +46,12 @@ import {
   Collapsible,
   CollapsibleContent,
 } from "@/components/ui/collapsible"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 /** Database adapters whose dumpOne()/restoreOne() capability supports combining with directory sources in one job. */
 const COMBINABLE_DB_ADAPTERS = ["mysql", "mariadb", "postgres", "mongodb", "firebird"];
+
+/** Which kind of source(s) this job backs up - purely client-side UI state, not persisted. */
+type SourceMode = "db" | "dirs" | "both";
 
 const retentionSchema = z.object({
     mode: z.enum(["NONE", "SIMPLE", "SMART"]),
@@ -72,6 +76,7 @@ const directorySourceSchema = z.object({
     configId: z.string().min(1, "Storage adapter is required"),
     path: z.string().min(1, "Path is required"),
     excludePatterns: z.array(z.string()).default([]),
+    excludePatternPresetId: z.string().nullable().optional(),
 });
 
 export interface JobSourceData {
@@ -79,6 +84,7 @@ export interface JobSourceData {
     priority: number;
     path: string;
     excludePatterns: string[];
+    excludePatternPresetId?: string | null;
 }
 
 export interface JobData {
@@ -114,6 +120,8 @@ export interface AdapterOption {
     metadata?: string | null;
     usableAsSource?: boolean;
     usableAsDestination?: boolean;
+    /** Whether the directory-source folder tree picker can browse this adapter's configured root. */
+    supportsBrowse?: boolean;
 }
 
 export interface EncryptionOption {
@@ -260,6 +268,23 @@ function resolveInitialRetentionPolicyId(d: { retentionPolicyId?: string | null;
     return undefined;
 }
 
+/**
+ * Tolerates excludePatterns arriving as either a real string[] (expected, once the API parses it)
+ * or a raw JSON string (defense-in-depth against the same class of bug regardless of upstream fix).
+ */
+function normalizeExcludePatterns(value: unknown): string[] {
+    if (Array.isArray(value)) return value.filter((v): v is string => typeof v === "string");
+    if (typeof value === "string") {
+        try {
+            const parsed = JSON.parse(value);
+            return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
+        } catch {
+            return [];
+        }
+    }
+    return [];
+}
+
 export function JobForm({ sources, destinations, directorySourceOptions, notifications: _notifications, encryptionProfiles, initialData, onSuccess }: JobFormProps) {
     const [sourceOpen, setSourceOpen] = useState(false);
     const [expandedDests, setExpandedDests] = useState<Set<number>>(new Set());
@@ -275,6 +300,14 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
     const [presetCreateOpen, setPresetCreateOpen] = useState(false);
     const [presetEditTarget, setPresetEditTarget] = useState<SchedulePreset | null>(null);
     const [presetEditOpen, setPresetEditOpen] = useState(false);
+    const [directoryPickerOpen, setDirectoryPickerOpen] = useState(false);
+    const [sourceMode, setSourceMode] = useState<SourceMode>(() => {
+        const hasDb = !!initialData?.sourceId;
+        const hasDirs = (initialData?.sources?.length ?? 0) > 0;
+        if (hasDirs && !hasDb) return "dirs";
+        if (hasDirs && hasDb) return "both";
+        return "db";
+    });
 
     // Parse initial databases from JSON string
     const parseInitialDatabases = (): string[] => {
@@ -296,7 +329,8 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
     const defaultDirectorySources = (initialData?.sources ?? []).map(s => ({
         configId: s.configId,
         path: s.path,
-        excludePatterns: s.excludePatterns || [],
+        excludePatterns: normalizeExcludePatterns(s.excludePatterns),
+        excludePatternPresetId: s.excludePatternPresetId ?? null,
     }));
 
     const form = useForm({
@@ -330,6 +364,38 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
         control: form.control,
         name: "directorySources",
     });
+
+    // Clears (rather than hides-and-preserves) fields that become irrelevant to the new mode, since
+    // onSubmit unconditionally maps sourceId/directorySources into the payload - a hidden-but-populated
+    // field would otherwise still get submitted.
+    const handleSourceModeChange = (nextMode: SourceMode) => {
+        if (nextMode === sourceMode) return;
+
+        if (nextMode === "db") {
+            form.setValue("directorySources", [], { shouldDirty: true, shouldValidate: true });
+            setExpandedSources(new Set());
+        }
+
+        if (nextMode === "dirs") {
+            form.setValue("sourceId", "", { shouldDirty: true, shouldValidate: true });
+            form.setValue("databases", [], { shouldDirty: true });
+            setAvailableDatabases([]);
+            setIsDbListOpen(false);
+        }
+
+        if (nextMode === "both") {
+            const currentSourceId = form.getValues("sourceId");
+            const currentSource = sources.find(s => s.id === currentSourceId);
+            if (currentSource && !COMBINABLE_DB_ADAPTERS.includes(currentSource.adapterId)) {
+                form.setValue("sourceId", "", { shouldDirty: true, shouldValidate: true });
+                form.setValue("databases", [], { shouldDirty: true });
+                setAvailableDatabases([]);
+                toast.info(`${currentSource.name} does not support combined backups - select a different database source.`);
+            }
+        }
+
+        setSourceMode(nextMode);
+    };
 
     const toggleExpanded = (index: number) => {
         setExpandedDests(prev => {
@@ -373,12 +439,11 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
     const selectedSourceId = form.watch("sourceId");
     const selectedSource = sources.find(s => s.id === selectedSourceId);
     const showDatabasePicker = selectedSource && !["sqlite", "redis", "valkey"].includes(selectedSource.adapterId);
-    const directorySourcesValue = form.watch("directorySources") || [];
-    // Combining a DB source with directory sources requires the adapter's dumpOne()/restoreOne()
-    // capability (mysql/mariadb/postgres/mongodb/firebird only in v1) - enforced here for UX and
-    // again server-side in JobService as the authoritative check.
-    const dbBlocksCombination = !!selectedSourceId && !!selectedSource && !COMBINABLE_DB_ADAPTERS.includes(selectedSource.adapterId);
-    const hasDirectorySourcesBlockingDb = dbBlocksCombination && directorySourcesValue.length > 0;
+    // In "both" mode only combinable DB adapters (dumpOne()/restoreOne() support) are offered, so the
+    // combination is valid by construction - JobService.validateJobSources remains the server-side backstop.
+    const sourcePickerOptions = sourceMode === "both"
+        ? sources.filter(s => COMBINABLE_DB_ADAPTERS.includes(s.adapterId))
+        : sources;
     const isPgSource = selectedSource?.adapterId === "postgres";
     const pgMajorVersion = isPgSource ? parsePgMajorVersion(selectedSource?.metadata) : null;
 
@@ -484,6 +549,7 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
                     priority: i,
                     path: s.path,
                     excludePatterns: s.excludePatterns || [],
+                    excludePatternPresetId: s.excludePatternPresetId ?? null,
                 })),
                 destinations: data.destinations.map((d, i) => ({
                     configId: d.configId,
@@ -686,6 +752,30 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
 
                     {/* TAB: SOURCES (Database source + directory sources) */}
                     <TabsContent value="sources" className="space-y-4 pt-4">
+                        <div className="space-y-2">
+                            <FormLabel>Backup Type</FormLabel>
+                            <Tabs value={sourceMode} onValueChange={(v) => handleSourceModeChange(v as SourceMode)}>
+                                <TabsList className="grid w-full grid-cols-3">
+                                    <TabsTrigger value="db">
+                                        <Database className="h-3.5 w-3.5 mr-1.5" />
+                                        Database Only
+                                    </TabsTrigger>
+                                    <TabsTrigger value="dirs">
+                                        <FolderInput className="h-3.5 w-3.5 mr-1.5" />
+                                        Directories Only
+                                    </TabsTrigger>
+                                    <TabsTrigger value="both">Database + Directories</TabsTrigger>
+                                </TabsList>
+                            </Tabs>
+                            <p className="text-xs text-muted-foreground">
+                                {sourceMode === "db" && "Back up a single database source."}
+                                {sourceMode === "dirs" && "Back up one or more file/directory paths, no database involved."}
+                                {sourceMode === "both" && "Combine a database source with directory sources in one job. Only MySQL, MariaDB, PostgreSQL, MongoDB and Firebird support this."}
+                            </p>
+                        </div>
+
+                        {(sourceMode === "db" || sourceMode === "both") && (
+                        <>
                         <FormField control={form.control} name="sourceId" render={({ field }) => (
                             <FormItem className="flex flex-col">
                                 <FormLabel>Database Source</FormLabel>
@@ -727,7 +817,7 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
                                                             <span className="text-muted-foreground">None (directory sources only)</span>
                                                         </CommandItem>
                                                     )}
-                                                    {sources.map((s) => (
+                                                    {sourcePickerOptions.map((s) => (
                                                         <CommandItem
                                                             value={s.name}
                                                             key={s.id}
@@ -785,7 +875,10 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
                                 </FormItem>
                             )} />
                         )}
+                        </>
+                        )}
 
+                        {(sourceMode === "dirs" || sourceMode === "both") && (
                         <Card className="border-border">
                             <CardHeader className="pb-3">
                                 <div className="flex items-center justify-between">
@@ -793,43 +886,15 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
                                         <FolderInput className="h-4 w-4" />
                                         Directory Sources
                                     </CardTitle>
-                                    {hasDirectorySourcesBlockingDb ? (
-                                        <Tooltip>
-                                            <TooltipTrigger asChild>
-                                                <span tabIndex={0}>
-                                                    <Button type="button" variant="outline" size="sm" disabled>
-                                                        <Plus className="h-4 w-4 mr-1" />
-                                                        Add Directory Source
-                                                    </Button>
-                                                </span>
-                                            </TooltipTrigger>
-                                            <TooltipContent>
-                                                {selectedSource?.name} does not yet support combined directory backups. Remove the database source to add directory-only sources instead.
-                                            </TooltipContent>
-                                        </Tooltip>
-                                    ) : (
-                                        <Tooltip>
-                                            <TooltipTrigger asChild>
-                                                <span tabIndex={dbBlocksCombination ? 0 : -1}>
-                                                    <Button
-                                                        type="button"
-                                                        variant="outline"
-                                                        size="sm"
-                                                        disabled={dbBlocksCombination}
-                                                        onClick={() => appendSource({ configId: "", path: "", excludePatterns: [] })}
-                                                    >
-                                                        <Plus className="h-4 w-4 mr-1" />
-                                                        Add Directory Source
-                                                    </Button>
-                                                </span>
-                                            </TooltipTrigger>
-                                            {dbBlocksCombination && (
-                                                <TooltipContent>
-                                                    {selectedSource?.name} does not yet support combined directory backups.
-                                                </TooltipContent>
-                                            )}
-                                        </Tooltip>
-                                    )}
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setDirectoryPickerOpen(true)}
+                                    >
+                                        <Plus className="h-4 w-4 mr-1" />
+                                        Add Directory Source
+                                    </Button>
                                 </div>
                                 <p className="text-sm text-muted-foreground">
                                     Back up files and directories alongside (or instead of) the database above, using any storage adapter enabled as a source.
@@ -876,6 +941,16 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
                                 )}
                             </CardContent>
                         </Card>
+                        )}
+
+                        <DirectorySourcePickerDialog
+                            open={directoryPickerOpen}
+                            onOpenChange={setDirectoryPickerOpen}
+                            directorySourceOptions={directorySourceOptions}
+                            onConfirm={(entries: DirectorySourceEntry[]) => {
+                                entries.forEach((entry) => appendSource(entry));
+                            }}
+                        />
                     </TabsContent>
 
                     {/* TAB 2: DESTINATIONS */}
@@ -1366,6 +1441,7 @@ function DirectorySourceRow({ index, form, directorySourceOptions, isExpanded, o
     const currentConfigId = form.watch(`directorySources.${index}.configId`);
     const currentAdapter = directorySourceOptions.find(d => d.id === currentConfigId);
     const excludePatterns: string[] = form.watch(`directorySources.${index}.excludePatterns`) || [];
+    const excludePatternPresetId: string | null = form.watch(`directorySources.${index}.excludePatternPresetId`) ?? null;
 
     return (
         <div className="border rounded-lg">
@@ -1463,9 +1539,15 @@ function DirectorySourceRow({ index, form, directorySourceOptions, isExpanded, o
                             <Filter className="h-3 w-3" />
                             Exclude patterns for {currentAdapter?.name || `Source #${index + 1}`}
                         </div>
+                        <ExcludePatternPresetPicker
+                            patterns={excludePatterns}
+                            onPatternsChange={(p) => form.setValue(`directorySources.${index}.excludePatterns`, p, { shouldValidate: true })}
+                            presetId={excludePatternPresetId}
+                            onPresetIdChange={(id) => form.setValue(`directorySources.${index}.excludePatternPresetId`, id)}
+                        />
                         <Textarea
                             rows={3}
-                            placeholder={"*.tmp\nnode_modules/\n.cache/"}
+                            placeholder={"*.tmp\nnode_modules/**\n.cache/**"}
                             value={excludePatterns.join("\n")}
                             onChange={(e) => form.setValue(
                                 `directorySources.${index}.excludePatterns`,

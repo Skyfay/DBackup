@@ -106,6 +106,17 @@ model SchedulePreset {
   jobs        Job[]
 }
 
+model ExcludePatternPreset {
+  id          String      @id @default(cuid())
+  name        String      @unique
+  description String?
+  patterns    String      // JSON array of glob-pattern strings, same shape as JobSource.excludePatterns
+  isSystem    Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  jobSources  JobSource[]
+}
+
 model Job {
   id                  String             @id @default(uuid())
   name                String
@@ -185,15 +196,17 @@ model JobDestination {
 }
 
 model JobSource {
-  id              String   @id @default(uuid())
-  jobId           String
-  configId        String
-  priority        Int      @default(0) // Collection/manifest ordering
-  path            String   // Remote path on the storage adapter to pull from
-  excludePatterns String   @default("[]") // JSON array of glob patterns
-  useStagingCache Boolean  @default(false) // Reserved for a later phase (persistent rsync mirror); unused for now
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                     String                @id @default(uuid())
+  jobId                  String
+  configId               String
+  priority               Int                   @default(0) // Collection/manifest ordering
+  path                   String                // Remote path on the storage adapter to pull from
+  excludePatterns        String                @default("[]") // JSON array of glob patterns
+  excludePatternPresetId String?               // Provenance only ("seeded from X") - never dereferenced at runtime, see ExcludePatternPreset
+  excludePatternPreset   ExcludePatternPreset? @relation(fields: [excludePatternPresetId], references: [id], onDelete: SetNull)
+  useStagingCache        Boolean               @default(false) // Reserved for a later phase (persistent rsync mirror); unused for now
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
 
   job    Job           @relation(fields: [jobId], references: [id], onDelete: Cascade)
   config AdapterConfig @relation("JobSourceConfig", fields: [configId], references: [id], onDelete: Restrict)

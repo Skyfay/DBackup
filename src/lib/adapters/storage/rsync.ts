@@ -1,4 +1,4 @@
-import { StorageAdapter, StorageSession, FileInfo, DirectoryDownloadResult, DirectoryFileEntry } from "@/lib/core/interfaces";
+import { StorageAdapter, StorageSession, FileInfo, DirectoryDownloadResult, DirectoryFileEntry, DirectoryBrowseEntry } from "@/lib/core/interfaces";
 import { RsyncSchema } from "@/lib/adapters/definitions";
 import Rsync from "rsync";
 import { exec, execFile } from "child_process";
@@ -569,6 +569,35 @@ export const RsyncAdapter: StorageAdapter = {
             return files;
         } catch (error: unknown) {
             log.error("Rsync list failed", { host: config.host, dir }, wrapError(error));
+            throw error;
+        } finally {
+            if (keyFile) await fs.unlink(keyFile).catch(() => {});
+        }
+    },
+
+    async browseDirectories(config: RsyncConfig, subPath: string = ""): Promise<DirectoryBrowseEntry[]> {
+        let keyFile: string | undefined;
+        try {
+            if (config.authType === "privateKey" && config.privateKey) {
+                keyFile = await writeTempKey(config.privateKey);
+            }
+
+            const startDir = path.posix.join(config.pathPrefix, subPath);
+            const safeStartDir = shellEscapeSingleQuote(startDir);
+            const output = await execSSH(
+                config,
+                `find '${safeStartDir}' -mindepth 1 -maxdepth 1 -type d -printf '%f\\n' 2>/dev/null`,
+                keyFile
+            );
+
+            if (!output) return [];
+            return output
+                .split("\n")
+                .map((name) => name.trim())
+                .filter(Boolean)
+                .map((name) => ({ name, path: subPath ? `${subPath}/${name}` : name }));
+        } catch (error: unknown) {
+            log.error("Rsync browseDirectories failed", { host: config.host, subPath }, wrapError(error));
             throw error;
         } finally {
             if (keyFile) await fs.unlink(keyFile).catch(() => {});

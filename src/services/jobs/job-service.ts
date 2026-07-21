@@ -22,6 +22,7 @@ export interface SourceInput {
     priority: number;
     path: string;
     excludePatterns?: string[];
+    excludePatternPresetId?: string | null;
 }
 
 export interface CreateJobInput {
@@ -90,16 +91,37 @@ const jobInclude = {
     }
 };
 
+/**
+ * JobSource.excludePatterns is stored as a JSON-encoded string column. Parses it back into a
+ * real string[] for every source before handing job data to API/UI consumers, mirroring the
+ * JSON.parse already performed by the runner (src/lib/runner/steps/01-initialize.ts).
+ */
+function parseSourceExcludePatterns<T extends { excludePatterns: string }>(
+    sources: T[]
+): (Omit<T, "excludePatterns"> & { excludePatterns: string[] })[] {
+    return sources.map(({ excludePatterns, ...rest }) => {
+        let parsed: string[] = [];
+        try {
+            const p = JSON.parse(excludePatterns);
+            if (Array.isArray(p)) parsed = p.filter((v): v is string => typeof v === "string");
+        } catch {
+            // malformed/legacy data - fall back to no exclusions
+        }
+        return { ...rest, excludePatterns: parsed };
+    });
+}
+
 export class JobService {
     async getJobs() {
-        return prisma.job.findMany({
+        const jobs = await prisma.job.findMany({
             include: jobInclude,
             orderBy: { createdAt: 'desc' }
         });
+        return jobs.map((job) => ({ ...job, sources: parseSourceExcludePatterns(job.sources) }));
     }
 
     async getJobById(id: string) {
-        return prisma.job.findUnique({
+        const job = await prisma.job.findUnique({
             where: { id },
             include: {
                 source: true,
@@ -115,6 +137,8 @@ export class JobService {
                 encryptionProfile: true
             }
         });
+        if (!job) return job;
+        return { ...job, sources: parseSourceExcludePatterns(job.sources) };
     }
 
     /**
@@ -232,6 +256,7 @@ export class JobService {
                             priority: s.priority,
                             path: s.path,
                             excludePatterns: JSON.stringify(s.excludePatterns || []),
+                            excludePatternPresetId: s.excludePatternPresetId ?? null,
                         }))
                     }
                     : undefined
@@ -285,6 +310,7 @@ export class JobService {
                             priority: s.priority,
                             path: s.path,
                             excludePatterns: JSON.stringify(s.excludePatterns || []),
+                            excludePatternPresetId: s.excludePatternPresetId ?? null,
                         }))
                     });
                 }
@@ -409,6 +435,7 @@ export class JobService {
                             priority: s.priority,
                             path: s.path,
                             excludePatterns: s.excludePatterns,
+                            excludePatternPresetId: s.excludePatternPresetId,
                         }))
                     }
                     : undefined

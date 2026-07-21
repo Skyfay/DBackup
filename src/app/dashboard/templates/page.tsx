@@ -7,6 +7,7 @@ import { RetentionPolicyList } from "@/components/settings/templates/retention-p
 import { NamingTemplateList } from "@/components/settings/templates/naming-template-list";
 import { SchedulePresetList } from "@/components/settings/templates/schedule-preset-list";
 import { NotificationTemplateList } from "@/components/settings/templates/notification-template-list";
+import { ExcludePatternPresetList } from "@/components/settings/templates/exclude-pattern-preset-list";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import prisma from "@/lib/prisma";
 
@@ -45,6 +46,7 @@ export default async function TemplatesPage() {
                     <TabsTrigger value="naming">Naming Templates</TabsTrigger>
                     <TabsTrigger value="presets">Schedule Presets</TabsTrigger>
                     <TabsTrigger value="notifications">Notification Templates</TabsTrigger>
+                    <TabsTrigger value="excludes">Exclude Patterns</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="retention" className="mt-4">
@@ -61,6 +63,10 @@ export default async function TemplatesPage() {
 
                 <TabsContent value="notifications" className="mt-4">
                     <NotificationTemplateList availableChannels={notificationChannels} />
+                </TabsContent>
+
+                <TabsContent value="excludes" className="mt-4">
+                    <ExcludePatternPresetList />
                 </TabsContent>
             </Tabs>
         </div>

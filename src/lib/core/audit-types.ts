@@ -22,7 +22,7 @@ export const AUDIT_RESOURCES = {
   VAULT: "VAULT", // Encryption profiles / recovery kits
   CREDENTIAL: "CREDENTIAL", // Credential profiles (DB/SSH/storage credentials)
   API_KEY: "API_KEY",
-  TEMPLATE: "TEMPLATE", // Retention policies, naming templates, schedule presets
+  TEMPLATE: "TEMPLATE", // Retention policies, naming templates, schedule presets, exclude pattern presets
 } as const;
 
 export type AuditResource = typeof AUDIT_RESOURCES[keyof typeof AUDIT_RESOURCES];

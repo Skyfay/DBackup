@@ -1,4 +1,4 @@
-import { StorageAdapter, FileInfo } from "@/lib/core/interfaces";
+import { StorageAdapter, FileInfo, DirectoryBrowseEntry } from "@/lib/core/interfaces";
 import { GoogleDriveSchema } from "@/lib/adapters/definitions";
 import { google, drive_v3 } from "googleapis";
 import { Readable, Transform } from "stream";
@@ -319,6 +319,42 @@ export const GoogleDriveAdapter: StorageAdapter = {
             return await listFilesRecursive(drive, rootFolderId, dir || "");
         } catch (error: unknown) {
             log.error("Google Drive list failed", { dir }, wrapError(error));
+            throw error;
+        }
+    },
+
+    /**
+     * Lists immediate child folders. Unlike other adapters, Google Drive is ID-based, not
+     * path-based - subPath (when non-empty) is itself a folder ID returned by a previous call,
+     * not a path string. Empty subPath means "start at this adapter's configured root".
+     */
+    async browseDirectories(config: GoogleDriveConfig, subPath: string = ""): Promise<DirectoryBrowseEntry[]> {
+        try {
+            const drive = createDriveClient(config);
+            const parentId = subPath || config.folderId || "root";
+
+            const query = `'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+            const entries: DirectoryBrowseEntry[] = [];
+            let pageToken: string | undefined;
+
+            do {
+                const res = await drive.files.list({
+                    q: query,
+                    fields: "nextPageToken, files(id, name)",
+                    spaces: "drive",
+                    orderBy: "name",
+                    pageSize: 100,
+                    pageToken,
+                });
+                for (const f of res.data.files || []) {
+                    entries.push({ name: f.name || "Untitled", path: f.id! });
+                }
+                pageToken = res.data.nextPageToken || undefined;
+            } while (pageToken);
+
+            return entries;
+        } catch (error: unknown) {
+            log.error("Google Drive browseDirectories failed", { subPath }, wrapError(error));
             throw error;
         }
     },

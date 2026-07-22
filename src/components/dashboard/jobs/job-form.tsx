@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { Lock, History, ChevronsUpDown, Plus, Trash2, ChevronDown, ChevronRight, Database, Info, Loader2, FileText, CalendarClock, Pencil, FolderInput, FolderOpen, Filter, CheckCircle2 } from "lucide-react";
+import { Lock, History, ChevronsUpDown, Plus, Trash2, ChevronDown, ChevronRight, Database, Info, Loader2, FileText, CalendarClock, Pencil, FolderInput, FolderOpen, Filter, type LucideIcon } from "lucide-react";
 import { SchedulePicker } from "./schedule-picker";
 import { RetentionPolicyPicker, DEFAULT_RETENTION_SENTINEL } from "@/components/templates/retention-policy-picker";
 import { NamingTemplatePicker } from "@/components/templates/naming-template-picker";
@@ -294,6 +294,33 @@ function normalizeExcludePatterns(value: unknown): string[] {
     return [];
 }
 
+/** Full-width dashed placeholder for a disabled backup-type section - click to enable and reveal its configuration Card in the same slot. */
+function SourceTypeTile({ icon: Icon, title, description, onClick }: {
+    icon: LucideIcon;
+    title: string;
+    description: string;
+    onClick: () => void;
+}) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className="flex w-full items-center gap-4 rounded-lg border border-dashed p-6 text-left transition-colors hover:bg-accent hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                <Icon className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+                <span className="flex items-center gap-1.5 text-sm font-medium">
+                    <Plus className="h-3.5 w-3.5" />
+                    {title}
+                </span>
+                <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+            </div>
+        </button>
+    );
+}
+
 export function JobForm({ sources, destinations, directorySourceOptions, notifications: _notifications, encryptionProfiles, initialData, onSuccess }: JobFormProps) {
     const [sourceOpen, setSourceOpen] = useState(false);
     const [expandedDests, setExpandedDests] = useState<Set<number>>(new Set());
@@ -409,7 +436,10 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
     const handleToggleDb = (checked: boolean) => {
         if (checked === dbEnabled) return;
         if (!checked) {
-            if (!dirsEnabled) return;
+            if (!dirsEnabled) {
+                toast.info("A job needs at least one source - enable directory sources before disabling the database source.");
+                return;
+            }
             form.setValue("sourceId", "", { shouldDirty: true, shouldValidate: true });
             form.setValue("databases", [], { shouldDirty: true });
             setAvailableDatabases([]);
@@ -430,7 +460,10 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
     const handleToggleDirs = (checked: boolean) => {
         if (checked === dirsEnabled) return;
         if (!checked) {
-            if (!dbEnabled) return;
+            if (!dbEnabled) {
+                toast.info("A job needs at least one source - enable the database source before disabling directory sources.");
+                return;
+            }
             form.setValue("directorySources", [], { shouldDirty: true, shouldValidate: true });
             setExpandedSources(new Set());
         } else if (dbEnabled) {
@@ -806,66 +839,19 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
 
                     {/* TAB: SOURCES (Database source + directory sources) */}
                     <TabsContent value="sources" className="space-y-4 pt-4">
-                        <div className="space-y-2">
-                            <FormLabel>Backup Type</FormLabel>
-                            <div className="grid grid-cols-2 gap-3">
-                                <button
-                                    type="button"
-                                    aria-pressed={dbEnabled}
-                                    onClick={() => handleToggleDb(!dbEnabled)}
-                                    className={cn(
-                                        "relative flex flex-col items-center gap-2 rounded-lg border p-4 text-center transition-colors",
-                                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                                        dbEnabled ? "border-primary bg-primary/5" : "border-dashed hover:bg-accent hover:border-primary/50"
-                                    )}
-                                >
-                                    {dbEnabled && <CheckCircle2 className="absolute top-2 right-2 h-4 w-4 text-primary" />}
-                                    <div className={cn(
-                                        "flex h-9 w-9 items-center justify-center rounded-full",
-                                        dbEnabled ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-                                    )}>
-                                        <Database className="h-4.5 w-4.5" />
-                                    </div>
-                                    <span className="text-sm font-medium">Database</span>
-                                    <span className="text-xs text-muted-foreground">Back up a database source</span>
-                                </button>
-                                <button
-                                    type="button"
-                                    aria-pressed={dirsEnabled}
-                                    onClick={() => handleToggleDirs(!dirsEnabled)}
-                                    className={cn(
-                                        "relative flex flex-col items-center gap-2 rounded-lg border p-4 text-center transition-colors",
-                                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                                        dirsEnabled ? "border-primary bg-primary/5" : "border-dashed hover:bg-accent hover:border-primary/50"
-                                    )}
-                                >
-                                    {dirsEnabled && <CheckCircle2 className="absolute top-2 right-2 h-4 w-4 text-primary" />}
-                                    <div className={cn(
-                                        "flex h-9 w-9 items-center justify-center rounded-full",
-                                        dirsEnabled ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-                                    )}>
-                                        <FolderInput className="h-4.5 w-4.5" />
-                                    </div>
-                                    <span className="text-sm font-medium">Directories</span>
-                                    <span className="text-xs text-muted-foreground">Back up file/directory paths</span>
-                                </button>
-                            </div>
-                            <p className="text-xs text-muted-foreground">
-                                {sourceMode === "db" && "Back up a single database source."}
-                                {sourceMode === "dirs" && "Back up one or more file/directory paths, no database involved."}
-                                {sourceMode === "both" && "Combine a database source with directory sources in one job. Only MySQL, MariaDB, PostgreSQL, MongoDB and Firebird support this."}
-                            </p>
-                        </div>
-
-                        {(sourceMode === "db" || sourceMode === "both") && (
+                        {dbEnabled ? (
                         <Card className="border-border">
                             <CardHeader className="pb-3">
-                                <CardTitle className="text-base flex items-center gap-2">
-                                    <Database className="h-4 w-4" />
-                                    Database Source
-                                </CardTitle>
+                                <div className="flex items-center justify-between">
+                                    <CardTitle className="text-base flex items-center gap-2">
+                                        <Database className="h-4 w-4" />
+                                        Database Source
+                                    </CardTitle>
+                                    <Switch checked={dbEnabled} onCheckedChange={handleToggleDb} />
+                                </div>
                                 <p className="text-sm text-muted-foreground">
                                     Select the database adapter to back up, and optionally restrict it to specific databases.
+                                    {dirsEnabled && " Only MySQL, MariaDB, PostgreSQL, MongoDB and Firebird support combining with directory sources."}
                                 </p>
                             </CardHeader>
                             <CardContent className="space-y-3">
@@ -959,9 +945,16 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
                                 )} />
                             </CardContent>
                         </Card>
+                        ) : (
+                            <SourceTypeTile
+                                icon={Database}
+                                title="Add Database Source"
+                                description="Back up a single database source, e.g. MySQL, PostgreSQL, or MongoDB."
+                                onClick={() => handleToggleDb(true)}
+                            />
                         )}
 
-                        {(sourceMode === "dirs" || sourceMode === "both") && (
+                        {dirsEnabled ? (
                         <Card className="border-border">
                             <CardHeader className="pb-3">
                                 <div className="flex items-center justify-between">
@@ -969,16 +962,19 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
                                         <FolderInput className="h-4 w-4" />
                                         Directory Sources
                                     </CardTitle>
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => appendSource({ configId: "", path: "", excludePatterns: [], excludePatternPresetIds: [] })}
-                                        disabled={directorySourceOptions.length === 0}
-                                    >
-                                        <Plus className="h-4 w-4 mr-1" />
-                                        Add Directory Source
-                                    </Button>
+                                    <div className="flex items-center gap-2">
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => appendSource({ configId: "", path: "", excludePatterns: [], excludePatternPresetIds: [] })}
+                                            disabled={directorySourceOptions.length === 0}
+                                        >
+                                            <Plus className="h-4 w-4 mr-1" />
+                                            Add Directory Source
+                                        </Button>
+                                        <Switch checked={dirsEnabled} onCheckedChange={handleToggleDirs} />
+                                    </div>
                                 </div>
                                 <p className="text-sm text-muted-foreground">
                                     Back up files and directories alongside (or instead of) the database above, using any storage adapter enabled as a source. The same adapter can be used in more than one row.
@@ -1026,6 +1022,13 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
                                 )}
                             </CardContent>
                         </Card>
+                        ) : (
+                            <SourceTypeTile
+                                icon={FolderInput}
+                                title="Add Directory Sources"
+                                description="Back up one or more file/directory paths using any storage adapter enabled as a source."
+                                onClick={() => handleToggleDirs(true)}
+                            />
                         )}
                     </TabsContent>
 

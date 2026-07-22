@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { Lock, History, ChevronsUpDown, Plus, Trash2, ChevronDown, ChevronRight, Database, Info, Loader2, FileText, CalendarClock, Pencil, FolderInput, FolderOpen, Filter } from "lucide-react";
+import { Lock, History, ChevronsUpDown, Plus, Trash2, ChevronDown, ChevronRight, Database, Info, Loader2, FileText, CalendarClock, Pencil, FolderInput, FolderOpen, Filter, CheckCircle2 } from "lucide-react";
 import { SchedulePicker } from "./schedule-picker";
 import { RetentionPolicyPicker, DEFAULT_RETENTION_SENTINEL } from "@/components/templates/retention-policy-picker";
 import { NamingTemplatePicker } from "@/components/templates/naming-template-picker";
@@ -309,13 +309,15 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
     const [presetEditTarget, setPresetEditTarget] = useState<SchedulePreset | null>(null);
     const [presetEditOpen, setPresetEditOpen] = useState(false);
     const [expandedSources, setExpandedSources] = useState<Set<number>>(new Set());
-    const [sourceMode, setSourceMode] = useState<SourceMode>(() => {
+    const [dbEnabled, setDbEnabled] = useState<boolean>(() => {
         const hasDb = !!initialData?.sourceId;
         const hasDirs = (initialData?.sources?.length ?? 0) > 0;
-        if (hasDirs && !hasDb) return "dirs";
-        if (hasDirs && hasDb) return "both";
-        return "db";
+        return hasDb || !hasDirs;
     });
+    const [dirsEnabled, setDirsEnabled] = useState<boolean>(() => (initialData?.sources?.length ?? 0) > 0);
+    // Derived from the two tiles below - kept as a tri-state purely to reuse the existing
+    // "db" / "dirs" / "both" gating throughout this component without touching every check.
+    const sourceMode: SourceMode = dbEnabled && dirsEnabled ? "both" : dirsEnabled ? "dirs" : "db";
 
     // Parse initial databases from JSON string
     const parseInitialDatabases = (): string[] => {
@@ -401,25 +403,18 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
         setExpandedSources(new Set());
     };
 
-    // Clears (rather than hides-and-preserves) fields that become irrelevant to the new mode, since
-    // onSubmit unconditionally maps sourceId/directorySources into the payload - a hidden-but-populated
-    // field would otherwise still get submitted.
-    const handleSourceModeChange = (nextMode: SourceMode) => {
-        if (nextMode === sourceMode) return;
-
-        if (nextMode === "db") {
-            form.setValue("directorySources", [], { shouldDirty: true, shouldValidate: true });
-            setExpandedSources(new Set());
-        }
-
-        if (nextMode === "dirs") {
+    // Clears (rather than hides-and-preserves) fields that become irrelevant when a tile is switched
+    // off, since onSubmit unconditionally maps sourceId/directorySources into the payload - a
+    // hidden-but-populated field would otherwise still get submitted. At least one tile must stay on.
+    const handleToggleDb = (checked: boolean) => {
+        if (checked === dbEnabled) return;
+        if (!checked) {
+            if (!dirsEnabled) return;
             form.setValue("sourceId", "", { shouldDirty: true, shouldValidate: true });
             form.setValue("databases", [], { shouldDirty: true });
             setAvailableDatabases([]);
             setIsDbListOpen(false);
-        }
-
-        if (nextMode === "both") {
+        } else if (dirsEnabled) {
             const currentSourceId = form.getValues("sourceId");
             const currentSource = sources.find(s => s.id === currentSourceId);
             if (currentSource && !COMBINABLE_DB_ADAPTERS.includes(currentSource.adapterId)) {
@@ -429,8 +424,26 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
                 toast.info(`${currentSource.name} does not support combined backups - select a different database source.`);
             }
         }
+        setDbEnabled(checked);
+    };
 
-        setSourceMode(nextMode);
+    const handleToggleDirs = (checked: boolean) => {
+        if (checked === dirsEnabled) return;
+        if (!checked) {
+            if (!dbEnabled) return;
+            form.setValue("directorySources", [], { shouldDirty: true, shouldValidate: true });
+            setExpandedSources(new Set());
+        } else if (dbEnabled) {
+            const currentSourceId = form.getValues("sourceId");
+            const currentSource = sources.find(s => s.id === currentSourceId);
+            if (currentSource && !COMBINABLE_DB_ADAPTERS.includes(currentSource.adapterId)) {
+                form.setValue("sourceId", "", { shouldDirty: true, shouldValidate: true });
+                form.setValue("databases", [], { shouldDirty: true });
+                setAvailableDatabases([]);
+                toast.info(`${currentSource.name} does not support combined backups - select a different database source.`);
+            }
+        }
+        setDirsEnabled(checked);
     };
 
     const toggleExpanded = (index: number) => {
@@ -795,19 +808,48 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
                     <TabsContent value="sources" className="space-y-4 pt-4">
                         <div className="space-y-2">
                             <FormLabel>Backup Type</FormLabel>
-                            <Tabs value={sourceMode} onValueChange={(v) => handleSourceModeChange(v as SourceMode)}>
-                                <TabsList className="grid w-full grid-cols-3">
-                                    <TabsTrigger value="db">
-                                        <Database className="h-3.5 w-3.5 mr-1.5" />
-                                        Database Only
-                                    </TabsTrigger>
-                                    <TabsTrigger value="dirs">
-                                        <FolderInput className="h-3.5 w-3.5 mr-1.5" />
-                                        Directories Only
-                                    </TabsTrigger>
-                                    <TabsTrigger value="both">Database + Directories</TabsTrigger>
-                                </TabsList>
-                            </Tabs>
+                            <div className="grid grid-cols-2 gap-3">
+                                <button
+                                    type="button"
+                                    aria-pressed={dbEnabled}
+                                    onClick={() => handleToggleDb(!dbEnabled)}
+                                    className={cn(
+                                        "relative flex flex-col items-center gap-2 rounded-lg border p-4 text-center transition-colors",
+                                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                                        dbEnabled ? "border-primary bg-primary/5" : "border-dashed hover:bg-accent hover:border-primary/50"
+                                    )}
+                                >
+                                    {dbEnabled && <CheckCircle2 className="absolute top-2 right-2 h-4 w-4 text-primary" />}
+                                    <div className={cn(
+                                        "flex h-9 w-9 items-center justify-center rounded-full",
+                                        dbEnabled ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                                    )}>
+                                        <Database className="h-4.5 w-4.5" />
+                                    </div>
+                                    <span className="text-sm font-medium">Database</span>
+                                    <span className="text-xs text-muted-foreground">Back up a database source</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    aria-pressed={dirsEnabled}
+                                    onClick={() => handleToggleDirs(!dirsEnabled)}
+                                    className={cn(
+                                        "relative flex flex-col items-center gap-2 rounded-lg border p-4 text-center transition-colors",
+                                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                                        dirsEnabled ? "border-primary bg-primary/5" : "border-dashed hover:bg-accent hover:border-primary/50"
+                                    )}
+                                >
+                                    {dirsEnabled && <CheckCircle2 className="absolute top-2 right-2 h-4 w-4 text-primary" />}
+                                    <div className={cn(
+                                        "flex h-9 w-9 items-center justify-center rounded-full",
+                                        dirsEnabled ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                                    )}>
+                                        <FolderInput className="h-4.5 w-4.5" />
+                                    </div>
+                                    <span className="text-sm font-medium">Directories</span>
+                                    <span className="text-xs text-muted-foreground">Back up file/directory paths</span>
+                                </button>
+                            </div>
                             <p className="text-xs text-muted-foreground">
                                 {sourceMode === "db" && "Back up a single database source."}
                                 {sourceMode === "dirs" && "Back up one or more file/directory paths, no database involved."}
@@ -816,107 +858,107 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
                         </div>
 
                         {(sourceMode === "db" || sourceMode === "both") && (
-                        <>
-                        <FormField control={form.control} name="sourceId" render={({ field }) => (
-                            <FormItem className="flex flex-col">
-                                <FormLabel>Database Source</FormLabel>
-                                <Popover open={sourceOpen} onOpenChange={setSourceOpen} modal={true}>
-                                    <PopoverTrigger asChild>
-                                        <FormControl>
-                                            <Button
-                                                variant="outline"
-                                                role="combobox"
-                                                aria-expanded={sourceOpen}
-                                                className={cn("w-full justify-between", !field.value && "text-muted-foreground")}
-                                            >
-                                                {field.value ? (
-                                                    <span className="flex items-center gap-2 min-w-0">
-                                                        <AdapterIcon adapterId={sources.find((s) => s.id === field.value)?.adapterId ?? ""} className="h-4 w-4 shrink-0" />
-                                                        <span className="truncate">{sources.find((s) => s.id === field.value)?.name}</span>
-                                                    </span>
-                                                ) : "None (directory sources only)"}
-                                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                            </Button>
-                                        </FormControl>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-                                        <Command>
-                                            <CommandInput placeholder="Search source..." />
-                                            <CommandList>
-                                                <CommandEmpty>No source found.</CommandEmpty>
-                                                <CommandGroup>
-                                                    {field.value && (
-                                                        <CommandItem
-                                                            value="__none__"
-                                                            onSelect={() => {
-                                                                form.setValue("sourceId", "");
-                                                                setSourceOpen(false);
-                                                                form.setValue("databases", []);
-                                                                setAvailableDatabases([]);
-                                                            }}
+                        <Card className="border-border">
+                            <CardHeader className="pb-3">
+                                <CardTitle className="text-base flex items-center gap-2">
+                                    <Database className="h-4 w-4" />
+                                    Database Source
+                                </CardTitle>
+                                <p className="text-sm text-muted-foreground">
+                                    Select the database adapter to back up, and optionally restrict it to specific databases.
+                                </p>
+                            </CardHeader>
+                            <CardContent className="space-y-3">
+                                <FormField control={form.control} name="sourceId" render={({ field }) => (
+                                    <FormItem className="space-y-2">
+                                        <div className="border rounded-lg flex items-center gap-2 p-3 flex-wrap">
+                                            <Popover open={sourceOpen} onOpenChange={setSourceOpen} modal={true}>
+                                                <PopoverTrigger asChild>
+                                                    <FormControl>
+                                                        <Button
+                                                            variant="outline"
+                                                            role="combobox"
+                                                            aria-expanded={sourceOpen}
+                                                            className={cn("w-56 shrink-0 justify-between h-9", !field.value && "text-muted-foreground")}
                                                         >
-                                                            <span className="text-muted-foreground">None (directory sources only)</span>
-                                                        </CommandItem>
-                                                    )}
-                                                    {sourcePickerOptions.map((s) => (
-                                                        <CommandItem
-                                                            value={s.name}
-                                                            key={s.id}
-                                                            onSelect={() => {
-                                                                const prevSourceId = form.getValues("sourceId");
-                                                                form.setValue("sourceId", s.id);
-                                                                setSourceOpen(false);
-                                                                // Reset databases when source changes
-                                                                if (prevSourceId !== s.id) {
-                                                                    form.setValue("databases", []);
-                                                                    setAvailableDatabases([]);
-                                                                }
-                                                            }}
-                                                            className={cn(field.value === s.id && "bg-accent")}
-                                                        >
-                                                            <AdapterIcon adapterId={s.adapterId} className="h-4 w-4" />
-                                                            {s.name}
-                                                        </CommandItem>
-                                                    ))}
-                                                </CommandGroup>
-                                            </CommandList>
-                                        </Command>
-                                    </PopoverContent>
-                                </Popover>
-                                <FormDescription>
-                                    A job needs a database source, one or more directory sources below, or both.
-                                </FormDescription>
-                                <FormMessage />
-                            </FormItem>
-                        )} />
+                                                            {field.value ? (
+                                                                <span className="flex items-center gap-2 min-w-0">
+                                                                    <AdapterIcon adapterId={sources.find((s) => s.id === field.value)?.adapterId ?? ""} className="h-4 w-4 shrink-0" />
+                                                                    <span className="truncate">{sources.find((s) => s.id === field.value)?.name}</span>
+                                                                </span>
+                                                            ) : "Select Database Source"}
+                                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                                        </Button>
+                                                    </FormControl>
+                                                </PopoverTrigger>
+                                                <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+                                                    <Command>
+                                                        <CommandInput placeholder="Search source..." />
+                                                        <CommandList>
+                                                            <CommandEmpty>No source found.</CommandEmpty>
+                                                            <CommandGroup>
+                                                                {sourcePickerOptions.map((s) => (
+                                                                    <CommandItem
+                                                                        value={s.name}
+                                                                        key={s.id}
+                                                                        onSelect={() => {
+                                                                            const prevSourceId = form.getValues("sourceId");
+                                                                            form.setValue("sourceId", s.id, { shouldValidate: true });
+                                                                            setSourceOpen(false);
+                                                                            // Reset databases when source changes
+                                                                            if (prevSourceId !== s.id) {
+                                                                                form.setValue("databases", []);
+                                                                                setAvailableDatabases([]);
+                                                                            }
+                                                                        }}
+                                                                        className={cn(field.value === s.id && "bg-accent")}
+                                                                    >
+                                                                        <AdapterIcon adapterId={s.adapterId} className="h-4 w-4" />
+                                                                        {s.name}
+                                                                    </CommandItem>
+                                                                ))}
+                                                            </CommandGroup>
+                                                        </CommandList>
+                                                    </Command>
+                                                </PopoverContent>
+                                            </Popover>
 
-                        {/* Database Picker (hidden for SQLite/Redis/Valkey) */}
-                        {showDatabasePicker && (
-                            <FormField control={form.control} name="databases" render={({ field }) => (
-                                <FormItem>
-                                    <FormLabel className="flex items-center gap-2">
-                                        <Database className="h-3 w-3" />
-                                        Databases
-                                    </FormLabel>
-                                    <FormControl>
-                                        <DatabasePicker
-                                            value={field.value}
-                                            onChange={field.onChange}
-                                            availableDatabases={availableDatabases}
-                                            isLoading={isLoadingDbs}
-                                            onLoad={fetchDatabases}
-                                            isOpen={isDbListOpen}
-                                            setIsOpen={setIsDbListOpen}
-                                        />
-                                    </FormControl>
-                                    <FormDescription>
-                                        Select specific databases to back up. Leave empty to back up all databases.
-                                    </FormDescription>
-                                    <FormMessage />
-                                </FormItem>
-                            )} />
-                        )}
-                        </>
+                                            {/* Database Picker (hidden for SQLite/Redis/Valkey) - same left-adapter/right-load-and-select layout as a Directory Source row */}
+                                            {showDatabasePicker ? (
+                                                <FormField control={form.control} name="databases" render={({ field: dbField }) => (
+                                                    <FormItem className="flex-1 min-w-60 space-y-0">
+                                                        <FormControl>
+                                                            <DatabasePicker
+                                                                value={dbField.value}
+                                                                onChange={dbField.onChange}
+                                                                availableDatabases={availableDatabases}
+                                                                isLoading={isLoadingDbs}
+                                                                onLoad={fetchDatabases}
+                                                                isOpen={isDbListOpen}
+                                                                setIsOpen={setIsDbListOpen}
+                                                            />
+                                                        </FormControl>
+                                                    </FormItem>
+                                                )} />
+                                            ) : field.value ? (
+                                                <p className="text-xs text-muted-foreground flex-1">
+                                                    This adapter backs up its entire dataset. Individual database selection is not applicable.
+                                                </p>
+                                            ) : null}
+                                        </div>
+                                        <FormDescription>
+                                            A job needs a database source, one or more directory sources below, or both.
+                                        </FormDescription>
+                                        {showDatabasePicker && (
+                                            <FormDescription>
+                                                Select specific databases to back up. Leave empty to back up all databases.
+                                            </FormDescription>
+                                        )}
+                                        <FormMessage />
+                                    </FormItem>
+                                )} />
+                            </CardContent>
+                        </Card>
                         )}
 
                         {(sourceMode === "dirs" || sourceMode === "both") && (

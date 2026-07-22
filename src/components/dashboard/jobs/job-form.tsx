@@ -932,14 +932,6 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
                                                 </p>
                                             ) : null}
                                         </div>
-                                        <FormDescription>
-                                            A job needs a database source, one or more directory sources below, or both.
-                                        </FormDescription>
-                                        {showDatabasePicker && (
-                                            <FormDescription>
-                                                Select specific databases to back up. Leave empty to back up all databases.
-                                            </FormDescription>
-                                        )}
                                         <FormMessage />
                                     </FormItem>
                                 )} />

@@ -84,6 +84,12 @@ export interface RunnerContext {
 
     // File paths
     tempFile?: string;
+    /**
+     * Local path of the seekable archive's index sidecar, set only by the combined dump
+     * path. Uploaded next to the backup file so browsing and file-level restore never have
+     * to download the archive itself.
+     */
+    indexFile?: string;
     finalRemotePath?: string;
 
     // Result Data

@@ -6,14 +6,15 @@ import { DatabaseAdapter, StorageAdapter } from "@/lib/core/interfaces";
 import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { LogLevel, LogType } from "@/lib/core/logs";
 import {
-    readCombinedManifest,
-    extractCombinedArchive,
     createTempDir,
     cleanupTempDir,
     shouldRestoreDatabase,
     getTargetDatabaseName,
 } from "@/lib/adapters/database/common/tar-utils";
-import type { DbEntryV2, DirectoryEntryV2 } from "@/lib/adapters/database/common/types";
+import { extractArchive } from "@/lib/archive/extract";
+import { readArchiveManifest, readArchiveIndex } from "@/lib/archive/reader";
+import { localFileSource } from "@/lib/archive/sources";
+import { getProfileMasterKey } from "@/services/backup/encryption-service";
 import type { RestoreInput } from "./types";
 
 export interface CombinedRestoreCallbacks {
@@ -58,13 +59,19 @@ export async function restoreCombinedArchive(
 ): Promise<CombinedRestoreResult> {
     const { log, updateDetail } = callbacks;
 
-    const manifest = await readCombinedManifest(tempFile);
-    if (!manifest) {
-        throw new Error("Archive does not contain a valid combined (v2) manifest");
-    }
+    const archiveSource = await localFileSource(tempFile);
+    const manifest = await readArchiveManifest(archiveSource);
 
-    const allDbEntries = manifest.entries.filter((e): e is DbEntryV2 => e.kind === "database");
-    const allDirEntries = manifest.entries.filter((e): e is DirectoryEntryV2 => e.kind === "directory");
+    // A v2 archive is encrypted per entry, so the master key is needed to read even the
+    // index - the file list itself is sealed, deliberately, since paths are usually the
+    // most sensitive metadata in a backup.
+    const masterKey = manifest.encryption
+        ? await getProfileMasterKey(manifest.encryption.profileId)
+        : undefined;
+    const index = await readArchiveIndex(archiveSource, manifest, { masterKey });
+
+    const allDbEntries = index.databases;
+    const allDirEntries = index.directories;
 
     log(`Combined archive detected: ${allDbEntries.length} database(s), ${allDirEntries.length} directory source(s)`, 'info');
 
@@ -79,8 +86,8 @@ export async function restoreCombinedArchive(
 
     const dirMapping = input.directoryMapping ?? [];
     const selectedDirIds = dirMapping.length > 0
-        ? allDirEntries.map((e) => e.jobSourceId).filter((id) => dirMapping.some((m) => m.entryId === id && m.selected))
-        : allDirEntries.map((e) => e.jobSourceId);
+        ? allDirEntries.map((e) => e.src).filter((id) => dirMapping.some((m) => m.entryId === id && m.selected))
+        : allDirEntries.map((e) => e.src);
 
     if (selectedDbNames.length === 0 && selectedDirIds.length === 0) {
         throw new Error("No entries selected for restore");
@@ -129,9 +136,12 @@ export async function restoreCombinedArchive(
 
     try {
         log(`Extracting ${selectedDbNames.length} database(s) and ${selectedDirIds.length} directory source(s)...`, 'info');
-        const extracted = await extractCombinedArchive(tempFile, extractDir, {
-            databaseNames: selectedDbNames,
-            directoryJobSourceIds: selectedDirIds,
+        const extracted = await extractArchive(tempFile, extractDir, {
+            masterKey,
+            selection: {
+                databaseNames: selectedDbNames,
+                directoryJobSourceIds: selectedDirIds,
+            },
         });
 
         // ── Database entries ──
@@ -174,11 +184,11 @@ export async function restoreCombinedArchive(
 
         // ── Directory entries ──
         for (const { entry, path: rootPath } of extracted.directoryRoots) {
-            if (!selectedDirIds.includes(entry.jobSourceId)) continue; // e.g. an empty (0-file) unselected dir still appears here
+            if (!selectedDirIds.includes(entry.src)) continue; // e.g. an empty (0-file) unselected dir still appears here
 
-            const mappingEntry = dirMapping.find((m) => m.entryId === entry.jobSourceId);
+            const mappingEntry = dirMapping.find((m) => m.entryId === entry.src);
             if (!mappingEntry || !mappingEntry.targetConfigId) {
-                errors.push({ entry: `directory:${entry.jobSourceId}`, error: "No restore target specified" });
+                errors.push({ entry: `directory:${entry.src}`, error: "No restore target specified" });
                 log(`Skipping directory '${entry.label}': no restore target specified`, 'warning', 'storage');
                 continue;
             }
@@ -208,11 +218,11 @@ export async function restoreCombinedArchive(
                     updateDetail(`${entry.label}: ${uploaded}/${files.length} file(s) restored`);
                 }
 
-                restoredDirectories.push(entry.jobSourceId);
+                restoredDirectories.push(entry.src);
                 log(`Directory restored: ${entry.label} (${uploaded} file(s))`, 'success', 'storage');
             } catch (e: unknown) {
                 const message = e instanceof Error ? e.message : String(e);
-                errors.push({ entry: `directory:${entry.jobSourceId}`, error: message });
+                errors.push({ entry: `directory:${entry.src}`, error: message });
                 log(`Failed to restore directory '${entry.label}': ${message}`, 'error', 'storage');
             }
         }

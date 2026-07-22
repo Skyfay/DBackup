@@ -3,8 +3,11 @@ import fs from "fs/promises";
 import { RunnerContext } from "../types";
 import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { downloadDirectory } from "@/lib/adapters/storage/common/download-directory";
-import { createCombinedTar, createTempDir, cleanupTempDir } from "@/lib/adapters/database/common/tar-utils";
-import { CombinedTarFileEntry, DbEntryV2, DirectoryFileIndexEntry } from "@/lib/adapters/database/common/types";
+import { createTempDir, cleanupTempDir } from "@/lib/adapters/database/common/tar-utils";
+import { createArchive } from "@/lib/archive/writer";
+import { ArchiveSourceEntry, DumpFormat, SourceFileEntry } from "@/lib/archive/types";
+import { DIRECTORY_ONLY_SOURCE_TYPE, INDEX_SIDECAR_SUFFIX } from "@/lib/archive/format";
+import { getProfileMasterKey } from "@/services/backup/encryption-service";
 import { resolveBackupFilename, parseJobDatabases } from "./dump-helpers";
 import { formatBytes } from "@/lib/utils";
 import { calculateFileChecksum } from "@/lib/crypto/checksum";
@@ -14,7 +17,7 @@ import { wrapError } from "@/lib/logging/errors";
 const log = logger.child({ step: "combined-dump" });
 
 /** Per-adapter dump format, matching what each adapter's own multi-DB path already uses internally. */
-const DB_FORMAT_BY_ADAPTER: Record<string, DbEntryV2["format"]> = {
+const DB_FORMAT_BY_ADAPTER: Record<string, DumpFormat> = {
     mysql: "sql",
     mariadb: "sql",
     postgres: "custom",
@@ -45,7 +48,7 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
     ctx.log(`Prepared temporary path: ${tempFile}`);
 
     const workDir = await createTempDir("combined-dump-");
-    const entries: CombinedTarFileEntry[] = [];
+    const entries: ArchiveSourceEntry[] = [];
     let dbNames: string[] = [];
     let engineVersion: string | undefined;
     let engineEdition: string | undefined;
@@ -149,12 +152,14 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
                 (msg, level, type, details) => ctx.log(`${logPrefix} ${msg}`, level, type ?? 'storage', details)
             );
 
-            const fileIndex: DirectoryFileIndexEntry[] = await Promise.all(result.entries.map(async (e) => ({
+            const fileIndex: SourceFileEntry[] = await Promise.all(result.entries.map(async (e) => ({
                 path: e.relativePath,
                 size: e.size,
                 mtime: e.lastModified.toISOString(),
-                // Content hash of the raw (pre-compression) file - groundwork for future
-                // incremental-backup change detection, not yet consumed by anything else.
+                // Content hash of the raw (pre-compression, pre-encryption) file. Lands in
+                // the archive index, which is itself sealed when the job is encrypted - a
+                // plaintext hash sitting in the clear would be a confirmation oracle
+                // against known files. Also the basis for incremental change detection.
                 checksum: await calculateFileChecksum(path.join(localDir, e.relativePath)),
             })));
 
@@ -173,15 +178,32 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
         }
 
         // ── Combine everything into one archive ────────────────────────────────────
-        // Compression is applied per-entry here (skipped for natively-compressed DB dumps, always
-        // applied to directory files) instead of as a single whole-file pass in 03-upload.ts - see
-        // TarManifestV2.perEntryCompression.
+        // Compression AND encryption are applied per entry inside the archive rather than as
+        // whole-file passes in 03-upload.ts. That is what keeps the archive seekable: a single
+        // file can later be fetched by byte range and opened on its own, which a
+        // compressed-or-encrypted outer stream would make impossible. 03-upload.ts skips both
+        // of its own passes for this archive - see the isCombinedArchive guard there.
+        const encryptionProfileId = job.encryptionProfileId ?? undefined;
+        if (encryptionProfileId) {
+            ctx.log(`Per-entry encryption enabled. Profile ID: ${encryptionProfileId}`);
+        }
+
         ctx.log(`Creating combined archive with ${dbNames.length} database(s) and ${ctx.sources.length} directory source(s)...`);
-        const manifest = await createCombinedTar(entries, tempFile, {
-            sourceType: job.source ? job.source.adapterId : "directory-only",
+        const { manifest, indexBytes } = await createArchive(entries, tempFile, {
+            sourceType: job.source ? job.source.adapterId : DIRECTORY_ONLY_SOURCE_TYPE,
             engineVersion,
             compression: (job.compression as "NONE" | "GZIP" | "BROTLI" | undefined) ?? "NONE",
+            ...(encryptionProfileId
+                ? { encryption: { masterKey: await getProfileMasterKey(encryptionProfileId), profileId: encryptionProfileId } }
+                : {}),
         });
+
+        // The sidecar is a byte-identical copy of the archive's own index member. Uploading
+        // it separately is what lets browsing and file-level restore read a file list
+        // without pulling the archive down.
+        ctx.indexFile = tempFile + INDEX_SIDECAR_SUFFIX;
+        await fs.writeFile(ctx.indexFile, indexBytes);
+        ctx.log(`Wrote archive index sidecar (${formatBytes(indexBytes.length)}, ${manifest.counts.files} file(s))`);
 
         ctx.dumpSize = manifest.totalSize;
         ctx.metadata = {
@@ -198,6 +220,21 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
             combined: {
                 databases: dbNames.length,
                 directorySources: ctx.sources.length,
+            },
+            archive: {
+                formatVersion: 2 as const,
+                indexFile: INDEX_SIDECAR_SUFFIX,
+                encrypted: !!manifest.encryption,
+                ...(manifest.encryption
+                    ? {
+                        profileId: manifest.encryption.profileId,
+                        kdfSalt: manifest.encryption.kdfSalt,
+                        noncePrefix: manifest.encryption.noncePrefix,
+                    }
+                    : {}),
+                ...(manifest.compression !== "NONE" ? { compression: manifest.compression } : {}),
+                ...(manifest.bundled ? { bundled: true } : {}),
+                files: manifest.counts.files,
             },
         };
 

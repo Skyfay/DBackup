@@ -43,11 +43,13 @@ vi.mock("@/lib/core/registry", () => ({
     registry: { get: (...args: any[]) => mockRegistryGet(...args) },
 }));
 
-const mockReadManifestVersion = vi.fn();
-const mockReadCombinedManifest = vi.fn();
-vi.mock("@/lib/adapters/database/common/tar-utils", () => ({
-    readManifestVersion: (...args: any[]) => mockReadManifestVersion(...args),
-    readCombinedManifest: (...args: any[]) => mockReadCombinedManifest(...args),
+const mockSummarize = vi.fn();
+const mockSummarizeFromArchive = vi.fn();
+vi.mock("@/services/backup/archive-index-service", () => ({
+    archiveIndexService: {
+        summarize: (...args: any[]) => mockSummarize(...args),
+        summarizeFromArchive: (...args: any[]) => mockSummarizeFromArchive(...args),
+    },
 }));
 
 vi.mock("@/lib/temp-dir", () => ({
@@ -85,16 +87,18 @@ describe("POST /api/storage/[id]/analyze - combined (manifest v2) archives", () 
         mockRead.mockRejectedValue(new Error("not found"));
     });
 
-    it("skips the sidecar shortcut and reads the full manifest when the sidecar itself reports directory sources", async () => {
-        mockRead.mockResolvedValue(JSON.stringify({ combined: { databases: 1, directorySources: 2 }, sourceType: "mysql" }));
-        mockReadManifestVersion.mockResolvedValue(2);
-        mockReadCombinedManifest.mockResolvedValue({
-            version: 2,
+    it("answers from the index sidecar without downloading the archive", async () => {
+        // This is the whole point of the sidecar: listing a backup's contents must not
+        // cost a download of the backup.
+        mockRead.mockResolvedValue(JSON.stringify({
+            archive: { formatVersion: 2, indexFile: ".index", encrypted: false },
+            combined: { databases: 1, directorySources: 1 },
             sourceType: "mysql",
-            entries: [
-                { kind: "database", name: "db1", filename: "databases/db1.sql", size: 100, format: "sql" },
-                { kind: "directory", jobSourceId: "src-1", label: "SFTP: /var/www", pathPrefix: "sources/src-1", fileCount: 12, totalSize: 4096, excludePatterns: [] },
-            ],
+        }));
+        mockSummarize.mockResolvedValue({
+            databases: ["db1"],
+            directories: [{ jobSourceId: "src-1", label: "SFTP: /var/www", fileCount: 12, totalSize: 4096, excludePatterns: [] }],
+            sourceType: "mysql",
         });
 
         const res = await POST(createRequest({ file: "backups/job1/archive.tar", type: undefined }), createProps());
@@ -105,16 +109,19 @@ describe("POST /api/storage/[id]/analyze - combined (manifest v2) archives", () 
             { jobSourceId: "src-1", label: "SFTP: /var/www", fileCount: 12, totalSize: 4096, excludePatterns: [] },
         ]);
         expect(body.sourceType).toBe("mysql");
+        expect(mockDownload).not.toHaveBeenCalled();
     });
 
     it("omits sourceType for a directory-only combined archive", async () => {
-        mockReadManifestVersion.mockResolvedValue(2);
-        mockReadCombinedManifest.mockResolvedValue({
-            version: 2,
+        mockRead.mockResolvedValue(JSON.stringify({
+            archive: { formatVersion: 2, indexFile: ".index", encrypted: true, profileId: "p1", kdfSalt: "00", noncePrefix: "01" },
+            combined: { databases: 0, directorySources: 1 },
             sourceType: "directory-only",
-            entries: [
-                { kind: "directory", jobSourceId: "src-1", label: "SFTP: /var/www", pathPrefix: "sources/src-1", fileCount: 3, totalSize: 100, excludePatterns: [] },
-            ],
+        }));
+        mockSummarize.mockResolvedValue({
+            databases: [],
+            directories: [{ jobSourceId: "src-1", label: "SFTP: /var/www", fileCount: 3, totalSize: 100, excludePatterns: [] }],
+            sourceType: undefined,
         });
 
         const res = await POST(createRequest({ file: "backups/job1/archive.tar" }), createProps());
@@ -125,8 +132,30 @@ describe("POST /api/storage/[id]/analyze - combined (manifest v2) archives", () 
         expect(body.sourceType).toBeUndefined();
     });
 
+    it("falls back to the full download when the sidecar is unreadable", async () => {
+        // A missing or corrupt sidecar must degrade to the old path, not fail the listing.
+        mockRead.mockResolvedValue(JSON.stringify({
+            archive: { formatVersion: 2, indexFile: ".index", encrypted: false },
+            sourceType: "mysql",
+        }));
+        mockSummarize.mockResolvedValue(null);
+        // The embedded index member is the disaster fallback, and it must still report the
+        // directory sources - the legacy database-only shortcuts would have dropped them.
+        mockSummarizeFromArchive.mockResolvedValue({
+            databases: ["db1"],
+            directories: [{ jobSourceId: "src-1", label: "SFTP: /var/www", fileCount: 4, totalSize: 900, excludePatterns: [] }],
+            sourceType: "mysql",
+        });
+
+        const res = await POST(createRequest({ file: "backups/job1/archive.tar", type: "mysql" }), createProps());
+        const body = await res.json();
+
+        expect(mockDownload).toHaveBeenCalled();
+        expect(body.databases).toEqual(["db1"]);
+        expect(body.directories).toHaveLength(1);
+    });
+
     it("falls back to the legacy database-only heuristic for a v1 archive", async () => {
-        mockReadManifestVersion.mockResolvedValue(1);
         const mockAnalyzeDump = vi.fn().mockResolvedValue(["legacy_db"]);
         mockRegistryGet.mockImplementation((id: string) => {
             if (id === "local-filesystem") return { id, type: "storage", download: mockDownload, read: mockRead };

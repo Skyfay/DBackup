@@ -12,6 +12,7 @@ import { ProgressMonitorStream } from "@/lib/streams/progress-monitor";
 import { formatBytes } from "@/lib/utils";
 import { calculateFileChecksums } from "@/lib/crypto/checksum";
 import { PIPELINE_STAGES } from "@/lib/core/logs";
+import { INDEX_SIDECAR_SUFFIX } from "@/lib/archive/format";
 import { withStorageSession } from "./upload-helpers";
 import { verificationService } from "@/services/storage/verification-service";
 
@@ -19,18 +20,24 @@ export async function stepUpload(ctx: RunnerContext) {
     if (!ctx.job || ctx.destinations.length === 0 || !ctx.tempFile) throw new Error("Context not ready for upload");
 
     const job = ctx.job;
-    // Combined (DB + directory source) archives already apply compression per-entry inside the
-    // tar itself (see combined-dump.ts / createCombinedTar, gated by TarManifestV2.perEntryCompression)
-    // instead of as a single whole-file pass here - doing both would double-compress bytes that
-    // are already compressed for zero benefit. ctx.metadata.combined is only ever set by
-    // executeCombinedDump(), so its presence is the correct signal.
+    // Combined (DB + directory source) archives apply BOTH compression and encryption per
+    // entry inside the archive itself (see combined-dump.ts / createArchive), so neither
+    // whole-file pass runs here.
+    //
+    // For compression that would merely waste CPU re-compressing compressed bytes. For
+    // encryption it would be actively destructive: a whole-file AES-GCM stream makes the
+    // archive unseekable, and an unseekable archive cannot serve a single file without a
+    // full download and a full decrypt - which is the entire point of the format.
+    //
+    // ctx.metadata.combined is only ever set by executeCombinedDump(), so its presence is
+    // the correct signal.
     const isCombinedArchive = !!ctx.metadata?.combined;
     const compression = isCombinedArchive ? ("NONE" as CompressionType) : ((job as any).compression as CompressionType);
 
     // Determine Action Label for UI
     const actions: string[] = [];
     if (compression && compression !== 'NONE') actions.push("Compressing");
-    if (job.encryptionProfileId) actions.push("Encrypting");
+    if (job.encryptionProfileId && !isCombinedArchive) actions.push("Encrypting");
     const processingLabel = actions.length > 0 ? actions.join(" & ") : "Processing";
 
     if (actions.length > 0) {
@@ -66,7 +73,7 @@ export async function stepUpload(ctx: RunnerContext) {
     let encryptionMeta: BackupMetadata['encryption'] = undefined;
     let getAuthTagCallback: (() => Buffer) | null = null;
 
-    if (job.encryptionProfileId) {
+    if (job.encryptionProfileId && !isCombinedArchive) {
         try {
             ctx.log(`Encryption enabled. Profile ID: ${job.encryptionProfileId}`);
 
@@ -163,6 +170,7 @@ export async function stepUpload(ctx: RunnerContext) {
         checksumMd5,
         multiDb: ctx.metadata?.multiDb,
         combined: ctx.metadata?.combined,
+        archive: ctx.metadata?.archive,
         trigger,
         locked: ctx.lock === true,
     };
@@ -211,6 +219,19 @@ export async function stepUpload(ctx: RunnerContext) {
                     undefined,
                     sessionLog
                 );
+
+                // Upload the archive index sidecar, when the dump produced one. Browsing and
+                // file-level restore read this instead of the archive, so it has to reach
+                // every destination the archive itself reaches.
+                if (ctx.indexFile) {
+                    ctx.log(`${destLabel} Uploading archive index sidecar...`);
+                    await session.upload(
+                        ctx.indexFile,
+                        remotePath + INDEX_SIDECAR_SUFFIX,
+                        undefined,
+                        sessionLog
+                    );
+                }
 
                 // Upload main backup file (pass checksums so adapters can store them natively)
                 const uploadSuccess = await session.upload(

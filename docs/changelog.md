@@ -5,7 +5,9 @@ All notable changes to DBackup are documented here.
 ## vNEXT
 *Release: In Progress*
 
-> ⚠️ **Breaking:** Combined (database + directory source) backups created with compression enabled after this update are stored with per-entry compression instead of one whole-archive compression pass. Restoring such a backup requires this version or newer - downgrading to an older DBackup release and attempting to restore one will fail. Backups created before this update, and any backup without directory sources, are unaffected and remain restorable as before.
+> ⚠️ **Breaking:** Combined (database + directory source) backups now use a new seekable archive format. Compression and encryption are applied to each entry inside the archive instead of to the archive as a whole, which is what makes it possible to restore a single file without downloading and decrypting the entire backup. Restoring such a backup requires this version or newer. Database-only backups are unaffected and keep their existing format.
+>
+> ⚠️ **Breaking:** Combined backups now write a third sidecar file next to the backup (`<backup>.index`) on every destination, alongside the existing `.meta.json`. It holds the archive's file index. Retention and storage tooling that assumes exactly two files per backup needs updating.
 
 ### ✨ Features
 
@@ -18,14 +20,20 @@ All notable changes to DBackup are documented here.
 - **jobs**: The directory source folder browser now reflects every row already configured for that adapter, no matter which row's "Browse" button opened it - checking a new folder adds a row, unchecking one removes it, instead of only ever appending rows.
 - **jobs**: Added a "Back up everything" option to the directory source folder browser, backing up an entire adapter's root as a single source instead of requiring one row per folder.
 - **templates**: A directory source can now link multiple Exclude Pattern Presets at once, matching the multi-template picker already used for notifications.
-- **backup**: Combined database + directory backups now compress each database dump and each directory source file individually instead of compressing the whole archive as one pass, so directory files are still compressed even when the database portion uses its own native compression (e.g. PostgreSQL).
-- **backup**: Directory source files now get a SHA-256 checksum recorded in their per-file backup index, computed once right after download - groundwork for future incremental backup change detection.
+- **backup**: Combined database + directory backups now use a seekable archive format that compresses and encrypts each entry individually, so a single file can be read out of a large backup without downloading or decrypting the rest.
+- **backup**: Combined backups now write a `<backup>.index` sidecar listing every file's path, size, modification time and checksum, so browsing a backup's contents no longer downloads the archive.
+- **backup**: Encrypted combined archives derive a fresh key per archive and use counter-based nonces, making nonce reuse impossible by construction.
+- **backup**: Small files in encrypted combined archives are packed into shared bundles, removing the per-file overhead and compression-ratio penalty of backups with many small files.
 
 ### 🐛 Bug Fixes
 
 - **jobs**: Fixed a crash when expanding a directory source's exclude-pattern filter while editing an existing job.
 - **jobs**: Fixed linked Exclude Pattern Presets being silently dropped when creating or updating a job, so the link never actually applied.
 - **jobs**: Fixed external compression being force-disabled for combined jobs whenever PostgreSQL native compression was active, even when the job also had directory sources whose files should still be compressed.
+
+### 🔒 Security
+
+- **backup**: File paths, database names and content checksums no longer appear in cleartext anywhere in an encrypted combined backup, including its archive member names and index sidecar.
 
 ### 🎨 Improvements
 

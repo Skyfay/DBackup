@@ -37,6 +37,13 @@ export async function stepCleanup(ctx: RunnerContext) {
             // File doesn't exist or cleanup failed - ignore
         }
     }
+
+    // The archive index sidecar, when the combined dump path produced one.
+    if (ctx.indexFile) {
+        await fs.unlink(ctx.indexFile).catch(() => {
+            // File doesn't exist or cleanup failed - ignore, same as the archive above
+        });
+    }
 }
 
 export async function stepFinalize(ctx: RunnerContext) {

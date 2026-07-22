@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'fs/promises';
 import path from 'path';
 import { executeCombinedDump } from '@/lib/runner/steps/combined-dump';
-import { readCombinedManifest, extractCombinedArchive, createTempDir, cleanupTempDir } from '@/lib/adapters/database/common/tar-utils';
+import { createTempDir, cleanupTempDir } from '@/lib/adapters/database/common/tar-utils';
+import { extractArchive } from '@/lib/archive/extract';
+import { readArchiveManifest, readArchiveIndex } from '@/lib/archive/reader';
+import { localFileSource } from '@/lib/archive/sources';
 import type { RunnerContext, DirectorySourceContext, JobWithRelations } from '@/lib/runner/types';
 import type { DatabaseAdapter, StorageAdapter, DirectoryDownloadResult } from '@/lib/core/interfaces';
 
@@ -146,12 +149,13 @@ describe('executeCombinedDump', () => {
         const exists = await fs.access(ctx.tempFile!).then(() => true).catch(() => false);
         expect(exists).toBe(true);
 
-        const manifest = await readCombinedManifest(ctx.tempFile!);
-        expect(manifest).not.toBeNull();
-        expect(manifest!.version).toBe(2);
-        expect(manifest!.sourceType).toBe('mysql');
-        expect(manifest!.entries.filter((e) => e.kind === 'database')).toHaveLength(2);
-        expect(manifest!.entries.filter((e) => e.kind === 'directory')).toHaveLength(1);
+        const source = await localFileSource(ctx.tempFile!);
+        const manifest = await readArchiveManifest(source);
+        const index = await readArchiveIndex(source, manifest);
+        expect(manifest.version).toBe(2);
+        expect(manifest.sourceType).toBe('mysql');
+        expect(index.databases).toHaveLength(2);
+        expect(index.directories).toHaveLength(1);
 
         expect(ctx.dumpSize).toBeGreaterThan(0);
         expect(ctx.metadata.combined).toEqual({ databases: 2, directorySources: 1 });
@@ -160,7 +164,7 @@ describe('executeCombinedDump', () => {
         // Round-trip: the actual dumped/downloaded content survives extraction untouched.
         const extractDir = path.join(path.dirname(ctx.tempFile!), `extract-${Date.now()}`);
         createdTempFiles.push(extractDir);
-        const result = await extractCombinedArchive(ctx.tempFile!, extractDir);
+        const result = await extractArchive(ctx.tempFile!, extractDir);
         expect(result.databaseFiles).toHaveLength(2);
         expect(result.directoryRoots).toHaveLength(1);
         const dumpedDb1 = result.databaseFiles.find((f) => f.entry.name === 'db1')!;
@@ -169,7 +173,7 @@ describe('executeCombinedDump', () => {
         expect(await fs.readFile(path.join(dirRoot, 'sub/b.txt'), 'utf-8')).toBe('BBBBB');
     });
 
-    it("writes a SHA-256 checksum for every directory-source file into the manifest's per-file index", async () => {
+    it('records a SHA-256 checksum of every directory-source file in the archive index', async () => {
         const ctx = makeCtx({
             sourceAdapter: undefined,
             sources: [makeDirectorySource({ adapter: makeFakeStorageAdapter({ 'a.txt': 'AAAA', 'sub/b.txt': 'BBBBB' }) })],
@@ -179,40 +183,40 @@ describe('executeCombinedDump', () => {
         await executeCombinedDump(ctx);
         createdTempFiles.push(ctx.tempFile!);
 
-        // The per-file index lives inside the tar as a metadata member (not returned by
-        // extractCombinedArchive, which treats it as metadata) - read it directly.
-        const { extract } = await import('tar-stream');
-        const { createReadStream } = await import('fs');
-        const indexContents = new Map<string, string>();
-        await new Promise<void>((resolve, reject) => {
-            const extractor = extract();
-            extractor.on('entry', (header, stream, next) => {
-                if (!header.name.endsWith('.dbackup-index.json')) {
-                    stream.resume();
-                    next();
-                    return;
-                }
-                const chunks: Buffer[] = [];
-                stream.on('data', (c: Buffer) => chunks.push(c));
-                stream.on('end', () => {
-                    indexContents.set(header.name, Buffer.concat(chunks).toString('utf-8'));
-                    next();
-                });
-            });
-            extractor.on('finish', () => resolve());
-            extractor.on('error', reject);
-            createReadStream(ctx.tempFile!).pipe(extractor);
-        });
-
-        expect(indexContents.size).toBe(1);
-        const index = JSON.parse([...indexContents.values()][0]) as { path: string; checksum?: string }[];
+        const source = await localFileSource(ctx.tempFile!);
+        const index = await readArchiveIndex(source, await readArchiveManifest(source));
 
         const crypto = await import('crypto');
         const expectedA = crypto.createHash('sha256').update('AAAA').digest('hex');
         const expectedB = crypto.createHash('sha256').update('BBBBB').digest('hex');
 
-        expect(index.find((e) => e.path === 'a.txt')?.checksum).toBe(expectedA);
-        expect(index.find((e) => e.path === 'sub/b.txt')?.checksum).toBe(expectedB);
+        expect(index.files.find((e) => e.p === 'a.txt')?.h).toBe(expectedA);
+        expect(index.files.find((e) => e.p === 'sub/b.txt')?.h).toBe(expectedB);
+    });
+
+    it('writes an index sidecar that matches the archive and is cleaned up afterwards', async () => {
+        const ctx = makeCtx({
+            sourceAdapter: undefined,
+            sources: [makeDirectorySource({ adapter: makeFakeStorageAdapter({ 'a.txt': 'AAAA' }) })],
+            job: makeJob({ source: null }),
+        });
+
+        await executeCombinedDump(ctx);
+        createdTempFiles.push(ctx.tempFile!);
+
+        // The sidecar is what browsing and file-level restore read instead of the archive,
+        // so it has to exist next to the archive and describe the same content.
+        expect(ctx.indexFile).toBe(ctx.tempFile! + '.index');
+        createdTempFiles.push(ctx.indexFile!);
+
+        const sidecarBytes = await fs.readFile(ctx.indexFile!);
+        const source = await localFileSource(ctx.tempFile!);
+        const manifest = await readArchiveManifest(source);
+        const fromSidecar = await readArchiveIndex(source, manifest, { sidecarBytes });
+        const fromArchive = await readArchiveIndex(source, manifest);
+
+        expect(fromSidecar.files.map((f) => f.p)).toEqual(fromArchive.files.map((f) => f.p));
+        expect(ctx.metadata.archive).toMatchObject({ formatVersion: 2, indexFile: '.index', encrypted: false, files: 1 });
     });
 
     it('supports a directory-only job with no database source', async () => {
@@ -225,10 +229,12 @@ describe('executeCombinedDump', () => {
         await executeCombinedDump(ctx);
         createdTempFiles.push(ctx.tempFile!);
 
-        const manifest = await readCombinedManifest(ctx.tempFile!);
-        expect(manifest!.sourceType).toBe('directory-only');
-        expect(manifest!.entries.filter((e) => e.kind === 'database')).toHaveLength(0);
-        expect(manifest!.entries.filter((e) => e.kind === 'directory')).toHaveLength(1);
+        const source = await localFileSource(ctx.tempFile!);
+        const manifest = await readArchiveManifest(source);
+        const index = await readArchiveIndex(source, manifest);
+        expect(manifest.sourceType).toBe('directory-only');
+        expect(index.databases).toHaveLength(0);
+        expect(index.directories).toHaveLength(1);
         expect(ctx.metadata.combined).toEqual({ databases: 0, directorySources: 1 });
     });
 

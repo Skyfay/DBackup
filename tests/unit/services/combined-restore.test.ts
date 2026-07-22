@@ -4,8 +4,9 @@ import path from 'path';
 import { prismaMock } from '@/lib/testing/prisma-mock';
 import { registry } from '@/lib/core/registry';
 import { restoreCombinedArchive } from '@/services/restore/combined-restore';
-import { createCombinedTar, createTempDir, createMultiDbTar } from '@/lib/adapters/database/common/tar-utils';
-import type { CombinedTarFileEntry, DirectoryFileIndexEntry } from '@/lib/adapters/database/common/types';
+import { createTempDir, createMultiDbTar } from '@/lib/adapters/database/common/tar-utils';
+import { createArchive } from '@/lib/archive/writer';
+import type { ArchiveSourceEntry, SourceFileEntry } from '@/lib/archive/types';
 import type { RestoreInput } from '@/services/restore/types';
 
 vi.mock('@/lib/core/registry', () => ({
@@ -61,7 +62,7 @@ async function buildCombinedArchive(dbNames: string[], dirFiles?: Record<string,
     const workDir = await createTempDir('combined-restore-test-work-');
     createdPaths.push(workDir);
 
-    const entries: CombinedTarFileEntry[] = [];
+    const entries: ArchiveSourceEntry[] = [];
     for (const dbName of dbNames) {
         const p = path.join(workDir, `${dbName}.sql`);
         await fs.writeFile(p, `-- dump of ${dbName}`);
@@ -70,7 +71,7 @@ async function buildCombinedArchive(dbNames: string[], dirFiles?: Record<string,
 
     if (dirFiles) {
         const dirLocalPath = path.join(workDir, 'dirsrc');
-        const index: DirectoryFileIndexEntry[] = [];
+        const index: SourceFileEntry[] = [];
         for (const [relPath, content] of Object.entries(dirFiles)) {
             const abs = path.join(dirLocalPath, relPath);
             await fs.mkdir(path.dirname(abs), { recursive: true });
@@ -81,7 +82,7 @@ async function buildCombinedArchive(dbNames: string[], dirFiles?: Record<string,
     }
 
     const tarPath = path.join(workDir, 'archive.tar');
-    await createCombinedTar(entries, tarPath, { sourceType: dbNames.length > 0 ? 'mysql' : 'directory-only' });
+    await createArchive(entries, tarPath, { sourceType: dbNames.length > 0 ? 'mysql' : 'directory-only' });
     return { tarPath, workDir };
 }
 
@@ -221,7 +222,7 @@ describe('restoreCombinedArchive', () => {
         ).rejects.toThrow('does not support combined restores');
     });
 
-    it('throws when the archive does not contain a valid v2 manifest', async () => {
+    it('refuses a v1 archive instead of misreading it as a seekable v2 one', async () => {
         const workDir = await createTempDir('combined-restore-v1-check-');
         createdPaths.push(workDir);
         const dbFile = path.join(workDir, 'db1.sql');
@@ -231,7 +232,7 @@ describe('restoreCombinedArchive', () => {
 
         await expect(
             restoreCombinedArchive(v1TarPath, makeInput({ targetSourceId: 'target-db-1' }), { log: vi.fn(), updateDetail: vi.fn() })
-        ).rejects.toThrow('does not contain a valid combined');
+        ).rejects.toThrow(/unsupported archive format version: 1/i);
     });
 
     it('records an error (Partial) for a directory entry with no restore target specified', async () => {

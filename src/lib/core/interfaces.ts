@@ -49,6 +49,35 @@ export interface BackupMetadata {
         databases: number;
         directorySources: number;
     };
+    /**
+     * Present only for seekable (manifest v2) archives. Lets the browse and file-level
+     * restore paths find and open the index sidecar without touching the archive itself,
+     * which is the whole point of the sidecar - a directory listing must not cost a
+     * multi-gigabyte download.
+     *
+     * Note that a v2 archive is never compressed or encrypted as a whole, so the top-level
+     * `compression` and `encryption` fields above stay unset for it even when the job has
+     * both enabled. Both are applied per entry inside the archive instead.
+     */
+    archive?: {
+        formatVersion: 2;
+        /** Filename suffix of the index sidecar, appended to the backup file's remote path. */
+        indexFile: string;
+        encrypted: boolean;
+        /** EncryptionProfile id, when encrypted. */
+        profileId?: string;
+        /**
+         * Hex-encoded KDF salt and nonce prefix, copied from the archive's own manifest.
+         * Neither is a secret - they exist so the index sidecar can be opened without
+         * reading the archive at all, which is what keeps a directory listing cheap.
+         */
+        kdfSalt?: string;
+        noncePrefix?: string;
+        compression?: 'GZIP' | 'BROTLI';
+        /** Whether small files were packed into shared bundles. */
+        bundled?: boolean;
+        files?: number;
+    };
     /** SHA-256 checksum of the final backup file (after compression/encryption) */
     checksum?: string;
     /** MD5 checksum of the final backup file - enables native verification for Google Drive and OneDrive */

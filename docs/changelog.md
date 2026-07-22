@@ -25,7 +25,7 @@ All notable changes to DBackup are documented here.
 - **backup**: Encrypted combined archives derive a fresh key per archive and use counter-based nonces, making nonce reuse impossible by construction.
 - **backup**: Small files in encrypted combined archives are packed into shared bundles, removing the per-file overhead and compression-ratio penalty of backups with many small files.
 - **storage**: Backups with directory sources can now be browsed file by file in the Storage Explorer, and individual files or folders restored on their own - as a `.tar.gz` download, back to their original location, or into any configured destination.
-- **storage**: Storage adapters can now serve byte ranges, so a single-file restore transfers only that file instead of the whole backup. Implemented for S3, SFTP, WebDAV, Google Drive, OneDrive and the local filesystem, with an automatic fallback for the rest.
+- **storage**: Storage adapters can now serve byte ranges, so a single-file restore transfers only that file instead of the whole backup. Implemented for S3, SFTP, WebDAV, Google Drive, OneDrive, FTP, Dropbox and the local filesystem, with an automatic fallback for SMB and Rsync.
 - **vault**: The Recovery Kit now also ships `restore_archive.js`, which lists and extracts file backups offline with nothing but Node.js.
 
 ### 🐛 Bug Fixes
@@ -34,6 +34,8 @@ All notable changes to DBackup are documented here.
 - **jobs**: Fixed linked Exclude Pattern Presets being silently dropped when creating or updating a job, so the link never actually applied.
 - **jobs**: Fixed external compression being force-disabled for combined jobs whenever PostgreSQL native compression was active, even when the job also had directory sources whose files should still be compressed.
 - **backup**: Fixed the storage listing cache update after an upload being fired without awaiting it, which left its failures unhandled and could let it outlive the backup run that produced it.
+- **backup**: Fixed the archive index sidecar being counted as a backup file by retention, the Storage Explorer, integrity checks and storage statistics, which could cause retention to delete real backups prematurely.
+- **storage**: Deleting a backup now removes every sidecar belonging to it, instead of leaving orphaned index files behind.
 
 ### 🔒 Security
 

@@ -8,6 +8,7 @@ import { registerAdapters } from "@/lib/adapters";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { checkStorageAlerts } from "@/services/storage/storage-alert-service";
+import { isBackupFile } from "@/lib/core/backup-files";
 
 export interface DashboardStats {
   totalJobs: number;
@@ -418,8 +419,8 @@ export async function refreshStorageStatsCache(): Promise<StorageVolumeEntry[]> 
         return !p.startsWith('.dbackup/') && !p.startsWith('/.dbackup/');
       });
 
-      // Filter out .meta.json sidecar files (they are not backup data)
-      const backupFiles = files.filter((f) => !f.name.endsWith(".meta.json"));
+      // Sidecars (.meta.json, .index) are not backup data and must not be counted.
+      const backupFiles = files.filter((f) => isBackupFile(f.name));
       const totalSize = backupFiles.reduce((sum, f) => sum + (f.size || 0), 0);
 
       return {

@@ -7,6 +7,7 @@ import { verificationService } from "@/services/storage/verification-service";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { INTEGRITY_CHECK_STAGES } from "@/lib/core/logs";
+import { isBackupFile } from "@/lib/core/backup-files";
 
 const log = logger.child({ service: "IntegrityService" });
 
@@ -279,7 +280,7 @@ export class IntegrityService {
 
       // Keep only files that belong to one of the eligible jobs (path starts with jobName/)
       const backupFiles = allFiles.filter(
-        (f) => !f.name.endsWith(".meta.json") && jobNames.some((n) => f.path.startsWith(n + "/"))
+        (f) => isBackupFile(f.name) && jobNames.some((n) => f.path.startsWith(n + "/"))
       );
 
       for (const file of backupFiles) {
@@ -360,7 +361,7 @@ export class IntegrityService {
       }
     }
 
-    const backupFiles = allFiles.filter((f) => !f.name.endsWith(".meta.json"));
+    const backupFiles = allFiles.filter((f) => isBackupFile(f.name));
 
     for (const file of backupFiles) {
       if (filters.maxAgeDays > 0 && file.lastModified) {

@@ -1,8 +1,9 @@
 import { StorageAdapter, FileInfo, DirectoryBrowseEntry } from "@/lib/core/interfaces";
 import { DropboxSchema } from "@/lib/adapters/definitions";
-import { Dropbox } from "dropbox";
+import { Dropbox, DropboxAuth } from "dropbox";
 import fs from "fs/promises";
 import { createReadStream } from "fs";
+import { Readable } from "stream";
 import path from "path";
 import { LogLevel, LogType } from "@/lib/core/logs";
 import { logger } from "@/lib/logging/logger";
@@ -73,6 +74,25 @@ function createDropboxClient(config: DropboxConfig): Dropbox {
     }
 
     return new Dropbox({
+        clientId: config.clientId,
+        clientSecret: config.clientSecret,
+        refreshToken: config.refreshToken,
+        fetch: dropboxFetch,
+    });
+}
+
+/**
+ * Standalone auth handle, for the few calls that bypass the SDK client.
+ *
+ * Kept separate from createDropboxClient() so the working upload and download paths are
+ * untouched - this only feeds the ranged read, which has to call the content API directly.
+ */
+function createDropboxAuth(config: DropboxConfig): DropboxAuth {
+    if (!config.refreshToken) {
+        throw new Error("Dropbox is not authorized. Please click 'Authorize with Dropbox' to connect your account.");
+    }
+
+    return new DropboxAuth({
         clientId: config.clientId,
         clientSecret: config.clientSecret,
         refreshToken: config.refreshToken,
@@ -229,6 +249,48 @@ export const DropboxAdapter: StorageAdapter = {
             if (onLog) onLog(`Dropbox upload failed: ${error instanceof Error ? error.message : String(error)}`, "error", "storage");
             return false;
         }
+    },
+
+    /**
+     * Streams a byte range via the Dropbox content API.
+     *
+     * The SDK's filesDownload() buffers the whole object and offers no way to pass a
+     * Range header, so this calls the content endpoint directly. Auth still goes through
+     * the SDK client so the existing refresh-token flow keeps working.
+     */
+    async downloadRange(
+        config: DropboxConfig,
+        remotePath: string,
+        start: number,
+        end: number
+    ): Promise<NodeJS.ReadableStream> {
+        // An empty range is legal - a zero-length file's archive entry produces one.
+        if (end < start) return Readable.from([]);
+
+        const auth = createDropboxAuth(config);
+        await auth.checkAndRefreshAccessToken();
+        const accessToken = auth.getAccessToken();
+        if (!accessToken) throw new Error("Could not obtain a Dropbox access token");
+
+        const res = await fetch("https://content.dropboxapi.com/2/files/download", {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${accessToken}`,
+                "Dropbox-API-Arg": JSON.stringify({ path: buildDropboxPath(config.folderPath, remotePath) }),
+                Range: `bytes=${start}-${end}`,
+            },
+        });
+
+        if (!res.ok || !res.body) {
+            throw new Error(`Dropbox ranged download failed with status ${res.status}`);
+        }
+        // 200 instead of 206 means the server ignored the Range and is sending the whole
+        // object. Failing loudly beats silently decrypting the wrong bytes.
+        if (res.status !== 206) {
+            throw new Error(`Dropbox ignored the Range header (status ${res.status})`);
+        }
+
+        return Readable.fromWeb(res.body as never);
     },
 
     async download(

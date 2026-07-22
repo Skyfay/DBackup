@@ -106,9 +106,14 @@ choose where they go:
 | **Original location** | Files are written back to the path they were collected from, overwriting what is there |
 | **Other destination** | Files are written into any configured storage destination, under a path you choose |
 
-Only the selected files are read out of the backup. On destinations that support ranged
-reads (S3, SFTP, WebDAV, Google Drive, OneDrive, local filesystem) that means a handful of
-small requests. Other destinations fall back to fetching the archive once per restore.
+Only the selected files are read out of the backup. Destinations that support ranged reads
+answer with a handful of small requests instead of transferring the archive:
+
+| Ranged reads | Full download per restore |
+| :--- | :--- |
+| Local Filesystem, S3 (and compatible), SFTP, WebDAV, Google Drive, OneDrive, FTP, Dropbox | SMB, Rsync |
+
+On SMB and Rsync the archive is fetched once per restore, not once per file.
 
 ::: tip Extract locally instead
 `.tar.gz` opens natively on macOS, Linux and Windows 11. On older Windows use 7-Zip, or

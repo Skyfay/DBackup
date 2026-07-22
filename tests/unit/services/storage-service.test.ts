@@ -744,12 +744,26 @@ describe('StorageService', () => {
                 .rejects.toThrow('Failed to decrypt configuration for conf-123');
         });
 
-        it('should continue and warn when meta file deletion fails', async () => {
-            let callCount = 0;
+        it('deletes every sidecar alongside the backup', async () => {
+            const adapter = makeAdapter({ delete: vi.fn().mockResolvedValue(true) });
+            prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig());
+            vi.mocked(registry.get).mockReturnValue(adapter);
+
+            await service.deleteFile('conf-123', 'test.sql');
+
+            expect(vi.mocked(adapter.delete).mock.calls.map((c) => c[1])).toEqual([
+                'test.sql',
+                'test.sql.meta.json',
+                'test.sql.index',
+            ]);
+        });
+
+        it('continues with the remaining sidecars when one deletion fails', async () => {
+            // A missing sidecar is normal (older backups have no .index), so a failure
+            // there must never abort the rest or fail the delete.
             const adapter = makeAdapter({
-                delete: vi.fn().mockImplementation(() => {
-                    callCount++;
-                    if (callCount === 2) throw new Error('Meta not found');
+                delete: vi.fn().mockImplementation((_config: unknown, target: string) => {
+                    if (target.endsWith('.meta.json')) throw new Error('Meta not found');
                     return Promise.resolve(true);
                 }),
             });
@@ -759,7 +773,7 @@ describe('StorageService', () => {
             const result = await service.deleteFile('conf-123', 'test.sql');
 
             expect(result).toBe(true); // main delete succeeded
-            expect(adapter.delete).toHaveBeenCalledTimes(2);
+            expect(vi.mocked(adapter.delete).mock.calls.map((c) => c[1])).toContain('test.sql.index');
         });
     });
 

@@ -13,6 +13,7 @@ import AdmZip from "adm-zip";
 import { registerAdapters } from "@/lib/adapters";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
+import { isBackupFile, sidecarPathsFor, METADATA_SIDECAR_SUFFIX } from "@/lib/core/backup-files";
 
 const log = logger.child({ service: "StorageService" });
 
@@ -309,8 +310,8 @@ export class StorageService {
             const p = f.path.replace(/\\/g, '/');
             return !p.startsWith('.dbackup/') && !p.startsWith('/.dbackup/');
         });
-        const remoteBackups = allRemoteFiles.filter(f => !f.name.endsWith('.meta.json'));
-        const remoteMetaFiles = allRemoteFiles.filter(f => f.name.endsWith('.meta.json'));
+        const remoteBackups = allRemoteFiles.filter(f => isBackupFile(f.name));
+        const remoteMetaFiles = allRemoteFiles.filter(f => f.name.endsWith(METADATA_SIDECAR_SUFFIX));
         const remotePathSet = new Set(remoteBackups.map(f => f.path));
 
         const cached = await prisma.storageListCache.findUnique({ where: { adapterConfigId } });
@@ -422,8 +423,8 @@ export class StorageService {
             return !p.startsWith('.dbackup/') && !p.startsWith('/.dbackup/');
         });
 
-        const backups = allFiles.filter(f => !f.name.endsWith('.meta.json'));
-        const metadataFiles = allFiles.filter(f => f.name.endsWith('.meta.json'));
+        const backups = allFiles.filter(f => isBackupFile(f.name));
+        const metadataFiles = allFiles.filter(f => f.name.endsWith(METADATA_SIDECAR_SUFFIX));
 
         const metadataMap = new Map<string, BackupMetadata>();
         if (adapter.read) {
@@ -520,11 +521,14 @@ export class StorageService {
 
         const mainDelete = await adapter.delete(config, filePath);
 
-        try {
-            const metaPath = filePath + ".meta.json";
-            await adapter.delete(config, metaPath);
-        } catch (e) {
-            log.warn("Failed to delete associated metadata file", { filePath }, wrapError(e));
+        // Every sidecar goes with it, otherwise orphans accumulate and later confuse
+        // listings and storage statistics.
+        for (const sidecar of sidecarPathsFor(filePath)) {
+            try {
+                await adapter.delete(config, sidecar);
+            } catch (e) {
+                log.warn("Failed to delete associated sidecar file", { filePath, sidecar }, wrapError(e));
+            }
         }
 
         await this.removeStorageListCacheEntry(adapterConfigId, filePath);

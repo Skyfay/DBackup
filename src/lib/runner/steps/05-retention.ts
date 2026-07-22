@@ -1,6 +1,7 @@
 import { RunnerContext, DestinationContext } from "../types";
 import { RetentionService } from "@/services/backup/retention-service";
 import { FileInfo } from '@/lib/core/interfaces';
+import { isBackupFile, sidecarPathsFor } from '@/lib/core/backup-files';
 import path from "path";
 import { logger } from "@/lib/logging/logger";
 import prisma from "@/lib/prisma";
@@ -79,7 +80,7 @@ async function applyRetentionForDestination(ctx: RunnerContext, dest: Destinatio
     }
 
     const files: FileInfo[] = await dest.adapter.list(dest.config, remoteDir);
-    const backupFiles = files.filter(f => !f.name.endsWith('.meta.json'));
+    const backupFiles = files.filter(f => isBackupFile(f.name));
 
     // Check for locked files
     if (dest.adapter.read) {
@@ -113,8 +114,11 @@ async function applyRetentionForDestination(ctx: RunnerContext, dest: Destinatio
         try {
             if (dest.adapter.delete) {
                 await dest.adapter.delete(dest.config, file.path);
-                const metaPath = file.path + ".meta.json";
-                await dest.adapter.delete(dest.config, metaPath).catch(() => {});
+                // Every sidecar goes with it, otherwise orphans accumulate and later
+                // confuse listings and storage statistics.
+                for (const sidecar of sidecarPathsFor(file.path)) {
+                    await dest.adapter.delete(dest.config, sidecar).catch(() => {});
+                }
                 deletedCount++;
                 import("@/services/storage/storage-service").then(({ storageService }) => {
                     storageService.removeStorageListCacheEntry(dest.configId, file.path).catch(() => {});

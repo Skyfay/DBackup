@@ -130,8 +130,55 @@ describe('Step 05 - Per-Destination Retention', () => {
             expect.objectContaining({ mode: 'SIMPLE' }),
             expect.any(String)
         );
-        // 2 files to delete × 2 (backup + meta each)
-        expect(mockDelete).toHaveBeenCalledTimes(4);
+        // 2 files to delete × 3 calls each (backup + .meta.json + .index sidecar)
+        expect(mockDelete).toHaveBeenCalledTimes(6);
+    });
+
+    it('never treats an index sidecar as a backup candidate', async () => {
+        // Regression: the .index sidecar introduced with the seekable archive format was
+        // only excluded by a hard-coded .meta.json check, so it counted as a backup. With
+        // keepCount: 3 that pushes real backups out of the keep window and deletes them.
+        const files = makeBackupFiles(3);
+        mockList.mockResolvedValue([
+            ...files,
+            ...files.map(f => ({ ...f, name: f.name + '.meta.json', path: f.path + '.meta.json' })),
+            ...files.map(f => ({ ...f, name: f.name + '.index', path: f.path + '.index' })),
+        ]);
+
+        vi.mocked(RetentionService.calculateRetention).mockReturnValue({ keep: files, delete: [] });
+
+        ctx.destinations = [
+            createDestination({ retention: { mode: 'SIMPLE', simple: { keepCount: 3 } } }),
+        ];
+
+        await stepRetention(ctx);
+
+        const candidates = vi.mocked(RetentionService.calculateRetention).mock.calls[0][0];
+        expect(candidates).toHaveLength(3);
+        for (const candidate of candidates) {
+            expect(candidate.name.endsWith('.index')).toBe(false);
+            expect(candidate.name.endsWith('.meta.json')).toBe(false);
+        }
+        expect(mockDelete).not.toHaveBeenCalled();
+    });
+
+    it('removes every sidecar when deleting a backup', async () => {
+        const files = makeBackupFiles(1);
+        mockList.mockResolvedValue(files);
+        vi.mocked(RetentionService.calculateRetention).mockReturnValue({ keep: [], delete: files });
+
+        ctx.destinations = [
+            createDestination({ retention: { mode: 'SIMPLE', simple: { keepCount: 0 } } }),
+        ];
+
+        await stepRetention(ctx);
+
+        const deleted = mockDelete.mock.calls.map((c) => c[1]);
+        expect(deleted).toEqual([
+            files[0].path,
+            files[0].path + '.meta.json',
+            files[0].path + '.index',
+        ]);
     });
 
     it('should apply independent retention per destination', async () => {
@@ -167,10 +214,10 @@ describe('Step 05 - Per-Destination Retention', () => {
 
         // Both destinations had retention applied
         expect(RetentionService.calculateRetention).toHaveBeenCalledTimes(2);
-        // Local: 2 files deleted × 2 = 4 calls
-        expect(deleteFn1).toHaveBeenCalledTimes(4);
-        // S3: 4 files deleted × 2 = 8 calls
-        expect(deleteFn2).toHaveBeenCalledTimes(8);
+        // Local: 2 files deleted × 3 calls each (backup + .meta.json + .index)
+        expect(deleteFn1).toHaveBeenCalledTimes(6);
+        // S3: 4 files deleted × 3 calls each
+        expect(deleteFn2).toHaveBeenCalledTimes(12);
     });
 
     it('should continue retention for other destinations if one fails', async () => {

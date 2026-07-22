@@ -2,6 +2,7 @@ import { StorageAdapter, StorageSession, FileInfo } from "@/lib/core/interfaces"
 import { FTPSchema } from "@/lib/adapters/definitions";
 import { Client, FileInfo as FTPFileInfo } from "basic-ftp";
 import { createReadStream, createWriteStream } from "fs";
+import { PassThrough, Readable, Writable } from "stream";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
@@ -171,6 +172,56 @@ export const FTPAdapter: StorageAdapter = {
         } finally {
             if (client) client.close();
         }
+    },
+
+    /**
+     * Streams a byte range using FTP's REST command.
+     *
+     * FTP can seek to a start offset but has no way to express an end, so the transfer is
+     * aborted once enough bytes have arrived. Aborting leaves the control connection
+     * unusable, hence one connection per range - acceptable because a restore touches a
+     * handful of entries, and vastly cheaper than transferring the whole archive.
+     */
+    async downloadRange(config: FTPConfig, remotePath: string, start: number, end: number): Promise<NodeJS.ReadableStream> {
+        // An empty range is legal - a zero-length file's archive entry produces one.
+        if (end < start) return Readable.from([]);
+
+        const wanted = end - start + 1;
+        const client = await connectFTP(config);
+        const source = resolvePath(config, remotePath);
+        const out = new PassThrough();
+
+        let delivered = 0;
+        const sink = new Writable({
+            write(chunk: Buffer, _encoding, callback) {
+                const take = Math.min(chunk.length, wanted - delivered);
+                if (take > 0) {
+                    delivered += take;
+                    out.write(chunk.subarray(0, take));
+                }
+                if (delivered >= wanted) {
+                    // Enough bytes. Closing the client aborts the data transfer, which
+                    // rejects the downloadTo() promise below - that rejection is expected.
+                    client.close();
+                }
+                callback();
+            },
+        });
+
+        client.downloadTo(sink, source, start)
+            .then(() => out.end())
+            .catch((error: unknown) => {
+                // A rejection after the range was fully delivered is our own abort.
+                if (delivered >= wanted) {
+                    out.end();
+                    return;
+                }
+                log.error("FTP ranged download failed", { host: config.host, remotePath, start, end }, wrapError(error));
+                out.destroy(wrapError(error));
+            })
+            .finally(() => client.close());
+
+        return out;
     },
 
     async download(config: FTPConfig, remotePath: string, localPath: string, onProgress?: (processed: number, total: number) => void, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void): Promise<boolean> {

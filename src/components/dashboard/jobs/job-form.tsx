@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -616,6 +616,11 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
     // Get used destination IDs to prevent duplicates
     const usedDestIds = form.watch("destinations").map(d => d.configId).filter(Boolean);
 
+    // Only storage adapters enabled with the destination role should be pickable here (mirrors
+    // directorySourceOptions' usableAsSource filter above). `usableAsDestination` defaults to true
+    // in the DB, so treat a missing value as usable to stay backward compatible.
+    const destinationOptions = useMemo(() => destinations.filter(d => d.usableAsDestination !== false), [destinations]);
+
     return (
         <>
         <Form {...form}>
@@ -995,7 +1000,7 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
                                         onClick={() => {
                                             append({ configId: "", retention: { ...defaultRetentionValue }, retentionPolicyId: DEFAULT_RETENTION_SENTINEL });
                                         }}
-                                        disabled={usedDestIds.length >= destinations.length}
+                                        disabled={usedDestIds.length >= destinationOptions.length}
                                     >
                                         <Plus className="h-4 w-4 mr-1" />
                                         Add Destination
@@ -1019,7 +1024,7 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
                                                     key={field.id}
                                                     index={index}
                                                     form={form}
-                                                    destinations={destinations}
+                                                    destinations={destinationOptions}
                                                     usedDestIds={usedDestIds}
                                                     isExpanded={expandedDests.has(index)}
                                                     onToggleExpand={() => toggleExpanded(index)}

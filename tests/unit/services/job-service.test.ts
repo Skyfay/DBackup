@@ -60,6 +60,11 @@ describe('JobService', () => {
                     pgCompression: "",
                     notificationEvents: "ALWAYS",
                     skipVerification: false,
+                    // Incremental backups default to off - an existing job must never
+                    // silently start producing chains.
+                    backupMode: "FULL",
+                    fullEveryDays: 7,
+                    verifyByHash: false,
                     notifications: {
                         connect: [{ id: 'notif-1' }]
                     },

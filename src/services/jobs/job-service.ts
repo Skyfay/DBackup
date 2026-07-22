@@ -42,6 +42,9 @@ export interface CreateJobInput {
     namingTemplateId?: string | null;
     schedulePresetId?: string | null;
     skipVerification?: boolean;
+    backupMode?: string;
+    fullEveryDays?: number;
+    verifyByHash?: boolean;
 }
 
 export interface UpdateJobInput {
@@ -61,6 +64,9 @@ export interface UpdateJobInput {
     namingTemplateId?: string | null;
     schedulePresetId?: string | null;
     skipVerification?: boolean;
+    backupMode?: string;
+    fullEveryDays?: number;
+    verifyByHash?: boolean;
 }
 
 const jobInclude = {
@@ -196,7 +202,7 @@ export class JobService {
     }
 
     async createJob(input: CreateJobInput) {
-        const { name, schedule, sourceId, databases, destinations, sources, notificationIds, notificationTemplateIds, enabled, encryptionProfileId, compression, pgCompression, notificationEvents, skipVerification } = input;
+        const { name, schedule, sourceId, databases, destinations, sources, notificationIds, notificationTemplateIds, enabled, encryptionProfileId, compression, pgCompression, notificationEvents, skipVerification, backupMode, fullEveryDays, verifyByHash } = input;
 
         // Check name uniqueness
         const existingByName = await prisma.job.findFirst({ where: { name } });
@@ -220,6 +226,9 @@ export class JobService {
                 pgCompression: pgCompression ?? "",
                 notificationEvents: notificationEvents || "ALWAYS",
                 skipVerification: skipVerification ?? false,
+                backupMode: backupMode ?? "FULL",
+                fullEveryDays: fullEveryDays ?? 7,
+                verifyByHash: verifyByHash ?? false,
                 notifications: {
                     connect: notificationIds?.map((id) => ({ id })) || []
                 },
@@ -262,7 +271,7 @@ export class JobService {
     }
 
     async updateJob(id: string, input: UpdateJobInput) {
-        const { name, schedule, sourceId, databases, destinations, sources, notificationIds, notificationTemplateIds, enabled, encryptionProfileId, compression, pgCompression, notificationEvents, namingTemplateId, skipVerification } = input;
+        const { name, schedule, sourceId, databases, destinations, sources, notificationIds, notificationTemplateIds, enabled, encryptionProfileId, compression, pgCompression, notificationEvents, namingTemplateId, skipVerification, backupMode, fullEveryDays, verifyByHash } = input;
 
         // Check name uniqueness (excluding current job)
         if (name) {
@@ -340,6 +349,9 @@ export class JobService {
                     schedulePresetId: input.schedulePresetId !== undefined ? (input.schedulePresetId ?? null) : undefined,
                     encryptionProfileId: encryptionProfileId === "" ? null : encryptionProfileId,
                     skipVerification: skipVerification !== undefined ? skipVerification : undefined,
+                    backupMode: backupMode !== undefined ? backupMode : undefined,
+                    fullEveryDays: fullEveryDays !== undefined ? fullEveryDays : undefined,
+                    verifyByHash: verifyByHash !== undefined ? verifyByHash : undefined,
                     notifications: {
                         set: [],
                         connect: notificationIds?.map((id) => ({ id })) || []

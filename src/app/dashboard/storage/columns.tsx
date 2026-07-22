@@ -9,6 +9,7 @@ import { formatBytes } from "@/lib/utils";
 import { NameCell } from "@/components/dashboard/storage/cells/name-cell";
 import { ActionsCell } from "@/components/dashboard/storage/cells/actions-cell";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 // This type is used to define the shape of our data.
 export type FileInfo = {
@@ -32,6 +33,10 @@ export type FileInfo = {
     checksumMd5?: string;
     /** True for backups that carry a file index, so individual files can be browsed and restored. */
     hasFileIndex?: boolean;
+    /** Incremental chain membership. Absent on standalone full backups. */
+    chain?: { id: string; type: 'full' | 'incremental'; index: number };
+    /** Complete snapshot size, which for an incremental exceeds the archive's own size. */
+    logicalSize?: number;
     verification?: {
         verifiedAt: string;
         passed: boolean;
@@ -42,6 +47,7 @@ export type FileInfo = {
 interface ColumnsProps {
     onRestore: (file: FileInfo) => void;
     onBrowseFiles: (file: FileInfo) => void;
+    onDownloadSnapshot: (file: FileInfo) => void;
     onDownload: (file: FileInfo, decrypt?: boolean) => void;
     onDelete: (file: FileInfo) => void;
     onToggleLock: (file: FileInfo) => void;
@@ -52,7 +58,7 @@ interface ColumnsProps {
     canDelete: boolean;
 }
 
-export const getColumns = ({ onRestore, onBrowseFiles, onDownload, onDelete, onToggleLock, onGenerateLink, onVerify, canDownload, canRestore, canDelete }: ColumnsProps): ColumnDef<FileInfo>[] => [
+export const getColumns = ({ onRestore, onBrowseFiles, onDownloadSnapshot, onDownload, onDelete, onToggleLock, onGenerateLink, onVerify, canDownload, canRestore, canDelete }: ColumnsProps): ColumnDef<FileInfo>[] => [
     {
         accessorKey: "name",
         header: ({ column }) => {
@@ -202,9 +208,62 @@ export const getColumns = ({ onRestore, onBrowseFiles, onDownload, onDelete, onT
         },
         cell: ({ row }) => {
             const size = parseFloat(row.getValue("size"));
-            const formatted = formatBytes(size);
+            const logical = row.original.logicalSize;
 
-            return <div className="font-medium font-mono text-xs text-right pr-4">{formatted}</div>;
+            // For an incremental the archive only stores what changed. Showing that number
+            // alone would suggest the snapshot is nearly empty, so the complete snapshot
+            // size is shown and the stored size moves into the tooltip.
+            const isPartial = typeof logical === "number" && logical > size;
+
+            return (
+                <div className="font-medium font-mono text-xs text-right pr-4">
+                    {isPartial ? (
+                        <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <span className="cursor-help border-b border-dotted border-muted-foreground/50">
+                                        {formatBytes(logical!)}
+                                    </span>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                    Complete snapshot. This archive stores {formatBytes(size)}; the rest is
+                                    referenced from earlier backups in its chain.
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
+                    ) : (
+                        formatBytes(size)
+                    )}
+                </div>
+            );
+        },
+    },
+    {
+        id: "backupType",
+        header: "Type",
+        cell: ({ row }) => {
+            const chain = row.original.chain;
+            if (!chain) return <span className="text-muted-foreground text-xs">-</span>;
+
+            return chain.type === "full" ? (
+                <Badge variant="outline" className="text-[10px] h-5 px-1.5 border-emerald-200 text-emerald-700 dark:text-emerald-400 dark:border-emerald-900">
+                    Full
+                </Badge>
+            ) : (
+                <TooltipProvider>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Badge variant="outline" className="text-[10px] h-5 px-1.5 border-amber-200 text-amber-700 dark:text-amber-400 dark:border-amber-900">
+                                Incremental
+                            </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                            Position {chain.index} in its backup chain. Restoring it reads from the earlier
+                            archives in the same folder as well.
+                        </TooltipContent>
+                    </Tooltip>
+                </TooltipProvider>
+            );
         },
     },
     {
@@ -233,6 +292,7 @@ export const getColumns = ({ onRestore, onBrowseFiles, onDownload, onDelete, onT
                 onDownload={onDownload}
                 onRestore={onRestore}
                 onBrowseFiles={onBrowseFiles}
+                onDownloadSnapshot={onDownloadSnapshot}
                 onDelete={onDelete}
                 onToggleLock={onToggleLock}
                 onGenerateLink={onGenerateLink}

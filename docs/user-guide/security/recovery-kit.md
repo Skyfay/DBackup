@@ -151,6 +151,18 @@ node restore_archive.js --extract backup.tar ./restored <key> docs
 Every extracted file is verified against the checksum recorded when the backup was made.
 A mismatch is reported and the command exits non-zero.
 
+### Incremental chains
+
+Incremental backups are stored as a chain in one folder. Point the tool at the snapshot you
+want and keep the other archives beside it - it resolves them itself:
+
+```bash
+node restore_archive.js --list ./chain-2026-07-15/inc-2026-07-17.tar <key>
+```
+
+The listing names every archive the snapshot needs and marks any that are missing, so a gap
+is visible before you start extracting rather than halfway through.
+
 ::: tip Unencrypted archives need no kit at all
 If the job had no encryption profile, the archive is a plain TAR:
 

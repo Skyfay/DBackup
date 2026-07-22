@@ -1,7 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { minimatch } from "minimatch";
-import { StorageAdapter, AdapterConfig, DirectoryDownloadResult, DirectoryFileEntry } from "@/lib/core/interfaces";
+import { StorageAdapter, AdapterConfig, DirectoryDownloadOptions, DirectoryDownloadResult, DirectoryFileEntry } from "@/lib/core/interfaces";
 import { LogLevel, LogType } from "@/lib/core/logs";
 
 /**
@@ -44,7 +44,8 @@ export async function downloadDirectoryGeneric(
     localPath: string,
     excludePatterns?: string[],
     onProgress?: OnProgress,
-    onLog?: OnLog
+    onLog?: OnLog,
+    options?: DirectoryDownloadOptions
 ): Promise<DirectoryDownloadResult> {
     const allFiles = await adapter.list(config, remotePath);
 
@@ -62,7 +63,25 @@ export async function downloadDirectoryGeneric(
 
     const resultEntries: DirectoryFileEntry[] = [];
 
+    let skippedFiles = 0;
+
     for (const entry of entries) {
+        // Incremental backups skip files the chain already holds. They still belong to the
+        // snapshot, so they are reported as unchanged rather than dropped - the archive
+        // writer carries them forward by reference.
+        if (options?.shouldDownload && !options.shouldDownload(entry)) {
+            skippedFiles++;
+            processedFiles++;
+            onProgress?.(processedBytes, totalBytes, processedFiles, totalFiles);
+            resultEntries.push({
+                relativePath: entry.relativePath,
+                size: entry.size,
+                lastModified: entry.lastModified,
+                unchanged: true,
+            });
+            continue;
+        }
+
         const localFilePath = path.join(localPath, entry.relativePath);
         await fs.mkdir(path.dirname(localFilePath), { recursive: true });
 
@@ -79,6 +98,10 @@ export async function downloadDirectoryGeneric(
         resultEntries.push({ relativePath: entry.relativePath, size: entry.size, lastModified: entry.lastModified });
     }
 
+    if (skippedFiles > 0) {
+        onLog?.(`${skippedFiles} of ${totalFiles} file(s) unchanged, not transferred`, "info", "storage");
+    }
+
     return { files: resultEntries.length, bytes: processedBytes, entries: resultEntries };
 }
 
@@ -93,10 +116,11 @@ export async function downloadDirectory(
     localPath: string,
     excludePatterns?: string[],
     onProgress?: OnProgress,
-    onLog?: OnLog
+    onLog?: OnLog,
+    options?: DirectoryDownloadOptions
 ): Promise<DirectoryDownloadResult> {
     if (adapter.downloadDirectory) {
-        return adapter.downloadDirectory(config, remotePath, localPath, excludePatterns, onProgress, onLog);
+        return adapter.downloadDirectory(config, remotePath, localPath, excludePatterns, onProgress, onLog, options);
     }
-    return downloadDirectoryGeneric(adapter, config, remotePath, localPath, excludePatterns, onProgress, onLog);
+    return downloadDirectoryGeneric(adapter, config, remotePath, localPath, excludePatterns, onProgress, onLog, options);
 }

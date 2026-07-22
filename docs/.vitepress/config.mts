@@ -183,6 +183,7 @@ export default defineConfig({
             { text: 'Rate Limits', link: '/user-guide/features/rate-limits' },
             { text: 'API Keys', link: '/user-guide/features/api-keys' },
             { text: 'Webhook Triggers', link: '/user-guide/features/webhook-triggers' },
+            { text: 'Backup Modes', link: '/user-guide/features/backup-modes' },
             { text: 'API Reference', link: '/user-guide/features/api-reference' }
           ]
         },

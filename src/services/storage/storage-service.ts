@@ -36,6 +36,13 @@ export type RichFileInfo = FileInfo & {
     checksumMd5?: string;
     /** True for seekable (v2) archives, which carry a file index and can be browsed and restored file by file. */
     hasFileIndex?: boolean;
+    /** Incremental chain membership. Absent on standalone full backups. */
+    chain?: { id: string; type: 'full' | 'incremental'; index: number };
+    /**
+     * Complete snapshot size. For an incremental this is larger than `size`, which is only
+     * what this archive physically stores - the rest lives in earlier archives of the chain.
+     */
+    logicalSize?: number;
     verification?: {
         verifiedAt: string;
         passed: boolean;
@@ -219,6 +226,8 @@ export class StorageService {
                 checksum: sidecar.checksum,
                 checksumMd5: sidecar.checksumMd5,
                 hasFileIndex: sidecar.archive?.formatVersion === 2,
+                ...(sidecar.chain ? { chain: sidecar.chain } : {}),
+                ...(typeof sidecar.logicalSize === 'number' ? { logicalSize: sidecar.logicalSize } : {}),
                 verification: sidecar.verification ? {
                     verifiedAt: sidecar.verification.verifiedAt,
                     passed: sidecar.verification.passed,

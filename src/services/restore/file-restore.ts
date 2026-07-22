@@ -22,6 +22,8 @@ import crypto from "crypto";
 import { BackupMetadata, StorageAdapter, AdapterConfig } from "@/lib/core/interfaces";
 import { openStorageArchiveSource, resolveStorageAdapter, ManagedArchiveSource } from "@/lib/archive/storage-source";
 import { readArchiveManifest, readArchiveIndex, openArchiveEntry, groupFilesByEntry } from "@/lib/archive/reader";
+import { openChainArchive, groupFilesByArchive, ChainReaderOptions, OpenedChainArchive } from "@/lib/archive/chain-source";
+import { checkChainCompleteness } from "@/lib/archive/chain";
 import { readAll } from "@/lib/archive/sources";
 import { resolveSelection, totalSize } from "@/lib/archive/browse";
 import { getProfileMasterKey } from "@/services/backup/encryption-service";
@@ -56,15 +58,21 @@ export interface FileRestoreInput {
     storageConfigId: string;
     /** Remote path of the backup archive. */
     file: string;
-    selections: FileRestoreSelection[];
+    /**
+     * Files to restore. Omit to restore the complete snapshot, which for an incremental
+     * means every file it describes, wherever in the chain the bytes live.
+     */
+    selections?: FileRestoreSelection[];
     target: FileRestoreTarget;
 }
 
-/** Everything needed to read files out of one archive, plus how to release it. */
+/** Everything needed to read files out of a snapshot, plus how to release it. */
 interface OpenedArchive extends ManagedArchiveSource {
     manifest: ArchiveManifest;
     index: ArchiveIndex;
     masterKey?: Buffer;
+    /** Lets sibling archives of the same chain be opened on demand. */
+    chain: ChainReaderOptions;
 }
 
 /** Hashes what flows through it, so a restored file can be checked against its index entry. */
@@ -107,7 +115,33 @@ async function readBackupMetadata(
     }
 }
 
-/** Opens an archive for reading: byte source, manifest, index and master key. */
+/**
+ * Verifies that every archive a snapshot depends on is actually present.
+ *
+ * Done up front so a broken chain is reported by name before anything is restored,
+ * instead of surfacing halfway through as a confusing per-file failure.
+ */
+async function assertChainComplete(
+    adapter: StorageAdapter,
+    config: AdapterConfig,
+    snapshotPath: string,
+    index: ArchiveIndex
+): Promise<void> {
+    if (index.deps.length === 0) return;
+
+    const dir = path.posix.dirname(snapshotPath.replace(/\\/g, "/"));
+    const present = new Set((await adapter.list(config, dir === "." ? "" : dir)).map((f) => path.posix.basename(f.path)));
+    const { complete, missing } = checkChainCompleteness(index, present);
+
+    if (!complete) {
+        throw new ValidationError(
+            `This backup is part of an incremental chain and ${missing.length === 1 ? "one archive it needs is" : "some archives it needs are"} missing: ${missing.join(", ")}. Restore an older snapshot, or restore the missing archive(s) to this destination first.`,
+            { field: "file" }
+        );
+    }
+}
+
+/** Opens a snapshot for reading: byte source, manifest, index, master key and chain access. */
 export async function openArchiveForRestore(storageConfigId: string, file: string): Promise<OpenedArchive> {
     const { adapter, config } = await resolveStorageAdapter(storageConfigId);
     const meta = await readBackupMetadata(adapter, config, file);
@@ -118,6 +152,13 @@ export async function openArchiveForRestore(storageConfigId: string, file: strin
             { field: "file" }
         );
     }
+
+    const chain: ChainReaderOptions = {
+        adapter,
+        config,
+        snapshotPath: file,
+        resolveMasterKey: getProfileMasterKey,
+    };
 
     // The index sidecar is the primary path: it is small, and reading it means the archive
     // itself is only ever touched for the entries actually being restored.
@@ -130,21 +171,24 @@ export async function openArchiveForRestore(storageConfigId: string, file: strin
             ? await getProfileMasterKey(manifest.encryption.profileId)
             : undefined;
 
-        if (sidecarBytes) {
-            const index = await readArchiveIndex(managed.source, manifest, { sidecarBytes, masterKey });
-            return { ...managed, manifest, index, masterKey };
+        if (!sidecarBytes) {
+            // No sidecar. Every archive carries a copy of its index as its last member, but
+            // finding it means scanning backwards from the tail, which needs the archive
+            // size - so this falls back to fetching the archive whole.
+            log.warn("Archive index sidecar is missing, falling back to the embedded index", { file });
+            await managed.dispose();
+            managed = await openStorageArchiveSource(
+                { ...adapter, downloadRange: undefined } as StorageAdapter, config, file
+            );
         }
 
-        // No sidecar. Every archive carries a copy of its index as its last member, but
-        // finding it means scanning backwards from the tail, which needs the archive size -
-        // so this falls back to fetching the archive whole.
-        log.warn("Archive index sidecar is missing, falling back to the embedded index", { file });
-        await managed.dispose();
-        managed = await openStorageArchiveSource(
-            { ...adapter, downloadRange: undefined } as StorageAdapter, config, file
-        );
-        const index = await readArchiveIndex(managed.source, manifest, { masterKey });
-        return { ...managed, manifest, index, masterKey };
+        const index = await readArchiveIndex(managed.source, manifest, {
+            ...(sidecarBytes ? { sidecarBytes } : {}),
+            masterKey,
+        });
+        await assertChainComplete(adapter, config, file, index);
+
+        return { ...managed, manifest, index, masterKey, chain };
     } catch (e: unknown) {
         await managed.dispose();
         throw e;
@@ -152,7 +196,13 @@ export async function openArchiveForRestore(storageConfigId: string, file: strin
 }
 
 /** Expands the caller's selection into concrete index lines, keyed by directory source. */
-function resolveFiles(index: ArchiveIndex, selections: FileRestoreSelection[]): { src: string; file: IndexFileLine }[] {
+function resolveFiles(index: ArchiveIndex, selections?: FileRestoreSelection[]): { src: string; file: IndexFileLine }[] {
+    // No selection means the whole snapshot. This is what the Storage Explorer's download
+    // uses, so a user gets the complete contents rather than an incremental's delta.
+    if (!selections || selections.length === 0) {
+        return index.files.map((file) => ({ src: file.src, file }));
+    }
+
     const resolved: { src: string; file: IndexFileLine }[] = [];
     const seen = new Set<string>();
 
@@ -169,36 +219,53 @@ function resolveFiles(index: ArchiveIndex, selections: FileRestoreSelection[]): 
 }
 
 /**
- * Iterates the selected files, fetching each physical entry exactly once.
+ * Iterates the selected files, opening each archive of the chain exactly once.
  *
- * Bundled entries hold many small files, so the entry is read into memory once (they are
- * capped at a few MB by the writer) and sliced. Standalone entries are streamed, so a
- * multi-gigabyte file never has to fit in RAM.
+ * Work is grouped by archive first and by entry second. The archive grouping is what caps
+ * peak disk usage: an adapter without ranged reads downloads a whole archive to a temp
+ * file, so visiting files in selection order would end up holding the entire chain at
+ * once. Grouped this way, at most the snapshot's own archive plus one sibling is open.
+ *
+ * Within an archive, bundled entries are read once into memory (the writer caps them at a
+ * few MB) and sliced, while standalone entries stream, so a multi-gigabyte file never has
+ * to fit in RAM.
  */
 async function forEachSelectedFile(
     archive: OpenedArchive,
     files: { src: string; file: IndexFileLine }[],
     visit: (file: IndexFileLine, content: NodeJS.ReadableStream) => Promise<void>
 ): Promise<void> {
-    const byEntry = groupFilesByEntry(files.map((f) => f.file));
+    for (const [archiveName, group] of groupFilesByArchive(files)) {
+        // The snapshot's own archive is already open; siblings are opened and released
+        // one at a time.
+        const opened: Pick<OpenedChainArchive, "source" | "manifest" | "masterKey"> & { dispose?: () => Promise<void> } =
+            archiveName === undefined
+                ? { source: archive.source, manifest: archive.manifest, masterKey: archive.masterKey }
+                : await openChainArchive(archive.chain, archiveName);
 
-    for (const [ordinal, group] of byEntry) {
-        const entry = archive.index.entries.get(ordinal);
-        if (!entry) throw new Error(`Archive index is inconsistent: missing entry ${ordinal}`);
+        try {
+            for (const [key, entryFiles] of groupFilesByEntry(group.map((g) => g.file))) {
+                const entry = archive.index.entries.get(key);
+                if (!entry) throw new Error(`Archive index is inconsistent: missing entry ${key}`);
 
-        if (!entry.bundle) {
-            const stream = await openArchiveEntry(archive.source, archive.manifest, entry, archive.masterKey);
-            await visit(group[0], stream);
-            continue;
-        }
+                if (!entry.bundle) {
+                    await visit(
+                        entryFiles[0],
+                        await openArchiveEntry(opened.source, opened.manifest, entry, opened.masterKey)
+                    );
+                    continue;
+                }
 
-        const payload = await readAll(
-            await openArchiveEntry(archive.source, archive.manifest, entry, archive.masterKey)
-        );
-        for (const file of group) {
-            const start = file.o ?? 0;
-            const slice = payload.subarray(start, start + (file.l ?? payload.length));
-            await visit(file, Readable.from([slice]));
+                const payload = await readAll(
+                    await openArchiveEntry(opened.source, opened.manifest, entry, opened.masterKey)
+                );
+                for (const file of entryFiles) {
+                    const start = file.o ?? 0;
+                    await visit(file, Readable.from([payload.subarray(start, start + (file.l ?? payload.length))]));
+                }
+            }
+        } finally {
+            if (opened.dispose) await opened.dispose();
         }
     }
 }
@@ -241,6 +308,7 @@ export async function streamFileRestore(input: FileRestoreInput): Promise<NodeJS
         throw new ValidationError("No files matched the selection", { field: "selections" });
     }
 
+    const bySrc = new Map(files.map((f) => [f.file, f.src]));
     const tarPack = pack();
     const gzip = createGzip();
     tarPack.pipe(gzip);
@@ -249,14 +317,11 @@ export async function streamFileRestore(input: FileRestoreInput): Promise<NodeJS
     // pushed into the stream rather than thrown, since the caller already holds it.
     void (async () => {
         try {
-            for (const { src, file } of files) {
-                const entry = tarPack.entry({ name: `${src}/${file.p}`, size: file.s });
+            await forEachSelectedFile(archive, files, async (file, content) => {
+                const entry = tarPack.entry({ name: `${bySrc.get(file) ?? file.src}/${file.p}`, size: file.s });
                 let digest: string | undefined;
-                await pipeline(
-                    await openArchiveEntryFor(archive, file),
-                    hashingStream((d) => { digest = d; }),
-                    entry
-                );
+                await pipeline(content, hashingStream((d) => { digest = d; }), entry);
+
                 if (file.h && digest && digest !== file.h) {
                     // The entry's AEAD tag already rules out corruption in transit, so a
                     // mismatch here means the archive was written wrong. Worth shouting about.
@@ -264,7 +329,7 @@ export async function streamFileRestore(input: FileRestoreInput): Promise<NodeJS
                         file: file.p, expected: file.h, actual: digest,
                     });
                 }
-            }
+            });
             tarPack.finalize();
         } catch (e: unknown) {
             log.error("File restore stream failed", { file: input.file }, wrapError(e));
@@ -278,34 +343,22 @@ export async function streamFileRestore(input: FileRestoreInput): Promise<NodeJS
 }
 
 /**
- * Opens one file's content.
+ * Resolves where each directory source's files should be written back to.
  *
- * The bundle-aware batching in forEachSelectedFile() is skipped here because the tar
- * stream has to emit files in selection order. Bundles are small by construction, so the
- * repeated fetch is cheap, and correctness of ordering matters more.
+ * Driven by the source ids actually resolved from the index rather than by the request's
+ * selection, so restoring a whole snapshot (which carries no selection) works too.
  */
-async function openArchiveEntryFor(archive: OpenedArchive, file: IndexFileLine): Promise<NodeJS.ReadableStream> {
-    const entry = archive.index.entries.get(file.n);
-    if (!entry) throw new Error(`Archive index is inconsistent: missing entry ${file.n}`);
-
-    const stream = await openArchiveEntry(archive.source, archive.manifest, entry, archive.masterKey);
-    if (file.o === undefined || file.l === undefined) return stream;
-
-    const payload = await readAll(stream);
-    return Readable.from([payload.subarray(file.o, file.o + file.l)]);
-}
-
-/** Resolves where each directory source's files should be written back to. */
 async function resolveTargets(
-    input: FileRestoreInput
+    input: FileRestoreInput,
+    sourceIds: string[]
 ): Promise<Map<string, { adapter: StorageAdapter; config: AdapterConfig; basePath: string; label: string }>> {
     const targets = new Map<string, { adapter: StorageAdapter; config: AdapterConfig; basePath: string; label: string }>();
 
     if (input.target.kind === "storage") {
         const { adapter, config } = await resolveStorageAdapter(input.target.configId);
         const row = await prisma.adapterConfig.findUnique({ where: { id: input.target.configId } });
-        for (const selection of input.selections) {
-            targets.set(selection.src, {
+        for (const src of sourceIds) {
+            targets.set(src, {
                 adapter, config,
                 basePath: input.target.basePath,
                 label: `${row?.name ?? input.target.configId}:${input.target.basePath}`,
@@ -315,19 +368,19 @@ async function resolveTargets(
     }
 
     // "origin" - each directory source goes back to the adapter and path it came from.
-    for (const selection of input.selections) {
+    for (const src of sourceIds) {
         const jobSource = await prisma.jobSource.findUnique({
-            where: { id: selection.src },
+            where: { id: src },
             include: { config: true },
         });
         if (!jobSource) {
             throw new NotFoundError(
                 "Directory source",
-                `${selection.src} - it was deleted since this backup was taken, so its original location is unknown. Restore to a chosen destination instead.`
+                `${src} - it was deleted since this backup was taken, so its original location is unknown. Restore to a chosen destination instead.`
             );
         }
         const { adapter, config } = await resolveStorageAdapter(jobSource.configId);
-        targets.set(selection.src, {
+        targets.set(src, {
             adapter, config,
             basePath: jobSource.path,
             label: `${jobSource.config.name}:${jobSource.path}`,
@@ -359,8 +412,8 @@ export async function restoreFilesToStorage(
     }
 
     const archive = await openArchiveForRestore(input.storageConfigId, input.file);
-    const targets = await resolveTargets(input);
     const files = resolveFiles(archive.index, input.selections);
+    const targets = await resolveTargets(input, [...new Set(files.map((f) => f.src))]);
 
     if (files.length === 0) {
         await archive.dispose();

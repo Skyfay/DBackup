@@ -8,6 +8,8 @@ import { createArchive } from "@/lib/archive/writer";
 import { ArchiveSourceEntry, DumpFormat, SourceFileEntry } from "@/lib/archive/types";
 import { DIRECTORY_ONLY_SOURCE_TYPE, INDEX_SIDECAR_SUFFIX } from "@/lib/archive/format";
 import { getProfileMasterKey } from "@/services/backup/encryption-service";
+import { planChain } from "@/services/backup/chain-planner";
+import { carryForward, fileKey } from "@/lib/archive/chain";
 import { resolveBackupFilename, parseJobDatabases } from "./dump-helpers";
 import { formatBytes } from "@/lib/utils";
 import { calculateFileChecksum } from "@/lib/crypto/checksum";
@@ -46,6 +48,38 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
     const { tempFile } = await resolveBackupFilename(job);
     ctx.tempFile = tempFile;
     ctx.log(`Prepared temporary path: ${tempFile}`);
+
+    // Decide full vs incremental before anything is collected - it changes what has to be
+    // transferred at all.
+    const plan = await planChain({
+        job: {
+            id: job.id,
+            name: job.name,
+            backupMode: (job as { backupMode?: string }).backupMode ?? "FULL",
+            fullEveryDays: (job as { fullEveryDays?: number }).fullEveryDays ?? 7,
+            encryptionProfileId: job.encryptionProfileId ?? null,
+        },
+        sources: ctx.sources.map((s) => ({ jobSourceId: s.jobSourceId, excludePatterns: s.excludePatterns })),
+        destinationConfigIds: ctx.destinations.map((d) => d.configId),
+        now: new Date(),
+    });
+
+    if (plan.type === "incremental") {
+        ctx.log(`Incremental backup, continuing the chain started on ${plan.chainDir.replace("chain-", "")} (position ${plan.index})`);
+    } else if (plan.reason) {
+        ctx.log(`Full backup: ${plan.reason}`, 'warning');
+    }
+    ctx.chain = plan;
+
+    // Files whose bytes already live in an earlier archive of the chain. Collected while
+    // walking the sources, then turned into carried index lines below.
+    const carriedKeys = new Set<string>();
+    const previousBySource = new Map(
+        (plan.previousIndex?.directories ?? []).map((d) => [
+            d.src,
+            new Map((plan.previousIndex!.files.filter((f) => f.src === d.src)).map((f) => [f.p, f])),
+        ])
+    );
 
     const workDir = await createTempDir("combined-dump-");
     const entries: ArchiveSourceEntry[] = [];
@@ -136,6 +170,19 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
             const localDir = path.join(workDir, "sources", source.jobSourceId);
             const unitBase = completedUnits;
 
+            // Incremental runs skip files the chain already holds. The decision uses the
+            // listing (size and mtime), so an unchanged file is never transferred - which
+            // is where the bandwidth saving comes from, on top of the storage saving.
+            const previousFiles = previousBySource.get(source.jobSourceId);
+            const shouldDownload = plan.type === "incremental" && previousFiles && !job.verifyByHash
+                ? (entry: { relativePath: string; size: number; lastModified: Date }) => {
+                    const before = previousFiles.get(entry.relativePath);
+                    if (!before) return true;
+                    if (before.s !== entry.size) return true;
+                    return entry.lastModified.getTime() > new Date(before.m).getTime();
+                }
+                : undefined;
+
             const result = await downloadDirectory(
                 source.adapter,
                 source.config,
@@ -149,19 +196,50 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
                     setOverallProgress(unitBase + localFraction);
                     ctx.updateDetail(`${label}: ${processedFiles}/${totalFiles} files, ${formatBytes(processedBytes)}/${formatBytes(totalBytes)}`);
                 },
-                (msg, level, type, details) => ctx.log(`${logPrefix} ${msg}`, level, type ?? 'storage', details)
+                (msg, level, type, details) => ctx.log(`${logPrefix} ${msg}`, level, type ?? 'storage', details),
+                shouldDownload ? { shouldDownload } : undefined
             );
 
-            const fileIndex: SourceFileEntry[] = await Promise.all(result.entries.map(async (e) => ({
-                path: e.relativePath,
-                size: e.size,
-                mtime: e.lastModified.toISOString(),
+            const fileIndex: SourceFileEntry[] = [];
+            for (const e of result.entries) {
+                const before = previousFiles?.get(e.relativePath);
+
+                if (e.unchanged) {
+                    // Not transferred, so its bytes stay where they already are.
+                    carriedKeys.add(fileKey(source.jobSourceId, e.relativePath));
+                    continue;
+                }
+
                 // Content hash of the raw (pre-compression, pre-encryption) file. Lands in
                 // the archive index, which is itself sealed when the job is encrypted - a
                 // plaintext hash sitting in the clear would be a confirmation oracle
-                // against known files. Also the basis for incremental change detection.
-                checksum: await calculateFileChecksum(path.join(localDir, e.relativePath)),
-            })));
+                // against known files.
+                const checksum = await calculateFileChecksum(path.join(localDir, e.relativePath));
+
+                // The file was transferred, but its content is identical to what the chain
+                // already holds - mtime moved without the bytes changing, which happens on
+                // every deploy and every `touch`. Carrying it forward avoids storing a
+                // second copy of the same content.
+                if (before?.h && before.h === checksum) {
+                    carriedKeys.add(fileKey(source.jobSourceId, e.relativePath));
+                    continue;
+                }
+
+                fileIndex.push({
+                    path: e.relativePath,
+                    size: e.size,
+                    mtime: e.lastModified.toISOString(),
+                    checksum,
+                });
+            }
+
+            if (plan.type === "incremental") {
+                const carriedHere = result.entries.length - fileIndex.length;
+                ctx.log(
+                    `${logPrefix} ${fileIndex.length} changed file(s) stored, ${carriedHere} unchanged file(s) referenced from earlier backups`,
+                    'info', 'storage'
+                );
+            }
 
             entries.push({
                 kind: "directory",
@@ -189,13 +267,22 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
         }
 
         ctx.log(`Creating combined archive with ${dbNames.length} database(s) and ${ctx.sources.length} directory source(s)...`);
-        const { manifest, indexBytes } = await createArchive(entries, tempFile, {
+        const { manifest, index, indexBytes } = await createArchive(entries, tempFile, {
             sourceType: job.source ? job.source.adapterId : DIRECTORY_ONLY_SOURCE_TYPE,
             engineVersion,
             compression: (job.compression as "NONE" | "GZIP" | "BROTLI" | undefined) ?? "NONE",
             ...(encryptionProfileId
                 ? { encryption: { masterKey: await getProfileMasterKey(encryptionProfileId), profileId: encryptionProfileId } }
                 : {}),
+            chain: {
+                id: plan.chainId,
+                type: plan.type,
+                ...(plan.baseArchive ? { base: plan.baseArchive } : {}),
+                index: plan.index,
+                ...(plan.previousIndex && plan.baseArchive
+                    ? { carried: carryForward(plan.previousIndex, plan.baseArchive, carriedKeys) }
+                    : {}),
+            },
         });
 
         // The sidecar is a byte-identical copy of the archive's own index member. Uploading
@@ -204,6 +291,12 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
         ctx.indexFile = tempFile + INDEX_SIDECAR_SUFFIX;
         await fs.writeFile(ctx.indexFile, indexBytes);
         ctx.log(`Wrote archive index sidecar (${formatBytes(indexBytes.length)}, ${manifest.counts.files} file(s))`);
+
+        // The complete snapshot size, including files whose bytes live in earlier
+        // archives of the chain. manifest.totalSize only covers what this archive stores.
+        const logicalSize =
+            index.files.reduce((sum, f) => sum + f.s, 0) +
+            index.databases.reduce((sum, d) => sum + d.s, 0);
 
         ctx.dumpSize = manifest.totalSize;
         ctx.metadata = {
@@ -221,6 +314,7 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
                 databases: dbNames.length,
                 directorySources: ctx.sources.length,
             },
+            logicalSize,
             archive: {
                 formatVersion: 2 as const,
                 indexFile: INDEX_SIDECAR_SUFFIX,

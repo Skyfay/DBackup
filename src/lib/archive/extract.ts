@@ -14,16 +14,31 @@ import { createWriteStream } from "fs";
 import { pipeline } from "stream/promises";
 import { DATABASE_MEMBER_PREFIX, EXTENSION_BY_FORMAT, SOURCE_MEMBER_PREFIX } from "./format";
 import { groupFilesByEntry, openArchiveEntry, openArchiveFile, readArchiveIndex, readArchiveManifest } from "./reader";
+import { groupFilesByArchive, OpenedChainArchive } from "./chain-source";
 import { localFileSource, readAll } from "./sources";
 import {
     ArchiveByteSource,
     ArchiveIndex,
     ArchiveManifest,
     ArchiveSelection,
+    entryKey,
     IndexDatabaseLine,
     IndexDirectoryLine,
     IndexFileLine,
 } from "./types";
+
+export interface ExtractOptions {
+    selection?: ArchiveSelection;
+    masterKey?: Buffer;
+    sidecarBytes?: Buffer;
+    /**
+     * Opens a sibling archive of the same incremental chain.
+     *
+     * Required only when the snapshot carries files forward from earlier archives.
+     * Omitting it on a standalone full backup is correct and costs nothing.
+     */
+    openChainArchive?: (archiveName: string) => Promise<OpenedChainArchive>;
+}
 
 export interface ExtractResult {
     manifest: ArchiveManifest;
@@ -65,7 +80,7 @@ async function writeStreamTo(stream: NodeJS.ReadableStream, target: string): Pro
 export async function extractArchiveFrom(
     source: ArchiveByteSource,
     extractDir: string,
-    options?: { selection?: ArchiveSelection; masterKey?: Buffer; sidecarBytes?: Buffer }
+    options?: ExtractOptions
 ): Promise<ExtractResult> {
     await fs.mkdir(extractDir, { recursive: true });
 
@@ -87,7 +102,9 @@ export async function extractArchiveFrom(
 
     const databaseFiles: ExtractResult["databaseFiles"] = [];
     for (const database of wantedDatabases) {
-        const entry = index.entries.get(database.n);
+        // Database dumps are always stored in full in the archive that references them -
+        // an incremental never carries one forward - so the entry is always local.
+        const entry = index.entries.get(entryKey(undefined, database.n));
         if (!entry) throw new Error(`Archive index is inconsistent: database '${database.name}' references missing entry ${database.n}`);
 
         const target = safeJoin(
@@ -110,27 +127,48 @@ export async function extractArchiveFrom(
     const rootBySourceId = new Map(directoryRoots.map((r) => [r.entry.src, r.path]));
     const wantedFiles = index.files.filter((f) => wantedSourceIds.has(f.src));
 
-    for (const [ordinal, files] of groupFilesByEntry(wantedFiles)) {
-        const entry = index.entries.get(ordinal);
-        if (!entry) throw new Error(`Archive index is inconsistent: missing entry ${ordinal}`);
-
-        if (!entry.bundle) {
-            // Exactly one file per non-bundled entry, so stream it straight to disk.
-            const file = files[0];
-            await writeStreamTo(
-                await openArchiveEntry(source, manifest, entry, options?.masterKey),
-                safeJoin(rootBySourceId.get(file.src)!, file.p)
+    // Grouped by archive first: files carried over from earlier archives of an incremental
+    // chain live elsewhere, and opening one sibling at a time bounds peak disk usage on
+    // adapters that cannot serve byte ranges.
+    for (const [archiveName, group] of groupFilesByArchive(wantedFiles.map((file) => ({ file })))) {
+        if (archiveName !== undefined && !options?.openChainArchive) {
+            throw new Error(
+                `This snapshot needs '${archiveName}' from its backup chain, but no chain reader was provided`
             );
-            continue;
         }
 
-        // Bundles are capped at a few MB, so one buffered read serves every file in them.
-        const payload = await readAll(await openArchiveEntry(source, manifest, entry, options?.masterKey));
-        for (const file of files) {
-            const slice = payload.subarray(file.o ?? 0, (file.o ?? 0) + (file.l ?? payload.length));
-            const target = safeJoin(rootBySourceId.get(file.src)!, file.p);
-            await fs.mkdir(path.dirname(target), { recursive: true });
-            await fs.writeFile(target, slice);
+        const opened = archiveName === undefined
+            ? { source, manifest, masterKey: options?.masterKey, dispose: undefined as (() => Promise<void>) | undefined }
+            : await options!.openChainArchive!(archiveName);
+
+        try {
+            for (const [key, files] of groupFilesByEntry(group.map((g) => g.file))) {
+                const entry = index.entries.get(key);
+                if (!entry) throw new Error(`Archive index is inconsistent: missing entry ${key}`);
+
+                if (!entry.bundle) {
+                    // Exactly one file per non-bundled entry, so stream it straight to disk.
+                    const file = files[0];
+                    await writeStreamTo(
+                        await openArchiveEntry(opened.source, opened.manifest, entry, opened.masterKey),
+                        safeJoin(rootBySourceId.get(file.src)!, file.p)
+                    );
+                    continue;
+                }
+
+                // Bundles are capped at a few MB, so one buffered read serves every file in them.
+                const payload = await readAll(
+                    await openArchiveEntry(opened.source, opened.manifest, entry, opened.masterKey)
+                );
+                for (const file of files) {
+                    const slice = payload.subarray(file.o ?? 0, (file.o ?? 0) + (file.l ?? payload.length));
+                    const target = safeJoin(rootBySourceId.get(file.src)!, file.p);
+                    await fs.mkdir(path.dirname(target), { recursive: true });
+                    await fs.writeFile(target, slice);
+                }
+            }
+        } finally {
+            if (opened.dispose) await opened.dispose();
         }
     }
 
@@ -141,7 +179,7 @@ export async function extractArchiveFrom(
 export async function extractArchive(
     archivePath: string,
     extractDir: string,
-    options?: { selection?: ArchiveSelection; masterKey?: Buffer; sidecarBytes?: Buffer }
+    options?: ExtractOptions
 ): Promise<ExtractResult> {
     return extractArchiveFrom(await localFileSource(archivePath), extractDir, options);
 }

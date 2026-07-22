@@ -1,3 +1,4 @@
+import type { ChainPlan } from "@/services/backup/chain-planner";
 import { DatabaseAdapter, StorageAdapter } from "@/lib/core/interfaces";
 import { Job, AdapterConfig, Execution, JobDestination, JobSource, NotificationTemplate, NotificationTemplateChannel, JobNotificationTemplate } from "@prisma/client";
 import { LogEntry, LogLevel, LogType, PipelineStage } from "@/lib/core/logs";
@@ -90,6 +91,12 @@ export interface RunnerContext {
      * to download the archive itself.
      */
     indexFile?: string;
+    /**
+     * Incremental chain decision for this run, set only by the combined dump path.
+     * Determines the remote directory and the archive's `full-`/`inc-` prefix, and is
+     * recorded on the Execution so retention can reason about chains.
+     */
+    chain?: ChainPlan;
     finalRemotePath?: string;
 
     // Result Data

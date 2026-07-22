@@ -208,34 +208,71 @@ function openArchive(archivePath, hexKey) {
         indexBytes = openEntry(indexBytes, keys.indexKey, manifest.encryption.noncePrefix, INDEX_ORDINAL);
     }
 
-    const index = { entries: new Map(), databases: [], directories: [], files: [] };
+    const index = { entries: new Map(), databases: [], directories: [], files: [], deps: [] };
     for (const line of zlib.gunzipSync(indexBytes).toString("utf-8").split("\n")) {
         if (!line) continue;
         const parsed = JSON.parse(line);
-        if (parsed.k === "e") index.entries.set(parsed.n, parsed);
+        // Entry ordinals are only unique within their own archive, so carried entries are
+        // keyed by archive as well. An absent `a` means this archive.
+        if (parsed.k === "e") index.entries.set(entryKey(parsed.a, parsed.n), parsed);
+        else if (parsed.k === "deps") index.deps = parsed.archives;
         else if (parsed.k === "db") index.databases.push(parsed);
         else if (parsed.k === "d") index.directories.push(parsed);
         else if (parsed.k === "f") index.files.push(parsed);
     }
 
-    return { fd, manifest, index, keys };
+    return { fd, manifest, index, keys, chain: new Map() };
 }
 
-/** Returns the plaintext bytes of one physical entry. */
-function readEntry(archive, ordinal) {
-    const entry = archive.index.entries.get(ordinal);
+/** Addresses an entry across a chain. Ordinals repeat between archives. */
+function entryKey(archive, ordinal) {
+    return `${archive ?? ""}#${ordinal}`;
+}
+
+/**
+ * Opens the archives a snapshot depends on.
+ *
+ * They live next to the snapshot in the same folder, which is exactly what the folder
+ * layout is for: copying that folder gives you a complete, restorable backup.
+ */
+function openChain(archivePath, index, hexKey) {
+    const dir = path.dirname(archivePath);
+    const chain = new Map();
+    const missing = [];
+
+    for (const name of index.deps) {
+        const siblingPath = path.join(dir, name);
+        if (!fs.existsSync(siblingPath)) {
+            missing.push(name);
+            continue;
+        }
+        chain.set(name, openArchive(siblingPath, hexKey));
+    }
+
+    return { chain, missing };
+}
+
+/** Returns the plaintext bytes of one physical entry, from this archive or a chain sibling. */
+function readEntry(archive, ordinal, fromArchive) {
+    const target = fromArchive ? archive.chain.get(fromArchive) : archive;
+    if (!target) {
+        throw new Error(`Archive '${fromArchive}' is part of this backup's chain but is not in this folder`);
+    }
+
+    const entry = target.index.entries.get(entryKey(undefined, ordinal))
+        ?? archive.index.entries.get(entryKey(fromArchive, ordinal));
     if (!entry) throw new Error(`Index references missing entry ${ordinal}`);
 
-    let payload = readAt(archive.fd, entry.off, entry.size);
+    let payload = readAt(target.fd, entry.off, entry.size);
     if (entry.sealed) {
-        payload = openEntry(payload, archive.keys.dataKey, archive.manifest.encryption.noncePrefix, entry.n);
+        payload = openEntry(payload, target.keys.dataKey, target.manifest.encryption.noncePrefix, entry.n);
     }
     return decompress(payload, entry.comp);
 }
 
 /** Returns the plaintext bytes of one logical file, slicing it out of a bundle if needed. */
 function readFile(archive, fileLine) {
-    const payload = readEntry(archive, fileLine.n);
+    const payload = readEntry(archive, fileLine.n, fileLine.a);
     if (fileLine.o === undefined || fileLine.l === undefined) return payload;
     return payload.subarray(fileLine.o, fileLine.o + fileLine.l);
 }
@@ -279,12 +316,31 @@ function commandList(archivePath, hexKey) {
     const archive = openArchive(archivePath, hexKey);
     try {
         const { manifest, index } = archive;
+        const { chain, missing } = openChain(archivePath, index, hexKey);
+        archive.chain = chain;
         console.log(`Archive:     ${path.basename(archivePath)}`);
         console.log(`Created:     ${manifest.createdAt}`);
         console.log(`Source:      ${manifest.sourceType}${manifest.engineVersion ? ` ${manifest.engineVersion}` : ""}`);
         console.log(`Encrypted:   ${manifest.encryption ? "yes" : "no"}`);
         console.log(`Compression: ${manifest.compression}`);
         console.log(`Total size:  ${formatBytes(manifest.totalSize)}`);
+
+        if (manifest.chain) {
+            console.log(`Backup type: ${manifest.chain.type} (position ${manifest.chain.index} in its chain)`);
+        }
+        if (index.deps.length > 0) {
+            console.log(`\nNeeds ${index.deps.length} other archive(s) from the same folder:`);
+            for (const name of index.deps) {
+                console.log(`  ${missing.includes(name) ? "MISSING  " : "found    "}${name}`);
+            }
+            if (missing.length > 0) {
+                console.error(
+                    `\nWARNING: ${missing.length} archive(s) are missing. Files stored in them cannot be` +
+                    ` restored. Put them in the same folder as this archive and try again.`
+                );
+                process.exitCode = 1;
+            }
+        }
 
         if (index.databases.length > 0) {
             console.log(`\nDatabases (${index.databases.length}):`);
@@ -301,6 +357,7 @@ function commandList(archivePath, hexKey) {
             }
         }
     } finally {
+        for (const sibling of archive.chain.values()) fs.closeSync(sibling.fd);
         fs.closeSync(archive.fd);
     }
 }
@@ -308,6 +365,17 @@ function commandList(archivePath, hexKey) {
 function commandExtract(archivePath, outputDir, hexKey, patterns) {
     const archive = openArchive(archivePath, hexKey);
     try {
+        // Resolved before anything is written, so a broken chain is reported by name up
+        // front instead of surfacing halfway through as a confusing per-file failure.
+        const { chain, missing } = openChain(archivePath, archive.index, hexKey);
+        archive.chain = chain;
+        if (missing.length > 0) {
+            throw new Error(
+                `This backup is part of an incremental chain and ${missing.length} archive(s) it needs are` +
+                ` missing from this folder: ${missing.join(", ")}`
+            );
+        }
+
         let extracted = 0;
         let mismatches = 0;
 
@@ -355,6 +423,7 @@ function commandExtract(archivePath, outputDir, hexKey, patterns) {
             process.exitCode = 1;
         }
     } finally {
+        for (const sibling of archive.chain.values()) fs.closeSync(sibling.fd);
         fs.closeSync(archive.fd);
     }
 }
@@ -368,7 +437,10 @@ function usage() {
   node restore_archive.js --extract <archive> <output_dir> [<hex_key>] [pattern...]
 
 The key is only needed for encrypted archives. Patterns accept * and **, and naming a
-folder selects everything inside it. Omit patterns to extract the whole archive.`);
+folder selects everything inside it. Omit patterns to extract the whole archive.
+
+Incremental backups are stored as a chain in one folder. Point this tool at the snapshot
+you want and keep the other archives in the same folder - it resolves them itself.`);
 }
 
 function main() {

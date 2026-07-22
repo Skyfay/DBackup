@@ -73,16 +73,25 @@ async function applyRetentionForDestination(ctx: RunnerContext, dest: Destinatio
         return 0;
     }
 
-    // Determine remote directory
+    // Determine remote directory.
+    //
+    // For an incremental job the uploaded archive sits inside its chain's own folder, so
+    // the directory to scan is one level up - otherwise retention would only ever see the
+    // current chain and no old chain would ever be deleted. Both list() implementations
+    // that matter here are recursive, so the chain subfolders are still found.
     let remoteDir = `/${ctx.job!.name}`;
     if (dest.uploadResult?.path) {
-        remoteDir = path.dirname(dest.uploadResult.path).replace(/\\/g, '/');
+        const uploadDir = path.dirname(dest.uploadResult.path).replace(/\\/g, '/');
+        remoteDir = ctx.chain && ctx.job!.backupMode === "INCREMENTAL"
+            ? path.dirname(uploadDir).replace(/\\/g, '/')
+            : uploadDir;
     }
 
     const files: FileInfo[] = await dest.adapter.list(dest.config, remoteDir);
     const backupFiles = files.filter(f => isBackupFile(f.name));
 
-    // Check for locked files
+    // Read each backup's sidecar for its lock flag and chain membership. The chain id is
+    // what lets retention treat an incremental chain as one indivisible unit.
     if (dest.adapter.read) {
         for (const file of backupFiles) {
             try {
@@ -91,6 +100,9 @@ async function applyRetentionForDestination(ctx: RunnerContext, dest: Destinatio
                     const meta = JSON.parse(metaContent);
                     if (meta.locked) {
                         file.locked = true;
+                    }
+                    if (meta.chain?.id) {
+                        file.chainId = meta.chain.id;
                     }
                 }
             } catch (_e) {
@@ -106,6 +118,11 @@ async function applyRetentionForDestination(ctx: RunnerContext, dest: Destinatio
     }
 
     const { keep, delete: filesToDelete } = RetentionService.calculateRetention(backupFiles, policy, timezone);
+
+    const chainCount = new Set(backupFiles.map(f => f.chainId).filter(Boolean)).size;
+    if (chainCount > 0) {
+        ctx.log(`${destLabel} Retention: ${chainCount} incremental chain(s) present - a chain is only deleted once all of its snapshots expire.`);
+    }
     ctx.log(`${destLabel} Retention: Keeping ${keep.length}, Deleting ${filesToDelete.length}.`);
 
     let deletedCount = 0;

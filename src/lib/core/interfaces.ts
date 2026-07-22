@@ -78,6 +78,20 @@ export interface BackupMetadata {
         bundled?: boolean;
         files?: number;
     };
+    /**
+     * Incremental chain membership. Absent on a standalone full backup.
+     *
+     * Duplicated from the archive's own manifest so retention can group backups into
+     * chains without opening any archive, and so it still works for archives whose
+     * Execution row has been cleaned up.
+     */
+    chain?: {
+        id: string;
+        type: 'full' | 'incremental';
+        /** Filename of the predecessor archive. Absent on the full. */
+        base?: string;
+        index: number;
+    };
     /** SHA-256 checksum of the final backup file (after compression/encryption) */
     checksum?: string;
     /** MD5 checksum of the final backup file - enables native verification for Google Drive and OneDrive */
@@ -300,6 +314,14 @@ export type FileInfo = {
     lastModified: Date;
     locked?: boolean;
     storageClass?: string;
+    /**
+     * Incremental chain this backup belongs to, read from its `.meta.json`.
+     *
+     * Retention needs it because a chain can only be deleted as a whole - later snapshots
+     * reference bytes in earlier archives, so removing one member would silently gut the
+     * others.
+     */
+    chainId?: string;
 };
 
 /** Optional options passed to upload() for adapters that support native checksum storage. */
@@ -333,6 +355,24 @@ export interface DirectoryFileEntry {
     relativePath: string;
     size: number;
     lastModified: Date;
+    /**
+     * Set when an incremental backup decided the file is unchanged and skipped the
+     * transfer. The file still belongs to the snapshot - its bytes just already exist in
+     * an earlier archive of the chain - so it is reported here rather than omitted.
+     */
+    unchanged?: boolean;
+}
+
+/** Options for a directory download, used by incremental backups to skip unchanged files. */
+export interface DirectoryDownloadOptions {
+    /**
+     * Decides whether a file has to be transferred.
+     *
+     * Adapters that ignore this stay correct: everything is downloaded, and the archive
+     * writer still avoids re-storing unchanged content by comparing checksums. Honouring
+     * it is what turns that storage saving into a bandwidth saving as well.
+     */
+    shouldDownload?: (entry: { relativePath: string; size: number; lastModified: Date }) => boolean;
 }
 
 /** Result of downloading an entire remote directory tree to a local directory. */
@@ -442,7 +482,8 @@ export interface StorageAdapter extends BaseAdapter {
         localPath: string,
         excludePatterns?: string[],
         onProgress?: (processedBytes: number, totalBytes: number, processedFiles: number, totalFiles: number) => void,
-        onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void
+        onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void,
+        options?: DirectoryDownloadOptions
     ): Promise<DirectoryDownloadResult>;
 
     /**

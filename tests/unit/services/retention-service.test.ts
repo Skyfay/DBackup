@@ -650,3 +650,80 @@ describe('RetentionService', () => {
         });
     });
 });
+
+describe('RetentionService - incremental chains', () => {
+    const at = (day: number) => new Date(2026, 0, day);
+    const file = (name: string, day: number, chainId?: string, locked = false) => ({
+        name, path: `/job/${name}`, size: 1000, lastModified: at(day),
+        ...(chainId ? { chainId } : {}),
+        ...(locked ? { locked: true } : {}),
+    });
+
+    it('keeps every member of a chain when one of its snapshots survives', () => {
+        // keepCount 2 would normally drop the two oldest, but they are the base the two
+        // survivors are built on - deleting them would gut the snapshots being kept.
+        const files = [
+            file('full-1.tar', 1, 'chain-a'),
+            file('inc-2.tar', 2, 'chain-a'),
+            file('inc-3.tar', 3, 'chain-a'),
+            file('inc-4.tar', 4, 'chain-a'),
+        ];
+
+        const result = RetentionService.calculateRetention(files, { mode: 'SIMPLE', simple: { keepCount: 2 } });
+
+        expect(result.delete).toHaveLength(0);
+        expect(result.keep).toHaveLength(4);
+    });
+
+    it('deletes a whole chain once all of its snapshots have expired', () => {
+        const files = [
+            file('old-full.tar', 1, 'chain-old'),
+            file('old-inc.tar', 2, 'chain-old'),
+            file('new-full.tar', 10, 'chain-new'),
+            file('new-inc.tar', 11, 'chain-new'),
+        ];
+
+        const result = RetentionService.calculateRetention(files, { mode: 'SIMPLE', simple: { keepCount: 2 } });
+
+        expect(result.delete.map((f) => f.name).sort()).toEqual(['old-full.tar', 'old-inc.tar']);
+        expect(result.keep.map((f) => f.name).sort()).toEqual(['new-full.tar', 'new-inc.tar']);
+    });
+
+    it('never deletes part of a chain', () => {
+        const files = [
+            file('c1-a.tar', 1, 'chain-1'), file('c1-b.tar', 2, 'chain-1'), file('c1-c.tar', 3, 'chain-1'),
+            file('c2-a.tar', 4, 'chain-2'), file('c2-b.tar', 5, 'chain-2'),
+        ];
+
+        const result = RetentionService.calculateRetention(files, { mode: 'SIMPLE', simple: { keepCount: 1 } });
+
+        const deletedChains = new Set(result.delete.map((f) => f.chainId));
+        for (const chainId of deletedChains) {
+            const survivors = result.keep.filter((f) => f.chainId === chainId);
+            expect(survivors, `chain ${chainId} was only partially deleted`).toHaveLength(0);
+        }
+    });
+
+    it('lets a locked snapshot pin its entire chain', () => {
+        const files = [
+            file('full-1.tar', 1, 'chain-a', true),
+            file('inc-2.tar', 2, 'chain-a'),
+            file('standalone.tar', 20),
+        ];
+
+        const result = RetentionService.calculateRetention(files, { mode: 'SIMPLE', simple: { keepCount: 1 } });
+
+        expect(result.delete).toHaveLength(0);
+        expect(result.keep.map((f) => f.name).sort()).toEqual(['full-1.tar', 'inc-2.tar', 'standalone.tar']);
+    });
+
+    it('leaves standalone backups unaffected by chain protection', () => {
+        const files = [
+            file('a.tar', 1), file('b.tar', 2), file('c.tar', 3), file('d.tar', 4),
+        ];
+
+        const result = RetentionService.calculateRetention(files, { mode: 'SIMPLE', simple: { keepCount: 2 } });
+
+        expect(result.delete.map((f) => f.name).sort()).toEqual(['a.tar', 'b.tar']);
+    });
+});

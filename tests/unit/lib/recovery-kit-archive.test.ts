@@ -200,3 +200,94 @@ describe("recovery kit: restore_archive.js", () => {
         expect(stderr).toMatch(/decrypt_backup\.js/);
     });
 });
+
+describe("recovery kit: incremental chains", () => {
+    const SRC = "src-1";
+
+    /** Builds full-1.tar plus inc-2.tar in the same folder, as DBackup lays them out. */
+    async function buildChain() {
+        const { carryForward, fileKey } = await import("@/lib/archive/chain");
+
+        const chainDir = path.join(workDir, "chain-2026-07-15");
+        await fs.mkdir(chainDir, { recursive: true });
+
+        const stage = async (files: Record<string, Buffer>) => {
+            const dir = await fs.mkdtemp(path.join(workDir, "stage-"));
+            const entries = [];
+            for (const [rel, content] of Object.entries(files)) {
+                await fs.writeFile(path.join(dir, rel), content);
+                entries.push({
+                    path: rel, size: content.length, mtime: "2026-07-22T10:00:00.000Z",
+                    checksum: crypto.createHash("sha256").update(content).digest("hex"),
+                });
+            }
+            return { dir, entries };
+        };
+
+        const contents = { kept: Buffer.from("KEPT SINCE THE FULL\n"), changed: crypto.randomBytes(3000) };
+
+        const s1 = await stage({ "kept.txt": contents.kept, "changed.bin": Buffer.from("OLD") });
+        const full = await createArchive(
+            [{ kind: "directory", jobSourceId: SRC, label: "T", localPath: s1.dir, excludePatterns: [], files: s1.entries }],
+            path.join(chainDir, "full-1.tar"),
+            {
+                sourceType: "directory-only", compression: "GZIP",
+                encryption: { masterKey: MASTER_KEY, profileId: "p1" },
+                chain: { id: "c1", type: "full", index: 0 },
+            }
+        );
+
+        const s2 = await stage({ "changed.bin": contents.changed });
+        await createArchive(
+            [{ kind: "directory", jobSourceId: SRC, label: "T", localPath: s2.dir, excludePatterns: [], files: s2.entries }],
+            path.join(chainDir, "inc-2.tar"),
+            {
+                sourceType: "directory-only", compression: "GZIP",
+                encryption: { masterKey: MASTER_KEY, profileId: "p1" },
+                chain: {
+                    id: "c1", type: "incremental", base: "full-1.tar", index: 1,
+                    carried: carryForward(full.index, "full-1.tar", new Set([fileKey(SRC, "kept.txt")])),
+                },
+            }
+        );
+
+        return { chainDir, contents };
+    }
+
+    it("lists a snapshot and reports which archives of the chain it needs", async () => {
+        const { chainDir } = await buildChain();
+        const { stdout, code } = await runScript(["--list", path.join(chainDir, "inc-2.tar"), KEY_HEX]);
+
+        expect(code).toBe(0);
+        expect(stdout).toContain("incremental (position 1");
+        expect(stdout).toContain("found    full-1.tar");
+        expect(stdout).toContain("kept.txt");
+        expect(stdout).toContain("changed.bin");
+    });
+
+    it("extracts a snapshot from across the chain, offline and with only the key", async () => {
+        const { chainDir, contents } = await buildChain();
+        const outDir = path.join(workDir, "out");
+
+        const { code, stderr } = await runScript(["--extract", path.join(chainDir, "inc-2.tar"), outDir, KEY_HEX]);
+
+        expect(stderr).toBe("");
+        expect(code).toBe(0);
+        // kept.txt lives in full-1.tar, changed.bin in inc-2.tar - both come back intact.
+        expect(await fs.readFile(path.join(outDir, SRC, "kept.txt"))).toEqual(contents.kept);
+        expect(await fs.readFile(path.join(outDir, SRC, "changed.bin"))).toEqual(contents.changed);
+    });
+
+    it("names the missing archive instead of restoring a partial snapshot", async () => {
+        const { chainDir } = await buildChain();
+        await fs.unlink(path.join(chainDir, "full-1.tar"));
+
+        const { stderr, code } = await runScript([
+            "--extract", path.join(chainDir, "inc-2.tar"), path.join(workDir, "out"), KEY_HEX,
+        ]);
+
+        expect(code).not.toBe(0);
+        expect(stderr).toMatch(/full-1\.tar/);
+        expect(stderr).toMatch(/incremental chain/i);
+    });
+});

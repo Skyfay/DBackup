@@ -13,7 +13,7 @@ import { pipeline } from "stream/promises";
 import { createGzip, createGunzip } from "zlib";
 import { createInterface } from "readline";
 import { openEntry, sealEntry, INDEX_ORDINAL } from "@/lib/crypto/entry-cipher";
-import { ArchiveIndex, IndexEntryLine, IndexLine } from "./types";
+import { ArchiveIndex, entryKey, IndexEntryLine, IndexLine } from "./types";
 
 /** Crypto parameters for the index, omitted for unencrypted archives. */
 export interface IndexSealing {
@@ -65,10 +65,11 @@ export async function parseIndex(bytes: Buffer, sealing?: IndexSealing): Promise
 
     const index: ArchiveIndex = {
         header: { k: "h", v: 2, createdAt: "", archive: "" },
-        entries: new Map<number, IndexEntryLine>(),
+        entries: new Map<string, IndexEntryLine>(),
         databases: [],
         directories: [],
         files: [],
+        deps: [],
     };
 
     let sawHeader = false;
@@ -86,8 +87,11 @@ export async function parseIndex(bytes: Buffer, sealing?: IndexSealing): Promise
                         index.header = parsed;
                         sawHeader = true;
                         break;
+                    case "deps":
+                        index.deps = parsed.archives;
+                        break;
                     case "e":
-                        index.entries.set(parsed.n, parsed);
+                        index.entries.set(entryKey(parsed.a, parsed.n), parsed);
                         break;
                     case "db":
                         index.databases.push(parsed);
@@ -114,7 +118,8 @@ export async function parseIndex(bytes: Buffer, sealing?: IndexSealing): Promise
 export function indexToLines(index: ArchiveIndex): IndexLine[] {
     return [
         index.header,
-        ...[...index.entries.values()].sort((a, b) => a.n - b.n),
+        ...(index.deps.length > 0 ? [{ k: "deps" as const, archives: index.deps }] : []),
+        ...[...index.entries.values()].sort((a, b) => (a.a ?? "").localeCompare(b.a ?? "") || a.n - b.n),
         ...index.databases,
         ...index.directories,
         ...index.files,

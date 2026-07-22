@@ -89,6 +89,21 @@ Click on a file to see:
 - Compression/encryption status
 - File checksums
 
+### Incremental Snapshots
+
+Jobs using [incremental backups](/user-guide/features/backup-modes) produce one row per
+snapshot, each a complete restorable point in time. A **Type** column marks them Full or
+Incremental.
+
+The size column shows the **complete snapshot size**, not just what that archive stores -
+hover it to see the stored size. An incremental archive holding 2 GB can represent a 60 GB
+snapshot, and showing the 2 GB alone would be misleading.
+
+For these backups the download menu offers **Download Complete Snapshot**, which assembles
+the full contents from the chain as a `.tar.gz`. Plain **Download** still gives you the raw
+archive file, which for an incremental is only the delta - useful for diagnostics, not for
+recovery.
+
 ### Browse Files
 
 Backups that include directory sources carry a file index, and show a **Browse files**

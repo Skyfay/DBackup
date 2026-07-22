@@ -301,9 +301,47 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
         setBrowseFile(file);
     }, []);
 
+    /**
+     * Downloads a complete snapshot rather than the raw archive.
+     *
+     * An incremental archive only stores what changed, so downloading the file itself
+     * would hand the user a delta. This assembles the full contents from the chain.
+     */
+    const handleDownloadSnapshot = useCallback(async (file: FileInfo) => {
+        if (!canDownload) {
+            toast.error("You do not have permission to download backups");
+            return;
+        }
+
+        const toastId = toast.loading(`Assembling ${file.name}...`);
+        try {
+            const res = await fetch(`/api/storage/${selectedDestination}/restore-files`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ file: file.path, target: { kind: "download" } }),
+            });
+            if (!res.ok) {
+                const failure = await res.json().catch(() => ({ error: "Download failed" }));
+                throw new Error(failure.error || "Download failed");
+            }
+
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement("a");
+            anchor.href = url;
+            anchor.download = `${file.name.replace(/\.[^.]+$/, "")}-snapshot.tar.gz`;
+            anchor.click();
+            URL.revokeObjectURL(url);
+            toast.success("Download started", { id: toastId });
+        } catch (e: unknown) {
+            toast.error(e instanceof Error ? e.message : String(e), { id: toastId });
+        }
+    }, [canDownload, selectedDestination]);
+
     const columns = useMemo(() => getColumns({
         onRestore: handleRestoreClick,
         onBrowseFiles: handleBrowseFiles,
+        onDownloadSnapshot: handleDownloadSnapshot,
         onDownload: handleDownload,
         onDelete: handleDeleteClick,
         onToggleLock: handleToggleLock,
@@ -312,7 +350,7 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
         canDownload,
         canRestore,
         canDelete
-    }), [handleRestoreClick, handleBrowseFiles, handleDownload, handleDeleteClick, handleToggleLock, handleGenerateLink, handleVerify, canDownload, canRestore, canDelete]);
+    }), [handleRestoreClick, handleBrowseFiles, handleDownloadSnapshot, handleDownload, handleDeleteClick, handleToggleLock, handleGenerateLink, handleVerify, canDownload, canRestore, canDelete]);
 
     const filterableColumns = useMemo(() => {
         const jobs = Array.from(new Set(files.map(f => f.jobName).filter(Boolean).filter(n => n !== "Unknown"))) as string[];

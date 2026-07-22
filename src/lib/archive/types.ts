@@ -29,9 +29,32 @@ export interface ArchiveEncryptionInfo {
     profileId: string;
 }
 
+/**
+ * Position of this archive within an incremental chain.
+ *
+ * Absent on a standalone full backup, which is what a FULL-mode job always produces.
+ */
+export interface ChainInfo {
+    /** Shared by the full and every incremental built on it. */
+    id: string;
+    type: "full" | "incremental";
+    /**
+     * Filename of the predecessor archive, absent on the full.
+     *
+     * Deliberately a filename and not an Execution id: an id means nothing outside
+     * DBackup's database, which would make the chain unresolvable without DBackup and
+     * break the whole recoverability promise.
+     */
+    base?: string;
+    /** Position in the chain. The full is 0. */
+    index: number;
+}
+
 export interface ArchiveManifest {
     version: 2;
     createdAt: string;
+    /** Absent on standalone full backups. */
+    chain?: ChainInfo;
     /** Database adapterId, or DIRECTORY_ONLY_SOURCE_TYPE. Structural, not user data. */
     sourceType: string;
     engineVersion?: string;
@@ -78,8 +101,21 @@ export interface IndexHeaderLine {
  */
 export interface IndexEntryLine {
     k: "e";
-    /** Entry ordinal, also the nonce counter. Unique within the archive, starts at 1. */
+    /**
+     * Entry ordinal, also the nonce counter. Unique **within its own archive**, starts at 1.
+     *
+     * Not unique across a chain's index, because a carried-over entry keeps the ordinal it
+     * had in its own archive - it has to, since that ordinal is what derives its nonce.
+     * Use entryKey() to address entries.
+     */
     n: number;
+    /**
+     * Archive holding this entry. Absent means the archive this index belongs to.
+     *
+     * Set on entries carried forward from an earlier archive in the same chain, so a
+     * single index fully describes a snapshot without opening the predecessors' indexes.
+     */
+    a?: string;
     /** Tar member name. */
     member: string;
     /** Byte offset of the member's payload within the archive. */
@@ -129,29 +165,61 @@ export interface IndexFileLine {
     m: string;
     /** SHA-256 of the plaintext content. Safe to store here because the index is sealed. */
     h?: string;
-    /** Ordinal of the physical entry holding this file's bytes. */
+    /** Ordinal of the physical entry holding this file's bytes, within archive `a`. */
     n: number;
+    /**
+     * Archive holding this file's bytes. Absent means the archive this index belongs to.
+     *
+     * This is what makes a snapshot's index a complete picture: an unchanged file simply
+     * keeps pointing at whichever earlier archive already holds it, so a restore never
+     * has to replay the chain.
+     */
+    a?: string;
     /** Byte offset within the decompressed entry. Only set for bundled entries. */
     o?: number;
     /** Byte length within the decompressed entry. Only set for bundled entries. */
     l?: number;
 }
 
+/**
+ * Archives this snapshot needs besides its own.
+ *
+ * Lets a reader check chain completeness up front and name the missing archive, instead
+ * of failing partway through a restore.
+ */
+export interface IndexDepsLine {
+    k: "deps";
+    archives: string[];
+}
+
 export type IndexLine =
     | IndexHeaderLine
+    | IndexDepsLine
     | IndexEntryLine
     | IndexDatabaseLine
     | IndexDirectoryLine
     | IndexFileLine;
 
+/**
+ * Addresses an entry across a chain.
+ *
+ * Ordinals are only unique within one archive, so the archive name has to be part of the
+ * key. An absent archive means "this index's own archive".
+ */
+export function entryKey(archive: string | undefined, ordinal: number): string {
+    return `${archive ?? ""}#${ordinal}`;
+}
+
 /** Parsed index, grouped for lookup. */
 export interface ArchiveIndex {
     header: IndexHeaderLine;
-    /** Keyed by ordinal. */
-    entries: Map<number, IndexEntryLine>;
+    /** Keyed by entryKey(entry.a, entry.n). */
+    entries: Map<string, IndexEntryLine>;
     databases: IndexDatabaseLine[];
     directories: IndexDirectoryLine[];
     files: IndexFileLine[];
+    /** Other archives this snapshot references. Empty for a standalone full. */
+    deps: string[];
 }
 
 // ── Writer input ──────────────────────────────────────────────────────────
@@ -191,6 +259,14 @@ export type ArchiveSourceEntry =
         files: SourceFileEntry[];
     };
 
+/** Index content carried forward from earlier archives in the same chain. */
+export interface CarriedIndexContent {
+    /** File lines whose bytes live in an earlier archive. Every line has `a` set. */
+    files: IndexFileLine[];
+    /** The entry lines those files point at. Every line has `a` set. */
+    entries: IndexEntryLine[];
+}
+
 export interface CreateArchiveOptions {
     sourceType: string;
     engineVersion?: string;
@@ -200,6 +276,8 @@ export interface CreateArchiveOptions {
         masterKey: Buffer;
         profileId: string;
     };
+    /** Omit for a standalone full backup. */
+    chain?: ChainInfo & { carried?: CarriedIndexContent };
 }
 
 export interface CreateArchiveResult {

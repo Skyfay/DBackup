@@ -111,6 +111,9 @@ export interface JobData {
     schedulePresetId?: string | null;
     schedulePreset?: { id: string; name: string; schedule: string } | null;
     skipVerification?: boolean;
+    backupMode?: string;
+    fullEveryDays?: number;
+    verifyByHash?: boolean;
     notifications: { id: string, name: string }[];
     notificationTemplates?: { templateId: string; priority: number }[];
     destinations: {
@@ -186,6 +189,9 @@ const jobSchema = z.object({
     notificationTemplateIds: z.array(z.string()).default([]),
     enabled: z.boolean().default(true),
     skipVerification: z.boolean().default(false),
+    backupMode: z.enum(["FULL", "INCREMENTAL"]).default("FULL"),
+    fullEveryDays: z.coerce.number().int().min(1).max(365).default(7),
+    verifyByHash: z.boolean().default(false),
 }).superRefine((data, ctx) => {
     if (!data.sourceId && data.directorySources.length === 0) {
         ctx.addIssue({
@@ -235,6 +241,9 @@ export interface JobFormProps {
         schedulePresetId?: string | null;
         schedulePreset?: { id: string; name: string; schedule: string } | null;
         skipVerification?: boolean;
+        backupMode?: string;
+        fullEveryDays?: number;
+        verifyByHash?: boolean;
         notifications: { id: string; name: string }[];
         notificationTemplates?: { templateId: string; priority: number }[];
         destinations: { configId: string; priority: number; retention: string; retentionPolicyId?: string | null }[];
@@ -389,6 +398,9 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
             notificationTemplateIds: initialData?.notificationTemplates?.map((t) => t.templateId) || [],
             enabled: initialData?.enabled ?? true,
             skipVerification: initialData?.skipVerification ?? false,
+            backupMode: (initialData?.backupMode as "FULL" | "INCREMENTAL") ?? "FULL",
+            fullEveryDays: initialData?.fullEveryDays ?? 7,
+            verifyByHash: initialData?.verifyByHash ?? false,
         }
     });
 
@@ -624,6 +636,9 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
                 notificationTemplateIds: data.notificationTemplateIds || [],
                 notificationEvents: data.notificationEvents.join("|") || "SUCCESS|PARTIAL|FAILED",
                 skipVerification: data.skipVerification,
+                backupMode: data.backupMode,
+                fullEveryDays: data.fullEveryDays,
+                verifyByHash: data.verifyByHash,
                 pgCompression,
                 encryptionProfileId: data.encryptionProfileId === "no-encryption" ? "" : data.encryptionProfileId,
                 namingTemplateId: data.namingTemplateId || null,
@@ -1254,6 +1269,83 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
                                 </div>
                             </div>
                         )}
+                        {/* Incremental backups only affect directory sources - database dumps
+                            are always stored in full, so the section is hidden without them. */}
+                        {(form.watch("directorySources") ?? []).length > 0 && (
+                            <div className="rounded-lg border p-4 space-y-4">
+                                <FormField control={form.control} name="backupMode" render={({ field }) => (
+                                    <FormItem>
+                                        <div className="flex items-center justify-between">
+                                            <div className="space-y-0.5">
+                                                <FormLabel>Incremental backups</FormLabel>
+                                                <FormDescription>
+                                                    Store only files that changed since the last run. Saves a lot of
+                                                    storage and transfer, but a backup is then part of a chain: if the
+                                                    chain&apos;s full backup is lost, every backup built on it is
+                                                    affected. Chains are kept in their own folder and deleted as a unit.
+                                                </FormDescription>
+                                            </div>
+                                            <FormControl>
+                                                <Switch
+                                                    checked={field.value === "INCREMENTAL"}
+                                                    onCheckedChange={(on) => field.onChange(on ? "INCREMENTAL" : "FULL")}
+                                                />
+                                            </FormControl>
+                                        </div>
+                                        <FormMessage />
+                                    </FormItem>
+                                )} />
+
+                                {form.watch("backupMode") === "INCREMENTAL" && (
+                                    <div className="space-y-4 border-t pt-4">
+                                        {form.watch("sourceId") && (
+                                            <p className="text-sm text-muted-foreground">
+                                                This job also backs up a database. Database dumps are always stored in
+                                                full, so the saving only applies to the directory sources.
+                                            </p>
+                                        )}
+
+                                        <FormField control={form.control} name="fullEveryDays" render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel>Full backup every</FormLabel>
+                                                <FormControl>
+                                                    <div className="flex items-center gap-2">
+                                                        <Input type="number" min={1} max={365} className="w-24" {...field} value={String(field.value ?? 7)} />
+                                                        <span className="text-sm text-muted-foreground">day(s)</span>
+                                                    </div>
+                                                </FormControl>
+                                                <FormDescription>
+                                                    Starts a fresh chain this often. A shorter interval uses more
+                                                    storage but limits how many backups a damaged full can affect.
+                                                </FormDescription>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )} />
+
+                                        <FormField control={form.control} name="verifyByHash" render={({ field }) => (
+                                            <FormItem>
+                                                <div className="flex items-center justify-between">
+                                                    <div className="space-y-0.5">
+                                                        <FormLabel>Detect changes by content</FormLabel>
+                                                        <FormDescription>
+                                                            Read every file and compare its checksum instead of trusting
+                                                            size and modification time. Still avoids storing unchanged
+                                                            files, but no longer saves transfer. Use it when the source
+                                                            has unreliable timestamps.
+                                                        </FormDescription>
+                                                    </div>
+                                                    <FormControl>
+                                                        <Switch checked={field.value} onCheckedChange={field.onChange} />
+                                                    </FormControl>
+                                                </div>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )} />
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                         <FormField control={form.control} name="skipVerification" render={({ field }) => (
                             <FormItem>
                                 <div className="flex items-center justify-between rounded-lg border p-4">

@@ -75,6 +75,12 @@ anything.
 {
   "version": 2,
   "createdAt": "2026-07-22T03:00:00.000Z",
+  "chain": {                          // absent on a standalone full backup
+    "id": "<uuid>",                   // shared by the full and every incremental on it
+    "type": "incremental",            // "full" | "incremental"
+    "base": "full-2026-07-15.tar",    // predecessor filename, absent on the full
+    "index": 3                        // position in the chain, the full is 0
+  },
   "sourceType": "mysql",              // or "directory-only"
   "engineVersion": "8.0.32",
   "compression": "GZIP",              // "NONE" | "GZIP" | "BROTLI"
@@ -153,8 +159,14 @@ One object per line streams in constant memory.
 // Header, first line
 {"k":"h","v":2,"createdAt":"2026-07-22T03:00:00.000Z","archive":"backup.tar"}
 
+// Archives this snapshot needs besides its own (incremental chains only)
+{"k":"deps","archives":["full-2026-07-15.tar","inc-2026-07-18.tar"]}
+
 // Physical entry: one TAR member holding bytes
 {"k":"e","n":1,"member":"d/000001","off":1536,"size":8421,"sealed":true,"comp":"GZIP","bundle":true}
+
+// The same, but carried forward - its bytes live in another archive of the chain
+{"k":"e","n":7,"a":"full-2026-07-15.tar","member":"d/000007","off":9216,"size":4096,"sealed":true}
 
 // Database dump
 {"k":"db","name":"appdb","format":"custom","n":1,"s":4211000}
@@ -168,7 +180,8 @@ One object per line streams in constant memory.
 
 | Field | Meaning |
 | :--- | :--- |
-| `n` | Entry ordinal. Also the nonce counter. |
+| `n` | Entry ordinal, **unique within its own archive**. Also the nonce counter. |
+| `a` | Archive holding these bytes. Absent means this archive. Set on carried-forward content. |
 | `off` | Byte offset of the member's payload within the archive |
 | `size` | Bytes stored in the TAR, i.e. after compression and sealing |
 | `sealed` | Present when the payload is encrypted |
@@ -179,6 +192,55 @@ One object per line streams in constant memory.
 
 Separating physical entries (`e`) from logical files (`f`) is what makes bundling possible:
 many `f` lines can point at one `e` line.
+
+Because ordinals repeat between archives, an entry is addressed by the pair `(a, n)`, not
+by `n` alone. The ordinal has to stay as it was in its own archive, since that is what
+derives its nonce.
+
+## Incremental chains
+
+An incremental archive stores only the files that changed, but **its index still describes
+the whole snapshot**. Unchanged files keep pointing at whichever archive already holds
+them via `a`, and the entries they reference are copied into this index too. A restore
+therefore resolves a snapshot in one lookup and never replays the chain.
+
+Deleted files simply do not appear in the new index. There are no tombstones.
+
+### Folder layout
+
+A chain lives in its own folder, so copying "a backup" means copying a folder. This is
+visible in any file browser without knowing anything about the format:
+
+```
+<job name>/
+  chain-2026-07-15T03-00-00/
+    full-2026-07-15.tar      + .index + .meta.json
+    inc-2026-07-16.tar       + .index + .meta.json
+    inc-2026-07-17.tar       + .index + .meta.json
+```
+
+Jobs in full-backup mode keep the flat `<job name>/<file>.tar` layout.
+
+### Resolving a chain
+
+1. Read the snapshot's index and its `deps` line.
+2. Look for each named archive **in the same folder**. If one is missing, stop and report
+   it by name - a partial restore is worse than a clear failure.
+3. For each `f` line, take `a` to find the archive and `(a, n)` to find the entry.
+4. Open the foreign archive and read **its own** manifest for the `kdfSalt` and
+   `noncePrefix`. Each archive derives its own keys from the same profile key, so no extra
+   secret is involved.
+
+::: tip Work archive by archive
+Group the files by `a` and finish one archive before opening the next. A reader that has to
+download whole archives (because the storage backend cannot serve byte ranges) otherwise
+ends up holding the entire chain on disk at once.
+:::
+
+### Database dumps are never incremental
+
+Every archive stores its databases in full. An incremental archive is "every database
+complete, plus only the directory files that changed", so `db` lines never carry an `a`.
 
 ::: warning The checksum belongs in the sealed index
 `h` is a SHA-256 over plaintext, which is a confirmation oracle: anyone holding a candidate
@@ -228,6 +290,13 @@ header on a potentially enormous archive.
 ```bash
 node restore_archive.js --list    backup.tar <hex_key>
 node restore_archive.js --extract backup.tar ./out <hex_key> 'www/**'
+```
+
+For an incremental chain, point the tool at the snapshot you want and keep the other
+archives in the same folder - it resolves them itself and lists what it is missing:
+
+```bash
+node restore_archive.js --list ./chain-2026-07-15/inc-2026-07-17.tar <hex_key>
 ```
 
 **Unencrypted archives** need no tooling:

@@ -9,6 +9,7 @@ function file(src: string, p: string, s: number): IndexFileLine {
 const index: ArchiveIndex = {
     header: { k: "h", v: 2, createdAt: "2026-07-22T10:00:00.000Z", archive: "backup.tar" },
     entries: new Map(),
+    deps: [],
     databases: [],
     directories: [],
     files: [

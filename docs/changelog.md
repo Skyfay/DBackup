@@ -8,6 +8,8 @@ All notable changes to DBackup are documented here.
 > ⚠️ **Breaking:** Combined (database + directory source) backups now use a new seekable archive format. Compression and encryption are applied to each entry inside the archive instead of to the archive as a whole, which is what makes it possible to restore a single file without downloading and decrypting the entire backup. Restoring such a backup requires this version or newer. Database-only backups are unaffected and keep their existing format.
 >
 > ⚠️ **Breaking:** Combined backups now write a third sidecar file next to the backup (`<backup>.index`) on every destination, alongside the existing `.meta.json`. It holds the archive's file index. Retention and storage tooling that assumes exactly two files per backup needs updating.
+>
+> ⚠️ **Breaking:** Jobs using the new incremental mode store their backups in one folder per chain, named `<job>/chain-<timestamp>/`, with a `full-` or `inc-` filename prefix. Jobs in the default full-backup mode keep the existing flat layout.
 
 ### ✨ Features
 
@@ -27,6 +29,8 @@ All notable changes to DBackup are documented here.
 - **storage**: Backups with directory sources can now be browsed file by file in the Storage Explorer, and individual files or folders restored on their own - as a `.tar.gz` download, back to their original location, or into any configured destination.
 - **storage**: Storage adapters can now serve byte ranges, so a single-file restore transfers only that file instead of the whole backup. Implemented for S3, SFTP, WebDAV, Google Drive, OneDrive, FTP, Dropbox and the local filesystem, with an automatic fallback for SMB and Rsync.
 - **vault**: The Recovery Kit now also ships `restore_archive.js`, which lists and extracts file backups offline with nothing but Node.js.
+- **jobs**: Directory sources can now be backed up incrementally, storing only files that changed since the last run. Opt-in per job, with a configurable full-backup interval, and a mode that detects changes by content instead of timestamps.
+- **storage**: The Storage Explorer now shows incremental snapshots with their complete size and a Full/Incremental badge, and offers a download that assembles the complete snapshot out of its chain.
 
 ### 🐛 Bug Fixes
 
@@ -36,6 +40,7 @@ All notable changes to DBackup are documented here.
 - **backup**: Fixed the storage listing cache update after an upload being fired without awaiting it, which left its failures unhandled and could let it outlive the backup run that produced it.
 - **backup**: Fixed the archive index sidecar being counted as a backup file by retention, the Storage Explorer, integrity checks and storage statistics, which could cause retention to delete real backups prematurely.
 - **storage**: Deleting a backup now removes every sidecar belonging to it, instead of leaving orphaned index files behind.
+- **retention**: Incremental chains are now retained and deleted as a unit, so a snapshot can never lose the archives it depends on.
 
 ### 🔒 Security
 
@@ -49,6 +54,7 @@ All notable changes to DBackup are documented here.
 
 - **wiki**: Added an Archive Format reference documenting the seekable archive layout, key derivation and index format byte by byte, so backups stay recoverable independently of DBackup.
 - **wiki**: Updated the Recovery Kit and Storage Explorer guides for file-level browsing and restore.
+- **wiki**: Added a Backup Modes guide covering incremental backups, chain storage, retention behaviour and when DBackup falls back to a full backup.
 
 ### 🐳 Docker
 

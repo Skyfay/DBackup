@@ -24,10 +24,11 @@ const TargetSchema = z.discriminatedUnion("kind", [
 
 const RestoreFilesSchema = z.object({
     file: z.string().min(1).refine((v) => !v.includes("..") && !v.startsWith("/"), "Invalid file path"),
+    /** Omit to restore the complete snapshot. */
     selections: z.array(z.object({
         src: z.string().min(1),
         paths: z.array(z.string().min(1)).min(1),
-    })).min(1),
+    })).min(1).optional(),
     target: TargetSchema,
     /** Resolve the selection and report its size without restoring anything. */
     dryRun: z.boolean().optional(),

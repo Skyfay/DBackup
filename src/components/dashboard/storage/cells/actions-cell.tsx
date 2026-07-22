@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Download, RotateCcw, Trash2, Lock, FileLock2, FileCheck, Terminal, ShieldCheck, ShieldX, Shield, FolderSearch } from "lucide-react";
+import { Download, RotateCcw, Trash2, Lock, FileLock2, FileCheck, Terminal, ShieldCheck, ShieldX, Shield, FolderSearch, PackageOpen } from "lucide-react";
 import { FileInfo } from "@/app/dashboard/storage/columns";
 
 const ARCHIVED_STORAGE_CLASSES = ["GLACIER", "DEEP_ARCHIVE"];
@@ -11,6 +11,8 @@ interface ActionsCellProps {
     onDownload: (file: FileInfo, decrypt?: boolean) => void;
     onRestore: (file: FileInfo) => void;
     onBrowseFiles?: (file: FileInfo) => void;
+    /** Materialises a complete snapshot out of its incremental chain. */
+    onDownloadSnapshot?: (file: FileInfo) => void;
     onDelete: (file: FileInfo) => void;
     onToggleLock?: (file: FileInfo) => void;
     onGenerateLink?: (file: FileInfo) => void;
@@ -25,6 +27,7 @@ export function ActionsCell({
     onDownload,
     onRestore,
     onBrowseFiles,
+    onDownloadSnapshot,
     onDelete,
     onToggleLock,
     onGenerateLink,
@@ -132,6 +135,12 @@ export function ActionsCell({
                                 <FileCheck className="mr-2 h-4 w-4" />
                                 <span>Download Decrypted</span>
                             </DropdownMenuItem>
+                            {onDownloadSnapshot && file.chain && (
+                                <DropdownMenuItem onClick={() => onDownloadSnapshot(file)}>
+                                    <PackageOpen className="mr-2 h-4 w-4" />
+                                    <span>Download Complete Snapshot</span>
+                                </DropdownMenuItem>
+                            )}
                             {onGenerateLink && (
                                 <>
                                     <DropdownMenuSeparator />
@@ -162,6 +171,12 @@ export function ActionsCell({
                                 <Download className="mr-2 h-4 w-4" />
                                 <span>Download</span>
                             </DropdownMenuItem>
+                            {onDownloadSnapshot && file.chain && (
+                                <DropdownMenuItem onClick={() => onDownloadSnapshot(file)}>
+                                    <PackageOpen className="mr-2 h-4 w-4" />
+                                    <span>Download Complete Snapshot</span>
+                                </DropdownMenuItem>
+                            )}
                             {onGenerateLink && (
                                 <>
                                     <DropdownMenuSeparator />

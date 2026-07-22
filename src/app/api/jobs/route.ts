@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
         checkPermissionWithContext(ctx, PERMISSIONS.JOBS.WRITE);
 
         const body = await req.json();
-        const { name, schedule, sourceId, databases, destinations, sources, notificationIds, notificationTemplateIds, enabled, encryptionProfileId, compression, pgCompression, notificationEvents, namingTemplateId, schedulePresetId, skipVerification } = body;
+        const { name, schedule, sourceId, databases, destinations, sources, notificationIds, notificationTemplateIds, enabled, encryptionProfileId, compression, pgCompression, notificationEvents, namingTemplateId, schedulePresetId, skipVerification, backupMode, fullEveryDays, verifyByHash } = body;
 
         if (!name || !schedule || !destinations || !Array.isArray(destinations) || destinations.length === 0) {
             return NextResponse.json({ error: "Missing required fields (name, schedule, destinations)" }, { status: 400 });
@@ -93,6 +93,9 @@ export async function POST(req: NextRequest) {
             namingTemplateId: namingTemplateId ?? null,
             schedulePresetId: schedulePresetId ?? null,
             skipVerification: skipVerification ?? false,
+            backupMode: backupMode ?? "FULL",
+            fullEveryDays: fullEveryDays ?? 7,
+            verifyByHash: verifyByHash ?? false,
         });
 
         return NextResponse.json(newJob, { status: 201 });

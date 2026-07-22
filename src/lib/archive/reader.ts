@@ -14,7 +14,7 @@ import { openEntry } from "@/lib/crypto/entry-cipher";
 import { INDEX_MEMBER, MANIFEST_MEMBER, TAR_BLOCK_SIZE } from "./format";
 import { parseIndex } from "./index-file";
 import { readAll } from "./sources";
-import { ArchiveByteSource, ArchiveIndex, ArchiveManifest, IndexEntryLine, IndexFileLine } from "./types";
+import { ArchiveByteSource, ArchiveIndex, ArchiveManifest, entryKey, IndexEntryLine, IndexFileLine } from "./types";
 
 /** Bytes read when looking for the manifest. Generous, and the manifest is far smaller. */
 const MANIFEST_PROBE_SIZE = 256 * 1024;
@@ -206,7 +206,7 @@ export async function openArchiveFile(
     file: IndexFileLine,
     masterKey?: Buffer
 ): Promise<NodeJS.ReadableStream> {
-    const entry = index.entries.get(file.n);
+    const entry = index.entries.get(entryKey(file.a, file.n));
     if (!entry) {
         throw new Error(`Archive index is inconsistent: file '${file.p}' references missing entry ${file.n}`);
     }
@@ -227,13 +227,20 @@ export async function readArchiveFile(
     return readAll(await openArchiveFile(source, manifest, index, file, masterKey));
 }
 
-/** Groups files by the physical entry holding them, so each entry is fetched once. */
-export function groupFilesByEntry(files: IndexFileLine[]): Map<number, IndexFileLine[]> {
-    const grouped = new Map<number, IndexFileLine[]>();
+/**
+ * Groups files by the physical entry holding them, so each entry is fetched once.
+ *
+ * Keyed by entryKey(), so files carried over from earlier archives in a chain group
+ * against the entry in *their* archive rather than colliding with a same-ordinal entry
+ * in this one.
+ */
+export function groupFilesByEntry(files: IndexFileLine[]): Map<string, IndexFileLine[]> {
+    const grouped = new Map<string, IndexFileLine[]>();
     for (const file of files) {
-        const existing = grouped.get(file.n);
+        const key = entryKey(file.a, file.n);
+        const existing = grouped.get(key);
         if (existing) existing.push(file);
-        else grouped.set(file.n, [file]);
+        else grouped.set(key, [file]);
     }
     // Bundled files are emitted in offset order so one pass over the entry serves them all.
     for (const group of grouped.values()) {

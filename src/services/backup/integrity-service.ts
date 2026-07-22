@@ -379,12 +379,34 @@ export class IntegrityService {
       });
     }
 
+    prioritiseChainMembers(workItems);
+
     callbacks?.onLog(
       `${storageConfig.name}: found ${workItems.length} file${workItems.length !== 1 ? "s" : ""} to verify`
     );
 
     return workItems;
   }
+}
+
+/**
+ * Puts incremental chain members first, fulls ahead of their incrementals.
+ *
+ * A standalone backup only risks itself. A chain's full carries every snapshot built on
+ * it, so if a run is cut short by a filter or a timeout, the archives with the most at
+ * stake should already have been checked. A failed full also makes the next backup run
+ * start a fresh chain, so finding it early limits how much is piled on top of it.
+ *
+ * Chain membership is read from the filename prefix the upload step writes, which avoids
+ * fetching a sidecar per file just to order the queue.
+ */
+function prioritiseChainMembers(items: { fileName: string }[]): void {
+  const rank = (name: string): number => {
+    if (name.startsWith("full-")) return 0;
+    if (name.startsWith("inc-")) return 1;
+    return 2;
+  };
+  items.sort((a, b) => rank(a.fileName) - rank(b.fileName));
 }
 
 export const integrityService = new IntegrityService();

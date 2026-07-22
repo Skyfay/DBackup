@@ -142,6 +142,10 @@ model Job {
   notificationEvents  String             @default("ALWAYS") // Legacy: "ALWAYS", "FAILURE_ONLY", "SUCCESS_ONLY" - kept for backward compat
   notificationTemplates JobNotificationTemplate[]
   skipVerification    Boolean            @default(false)
+  // Incremental backups (directory sources only - database dumps are always full).
+  backupMode          String             @default("FULL")  // "FULL" | "INCREMENTAL"
+  fullEveryDays       Int                @default(7)       // Forces a fresh chain this often
+  verifyByHash        Boolean            @default(false)   // Hash every file instead of trusting size+mtime
 }
 
 model NotificationTemplate {
@@ -226,6 +230,12 @@ model Execution {
   metadata     String?
   triggerType  String?   // "Manual" | "Scheduler" | "Api"
   triggerLabel String?   // e.g. user name, API key name, "Scheduler"
+  // Incremental chain bookkeeping. All null for a standalone full backup.
+  backupType   String?   // "Full" | "Incremental"
+  chainId      String?   // Shared by the full and every incremental built on it
+  baseArchive  String?   // Filename of the predecessor, not an Execution id
+  chainIndex   Int?      // Position in the chain, full = 0
+  logicalSize  BigInt?   // Full snapshot size, as opposed to `size` which is what was stored
   job          Job?      @relation(fields: [jobId], references: [id])
 }
 

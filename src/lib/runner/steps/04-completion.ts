@@ -73,7 +73,20 @@ export async function stepFinalize(ctx: RunnerContext) {
             logs: JSON.stringify(ctx.logs),
             size: ctx.dumpSize,
             path: ctx.finalRemotePath,
-            metadata: JSON.stringify(executionMetadata)
+            metadata: JSON.stringify(executionMetadata),
+            // Chain bookkeeping. Only set for incremental-mode jobs; a full-mode job
+            // leaves these null, which is what marks a backup as standalone.
+            ...(ctx.chain && ctx.job?.backupMode === "INCREMENTAL"
+                ? {
+                    backupType: ctx.chain.type === "full" ? "Full" : "Incremental",
+                    chainId: ctx.chain.chainId,
+                    baseArchive: ctx.chain.baseArchive ?? null,
+                    chainIndex: ctx.chain.index,
+                    // The complete snapshot size, as opposed to `size` which is what this
+                    // archive physically stores. The Storage Explorer shows this one.
+                    logicalSize: typeof ctx.metadata?.logicalSize === "number" ? ctx.metadata.logicalSize : null,
+                }
+                : {}),
         }
     });
 

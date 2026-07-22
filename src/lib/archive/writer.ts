@@ -45,6 +45,8 @@ import { serializeIndex } from "./index-file";
 import {
     ArchiveIndex,
     ArchiveManifest,
+    ChainInfo,
+    entryKey,
     ArchiveSourceEntry,
     CompressionKind,
     CreateArchiveOptions,
@@ -274,6 +276,16 @@ export async function createArchive(
     const manifest: ArchiveManifest = {
         version: 2,
         createdAt: new Date().toISOString(),
+        ...(options.chain
+            ? {
+                chain: {
+                    id: options.chain.id,
+                    type: options.chain.type,
+                    ...(options.chain.base ? { base: options.chain.base } : {}),
+                    index: options.chain.index,
+                } satisfies ChainInfo,
+            }
+            : {}),
         sourceType: options.sourceType,
         engineVersion: options.engineVersion,
         compression: compression ?? "NONE",
@@ -367,15 +379,44 @@ export async function createArchive(
         }
     }
 
+    // ── Carried-over content from earlier archives in the chain ───────────
+    // An incremental only stores what changed, but its index still describes the whole
+    // tree. Unchanged files keep pointing at whichever archive already holds them, which
+    // is what lets a restore resolve a snapshot in one lookup instead of replaying the
+    // chain. The foreign entry lines are carried too, so a single index is self-sufficient
+    // and no predecessor's index has to be opened.
+    const carried = options.chain?.carried;
+    const allFileLines = [...fileLines, ...(carried?.files ?? [])];
+    const allEntryLines = [...entryLines, ...(carried?.entries ?? [])];
+
+    const deps = [...new Set(allFileLines.map((f) => f.a).filter((a): a is string => !!a))].sort();
+
+    // Directory lines describe the whole snapshot, so carried files count towards their
+    // file count and size too. Without this an incremental would report only what it
+    // physically stores, and the browse UI would show a directory as nearly empty.
+    for (const line of directoryLines) {
+        const carriedHere = (carried?.files ?? []).filter((f) => f.src === line.src);
+        line.fileCount += carriedHere.length;
+        line.totalSize += carriedHere.reduce((sum, f) => sum + f.s, 0);
+    }
+
     const index: ArchiveIndex = {
         header: { k: "h", v: 2, createdAt: manifest.createdAt, archive: path.basename(destinationPath) },
-        entries: new Map(entryLines.map((line) => [line.n, line])),
+        entries: new Map(allEntryLines.map((line) => [entryKey(line.a, line.n), line])),
         databases: databaseLines,
         directories: directoryLines,
-        files: fileLines,
+        files: allFileLines,
+        deps,
     };
 
-    const lines: IndexLine[] = [index.header, ...entryLines, ...databaseLines, ...directoryLines, ...fileLines];
+    const lines: IndexLine[] = [
+        index.header,
+        ...(deps.length > 0 ? [{ k: "deps" as const, archives: deps }] : []),
+        ...allEntryLines,
+        ...databaseLines,
+        ...directoryLines,
+        ...allFileLines,
+    ];
     const indexBytes = await serializeIndex(
         lines,
         keys && noncePrefix ? { indexKey: keys.indexKey, noncePrefix } : undefined

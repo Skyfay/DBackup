@@ -171,6 +171,19 @@ export async function stepUpload(ctx: RunnerContext) {
         multiDb: ctx.metadata?.multiDb,
         combined: ctx.metadata?.combined,
         archive: ctx.metadata?.archive,
+        ...(ctx.chain && job.backupMode === "INCREMENTAL"
+            ? {
+                chain: {
+                    id: ctx.chain.chainId,
+                    type: ctx.chain.type,
+                    ...(ctx.chain.baseArchive ? { base: ctx.chain.baseArchive } : {}),
+                    index: ctx.chain.index,
+                },
+                // The complete snapshot size, so the Storage Explorer can show what a
+                // snapshot actually contains rather than only what this archive stores.
+                logicalSize: ctx.metadata?.logicalSize,
+            }
+            : {}),
         trigger,
         locked: ctx.lock === true,
     };
@@ -179,7 +192,13 @@ export async function stepUpload(ctx: RunnerContext) {
     await fs.writeFile(metaPath, JSON.stringify(metadata, null, 2));
 
     // --- SEQUENTIAL UPLOAD TO ALL DESTINATIONS ---
-    const remotePath = `${job.name}/${path.basename(ctx.tempFile)}`;
+    // Incremental jobs group a chain into its own directory and prefix the archive with
+    // its type. Both are visible in any file browser without knowing the format: copying
+    // "a backup" means copying the folder, and `ls` shows at a glance which archive is the
+    // full. Full-mode jobs keep the flat layout they have always had.
+    const remotePath = ctx.chain && ctx.chain.type !== undefined && ctx.job!.backupMode === "INCREMENTAL"
+        ? `${job.name}/${ctx.chain.chainDir}/${ctx.chain.type === "full" ? "full-" : "inc-"}${path.basename(ctx.tempFile)}`
+        : `${job.name}/${path.basename(ctx.tempFile)}`;
     const totalDests = ctx.destinations.length;
 
     ctx.setStage(PIPELINE_STAGES.UPLOADING);
@@ -276,6 +295,8 @@ export async function stepUpload(ctx: RunnerContext) {
                 checksum: metadata.checksum,
                 checksumMd5: metadata.checksumMd5,
                 hasFileIndex: metadata.archive?.formatVersion === 2,
+                ...(metadata.chain ? { chain: metadata.chain } : {}),
+                ...(typeof ctx.metadata?.logicalSize === 'number' ? { logicalSize: ctx.metadata.logicalSize } : {}),
             };
             // Awaited rather than fired and forgotten: the previous form left the dynamic
             // import's own rejection unhandled (the .catch() only covered the inner call),

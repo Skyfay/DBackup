@@ -14,6 +14,9 @@ import {
 import { extractArchive } from "@/lib/archive/extract";
 import { readArchiveManifest, readArchiveIndex } from "@/lib/archive/reader";
 import { localFileSource } from "@/lib/archive/sources";
+import { openChainArchive } from "@/lib/archive/chain-source";
+import { checkChainCompleteness } from "@/lib/archive/chain";
+import { resolveStorageAdapter } from "@/lib/archive/storage-source";
 import { getProfileMasterKey } from "@/services/backup/encryption-service";
 import type { RestoreInput } from "./types";
 
@@ -69,6 +72,31 @@ export async function restoreCombinedArchive(
         ? await getProfileMasterKey(manifest.encryption.profileId)
         : undefined;
     const index = await readArchiveIndex(archiveSource, manifest, { masterKey });
+
+    // A snapshot from an incremental chain carries files forward from earlier archives.
+    // Those live next to it on the storage destination, so they are opened from there
+    // rather than from the single archive the pipeline downloaded.
+    let openChain: ((archiveName: string) => Promise<Awaited<ReturnType<typeof openChainArchive>>>) | undefined;
+    if (index.deps.length > 0) {
+        const { adapter, config } = await resolveStorageAdapter(input.storageConfigId);
+        const dir = path.posix.dirname(input.file.replace(/\\/g, "/"));
+        const present = new Set(
+            (await adapter.list(config, dir === "." ? "" : dir)).map((f) => path.posix.basename(f.path))
+        );
+        const { complete, missing } = checkChainCompleteness(index, present);
+        if (!complete) {
+            throw new Error(
+                `This backup is part of an incremental chain and ${missing.length === 1 ? "one archive it needs is" : "some archives it needs are"} missing: ${missing.join(", ")}`
+            );
+        }
+
+        log(`Incremental snapshot: resolving ${index.deps.length} archive(s) from the chain`, 'info');
+        const chainOptions = {
+            adapter, config, snapshotPath: input.file,
+            resolveMasterKey: getProfileMasterKey,
+        };
+        openChain = (archiveName: string) => openChainArchive(chainOptions, archiveName);
+    }
 
     const allDbEntries = index.databases;
     const allDirEntries = index.directories;
@@ -138,6 +166,7 @@ export async function restoreCombinedArchive(
         log(`Extracting ${selectedDbNames.length} database(s) and ${selectedDirIds.length} directory source(s)...`, 'info');
         const extracted = await extractArchive(tempFile, extractDir, {
             masterKey,
+            ...(openChain ? { openChainArchive: openChain } : {}),
             selection: {
                 databaseNames: selectedDbNames,
                 directoryJobSourceIds: selectedDirIds,

@@ -17,6 +17,7 @@ import { extractArchive } from "@/lib/archive/extract";
 import { localFileSource, readAll } from "@/lib/archive/sources";
 import { walkTarHeaders } from "@/lib/archive/tar-blocks";
 import { MANIFEST_MEMBER, INDEX_MEMBER, BUNDLE_FILE_MAX_SIZE } from "@/lib/archive/format";
+import { entryKey } from "@/lib/archive/types";
 import type { ArchiveSourceEntry, CompressionKind, SourceFileEntry } from "@/lib/archive/types";
 
 const execFileAsync = promisify(execFile);
@@ -154,7 +155,7 @@ describe("createArchive / read back", () => {
             }
 
             const dbLine = index.databases[0];
-            const dbEntry = index.entries.get(dbLine.n)!;
+            const dbEntry = index.entries.get(entryKey(undefined, dbLine.n))!;
             const dumpBytes = await readAll(await openArchiveEntry(source, manifest, dbEntry, masterKey));
             expect(dumpBytes.toString("utf-8")).toContain("CREATE TABLE gehalt");
         });
@@ -251,7 +252,7 @@ describe("encrypted archives leak nothing in cleartext", () => {
         const manifest = await readArchiveManifest(source);
         const index = await readArchiveIndex(source, manifest, { masterKey: MASTER_KEY });
         const file = index.files.find((f) => f.p === "big/payload.bin")!;
-        const entry = index.entries.get(file.n)!;
+        const entry = index.entries.get(entryKey(file.a, file.n))!;
 
         const raw = await fs.readFile(archivePath);
         raw[entry.off + 10] ^= 0xff;

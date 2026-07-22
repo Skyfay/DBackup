@@ -302,6 +302,26 @@ export const OneDriveAdapter: StorageAdapter = {
         }
     },
 
+    async downloadRange(
+        config: OneDriveConfig,
+        remotePath: string,
+        start: number,
+        end: number
+    ): Promise<NodeJS.ReadableStream> {
+        // An empty range is legal - a zero-length file's archive entry produces one.
+        if (end < start) return Readable.from([]);
+
+        const client = createGraphClient(await getAccessToken(config));
+        const item = await client.api(driveItemPath(buildDrivePath(config.folderPath, remotePath))).get();
+
+        const downloadUrl = item["@microsoft.graph.downloadUrl"];
+        if (!downloadUrl) throw new Error("Could not get download URL for file");
+
+        const res = await fetch(downloadUrl, { headers: { Range: `bytes=${start}-${end}` } });
+        if (!res.ok || !res.body) throw new Error(`Ranged download failed with status ${res.status}`);
+        return Readable.fromWeb(res.body as never);
+    },
+
     async download(
         config: OneDriveConfig,
         remotePath: string,

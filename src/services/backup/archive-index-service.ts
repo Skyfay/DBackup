@@ -21,6 +21,7 @@ import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { getTempDir } from "@/lib/temp-dir";
 import { deriveArchiveKeys } from "@/lib/crypto/kdf";
 import { parseIndex } from "@/lib/archive/index-file";
+import { browseLevel, BrowseEntry } from "@/lib/archive/browse";
 import { readArchiveIndex, readArchiveManifest } from "@/lib/archive/reader";
 import { localFileSource } from "@/lib/archive/sources";
 import { ArchiveIndex } from "@/lib/archive/types";
@@ -43,7 +44,19 @@ export interface ArchiveSummary {
     sourceType?: string;
 }
 
+/**
+ * How long a parsed index stays cached. Browsing a tree fires one request per expanded
+ * folder, and re-fetching plus re-decrypting the sidecar for each of them would make the
+ * UI crawl. Short enough that a deleted or replaced backup is not served for long.
+ */
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
+/** Cap on cached indexes, so browsing many large backups cannot grow without bound. */
+const CACHE_MAX_ENTRIES = 8;
+
 export class ArchiveIndexService {
+    private cache = new Map<string, { index: ArchiveIndex; expiresAt: number }>();
+
     /**
      * Loads and parses the index sidecar for one backup file.
      *
@@ -55,25 +68,61 @@ export class ArchiveIndexService {
     async load(configId: string, file: string, meta: BackupMetadata): Promise<ArchiveIndex | null> {
         if (meta.archive?.formatVersion !== 2) return null;
 
+        const cacheKey = `${configId}::${file}`;
+        const cached = this.cache.get(cacheKey);
+        if (cached && cached.expiresAt > Date.now()) return cached.index;
+
         const bytes = await this.fetchSidecar(configId, file, meta.archive.indexFile);
         if (!bytes) return null;
 
         try {
-            if (!meta.archive.encrypted) return await parseIndex(bytes);
-
-            if (!meta.archive.profileId || !meta.archive.kdfSalt || !meta.archive.noncePrefix) {
-                throw new Error("Backup metadata is missing the crypto parameters needed to open the index");
+            let index: ArchiveIndex;
+            if (!meta.archive.encrypted) {
+                index = await parseIndex(bytes);
+            } else {
+                if (!meta.archive.profileId || !meta.archive.kdfSalt || !meta.archive.noncePrefix) {
+                    throw new Error("Backup metadata is missing the crypto parameters needed to open the index");
+                }
+                const masterKey = await getProfileMasterKey(meta.archive.profileId);
+                const { indexKey } = deriveArchiveKeys(masterKey, Buffer.from(meta.archive.kdfSalt, "hex"));
+                index = await parseIndex(bytes, {
+                    indexKey,
+                    noncePrefix: Buffer.from(meta.archive.noncePrefix, "hex"),
+                });
             }
-            const masterKey = await getProfileMasterKey(meta.archive.profileId);
-            const { indexKey } = deriveArchiveKeys(masterKey, Buffer.from(meta.archive.kdfSalt, "hex"));
-            return await parseIndex(bytes, {
-                indexKey,
-                noncePrefix: Buffer.from(meta.archive.noncePrefix, "hex"),
-            });
+
+            this.remember(cacheKey, index);
+            return index;
         } catch (e: unknown) {
             log.warn("Failed to parse archive index sidecar", { configId, file }, wrapError(e));
             return null;
         }
+    }
+
+    /** Lists one directory level inside a directory source. */
+    async browse(
+        configId: string,
+        file: string,
+        meta: BackupMetadata,
+        jobSourceId: string,
+        prefix?: string
+    ): Promise<BrowseEntry[] | null> {
+        const index = await this.load(configId, file, meta);
+        return index ? browseLevel(index, jobSourceId, prefix) : null;
+    }
+
+    /** Drops any cached index for a backup. Call after the backup is deleted or replaced. */
+    invalidate(configId: string, file: string): void {
+        this.cache.delete(`${configId}::${file}`);
+    }
+
+    private remember(key: string, index: ArchiveIndex): void {
+        if (this.cache.size >= CACHE_MAX_ENTRIES) {
+            // Insertion-ordered, so the first key is the oldest.
+            const oldest = this.cache.keys().next().value;
+            if (oldest !== undefined) this.cache.delete(oldest);
+        }
+        this.cache.set(key, { index, expiresAt: Date.now() + CACHE_TTL_MS });
     }
 
     /** Index reduced to what the restore dialog's entry pickers need. */
@@ -123,8 +172,10 @@ export class ArchiveIndexService {
      *
      * Deliberately not using the adapter's `read()` shortcut: it returns a string, and a
      * sealed index is binary, so any text decoding would silently corrupt it.
+     *
+     * @returns The raw sidecar bytes, or null when it is missing or unreadable
      */
-    private async fetchSidecar(configId: string, file: string, suffix: string): Promise<Buffer | null> {
+    async fetchSidecar(configId: string, file: string, suffix: string): Promise<Buffer | null> {
         const config = await prisma.adapterConfig.findUnique({ where: { id: configId } });
         if (!config || config.type !== "storage") return null;
 

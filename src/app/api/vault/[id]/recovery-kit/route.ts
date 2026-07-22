@@ -54,15 +54,26 @@ export async function GET(
         // A. Master Key File
         zip.addFile("master.key", Buffer.from(masterKeyHex, "utf8"));
 
-        // B. Decryption Script (Read from disk)
-        try {
-            const scriptPath = path.join(process.cwd(), "scripts", "decrypt_backup.js");
-            const scriptContent = await fs.readFile(scriptPath, "utf8");
-            zip.addFile("decrypt_backup.js", Buffer.from(scriptContent, "utf8"));
-        } catch (e: unknown) {
-            log.error("Failed to read decrypt_backup.js script", {}, wrapError(e));
-            // Fallback: Add error note in readme
-            zip.addFile("ERROR_MISSING_SCRIPT.txt", Buffer.from("Could not find scripts/decrypt_backup.js on server.", "utf8"));
+        // B. Recovery Scripts (Read from disk)
+        //
+        // Two are shipped because there are two archive formats in the wild, and picking
+        // the wrong one in a disaster is exactly the kind of friction a recovery kit exists
+        // to remove:
+        //   - restore_archive.js decrypts and unpacks seekable (v2) archives, which is what
+        //     jobs with directory sources produce. It can also list and extract single files.
+        //   - decrypt_backup.js decrypts whole-file encrypted backups, which is what every
+        //     database-only job produces.
+        for (const script of ["restore_archive.js", "decrypt_backup.js"]) {
+            try {
+                const scriptContent = await fs.readFile(path.join(process.cwd(), "scripts", script), "utf8");
+                zip.addFile(script, Buffer.from(scriptContent, "utf8"));
+            } catch (e: unknown) {
+                log.error("Failed to read recovery script", { script }, wrapError(e));
+                zip.addFile(
+                    `ERROR_MISSING_${script}.txt`,
+                    Buffer.from(`Could not find scripts/${script} on server.`, "utf8")
+                );
+            }
         }
 
         // C. Helper Scripts (Pre-filled with Key for easing usage)
@@ -96,31 +107,67 @@ node decrypt_backup.js "$1" "${masterKeyHex}"
         const readmeContent = `# Recovery Kit for Profile: ${profile.name}
 Generated at: ${new Date().toISOString()}
 
+This kit decrypts your backups WITHOUT DBackup. Keep it somewhere safe, and NOT next to
+your backups.
+
 ## CONTENTS
-1. master.key                 - Your raw 64-character hex key. KEEP IT SAFE.
-2. decrypt_backup.js          - The Node.js logic to decrypt files.
-3. decrypt_drag_drop_windows.bat - Helper for Windows (Drag & Drop .enc file).
-4. decrypt_linux_mac.sh       - Helper for Linux/Mac.
+1. master.key                      - Your raw 64-character hex key. KEEP IT SAFE.
+2. restore_archive.js              - Lists and extracts file backups (archives with directory sources).
+3. decrypt_backup.js               - Decrypts database-only backups.
+4. decrypt_drag_drop_windows.bat   - Helper for Windows (drag and drop a .enc file).
+5. decrypt_linux_mac.sh            - Helper for Linux/macOS.
 
-## INSTRUCTIONS
+## WHICH SCRIPT DO I NEED?
 
-### Prerequisites
-You must have Node.js installed on your computer.
-Download from: https://nodejs.org/
+Look at the backup file next to your archive:
+
+- A '.enc' file, or a job that backs up only databases
+  -> use decrypt_backup.js
+
+- A '.tar' file from a job that includes directory sources
+  -> use restore_archive.js. These archives encrypt each file individually, which is what
+     lets you pull out a single file instead of the whole backup.
+
+## PREREQUISITES
+
+Node.js 18 or newer. Download from https://nodejs.org/
+Nothing else - no npm install, no DBackup server, no database.
+
+## FILE BACKUPS (restore_archive.js)
+
+See what is inside:
+    node restore_archive.js --list backup.tar <paste-master.key-here>
+
+Extract everything:
+    node restore_archive.js --extract backup.tar ./restored <paste-master.key-here>
+
+Extract just part of it (patterns accept * and **, and a folder name takes everything in it):
+    node restore_archive.js --extract backup.tar ./restored <key> 'www/**'
+    node restore_archive.js --extract backup.tar ./restored <key> docs
+
+Every extracted file is checked against the checksum recorded when the backup was made.
+The key argument can be left out for unencrypted archives.
+
+### Without this kit at all
+An UNENCRYPTED archive of this type is a plain TAR:
+    tar -xf backup.tar
+If the job used compression, the extracted files are gzip/brotli streams - run
+'gunzip' or 'brotli -d' on them afterwards. Encrypted archives always need this kit.
+
+## DATABASE BACKUPS (decrypt_backup.js)
 
 ### Windows
-1. Install Node.js.
-2. Drag your '.enc' backup file and drop it onto 'decrypt_drag_drop_windows.bat'.
-3. The decrypted file will appear next to the original.
+Drag your '.enc' backup file onto 'decrypt_drag_drop_windows.bat'.
 
 ### Linux / macOS
-1. Install Node.js.
-2. Open terminal in this folder.
-3. Run: chmod +x decrypt_linux_mac.sh
-4. Run: ./decrypt_linux_mac.sh /path/to/backup.enc
+    chmod +x decrypt_linux_mac.sh
+    ./decrypt_linux_mac.sh /path/to/backup.enc
 
-### Manual Usage
-node decrypt_backup.js <file.enc> <hex_key>
+### Manual
+    node decrypt_backup.js <file.enc> <hex_key>
+
+The output is still compressed if the job used compression:
+    gunzip backup.sql.gz      # or: brotli -d backup.sql.br
 `;
         zip.addFile("README.txt", Buffer.from(readmeContent, "utf8"));
 

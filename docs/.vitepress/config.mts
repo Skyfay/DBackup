@@ -253,6 +253,7 @@ export default defineConfig({
           collapsed: false,
           items: [
             { text: 'Environment Variables', link: '/developer-guide/reference/environment' },
+            { text: 'Archive Format', link: '/developer-guide/reference/archive-format' },
             { text: 'Database Schema', link: '/developer-guide/reference/schema' },
             { text: 'Supported Versions', link: '/developer-guide/reference/versions' },
             { text: 'Testing Guide', link: '/developer-guide/reference/testing' }

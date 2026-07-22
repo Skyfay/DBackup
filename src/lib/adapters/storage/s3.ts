@@ -4,7 +4,7 @@ import { S3Client, ListObjectsV2Command, GetObjectCommand, DeleteObjectCommand, 
 import { Upload } from "@aws-sdk/lib-storage";
 import { createReadStream, createWriteStream } from "fs";
 import { pipeline } from "stream/promises";
-import { Transform } from "stream";
+import { Transform, Readable } from "stream";
 import path from "path";
 import { LogLevel, LogType } from "@/lib/core/logs";
 import { logger } from "@/lib/logging/logger";
@@ -164,6 +164,44 @@ async function s3Download(
     }
 }
 
+/**
+ * Streams a byte range of an object via the HTTP Range header.
+ *
+ * Used by file-level restore to pull a single archive entry out of a large backup. The
+ * client is destroyed once the caller has consumed the stream, not before - destroying it
+ * eagerly would abort the transfer mid-flight.
+ */
+async function s3DownloadRange(
+    internalConfig: S3InternalConfig,
+    remotePath: string,
+    start: number,
+    end: number
+): Promise<NodeJS.ReadableStream> {
+    // An empty range is legal - a zero-length file's archive entry produces one - but S3
+    // has no way to express it, so it is answered locally.
+    if (end < start) return Readable.from([]);
+
+    const client = S3ClientFactory.create(internalConfig);
+    try {
+        const response = await client.send(new GetObjectCommand({
+            Bucket: internalConfig.bucket,
+            Key: remotePath,
+            Range: `bytes=${start}-${end}`,
+        }));
+
+        const body = response.Body as unknown as NodeJS.ReadableStream | undefined;
+        if (!body) throw new Error("Empty response body");
+
+        body.on("end", () => client.destroy());
+        body.on("error", () => client.destroy());
+        return body;
+    } catch (error) {
+        client.destroy();
+        log.error("S3 ranged download failed", { bucket: internalConfig.bucket, remotePath, start, end }, wrapError(error));
+        throw error;
+    }
+}
+
 async function s3Read(internalConfig: S3InternalConfig, remotePath: string): Promise<string | null> {
     const client = S3ClientFactory.create(internalConfig);
     // Note: remotePath here is usually the full path/key from list(), so we don't apply prefix again
@@ -317,6 +355,14 @@ export const S3GenericAdapter: StorageAdapter = {
         forcePathStyle: config.forcePathStyle,
         pathPrefix: config.pathPrefix
     }, ...args),
+    downloadRange: (config, ...args) => s3DownloadRange({
+        endpoint: config.endpoint,
+        region: config.region,
+        bucket: config.bucket,
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        forcePathStyle: config.forcePathStyle,
+        pathPrefix: config.pathPrefix
+    }, ...args),
     delete: (config, ...args) => s3Delete({
         endpoint: config.endpoint,
         region: config.region,
@@ -378,6 +424,11 @@ export const S3AWSAdapter: StorageAdapter = {
         pathPrefix: config.pathPrefix
     }, ...args),
     download: (config, ...args) => s3Download({
+        region: config.region,
+        bucket: config.bucket,
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+    }, ...args),
+    downloadRange: (config, ...args) => s3DownloadRange({
         region: config.region,
         bucket: config.bucket,
         credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
@@ -444,6 +495,12 @@ export const S3R2Adapter: StorageAdapter = {
         bucket: config.bucket,
         credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
     }, ...args),
+    downloadRange: (config, ...args) => s3DownloadRange({
+        endpoint: r2Endpoint(config.accountId, config.jurisdiction),
+        region: "auto",
+        bucket: config.bucket,
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+    }, ...args),
     delete: (config, ...args) => s3Delete({
         endpoint: r2Endpoint(config.accountId, config.jurisdiction),
         region: "auto",
@@ -500,6 +557,12 @@ export const S3HetznerAdapter: StorageAdapter = {
         pathPrefix: config.pathPrefix
     }, ...args),
     download: (config, ...args) => s3Download({
+        endpoint: `https://${config.region}.your-objectstorage.com`,
+        region: config.region,
+        bucket: config.bucket,
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+    }, ...args),
+    downloadRange: (config, ...args) => s3DownloadRange({
         endpoint: `https://${config.region}.your-objectstorage.com`,
         region: config.region,
         bucket: config.bucket,

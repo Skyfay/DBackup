@@ -3,6 +3,7 @@ import { normalizeSshPrivateKey } from "@/lib/ssh/pkcs8-compat";
 import { SFTPSchema } from "@/lib/adapters/definitions";
 import Client from "ssh2-sftp-client";
 import { createReadStream } from "fs";
+import { Readable } from "stream";
 import path from "path";
 import { LogLevel, LogType } from "@/lib/core/logs";
 import { logger } from "@/lib/logging/logger";
@@ -221,6 +222,30 @@ export const SFTPAdapter: StorageAdapter = {
             throw error;
         } finally {
             if (sftp) await sftp.end();
+        }
+    },
+
+    async downloadRange(config: SFTPConfig, remotePath: string, start: number, end: number): Promise<NodeJS.ReadableStream> {
+        // An empty range is legal - a zero-length file's archive entry produces one.
+        if (end < start) return Readable.from([]);
+
+        const sftp = await connectSFTP(config);
+        const source = config.pathPrefix ? path.posix.join(config.pathPrefix, remotePath) : remotePath;
+
+        try {
+            // createReadStream's `end` is inclusive, matching the capability's contract.
+            const stream = sftp.createReadStream(source, { start, end }) as NodeJS.ReadableStream;
+            // The connection has to outlive the stream, so it is closed on completion
+            // rather than in a finally block here.
+            const close = () => { void sftp.end().catch(() => { }); };
+            stream.on("end", close);
+            stream.on("error", close);
+            stream.on("close", close);
+            return stream;
+        } catch (error) {
+            await sftp.end().catch(() => { });
+            log.error("SFTP ranged download failed", { host: config.host, remotePath, start, end }, wrapError(error));
+            throw error;
         }
     },
 

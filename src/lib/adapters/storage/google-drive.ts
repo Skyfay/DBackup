@@ -224,6 +224,29 @@ export const GoogleDriveAdapter: StorageAdapter = {
         }
     },
 
+    async downloadRange(
+        config: GoogleDriveConfig,
+        remotePath: string,
+        start: number,
+        end: number
+    ): Promise<NodeJS.ReadableStream> {
+        // An empty range is legal - a zero-length file's archive entry produces one.
+        if (end < start) return Readable.from([]);
+
+        const drive = createDriveClient(config);
+        const dirPath = path.posix.dirname(remotePath);
+        const targetFolderId = await resolveOrCreatePath(drive, config.folderId, dirPath === "." ? "dummy" : dirPath + "/dummy");
+
+        const file = await findFile(drive, targetFolderId, path.basename(remotePath));
+        if (!file) throw new Error(`File not found: ${remotePath}`);
+
+        const res = await drive.files.get(
+            { fileId: file.id!, alt: "media" },
+            { responseType: "stream", headers: { Range: `bytes=${start}-${end}` } }
+        );
+        return res.data as unknown as Readable;
+    },
+
     async download(
         config: GoogleDriveConfig,
         remotePath: string,

@@ -400,6 +400,26 @@ export interface StorageAdapter extends BaseAdapter {
     read?(config: AdapterConfig, remotePath: string): Promise<string | null>;
 
     /**
+     * Optional: streams a byte range [start, end] (both inclusive) of a remote file.
+     *
+     * This is what makes file-level restore cheap: a seekable (manifest v2) archive records
+     * the exact byte offset of every entry, so one file can be pulled out of a
+     * multi-gigabyte backup by fetching just its range. Implemented by adapters whose
+     * protocol supports it natively - HTTP Range for S3/WebDAV/Drive/OneDrive/Dropbox, seek
+     * for SFTP and the local filesystem.
+     *
+     * Adapters that don't implement this still work: the caller falls back to downloading
+     * the archive once to a temp file and ranging over that. See
+     * src/lib/archive/storage-source.ts.
+     */
+    downloadRange?(
+        config: AdapterConfig,
+        remotePath: string,
+        start: number,
+        end: number
+    ): Promise<NodeJS.ReadableStream>;
+
+    /**
      * Lists files in a directory
      */
     list(config: AdapterConfig, remotePath: string): Promise<FileInfo[]>;

@@ -38,6 +38,7 @@ import { getColumns, FileInfo } from "./columns";
 import { lockBackup } from "@/app/actions/storage/lock";
 import { DownloadLinkModal } from "@/components/dashboard/storage/download-link-modal";
 import { IntegrityModal } from "@/components/dashboard/storage/integrity-modal";
+import { FileBrowserModal } from "@/components/dashboard/storage/file-browser-modal";
 import { StorageHistoryTab } from "@/components/dashboard/storage/storage-history-tab";
 import { StorageSettingsTab } from "@/components/dashboard/storage/storage-settings-tab";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -85,6 +86,9 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
 
     // Integrity Modal State
     const [verifyModalFile, setVerifyModalFile] = useState<FileInfo | null>(null);
+
+    // File Browser State (per-file restore out of a seekable archive)
+    const [browseFile, setBrowseFile] = useState<FileInfo | null>(null);
 
     // Encryption Key Resolution Dialog State (decrypted download fallback)
     const [decryptKeyDialogOpen, setDecryptKeyDialogOpen] = useState(false);
@@ -293,8 +297,13 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
         }
     };
 
+    const handleBrowseFiles = useCallback((file: FileInfo) => {
+        setBrowseFile(file);
+    }, []);
+
     const columns = useMemo(() => getColumns({
         onRestore: handleRestoreClick,
+        onBrowseFiles: handleBrowseFiles,
         onDownload: handleDownload,
         onDelete: handleDeleteClick,
         onToggleLock: handleToggleLock,
@@ -303,7 +312,7 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
         canDownload,
         canRestore,
         canDelete
-    }), [handleRestoreClick, handleDownload, handleDeleteClick, handleToggleLock, handleGenerateLink, handleVerify, canDownload, canRestore, canDelete]);
+    }), [handleRestoreClick, handleBrowseFiles, handleDownload, handleDeleteClick, handleToggleLock, handleGenerateLink, handleVerify, canDownload, canRestore, canDelete]);
 
     const filterableColumns = useMemo(() => {
         const jobs = Array.from(new Set(files.map(f => f.jobName).filter(Boolean).filter(n => n !== "Unknown"))) as string[];
@@ -559,6 +568,20 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
                     file={verifyModalFile}
                     storageConfigId={selectedDestination}
                     onVerifyComplete={() => fetchFiles(selectedDestination, showSystemConfigs)}
+                />
+            )}
+
+            {/* File Browser (per-file restore out of a seekable archive) */}
+            {browseFile && (
+                <FileBrowserModal
+                    open={!!browseFile}
+                    onOpenChange={(o) => { if (!o) setBrowseFile(null); }}
+                    destinationId={selectedDestination}
+                    file={browseFile.path}
+                    fileName={browseFile.name}
+                    storageDestinations={destinations.map((d) => ({ id: d.id, name: d.name }))}
+                    canRestore={canRestore}
+                    canDownload={canDownload}
                 />
             )}
 

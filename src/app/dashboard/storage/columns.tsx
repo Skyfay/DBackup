@@ -30,6 +30,8 @@ export type FileInfo = {
     storageClass?: string;
     checksum?: string;
     checksumMd5?: string;
+    /** True for backups that carry a file index, so individual files can be browsed and restored. */
+    hasFileIndex?: boolean;
     verification?: {
         verifiedAt: string;
         passed: boolean;
@@ -39,6 +41,7 @@ export type FileInfo = {
 
 interface ColumnsProps {
     onRestore: (file: FileInfo) => void;
+    onBrowseFiles: (file: FileInfo) => void;
     onDownload: (file: FileInfo, decrypt?: boolean) => void;
     onDelete: (file: FileInfo) => void;
     onToggleLock: (file: FileInfo) => void;
@@ -49,7 +52,7 @@ interface ColumnsProps {
     canDelete: boolean;
 }
 
-export const getColumns = ({ onRestore, onDownload, onDelete, onToggleLock, onGenerateLink, onVerify, canDownload, canRestore, canDelete }: ColumnsProps): ColumnDef<FileInfo>[] => [
+export const getColumns = ({ onRestore, onBrowseFiles, onDownload, onDelete, onToggleLock, onGenerateLink, onVerify, canDownload, canRestore, canDelete }: ColumnsProps): ColumnDef<FileInfo>[] => [
     {
         accessorKey: "name",
         header: ({ column }) => {
@@ -229,6 +232,7 @@ export const getColumns = ({ onRestore, onDownload, onDelete, onToggleLock, onGe
                 file={row.original}
                 onDownload={onDownload}
                 onRestore={onRestore}
+                onBrowseFiles={onBrowseFiles}
                 onDelete={onDelete}
                 onToggleLock={onToggleLock}
                 onGenerateLink={onGenerateLink}

@@ -33,6 +33,8 @@ export type RichFileInfo = FileInfo & {
     trigger?: { type: string; actor?: string };
     checksum?: string;
     checksumMd5?: string;
+    /** True for seekable (v2) archives, which carry a file index and can be browsed and restored file by file. */
+    hasFileIndex?: boolean;
     verification?: {
         verifiedAt: string;
         passed: boolean;
@@ -215,6 +217,7 @@ export class StorageService {
                 trigger: sidecar.trigger as { type: string; actor?: string } | undefined,
                 checksum: sidecar.checksum,
                 checksumMd5: sidecar.checksumMd5,
+                hasFileIndex: sidecar.archive?.formatVersion === 2,
                 verification: sidecar.verification ? {
                     verifiedAt: sidecar.verification.verifiedAt,
                     passed: sidecar.verification.passed,

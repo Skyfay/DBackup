@@ -24,12 +24,16 @@ All notable changes to DBackup are documented here.
 - **backup**: Combined backups now write a `<backup>.index` sidecar listing every file's path, size, modification time and checksum, so browsing a backup's contents no longer downloads the archive.
 - **backup**: Encrypted combined archives derive a fresh key per archive and use counter-based nonces, making nonce reuse impossible by construction.
 - **backup**: Small files in encrypted combined archives are packed into shared bundles, removing the per-file overhead and compression-ratio penalty of backups with many small files.
+- **storage**: Backups with directory sources can now be browsed file by file in the Storage Explorer, and individual files or folders restored on their own - as a `.tar.gz` download, back to their original location, or into any configured destination.
+- **storage**: Storage adapters can now serve byte ranges, so a single-file restore transfers only that file instead of the whole backup. Implemented for S3, SFTP, WebDAV, Google Drive, OneDrive and the local filesystem, with an automatic fallback for the rest.
+- **vault**: The Recovery Kit now also ships `restore_archive.js`, which lists and extracts file backups offline with nothing but Node.js.
 
 ### 🐛 Bug Fixes
 
 - **jobs**: Fixed a crash when expanding a directory source's exclude-pattern filter while editing an existing job.
 - **jobs**: Fixed linked Exclude Pattern Presets being silently dropped when creating or updating a job, so the link never actually applied.
 - **jobs**: Fixed external compression being force-disabled for combined jobs whenever PostgreSQL native compression was active, even when the job also had directory sources whose files should still be compressed.
+- **backup**: Fixed the storage listing cache update after an upload being fired without awaiting it, which left its failures unhandled and could let it outlive the backup run that produced it.
 
 ### 🔒 Security
 
@@ -38,6 +42,11 @@ All notable changes to DBackup are documented here.
 ### 🎨 Improvements
 
 - **storage**: The Storage Explorer's backup count badge now reflects combined database + directory archives (e.g. "2 DBs + 2 Dirs") instead of a misleading database-only count.
+
+### 📝 Documentation
+
+- **wiki**: Added an Archive Format reference documenting the seekable archive layout, key derivation and index format byte by byte, so backups stay recoverable independently of DBackup.
+- **wiki**: Updated the Recovery Kit and Storage Explorer guides for file-level browsing and restore.
 
 ### 🐳 Docker
 

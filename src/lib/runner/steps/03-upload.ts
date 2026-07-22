@@ -275,10 +275,18 @@ export async function stepUpload(ctx: RunnerContext) {
                 trigger: metadata.trigger as { type: string; actor?: string } | undefined,
                 checksum: metadata.checksum,
                 checksumMd5: metadata.checksumMd5,
+                hasFileIndex: metadata.archive?.formatVersion === 2,
             };
-            import("@/services/storage/storage-service").then(({ storageService }) => {
-                storageService.appendStorageListCacheEntry(dest.configId, richEntry).catch(() => {});
-            });
+            // Awaited rather than fired and forgotten: the previous form left the dynamic
+            // import's own rejection unhandled (the .catch() only covered the inner call),
+            // and let the cache update outlive the run that produced it.
+            try {
+                const { storageService } = await import("@/services/storage/storage-service");
+                await storageService.appendStorageListCacheEntry(dest.configId, richEntry);
+            } catch (e: unknown) {
+                // A stale listing cache is cosmetic - it must never fail a successful upload.
+                ctx.log(`${destLabel} Could not update the storage listing cache: ${e instanceof Error ? e.message : String(e)}`, 'warning');
+            }
 
         } catch (e: unknown) {
             const message = e instanceof Error ? e.message : String(e);

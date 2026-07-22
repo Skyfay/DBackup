@@ -89,6 +89,32 @@ Click on a file to see:
 - Compression/encryption status
 - File checksums
 
+### Browse Files
+
+Backups that include directory sources carry a file index, and show a **Browse files**
+action. It opens a folder tree of everything inside the backup.
+
+Listing folders reads only a small index file stored next to the backup, so browsing a
+100 GB backup transfers a few megabytes rather than the whole thing.
+
+Select any mix of files and folders (selecting a folder takes everything inside it), then
+choose where they go:
+
+| Target | What happens |
+| :--- | :--- |
+| **Download** | The selection is streamed to your browser as a single `.tar.gz` |
+| **Original location** | Files are written back to the path they were collected from, overwriting what is there |
+| **Other destination** | Files are written into any configured storage destination, under a path you choose |
+
+Only the selected files are read out of the backup. On destinations that support ranged
+reads (S3, SFTP, WebDAV, Google Drive, OneDrive, local filesystem) that means a handful of
+small requests. Other destinations fall back to fetching the archive once per restore.
+
+::: tip Extract locally instead
+`.tar.gz` opens natively on macOS, Linux and Windows 11. On older Windows use 7-Zip, or
+run `tar -xzf selection.tar.gz` from a terminal.
+:::
+
 ### Download
 
 1. Click **Download** button

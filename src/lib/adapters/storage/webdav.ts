@@ -2,7 +2,7 @@ import { StorageAdapter, FileInfo } from "@/lib/core/interfaces";
 import { WebDAVSchema } from "@/lib/adapters/definitions";
 import { createClient, WebDAVClient, FileStat } from "webdav";
 import { createWriteStream } from "fs";
-import { Transform } from "stream";
+import { Transform, Readable } from "stream";
 import fs from "fs/promises";
 import path from "path";
 import { pipeline } from "stream/promises";
@@ -71,6 +71,15 @@ export const WebDAVAdapter: StorageAdapter = {
             if (onLog && error instanceof Error) onLog(`WebDAV upload failed: ${error.message}`, "error", "storage", error.stack);
             return false;
         }
+    },
+
+    async downloadRange(config: WebDAVConfig, remotePath: string, start: number, end: number): Promise<NodeJS.ReadableStream> {
+        // An empty range is legal - a zero-length file's archive entry produces one.
+        if (end < start) return Readable.from([]);
+
+        const client = getClient(config);
+        // The webdav client's range is inclusive on both ends, matching our contract.
+        return client.createReadStream(resolvePath(config, remotePath), { range: { start, end } });
     },
 
     async download(config: WebDAVConfig, remotePath: string, localPath: string, onProgress?: (processed: number, total: number) => void, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void): Promise<boolean> {

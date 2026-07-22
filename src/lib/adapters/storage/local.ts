@@ -5,6 +5,7 @@ import { LocalStorageSchema } from "@/lib/adapters/definitions";
 import fs from "fs/promises";
 import path from "path";
 import { createReadStream, createWriteStream } from "fs";
+import { Readable } from "stream";
 import { execFile } from "child_process";
 import { promisify } from "util";
 
@@ -70,6 +71,18 @@ export const LocalFileSystemAdapter: StorageAdapter = {
             if (onLog && error instanceof Error) onLog(`Local upload failed: ${error.message}`, 'error', 'general', error.stack);
             return false;
         }
+    },
+
+    async downloadRange(
+        config: { basePath: string },
+        remotePath: string,
+        start: number,
+        end: number
+    ): Promise<NodeJS.ReadableStream> {
+        const sourcePath = resolveSafePath(config.basePath, remotePath);
+        // An empty range is legal - a zero-length file's archive entry produces one.
+        if (end < start) return Readable.from([]);
+        return createReadStream(sourcePath, { start, end });
     },
 
     async download(

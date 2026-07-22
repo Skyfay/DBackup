@@ -12,11 +12,24 @@ Each Recovery Kit contains:
 
 ```
 recovery-kit/
-├── README.md           # Instructions
-├── decrypt.js          # Node.js decryption script
-├── key.txt            # Your encryption key
-└── metadata-sample.json # Example metadata format
+├── README.txt                    # Instructions
+├── master.key                    # Your encryption key (64 hex characters)
+├── restore_archive.js            # Lists and extracts file backups
+├── decrypt_backup.js             # Decrypts database-only backups
+├── decrypt_drag_drop_windows.bat # Windows helper
+└── decrypt_linux_mac.sh          # Linux/macOS helper
 ```
+
+### Which script do I need?
+
+| Your backup | Script |
+| :--- | :--- |
+| Job backs up **only databases** (a `.enc` file, or a plain dump) | `decrypt_backup.js` |
+| Job includes **directory sources** (a `.tar` file) | `restore_archive.js` |
+
+The two formats differ because file backups encrypt each file individually, which is what
+makes it possible to pull a single file out of a large backup. The format is fully
+documented in the [Archive Format reference](/developer-guide/reference/archive-format).
 
 ## Why You Need It
 
@@ -105,6 +118,51 @@ node decrypt.js <encrypted-file> [output-file]
 node decrypt.js backup.sql.gz.enc
 node decrypt.js backup.sql.gz.enc decrypted.sql.gz
 ```
+
+## Restoring File Backups
+
+Backups that include directory sources use the seekable archive format. Use
+`restore_archive.js`, which can list contents and extract selected paths.
+
+### See what is inside
+
+```bash
+node restore_archive.js --list backup.tar <paste-master.key-here>
+```
+
+This prints the databases, the directory sources, and every file with its size and
+modification time.
+
+### Extract everything
+
+```bash
+node restore_archive.js --extract backup.tar ./restored <paste-master.key-here>
+```
+
+### Extract only part of it
+
+Patterns accept `*` and `**`, and naming a folder selects everything inside it:
+
+```bash
+node restore_archive.js --extract backup.tar ./restored <key> 'www/**'
+node restore_archive.js --extract backup.tar ./restored <key> docs
+```
+
+Every extracted file is verified against the checksum recorded when the backup was made.
+A mismatch is reported and the command exits non-zero.
+
+::: tip Unencrypted archives need no kit at all
+If the job had no encryption profile, the archive is a plain TAR:
+
+```bash
+tar -xf backup.tar
+# If the job used compression, the extracted files are gzip streams:
+find . -name '*.gz' -exec gunzip {} +
+```
+
+Encrypted archives always require this kit, because each file inside is individually
+encrypted.
+:::
 
 ## How It Works
 

@@ -532,12 +532,15 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
     const pgCompressionAlgo = (form.watch("pgCompressionAlgo") ?? "LEGACY") as PgCompressionAlgo;
     const isNativeCompressionActive = isPgSource && ["LEGACY", "GZIP", "LZ4", "ZSTD"].includes(pgCompressionAlgo);
 
-    // Auto-disable external compression when native pg compression is active
+    // Auto-disable external compression when native pg compression is active - but only for a
+    // pure DB-only job. For a combined (DB + directory sources) job, the runner now skips
+    // per-entry compression for the Postgres dump specifically while still compressing directory
+    // files, so there's no reason to force the whole setting off just because Postgres is involved.
     useEffect(() => {
-        if (isNativeCompressionActive) {
+        if (isNativeCompressionActive && !dirsEnabled) {
             form.setValue("compression", "NONE");
         }
-    }, [isNativeCompressionActive, form]);
+    }, [isNativeCompressionActive, dirsEnabled, form]);
 
     // Reset pgCompression when source changes to a non-PG adapter,
     // or when the selected algo is incompatible with the detected PG version.
@@ -1135,7 +1138,7 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
                             <FormField control={form.control} name="compression" render={({ field }) => (
                                 <FormItem>
                                     <FormLabel>Compression</FormLabel>
-                                    <Select onValueChange={field.onChange} value={field.value} disabled={isNativeCompressionActive}>
+                                    <Select onValueChange={field.onChange} value={field.value} disabled={isNativeCompressionActive && !dirsEnabled}>
                                         <FormControl>
                                             <SelectTrigger>
                                                 <SelectValue placeholder="Select compression" />
@@ -1148,8 +1151,10 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
                                         </SelectContent>
                                     </Select>
                                     <FormDescription>
-                                        {isNativeCompressionActive
+                                        {isNativeCompressionActive && !dirsEnabled
                                             ? "Disabled - PostgreSQL native compression is active."
+                                            : isNativeCompressionActive && dirsEnabled
+                                            ? "Applies to directory files only - the PostgreSQL dump keeps its own native compression."
                                             : "Trade CPU for storage."}
                                     </FormDescription>
                                     <FormMessage />

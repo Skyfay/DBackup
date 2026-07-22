@@ -19,7 +19,13 @@ export async function stepUpload(ctx: RunnerContext) {
     if (!ctx.job || ctx.destinations.length === 0 || !ctx.tempFile) throw new Error("Context not ready for upload");
 
     const job = ctx.job;
-    const compression = (job as any).compression as CompressionType;
+    // Combined (DB + directory source) archives already apply compression per-entry inside the
+    // tar itself (see combined-dump.ts / createCombinedTar, gated by TarManifestV2.perEntryCompression)
+    // instead of as a single whole-file pass here - doing both would double-compress bytes that
+    // are already compressed for zero benefit. ctx.metadata.combined is only ever set by
+    // executeCombinedDump(), so its presence is the correct signal.
+    const isCombinedArchive = !!ctx.metadata?.combined;
+    const compression = isCombinedArchive ? ("NONE" as CompressionType) : ((job as any).compression as CompressionType);
 
     // Determine Action Label for UI
     const actions: string[] = [];

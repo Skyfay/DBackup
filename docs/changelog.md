@@ -5,6 +5,8 @@ All notable changes to DBackup are documented here.
 ## vNEXT
 *Release: In Progress*
 
+> ⚠️ **Breaking:** Combined (database + directory source) backups created with compression enabled after this update are stored with per-entry compression instead of one whole-archive compression pass. Restoring such a backup requires this version or newer - downgrading to an older DBackup release and attempting to restore one will fail. Backups created before this update, and any backup without directory sources, are unaffected and remain restorable as before.
+
 ### ✨ Features
 
 - **jobs**: Backup jobs can now include one or more directory sources (SFTP, SMB, WebDAV, Rsync, or Local Filesystem) alongside or instead of a database source, backed up into a single combined archive per execution. Configure them in the new "Sources" tab of the job form. Storage adapters can be flagged as directory backup sources in addition to backup destinations, shown as a new "Directory Sources" section on the Sources page and as role badges on the Destinations page.
@@ -16,11 +18,14 @@ All notable changes to DBackup are documented here.
 - **jobs**: The directory source folder browser now reflects every row already configured for that adapter, no matter which row's "Browse" button opened it - checking a new folder adds a row, unchecking one removes it, instead of only ever appending rows.
 - **jobs**: Added a "Back up everything" option to the directory source folder browser, backing up an entire adapter's root as a single source instead of requiring one row per folder.
 - **templates**: A directory source can now link multiple Exclude Pattern Presets at once, matching the multi-template picker already used for notifications.
+- **backup**: Combined database + directory backups now compress each database dump and each directory source file individually instead of compressing the whole archive as one pass, so directory files are still compressed even when the database portion uses its own native compression (e.g. PostgreSQL).
+- **backup**: Directory source files now get a SHA-256 checksum recorded in their per-file backup index, computed once right after download - groundwork for future incremental backup change detection.
 
 ### 🐛 Bug Fixes
 
 - **jobs**: Fixed a crash when expanding a directory source's exclude-pattern filter while editing an existing job.
 - **jobs**: Fixed linked Exclude Pattern Presets being silently dropped when creating or updating a job, so the link never actually applied.
+- **jobs**: Fixed external compression being force-disabled for combined jobs whenever PostgreSQL native compression was active, even when the job also had directory sources whose files should still be compressed.
 
 ### 🎨 Improvements
 

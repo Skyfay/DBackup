@@ -169,6 +169,52 @@ describe('executeCombinedDump', () => {
         expect(await fs.readFile(path.join(dirRoot, 'sub/b.txt'), 'utf-8')).toBe('BBBBB');
     });
 
+    it("writes a SHA-256 checksum for every directory-source file into the manifest's per-file index", async () => {
+        const ctx = makeCtx({
+            sourceAdapter: undefined,
+            sources: [makeDirectorySource({ adapter: makeFakeStorageAdapter({ 'a.txt': 'AAAA', 'sub/b.txt': 'BBBBB' }) })],
+            job: makeJob({ source: null }),
+        });
+
+        await executeCombinedDump(ctx);
+        createdTempFiles.push(ctx.tempFile!);
+
+        // The per-file index lives inside the tar as a metadata member (not returned by
+        // extractCombinedArchive, which treats it as metadata) - read it directly.
+        const { extract } = await import('tar-stream');
+        const { createReadStream } = await import('fs');
+        const indexContents = new Map<string, string>();
+        await new Promise<void>((resolve, reject) => {
+            const extractor = extract();
+            extractor.on('entry', (header, stream, next) => {
+                if (!header.name.endsWith('.dbackup-index.json')) {
+                    stream.resume();
+                    next();
+                    return;
+                }
+                const chunks: Buffer[] = [];
+                stream.on('data', (c: Buffer) => chunks.push(c));
+                stream.on('end', () => {
+                    indexContents.set(header.name, Buffer.concat(chunks).toString('utf-8'));
+                    next();
+                });
+            });
+            extractor.on('finish', () => resolve());
+            extractor.on('error', reject);
+            createReadStream(ctx.tempFile!).pipe(extractor);
+        });
+
+        expect(indexContents.size).toBe(1);
+        const index = JSON.parse([...indexContents.values()][0]) as { path: string; checksum?: string }[];
+
+        const crypto = await import('crypto');
+        const expectedA = crypto.createHash('sha256').update('AAAA').digest('hex');
+        const expectedB = crypto.createHash('sha256').update('BBBBB').digest('hex');
+
+        expect(index.find((e) => e.path === 'a.txt')?.checksum).toBe(expectedA);
+        expect(index.find((e) => e.path === 'sub/b.txt')?.checksum).toBe(expectedB);
+    });
+
     it('supports a directory-only job with no database source', async () => {
         const ctx = makeCtx({
             sourceAdapter: undefined,

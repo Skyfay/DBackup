@@ -7,6 +7,7 @@ import { createCombinedTar, createTempDir, cleanupTempDir } from "@/lib/adapters
 import { CombinedTarFileEntry, DbEntryV2, DirectoryFileIndexEntry } from "@/lib/adapters/database/common/types";
 import { resolveBackupFilename, parseJobDatabases } from "./dump-helpers";
 import { formatBytes } from "@/lib/utils";
+import { calculateFileChecksum } from "@/lib/crypto/checksum";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 
@@ -20,6 +21,9 @@ const DB_FORMAT_BY_ADAPTER: Record<string, DbEntryV2["format"]> = {
     mongodb: "archive",
     firebird: "fbk",
 };
+
+/** Adapters whose dump() already applies its own native compression - per-entry external compression is skipped for their dumps to avoid double-compressing already-compressed bytes. */
+const NATIVE_COMPRESSION_ADAPTERS = new Set(["postgres"]);
 
 /**
  * Combined dump path for jobs that have directory sources (JobSource), used instead of the
@@ -96,6 +100,13 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
             ctx.updateStageProgress(Math.min(100, Math.max(0, percent)));
         };
 
+        // Postgres applies its own native compression (pg_dump -Z) unless explicitly disabled via
+        // pgCompression "NONE" - per-entry external compression is skipped for its dumps below to
+        // avoid double-compressing already-compressed bytes.
+        const nativeCompressionActive = job.source
+            ? NATIVE_COMPRESSION_ADAPTERS.has(job.source.adapterId) && job.pgCompression !== "NONE"
+            : false;
+
         // ── Database dumps (one per selected database - Multi-DB fully supported) ──
         for (const dbName of dbNames) {
             const format = DB_FORMAT_BY_ADAPTER[job.source!.adapterId] ?? "sql";
@@ -106,7 +117,7 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
             const dumpConfigWithVersion = { ...sourceConfig, detectedVersion: engineVersion };
             await ctx.sourceAdapter!.dumpOne!(dumpConfigWithVersion, dbName, dest, (msg, level, type, details) => ctx.log(msg, level, type, details));
 
-            entries.push({ kind: "database", dbName, path: dest, format });
+            entries.push({ kind: "database", dbName, path: dest, format, nativeCompression: nativeCompressionActive });
             completedUnits++;
             setOverallProgress(completedUnits);
             ctx.log(`Completed dump for: ${dbName}`, 'success');
@@ -138,11 +149,14 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
                 (msg, level, type, details) => ctx.log(`${logPrefix} ${msg}`, level, type ?? 'storage', details)
             );
 
-            const fileIndex: DirectoryFileIndexEntry[] = result.entries.map((e) => ({
+            const fileIndex: DirectoryFileIndexEntry[] = await Promise.all(result.entries.map(async (e) => ({
                 path: e.relativePath,
                 size: e.size,
                 mtime: e.lastModified.toISOString(),
-            }));
+                // Content hash of the raw (pre-compression) file - groundwork for future
+                // incremental-backup change detection, not yet consumed by anything else.
+                checksum: await calculateFileChecksum(path.join(localDir, e.relativePath)),
+            })));
 
             entries.push({
                 kind: "directory",
@@ -159,10 +173,14 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
         }
 
         // ── Combine everything into one archive ────────────────────────────────────
+        // Compression is applied per-entry here (skipped for natively-compressed DB dumps, always
+        // applied to directory files) instead of as a single whole-file pass in 03-upload.ts - see
+        // TarManifestV2.perEntryCompression.
         ctx.log(`Creating combined archive with ${dbNames.length} database(s) and ${ctx.sources.length} directory source(s)...`);
         const manifest = await createCombinedTar(entries, tempFile, {
             sourceType: job.source ? job.source.adapterId : "directory-only",
             engineVersion,
+            compression: (job.compression as "NONE" | "GZIP" | "BROTLI" | undefined) ?? "NONE",
         });
 
         ctx.dumpSize = manifest.totalSize;

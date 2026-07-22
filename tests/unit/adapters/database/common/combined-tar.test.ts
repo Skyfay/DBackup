@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "fs/promises";
+import { createReadStream } from "fs";
 import path from "path";
+import { extract } from "tar-stream";
 import {
     createCombinedTar,
     extractCombinedArchive,
@@ -141,6 +143,59 @@ describe("Combined TAR utilities (manifest v2 - DB + directory sources)", () => 
             expect(entry.fileCount).toBe(0);
             expect(entry.totalSize).toBe(0);
         });
+
+        it("sets perEntryCompression on every archive, regardless of whether compression is requested", async () => {
+            const db = await writeLocalFile("db.sql", "-- dump");
+            const tarPath = path.join(tempDir, "no-compression.tar");
+            const manifest = await createCombinedTar([{ kind: "database", dbName: "a", path: db, format: "sql" }], tarPath, { sourceType: "mysql" });
+
+            expect(manifest.perEntryCompression).toBe(true);
+            const entry = manifest.entries[0] as DbEntryV2;
+            expect(entry.compressed).toBeUndefined();
+        });
+
+        it("compresses database entries per-entry when compression is requested", async () => {
+            const content = "-- " + "x".repeat(2000);
+            const db = await writeLocalFile("db.sql", content);
+            const tarPath = path.join(tempDir, "db-gzip.tar");
+
+            const manifest = await createCombinedTar(
+                [{ kind: "database", dbName: "a", path: db, format: "sql" }],
+                tarPath,
+                { sourceType: "mysql", compression: "GZIP" }
+            );
+
+            const entry = manifest.entries[0] as DbEntryV2;
+            expect(entry.compressed).toBe("GZIP");
+            // Compressed size should be smaller than the (highly repetitive, easily compressible) original.
+            expect(entry.size).toBeLessThan(Buffer.byteLength(content));
+        });
+
+        it("skips per-entry compression for database entries flagged nativeCompression", async () => {
+            const content = "PGDMP " + "x".repeat(2000);
+            const db = await writeLocalFile("db.dump", content);
+            const tarPath = path.join(tempDir, "db-native.tar");
+
+            const manifest = await createCombinedTar(
+                [{ kind: "database", dbName: "a", path: db, format: "custom", nativeCompression: true }],
+                tarPath,
+                { sourceType: "postgres", compression: "GZIP" }
+            );
+
+            const entry = manifest.entries[0] as DbEntryV2;
+            expect(entry.compressed).toBeUndefined();
+            expect(entry.size).toBe(Buffer.byteLength(content));
+        });
+
+        it("compresses directory entries uniformly when compression is requested", async () => {
+            const dir = await makeDirectoryEntry("src-1", "Local", { "a.txt": "a".repeat(2000) });
+            const tarPath = path.join(tempDir, "dir-brotli.tar");
+
+            const manifest = await createCombinedTar([dir], tarPath, { sourceType: "directory-only", compression: "BROTLI" });
+
+            const entry = manifest.entries[0] as DirectoryEntryV2;
+            expect(entry.compressed).toBe("BROTLI");
+        });
     });
 
     // ── readManifestVersion / readCombinedManifest ──────────────────────
@@ -278,7 +333,94 @@ describe("Combined TAR utilities (manifest v2 - DB + directory sources)", () => 
             expect(result.databaseFiles).toHaveLength(1);
             expect(result.databaseFiles[0].entry.name).toBe("two");
             expect(result.directoryRoots).toHaveLength(1);
+
             expect(result.directoryRoots[0].entry.jobSourceId).toBe("dir-a");
+        });
+
+        it("transparently decompresses per-entry-compressed database and directory entries on extraction", async () => {
+            const dbContent = "-- dump " + "y".repeat(500);
+            const db = await writeLocalFile("db.sql", dbContent);
+            const dir = await makeDirectoryEntry("src-1", "Local", { "file.txt": "file-content " + "z".repeat(500) });
+
+            const entries: CombinedTarFileEntry[] = [
+                { kind: "database", dbName: "a", path: db, format: "sql" },
+                dir,
+            ];
+
+            const tarPath = path.join(tempDir, "compressed-roundtrip.tar");
+            const manifest = await createCombinedTar(entries, tarPath, { sourceType: "mysql", compression: "GZIP" });
+            expect((manifest.entries[0] as DbEntryV2).compressed).toBe("GZIP");
+            expect((manifest.entries[1] as DirectoryEntryV2).compressed).toBe("GZIP");
+
+            const extractDir = path.join(tempDir, "extract-compressed");
+            const result = await extractCombinedArchive(tarPath, extractDir);
+
+            expect(await fs.readFile(result.databaseFiles[0].path, "utf-8")).toBe(dbContent);
+            const dirRoot = result.directoryRoots[0].path;
+            expect(await fs.readFile(path.join(dirRoot, "file.txt"), "utf-8")).toBe("file-content " + "z".repeat(500));
+        });
+
+        it("compresses each file of a directory source individually (one tar member per file, not bundled)", async () => {
+            const dir = await makeDirectoryEntry("src-multi", "Multi", {
+                "a.txt": "a".repeat(300),
+                "b.txt": "b".repeat(300),
+                "nested/c.txt": "c".repeat(300),
+            });
+
+            const tarPath = path.join(tempDir, "dir-per-file.tar");
+            const manifest = await createCombinedTar([dir], tarPath, { sourceType: "directory-only", compression: "GZIP" });
+            const dirEntry = manifest.entries[0] as DirectoryEntryV2;
+            expect(dirEntry.compressed).toBe("GZIP");
+
+            // List raw tar member names - one member per file (plus the index), never a single bundle.
+            const memberNames: string[] = [];
+            await new Promise<void>((resolve, reject) => {
+                const extractor = extract();
+                extractor.on("entry", (header, stream, next) => {
+                    memberNames.push(header.name);
+                    stream.resume();
+                    next();
+                });
+                extractor.on("finish", resolve);
+                extractor.on("error", reject);
+                createReadStream(tarPath).pipe(extractor);
+            });
+            const sourceMembers = memberNames.filter((n) => n.startsWith(`${dirEntry.pathPrefix}/`));
+            expect(sourceMembers.sort()).toEqual([
+                `${dirEntry.pathPrefix}/${DIRECTORY_INDEX_FILENAME}`,
+                `${dirEntry.pathPrefix}/a.txt`,
+                `${dirEntry.pathPrefix}/b.txt`,
+                `${dirEntry.pathPrefix}/nested/c.txt`,
+            ].sort());
+
+            // Round-trip: every file (including the nested one) must still be individually restorable.
+            const extractDir = path.join(tempDir, "extract-per-file");
+            const result = await extractCombinedArchive(tarPath, extractDir);
+            const root = result.directoryRoots[0].path;
+            expect(await fs.readFile(path.join(root, "a.txt"), "utf-8")).toBe("a".repeat(300));
+            expect(await fs.readFile(path.join(root, "b.txt"), "utf-8")).toBe("b".repeat(300));
+            expect(await fs.readFile(path.join(root, "nested/c.txt"), "utf-8")).toBe("c".repeat(300));
+        });
+
+        it("extracts archives written before per-entry compression support unchanged (no `compressed`/`perEntryCompression` fields)", async () => {
+            const dbContent = "-- legacy dump";
+            const db = await writeLocalFile("legacy.sql", dbContent);
+            const dir = await makeDirectoryEntry("src-legacy", "Legacy", { "legacy.txt": "legacy-content" });
+
+            const tarPath = path.join(tempDir, "legacy.tar");
+            // Simulates an archive from before this feature: no `compression` option passed, so
+            // neither `perEntryCompression` nor any entry's `compressed` field gets set.
+            await createCombinedTar(
+                [{ kind: "database", dbName: "legacy", path: db, format: "sql" }, dir],
+                tarPath,
+                { sourceType: "mysql" }
+            );
+
+            const extractDir = path.join(tempDir, "extract-legacy");
+            const result = await extractCombinedArchive(tarPath, extractDir);
+
+            expect(await fs.readFile(result.databaseFiles[0].path, "utf-8")).toBe(dbContent);
+            expect(await fs.readFile(path.join(result.directoryRoots[0].path, "legacy.txt"), "utf-8")).toBe("legacy-content");
         });
 
         it("treats an omitted field within a provided selection as 'none of this kind', not 'all'", async () => {

@@ -11,6 +11,7 @@ import path from "path";
 import { pack, extract, Pack } from "tar-stream";
 import { pipeline } from "stream/promises";
 import { getTempDir } from "@/lib/temp-dir";
+import { getCompressionStream, getDecompressionStream } from "@/lib/crypto/compression";
 import {
     TarManifest,
     TarFileEntry,
@@ -39,6 +40,22 @@ const EXTENSION_BY_FORMAT: Record<DbEntryV2["format"], string> = {
     archive: "archive",
     fbk: "fbk",
 };
+
+/**
+ * Compresses a local file to a new temporary file (GZIP/BROTLI) and returns its path. Used by
+ * createCombinedTar() to compress individual entries before they're streamed into the tar -
+ * caller owns cleanup of the returned temp file.
+ */
+async function compressFileToTemp(localPath: string, compression: "GZIP" | "BROTLI"): Promise<string> {
+    const ext = compression === "GZIP" ? ".gz" : ".br";
+    const compressedPath = path.join(getTempDir(), `combined-compress-${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
+    const compressStream = getCompressionStream(compression);
+    if (!compressStream) {
+        throw new Error(`Unsupported compression type: ${compression}`);
+    }
+    await pipeline(createReadStream(localPath), compressStream, createWriteStream(compressedPath));
+    return compressedPath;
+}
 
 /** Streams a local file into a new tar entry under the given member name. */
 async function addFileToTar(tarPack: Pack, tarName: string, localPath: string): Promise<void> {
@@ -519,75 +536,106 @@ export async function createCombinedTar(
     const outputStream = createWriteStream(destinationPath);
     const pipelinePromise = pipeline(tarPack, outputStream);
 
+    const externalCompression = options.compression && options.compression !== "NONE" ? options.compression : undefined;
+
     const manifestEntries: ManifestEntryV2[] = [];
+    // Local path actually streamed into the tar for each database entry (may be a temp
+    // compressed file instead of the original dump when per-entry compression applies) -
+    // resolved once here so the write loop below never re-decides or re-compresses.
+    const resolvedDbPaths: string[] = [];
+    const tempFilesToClean: string[] = [];
     let totalSize = 0;
 
-    for (const entry of entries) {
-        if (entry.kind === "database") {
-            const stats = await fs.stat(entry.path);
-            manifestEntries.push({
-                kind: "database",
-                name: entry.dbName,
-                filename: `databases/${entry.dbName}.${EXTENSION_BY_FORMAT[entry.format]}`,
-                size: stats.size,
-                format: entry.format,
-            });
-            totalSize += stats.size;
-        } else {
-            const dirTotalSize = entry.files.reduce((sum, f) => sum + f.size, 0);
-            manifestEntries.push({
-                kind: "directory",
-                jobSourceId: entry.jobSourceId,
-                label: entry.label,
-                pathPrefix: `sources/${entry.jobSourceId}`,
-                fileCount: entry.files.length,
-                totalSize: dirTotalSize,
-                excludePatterns: entry.excludePatterns,
-            });
-            totalSize += dirTotalSize;
-        }
-    }
+    try {
+        for (const entry of entries) {
+            if (entry.kind === "database") {
+                const shouldCompress = !!externalCompression && !entry.nativeCompression;
+                const sourcePath = shouldCompress ? await compressFileToTemp(entry.path, externalCompression!) : entry.path;
+                if (shouldCompress) tempFilesToClean.push(sourcePath);
+                resolvedDbPaths.push(sourcePath);
 
-    const manifest: TarManifestV2 = {
-        version: 2,
-        createdAt: new Date().toISOString(),
-        sourceType: options.sourceType,
-        engineVersion: options.engineVersion,
-        entries: manifestEntries,
-        totalSize,
-    };
-
-    const manifestJson = JSON.stringify(manifest, null, 2);
-    const manifestBuffer = Buffer.from(manifestJson, "utf-8");
-    const manifestEntryHandle = tarPack.entry({ name: MANIFEST_FILENAME, size: manifestBuffer.length });
-    manifestEntryHandle.end(manifestBuffer);
-
-    for (let i = 0; i < entries.length; i++) {
-        const entry = entries[i];
-        if (entry.kind === "database") {
-            const manifestEntry = manifestEntries[i] as DbEntryV2;
-            await addFileToTar(tarPack, manifestEntry.filename, entry.path);
-        } else {
-            const manifestEntry = manifestEntries[i] as DirectoryEntryV2;
-
-            const indexBuffer = Buffer.from(JSON.stringify(entry.files), "utf-8");
-            const indexEntryHandle = tarPack.entry({
-                name: `${manifestEntry.pathPrefix}/${DIRECTORY_INDEX_FILENAME}`,
-                size: indexBuffer.length,
-            });
-            indexEntryHandle.end(indexBuffer);
-
-            for (const file of entry.files) {
-                const localFilePath = path.join(entry.localPath, file.path);
-                await addFileToTar(tarPack, `${manifestEntry.pathPrefix}/${file.path}`, localFilePath);
+                const stats = await fs.stat(sourcePath);
+                manifestEntries.push({
+                    kind: "database",
+                    name: entry.dbName,
+                    filename: `databases/${entry.dbName}.${EXTENSION_BY_FORMAT[entry.format]}`,
+                    size: stats.size,
+                    format: entry.format,
+                    ...(shouldCompress ? { compressed: externalCompression } : {}),
+                });
+                totalSize += stats.size;
+            } else {
+                const dirTotalSize = entry.files.reduce((sum, f) => sum + f.size, 0);
+                manifestEntries.push({
+                    kind: "directory",
+                    jobSourceId: entry.jobSourceId,
+                    label: entry.label,
+                    pathPrefix: `sources/${entry.jobSourceId}`,
+                    fileCount: entry.files.length,
+                    totalSize: dirTotalSize,
+                    excludePatterns: entry.excludePatterns,
+                    ...(externalCompression ? { compressed: externalCompression } : {}),
+                });
+                totalSize += dirTotalSize;
             }
         }
+
+        const manifest: TarManifestV2 = {
+            version: 2,
+            createdAt: new Date().toISOString(),
+            sourceType: options.sourceType,
+            engineVersion: options.engineVersion,
+            entries: manifestEntries,
+            totalSize,
+            perEntryCompression: true,
+        };
+
+        // Add manifest.json as first entry
+        const manifestJson = JSON.stringify(manifest, null, 2);
+        const manifestBuffer = Buffer.from(manifestJson, "utf-8");
+
+        const manifestEntryHandle = tarPack.entry({ name: MANIFEST_FILENAME, size: manifestBuffer.length });
+        manifestEntryHandle.end(manifestBuffer);
+
+        let dbIndex = 0;
+        for (let i = 0; i < entries.length; i++) {
+            const entry = entries[i];
+            if (entry.kind === "database") {
+                const manifestEntry = manifestEntries[i] as DbEntryV2;
+                await addFileToTar(tarPack, manifestEntry.filename, resolvedDbPaths[dbIndex]);
+                dbIndex++;
+            } else {
+                const manifestEntry = manifestEntries[i] as DirectoryEntryV2;
+
+                const indexBuffer = Buffer.from(JSON.stringify(entry.files), "utf-8");
+                const indexEntryHandle = tarPack.entry({
+                    name: `${manifestEntry.pathPrefix}/${DIRECTORY_INDEX_FILENAME}`,
+                    size: indexBuffer.length,
+                });
+                indexEntryHandle.end(indexBuffer);
+
+                for (const file of entry.files) {
+                    const localFilePath = path.join(entry.localPath, file.path);
+                    if (manifestEntry.compressed) {
+                        const compressedPath = await compressFileToTemp(localFilePath, manifestEntry.compressed);
+                        tempFilesToClean.push(compressedPath);
+                        await addFileToTar(tarPack, `${manifestEntry.pathPrefix}/${file.path}`, compressedPath);
+                    } else {
+                        await addFileToTar(tarPack, `${manifestEntry.pathPrefix}/${file.path}`, localFilePath);
+                    }
+                }
+            }
+        }
+
+        tarPack.finalize();
+        await pipelinePromise;
+
+        return manifest;
+    } finally {
+        for (const f of tempFilesToClean) {
+            await fs.unlink(f).catch(() => {});
+        }
     }
-
-    tarPack.finalize();
-    await pipelinePromise;
-
-    return manifest;
 }
 
 /**
@@ -693,7 +741,17 @@ export async function extractCombinedArchive(
                         /* v8 ignore start */
                         writeStream.on("error", (err) => reject(err));
                         /* v8 ignore end */
-                        stream.pipe(writeStream);
+                        // `compressed` is only ever set on archives written with per-entry compression -
+                        // absent on older archives, which are written straight through unchanged.
+                        const decompressStream = dbEntry.compressed ? getDecompressionStream(dbEntry.compressed) : null;
+                        if (decompressStream) {
+                            /* v8 ignore start */
+                            decompressStream.on("error", (err) => reject(err));
+                            /* v8 ignore end */
+                            stream.pipe(decompressStream).pipe(writeStream);
+                        } else {
+                            stream.pipe(writeStream);
+                        }
                     })
                     /* v8 ignore next */
                     .catch(reject);
@@ -719,6 +777,11 @@ export async function extractCombinedArchive(
                     return;
                 }
 
+                // Flat per-file layout: each file is its own tar member, individually decompressed
+                // when `compressed` is set (kept per-file, not bundled, so a single file can be
+                // read/restored without touching the rest of the source - important for future
+                // file-level restore/browsing). `compressed` is absent on archives written before
+                // per-entry compression support, which are written straight through unchanged.
                 const outputPath = path.join(rootPath, suffix);
                 if (!outputPath.startsWith(rootPath)) {
                     reject(new Error(`Zip Slip detected: ${header.name}`));
@@ -732,7 +795,15 @@ export async function extractCombinedArchive(
                         /* v8 ignore start */
                         writeStream.on("error", (err) => reject(err));
                         /* v8 ignore end */
-                        stream.pipe(writeStream);
+                        const decompressStream = dirEntry.compressed ? getDecompressionStream(dirEntry.compressed) : null;
+                        if (decompressStream) {
+                            /* v8 ignore start */
+                            decompressStream.on("error", (err) => reject(err));
+                            /* v8 ignore end */
+                            stream.pipe(decompressStream).pipe(writeStream);
+                        } else {
+                            stream.pipe(writeStream);
+                        }
                     })
                     /* v8 ignore next */
                     .catch(reject);

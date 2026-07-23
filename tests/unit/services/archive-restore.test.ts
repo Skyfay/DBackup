@@ -188,7 +188,7 @@ describe('restoreArchiveSnapshot', () => {
             directoryMapping: [
                 { entryId: 'src-1', targetConfigId: 'target-storage-1', targetPath: '/restore/dir', selected: true },
             ],
-        }), { log: vi.fn(), updateDetail: vi.fn() });
+        }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() });
 
         expect(result.status).toBe('Success');
         expect(result.restoredDatabases.sort()).toEqual(['db1_restored', 'db2']);
@@ -196,6 +196,37 @@ describe('restoreArchiveSnapshot', () => {
         expect(dbAdapter.prepareRestore).toHaveBeenCalledWith(expect.anything(), expect.arrayContaining(['db1_restored', 'db2']));
         expect(dbAdapter.restoreOne).toHaveBeenCalledTimes(2);
         expect(storageAdapter.upload).toHaveBeenCalledWith(expect.anything(), expect.any(String), '/restore/dir/a.txt');
+    });
+
+    it('sets the two restore stages according to what the snapshot holds', async () => {
+        // A combined archive shows both, in order. The complaint that started this was a
+        // file-only restore still reporting "Restoring Databases".
+        const { sourceAdapter } = await buildRemoteBackup(['db1'], { 'a.txt': 'AAAA' });
+        const dbAdapter = makeFakeDbAdapter();
+        const storageAdapter = makeFakeStorageAdapter();
+        wire({ 'source-fs': sourceAdapter, mysql: dbAdapter, 'local-filesystem': storageAdapter });
+
+        const setStage = vi.fn();
+        await restoreArchiveSnapshot(makeInput({
+            targetSourceId: 'target-db-1',
+            databaseMapping: [{ originalName: 'db1', targetName: 'db1', selected: true }],
+            directoryMapping: [{ entryId: 'src-1', targetConfigId: 'target-storage-1', targetPath: '/r', selected: true }],
+        }), { log: vi.fn(), updateDetail: vi.fn(), setStage });
+
+        expect(setStage.mock.calls.map((c) => c[0])).toEqual(['Restoring Databases', 'Restoring Files']);
+    });
+
+    it('shows only the file stage for a files-only restore', async () => {
+        const { sourceAdapter } = await buildRemoteBackup([], { 'a.txt': 'AAAA' });
+        const storageAdapter = makeFakeStorageAdapter();
+        wire({ 'source-fs': sourceAdapter, 'local-filesystem': storageAdapter });
+
+        const setStage = vi.fn();
+        await restoreArchiveSnapshot(makeInput({
+            directoryMapping: [{ entryId: 'src-1', targetConfigId: 'target-storage-1', targetPath: '/r', selected: true }],
+        }), { log: vi.fn(), updateDetail: vi.fn(), setStage });
+
+        expect(setStage.mock.calls.map((c) => c[0])).toEqual(['Restoring Files']);
     });
 
     it('never downloads the archive when only a database is restored over a ranged adapter', async () => {
@@ -211,7 +242,7 @@ describe('restoreArchiveSnapshot', () => {
             targetSourceId: 'target-db-1',
             databaseMapping: [{ originalName: 'db1', targetName: 'db1', selected: true }],
             directoryMapping: [{ entryId: 'src-1', targetConfigId: 'target-storage-1', targetPath: '/r', selected: false }],
-        }), { log: vi.fn(), updateDetail: vi.fn() });
+        }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() });
 
         expect(result.status).toBe('Success');
         expect(traffic.archiveDownloads).toBe(0);
@@ -236,7 +267,7 @@ describe('restoreArchiveSnapshot', () => {
             directoryMapping: [
                 { entryId: 'src-1', targetConfigId: 'target-storage-1', targetPath: '/restore', selected: true, paths: ['www'] },
             ],
-        }), { log: vi.fn(), updateDetail: vi.fn() });
+        }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() });
 
         expect(result.status).toBe('Success');
         const uploaded = vi.mocked(storageAdapter.upload).mock.calls.map((c: unknown[]) => c[2]);
@@ -254,7 +285,7 @@ describe('restoreArchiveSnapshot', () => {
             directoryMapping: [
                 { entryId: 'src-1', targetConfigId: 'target-storage-1', targetPath: '/restore', selected: true },
             ],
-        }), { log: vi.fn(), updateDetail: vi.fn() });
+        }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() });
 
         expect(result.status).toBe('Success');
         expect(result.restoredDatabases).toEqual(['db1']);
@@ -269,7 +300,7 @@ describe('restoreArchiveSnapshot', () => {
         });
         wire({ 'source-fs': sourceAdapter, mysql: dbAdapter });
 
-        const result = await restoreArchiveSnapshot(makeInput({ targetSourceId: 'target-db-1' }), { log: vi.fn(), updateDetail: vi.fn() });
+        const result = await restoreArchiveSnapshot(makeInput({ targetSourceId: 'target-db-1' }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() });
 
         expect(result.status).toBe('Partial');
         expect(result.restoredDatabases).toHaveLength(1);
@@ -282,7 +313,7 @@ describe('restoreArchiveSnapshot', () => {
         const dbAdapter = makeFakeDbAdapter({ restoreOne: vi.fn().mockRejectedValue(new Error('connection refused')) });
         wire({ 'source-fs': sourceAdapter, mysql: dbAdapter });
 
-        const result = await restoreArchiveSnapshot(makeInput({ targetSourceId: 'target-db-1' }), { log: vi.fn(), updateDetail: vi.fn() });
+        const result = await restoreArchiveSnapshot(makeInput({ targetSourceId: 'target-db-1' }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() });
 
         expect(result.status).toBe('Failed');
         expect(result.restoredDatabases).toHaveLength(0);
@@ -297,7 +328,7 @@ describe('restoreArchiveSnapshot', () => {
             directoryMapping: [
                 { entryId: 'src-1', targetConfigId: 'target-storage-1', targetPath: '/restore', selected: true },
             ],
-        }), { log: vi.fn(), updateDetail: vi.fn() });
+        }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() });
 
         expect(result.status).toBe('Success');
         expect(result.restoredDirectories).toEqual(['src-1']);
@@ -310,7 +341,7 @@ describe('restoreArchiveSnapshot', () => {
         await expect(
             restoreArchiveSnapshot(makeInput({
                 directoryMapping: [{ entryId: 'src-1', targetConfigId: 'target-storage-1', targetPath: '/restore', selected: true }],
-            }), { log: vi.fn(), updateDetail: vi.fn() })
+            }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() })
         ).rejects.toThrow('Missing targetSourceId');
     });
 
@@ -319,7 +350,7 @@ describe('restoreArchiveSnapshot', () => {
         wire({ 'source-fs': sourceAdapter, mysql: { id: 'mysql', type: 'database' } }); // no restoreOne
 
         await expect(
-            restoreArchiveSnapshot(makeInput({ targetSourceId: 'target-db-1' }), { log: vi.fn(), updateDetail: vi.fn() })
+            restoreArchiveSnapshot(makeInput({ targetSourceId: 'target-db-1' }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() })
         ).rejects.toThrow('does not support combined restores');
     });
 
@@ -331,7 +362,7 @@ describe('restoreArchiveSnapshot', () => {
         wire({ 'source-fs': sourceAdapter });
 
         await expect(
-            restoreArchiveSnapshot(makeInput({ targetSourceId: 'target-db-1' }), { log: vi.fn(), updateDetail: vi.fn() })
+            restoreArchiveSnapshot(makeInput({ targetSourceId: 'target-db-1' }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() })
         ).rejects.toThrow(/does not support file-level restore/i);
     });
 
@@ -348,7 +379,7 @@ describe('restoreArchiveSnapshot', () => {
             scope: 'databases',
             targetSourceId: 'target-db-1',
             databaseMapping: [{ originalName: 'db1', targetName: 'db1', selected: true }],
-        }), { log: vi.fn(), updateDetail: vi.fn() });
+        }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() });
 
         expect(result.status).toBe('Success');
         expect(result.restoredDatabases).toEqual(['db1']);
@@ -370,7 +401,7 @@ describe('restoreArchiveSnapshot', () => {
             directoryMapping: [
                 { entryId: 'src-1', targetConfigId: 'target-storage-1', targetPath: '/restore/dir', selected: true },
             ],
-        }), { log: vi.fn(), updateDetail: vi.fn() });
+        }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() });
 
         expect(result.status).toBe('Success');
         expect(result.restoredDirectories).toEqual(['src-1']);
@@ -387,7 +418,7 @@ describe('restoreArchiveSnapshot', () => {
         const result = await restoreArchiveSnapshot(makeInput({
             targetSourceId: 'target-db-1',
             directoryMapping: [{ entryId: 'src-1', targetConfigId: '', targetPath: '', selected: true }],
-        }), { log: vi.fn(), updateDetail: vi.fn() });
+        }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() });
 
         expect(result.status).toBe('Partial');
         expect(result.restoredDatabases).toEqual(['db1']);
@@ -413,7 +444,7 @@ describe('restoreArchiveSnapshot', () => {
 
         const result = await restoreArchiveSnapshot(makeInput({
             directoryMapping: [{ entryId: 'src-1', targetConfigId: 'target-storage-1', targetPath: '/restore', selected: true }],
-        }), { log: vi.fn(), updateDetail: vi.fn() });
+        }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() });
 
         expect(result.status).toBe('Failed');
         expect(result.errors.some((e) => e.error.includes('Checksum mismatch'))).toBe(true);

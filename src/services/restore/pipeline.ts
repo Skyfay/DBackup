@@ -251,8 +251,10 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
         // dumps fall through unchanged.
         if (seekableArchive) {
             log("Reading directly from the archive - no full download needed.", 'success');
-            setStage(RESTORE_STAGES.RESTORING);
-            const result = await restoreArchiveSnapshot(input, { log, updateDetail });
+            // The stage is set inside restoreArchiveSnapshot, which knows whether it is
+            // restoring databases, files, or both - so a file-only restore no longer shows
+            // "Restoring Databases".
+            const result = await restoreArchiveSnapshot(input, { log, updateDetail, setStage });
 
             if (result.status === "Failed") {
                 log(`Restore failed: no entries could be restored (${result.errors.map(e => e.error).join('; ')})`, 'error');
@@ -463,7 +465,8 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
         if (!sourceConfig || !sourceAdapter) {
             throw new Error("Missing targetSourceId");
         }
-        setStage(RESTORE_STAGES.RESTORING);
+        // v1 archives and naked dumps are always a database restore.
+        setStage(RESTORE_STAGES.RESTORING_DATABASES);
         log(`Starting database restore on ${sourceConfig.name}...`, 'info');
 
         const dbConf = await resolveAdapterConfig(sourceConfig) as any;

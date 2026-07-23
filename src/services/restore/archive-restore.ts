@@ -23,7 +23,7 @@ import prisma from "@/lib/prisma";
 import { registry } from "@/lib/core/registry";
 import { DatabaseAdapter, StorageAdapter, AdapterConfig } from "@/lib/core/interfaces";
 import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
-import { LogLevel, LogType } from "@/lib/core/logs";
+import { LogLevel, LogType, RESTORE_STAGES } from "@/lib/core/logs";
 import { shouldRestoreDatabase, getTargetDatabaseName } from "@/lib/adapters/database/common/tar-utils";
 import { openArchiveEntry } from "@/lib/archive/reader";
 import { forEachSnapshotFile, hashingStream } from "@/lib/archive/chain-source";
@@ -36,6 +36,8 @@ import type { RestoreInput } from "./types";
 export interface ArchiveRestoreCallbacks {
     log: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void;
     updateDetail: (detail: string) => void;
+    /** Sets the visible restore stage, so a file-only restore never shows "Restoring Databases". */
+    setStage: (stage: string) => void;
 }
 
 export interface ArchiveRestoreResult {
@@ -64,7 +66,7 @@ export async function restoreArchiveSnapshot(
     input: RestoreInput,
     callbacks: ArchiveRestoreCallbacks
 ): Promise<ArchiveRestoreResult> {
-    const { log, updateDetail } = callbacks;
+    const { log, updateDetail, setStage } = callbacks;
 
     // Opens the archive remotely, reads the index (sidecar first), and verifies the chain
     // is complete - a missing sibling archive fails here, by name, before anything runs.
@@ -129,11 +131,13 @@ export async function restoreArchiveSnapshot(
 
         // ── Databases ─────────────────────────────────────────────────────────
         if (selectedDbNames.length > 0) {
+            setStage(RESTORE_STAGES.RESTORING_DATABASES);
             await restoreDatabases(input, archive, selectedDbNames, dbMapping, restoredDatabases, errors, callbacks);
         }
 
         // ── Directory sources ─────────────────────────────────────────────────
         if (selectedDirs.length > 0) {
+            setStage(RESTORE_STAGES.RESTORING_FILES);
             // Resolve every target up front, so a misconfigured source is reported before
             // any bytes move rather than midway through.
             const targets = new Map<string, DirectoryTarget>();

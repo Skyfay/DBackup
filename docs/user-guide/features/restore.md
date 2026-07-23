@@ -69,6 +69,33 @@ users_prod      → users_test
 
 Configure in the mapping section of restore dialog.
 
+### Directory Sources and File Selection
+
+Backups with directory sources show one card per source. Each card offers:
+
+- **A file tree** ("All files" by default) - expand it to restore only a folder or
+  individual files. Selecting a folder takes everything inside it. The tree loads level by
+  level from the backup's index, so even huge backups browse instantly.
+- **A restore target**: any configured storage destination plus a path, with a folder
+  browser where the destination supports it. When the original directory source still
+  exists, **Use original location** fills both in one click - and is the preselected
+  default.
+- **A selection summary** with file count, total size, and a warning when the destination
+  cannot serve byte ranges (the restore then transfers the whole archive once).
+
+A database target server is only required when at least one database is selected -
+restoring only directories out of a database + directory backup works without one.
+
+**Download selection (.tar.gz)** streams the current file selection straight to your
+browser instead of restoring it anywhere - the quickest way to get a single file back.
+
+::: info Incremental snapshots
+Snapshots from an [incremental chain](/user-guide/features/backup-modes) restore
+transparently - the page shows which chain the snapshot belongs to, and reads from the
+other archives of the chain automatically. If an archive of the chain is missing, the
+restore is blocked up front with the missing filename rather than failing halfway.
+:::
+
 ### Privileged Credentials
 
 For creating new databases:

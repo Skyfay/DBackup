@@ -14,17 +14,15 @@
 
 import path from "path";
 import prisma from "@/lib/prisma";
-import { Readable, Transform, TransformCallback } from "stream";
 import { pipeline } from "stream/promises";
 import { createGzip } from "zlib";
 import { pack } from "tar-stream";
 import crypto from "crypto";
 import { BackupMetadata, StorageAdapter, AdapterConfig } from "@/lib/core/interfaces";
 import { openStorageArchiveSource, resolveStorageAdapter, ManagedArchiveSource } from "@/lib/archive/storage-source";
-import { readArchiveManifest, readArchiveIndex, openArchiveEntry, groupFilesByEntry } from "@/lib/archive/reader";
-import { openChainArchive, groupFilesByArchive, ChainReaderOptions, OpenedChainArchive } from "@/lib/archive/chain-source";
+import { readArchiveManifest, readArchiveIndex } from "@/lib/archive/reader";
+import { forEachSnapshotFile, hashingStream, ChainReaderOptions } from "@/lib/archive/chain-source";
 import { checkChainCompleteness } from "@/lib/archive/chain";
-import { readAll } from "@/lib/archive/sources";
 import { resolveSelection, totalSize } from "@/lib/archive/browse";
 import { getProfileMasterKey } from "@/services/backup/encryption-service";
 import { archiveIndexService } from "@/services/backup/archive-index-service";
@@ -49,8 +47,11 @@ export type FileRestoreTarget =
 export interface FileRestoreSelection {
     /** JobSource id of the directory source. */
     src: string;
-    /** Selected paths relative to that source's root. A directory selects everything below it. */
-    paths: string[];
+    /**
+     * Selected paths relative to that source's root. A directory selects everything below
+     * it. Absent means the whole source.
+     */
+    paths?: string[];
 }
 
 export interface FileRestoreInput {
@@ -73,21 +74,6 @@ interface OpenedArchive extends ManagedArchiveSource {
     masterKey?: Buffer;
     /** Lets sibling archives of the same chain be opened on demand. */
     chain: ChainReaderOptions;
-}
-
-/** Hashes what flows through it, so a restored file can be checked against its index entry. */
-function hashingStream(onDigest: (digest: string) => void): Transform {
-    const hash = crypto.createHash("sha256");
-    return new Transform({
-        transform(chunk: Buffer, _encoding, callback: TransformCallback) {
-            hash.update(chunk);
-            callback(null, chunk);
-        },
-        flush(callback: TransformCallback) {
-            onDigest(hash.digest("hex"));
-            callback();
-        },
-    });
 }
 
 /**
@@ -207,7 +193,10 @@ function resolveFiles(index: ArchiveIndex, selections?: FileRestoreSelection[]):
     const seen = new Set<string>();
 
     for (const selection of selections) {
-        for (const file of resolveSelection(index, selection.src, selection.paths)) {
+        const files = selection.paths && selection.paths.length > 0
+            ? resolveSelection(index, selection.src, selection.paths)
+            : index.files.filter((f) => f.src === selection.src);
+        for (const file of files) {
             const key = `${file.src}::${file.p}`;
             if (seen.has(key)) continue;
             seen.add(key);
@@ -216,58 +205,6 @@ function resolveFiles(index: ArchiveIndex, selections?: FileRestoreSelection[]):
     }
 
     return resolved;
-}
-
-/**
- * Iterates the selected files, opening each archive of the chain exactly once.
- *
- * Work is grouped by archive first and by entry second. The archive grouping is what caps
- * peak disk usage: an adapter without ranged reads downloads a whole archive to a temp
- * file, so visiting files in selection order would end up holding the entire chain at
- * once. Grouped this way, at most the snapshot's own archive plus one sibling is open.
- *
- * Within an archive, bundled entries are read once into memory (the writer caps them at a
- * few MB) and sliced, while standalone entries stream, so a multi-gigabyte file never has
- * to fit in RAM.
- */
-async function forEachSelectedFile(
-    archive: OpenedArchive,
-    files: { src: string; file: IndexFileLine }[],
-    visit: (file: IndexFileLine, content: NodeJS.ReadableStream) => Promise<void>
-): Promise<void> {
-    for (const [archiveName, group] of groupFilesByArchive(files)) {
-        // The snapshot's own archive is already open; siblings are opened and released
-        // one at a time.
-        const opened: Pick<OpenedChainArchive, "source" | "manifest" | "masterKey"> & { dispose?: () => Promise<void> } =
-            archiveName === undefined
-                ? { source: archive.source, manifest: archive.manifest, masterKey: archive.masterKey }
-                : await openChainArchive(archive.chain, archiveName);
-
-        try {
-            for (const [key, entryFiles] of groupFilesByEntry(group.map((g) => g.file))) {
-                const entry = archive.index.entries.get(key);
-                if (!entry) throw new Error(`Archive index is inconsistent: missing entry ${key}`);
-
-                if (!entry.bundle) {
-                    await visit(
-                        entryFiles[0],
-                        await openArchiveEntry(opened.source, opened.manifest, entry, opened.masterKey)
-                    );
-                    continue;
-                }
-
-                const payload = await readAll(
-                    await openArchiveEntry(opened.source, opened.manifest, entry, opened.masterKey)
-                );
-                for (const file of entryFiles) {
-                    const start = file.o ?? 0;
-                    await visit(file, Readable.from([payload.subarray(start, start + (file.l ?? payload.length))]));
-                }
-            }
-        } finally {
-            if (opened.dispose) await opened.dispose();
-        }
-    }
 }
 
 export interface FileRestorePlan {
@@ -317,7 +254,7 @@ export async function streamFileRestore(input: FileRestoreInput): Promise<NodeJS
     // pushed into the stream rather than thrown, since the caller already holds it.
     void (async () => {
         try {
-            await forEachSelectedFile(archive, files, async (file, content) => {
+            await forEachSnapshotFile(archive, files, async (file, content) => {
                 const entry = tarPack.entry({ name: `${bySrc.get(file) ?? file.src}/${file.p}`, size: file.s });
                 let digest: string | undefined;
                 await pipeline(content, hashingStream((d) => { digest = d; }), entry);
@@ -425,7 +362,7 @@ export async function restoreFilesToStorage(
     let restoredBytes = 0;
 
     try {
-        await forEachSelectedFile(archive, files, async (file, content) => {
+        await forEachSnapshotFile(archive, files, async (file, content) => {
             const target = targets.get(file.src);
             if (!target) {
                 failed.push({ path: file.p, error: "No restore target resolved for this directory source" });

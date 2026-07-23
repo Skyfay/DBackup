@@ -31,6 +31,8 @@ All notable changes to DBackup are documented here.
 - **vault**: The Recovery Kit now also ships `restore_archive.js`, which lists and extracts file backups offline with nothing but Node.js.
 - **jobs**: Directory sources can now be backed up incrementally, storing only files that changed since the last run. Opt-in per job, with a configurable full-backup interval, and a mode that detects changes by content instead of timestamps.
 - **storage**: The Storage Explorer now shows incremental snapshots with their complete size and a Full/Incremental badge, and offers a download that assembles the complete snapshot out of its chain.
+- **restore**: The restore page now shows a file tree per directory source, so a restore can cover everything, single folders or individual files - with a per-selection size summary and a `.tar.gz` download option.
+- **restore**: Directory restore targets can now be picked with a folder browser, and a one-click "Use original location" fills in where the files were originally collected from.
 
 ### 🐛 Bug Fixes
 
@@ -41,6 +43,7 @@ All notable changes to DBackup are documented here.
 - **backup**: Fixed the archive index sidecar being counted as a backup file by retention, the Storage Explorer, integrity checks and storage statistics, which could cause retention to delete real backups prematurely.
 - **storage**: Deleting a backup now removes every sidecar belonging to it, instead of leaving orphaned index files behind.
 - **retention**: Incremental chains are now retained and deleted as a unit, so a snapshot can never lose the archives it depends on.
+- **restore**: Fixed restoring only directories out of a database + directory backup being blocked until a database and target server were selected.
 
 ### 🔒 Security
 
@@ -49,6 +52,11 @@ All notable changes to DBackup are documented here.
 ### 🎨 Improvements
 
 - **storage**: The Storage Explorer's backup count badge now reflects combined database + directory archives (e.g. "2 DBs + 2 Dirs") instead of a misleading database-only count.
+- **restore**: Restoring from a seekable archive no longer downloads the whole backup - only the selected databases and files are transferred on destinations that support byte ranges.
+
+### 🗑️ Removed
+
+- **storage**: Removed the separate "Browse files" button and dialog from the Storage Explorer - browsing and per-file restore now live on the restore page.
 
 ### 📝 Documentation
 

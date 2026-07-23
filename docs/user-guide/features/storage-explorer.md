@@ -104,36 +104,22 @@ the full contents from the chain as a `.tar.gz`. Plain **Download** still gives 
 archive file, which for an incremental is only the delta - useful for diagnostics, not for
 recovery.
 
-### Browse Files
+### Restore
 
-Backups that include directory sources carry a file index, and show a **Browse files**
-action. It opens a folder tree of everything inside the backup.
+The **Restore** action opens the restore page for the selected backup. For backups with
+directory sources it shows a file tree per source, so you can restore everything (the
+default), a folder, or individual files - see [Restore](/user-guide/features/restore) for
+the full flow, including restoring back to the original location and downloading a
+selection as `.tar.gz`.
 
-Listing folders reads only a small index file stored next to the backup, so browsing a
-100 GB backup transfers a few megabytes rather than the whole thing.
-
-Select any mix of files and folders (selecting a folder takes everything inside it), then
-choose where they go:
-
-| Target | What happens |
-| :--- | :--- |
-| **Download** | The selection is streamed to your browser as a single `.tar.gz` |
-| **Original location** | Files are written back to the path they were collected from, overwriting what is there |
-| **Other destination** | Files are written into any configured storage destination, under a path you choose |
-
-Only the selected files are read out of the backup. Destinations that support ranged reads
-answer with a handful of small requests instead of transferring the archive:
+Listing the backup's contents reads only a small index file stored next to it, so browsing
+a 100 GB backup transfers a few megabytes rather than the whole thing. Destinations that
+support ranged reads restore with a handful of small requests instead of transferring the
+archive:
 
 | Ranged reads | Full download per restore |
 | :--- | :--- |
 | Local Filesystem, S3 (and compatible), SFTP, WebDAV, Google Drive, OneDrive, FTP, Dropbox | SMB, Rsync |
-
-On SMB and Rsync the archive is fetched once per restore, not once per file.
-
-::: tip Extract locally instead
-`.tar.gz` opens natively on macOS, Linux and Windows 11. On older Windows use 7-Zip, or
-run `tar -xzf selection.tar.gz` from a terminal.
-:::
 
 ### Download
 

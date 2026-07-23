@@ -12,7 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { ArrowRight, ArrowLeft, FileIcon, AlertTriangle, ShieldAlert, Loader2, HardDrive, ChevronDown, ChevronUp, Server, ShieldCheck, HelpCircle, FolderInput, CheckCircle2 } from "lucide-react";
+import { ArrowRight, ArrowLeft, FileIcon, AlertTriangle, ShieldAlert, Loader2, HardDrive, ChevronDown, ChevronUp, Server, ShieldCheck, HelpCircle, FolderInput, CheckCircle2, FolderOpen, MapPin, Download, GitBranch } from "lucide-react";
 import { toast } from "sonner";
 import { FileInfo } from "@/app/dashboard/storage/columns";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -26,6 +26,9 @@ import { useUserPreferences } from "@/hooks/use-user-preferences";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { RedisRestoreWizard } from "@/components/dashboard/storage/redis-restore-wizard";
+import { ArchiveFileTree, ArchiveTreeSelection } from "@/components/dashboard/storage/archive-file-tree";
+import { FolderPickerDialog } from "@/components/dashboard/storage/folder-picker-dialog";
+import { computeRestoreValidity } from "./restore-validation";
 
 interface DatabaseInfo {
     name: string;
@@ -55,6 +58,15 @@ interface DirectoryAnalysis {
     fileCount: number;
     totalSize: number;
     excludePatterns: string[];
+    /** Original collection location, when the JobSource still exists. */
+    origin?: { configId: string; configName: string; path: string };
+}
+
+/** Incremental chain info from the analyze response. */
+interface ChainInfo {
+    type: 'full' | 'incremental';
+    index: number;
+    deps: string[];
 }
 
 interface DirConfig {
@@ -63,7 +75,18 @@ interface DirConfig {
     targetConfigId: string;
     targetPath: string;
     selected: boolean;
+    /** null = the whole source (default); an array = only these paths. */
+    selection: ArchiveTreeSelection;
+    /** Whether the file tree is expanded for this source. */
+    showTree?: boolean;
     checkStatus?: 'checking' | 'empty' | 'occupied' | 'unverified';
+}
+
+/** Result of the server-side dry run over the current directory selection. */
+interface RestorePlan {
+    fileCount: number;
+    totalBytes: number;
+    fullDownload: boolean;
 }
 
 export function RestoreClient() {
@@ -100,6 +123,12 @@ export function RestoreClient() {
     const [directories, setDirectories] = useState<DirectoryAnalysis[]>([]);
     const [dirConfig, setDirConfig] = useState<DirConfig[]>([]);
     const [storageDestinations, setStorageDestinations] = useState<AdapterConfig[]>([]);
+    const [chainInfo, setChainInfo] = useState<ChainInfo | null>(null);
+    const [restorePlan, setRestorePlan] = useState<RestorePlan | null>(null);
+    /** Set when the dry run failed, e.g. an incremental chain with a missing archive. */
+    const [planError, setPlanError] = useState<string | null>(null);
+    /** Which source's folder picker dialog is open, if any. */
+    const [folderPickerFor, setFolderPickerFor] = useState<string | null>(null);
 
     // Execution State
     const [restoring, setRestoring] = useState(false);
@@ -136,17 +165,20 @@ export function RestoreClient() {
     const isDirectoryOnly = resolvedSourceType.toLowerCase() === 'directory-only';
     const hasDirectories = directories.length > 0;
 
-    // Combined-restore validity: a database target is only required when this backup
-    // actually has a database component; directories only need target adapter + path
-    // filled in on the rows the user left selected.
-    const dbSelectionValid = isDirectoryOnly || !!targetSource;
-    const dbListValid = isDirectoryOnly || analyzedDbs.length === 0 || dbConfig.some(d => d.selected);
-    const dirSelectionValid = !hasDirectories || dirConfig
-        .filter(d => d.selected)
-        .every(d => d.targetConfigId && d.targetPath.trim().length > 0);
-    const atLeastOneSelected =
-        (!isDirectoryOnly && (analyzedDbs.length === 0 || dbConfig.some(d => d.selected))) ||
-        (hasDirectories && dirConfig.some(d => d.selected));
+    // Restore validity - the rules live in restore-validation.ts so they are testable.
+    // A database target server is only required when at least one database is actually
+    // selected; restoring only directories out of a DB+directory backup is a first-class
+    // case.
+    const validity = computeRestoreValidity({
+        dbSelections: dbConfig,
+        dirSelections: dirConfig,
+        hasDirectories,
+        analyzedDbCount: analyzedDbs.length,
+        isDirectoryOnly,
+        targetSourceId: targetSource,
+        planError,
+    });
+    const { dbTargetNeeded } = validity;
 
     const [restoreOptions, setRestoreOptions] = useState<RestoreOptions>({
         settings: true,
@@ -315,12 +347,15 @@ export function RestoreClient() {
                     setDirConfig(data.directories.map((d: DirectoryAnalysis) => ({
                         entryId: d.jobSourceId,
                         label: d.label,
-                        // Default restore target: the same storage adapter the backup lives on.
-                        targetConfigId: destinationId,
-                        targetPath: "",
-                        selected: true
+                        // Default restore target: the original location when its source
+                        // still exists ("put it back"), else the backup's own destination.
+                        targetConfigId: d.origin?.configId ?? destinationId,
+                        targetPath: d.origin?.path ?? "",
+                        selected: true,
+                        selection: null,
                     })));
                 }
+                setChainInfo(data.chain ?? null);
             }
         } catch {
             // Analysis failed silently
@@ -356,6 +391,97 @@ export function RestoreClient() {
         setDirConfig(prev => prev.map(d => d.entryId === entryId ? { ...d, targetPath, checkStatus: undefined } : d));
     };
 
+    const handleDirSelectionChange = (entryId: string, selection: ArchiveTreeSelection) => {
+        setDirConfig(prev => prev.map(d => d.entryId === entryId ? { ...d, selection } : d));
+    };
+
+    const handleToggleTree = (entryId: string) => {
+        setDirConfig(prev => prev.map(d => d.entryId === entryId ? { ...d, showTree: !d.showTree } : d));
+    };
+
+    const handleUseOrigin = (entryId: string) => {
+        const origin = directories.find(d => d.jobSourceId === entryId)?.origin;
+        if (!origin) return;
+        setDirConfig(prev => prev.map(d => d.entryId === entryId
+            ? { ...d, targetConfigId: origin.configId, targetPath: origin.path, checkStatus: undefined }
+            : d));
+    };
+
+    /** Selections of the currently selected directory sources, in restore-files format. */
+    const buildSelections = useCallback(() => {
+        return dirConfig
+            .filter(d => d.selected && (d.selection === null || d.selection.length > 0))
+            .map(d => ({
+                src: d.entryId,
+                ...(d.selection !== null ? { paths: d.selection } : {}),
+            }));
+    }, [dirConfig]);
+
+    // Server-side dry run over the current directory selection: resolves file count and
+    // byte total, reports whether the destination can serve byte ranges, and surfaces a
+    // broken incremental chain (missing archives, by name) before anything is restored.
+    useEffect(() => {
+        if (!file || !hasDirectories) return;
+        const selections = buildSelections();
+        if (selections.length === 0) {
+            setRestorePlan(null);
+            setPlanError(null);
+            return;
+        }
+
+        const timer = setTimeout(async () => {
+            try {
+                const res = await fetch(`/api/storage/${destinationId}/restore-files`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ file: file.path, selections, target: { kind: 'download' }, dryRun: true }),
+                });
+                const data = await res.json();
+                if (data.success) {
+                    setRestorePlan(data.data);
+                    setPlanError(null);
+                } else {
+                    setRestorePlan(null);
+                    setPlanError(data.error || 'Could not resolve the selection');
+                }
+            } catch {
+                // Network-level failure: leave the plan empty, do not block the restore.
+                setRestorePlan(null);
+                setPlanError(null);
+            }
+        }, 500);
+        return () => clearTimeout(timer);
+    }, [file, hasDirectories, buildSelections, destinationId]);
+
+    const handleDownloadSelection = async () => {
+        if (!file) return;
+        const selections = buildSelections();
+        if (selections.length === 0) return;
+
+        const toastId = toast.loading('Assembling selection...');
+        try {
+            const res = await fetch(`/api/storage/${destinationId}/restore-files`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ file: file.path, selections, target: { kind: 'download' } }),
+            });
+            if (!res.ok) {
+                const failure = await res.json().catch(() => ({ error: 'Download failed' }));
+                throw new Error(failure.error || 'Download failed');
+            }
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const anchorEl = document.createElement('a');
+            anchorEl.href = url;
+            anchorEl.download = `${file.name.replace(/\.[^.]+$/, '')}-files.tar.gz`;
+            anchorEl.click();
+            URL.revokeObjectURL(url);
+            toast.success('Download started', { id: toastId });
+        } catch (e: unknown) {
+            toast.error(e instanceof Error ? e.message : String(e), { id: toastId });
+        }
+    };
+
     // Debounced conflict check: does the chosen restore target already contain files?
     useEffect(() => {
         const timers = dirConfig
@@ -379,7 +505,7 @@ export function RestoreClient() {
 
     const handleRestore = async (usePrivileged = false) => {
         if (!file) return;
-        if (!isDirectoryOnly && !targetSource) return;
+        if (dbTargetNeeded && !targetSource) return;
 
         setRestoring(true);
         setRestoreLogs(null);
@@ -387,9 +513,11 @@ export function RestoreClient() {
         try {
             let mapping = undefined;
             if (analyzedDbs.length > 0) {
-                mapping = dbConfig
-                    .filter(c => c.selected)
-                    .map(c => ({ originalName: c.name, targetName: c.targetName, selected: true }));
+                // The full list including deselected entries: an entry with selected:false
+                // is how the backend knows a database is NOT wanted. Sending only the
+                // selected ones would collapse "none selected" into an empty mapping,
+                // which the backend treats as "restore everything".
+                mapping = dbConfig.map(c => ({ originalName: c.name, targetName: c.targetName, selected: c.selected }));
             }
 
             let auth = undefined;
@@ -403,6 +531,8 @@ export function RestoreClient() {
                     targetConfigId: d.targetConfigId,
                     targetPath: d.targetPath.trim(),
                     selected: d.selected,
+                    // Absent = the whole source; an array = only these paths.
+                    ...(d.selection !== null ? { paths: d.selection } : {}),
                 }))
                 : undefined;
 
@@ -908,6 +1038,28 @@ export function RestoreClient() {
                                 </div>
                             </CardHeader>
                             <CardContent className="space-y-3">
+                                {chainInfo && (
+                                    <Alert>
+                                        <GitBranch className="h-4 w-4" />
+                                        <AlertTitle className="text-sm font-semibold ml-2">
+                                            {chainInfo.type === 'incremental'
+                                                ? `Incremental snapshot (position ${chainInfo.index} in its chain)`
+                                                : 'Full backup of an incremental chain'}
+                                        </AlertTitle>
+                                        {chainInfo.deps.length > 0 && (
+                                            <AlertDescription className="text-xs ml-2">
+                                                Restoring reads from {chainInfo.deps.length + 1} archives of this chain, automatically.
+                                            </AlertDescription>
+                                        )}
+                                    </Alert>
+                                )}
+                                {planError && (
+                                    <Alert variant="destructive">
+                                        <AlertTriangle className="h-4 w-4" />
+                                        <AlertTitle className="text-sm font-semibold ml-2">Cannot restore this selection</AlertTitle>
+                                        <AlertDescription className="text-xs ml-2">{planError}</AlertDescription>
+                                    </Alert>
+                                )}
                                 {dirConfig.map(d => {
                                     const meta = directories.find(x => x.jobSourceId === d.entryId);
                                     return (
@@ -927,6 +1079,46 @@ export function RestoreClient() {
                                                     </span>
                                                 )}
                                             </div>
+                                            <div className="flex flex-wrap items-center gap-2 pl-6">
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="h-7 text-xs"
+                                                    disabled={!d.selected}
+                                                    onClick={() => handleToggleTree(d.entryId)}
+                                                >
+                                                    {d.showTree ? <ChevronUp className="h-3.5 w-3.5 mr-1" /> : <ChevronDown className="h-3.5 w-3.5 mr-1" />}
+                                                    {d.selection === null
+                                                        ? 'All files'
+                                                        : `${d.selection.length} path${d.selection.length === 1 ? '' : 's'} selected`}
+                                                </Button>
+                                                {meta?.origin && (
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="h-7 text-xs text-muted-foreground"
+                                                        disabled={!d.selected}
+                                                        onClick={() => handleUseOrigin(d.entryId)}
+                                                        title={`${meta.origin.configName}:${meta.origin.path}`}
+                                                    >
+                                                        <MapPin className="h-3.5 w-3.5 mr-1" />
+                                                        Use original location
+                                                    </Button>
+                                                )}
+                                            </div>
+                                            {d.showTree && d.selected && file && (
+                                                <div className="pl-6">
+                                                    <ArchiveFileTree
+                                                        destinationId={destinationId}
+                                                        file={file.path}
+                                                        jobSourceId={d.entryId}
+                                                        selection={d.selection}
+                                                        onSelectionChange={(sel) => handleDirSelectionChange(d.entryId, sel)}
+                                                    />
+                                                </div>
+                                            )}
                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-6">
                                                 <Select
                                                     value={d.targetConfigId}
@@ -955,6 +1147,17 @@ export function RestoreClient() {
                                                         className="h-8 text-sm"
                                                         disabled={!d.selected}
                                                     />
+                                                    <Button
+                                                        type="button"
+                                                        variant="outline"
+                                                        size="icon"
+                                                        className="h-8 w-8 shrink-0"
+                                                        disabled={!d.selected || !d.targetConfigId}
+                                                        onClick={() => setFolderPickerFor(d.entryId)}
+                                                        aria-label="Browse folders"
+                                                    >
+                                                        <FolderOpen className="h-3.5 w-3.5" />
+                                                    </Button>
                                                     {d.selected && d.checkStatus === 'checking' && (
                                                         <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
                                                     )}
@@ -999,9 +1202,53 @@ export function RestoreClient() {
                                         </div>
                                     );
                                 })}
+
+                                {(restorePlan || dirConfig.some(d => d.selected)) && (
+                                    <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
+                                        <div className="space-y-1">
+                                            {restorePlan && (
+                                                <p className="text-xs text-muted-foreground">
+                                                    Selection: {restorePlan.fileCount} file{restorePlan.fileCount === 1 ? '' : 's'}, {formatBytes(restorePlan.totalBytes)}
+                                                </p>
+                                            )}
+                                            {restorePlan?.fullDownload && (
+                                                <p className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+                                                    <AlertTriangle className="h-3 w-3" />
+                                                    This destination cannot serve byte ranges - the restore transfers the whole archive once.
+                                                </p>
+                                            )}
+                                        </div>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            disabled={restoring || !!planError || buildSelections().length === 0}
+                                            onClick={handleDownloadSelection}
+                                        >
+                                            <Download className="h-3.5 w-3.5 mr-1.5" />
+                                            Download selection (.tar.gz)
+                                        </Button>
+                                    </div>
+                                )}
                             </CardContent>
                         </Card>
                     )}
+
+                    {/* Folder picker for the directory restore target currently being edited */}
+                    {folderPickerFor && (() => {
+                        const editing = dirConfig.find(d => d.entryId === folderPickerFor);
+                        const targetAdapter = storageDestinations.find(sd => sd.id === editing?.targetConfigId);
+                        if (!editing || !targetAdapter) return null;
+                        return (
+                            <FolderPickerDialog
+                                open
+                                onOpenChange={(o) => { if (!o) setFolderPickerFor(null); }}
+                                configId={targetAdapter.id}
+                                configName={targetAdapter.name}
+                                onSelect={(path) => handleDirTargetPathChange(editing.entryId, path)}
+                            />
+                        );
+                    })()}
 
                     {/* Restore Failed Logs */}
                     {restoreLogs && (
@@ -1169,7 +1416,7 @@ export function RestoreClient() {
                                     ) : (
                                         <Button
                                             onClick={() => handleRestore(false)}
-                                            disabled={restoring || isLoadingTargetDbs || isAnalyzing || !dbSelectionValid || !dbListValid || !dirSelectionValid || !atLeastOneSelected || compatibilityIssues.length > 0}
+                                            disabled={restoring || isLoadingTargetDbs || isAnalyzing || !validity.canSubmit || compatibilityIssues.length > 0}
                                             className="w-full"
                                         >
                                             {restoring && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

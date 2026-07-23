@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Download, RotateCcw, Trash2, Lock, FileLock2, FileCheck, Terminal, ShieldCheck, ShieldX, Shield, FolderSearch, PackageOpen } from "lucide-react";
+import { Download, RotateCcw, Trash2, Lock, FileLock2, FileCheck, Terminal, ShieldCheck, ShieldX, Shield, PackageOpen } from "lucide-react";
 import { FileInfo } from "@/app/dashboard/storage/columns";
 
 const ARCHIVED_STORAGE_CLASSES = ["GLACIER", "DEEP_ARCHIVE"];
@@ -10,7 +10,6 @@ interface ActionsCellProps {
     file: FileInfo;
     onDownload: (file: FileInfo, decrypt?: boolean) => void;
     onRestore: (file: FileInfo) => void;
-    onBrowseFiles?: (file: FileInfo) => void;
     /** Materialises a complete snapshot out of its incremental chain. */
     onDownloadSnapshot?: (file: FileInfo) => void;
     onDelete: (file: FileInfo) => void;
@@ -26,7 +25,6 @@ export function ActionsCell({
     file,
     onDownload,
     onRestore,
-    onBrowseFiles,
     onDownloadSnapshot,
     onDelete,
     onToggleLock,
@@ -217,20 +215,6 @@ export function ActionsCell({
                         </Tooltip>
                     </TooltipProvider>
                 )
-            )}
-
-            {/* Only backups that carry a file index can be browsed file by file. */}
-            {onBrowseFiles && file.hasFileIndex && !isArchived && (canRestore || canDownload) && (
-                <TooltipProvider>
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onBrowseFiles(file)}>
-                                <FolderSearch className="h-4 w-4" />
-                            </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Browse files</TooltipContent>
-                    </Tooltip>
-                </TooltipProvider>
             )}
 
             {canDelete && (

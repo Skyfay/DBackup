@@ -40,8 +40,16 @@ export interface ArchiveSummary {
         fileCount: number;
         totalSize: number;
         excludePatterns: string[];
+        /**
+         * Where this source was collected from, when its JobSource still exists. Powers
+         * the "Original location" quick-fill in the restore dialog.
+         */
+        origin?: { configId: string; configName: string; path: string };
     }[];
     sourceType?: string;
+    encrypted?: boolean;
+    /** Incremental chain membership, so the dialog can explain multi-archive reads. */
+    chain?: { type: 'full' | 'incremental'; index: number; deps: string[] };
 }
 
 /**
@@ -151,8 +159,27 @@ export class ArchiveIndexService {
         }
     }
 
-    private toSummary(index: ArchiveIndex | null, meta: BackupMetadata): ArchiveSummary | null {
+    private async toSummary(index: ArchiveIndex | null, meta: BackupMetadata): Promise<ArchiveSummary | null> {
         if (!index) return null;
+
+        // Resolve each source's original location while the JobSource still exists - a
+        // deleted source simply has no origin to offer.
+        const origins = new Map<string, ArchiveSummary["directories"][number]["origin"]>();
+        for (const dir of index.directories) {
+            try {
+                const jobSource = await prisma.jobSource.findUnique({
+                    where: { id: dir.src },
+                    include: { config: true },
+                });
+                if (jobSource) {
+                    origins.set(dir.src, {
+                        configId: jobSource.configId,
+                        configName: jobSource.config.name,
+                        path: jobSource.path,
+                    });
+                }
+            } catch { /* origin is a convenience, never a blocker */ }
+        }
 
         return {
             databases: index.databases.map((d) => d.name),
@@ -162,8 +189,13 @@ export class ArchiveIndexService {
                 fileCount: d.fileCount,
                 totalSize: d.totalSize,
                 excludePatterns: d.excludePatterns,
+                ...(origins.has(d.src) ? { origin: origins.get(d.src) } : {}),
             })),
             sourceType: meta.sourceType !== "directory-only" ? meta.sourceType : undefined,
+            encrypted: meta.archive?.encrypted ?? false,
+            ...(meta.chain
+                ? { chain: { type: meta.chain.type, index: meta.chain.index, deps: index.deps } }
+                : {}),
         };
     }
 

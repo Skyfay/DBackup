@@ -16,8 +16,12 @@ import { parseIndex } from "./index-file";
 import { readAll } from "./sources";
 import { ArchiveByteSource, ArchiveIndex, ArchiveManifest, entryKey, IndexEntryLine, IndexFileLine } from "./types";
 
-/** Bytes read when looking for the manifest. Generous, and the manifest is far smaller. */
-const MANIFEST_PROBE_SIZE = 256 * 1024;
+/**
+ * Bytes read when looking for the manifest. A real manifest is under 2 KB; the probe is
+ * deliberately small because it is paid on every remote open, and readArchiveManifest()
+ * fetches the exact remainder in the (theoretical) case a manifest outgrows it.
+ */
+const MANIFEST_PROBE_SIZE = 16 * 1024;
 
 /** Initial window read from the tail when locating the index without a sidecar. */
 const INDEX_TAIL_PROBE_SIZE = 1024 * 1024;
@@ -47,7 +51,7 @@ function readName(block: Buffer): string {
  */
 export async function readArchiveManifest(source: ArchiveByteSource): Promise<ArchiveManifest> {
     const limit = source.size !== undefined ? Math.min(MANIFEST_PROBE_SIZE, source.size) : MANIFEST_PROBE_SIZE;
-    const head = await readAll(await source.read(0, limit - 1));
+    let head = await readAll(await source.read(0, limit - 1));
 
     if (head.length < TAR_BLOCK_SIZE) {
         throw new Error("Not a valid archive: file is shorter than one TAR block");
@@ -57,6 +61,12 @@ export async function readArchiveManifest(source: ArchiveByteSource): Promise<Ar
     }
 
     const size = readOctal(head, 124, 12);
+    if (TAR_BLOCK_SIZE + size > head.length && (source.size === undefined || TAR_BLOCK_SIZE + size <= source.size)) {
+        // Manifest larger than the probe - fetch exactly the missing remainder.
+        const rest = await readAll(await source.read(head.length, TAR_BLOCK_SIZE + size - 1));
+        head = Buffer.concat([head, rest]);
+    }
+
     const payload = head.subarray(TAR_BLOCK_SIZE, TAR_BLOCK_SIZE + size);
     if (payload.length < size) {
         throw new Error("Archive manifest is truncated");

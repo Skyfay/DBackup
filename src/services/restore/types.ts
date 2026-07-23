@@ -1,13 +1,19 @@
 import type { TriggerInfo } from "@/lib/runner";
 
-/** Selects a single directory entry (from a combined v2 archive) to restore, and where to. */
+/** Selects a directory entry (from a seekable v2 archive) to restore, and where to. */
 export interface DirectoryRestoreMapping {
-    /** Matches DirectoryEntryV2.jobSourceId in the archive's manifest. */
+    /** Matches the directory source's jobSourceId in the archive's index. */
     entryId: string;
     /** A StorageAdapter config to restore into - most commonly "Local Filesystem". */
     targetConfigId: string;
     targetPath: string;
     selected: boolean;
+    /**
+     * Paths to restore, relative to the source root. A directory path selects everything
+     * beneath it. Absent means the whole source - the common case, and what every request
+     * written before partial selection existed sends.
+     */
+    paths?: string[];
 }
 
 export interface RestoreInput {

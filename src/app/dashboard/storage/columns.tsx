@@ -46,7 +46,6 @@ export type FileInfo = {
 
 interface ColumnsProps {
     onRestore: (file: FileInfo) => void;
-    onBrowseFiles: (file: FileInfo) => void;
     onDownloadSnapshot: (file: FileInfo) => void;
     onDownload: (file: FileInfo, decrypt?: boolean) => void;
     onDelete: (file: FileInfo) => void;
@@ -58,7 +57,7 @@ interface ColumnsProps {
     canDelete: boolean;
 }
 
-export const getColumns = ({ onRestore, onBrowseFiles, onDownloadSnapshot, onDownload, onDelete, onToggleLock, onGenerateLink, onVerify, canDownload, canRestore, canDelete }: ColumnsProps): ColumnDef<FileInfo>[] => [
+export const getColumns = ({ onRestore, onDownloadSnapshot, onDownload, onDelete, onToggleLock, onGenerateLink, onVerify, canDownload, canRestore, canDelete }: ColumnsProps): ColumnDef<FileInfo>[] => [
     {
         accessorKey: "name",
         header: ({ column }) => {
@@ -291,7 +290,6 @@ export const getColumns = ({ onRestore, onBrowseFiles, onDownloadSnapshot, onDow
                 file={row.original}
                 onDownload={onDownload}
                 onRestore={onRestore}
-                onBrowseFiles={onBrowseFiles}
                 onDownloadSnapshot={onDownloadSnapshot}
                 onDelete={onDelete}
                 onToggleLock={onToggleLock}

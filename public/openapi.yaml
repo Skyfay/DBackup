@@ -505,6 +505,15 @@ paths:
             type: string
             enum: [database, storage, notification]
           description: Adapter category
+        - name: role
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [DESTINATION, SOURCE]
+          description: >-
+            Narrows storage adapters to one role (case-insensitive). Omit to receive both.
+            Ignored for other adapter types.
       responses:
         "200":
           description: Adapter list
@@ -2558,6 +2567,15 @@ components:
         updatedAt:
           type: string
           format: date-time
+        storageRole:
+          type: string
+          enum: [DESTINATION, SOURCE]
+          default: DESTINATION
+          description: >-
+            Storage adapters only. A config either receives backups (DESTINATION) or
+            provides folders to back up (SOURCE) - never both, because a destination writes
+            job and chain folders into its configured path while a source reads folders out
+            of it. Ignored for database and notification adapters.
 
     CreateAdapterRequest:
       type: object
@@ -2582,6 +2600,11 @@ components:
         config:
           type: object
           description: Adapter-specific configuration. See adapter documentation for fields.
+        storageRole:
+          type: string
+          enum: [DESTINATION, SOURCE]
+          default: DESTINATION
+          description: Storage adapters only - see AdapterConfig.storageRole. Ignored for other types.
 
     UpdateAdapterRequest:
       type: object
@@ -2591,6 +2614,12 @@ components:
         config:
           type: object
           description: Updated configuration (merged with existing)
+        storageRole:
+          type: string
+          enum: [DESTINATION, SOURCE]
+          description: >-
+            Storage adapters only. Rejected with 400 while a job still uses the adapter in
+            its current role, since the change would remove it from that job's picker.
 
     # ─── Storage ─────────────────────────────────────────────────
     FileInfo:

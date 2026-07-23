@@ -32,12 +32,36 @@ DBackup supports multiple storage backends for your backups.
 | [Dropbox](/user-guide/destinations/dropbox) | 2 GB | OAuth 2.0 |
 | [Microsoft OneDrive](/user-guide/destinations/onedrive) | 5 GB | OAuth 2.0 |
 
+## Destination or Directory Source
+
+The same storage backends serve two different purposes, and each configured adapter is set
+to exactly one of them:
+
+| Role | What it does | Path it uses |
+| :--- | :--- | :--- |
+| **Backup Destination** | Receives backups | The configured path, with one folder per job written into it (plus a folder per chain for incremental jobs) |
+| **Directory Source** | Provides files to back up | Folders below the configured path, picked per job |
+
+They are mutually exclusive on purpose. A destination owns its path and creates folders
+there, while a source reads from that same path - and a source set to "Back up everything"
+reads the path itself. One adapter doing both would mean a job backing up its own previous
+archives, growing without limit.
+
+Destinations are managed here; directory sources live on the **Sources** page.
+
+::: tip Same server for both
+Pick **Create as Directory Source** on a destination's row (or the reverse on a source) to
+copy it into the opposite role, credentials and all - then adjust the path. Two adapters
+for one server is intentional: they point at different paths and are monitored separately.
+:::
+
 ## Adding a Destination
 
 1. Navigate to **Destinations** → **Add New**
 2. Select the storage type
 3. Fill in configuration details
-4. Click **Test Connection** → **Save**
+4. Leave **Role** on *Backup Destination*
+5. Click **Test Connection** → **Save**
 
 ## Storage Structure
 

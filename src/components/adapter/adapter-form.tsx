@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
+import { STORAGE_ROLES, type StorageRole } from "@/lib/core/storage-roles";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -54,7 +55,7 @@ function seedSchemaDefaults(schema: z.ZodTypeAny, form: any) {
     }
 }
 
-export function AdapterForm({ type, adapters, onSuccess, initialData, onBack, defaultRoles }: { type: string, adapters: AdapterDefinition[], onSuccess: () => void, initialData?: AdapterConfig, onBack?: () => void, defaultRoles?: { usableAsSource: boolean; usableAsDestination: boolean } }) {
+export function AdapterForm({ type, adapters, onSuccess, initialData, onBack, defaultRole }: { type: string, adapters: AdapterDefinition[], onSuccess: () => void, initialData?: AdapterConfig, onBack?: () => void, defaultRole?: StorageRole }) {
     const [selectedAdapterId, setSelectedAdapterId] = useState<string>(initialData?.adapterId || "");
 
     // Health check notification opt-out (database & storage only)
@@ -67,15 +68,12 @@ export function AdapterForm({ type, adapters, onSuccess, initialData, onBack, de
     // Exclude from restore (database only)
     const [isRestoreExcluded, setIsRestoreExcluded] = useState<boolean>(initialMeta.isRestoreExcluded === true);
 
-    // Source/destination role flags (storage only) - real AdapterConfig columns, not metadata.
-    // Editing an existing adapter: seed from its stored values. Creating new: seed from the
-    // role the manager instance was opened with (e.g. the "Directory Sources" section defaults
-    // to source-only), falling back to the column default (destination-only) otherwise.
-    const [usableAsSource, setUsableAsSource] = useState<boolean>(
-        initialData ? (initialData.usableAsSource ?? false) : (defaultRoles?.usableAsSource ?? false)
-    );
-    const [usableAsDestination, setUsableAsDestination] = useState<boolean>(
-        initialData ? (initialData.usableAsDestination ?? true) : (defaultRoles?.usableAsDestination ?? true)
+    // The adapter's role (storage only) - a real AdapterConfig column, not metadata.
+    // Editing an existing adapter: seed from its stored role. Creating new: seed from the
+    // role the manager instance was opened with (the "Directory Sources" section defaults to
+    // SOURCE), falling back to the column default otherwise.
+    const [storageRole, setStorageRole] = useState<StorageRole>(
+        initialData?.storageRole ?? defaultRole ?? STORAGE_ROLES.DESTINATION
     );
 
     // Credential profile assignments (Phase 4 - Generic Credential Profile System)
@@ -233,7 +231,7 @@ export function AdapterForm({ type, adapters, onSuccess, initialData, onBack, de
                 metadata,
                 primaryCredentialId,
                 sshCredentialId,
-                ...(type === 'storage' ? { usableAsSource, usableAsDestination } : {}),
+                ...(type === 'storage' ? { storageRole } : {}),
             };
 
             const res = await fetch(url, {
@@ -440,10 +438,8 @@ export function AdapterForm({ type, adapters, onSuccess, initialData, onBack, de
                         onHealthNotificationsDisabledChange={setHealthNotificationsDisabled}
                         skipVerification={skipVerification}
                         onSkipVerificationChange={setSkipVerification}
-                        usableAsSource={usableAsSource}
-                        onUsableAsSourceChange={setUsableAsSource}
-                        usableAsDestination={usableAsDestination}
-                        onUsableAsDestinationChange={setUsableAsDestination}
+                        storageRole={storageRole}
+                        onStorageRoleChange={setStorageRole}
                         primaryCredentialId={primaryCredentialId}
                         sshCredentialId={sshCredentialId}
                         onPrimaryChange={setPrimaryCredentialId}

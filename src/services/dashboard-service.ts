@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { subDays, subMonths, addDays, startOfDay } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 import { registry } from "@/lib/core/registry";
@@ -397,7 +398,7 @@ export async function refreshStorageStatsCache(): Promise<StorageVolumeEntry[]> 
   registerAdapters();
 
   const storageAdapters = await prisma.adapterConfig.findMany({
-    where: { type: "storage" },
+    where: { type: "storage", storageRole: STORAGE_ROLES.DESTINATION },
   });
 
   if (storageAdapters.length === 0) {
@@ -484,7 +485,7 @@ export async function refreshStorageStatsCache(): Promise<StorageVolumeEntry[]> 
  */
 async function getStorageVolumeFromDB(): Promise<StorageVolumeEntry[]> {
   const storageAdapters = await prisma.adapterConfig.findMany({
-    where: { type: "storage" },
+    where: { type: "storage", storageRole: STORAGE_ROLES.DESTINATION },
   });
 
   if (storageAdapters.length === 0) return [];

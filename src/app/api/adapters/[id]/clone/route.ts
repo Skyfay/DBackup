@@ -9,6 +9,7 @@ import { logger } from "@/lib/logging/logger";
 import { wrapError, getErrorMessage } from "@/lib/logging/errors";
 import { registerAdapters } from "@/lib/adapters";
 import { toAdapterListItem } from "@/lib/adapters/dto";
+import { isStorageRole } from "@/lib/core/storage-roles";
 
 registerAdapters();
 
@@ -45,7 +46,7 @@ export async function POST(
         checkPermissionWithContext(ctx, getWritePermissionForType(original.type));
 
         // Use provided name or generate a unique one: "X (Copy)", then "X (Copy 2)", etc.
-        let body: { name?: string } = {};
+        let body: { name?: string; role?: string } = {};
         try { body = await req.json(); } catch { /* no body is fine */ }
 
         let uniqueName: string;
@@ -61,11 +62,20 @@ export async function POST(
             }
         }
 
+        // Without an explicit role the clone keeps the original's - a cloned directory
+        // source must not silently come back as a destination. With one, this is the
+        // counterpart action: same server and credentials, opposite role.
+        if (body.role !== undefined && !isStorageRole(body.role)) {
+            return NextResponse.json({ success: false, error: "Invalid storage role" }, { status: 400 });
+        }
+        const storageRole = isStorageRole(body.role) ? body.role : original.storageRole;
+
         const cloned = await prisma.adapterConfig.create({
             data: {
                 name: uniqueName,
                 type: original.type,
                 adapterId: original.adapterId,
+                storageRole,
                 // Copy the encrypted config blob directly - no decrypt/re-encrypt needed
                 config: original.config,
                 primaryCredentialId: original.primaryCredentialId ?? null,

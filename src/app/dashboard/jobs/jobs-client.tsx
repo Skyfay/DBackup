@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -70,7 +71,7 @@ interface JobsClientProps {
 export function JobsClient({ canManage, canExecute, sources, destinations, notificationChannels, encryptionProfiles }: JobsClientProps) {
     const [jobs, setJobs] = useState<Job[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const directorySourceOptions = useMemo(() => destinations.filter((d) => d.usableAsSource), [destinations]);
+    const directorySourceOptions = useMemo(() => destinations.filter((d) => d.storageRole === STORAGE_ROLES.SOURCE), [destinations]);
 
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editingJob, setEditingJob] = useState<Job | null>(null);

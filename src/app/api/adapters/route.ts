@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isStorageRole } from "@/lib/core/storage-roles";
 import prisma from "@/lib/prisma";
 import { encryptConfig } from "@/lib/crypto";
 import { toAdapterListItem } from "@/lib/adapters/dto";
@@ -24,6 +25,11 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const type = searchParams.get("type");
+    // Storage adapters split into two exclusive roles. Callers that only care about one
+    // (the Storage Explorer, the Destinations page) pass it; the job form deliberately
+    // omits it and splits the single response itself.
+    const roleParam = searchParams.get("role")?.toUpperCase();
+    const role = isStorageRole(roleParam) ? roleParam : undefined;
 
     try {
         if (type === 'database') {
@@ -42,7 +48,10 @@ export async function GET(req: NextRequest) {
         }
 
         const adapters = await prisma.adapterConfig.findMany({
-            where: type ? { type } : undefined,
+            where: {
+                ...(type ? { type } : {}),
+                ...(role && type === 'storage' ? { storageRole: role } : {}),
+            },
             orderBy: { createdAt: 'desc' }
         });
 
@@ -67,7 +76,7 @@ export async function POST(req: NextRequest) {
 
     try {
         const body = await req.json();
-        const { name, type, adapterId, config, metadata, primaryCredentialId, sshCredentialId, usableAsSource, usableAsDestination } = body;
+        const { name, type, adapterId, config, metadata, primaryCredentialId, sshCredentialId, storageRole } = body;
 
         // Permission Check
         if (type === 'database') {
@@ -122,11 +131,8 @@ export async function POST(req: NextRequest) {
                 primaryCredentialId: primaryCredentialId ?? null,
                 sshCredentialId: sshCredentialId ?? null,
                 ...(metadata ? { metadata: JSON.stringify(metadata) } : {}),
-                // Role flags only make sense for storage adapters - other types keep the column defaults.
-                ...(type === 'storage' ? {
-                    usableAsSource: usableAsSource ?? false,
-                    usableAsDestination: usableAsDestination ?? true,
-                } : {}),
+                // The role only makes sense for storage adapters - other types keep the default.
+                ...(type === 'storage' && isStorageRole(storageRole) ? { storageRole } : {}),
             },
         });
 

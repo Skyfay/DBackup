@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters";
 import { DatabaseAdapter } from "@/lib/core/interfaces";
@@ -591,7 +592,7 @@ export class SystemTaskService {
 
     private async runWarmupStorageCache() {
         const adapters = await prisma.adapterConfig.findMany({
-            where: { type: "storage" },
+            where: { type: "storage", storageRole: STORAGE_ROLES.DESTINATION },
             select: { id: true, name: true },
         });
         log.info("Pre-warming storage cache", { count: adapters.length });

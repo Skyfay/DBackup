@@ -15,6 +15,11 @@ describe('JobService (extra coverage)', () => {
     beforeEach(() => {
         service = new JobService();
         vi.clearAllMocks();
+        // createJob validates its destinations against the adapter table; these tests are
+        // about notification templates, so a plain valid destination is enough.
+        prismaMock.adapterConfig.findMany.mockResolvedValue([
+            { id: 'dest-1', name: 'Backup NAS', type: 'storage', storageRole: 'DESTINATION' },
+        ] as any);
     });
 
     // -------------------------------------------------------------------------

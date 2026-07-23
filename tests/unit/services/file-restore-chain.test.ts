@@ -9,8 +9,6 @@ import { extract } from "tar-stream";
 import { createGunzip } from "zlib";
 import { createArchive } from "@/lib/archive/writer";
 import { carryForward, fileKey } from "@/lib/archive/chain";
-import { readArchiveManifest, readArchiveIndex } from "@/lib/archive/reader";
-import { localFileSource } from "@/lib/archive/sources";
 import type { ArchiveSourceEntry, SourceFileEntry } from "@/lib/archive/types";
 import type { StorageAdapter } from "@/lib/core/interfaces";
 

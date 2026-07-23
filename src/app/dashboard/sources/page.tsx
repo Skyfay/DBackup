@@ -1,4 +1,5 @@
 import { AdapterManager } from "@/components/adapter/adapter-manager";
+import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 
@@ -25,8 +26,8 @@ export default async function SourcesPage() {
                 description="Storage adapters enabled to back up files and directories."
                 canManage={canManageDirectorySources}
                 permissions={permissions}
-                roleFilter="source"
-                defaultRoles={{ usableAsSource: true, usableAsDestination: false }}
+                roleFilter={STORAGE_ROLES.SOURCE}
+                defaultRole={STORAGE_ROLES.SOURCE}
             />
         </div>
     )

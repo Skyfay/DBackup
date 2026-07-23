@@ -147,8 +147,7 @@ describe("SystemNotificationService", () => {
       primaryCredentialId: null,
       sshCredentialId: null,
       defaultRetentionPolicyId: null,
-      usableAsSource: false,
-      usableAsDestination: true,
+      storageRole: 'DESTINATION',
     };
 
     const discordChannel = {
@@ -167,8 +166,7 @@ describe("SystemNotificationService", () => {
       primaryCredentialId: null,
       sshCredentialId: null,
       defaultRetentionPolicyId: null,
-      usableAsSource: false,
-      usableAsDestination: true,
+      storageRole: 'DESTINATION',
     };
 
     it("should skip disabled events", async () => {
@@ -502,8 +500,7 @@ describe("SystemNotificationService", () => {
       primaryCredentialId: null,
       sshCredentialId: null,
       defaultRetentionPolicyId: null,
-      usableAsSource: false,
-      usableAsDestination: true,
+      storageRole: 'DESTINATION',
     };
 
     const emailChannel = {
@@ -522,8 +519,7 @@ describe("SystemNotificationService", () => {
       primaryCredentialId: null,
       sshCredentialId: null,
       defaultRetentionPolicyId: null,
-      usableAsSource: false,
-      usableAsDestination: true,
+      storageRole: 'DESTINATION',
     };
 
     it("should skip channel and not send when adapter is not registered", async () => {

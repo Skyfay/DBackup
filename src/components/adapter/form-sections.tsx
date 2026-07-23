@@ -26,6 +26,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { STORAGE_ROLES, type StorageRole } from "@/lib/core/storage-roles";
 import { cn } from "@/lib/utils";
 import { AlertTriangle, Check, FolderOpen, Loader2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -159,46 +161,54 @@ function DisableVerificationSwitch({
     );
 }
 
-function AdapterRoleSwitches({
-    usableAsSource,
-    usableAsDestination,
-    onUsableAsSourceChange,
-    onUsableAsDestinationChange,
+/**
+ * Picks the adapter's single role.
+ *
+ * Exclusive on purpose: a destination owns its configured root - the runner writes
+ * `<root>/<jobName>/` into it and incremental jobs add chain folders - while a source
+ * reads folders out of that same root. One config doing both would let a job collect its
+ * own archives, so there is no "both" and no "neither".
+ */
+function AdapterRolePicker({
+    storageRole,
+    onStorageRoleChange,
 }: {
-    usableAsSource: boolean;
-    usableAsDestination: boolean;
-    onUsableAsSourceChange: (enabled: boolean) => void;
-    onUsableAsDestinationChange: (enabled: boolean) => void;
+    storageRole: StorageRole;
+    onStorageRoleChange: (role: StorageRole) => void;
 }) {
     return (
-        <>
-            <div className="flex items-center justify-between rounded-lg border p-4">
-                <div className="space-y-0.5">
-                    <Label htmlFor="usable-as-destination">Usable as Backup Destination</Label>
-                    <p className="text-sm text-muted-foreground">
-                        Can be selected as a storage destination when creating or editing a job.
-                    </p>
-                </div>
-                <Switch
-                    id="usable-as-destination"
-                    checked={usableAsDestination}
-                    onCheckedChange={onUsableAsDestinationChange}
-                />
+        <div className="rounded-lg border p-4 space-y-3">
+            <div className="space-y-0.5">
+                <Label>Role</Label>
+                <p className="text-sm text-muted-foreground">
+                    What this storage adapter is used for. An adapter is one or the other, never both.
+                </p>
             </div>
-            <div className="flex items-center justify-between rounded-lg border p-4">
-                <div className="space-y-0.5">
-                    <Label htmlFor="usable-as-source">Usable as Directory Source</Label>
-                    <p className="text-sm text-muted-foreground">
-                        Can be selected as a directory backup source when creating or editing a job.
-                    </p>
+            <RadioGroup
+                value={storageRole}
+                onValueChange={(value) => onStorageRoleChange(value as StorageRole)}
+                className="gap-3"
+            >
+                <div className="flex items-start space-x-2">
+                    <RadioGroupItem value={STORAGE_ROLES.DESTINATION} id="role-destination" className="mt-1" />
+                    <Label htmlFor="role-destination" className="font-normal cursor-pointer">
+                        <span className="font-medium">Backup Destination</span>
+                        <span className="block text-sm text-muted-foreground">
+                            Backups are written into this adapter&apos;s configured path, one folder per job.
+                        </span>
+                    </Label>
                 </div>
-                <Switch
-                    id="usable-as-source"
-                    checked={usableAsSource}
-                    onCheckedChange={onUsableAsSourceChange}
-                />
-            </div>
-        </>
+                <div className="flex items-start space-x-2">
+                    <RadioGroupItem value={STORAGE_ROLES.SOURCE} id="role-source" className="mt-1" />
+                    <Label htmlFor="role-source" className="font-normal cursor-pointer">
+                        <span className="font-medium">Directory Source</span>
+                        <span className="block text-sm text-muted-foreground">
+                            Folders below this adapter&apos;s configured path can be picked as backup sources.
+                        </span>
+                    </Label>
+                </div>
+            </RadioGroup>
+        </div>
     );
 }
 
@@ -740,22 +750,20 @@ export function StorageFormContent({
     onHealthNotificationsDisabledChange,
     skipVerification,
     onSkipVerificationChange,
-    usableAsSource,
-    onUsableAsSourceChange,
-    usableAsDestination,
-    onUsableAsDestinationChange,
+    storageRole,
+    onStorageRoleChange,
     primaryCredentialId,
     sshCredentialId: _sshCredentialId,
     onPrimaryChange,
     onSshChange: _onSshChange,
-}: { adapter: AdapterDefinition; initialData?: AdapterConfig; healthNotificationsDisabled?: boolean; onHealthNotificationsDisabledChange?: (disabled: boolean) => void; skipVerification?: boolean; onSkipVerificationChange?: (disabled: boolean) => void; usableAsSource?: boolean; onUsableAsSourceChange?: (enabled: boolean) => void; usableAsDestination?: boolean; onUsableAsDestinationChange?: (enabled: boolean) => void } & CredentialPickerHostProps) {
+}: { adapter: AdapterDefinition; initialData?: AdapterConfig; healthNotificationsDisabled?: boolean; onHealthNotificationsDisabledChange?: (disabled: boolean) => void; skipVerification?: boolean; onSkipVerificationChange?: (disabled: boolean) => void; storageRole?: StorageRole; onStorageRoleChange?: (role: StorageRole) => void } & CredentialPickerHostProps) {
     const { watch } = useFormContext();
     const authType = watch("config.authType");
     const storageClass = watch("config.storageClass");
     const isArchivedStorageClass = storageClass === "GLACIER" || storageClass === "DEEP_ARCHIVE";
     const hasRealConfigKeys = hasFields(adapter, STORAGE_CONFIG_KEYS);
-    // Always show Configuration tab for storage adapters (health check, verification and role switches live there)
-    const hasConfigKeys = hasRealConfigKeys || !!onHealthNotificationsDisabledChange || !!onSkipVerificationChange || !!onUsableAsSourceChange;
+    // Always show Configuration tab for storage adapters (health check, verification and the role picker live there)
+    const hasConfigKeys = hasRealConfigKeys || !!onHealthNotificationsDisabledChange || !!onSkipVerificationChange || !!onStorageRoleChange;
     const isGoogleDrive = adapter.id === 'google-drive';
     const isDropbox = adapter.id === 'dropbox';
     const isOneDrive = adapter.id === 'onedrive';
@@ -883,12 +891,10 @@ export function StorageFormContent({
                             onChange={onSkipVerificationChange}
                         />
                     )}
-                    {onUsableAsSourceChange && onUsableAsDestinationChange && (
-                        <AdapterRoleSwitches
-                            usableAsSource={usableAsSource ?? false}
-                            usableAsDestination={usableAsDestination ?? true}
-                            onUsableAsSourceChange={onUsableAsSourceChange}
-                            onUsableAsDestinationChange={onUsableAsDestinationChange}
+                    {onStorageRoleChange && (
+                        <AdapterRolePicker
+                            storageRole={storageRole ?? STORAGE_ROLES.DESTINATION}
+                            onStorageRoleChange={onStorageRoleChange}
                         />
                     )}
                 </TabsContent>

@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { registry } from "@/lib/core/registry";
 import { registerAdapters } from "@/lib/adapters";
 import { StorageAdapter } from "@/lib/core/interfaces";
@@ -112,7 +113,7 @@ export class IntegrityService {
       }
     } else {
       const storageConfigs = await prisma.adapterConfig.findMany({
-        where: { type: "storage" },
+        where: { type: "storage", storageRole: STORAGE_ROLES.DESTINATION },
       });
 
       callbacks?.onLog(`Found ${storageConfigs.length} storage destination${storageConfigs.length !== 1 ? "s" : ""}`);

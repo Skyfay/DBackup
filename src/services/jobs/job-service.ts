@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { scheduler } from "@/lib/server/scheduler";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
@@ -163,10 +164,10 @@ export class JobService {
 
     /**
      * Enforces the "a job needs at least one source" invariant and validates that:
-     * - every directory source points at a storage adapter enabled with the source role
+     * - every directory source points at a storage adapter whose role is SOURCE
      * - a database source combined with directory sources actually supports combination (dumpOne)
      * This mirrors the destinations.length===0 guard already enforced at runner init time
-     * (defense in depth), plus the new source-role/combinability checks this feature introduces.
+     * (defense in depth), plus the source-role/combinability checks this feature introduces.
      */
     private async validateJobSources(jobId: string | null, sourceId: string | null | undefined, sources: SourceInput[] | undefined) {
         const { effectiveSourceId, effectiveSourceCount } = await this.resolveEffectiveSourceState(jobId, sourceId, sources);
@@ -183,8 +184,8 @@ export class JobService {
                 if (!config) {
                     throw new Error(`Directory source references unknown adapter "${configId}".`);
                 }
-                if (config.type !== "storage" || !config.usableAsSource) {
-                    throw new Error(`Adapter "${config.name}" is not enabled as a directory source.`);
+                if (config.type !== "storage" || config.storageRole !== STORAGE_ROLES.SOURCE) {
+                    throw new Error(`Adapter "${config.name}" is not a directory source.`);
                 }
             }
         }
@@ -201,6 +202,29 @@ export class JobService {
         }
     }
 
+    /**
+     * Rejects destinations that are not storage adapters in the DESTINATION role.
+     *
+     * The counterpart to the directory-source check above, which existed on its own for a
+     * while: without this, a directory source could be picked as a backup target and the
+     * runner would write `<root>/<jobName>/` into the very tree the job reads from.
+     */
+    private async validateJobDestinations(destinations: DestinationInput[] | undefined) {
+        if (!destinations || destinations.length === 0) return;
+
+        const configIds = [...new Set(destinations.map((d) => d.configId))];
+        const configs = await prisma.adapterConfig.findMany({ where: { id: { in: configIds } } });
+        for (const configId of configIds) {
+            const config = configs.find((c) => c.id === configId);
+            if (!config) {
+                throw new Error(`Destination references unknown adapter "${configId}".`);
+            }
+            if (config.type !== "storage" || config.storageRole !== STORAGE_ROLES.DESTINATION) {
+                throw new Error(`Adapter "${config.name}" is not a backup destination.`);
+            }
+        }
+    }
+
     async createJob(input: CreateJobInput) {
         const { name, schedule, sourceId, databases, destinations, sources, notificationIds, notificationTemplateIds, enabled, encryptionProfileId, compression, pgCompression, notificationEvents, skipVerification, backupMode, fullEveryDays, verifyByHash } = input;
 
@@ -211,6 +235,7 @@ export class JobService {
         }
 
         await this.validateJobSources(null, sourceId || null, sources);
+        await this.validateJobDestinations(destinations);
 
         const newJob = await prisma.job.create({
             data: {
@@ -283,6 +308,7 @@ export class JobService {
 
         if (sourceId !== undefined || sources !== undefined) {
             await this.validateJobSources(id, sourceId !== undefined ? (sourceId || null) : undefined, sources);
+            await this.validateJobDestinations(destinations);
         }
 
         const updatedJob = await prisma.$transaction(async (tx) => {

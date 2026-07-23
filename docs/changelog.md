@@ -34,6 +34,7 @@ All notable changes to DBackup are documented here.
 - **restore**: The restore page now shows a file tree per directory source, so a restore can cover everything, single folders or individual files - with a per-selection size summary and a `.tar.gz` download option.
 - **restore**: Directory restore targets can now be picked with a folder browser, and a one-click "Use original location" fills in where the files were originally collected from.
 - **restore**: Clicking Restore on a backup that contains both databases and directory sources now offers a choice between restoring everything, only the databases or only the files, instead of always opening the page with both halves.
+- **destinations**: Added a "Create as Directory Source" action (and its reverse on the Sources page) that copies a storage adapter into the opposite role including its credentials, so the same server can serve both purposes without being set up twice by hand.
 
 ### 🐛 Bug Fixes
 
@@ -48,6 +49,11 @@ All notable changes to DBackup are documented here.
 - **local-filesystem**: Fixed restore targets written with a leading slash (such as the suggested `/restore`) being rejected as path traversal - a leading slash means the adapter's own root, as it already did for every other adapter.
 - **restore**: Fixed the progress view getting stuck on "Downloading" for backups with directory sources, and reporting a download that never happens for them.
 - **storage**: Fixed the Storage Explorer serving listing rows cached by an older version, which left new columns and actions (backup type, restore scope choice) missing until the cache happened to expire. Outdated caches are now rebuilt on first load after an update.
+- **storage**: Fixed directory sources appearing wherever backup destinations are listed - the Storage Explorer (where their files were shown as backups, delete button included), the Destinations page, Storage Usage on the dashboard, and the config backup target picker.
+- **storage**: Fixed storage alerts treating directory sources as destinations, which made "Missing Backup" fire indefinitely for a location that never receives one.
+- **system-tasks**: Fixed the hourly storage cache warmup and the destination-wide integrity check walking directory sources, which can hold no backups.
+- **destinations**: Fixed cloning a storage adapter losing its role, so a cloned directory source came back as a backup destination.
+- **jobs**: Fixed backup destinations never being validated, which allowed a job to write its backups into a directory source it also reads from.
 - **restore**: Fixed "Files Only" failing outright and "Databases Only" finishing as Partial when restoring from a backup that contains both. The restore request now states which half it covers, instead of the untouched half being read as "restore all of it".
 
 ### 🔒 Security
@@ -61,6 +67,10 @@ All notable changes to DBackup are documented here.
 - **restore**: Restoring from a seekable archive no longer downloads the whole backup - only the selected databases and files are transferred on destinations that support byte ranges.
 - **storage**: Every backup now records whether it is full or incremental, so the Storage Explorer's Type column is filled for database-only backups too instead of showing a dash.
 
+### 🔄 Changed
+
+- **destinations**: A storage adapter now has one exclusive role instead of two independent toggles. The two role switches in the adapter form are a single Role choice, and the Destinations and Sources pages each list only their own. The roles cannot be combined because a destination writes job and chain folders into its configured path while a source reads folders out of it - one adapter doing both would let a job back up its own archives.
+
 ### 🗑️ Removed
 
 - **storage**: Removed the separate "Browse files" button and dialog from the Storage Explorer - browsing and per-file restore now live on the restore page.
@@ -71,10 +81,15 @@ All notable changes to DBackup are documented here.
 - **wiki**: Updated the Recovery Kit and Storage Explorer guides for file-level browsing and restore.
 - **wiki**: Added a Backup Modes guide covering incremental backups, chain storage, retention behaviour and when DBackup falls back to a full backup.
 - **api**: Documented the restore endpoint's new `scope` parameter, and corrected `targetSourceId` from unconditionally required to required only when the restore includes a database.
+- **wiki**: Documented the destination/directory-source roles on both overview pages, including how to use one server for both.
+- **api**: Documented `storageRole` on the adapter schemas and the new `role` query parameter of the adapter listing endpoint.
 
 ### 🧪 Tests
 
 - **restore**: Added unit tests for the restore scope rules - when a combined backup asks what to restore, and how the restore page interprets the resulting parameter.
+- **destinations**: Added tests for the adapter role - the listing filter, the guard that refuses a role change while a job depends on it, and the clone keeping or flipping the role.
+- **jobs**: Added tests for the new destination-role validation, covering a destination pointing at a directory source and at an adapter that does not exist.
+- **lint-guards**: Added a guard that fails the build when new code enumerates storage adapters for backup purposes without filtering by role, with an explicit allow-list for the health check and the listing endpoint.
 
 ### 🐳 Docker
 

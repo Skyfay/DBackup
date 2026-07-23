@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useMemo } from "react";
+import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -131,7 +132,7 @@ export interface AdapterOption {
     adapterId: string;
     metadata?: string | null;
     usableAsSource?: boolean;
-    usableAsDestination?: boolean;
+    storageRole?: string;
     /** Whether the directory-source folder tree picker can browse this adapter's configured root. */
     supportsBrowse?: boolean;
 }
@@ -680,10 +681,10 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
     // Get used destination IDs to prevent duplicates
     const usedDestIds = form.watch("destinations").map(d => d.configId).filter(Boolean);
 
-    // Only storage adapters enabled with the destination role should be pickable here (mirrors
-    // directorySourceOptions' usableAsSource filter above). `usableAsDestination` defaults to true
-    // in the DB, so treat a missing value as usable to stay backward compatible.
-    const destinationOptions = useMemo(() => destinations.filter(d => d.usableAsDestination !== false), [destinations]);
+    // Only storage adapters in the destination role are pickable here (mirrors
+    // directorySourceOptions' role filter above). DESTINATION is the column default, so a
+    // missing value means destination too.
+    const destinationOptions = useMemo(() => destinations.filter(d => (d.storageRole ?? STORAGE_ROLES.DESTINATION) === STORAGE_ROLES.DESTINATION), [destinations]);
 
     return (
         <>

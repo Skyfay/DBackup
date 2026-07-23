@@ -95,7 +95,9 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
 
     const fetchAdapters = useCallback(async () => {
         try {
-            const storageRes = await fetch("/api/adapters?type=storage");
+            // Only destinations hold backups. A directory source would otherwise be offered here
+            // and list its own contents as backup rows, delete button included.
+            const storageRes = await fetch("/api/adapters?type=storage&role=DESTINATION");
             if (storageRes.ok) {
                 const storageData = await storageRes.json();
                 setDestinations(storageData);

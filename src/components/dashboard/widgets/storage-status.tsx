@@ -1,12 +1,14 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import prisma from "@/lib/prisma";
+import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { formatBytes } from "@/lib/utils";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 
 export async function StorageStatus() {
-    // 1. Get all configured storage adapters
+    // 1. Get the configured backup destinations. A directory source stores no backups,
+    // so including it would report its own tree as occupied backup space.
     const storageAdapters = await prisma.adapterConfig.findMany({
-        where: { type: "storage" }
+        where: { type: "storage", storageRole: STORAGE_ROLES.DESTINATION }
     });
 
     if (storageAdapters.length === 0) {

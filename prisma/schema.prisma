@@ -22,10 +22,12 @@ model AdapterConfig {
   jobSources       JobSource[]                   @relation("JobSourceConfig")
   notificationTemplateChannels NotificationTemplateChannel[]
 
-  // Directory-source/destination role flags (storage adapters only; app enforces this).
-  // Defaults preserve today's behavior for every pre-existing storage adapter: destination-only.
-  usableAsSource      Boolean @default(false)
-  usableAsDestination Boolean @default(true)
+  // Storage adapters only (app enforces this): a config is either a backup destination or
+  // a directory backup source, never both. A destination owns its configured root - backups
+  // and their chain folders are written into it - while a source only reads the folders
+  // picked for it. Sharing one config would let a job back up its own archives.
+  // DESTINATION | SOURCE, see STORAGE_ROLES in src/lib/core/storage-roles.ts.
+  storageRole String @default("DESTINATION")
 
   // Credential profile references (Phase 1: nullable; app enforces required-ness based on adapter type)
   primaryCredentialId String?

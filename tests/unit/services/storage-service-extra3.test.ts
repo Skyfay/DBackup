@@ -118,8 +118,7 @@ function makeDbConfig(overrides?: Record<string, any>) {
         primaryCredentialId: null,
         sshCredentialId: null,
         defaultRetentionPolicyId: null,
-        usableAsSource: false,
-        usableAsDestination: true,
+        storageRole: 'DESTINATION',
         ...overrides,
     };
 }

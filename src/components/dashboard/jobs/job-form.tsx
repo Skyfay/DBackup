@@ -1276,7 +1276,7 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
                             <div className="rounded-lg border p-4 space-y-4">
                                 <FormField control={form.control} name="backupMode" render={({ field }) => (
                                     <FormItem>
-                                        <div className="flex items-center justify-between">
+                                        <div className="flex items-center justify-between gap-4">
                                             <div className="space-y-0.5">
                                                 <FormLabel>Incremental backups</FormLabel>
                                                 <FormDescription>
@@ -1286,7 +1286,7 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
                                                     affected. Chains are kept in their own folder and deleted as a unit.
                                                 </FormDescription>
                                             </div>
-                                            <FormControl>
+                                            <FormControl className="shrink-0">
                                                 <Switch
                                                     checked={field.value === "INCREMENTAL"}
                                                     onCheckedChange={(on) => field.onChange(on ? "INCREMENTAL" : "FULL")}
@@ -1317,7 +1317,9 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
                                                 </FormControl>
                                                 <FormDescription>
                                                     Starts a fresh chain this often. A shorter interval uses more
-                                                    storage but limits how many backups a damaged full can affect.
+                                                    storage but limits how many backups a damaged full can affect. A
+                                                    full backup also re-reads every file, so it is the point at which
+                                                    any change missed by the timestamp check is picked up again.
                                                 </FormDescription>
                                                 <FormMessage />
                                             </FormItem>
@@ -1325,17 +1327,20 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
 
                                         <FormField control={form.control} name="verifyByHash" render={({ field }) => (
                                             <FormItem>
-                                                <div className="flex items-center justify-between">
+                                                <div className="flex items-center justify-between gap-4">
                                                     <div className="space-y-0.5">
                                                         <FormLabel>Detect changes by content</FormLabel>
                                                         <FormDescription>
-                                                            Read every file and compare its checksum instead of trusting
-                                                            size and modification time. Still avoids storing unchanged
-                                                            files, but no longer saves transfer. Use it when the source
-                                                            has unreliable timestamps.
+                                                            Normally a file is only fetched when its size or timestamp
+                                                            changed. Turn this on to fetch and checksum every file
+                                                            instead - it costs the full transfer on every run and saves
+                                                            no extra storage, so only turn it on for sources that can
+                                                            change a file without changing its size or timestamp: FTP
+                                                            servers with minute-precision timestamps, or files restored
+                                                            or copied with their original timestamp kept.
                                                         </FormDescription>
                                                     </div>
-                                                    <FormControl>
+                                                    <FormControl className="shrink-0">
                                                         <Switch checked={field.value} onCheckedChange={field.onChange} />
                                                     </FormControl>
                                                 </div>
@@ -1349,14 +1354,14 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
 
                         <FormField control={form.control} name="skipVerification" render={({ field }) => (
                             <FormItem>
-                                <div className="flex items-center justify-between rounded-lg border p-4">
+                                <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
                                     <div className="space-y-0.5">
                                         <FormLabel>Skip Verification</FormLabel>
                                         <FormDescription>
                                             Exclude this job from scheduled integrity checks.
                                         </FormDescription>
                                     </div>
-                                    <FormControl>
+                                    <FormControl className="shrink-0">
                                         <Switch checked={field.value} onCheckedChange={field.onChange} />
                                     </FormControl>
                                 </div>

@@ -49,6 +49,8 @@ All notable changes to DBackup are documented here.
 - **local-filesystem**: Fixed restore targets written with a leading slash (such as the suggested `/restore`) being rejected as path traversal - a leading slash means the adapter's own root, as it already did for every other adapter.
 - **restore**: Fixed the progress view getting stuck on "Downloading" for backups with directory sources, and reporting a download that never happens for them.
 - **storage**: Fixed the Storage Explorer serving listing rows cached by an older version, which left new columns and actions (backup type, restore scope choice) missing until the cache happened to expire. Outdated caches are now rebuilt on first load after an update.
+- **jobs**: Fixed the toggle in the Incremental backups and Skip Verification rows overlapping their description text, which pushed the switch under the last line on narrower dialogs.
+- **backup**: Fixed incremental backups treating a file as unchanged when its modification time moved backwards at an unchanged size, which silently kept the stale version. Any timestamp difference now counts as a change, matching rsync.
 - **storage**: Fixed directory sources appearing wherever backup destinations are listed - the Storage Explorer (where their files were shown as backups, delete button included), the Destinations page, Storage Usage on the dashboard, and the config backup target picker.
 - **storage**: Fixed storage alerts treating directory sources as destinations, which made "Missing Backup" fire indefinitely for a location that never receives one.
 - **system-tasks**: Fixed the hourly storage cache warmup and the destination-wide integrity check walking directory sources, which can hold no backups.
@@ -86,12 +88,14 @@ All notable changes to DBackup are documented here.
 - **api**: Documented the restore endpoint's new `scope` parameter, and corrected `targetSourceId` from unconditionally required to required only when the restore includes a database.
 - **wiki**: Documented the destination/directory-source roles on both overview pages, including how to use one server for both.
 - **wiki**: Updated every navigation instruction in the user guide for the new Connections page and its tabs.
+- **wiki**: Rewrote the "Detect changes by content" section to separate the transfer decision from the storage decision, name the cases that actually need it, and point out that a full backup re-checks everything.
 - **api**: Documented `storageRole` on the adapter schemas and the new `role` query parameter of the adapter listing endpoint.
 
 ### 🧪 Tests
 
 - **restore**: Added unit tests for the restore scope rules - when a combined backup asks what to restore, and how the restore page interprets the resulting parameter.
 - **destinations**: Added tests for the adapter role - the listing filter, the guard that refuses a role change while a job depends on it, and the clone keeping or flipping the role.
+- **backup**: Added a test for an incremental run re-reading a file whose timestamp moved backwards at an unchanged size.
 - **jobs**: Added tests for the new destination-role validation, covering a destination pointing at a directory source and at an adapter that does not exist.
 - **lint-guards**: Added a guard that fails the build when new code enumerates storage adapters for backup purposes without filtering by role, with an explicit allow-list for the health check and the listing endpoint.
 - **lint-guards**: Added a guard that fails the build when anything links to the retired `/dashboard/sources`, `/dashboard/destinations` or `/dashboard/notifications` routes, and that checks their redirect stubs are still in place.

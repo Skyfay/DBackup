@@ -395,6 +395,31 @@ describe('executeCombinedDump - incremental change detection', () => {
         incrementalPlan();
     });
 
+    it('re-reads a file whose timestamp moved backwards', async () => {
+        // Restoring an older copy over a file, or a corrected clock on the source, moves the
+        // mtime the wrong way. Only comparing "is it newer" would call that unchanged and
+        // keep the stale version in the chain for good.
+        const transferred: string[] = [];
+        const ctx = makeCtx({
+            sourceAdapter: undefined,
+            sources: [makeDirectorySource({
+                adapter: makeIncrementalAwareAdapter({
+                    'unchanged.txt': { content: 'SAME', mtime: '2026-01-01' },
+                    'touched.txt': { content: 'SAME-CONTENT', mtime: '2026-01-01' },
+                    // Same size as the recorded 'OLD', but an older timestamp.
+                    'modified.txt': { content: 'NEW', mtime: '2025-06-01' },
+                }, transferred),
+            })],
+            job: makeJob({ source: null }),
+        });
+
+        await executeCombinedDump(ctx);
+        createdTempFiles.push(ctx.tempFile!);
+
+        expect(transferred).toContain('modified.txt');
+        expect(transferred).not.toContain('unchanged.txt');
+    });
+
     it('stores only new and modified files, and carries the rest forward by reference', async () => {
         const transferred: string[] = [];
         const ctx = makeCtx({

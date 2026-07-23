@@ -35,13 +35,38 @@ With the default of 7 and a daily schedule you get one full and six incrementals
 
 ### Detect changes by content
 
-By default a file counts as unchanged when its size and modification time are unchanged,
-so unchanged files are never transferred at all.
+An incremental run answers two separate questions per file:
 
-Turn this on when the source has unreliable timestamps - clock skew, or copies that
-preserve mtime. Every file is then read and compared by checksum. Unchanged files are still
-not stored twice, but they are transferred, so you keep the storage saving and lose the
-bandwidth saving.
+| Question | Off (default) | On |
+| :--- | :--- | :--- |
+| Fetch it from the source? | Only if its size or timestamp differs | Always |
+| Store its bytes again? | Only if its checksum differs | Only if its checksum differs |
+
+The second question is **always** answered by checksum, whichever way the switch is set. A
+file that was touched but not edited is never stored twice - the switch does not change
+that, and turning it on saves no additional storage.
+
+What the switch changes is only whether a file is fetched at all. Off, DBackup trusts the
+directory listing; on, it reads every file every run.
+
+**Leave it off** unless your source can change a file without changing its size *or* its
+timestamp. That needs both to hold at once, which is rare:
+
+- FTP servers reporting timestamps only to the minute, where an edit lands within the same
+  minute and keeps the file's length
+- Files written back with their original timestamp preserved - `cp -p`, an archive
+  extraction, or a sync tool restoring an older copy
+- A source whose clock is corrected backwards
+
+Any timestamp difference counts, in either direction, so a file replaced by an older copy
+is picked up too.
+
+**And it is not the only line of defence.** A full backup re-reads and re-checksums
+everything, so anything the timestamp check missed is corrected at the next full at the
+latest - which is what *Full backup every N days* controls.
+
+The cost of turning it on is the full transfer on every run. On a large library over a slow
+link that removes the main reason to use incremental backups in the first place.
 
 ## How chains are stored
 

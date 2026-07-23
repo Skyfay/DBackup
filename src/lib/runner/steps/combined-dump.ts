@@ -173,13 +173,24 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
             // Incremental runs skip files the chain already holds. The decision uses the
             // listing (size and mtime), so an unchanged file is never transferred - which
             // is where the bandwidth saving comes from, on top of the storage saving.
+            //
+            // Any difference in the timestamp counts, not just a newer one: a file whose
+            // mtime moves backwards has still been replaced - restoring an older copy or a
+            // corrected clock on the source both do that - and treating it as unchanged
+            // would silently keep the stale version. Erring this way costs one needless
+            // transfer at worst, which is the direction to err in. Matches rsync's quick
+            // check, which compares size and mtime for inequality.
+            //
+            // A full backup sets no predicate at all, so everything is transferred and
+            // hashed. That bounds how long a missed change can survive: at most until the
+            // next full, which is what "Full backup every N days" controls.
             const previousFiles = previousBySource.get(source.jobSourceId);
             const shouldDownload = plan.type === "incremental" && previousFiles && !job.verifyByHash
                 ? (entry: { relativePath: string; size: number; lastModified: Date }) => {
                     const before = previousFiles.get(entry.relativePath);
                     if (!before) return true;
                     if (before.s !== entry.size) return true;
-                    return entry.lastModified.getTime() > new Date(before.m).getTime();
+                    return entry.lastModified.getTime() !== new Date(before.m).getTime();
                 }
                 : undefined;
 

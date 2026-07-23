@@ -50,6 +50,15 @@ index             Sealed NDJSON index, always last
 The index is last because it records byte offsets that only exist once the data members
 have been written.
 
+### Header sizes
+
+Plain POSIX ustar headers, with one detail that matters if you write your own reader: an
+entry of **8 GiB or more** does not fit the 11-digit octal size field, and is written in
+GNU **base-256** form instead - the high bit of the field's first byte is set, and the
+remaining bytes are the size big-endian. Reading such a field as octal yields zero, and a
+reader that walks the archive by adding sizes then loses its place for every member that
+follows. `tar` itself handles this; a hand-written parser has to.
+
 ### Member names
 
 | | Unencrypted archive | Encrypted archive |
@@ -78,7 +87,7 @@ anything.
   "chain": {                          // absent on a standalone full backup
     "id": "<uuid>",                   // shared by the full and every incremental on it
     "type": "incremental",            // "full" | "incremental"
-    "base": "full-2026-07-15.tar",    // predecessor filename, absent on the full
+    "base": "full-000-2026-07-15.tar",    // predecessor filename, absent on the full
     "index": 3                        // position in the chain, the full is 0
   },
   "sourceType": "mysql",              // or "directory-only"
@@ -160,13 +169,13 @@ One object per line streams in constant memory.
 {"k":"h","v":2,"createdAt":"2026-07-22T03:00:00.000Z","archive":"backup.tar"}
 
 // Archives this snapshot needs besides its own (incremental chains only)
-{"k":"deps","archives":["full-2026-07-15.tar","inc-2026-07-18.tar"]}
+{"k":"deps","archives":["full-000-2026-07-15.tar","inc-003-2026-07-18.tar"]}
 
 // Physical entry: one TAR member holding bytes
 {"k":"e","n":1,"member":"d/000001","off":1536,"size":8421,"sealed":true,"comp":"GZIP","bundle":true}
 
 // The same, but carried forward - its bytes live in another archive of the chain
-{"k":"e","n":7,"a":"full-2026-07-15.tar","member":"d/000007","off":9216,"size":4096,"sealed":true}
+{"k":"e","n":7,"a":"full-000-2026-07-15.tar","member":"d/000007","off":9216,"size":4096,"sealed":true}
 
 // Database dump
 {"k":"db","name":"appdb","format":"custom","n":1,"s":4211000}
@@ -214,9 +223,9 @@ visible in any file browser without knowing anything about the format:
 ```
 <job name>/
   chain-2026-07-15T03-00-00/
-    full-2026-07-15.tar      + .index + .meta.json
-    inc-2026-07-16.tar       + .index + .meta.json
-    inc-2026-07-17.tar       + .index + .meta.json
+    full-000-2026-07-15.tar      + .index + .meta.json
+    inc-001-2026-07-16.tar       + .index + .meta.json
+    inc-002-2026-07-17.tar       + .index + .meta.json
 ```
 
 Jobs in full-backup mode keep the flat `<job name>/<file>.tar` layout.
@@ -296,7 +305,7 @@ For an incremental chain, point the tool at the snapshot you want and keep the o
 archives in the same folder - it resolves them itself and lists what it is missing:
 
 ```bash
-node restore_archive.js --list ./chain-2026-07-15/inc-2026-07-17.tar <hex_key>
+node restore_archive.js --list ./chain-2026-07-15/inc-002-2026-07-17.tar <hex_key>
 ```
 
 **Unencrypted archives** need no tooling:

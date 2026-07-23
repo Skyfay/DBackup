@@ -37,6 +37,22 @@ type OnLog = (msg: string, level?: LogLevel, type?: LogType, details?: string) =
  * downloadDirectory natively (all except Rsync, which has its own optimized implementation
  * to preserve its delta-transfer advantage).
  */
+
+/**
+ * Joins a collected file under the work directory, refusing anything that escapes it.
+ *
+ * Mirrors the guard the restore side already applies when extracting an archive - the
+ * source listing deserves the same suspicion as an archive index.
+ */
+function resolveWithinRoot(root: string, relative: string): string {
+    const resolvedRoot = path.resolve(root);
+    const resolved = path.resolve(resolvedRoot, relative);
+    if (resolved !== resolvedRoot && !resolved.startsWith(resolvedRoot + path.sep)) {
+        throw new Error(`path escapes the collection directory`);
+    }
+    return resolved;
+}
+
 export async function downloadDirectoryGeneric(
     adapter: StorageAdapter,
     config: AdapterConfig,
@@ -62,6 +78,7 @@ export async function downloadDirectoryGeneric(
     let processedFiles = 0;
 
     const resultEntries: DirectoryFileEntry[] = [];
+    const failures: { path: string; error: string }[] = [];
 
     let skippedFiles = 0;
 
@@ -82,12 +99,26 @@ export async function downloadDirectoryGeneric(
             continue;
         }
 
-        const localFilePath = path.join(localPath, entry.relativePath);
+        // The relative path comes from the remote server's listing, so it is not trusted:
+        // an S3 key is stored verbatim and a WebDAV href is whatever the server sends. A
+        // ".." segment would otherwise write outside the work directory during collection.
+        let localFilePath: string;
+        try {
+            localFilePath = resolveWithinRoot(localPath, entry.relativePath);
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            onLog?.(`Refused to collect '${entry.relativePath}': ${message}`, "error", "security");
+            failures.push({ path: entry.relativePath, error: message });
+            continue;
+        }
         await fs.mkdir(path.dirname(localFilePath), { recursive: true });
 
         const success = await adapter.download(config, entry.sourcePath, localFilePath, undefined, onLog);
         if (!success) {
-            onLog?.(`Failed to download ${entry.sourcePath}, skipping`, "warning");
+            // Recorded, not swallowed: the file is absent from the archive, and a backup
+            // that hides that is worse than one that admits it.
+            onLog?.(`Failed to download ${entry.sourcePath}`, "error", "storage");
+            failures.push({ path: entry.relativePath, error: "the source did not return the file" });
             continue;
         }
 
@@ -102,7 +133,7 @@ export async function downloadDirectoryGeneric(
         onLog?.(`${skippedFiles} of ${totalFiles} file(s) unchanged, not transferred`, "info", "storage");
     }
 
-    return { files: resultEntries.length, bytes: processedBytes, entries: resultEntries };
+    return { files: resultEntries.length, bytes: processedBytes, entries: resultEntries, failures };
 }
 
 /**

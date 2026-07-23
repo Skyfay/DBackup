@@ -326,24 +326,53 @@ export class JobService {
                 });
             }
 
-            // Update directory sources if provided. createMany() can't set the excludePatternPresets
-            // m2m relation, so each source is created individually instead.
+            // Update directory sources if provided.
+            //
+            // Matched on (configId, path) and updated in place rather than replaced.
+            // A JobSource id is not an internal detail: it is the `src` key every archive
+            // index uses to attribute files, and what the chain planner compares to decide
+            // whether the source set changed. Deleting and recreating them - which the form
+            // triggers on *every* save, because it always submits `sources` - would mint new
+            // ids, force a full backup after any unrelated edit, and leave older backups
+            // pointing at sources that no longer exist, breaking "restore to original
+            // location" for them.
             if (sources) {
-                await tx.jobSource.deleteMany({ where: { jobId: id } });
-                await Promise.all(sources.map((s) =>
-                    tx.jobSource.create({
-                        data: {
-                            jobId: id,
-                            configId: s.configId,
-                            priority: s.priority,
-                            path: s.path,
-                            excludePatterns: JSON.stringify(s.excludePatterns || []),
-                            excludePatternPresets: {
-                                connect: (s.excludePatternPresetIds || []).map((presetId) => ({ id: presetId })),
-                            },
-                        }
-                    })
-                ));
+                const existing = await tx.jobSource.findMany({ where: { jobId: id } });
+                const keyOf = (s: { configId: string; path: string }) => `${s.configId}\u0000${s.path}`;
+                const byKey = new Map(existing.map((row) => [keyOf(row), row]));
+                const wanted = new Set(sources.map(keyOf));
+
+                // Rows the user removed. Genuinely gone, so their id going with them is correct.
+                const removed = existing.filter((row) => !wanted.has(keyOf(row)));
+                if (removed.length > 0) {
+                    await tx.jobSource.deleteMany({ where: { id: { in: removed.map((r) => r.id) } } });
+                }
+
+                for (const s of sources) {
+                    const match = byKey.get(keyOf(s));
+                    const data = {
+                        priority: s.priority,
+                        excludePatterns: JSON.stringify(s.excludePatterns || []),
+                        excludePatternPresets: {
+                            set: (s.excludePatternPresetIds || []).map((presetId) => ({ id: presetId })),
+                        },
+                    };
+                    if (match) {
+                        await tx.jobSource.update({ where: { id: match.id }, data });
+                    } else {
+                        await tx.jobSource.create({
+                            data: {
+                                jobId: id,
+                                configId: s.configId,
+                                path: s.path,
+                                ...data,
+                                excludePatternPresets: {
+                                    connect: (s.excludePatternPresetIds || []).map((presetId) => ({ id: presetId })),
+                                },
+                            }
+                        });
+                    }
+                }
             }
 
             // Update notification templates if provided

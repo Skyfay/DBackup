@@ -12,6 +12,7 @@
  */
 
 import fs from "fs/promises";
+import crypto from "crypto";
 import path from "path";
 import prisma from "@/lib/prisma";
 import { registry } from "@/lib/core/registry";
@@ -71,7 +72,7 @@ export async function openStorageArchiveSource(
         };
     }
 
-    const tempFile = path.join(getTempDir(), `archive-fetch-${process.pid}-${Date.now()}-${path.basename(remotePath)}`);
+    const tempFile = path.join(getTempDir(), `archive-fetch-${process.pid}-${crypto.randomUUID()}-${path.basename(remotePath)}`);
     const downloaded = await adapter.download(config, remotePath, tempFile);
     if (!downloaded) {
         await fs.unlink(tempFile).catch(() => { });

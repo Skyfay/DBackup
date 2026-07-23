@@ -14,6 +14,7 @@
 
 import fs from "fs/promises";
 import path from "path";
+import crypto from "crypto";
 import prisma from "@/lib/prisma";
 import { registry } from "@/lib/core/registry";
 import { BackupMetadata, StorageAdapter } from "@/lib/core/interfaces";
@@ -219,7 +220,10 @@ export class ArchiveIndexService {
 
         let tempFile: string | null = null;
         try {
-            tempFile = path.join(getTempDir(), `archive-index-${process.pid}-${path.basename(file)}${suffix}`);
+            // Unique per call: the restore page fetches the same backup's index several
+            // times at once (one file tree per directory source, plus the dry run), and a
+            // shared path means two downloads writing over each other.
+            tempFile = path.join(getTempDir(), `archive-index-${process.pid}-${crypto.randomUUID()}${suffix}`);
             const downloaded = await adapter.download(resolved, remotePath, tempFile);
             if (!downloaded) return null;
             return await fs.readFile(tempFile);

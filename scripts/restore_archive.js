@@ -100,7 +100,28 @@ function readString(block, start, length) {
     return raw.subarray(0, end === -1 ? raw.length : end).toString("utf-8");
 }
 
-function readOctal(block, start, length) {
+/**
+ * Reads a numeric TAR header field.
+ *
+ * A size of 8 GiB or more does not fit the octal field and is written in GNU base-256
+ * form, flagged by the high bit of the first byte. Without this the member walk would
+ * read 0 for such an entry and lose its place in the archive - so a backup containing one
+ * large file could not even be listed, let alone extracted.
+ */
+function readNumeric(block, start, length) {
+    const first = block[start];
+
+    if ((first & 0x80) !== 0) {
+        let value = first === 0xff ? -1 : first & 0x7f;
+        for (let i = start + 1; i < start + length; i++) {
+            value = value * 256 + block[i];
+        }
+        if (!Number.isSafeInteger(value)) {
+            throw new Error(`TAR header field at offset ${start} exceeds the safe integer range`);
+        }
+        return value;
+    }
+
     const text = readString(block, start, length).trim();
     const value = parseInt(text, 8);
     return Number.isNaN(value) ? 0 : value;
@@ -122,7 +143,7 @@ function walkMembers(fd, fileSize) {
         if (fs.readSync(fd, block, 0, TAR_BLOCK, position) < TAR_BLOCK) break;
         if (block.every((b) => b === 0)) break;
 
-        const size = readOctal(block, 124, 12);
+        const size = readNumeric(block, 124, 12);
         const typeFlag = String.fromCharCode(block[156]);
         const dataOffset = position + TAR_BLOCK;
 
@@ -153,9 +174,18 @@ function walkMembers(fd, fileSize) {
     return members;
 }
 
+/** A single readSync tops out at 2 GiB, so large entries are read in chunks. */
+const READ_CHUNK = 64 * 1024 * 1024;
+
 function readAt(fd, offset, size) {
     const buffer = Buffer.alloc(size);
-    if (size > 0) fs.readSync(fd, buffer, 0, size, offset);
+    let read = 0;
+    while (read < size) {
+        const want = Math.min(READ_CHUNK, size - read);
+        const got = fs.readSync(fd, buffer, read, want, offset + read);
+        if (got <= 0) break;
+        read += got;
+    }
     return buffer;
 }
 

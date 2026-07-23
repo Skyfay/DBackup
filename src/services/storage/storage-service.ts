@@ -596,6 +596,20 @@ export class StorageService {
             throw new Error(`Failed to decrypt configuration for ${adapterConfigId}: ${(e as Error).message}`);
         }
 
+        // Refuse to gut an incremental chain. Later snapshots reference bytes that live in
+        // earlier archives, so deleting one member silently makes every snapshot built on
+        // it unrestorable - and the full archive is the largest row in the explorer, which
+        // makes it the obvious one to delete for space. Retention already deletes chains
+        // whole; manual deletion has to hold the same line.
+        const dependents = await this.chainDependentsOf(adapterConfigId, filePath, adapter, config);
+        if (dependents.length > 0) {
+            throw new Error(
+                `This backup is part of an incremental chain that ${dependents.length} later backup(s) still build on: ` +
+                `${dependents.slice(0, 3).join(", ")}${dependents.length > 3 ? ", ..." : ""}. ` +
+                `Delete the whole chain folder instead, or let retention remove it as a unit.`
+            );
+        }
+
         const mainDelete = await adapter.delete(config, filePath);
 
         // Every sidecar goes with it, otherwise orphans accumulate and later confuse
@@ -611,6 +625,42 @@ export class StorageService {
         await this.removeStorageListCacheEntry(adapterConfigId, filePath);
 
         return mainDelete;
+    }
+
+
+    /**
+     * Names the backups that would lose their data if `filePath` were deleted.
+     *
+     * A chain lives in its own folder, and every member after the one being deleted may
+     * carry references into it. Rather than parsing each index, anything in the same chain
+     * folder that sorts after this archive is treated as dependent - the folder layout is
+     * the chain, and being conservative here costs nothing but a refusal.
+     */
+    private async chainDependentsOf(
+        adapterConfigId: string,
+        filePath: string,
+        adapter: StorageAdapter,
+        config: unknown
+    ): Promise<string[]> {
+        const normalized = filePath.replace(/\\/g, "/");
+        const folder = normalized.slice(0, normalized.lastIndexOf("/"));
+        // Chain folders are named chain-<timestamp> by the runner; anything else is a flat
+        // full backup with nothing depending on it.
+        if (!/\/chain-[^/]+$/.test(folder)) return [];
+
+        try {
+            const siblings = await adapter.list(config as never, folder);
+            const self = normalized.slice(normalized.lastIndexOf("/") + 1);
+            return siblings
+                .filter((f) => isBackupFile(f.name))
+                .map((f) => f.name)
+                .filter((name) => name > self)
+                .sort();
+        } catch (e) {
+            // Cannot prove it is safe, so do not claim it is.
+            log.warn("Could not check chain membership before delete", { adapterConfigId, filePath }, wrapError(e));
+            throw new Error("Could not verify whether this backup is part of an incremental chain. Refusing to delete it.");
+        }
     }
 
     /**

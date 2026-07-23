@@ -13,6 +13,7 @@
  */
 
 import path from "path";
+import { safeRemoteJoin } from "@/lib/archive/remote-paths";
 import prisma from "@/lib/prisma";
 import { pipeline } from "stream/promises";
 import { createGzip } from "zlib";
@@ -90,7 +91,7 @@ async function readBackupMetadata(
         if (content) return JSON.parse(content) as BackupMetadata;
     }
 
-    const tempFile = path.join(getTempDir(), `meta-${process.pid}-${Date.now()}.json`);
+    const tempFile = path.join(getTempDir(), `meta-${process.pid}-${crypto.randomUUID()}.json`);
     try {
         if (!(await adapter.download(config, `${file}.meta.json`, tempFile))) {
             throw new NotFoundError("Backup metadata", `${file}.meta.json`);
@@ -378,7 +379,7 @@ export async function restoreFilesToStorage(
                     throw new Error(`Checksum mismatch: expected ${file.h}, got ${digest}`);
                 }
 
-                const remotePath = `${target.basePath.replace(/\/+$/, "")}/${file.p}`;
+                const remotePath = safeRemoteJoin(target.basePath, file.p);
                 if (!(await target.adapter.upload(target.config, stagePath, remotePath))) {
                     throw new Error(`Adapter '${target.adapter.id}' rejected the upload`);
                 }

@@ -580,7 +580,7 @@ describe("RsyncAdapter", () => {
 
             const result = await RsyncAdapter.downloadDirectory!(agentConfig, "Job", "/local/job");
 
-            expect(result).toEqual({ files: 0, bytes: 0, entries: [] });
+            expect(result).toEqual({ files: 0, bytes: 0, entries: [], failures: [] });
             expect(mockRsyncExecute).not.toHaveBeenCalled();
         });
 

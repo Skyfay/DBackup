@@ -80,6 +80,48 @@ describe("walkTarHeaders", () => {
         }
     });
 
+    it("keeps its place across an entry whose size needs base-256 encoding", async () => {
+        // tar-stream switches the size field to GNU base-256 at 8 GiB, where the octal
+        // field runs out. Reading that as 0 would put every following offset in the wrong
+        // place - and a single VM image or uncompressed dump is enough to trigger it.
+        // The header is written by hand so the test does not need 8 GiB of disk.
+        const target = path.join(workDir, "huge.tar");
+        // tar-stream ships no types for its header codec; the shape used here is stable.
+        const headers = (await import("tar-stream/headers" as string)).default as { encode: (h: Record<string, unknown>) => Buffer };
+
+        const hugeSize = 9 * 1024 ** 3;
+        const hugeHeader = headers.encode({
+            name: "huge.bin", size: hugeSize, mode: 0o644, mtime: new Date(0),
+            type: "file", uid: 0, gid: 0, uname: "", gname: "",
+        });
+        expect(hugeHeader[124] & 0x80, "expected tar-stream to use base-256 here").not.toBe(0);
+
+        // The payload is sparse: the file is the declared length, but only the trailing
+        // member after it is real. That is enough to prove the walk lands in the right spot.
+        const after = Buffer.from("AFTER");
+        const handle = await fs.open(target, "w");
+        await handle.write(hugeHeader, 0, hugeHeader.length, 0);
+        const afterOffset = 512 + Math.ceil(hugeSize / 512) * 512;
+        await handle.write(buildUstarHeader("after.txt", after.length), 0, 512, afterOffset);
+        await handle.write(after, 0, after.length, afterOffset + 512);
+        await handle.write(tarPadding(after.length), 0, tarPadding(after.length).length, afterOffset + 512 + after.length);
+        await handle.write(TAR_TRAILER, 0, TAR_TRAILER.length, afterOffset + 512 + Math.ceil(after.length / 512) * 512);
+        await handle.close();
+
+        const members = await walkTarHeaders(target);
+
+        expect(members.map((m) => m.name)).toEqual(["huge.bin", "after.txt"]);
+        expect(members[0].size).toBe(hugeSize);
+        // The decisive assertion: the member after the huge one is found where it is.
+        expect(members[1].offset).toBe(afterOffset + 512);
+        // Read just that range - the file is 9 GiB long (sparse), so reading it whole would fail.
+        const verify = await fs.open(target, "r");
+        const buf = Buffer.alloc(members[1].size);
+        await verify.read(buf, 0, buf.length, members[1].offset);
+        await verify.close();
+        expect(buf.toString()).toBe("AFTER");
+    });
+
     it("stops early at a named member", async () => {
         const target = await writeTar(
             [

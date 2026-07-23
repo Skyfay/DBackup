@@ -199,8 +199,13 @@ export async function stepUpload(ctx: RunnerContext) {
     // its type. Both are visible in any file browser without knowing the format: copying
     // "a backup" means copying the folder, and `ls` shows at a glance which archive is the
     // full. Full-mode jobs keep the flat layout they have always had.
+    // The chain position is part of the filename, not decoration: members are addressed by
+    // name from each other's index, and the naming template is user-defined - one with
+    // day granularity plus two runs a day would otherwise have the second archive
+    // overwrite the first, silently gutting every snapshot that references it. The
+    // zero-padded position also makes `ls` show a chain in order.
     const remotePath = ctx.chain && ctx.chain.type !== undefined && ctx.job!.backupMode === "INCREMENTAL"
-        ? `${job.name}/${ctx.chain.chainDir}/${ctx.chain.type === "full" ? "full-" : "inc-"}${path.basename(ctx.tempFile)}`
+        ? `${job.name}/${ctx.chain.chainDir}/${ctx.chain.type === "full" ? "full" : "inc"}-${String(ctx.chain.index).padStart(3, "0")}-${path.basename(ctx.tempFile)}`
         : `${job.name}/${path.basename(ctx.tempFile)}`;
     const totalDests = ctx.destinations.length;
 

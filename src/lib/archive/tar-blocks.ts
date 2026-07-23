@@ -39,7 +39,31 @@ function readString(block: Buffer, start: number, length: number): string {
     return raw.subarray(0, end === -1 ? raw.length : end).toString("utf-8");
 }
 
-function readOctal(block: Buffer, start: number, length: number): number {
+/**
+ * Reads a numeric TAR header field.
+ *
+ * Values that do not fit the octal field - a size of 8 GiB or more - are written in GNU
+ * base-256 form instead, marked by the high bit of the first byte. `tar-stream`, which
+ * writes our archives, does this, so a single large entry (a VM image, an uncompressed
+ * dump) would otherwise read as 0 here and desynchronise the whole header walk: every
+ * offset recorded after it would point at the wrong bytes.
+ */
+function readNumeric(block: Buffer, start: number, length: number): number {
+    const first = block[start];
+
+    if ((first & 0x80) === 0x80) {
+        // Base-256, big-endian, two's complement. The high bit is the marker, not part of
+        // the value; a leading 0xFF would mean negative, which no size field ever is.
+        let value = first === 0xff ? -1 : first & 0x7f;
+        for (let i = start + 1; i < start + length; i++) {
+            value = value * 256 + block[i];
+        }
+        if (!Number.isSafeInteger(value)) {
+            throw new Error(`TAR header field at offset ${start} exceeds the safe integer range`);
+        }
+        return value;
+    }
+
     const text = readString(block, start, length).trim();
     if (text.length === 0) return 0;
     const value = parseInt(text, 8);
@@ -95,7 +119,7 @@ export async function walkTarHeaders(filePath: string, stopAt?: string): Promise
             // A zero block marks end-of-archive.
             if (block.every((byte) => byte === 0)) break;
 
-            const size = readOctal(block, 124, 12);
+            const size = readNumeric(block, 124, 12);
             const typeFlag = String.fromCharCode(block[156]);
             const dataOffset = position + TAR_BLOCK_SIZE;
 

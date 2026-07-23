@@ -216,6 +216,20 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
                 shouldDownload ? { shouldDownload } : undefined
             );
 
+            // A file the source would not hand over is missing from this backup. Naming each
+            // one and refusing to call the run a success is the whole point - a silently
+            // incomplete backup is the failure mode that only shows up when it is needed.
+            if (result.failures.length > 0) {
+                for (const failure of result.failures) {
+                    ctx.log(`${logPrefix} MISSING from this backup: ${failure.path} (${failure.error})`, 'error', 'storage');
+                }
+                ctx.log(
+                    `${logPrefix} ${result.failures.length} file(s) could not be collected and are not in this backup`,
+                    'error', 'storage'
+                );
+                ctx.status = "Partial";
+            }
+
             const fileIndex: SourceFileEntry[] = [];
             for (const e of result.entries) {
                 const before = previousFiles?.get(e.relativePath);

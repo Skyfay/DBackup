@@ -297,6 +297,79 @@ describe('JobService', () => {
         });
     });
 
+    describe('updateJob - directory source identity', () => {
+        it('keeps the id of a source that is still configured', async () => {
+            // The id is the `src` key in every archive index and what the chain planner
+            // compares. Regenerating it on an unrelated edit would force a full backup and
+            // orphan the origin of every older backup.
+            prismaMock.$transaction.mockImplementation(async (callback: any) => callback(prismaMock));
+            prismaMock.job.findUnique.mockResolvedValue({ id: 'job-1', sourceId: null, sources: [{ id: 'jsrc-keep' }] } as any);
+            prismaMock.adapterConfig.findMany.mockResolvedValue([
+                { id: 'storage-1', name: 'SFTP', type: 'storage', storageRole: 'SOURCE' },
+            ] as any);
+            prismaMock.jobSource.findMany.mockResolvedValue([
+                { id: 'jsrc-keep', jobId: 'job-1', configId: 'storage-1', path: '/data' },
+            ] as any);
+            prismaMock.job.update.mockResolvedValue({ id: 'job-1' } as any);
+
+            await service.updateJob('job-1', {
+                name: 'Renamed Job',
+                sources: [{ configId: 'storage-1', priority: 0, path: '/data', excludePatterns: [] }],
+            } as any);
+
+            expect(prismaMock.jobSource.deleteMany).not.toHaveBeenCalled();
+            expect(prismaMock.jobSource.create).not.toHaveBeenCalled();
+            expect(prismaMock.jobSource.update).toHaveBeenCalledWith(
+                expect.objectContaining({ where: { id: 'jsrc-keep' } })
+            );
+        });
+
+        it('creates only the source that is genuinely new', async () => {
+            prismaMock.$transaction.mockImplementation(async (callback: any) => callback(prismaMock));
+            prismaMock.job.findUnique.mockResolvedValue({ id: 'job-1', sourceId: null, sources: [{ id: 'jsrc-keep' }] } as any);
+            prismaMock.adapterConfig.findMany.mockResolvedValue([
+                { id: 'storage-1', name: 'SFTP', type: 'storage', storageRole: 'SOURCE' },
+            ] as any);
+            prismaMock.jobSource.findMany.mockResolvedValue([
+                { id: 'jsrc-keep', jobId: 'job-1', configId: 'storage-1', path: '/data' },
+            ] as any);
+            prismaMock.job.update.mockResolvedValue({ id: 'job-1' } as any);
+
+            await service.updateJob('job-1', {
+                name: 'Job',
+                sources: [
+                    { configId: 'storage-1', priority: 0, path: '/data', excludePatterns: [] },
+                    { configId: 'storage-1', priority: 1, path: '/more', excludePatterns: [] },
+                ],
+            } as any);
+
+            expect(prismaMock.jobSource.create).toHaveBeenCalledTimes(1);
+            expect(prismaMock.jobSource.create).toHaveBeenCalledWith(
+                expect.objectContaining({ data: expect.objectContaining({ path: '/more' }) })
+            );
+        });
+
+        it('deletes a source the user actually removed', async () => {
+            prismaMock.$transaction.mockImplementation(async (callback: any) => callback(prismaMock));
+            prismaMock.job.findUnique.mockResolvedValue({ id: 'job-1', sourceId: null, sources: [{ id: 'jsrc-keep' }] } as any);
+            prismaMock.adapterConfig.findMany.mockResolvedValue([
+                { id: 'storage-1', name: 'SFTP', type: 'storage', storageRole: 'SOURCE' },
+            ] as any);
+            prismaMock.jobSource.findMany.mockResolvedValue([
+                { id: 'jsrc-keep', jobId: 'job-1', configId: 'storage-1', path: '/data' },
+                { id: 'jsrc-gone', jobId: 'job-1', configId: 'storage-1', path: '/old' },
+            ] as any);
+            prismaMock.job.update.mockResolvedValue({ id: 'job-1' } as any);
+
+            await service.updateJob('job-1', {
+                name: 'Job',
+                sources: [{ configId: 'storage-1', priority: 0, path: '/data', excludePatterns: [] }],
+            } as any);
+
+            expect(prismaMock.jobSource.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['jsrc-gone'] } } });
+        });
+    });
+
     describe('createJob - destination validation', () => {
         it('throws when a destination points at a directory source adapter', async () => {
             // The mirror of the source-role check: writing backups into a tree that is

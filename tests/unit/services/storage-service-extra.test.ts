@@ -263,6 +263,62 @@ describe('StorageService - extra coverage', () => {
             expect(result).toBe(false);
         });
 
+        it('refuses to delete a chain member that later backups build on', async () => {
+            // Deleting the full archive of a chain silently makes every incremental after
+            // it unrestorable, and it is the biggest row in the explorer - the obvious one
+            // to remove for space.
+            const adapter = makeAdapter({
+                delete: vi.fn().mockResolvedValue(true),
+                list: vi.fn().mockResolvedValue([
+                    { name: 'full-2026-07-15.tar', path: 'job/chain-2026-07-15/full-2026-07-15.tar', size: 1, lastModified: new Date() },
+                    { name: 'inc-2026-07-16.tar', path: 'job/chain-2026-07-15/inc-2026-07-16.tar', size: 1, lastModified: new Date() },
+                ]),
+            });
+            prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig());
+            vi.mocked(registry.get).mockReturnValue(adapter);
+
+            await expect(service.deleteFile('conf-123', 'job/chain-2026-07-15/full-2026-07-15.tar'))
+                .rejects.toThrow(/incremental chain/i);
+
+            expect(adapter.delete).not.toHaveBeenCalled();
+        });
+
+        it('allows deleting the newest member of a chain', async () => {
+            const adapter = makeAdapter({
+                delete: vi.fn().mockResolvedValue(true),
+                list: vi.fn().mockResolvedValue([
+                    { name: 'full-2026-07-15.tar', path: 'job/chain-2026-07-15/full-2026-07-15.tar', size: 1, lastModified: new Date() },
+                    { name: 'inc-2026-07-16.tar', path: 'job/chain-2026-07-15/inc-2026-07-16.tar', size: 1, lastModified: new Date() },
+                ]),
+            });
+            prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig());
+            vi.mocked(registry.get).mockReturnValue(adapter);
+
+            await expect(service.deleteFile('conf-123', 'job/chain-2026-07-15/inc-2026-07-16.tar')).resolves.toBe(true);
+        });
+
+        it('leaves a flat full backup alone - nothing can depend on it', async () => {
+            const adapter = makeAdapter({ delete: vi.fn().mockResolvedValue(true), list: vi.fn() });
+            prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig());
+            vi.mocked(registry.get).mockReturnValue(adapter);
+
+            await expect(service.deleteFile('conf-123', 'job/backup.tar')).resolves.toBe(true);
+            expect(adapter.list).not.toHaveBeenCalled();
+        });
+
+        it('refuses rather than guesses when the chain folder cannot be listed', async () => {
+            const adapter = makeAdapter({
+                delete: vi.fn().mockResolvedValue(true),
+                list: vi.fn().mockRejectedValue(new Error('connection refused')),
+            });
+            prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig());
+            vi.mocked(registry.get).mockReturnValue(adapter);
+
+            await expect(service.deleteFile('conf-123', 'job/chain-2026-07-15/inc-1.tar'))
+                .rejects.toThrow(/could not verify/i);
+            expect(adapter.delete).not.toHaveBeenCalled();
+        });
+
         it('invalidates the cache entry for the deleted file', async () => {
             const adapter = makeAdapter({ delete: vi.fn().mockResolvedValue(true) });
             prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig());

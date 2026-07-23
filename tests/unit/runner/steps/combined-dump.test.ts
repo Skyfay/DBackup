@@ -109,7 +109,7 @@ function makeFakeStorageAdapter(files: Record<string, string>): StorageAdapter {
                 await fs.writeFile(abs, content);
                 entries.push({ relativePath: relPath, size: Buffer.byteLength(content), lastModified: new Date('2026-01-01') });
             }
-            return { files: entries.length, bytes: entries.reduce((s, e) => s + e.size, 0), entries };
+            return { files: entries.length, bytes: entries.reduce((s, e) => s + e.size, 0), entries, failures: [] };
         }),
     } as unknown as StorageAdapter;
 }
@@ -147,7 +147,7 @@ function makeIncrementalAwareAdapter(
                 transferred.push(relPath);
                 entries.push(entry);
             }
-            return { files: entries.length, bytes: 0, entries };
+            return { files: entries.length, bytes: 0, entries, failures: [] };
         }),
     } as unknown as StorageAdapter;
 }
@@ -347,6 +347,71 @@ describe('executeCombinedDump', () => {
         expect(combinedDirsAfter).toBe(combinedDirsBefore);
 
         await cleanupTempDir(tempRoot);
+    });
+});
+
+describe('executeCombinedDump - files the source would not hand over', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        planChainMock.mockResolvedValue({ type: 'full', chainId: 'chain-1', index: 0, chainDir: 'chain-x' });
+    });
+
+    /** Collects one file and reports another as unreadable, the way a locked file behaves. */
+    function partialAdapter() {
+        return {
+            ...makeFakeStorageAdapter({}),
+            downloadDirectory: vi.fn(async (_config: unknown, _remote: string, localPath: string) => {
+                await fs.mkdir(localPath, { recursive: true });
+                await fs.writeFile(path.join(localPath, 'ok.txt'), 'OK');
+                return {
+                    files: 1,
+                    bytes: 2,
+                    entries: [{ relativePath: 'ok.txt', size: 2, lastModified: new Date('2026-01-01') }],
+                    failures: [{ path: 'secrets/key.pem', error: 'permission denied' }],
+                };
+            }),
+        } as any;
+    }
+
+    it('does not report success when a file could not be collected', async () => {
+        const ctx = makeCtx({
+            sourceAdapter: undefined,
+            sources: [makeDirectorySource({ adapter: partialAdapter() })],
+            job: makeJob({ source: null }),
+        });
+
+        await executeCombinedDump(ctx);
+        createdTempFiles.push(ctx.tempFile!);
+
+        expect(ctx.status).toBe('Partial');
+    });
+
+    it('names the missing file in the log rather than only counting it', async () => {
+        const ctx = makeCtx({
+            sourceAdapter: undefined,
+            sources: [makeDirectorySource({ adapter: partialAdapter() })],
+            job: makeJob({ source: null }),
+        });
+
+        await executeCombinedDump(ctx);
+        createdTempFiles.push(ctx.tempFile!);
+
+        const logged = (ctx.log as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0])).join('\n');
+        expect(logged).toContain('secrets/key.pem');
+        expect(logged).toContain('permission denied');
+    });
+
+    it('keeps the run green when nothing failed', async () => {
+        const ctx = makeCtx({
+            sourceAdapter: undefined,
+            sources: [makeDirectorySource({ adapter: makeFakeStorageAdapter({ 'a.txt': 'AAAA' }) })],
+            job: makeJob({ source: null }),
+        });
+
+        await executeCombinedDump(ctx);
+        createdTempFiles.push(ctx.tempFile!);
+
+        expect(ctx.status).toBe('Running');
     });
 });
 

@@ -96,9 +96,9 @@ Each chain gets its own folder, and the archive name says what it is:
 ```
 plex/
   chain-2026-07-15T03-00-00/
-    full-2026-07-15.tar
-    inc-2026-07-16.tar
-    inc-2026-07-17.tar
+    full-000-2026-07-15.tar
+    inc-001-2026-07-16.tar
+    inc-002-2026-07-17.tar
 ```
 
 Copying "a backup" means copying the folder. This works in any file browser without
@@ -156,7 +156,7 @@ The retention log names the backups that only survive because of their chain:
 
 ```
 [NAS] Retention: 2 incremental chain(s) present - a chain is only deleted once all of its snapshots expire.
-[NAS] Retention: 5 backup(s) past the policy are kept because their chain is still in use: full-2026-07-15.tar, inc-2026-07-16.tar, ...
+[NAS] Retention: 5 backup(s) past the policy are kept because their chain is still in use: full-000-2026-07-15.tar, inc-001-2026-07-16.tar, ...
 ```
 
 ## When DBackup falls back to a full backup

@@ -19,6 +19,7 @@
  */
 
 import path from "path";
+import crypto from "crypto";
 import fs from "fs/promises";
 import { createReadStream, createWriteStream } from "fs";
 import { Readable } from "stream";
@@ -206,9 +207,12 @@ async function materialize(entry: PlannedEntry, sealKey: Buffer | null, noncePre
         return { storedSize: withTag(stats.size), open: () => seal(createReadStream(localPath)) };
     }
 
+    // Ordinals restart at 1 for every archive, so pid + ordinal is not unique: two jobs
+    // running concurrently in the same process (maxConcurrentJobs > 1) would compress
+    // different entries into the same file and each would end up with the other's bytes.
     const tempFile = path.join(
         getTempDir(),
-        `archive-entry-${process.pid}-${entry.ordinal}${getCompressionExtension(entry.comp)}`
+        `archive-entry-${process.pid}-${crypto.randomUUID()}${getCompressionExtension(entry.comp)}`
     );
     const compressStream = getCompressionStream(entry.comp);
     if (!compressStream) throw new Error(`Unsupported compression type: ${entry.comp}`);

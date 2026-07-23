@@ -389,6 +389,15 @@ export interface DirectoryDownloadResult {
     bytes: number;
     /** Per-file index - becomes the manifest's searchable file list (path/size/mtime). */
     entries: DirectoryFileEntry[];
+    /**
+     * Files the source listed but would not hand over - unreadable, locked, vanished
+     * mid-run, or rejected by the remote.
+     *
+     * Reported rather than skipped in silence: such a file is missing from the archive and
+     * from its index, so a backup that ignored this would look complete and not be. The
+     * runner names them and downgrades the execution instead of reporting Success.
+     */
+    failures: { path: string; error: string }[];
 }
 
 /** A single child directory returned by browseDirectories(), one tree level at a time. */

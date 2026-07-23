@@ -439,7 +439,7 @@ export const RsyncAdapter: StorageAdapter = {
 
             if (totalFiles === 0) {
                 if (onLog) onLog(`No files found under ${remotePath}`, "info", "storage");
-                return { files: 0, bytes: 0, entries: [] };
+                return { files: 0, bytes: 0, entries: [], failures: [] };
             }
 
             await fs.mkdir(localPath, { recursive: true });
@@ -474,7 +474,7 @@ export const RsyncAdapter: StorageAdapter = {
             if (onProgress) onProgress(totalBytes, totalBytes, totalFiles, totalFiles);
             if (onLog) onLog(`Rsync directory download completed: ${totalFiles} file(s), ${totalBytes} bytes`, "info", "storage");
 
-            return { files: totalFiles, bytes: totalBytes, entries };
+            return { files: totalFiles, bytes: totalBytes, entries, failures: [] };
         } catch (error: unknown) {
             log.error("Rsync directory download failed", { host: config.host, remotePath }, wrapError(error));
             if (onLog) onLog(`Rsync directory download failed: ${sanitizeError(error)}`, "error", "storage");

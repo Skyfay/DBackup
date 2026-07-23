@@ -14,6 +14,7 @@
  */
 
 import path from "path";
+import { safeRemoteJoin } from "@/lib/archive/remote-paths";
 import fs from "fs/promises";
 import { createWriteStream } from "fs";
 import crypto from "crypto";
@@ -204,7 +205,7 @@ export async function restoreArchiveSnapshot(
                         throw new Error(`Checksum mismatch: expected ${file.h}, got ${digest}`);
                     }
 
-                    const remotePath = `${target.basePath.replace(/\/+$/, "")}/${file.p}`;
+                    const remotePath = safeRemoteJoin(target.basePath, file.p);
                     if (!(await target.adapter.upload(target.config, stagePath, remotePath))) {
                         throw new Error(`Adapter '${target.adapter.id}' rejected the upload`);
                     }

@@ -31,13 +31,23 @@ export function needsRestoreScopeChoice(combined?: CombinedContents | null): boo
  *
  * Anything unrecognised - including the parameter being absent, which is the case for
  * every single-kind backup and every older deep link - means "restore everything".
+ *
+ * The restore request carries this value as well as the page using it: the backend reads
+ * an omitted database or directory mapping as "restore all of them", so it cannot tell a
+ * half that was left out on purpose from one the caller simply did not mention.
  */
+export function normalizeRestoreScope(param: string | null | undefined): RestoreMode {
+    return param === "databases" || param === "files" ? param : "all";
+}
+
+/** The same decision as {@link normalizeRestoreScope}, as the two flags the page renders from. */
 export function parseRestoreScope(param: string | null | undefined): {
     wantsDatabases: boolean;
     wantsFiles: boolean;
 } {
+    const scope = normalizeRestoreScope(param);
     return {
-        wantsDatabases: param !== "files",
-        wantsFiles: param !== "databases",
+        wantsDatabases: scope !== "files",
+        wantsFiles: scope !== "databases",
     };
 }

@@ -83,22 +83,43 @@ export async function restoreArchiveSnapshot(
         log(`Archive contains ${index.databases.length} database(s) and ${index.directories.length} directory source(s).`, 'info');
 
         // ── Selection (identical conventions to the old path) ────────────────
+        // A scope of 'databases' or 'files' means the other half was deliberately left out
+        // of this restore. It is not the same as selecting none of its entries: the
+        // excluded half is not reported as skipped and does not turn the result Partial,
+        // because the request never asked for it.
+        const scope = input.scope ?? 'all';
+        const wantsDatabases = scope !== 'files';
+        const wantsFiles = scope !== 'databases';
+
         const dbMapping = Array.isArray(input.databaseMapping)
             ? input.databaseMapping as { originalName: string; targetName: string; selected: boolean }[]
             : undefined;
         // No mapping provided at all = restore every database entry, matching every v1
         // adapter's own convention in shouldRestoreDatabase().
-        const selectedDbNames = dbMapping && dbMapping.length > 0
-            ? index.databases.map((d) => d.name).filter((name) => shouldRestoreDatabase(name, dbMapping))
-            : index.databases.map((d) => d.name);
+        const selectedDbNames = !wantsDatabases
+            ? []
+            : dbMapping && dbMapping.length > 0
+                ? index.databases.map((d) => d.name).filter((name) => shouldRestoreDatabase(name, dbMapping))
+                : index.databases.map((d) => d.name);
 
         const dirMapping = input.directoryMapping ?? [];
-        const selectedDirs = dirMapping.length > 0
-            ? index.directories.filter((d) => dirMapping.some((m) => m.entryId === d.src && m.selected))
-            : index.directories;
+        const selectedDirs = !wantsFiles
+            ? []
+            : dirMapping.length > 0
+                ? index.directories.filter((d) => dirMapping.some((m) => m.entryId === d.src && m.selected))
+                : index.directories;
 
         if (selectedDbNames.length === 0 && selectedDirs.length === 0) {
             throw new Error("No entries selected for restore");
+        }
+
+        if (scope !== 'all') {
+            log(
+                scope === 'databases'
+                    ? "Scope: databases only - the archive's directory sources are left untouched."
+                    : "Scope: files only - the archive's databases are left untouched.",
+                'info'
+            );
         }
 
         const restoredDatabases: string[] = [];

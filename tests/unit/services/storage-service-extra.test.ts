@@ -270,9 +270,10 @@ describe('StorageService - extra coverage', () => {
             vi.mocked(registry.get).mockReturnValue(adapter);
             prismaMock.storageListCache.findUnique.mockResolvedValue({
                 adapterConfigId: 'conf-123',
-                filesJson: JSON.stringify([
-                    { name: 'backup.sql', path: 'backup.sql', size: 100, lastModified: new Date() },
-                ]),
+                filesJson: JSON.stringify({
+                    v: 1,
+                    files: [{ name: 'backup.sql', path: 'backup.sql', size: 100, lastModified: new Date() }],
+                }),
                 cachedAt: new Date(),
             } as any);
             prismaMock.storageListCache.update.mockResolvedValue({} as any);
@@ -399,7 +400,7 @@ describe('StorageService - extra coverage', () => {
             ];
             prismaMock.storageListCache.findUnique.mockResolvedValue({
                 adapterConfigId: 'conf-123',
-                filesJson: JSON.stringify(cachedFiles),
+                filesJson: JSON.stringify({ v: 1, files: cachedFiles }),
                 cachedAt: new Date(), // fresh
             } as any);
 
@@ -417,7 +418,7 @@ describe('StorageService - extra coverage', () => {
             ];
             prismaMock.storageListCache.findUnique.mockResolvedValue({
                 adapterConfigId: 'conf-123',
-                filesJson: JSON.stringify(cachedFiles),
+                filesJson: JSON.stringify({ v: 1, files: cachedFiles }),
                 cachedAt: staleDate,
             } as any);
 
@@ -430,10 +431,31 @@ describe('StorageService - extra coverage', () => {
             expect(reconcileSpy).toHaveBeenCalledWith('conf-123');
         });
 
+        it('rebuilds instead of serving a cache written by an older version', async () => {
+            // A bare array is the pre-versioning payload: its rows lack fields the explorer
+            // reads (combined, backupType), and reconciling would never add them.
+            prismaMock.storageListCache.findUnique.mockResolvedValue({
+                adapterConfigId: 'conf-123',
+                filesJson: JSON.stringify([{ name: 'legacy.sql', path: 'legacy.sql', size: 100, lastModified: new Date().toISOString() }]),
+                cachedAt: new Date(), // fresh, but outdated in shape
+            } as any);
+
+            prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig());
+            const adapter = makeAdapter({ list: vi.fn().mockResolvedValue([]) });
+            vi.mocked(registry.get).mockReturnValue(adapter);
+            prismaMock.job.findMany.mockResolvedValue([]);
+            prismaMock.execution.findMany.mockResolvedValue([]);
+
+            const result = await service.listFilesWithMetadata('conf-123');
+
+            expect(prismaMock.adapterConfig.findUnique).toHaveBeenCalled();
+            expect(result).toHaveLength(0);
+        });
+
         it('bypasses cache when bypassCache=true', async () => {
             prismaMock.storageListCache.findUnique.mockResolvedValue({
                 adapterConfigId: 'conf-123',
-                filesJson: JSON.stringify([{ name: 'cached.sql', path: 'cached.sql', size: 100, lastModified: new Date().toISOString() }]),
+                filesJson: JSON.stringify({ v: 1, files: [{ name: 'cached.sql', path: 'cached.sql', size: 100, lastModified: new Date().toISOString() }] }),
                 cachedAt: new Date(),
             } as any);
 

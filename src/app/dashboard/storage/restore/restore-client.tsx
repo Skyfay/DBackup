@@ -29,7 +29,7 @@ import { RedisRestoreWizard } from "@/components/dashboard/storage/redis-restore
 import { ArchiveFileTree, ArchiveTreeSelection } from "@/components/dashboard/storage/archive-file-tree";
 import { FolderPickerDialog } from "@/components/dashboard/storage/folder-picker-dialog";
 import { computeRestoreValidity } from "./restore-validation";
-import { parseRestoreScope } from "@/components/dashboard/storage/restore-scope";
+import { parseRestoreScope, normalizeRestoreScope } from "@/components/dashboard/storage/restore-scope";
 
 interface DatabaseInfo {
     name: string;
@@ -112,6 +112,7 @@ export function RestoreClient() {
     // and directory sources. Absent (or "all") means everything, which is also what every
     // single-kind backup and every older deep link resolves to. Named "scope" rather than
     // "mode" because `restoreMode` below already means overwrite-vs-rename.
+    const restoreScope = normalizeRestoreScope(searchParams.get("mode"));
     const { wantsDatabases, wantsFiles } = parseRestoreScope(searchParams.get("mode"));
 
     // Sources fetched client-side
@@ -547,6 +548,11 @@ export function RestoreClient() {
 
             const payload = {
                 file: file.path,
+                // Tells the backend which half was asked for. Without it, the half this
+                // page never analyzed would be read as "restore all of it" (an omitted
+                // mapping means everything), which fails on a missing database target and
+                // reports the untouched half as skipped.
+                scope: restoreScope,
                 targetSourceId: targetSource || undefined,
                 // Note: restoreMode only gates the non-server-adapter RadioGroup UI (which
                 // clears targetDbName on "overwrite"); the server-adapter Input paths set

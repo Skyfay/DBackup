@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { needsRestoreScopeChoice, parseRestoreScope } from "@/components/dashboard/storage/restore-scope";
+import { needsRestoreScopeChoice, parseRestoreScope, normalizeRestoreScope } from "@/components/dashboard/storage/restore-scope";
 
 describe("needsRestoreScopeChoice", () => {
     it("asks only when the backup holds databases and directories", () => {
@@ -40,5 +40,19 @@ describe("parseRestoreScope", () => {
 
     it("falls back to everything for an unknown value, so a hand-edited link still works", () => {
         expect(parseRestoreScope("nonsense")).toEqual({ wantsDatabases: true, wantsFiles: true });
+    });
+});
+
+describe("normalizeRestoreScope", () => {
+    it("passes the two narrowing scopes through", () => {
+        expect(normalizeRestoreScope("databases")).toBe("databases");
+        expect(normalizeRestoreScope("files")).toBe("files");
+    });
+
+    it("resolves everything else to all, which is what the backend defaults to", () => {
+        expect(normalizeRestoreScope(null)).toBe("all");
+        expect(normalizeRestoreScope(undefined)).toBe("all");
+        expect(normalizeRestoreScope("all")).toBe("all");
+        expect(normalizeRestoreScope("nonsense")).toBe("all");
     });
 });

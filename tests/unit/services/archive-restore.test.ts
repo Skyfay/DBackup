@@ -335,6 +335,50 @@ describe('restoreArchiveSnapshot', () => {
         ).rejects.toThrow(/does not support file-level restore/i);
     });
 
+    it('restores only the databases and leaves the directories untouched at scope "databases"', async () => {
+        // The scope is what the user picked in the explorer. Without it the omitted
+        // directory mapping would read as "restore all directories", which then reports
+        // them as skipped for having no target and drags the result down to Partial.
+        const { sourceAdapter } = await buildRemoteBackup(['db1'], { 'a.txt': 'AAAA' });
+        const dbAdapter = makeFakeDbAdapter();
+        const storageAdapter = makeFakeStorageAdapter();
+        wire({ 'source-fs': sourceAdapter, mysql: dbAdapter, 'local-filesystem': storageAdapter });
+
+        const result = await restoreArchiveSnapshot(makeInput({
+            scope: 'databases',
+            targetSourceId: 'target-db-1',
+            databaseMapping: [{ originalName: 'db1', targetName: 'db1', selected: true }],
+        }), { log: vi.fn(), updateDetail: vi.fn() });
+
+        expect(result.status).toBe('Success');
+        expect(result.restoredDatabases).toEqual(['db1']);
+        expect(result.restoredDirectories).toEqual([]);
+        expect(result.errors).toEqual([]);
+        expect(storageAdapter.upload).not.toHaveBeenCalled();
+    });
+
+    it('restores only the files and needs no database target at scope "files"', async () => {
+        // Same asymmetry the other way round: the omitted database mapping would mean
+        // "restore every database", which fails outright without a target server.
+        const { sourceAdapter } = await buildRemoteBackup(['db1'], { 'a.txt': 'AAAA' });
+        const dbAdapter = makeFakeDbAdapter();
+        const storageAdapter = makeFakeStorageAdapter();
+        wire({ 'source-fs': sourceAdapter, mysql: dbAdapter, 'local-filesystem': storageAdapter });
+
+        const result = await restoreArchiveSnapshot(makeInput({
+            scope: 'files',
+            directoryMapping: [
+                { entryId: 'src-1', targetConfigId: 'target-storage-1', targetPath: '/restore/dir', selected: true },
+            ],
+        }), { log: vi.fn(), updateDetail: vi.fn() });
+
+        expect(result.status).toBe('Success');
+        expect(result.restoredDirectories).toEqual(['src-1']);
+        expect(result.restoredDatabases).toEqual([]);
+        expect(dbAdapter.restoreOne).not.toHaveBeenCalled();
+        expect(storageAdapter.upload).toHaveBeenCalledWith(expect.anything(), expect.any(String), '/restore/dir/a.txt');
+    });
+
     it('records an error (Partial) for a directory entry with no restore target specified', async () => {
         const { sourceAdapter } = await buildRemoteBackup(['db1'], { 'a.txt': 'A' });
         const dbAdapter = makeFakeDbAdapter();

@@ -47,6 +47,8 @@ All notable changes to DBackup are documented here.
 - **restore**: Fixed restoring only directories out of a database + directory backup being blocked until a database and target server were selected.
 - **local-filesystem**: Fixed restore targets written with a leading slash (such as the suggested `/restore`) being rejected as path traversal - a leading slash means the adapter's own root, as it already did for every other adapter.
 - **restore**: Fixed the progress view getting stuck on "Downloading" for backups with directory sources, and reporting a download that never happens for them.
+- **storage**: Fixed the Storage Explorer serving listing rows cached by an older version, which left new columns and actions (backup type, restore scope choice) missing until the cache happened to expire. Outdated caches are now rebuilt on first load after an update.
+- **restore**: Fixed "Files Only" failing outright and "Databases Only" finishing as Partial when restoring from a backup that contains both. The restore request now states which half it covers, instead of the untouched half being read as "restore all of it".
 
 ### 🔒 Security
 
@@ -68,6 +70,7 @@ All notable changes to DBackup are documented here.
 - **wiki**: Added an Archive Format reference documenting the seekable archive layout, key derivation and index format byte by byte, so backups stay recoverable independently of DBackup.
 - **wiki**: Updated the Recovery Kit and Storage Explorer guides for file-level browsing and restore.
 - **wiki**: Added a Backup Modes guide covering incremental backups, chain storage, retention behaviour and when DBackup falls back to a full backup.
+- **api**: Documented the restore endpoint's new `scope` parameter, and corrected `targetSourceId` from unconditionally required to required only when the restore includes a database.
 
 ### 🧪 Tests
 

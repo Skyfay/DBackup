@@ -23,7 +23,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         checkPermissionWithContext(ctx, PERMISSIONS.STORAGE.RESTORE);
 
         const body = await req.json();
-        const { file, targetSourceId, targetDatabaseName, databaseMapping, directoryMapping, privilegedAuth } = body;
+        const { file, scope, targetSourceId, targetDatabaseName, databaseMapping, directoryMapping, privilegedAuth } = body;
 
         if (!file || typeof file !== 'string' || file.includes('..') || file.startsWith('/')) {
             return NextResponse.json({ error: "Invalid file path" }, { status: 400 });
@@ -34,6 +34,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         const result = await restoreService.restore({
             storageConfigId: params.id,
             file,
+            // Anything unrecognised restores everything, same as omitting it.
+            scope: scope === 'databases' || scope === 'files' ? scope : undefined,
             targetSourceId: targetSourceId || undefined,
             targetDatabaseName,
             databaseMapping,

@@ -54,6 +54,39 @@ export type RichFileInfo = FileInfo & {
     };
 };
 
+/**
+ * Schema version of the cached listing payload.
+ *
+ * The cache stores fully enriched rows, so a release that adds a field to `RichFileInfo`
+ * leaves every existing row without it - and reconciliation only enriches *newly seen*
+ * files, so those rows would never gain it. Bumping this version discards the payload once
+ * on first read after an upgrade and rebuilds it from the sidecars.
+ *
+ * Bump whenever `enrichSingleFile` starts writing a field the UI depends on.
+ * - 1: `combined` and `backupType` (restore scope picker, Type column)
+ */
+const CACHE_SCHEMA_VERSION = 1;
+
+interface CachedListing {
+    v: number;
+    files: RichFileInfo[];
+}
+
+/**
+ * Reads a cached listing. A bare array is a pre-versioning payload and reports version 0,
+ * which every current reader treats as a miss.
+ */
+function parseCachedListing(json: string): CachedListing {
+    const parsed = JSON.parse(json);
+    if (Array.isArray(parsed)) return { v: 0, files: parsed as RichFileInfo[] };
+    return parsed as CachedListing;
+}
+
+function serializeCachedListing(files: RichFileInfo[]): string {
+    return JSON.stringify({ v: CACHE_SCHEMA_VERSION, files } satisfies CachedListing);
+}
+
+
 // After this many hours a cached listing is considered stale and triggers background reconciliation.
 const CACHE_STALENESS_HOURS = 2;
 
@@ -135,40 +168,54 @@ export class StorageService {
         await prisma.storageListCache.deleteMany({ where: { adapterConfigId } });
     }
 
-    async appendStorageListCacheEntry(adapterConfigId: string, entry: RichFileInfo): Promise<void> {
+    /**
+     * Loads the cached listing for mutation, or null when there is nothing usable.
+     *
+     * An outdated payload is dropped rather than patched: writing an entry back would
+     * stamp it with the current version while its other rows stay unenriched.
+     */
+    private async loadCurrentCache(adapterConfigId: string): Promise<RichFileInfo[] | null> {
         const cached = await prisma.storageListCache.findUnique({ where: { adapterConfigId } });
-        if (!cached) return;
-        const files = JSON.parse(cached.filesJson) as RichFileInfo[];
+        if (!cached) return null;
+        const listing = parseCachedListing(cached.filesJson);
+        if (listing.v !== CACHE_SCHEMA_VERSION) {
+            await prisma.storageListCache.deleteMany({ where: { adapterConfigId } });
+            return null;
+        }
+        return listing.files;
+    }
+
+    async appendStorageListCacheEntry(adapterConfigId: string, entry: RichFileInfo): Promise<void> {
+        const files = await this.loadCurrentCache(adapterConfigId);
+        if (!files) return;
         if (files.some(f => f.path === entry.path)) return;
         files.push(entry);
         await prisma.storageListCache.update({
             where: { adapterConfigId },
-            data: { filesJson: JSON.stringify(files), cachedAt: new Date() },
+            data: { filesJson: serializeCachedListing(files), cachedAt: new Date() },
         });
     }
 
     async removeStorageListCacheEntry(adapterConfigId: string, filePath: string): Promise<void> {
-        const cached = await prisma.storageListCache.findUnique({ where: { adapterConfigId } });
-        if (!cached) return;
-        const files = JSON.parse(cached.filesJson) as RichFileInfo[];
+        const files = await this.loadCurrentCache(adapterConfigId);
+        if (!files) return;
         const filtered = files.filter(f => f.path !== filePath);
         if (filtered.length === files.length) return;
         await prisma.storageListCache.update({
             where: { adapterConfigId },
-            data: { filesJson: JSON.stringify(filtered), cachedAt: new Date() },
+            data: { filesJson: serializeCachedListing(filtered), cachedAt: new Date() },
         });
     }
 
     async updateStorageListCacheEntry(adapterConfigId: string, filePath: string, updates: Partial<RichFileInfo>): Promise<void> {
-        const cached = await prisma.storageListCache.findUnique({ where: { adapterConfigId } });
-        if (!cached) return;
-        const files = JSON.parse(cached.filesJson) as RichFileInfo[];
+        const files = await this.loadCurrentCache(adapterConfigId);
+        if (!files) return;
         const idx = files.findIndex(f => f.path === filePath);
         if (idx === -1) return;
         files[idx] = { ...files[idx], ...updates };
         await prisma.storageListCache.update({
             where: { adapterConfigId },
-            data: { filesJson: JSON.stringify(files), cachedAt: new Date() },
+            data: { filesJson: serializeCachedListing(files), cachedAt: new Date() },
         });
     }
 
@@ -334,7 +381,14 @@ export class StorageService {
         const cached = await prisma.storageListCache.findUnique({ where: { adapterConfigId } });
         if (!cached) return;
 
-        const cachedFiles = JSON.parse(cached.filesJson) as RichFileInfo[];
+        const cachedListing = parseCachedListing(cached.filesJson);
+        // Reconciling an outdated payload would only stamp it with the current version
+        // while leaving its rows unenriched. Drop it and let the next read rebuild.
+        if (cachedListing.v !== CACHE_SCHEMA_VERSION) {
+            await prisma.storageListCache.deleteMany({ where: { adapterConfigId } });
+            return;
+        }
+        const cachedFiles = cachedListing.files;
         const cachedPathSet = new Set(cachedFiles.map(f => f.path));
 
         const removedPaths = new Set([...cachedPathSet].filter(p => !remotePathSet.has(p)));
@@ -389,7 +443,7 @@ export class StorageService {
 
         await prisma.storageListCache.update({
             where: { adapterConfigId },
-            data: { filesJson: JSON.stringify(updatedFiles), cachedAt: new Date() },
+            data: { filesJson: serializeCachedListing(updatedFiles), cachedAt: new Date() },
         });
         log.debug("Reconciled storage cache", { adapterConfigId, removed: removedPaths.size, added: newFiles.length });
     }
@@ -403,11 +457,17 @@ export class StorageService {
         if (!bypassCache) {
             const cached = await prisma.storageListCache.findUnique({ where: { adapterConfigId } });
             if (cached) {
-                const ageHours = (Date.now() - cached.cachedAt.getTime()) / 3_600_000;
-                if (ageHours > CACHE_STALENESS_HOURS) {
-                    this.reconcileStorageListCache(adapterConfigId).catch(() => {});
+                const listing = parseCachedListing(cached.filesJson);
+                // A payload from an older release is missing fields the UI reads, and no
+                // amount of reconciling brings them back - fall through and rebuild.
+                if (listing.v === CACHE_SCHEMA_VERSION) {
+                    const ageHours = (Date.now() - cached.cachedAt.getTime()) / 3_600_000;
+                    if (ageHours > CACHE_STALENESS_HOURS) {
+                        this.reconcileStorageListCache(adapterConfigId).catch(() => {});
+                    }
+                    return this.applyTypeFilter(listing.files, typeFilter);
                 }
-                return this.applyTypeFilter(JSON.parse(cached.filesJson) as RichFileInfo[], typeFilter);
+                log.info("Discarding outdated storage listing cache", { adapterConfigId, cachedVersion: listing.v });
             }
         }
 
@@ -498,7 +558,7 @@ export class StorageService {
         const results = backups.map(file => this.enrichSingleFile(file, metadataMap, jobMap, executionMap));
 
         // Persist to cache (full list without typeFilter applied)
-        const jsonStr = JSON.stringify(results);
+        const jsonStr = serializeCachedListing(results);
         prisma.storageListCache.upsert({
             where:  { adapterConfigId },
             create: { adapterConfigId, filesJson: jsonStr },

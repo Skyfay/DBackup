@@ -2613,15 +2613,25 @@ components:
 
     RestoreRequest:
       type: object
-      required: [file, targetSourceId]
+      required: [file]
       properties:
         file:
           type: string
           description: Backup file path
           example: "backups/mydb_2025-01-15.sql.gz.enc"
+        scope:
+          type: string
+          enum: [all, databases, files]
+          default: all
+          description: >-
+            Which half of a combined (database + directory) archive to restore. Omitting
+            `databaseMapping` or `directoryMapping` means "restore all of them", so a
+            restore that should leave one half untouched has to say so here.
         targetSourceId:
           type: string
-          description: Target database adapter ID
+          description: >-
+            Target database adapter ID. Required whenever the restore includes at least one
+            database - so not for a directory-only backup, nor at `scope: files`.
         targetDatabaseName:
           type: string
           description: Override target DB name (single-DB backups)

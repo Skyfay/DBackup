@@ -1,7 +1,7 @@
 "use client";
 
 import { ColumnDef } from "@tanstack/react-table";
-import { ArrowUpDown, Clock, HardDrive, KeyRound, MousePointerClick } from "lucide-react";
+import { ArrowUpDown, Clock, FolderInput, HardDrive, KeyRound, MousePointerClick } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { Button } from "@/components/ui/button";
 import { DateDisplay } from "@/components/utils/date-display";
@@ -93,12 +93,33 @@ export const getColumns = ({ onRestore, onDownloadSnapshot, onDownload, onDelete
         cell: ({ row }) => {
             const name = row.original.sourceName;
             const type = row.original.sourceType;
-            if (!name || name === "Unknown") return <span className="text-muted-foreground">-</span>;
+            const combined = row.original.combined;
+
+            // A combined backup carries per-kind counts; a plain database backup has none, so
+            // it is treated as a single database source. The database name and the directory
+            // count are stacked (the sidecar has no directory names, only how many), which
+            // keeps every row consistent: a DB-only, a directory-only and a mixed backup all
+            // read their source the same way instead of one showing a name and another a count.
+            const dirCount = combined?.directorySources ?? 0;
+            const hasDb = type !== "directory-only" && (combined ? combined.databases > 0 : Boolean(name && name !== "Unknown"));
+
+            if (!hasDb && dirCount === 0) return <span className="text-muted-foreground">-</span>;
+
             return (
-                <div className="flex items-center gap-2 text-sm">
-                    <AdapterIcon adapterId={type ?? ""} className="h-3 w-3" />
-                    <span>{name}</span>
-                    {type && <Badge variant="outline" className="text-[10px] h-5 px-1.5">{type}</Badge>}
+                <div className="flex flex-col gap-0.5 text-sm">
+                    {hasDb && (
+                        <div className="flex items-center gap-2">
+                            <AdapterIcon adapterId={type ?? ""} className="h-3 w-3" />
+                            <span>{name}</span>
+                            {type && <Badge variant="outline" className="text-[10px] h-5 px-1.5">{type}</Badge>}
+                        </div>
+                    )}
+                    {dirCount > 0 && (
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                            <FolderInput className="h-3 w-3" />
+                            <span>{dirCount} directory source{dirCount === 1 ? "" : "s"}</span>
+                        </div>
+                    )}
                 </div>
             );
         },

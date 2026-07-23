@@ -171,6 +171,9 @@ export async function stepUpload(ctx: RunnerContext) {
         multiDb: ctx.metadata?.multiDb,
         combined: ctx.metadata?.combined,
         archive: ctx.metadata?.archive,
+        // Every backup carries a type. Only jobs with directory sources can currently
+        // produce an incremental, so everything else is a full by construction.
+        backupType: ctx.chain?.type ?? 'full',
         ...(ctx.chain && job.backupMode === "INCREMENTAL"
             ? {
                 chain: {
@@ -295,6 +298,8 @@ export async function stepUpload(ctx: RunnerContext) {
                 checksum: metadata.checksum,
                 checksumMd5: metadata.checksumMd5,
                 hasFileIndex: metadata.archive?.formatVersion === 2,
+                backupType: metadata.backupType,
+                ...(metadata.combined ? { combined: metadata.combined } : {}),
                 ...(metadata.chain ? { chain: metadata.chain } : {}),
                 ...(typeof ctx.metadata?.logicalSize === 'number' ? { logicalSize: ctx.metadata.logicalSize } : {}),
             };

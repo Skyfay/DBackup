@@ -34,7 +34,7 @@ import { toast } from "sonner";
 import { DataTable } from "@/components/ui/data-table";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { getColumns, FileInfo } from "./columns";
+import { getColumns, FileInfo, RestoreMode } from "./columns";
 import { lockBackup } from "@/app/actions/storage/lock";
 import { DownloadLinkModal } from "@/components/dashboard/storage/download-link-modal";
 import { IntegrityModal } from "@/components/dashboard/storage/integrity-modal";
@@ -223,13 +223,16 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
         await performDecryptedDownload(pendingDecryptFile, result);
     }, [pendingDecryptFile, performDecryptedDownload]);
 
-    const handleRestoreClick = useCallback((file: FileInfo) => {
+    const handleRestoreClick = useCallback((file: FileInfo, mode?: RestoreMode) => {
         if (!canRestore) {
             toast.error("Permission denied");
             return;
         }
         const encoded = btoa(JSON.stringify(file));
-        router.push(`/dashboard/storage/restore?destinationId=${encodeURIComponent(selectedDestination)}&file=${encodeURIComponent(encoded)}`);
+        // The mode is only passed for backups holding both databases and directories -
+        // everything else has exactly one thing to restore and needs no choice.
+        const modeParam = mode && mode !== "all" ? `&mode=${mode}` : "";
+        router.push(`/dashboard/storage/restore?destinationId=${encodeURIComponent(selectedDestination)}&file=${encodeURIComponent(encoded)}${modeParam}`);
     }, [canRestore, selectedDestination, router]);
 
     const handleDeleteClick = useCallback((file: FileInfo) => {

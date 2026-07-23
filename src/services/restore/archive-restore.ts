@@ -117,11 +117,12 @@ export async function restoreArchiveSnapshot(
             const targets = new Map<string, DirectoryTarget>();
             const workItems: { src: string; file: IndexFileLine }[] = [];
             const perSourceTotals = new Map<string, number>();
+            const labels = new Map(index.directories.map((d) => [d.src, d.label]));
 
             for (const dir of selectedDirs) {
                 const mappingEntry = dirMapping.find((m) => m.entryId === dir.src);
                 if (!mappingEntry?.targetConfigId) {
-                    errors.push({ entry: `directory:${dir.src}`, error: "No restore target specified" });
+                    errors.push({ entry: `directory:${dir.label}`, error: "No restore target specified" });
                     log(`Skipping directory '${dir.label}': no restore target specified`, 'warning', 'storage');
                     continue;
                 }
@@ -145,7 +146,7 @@ export async function restoreArchiveSnapshot(
                     });
                 } catch (e: unknown) {
                     const message = e instanceof Error ? e.message : String(e);
-                    errors.push({ entry: `directory:${dir.src}`, error: message });
+                    errors.push({ entry: `directory:${dir.label}`, error: message });
                     log(`Failed to resolve restore target for '${dir.label}': ${message}`, 'error', 'storage');
                     continue;
                 }
@@ -191,8 +192,8 @@ export async function restoreArchiveSnapshot(
                 } catch (e: unknown) {
                     const message = e instanceof Error ? e.message : String(e);
                     perSourceFailed.set(file.src, (perSourceFailed.get(file.src) ?? 0) + 1);
-                    errors.push({ entry: `file:${file.src}/${file.p}`, error: message });
-                    log(`Failed to restore '${file.p}': ${message}`, 'error', 'storage');
+                    errors.push({ entry: `${labels.get(file.src) ?? file.src}/${file.p}`, error: message });
+                    log(`Failed to restore '${file.p}' to ${target.label}: ${message}`, 'error', 'storage');
                 } finally {
                     await fs.unlink(stagePath).catch(() => { });
                 }

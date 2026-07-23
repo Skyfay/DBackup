@@ -29,6 +29,7 @@ import { RedisRestoreWizard } from "@/components/dashboard/storage/redis-restore
 import { ArchiveFileTree, ArchiveTreeSelection } from "@/components/dashboard/storage/archive-file-tree";
 import { FolderPickerDialog } from "@/components/dashboard/storage/folder-picker-dialog";
 import { computeRestoreValidity } from "./restore-validation";
+import { parseRestoreScope } from "@/components/dashboard/storage/restore-scope";
 
 interface DatabaseInfo {
     name: string;
@@ -107,6 +108,12 @@ export function RestoreClient() {
 
     const destinationId = searchParams.get("destinationId") || "";
 
+    // Restore scope, chosen in the Storage Explorer for backups that hold both databases
+    // and directory sources. Absent (or "all") means everything, which is also what every
+    // single-kind backup and every older deep link resolves to. Named "scope" rather than
+    // "mode" because `restoreMode` below already means overwrite-vs-rename.
+    const { wantsDatabases, wantsFiles } = parseRestoreScope(searchParams.get("mode"));
+
     // Sources fetched client-side
     const [sources, setSources] = useState<AdapterConfig[]>([]);
 
@@ -161,8 +168,10 @@ export function RestoreClient() {
     // with a neutral "Unverified" indicator for this adapter.
     const isFirebird = resolvedSourceType.toLowerCase() === 'firebird';
     // Combined (manifest v2) archive with no database source at all - the "Target Database"
-    // section is meaningless for these and is hidden entirely.
-    const isDirectoryOnly = resolvedSourceType.toLowerCase() === 'directory-only';
+    // section is meaningless for these and is hidden entirely. A files-only scope is
+    // treated the same way: the archive does contain databases, but this restore does not
+    // touch them, so the section would only offer choices with no effect.
+    const isDirectoryOnly = resolvedSourceType.toLowerCase() === 'directory-only' || !wantsDatabases;
     const hasDirectories = directories.length > 0;
 
     // Restore validity - the rules live in restore-validation.ts so they are testable.
@@ -333,7 +342,7 @@ export function RestoreClient() {
                 if (data.sourceType) {
                     setBackupSourceType(data.sourceType);
                 }
-                if (data.databases && data.databases.length > 0) {
+                if (wantsDatabases && data.databases && data.databases.length > 0) {
                     setAnalyzedDbs(data.databases);
                     setDbConfig(data.databases.map((db: string) => ({
                         id: db,
@@ -342,7 +351,7 @@ export function RestoreClient() {
                         selected: true
                     })));
                 }
-                if (data.directories && data.directories.length > 0) {
+                if (wantsFiles && data.directories && data.directories.length > 0) {
                     setDirectories(data.directories);
                     setDirConfig(data.directories.map((d: DirectoryAnalysis) => ({
                         entryId: d.jobSourceId,
@@ -362,7 +371,7 @@ export function RestoreClient() {
         } finally {
             setIsAnalyzing(false);
         }
-    }, [destinationId]);
+    }, [destinationId, wantsDatabases, wantsFiles]);
 
     // Analyze backup on mount
     useEffect(() => {
@@ -716,6 +725,13 @@ export function RestoreClient() {
                                         )}
                                         {file.isEncrypted && (
                                             <Badge variant="outline" className="text-xs">Encrypted</Badge>
+                                        )}
+                                        {/* Only shown for a narrowed scope, so it is clear why one half of a
+                                            combined backup is missing from the page. */}
+                                        {(!wantsDatabases || !wantsFiles) && (
+                                            <Badge variant="outline" className="text-xs">
+                                                {wantsDatabases ? "Databases only" : "Files only"}
+                                            </Badge>
                                         )}
                                     </div>
                                 </div>

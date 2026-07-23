@@ -1,15 +1,16 @@
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Download, RotateCcw, Trash2, Lock, FileLock2, FileCheck, Terminal, ShieldCheck, ShieldX, Shield, PackageOpen } from "lucide-react";
+import { Download, RotateCcw, Trash2, Lock, FileLock2, FileCheck, Terminal, ShieldCheck, ShieldX, Shield, PackageOpen, Database, FolderInput, Layers } from "lucide-react";
 import { FileInfo } from "@/app/dashboard/storage/columns";
+import { needsRestoreScopeChoice, type RestoreMode } from "@/components/dashboard/storage/restore-scope";
 
 const ARCHIVED_STORAGE_CLASSES = ["GLACIER", "DEEP_ARCHIVE"];
 
 interface ActionsCellProps {
     file: FileInfo;
     onDownload: (file: FileInfo, decrypt?: boolean) => void;
-    onRestore: (file: FileInfo) => void;
+    onRestore: (file: FileInfo, mode?: RestoreMode) => void;
     /** Materialises a complete snapshot out of its incremental chain. */
     onDownloadSnapshot?: (file: FileInfo) => void;
     onDelete: (file: FileInfo) => void;
@@ -35,6 +36,8 @@ export function ActionsCell({
     canDelete
 }: ActionsCellProps) {
     const isArchived = ARCHIVED_STORAGE_CLASSES.includes(file.storageClass ?? "");
+    // Only a backup that actually contains both kinds needs the restore scope picker.
+    const hasBothKinds = needsRestoreScopeChoice(file.combined);
     const archivedTooltip = "This backup is archived in S3 Glacier or Deep Archive. Restore it via the AWS Console first (S3 - select object - Actions - Initiate restore).";
 
     const verifyIcon = file.verification
@@ -203,6 +206,39 @@ export function ActionsCell({
                             <TooltipContent className="max-w-xs">{archivedTooltip}</TooltipContent>
                         </Tooltip>
                     </TooltipProvider>
+                ) : hasBothKinds ? (
+                    // The backup holds databases *and* directory sources, so ask what to
+                    // restore up front instead of opening a page with both halves and
+                    // making the user deselect one.
+                    <DropdownMenu>
+                        <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <DropdownMenuTrigger asChild>
+                                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                                            <RotateCcw className="h-4 w-4" />
+                                        </Button>
+                                    </DropdownMenuTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent>Restore Options</TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
+                        <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => onRestore(file, "all")}>
+                                <Layers className="mr-2 h-4 w-4" />
+                                <span>Restore Everything</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => onRestore(file, "databases")}>
+                                <Database className="mr-2 h-4 w-4" />
+                                <span>Databases Only</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => onRestore(file, "files")}>
+                                <FolderInput className="mr-2 h-4 w-4" />
+                                <span>Files Only</span>
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                 ) : (
                     <TooltipProvider>
                         <Tooltip>

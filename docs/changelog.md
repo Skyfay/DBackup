@@ -33,6 +33,7 @@ All notable changes to DBackup are documented here.
 - **storage**: The Storage Explorer now shows incremental snapshots with their complete size and a Full/Incremental badge, and offers a download that assembles the complete snapshot out of its chain.
 - **restore**: The restore page now shows a file tree per directory source, so a restore can cover everything, single folders or individual files - with a per-selection size summary and a `.tar.gz` download option.
 - **restore**: Directory restore targets can now be picked with a folder browser, and a one-click "Use original location" fills in where the files were originally collected from.
+- **restore**: Clicking Restore on a backup that contains both databases and directory sources now offers a choice between restoring everything, only the databases or only the files, instead of always opening the page with both halves.
 
 ### 🐛 Bug Fixes
 
@@ -44,15 +45,19 @@ All notable changes to DBackup are documented here.
 - **storage**: Deleting a backup now removes every sidecar belonging to it, instead of leaving orphaned index files behind.
 - **retention**: Incremental chains are now retained and deleted as a unit, so a snapshot can never lose the archives it depends on.
 - **restore**: Fixed restoring only directories out of a database + directory backup being blocked until a database and target server were selected.
+- **local-filesystem**: Fixed restore targets written with a leading slash (such as the suggested `/restore`) being rejected as path traversal - a leading slash means the adapter's own root, as it already did for every other adapter.
+- **restore**: Fixed the progress view getting stuck on "Downloading" for backups with directory sources, and reporting a download that never happens for them.
 
 ### 🔒 Security
 
 - **backup**: File paths, database names and content checksums no longer appear in cleartext anywhere in an encrypted combined backup, including its archive member names and index sidecar.
+- **local-filesystem**: Tightened the path containment check, which accepted a sibling directory whose name merely started with the configured base path.
 
 ### 🎨 Improvements
 
 - **storage**: The Storage Explorer's backup count badge now reflects combined database + directory archives (e.g. "2 DBs + 2 Dirs") instead of a misleading database-only count.
 - **restore**: Restoring from a seekable archive no longer downloads the whole backup - only the selected databases and files are transferred on destinations that support byte ranges.
+- **storage**: Every backup now records whether it is full or incremental, so the Storage Explorer's Type column is filled for database-only backups too instead of showing a dash.
 
 ### 🗑️ Removed
 
@@ -63,6 +68,10 @@ All notable changes to DBackup are documented here.
 - **wiki**: Added an Archive Format reference documenting the seekable archive layout, key derivation and index format byte by byte, so backups stay recoverable independently of DBackup.
 - **wiki**: Updated the Recovery Kit and Storage Explorer guides for file-level browsing and restore.
 - **wiki**: Added a Backup Modes guide covering incremental backups, chain storage, retention behaviour and when DBackup falls back to a full backup.
+
+### 🧪 Tests
+
+- **restore**: Added unit tests for the restore scope rules - when a combined backup asks what to restore, and how the restore page interprets the resulting parameter.
 
 ### 🐳 Docker
 

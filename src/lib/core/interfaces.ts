@@ -79,6 +79,14 @@ export interface BackupMetadata {
         files?: number;
     };
     /**
+     * Whether this backup stores everything or only what changed.
+     *
+     * Written for **every** backup, including database-only ones that have no notion of
+     * chains yet, so the Storage Explorer can label them uniformly and a future
+     * incremental database mode does not need a second signal.
+     */
+    backupType?: 'full' | 'incremental';
+    /**
      * Incremental chain membership. Absent on a standalone full backup.
      *
      * Duplicated from the archive's own manifest so retention can group backups into

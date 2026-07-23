@@ -36,6 +36,10 @@ export type RichFileInfo = FileInfo & {
     checksumMd5?: string;
     /** True for seekable (v2) archives, which carry a file index and can be browsed and restored file by file. */
     hasFileIndex?: boolean;
+    /** Whether the backup stores everything or only what changed. Set for every backup with metadata. */
+    backupType?: 'full' | 'incremental';
+    /** What the backup actually contains - drives the restore mode picker. */
+    combined?: { databases: number; directorySources: number };
     /** Incremental chain membership. Absent on standalone full backups. */
     chain?: { id: string; type: 'full' | 'incremental'; index: number };
     /**
@@ -226,6 +230,10 @@ export class StorageService {
                 checksum: sidecar.checksum,
                 checksumMd5: sidecar.checksumMd5,
                 hasFileIndex: sidecar.archive?.formatVersion === 2,
+                // Backups written before this field existed are full by construction -
+                // incremental mode did not exist yet.
+                backupType: sidecar.backupType ?? sidecar.chain?.type ?? 'full',
+                ...(sidecar.combined ? { combined: sidecar.combined } : {}),
                 ...(sidecar.chain ? { chain: sidecar.chain } : {}),
                 ...(typeof sidecar.logicalSize === 'number' ? { logicalSize: sidecar.logicalSize } : {}),
                 verification: sidecar.verification ? {

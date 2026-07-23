@@ -16,12 +16,29 @@ import { wrapError, AdapterError } from "@/lib/logging/errors";
 
 const log = logger.child({ adapter: "local-filesystem" });
 
-// Helper to prevent path traversal
+/**
+ * Resolves a remote path against the adapter's configured root, refusing anything that
+ * escapes it.
+ *
+ * Every remote path in DBackup is relative to the adapter's own root, so a leading slash
+ * means "the root of this adapter", never the root of the host filesystem. It has to be
+ * stripped before resolving: `path.resolve(base, "/restore")` yields `/restore`, because an
+ * absolute second argument discards the base entirely - which would reject perfectly
+ * ordinary target paths like `/restore` that the UI itself suggests. Every other adapter
+ * already behaves this way by using `path.posix.join()`.
+ *
+ * Stripping is safe: the containment check below still runs on the resolved result, so
+ * `/../etc/passwd` and `/restore/../../etc/passwd` are both still rejected.
+ */
 function resolveSafePath(basePath: string, relativePath: string): string {
     const resolvedBase = path.resolve(basePath);
-    const resolvedTarget = path.resolve(resolvedBase, relativePath);
+    const relativeToRoot = relativePath.replace(/^[/\\]+/, "");
+    const resolvedTarget = path.resolve(resolvedBase, relativeToRoot);
 
-    if (!resolvedTarget.startsWith(resolvedBase)) {
+    // Compared against `base + separator`, not the bare base: a plain prefix check would
+    // accept a sibling directory whose name merely starts with the base name (base
+    // "/srv/data" would let "/srv/dataEVIL/secret" through).
+    if (resolvedTarget !== resolvedBase && !resolvedTarget.startsWith(resolvedBase + path.sep)) {
         throw new AdapterError("local-filesystem", "path-validation", `Access denied: Illegal path traversal detected. Base: ${resolvedBase}, Target: ${resolvedTarget}`);
     }
     return resolvedTarget;

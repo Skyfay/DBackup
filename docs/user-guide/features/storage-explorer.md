@@ -93,7 +93,8 @@ Click on a file to see:
 
 Jobs using [incremental backups](/user-guide/features/backup-modes) produce one row per
 snapshot, each a complete restorable point in time. A **Type** column marks them Full or
-Incremental.
+Incremental. Every backup carries this marker, so database-only backups show **Full** there
+rather than a blank cell. Backups written before this column existed also show Full.
 
 The size column shows the **complete snapshot size**, not just what that archive stores -
 hover it to see the stored size. An incremental archive holding 2 GB can represent a 60 GB
@@ -111,6 +112,18 @@ directory sources it shows a file tree per source, so you can restore everything
 default), a folder, or individual files - see [Restore](/user-guide/features/restore) for
 the full flow, including restoring back to the original location and downloading a
 selection as `.tar.gz`.
+
+If the backup contains **both** databases and directory sources, the action opens a short
+menu first:
+
+| Choice | Opens |
+| :--- | :--- |
+| **Restore Everything** | Both halves, databases and files |
+| **Databases Only** | The database section, files hidden |
+| **Files Only** | The file trees, no database target needed |
+
+Backups with only one kind of content skip the menu and open their restore page directly.
+The choice only narrows what the page offers - you can always go back and pick again.
 
 Listing the backup's contents reads only a small index file stored next to it, so browsing
 a 100 GB backup transfers a few megabytes rather than the whole thing. Destinations that
@@ -188,9 +201,10 @@ Enable post-upload verification for all new backups in **Settings → System →
 ### Restore
 
 1. Click **Restore** button
-2. Select target database source
-3. Configure options (see [Restore](/user-guide/features/restore))
-4. Confirm and monitor progress
+2. For a backup containing databases and directory sources, pick what to restore
+3. Select target database source, restore targets for directory sources, or both
+4. Configure options (see [Restore](/user-guide/features/restore))
+5. Confirm and monitor progress
 
 ::: warning Glacier / Deep Archive
 Backups stored in S3 `GLACIER` or `DEEP_ARCHIVE` show an orange badge and have **Restore** and **Download** disabled. Restore the object via the AWS Console first, then retry from here.

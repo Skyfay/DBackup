@@ -9,6 +9,10 @@ import { formatBytes } from "@/lib/utils";
 import { NameCell } from "@/components/dashboard/storage/cells/name-cell";
 import { ActionsCell } from "@/components/dashboard/storage/cells/actions-cell";
 import { Badge } from "@/components/ui/badge";
+import type { RestoreMode } from "@/components/dashboard/storage/restore-scope";
+
+// Re-exported so the explorer's call sites keep importing their types from one place.
+export type { RestoreMode };
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 // This type is used to define the shape of our data.
@@ -33,6 +37,10 @@ export type FileInfo = {
     checksumMd5?: string;
     /** True for backups that carry a file index, so individual files can be browsed and restored. */
     hasFileIndex?: boolean;
+    /** Whether the backup stores everything or only what changed. */
+    backupType?: 'full' | 'incremental';
+    /** What the backup contains - drives which restore modes are offered. */
+    combined?: { databases: number; directorySources: number };
     /** Incremental chain membership. Absent on standalone full backups. */
     chain?: { id: string; type: 'full' | 'incremental'; index: number };
     /** Complete snapshot size, which for an incremental exceeds the archive's own size. */
@@ -45,7 +53,7 @@ export type FileInfo = {
 };
 
 interface ColumnsProps {
-    onRestore: (file: FileInfo) => void;
+    onRestore: (file: FileInfo, mode?: RestoreMode) => void;
     onDownloadSnapshot: (file: FileInfo) => void;
     onDownload: (file: FileInfo, decrypt?: boolean) => void;
     onDelete: (file: FileInfo) => void;
@@ -241,10 +249,13 @@ export const getColumns = ({ onRestore, onDownloadSnapshot, onDownload, onDelete
         id: "backupType",
         header: "Type",
         cell: ({ row }) => {
+            // Every backup with metadata has a type; only ones from an incremental job
+            // also carry chain details worth explaining in a tooltip.
+            const backupType = row.original.backupType;
             const chain = row.original.chain;
-            if (!chain) return <span className="text-muted-foreground text-xs">-</span>;
+            if (!backupType) return <span className="text-muted-foreground text-xs">-</span>;
 
-            return chain.type === "full" ? (
+            return backupType === "full" ? (
                 <Badge variant="outline" className="text-[10px] h-5 px-1.5 border-emerald-200 text-emerald-700 dark:text-emerald-400 dark:border-emerald-900">
                     Full
                 </Badge>
@@ -257,8 +268,9 @@ export const getColumns = ({ onRestore, onDownloadSnapshot, onDownload, onDelete
                             </Badge>
                         </TooltipTrigger>
                         <TooltipContent>
-                            Position {chain.index} in its backup chain. Restoring it reads from the earlier
-                            archives in the same folder as well.
+                            {chain
+                                ? `Position ${chain.index} in its backup chain. Restoring it reads from the earlier archives in the same folder as well.`
+                                : "Stores only what changed since the previous backup."}
                         </TooltipContent>
                     </Tooltip>
                 </TooltipProvider>

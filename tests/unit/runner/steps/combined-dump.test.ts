@@ -183,6 +183,37 @@ describe('executeCombinedDump', () => {
         });
     });
 
+    /** The pipeline stages set during the dump, in order. */
+    const stagesSet = (ctx: RunnerContext) =>
+        (ctx.setStage as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
+
+    it('shows both a database and a file phase for a combined backup', async () => {
+        const ctx = makeCtx({
+            sourceAdapter: makeFakeDbAdapter(),
+            sources: [makeDirectorySource({ adapter: makeFakeStorageAdapter({ 'a.txt': 'AAAA' }) })],
+            job: makeJob({ databases: JSON.stringify(['db1']) }),
+        });
+
+        await executeCombinedDump(ctx);
+        createdTempFiles.push(ctx.tempFile!);
+
+        expect(stagesSet(ctx)).toEqual(['Dumping Databases', 'Collecting Files']);
+    });
+
+    it('shows only the file phase for a directory-only backup', async () => {
+        const ctx = makeCtx({
+            sourceAdapter: undefined,
+            sources: [makeDirectorySource({ adapter: makeFakeStorageAdapter({ 'a.txt': 'AAAA' }) })],
+            job: makeJob({ source: null }),
+        });
+
+        await executeCombinedDump(ctx);
+        createdTempFiles.push(ctx.tempFile!);
+
+        // Never "Dumping Databases" - the complaint that started this.
+        expect(stagesSet(ctx)).toEqual(['Collecting Files']);
+    });
+
     it('combines multiple database dumps and a directory source into one v2 archive', async () => {
         const dbAdapter = makeFakeDbAdapter();
         const dirSource = makeDirectorySource({

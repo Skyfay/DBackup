@@ -11,6 +11,7 @@ import { formatBytes } from "@/lib/utils";
 import prisma from "@/lib/prisma";
 import { applyNamingPattern } from "@/lib/templates/naming-template-engine";
 import { executeCombinedDump } from "./combined-dump";
+import { PIPELINE_STAGES } from "@/lib/core/logs";
 
 const log = logger.child({ step: "02-dump" });
 
@@ -32,6 +33,8 @@ export async function stepExecuteDump(ctx: RunnerContext) {
     const job = ctx.job;
     const sourceAdapter = ctx.sourceAdapter;
 
+    // Single-adapter path is always a database dump, so the label is accurate here.
+    ctx.setStage(PIPELINE_STAGES.DUMPING);
     ctx.log(`Starting Dump from ${job.source!.name} (${job.source!.type})...`);
 
     // 1. Prepare Settings (timezone and filename pattern)

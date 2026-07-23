@@ -17,7 +17,8 @@ export interface LogEntry {
 export const PIPELINE_STAGES = {
   QUEUED: "Queued",
   INITIALIZING: "Initializing",
-  DUMPING: "Dumping Database",
+  DUMPING: "Dumping Databases",
+  COLLECTING: "Collecting Files",
   PROCESSING: "Processing",
   UPLOADING: "Uploading",
   VERIFYING: "Verifying",
@@ -48,6 +49,7 @@ export const BACKUP_STAGE_ORDER: string[] = [
   PIPELINE_STAGES.QUEUED,
   PIPELINE_STAGES.INITIALIZING,
   PIPELINE_STAGES.DUMPING,
+  PIPELINE_STAGES.COLLECTING,
   PIPELINE_STAGES.PROCESSING,
   PIPELINE_STAGES.UPLOADING,
   PIPELINE_STAGES.VERIFYING,
@@ -105,7 +107,8 @@ export const STAGE_ORDER: PipelineStage[] = BACKUP_STAGE_ORDER as PipelineStage[
 export const STAGE_PROGRESS_MAP: Record<PipelineStage, [number, number]> = {
   [PIPELINE_STAGES.QUEUED]:          [0, 0],
   [PIPELINE_STAGES.INITIALIZING]:   [0, 5],
-  [PIPELINE_STAGES.DUMPING]:        [5, 45],
+  [PIPELINE_STAGES.DUMPING]:        [5, 25],
+  [PIPELINE_STAGES.COLLECTING]:     [25, 45],
   [PIPELINE_STAGES.PROCESSING]:     [45, 65],
   [PIPELINE_STAGES.UPLOADING]:      [65, 88],
   [PIPELINE_STAGES.VERIFYING]:      [88, 92],

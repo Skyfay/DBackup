@@ -121,6 +121,8 @@ describe('stepExecuteDump', () => {
         expect(ctx.dumpSize).toBe(2048);
         expect(ctx.metadata).toBeDefined();
         expect(ctx.metadata.engineVersion).toBe('8.0.32');
+        // A database-only backup keeps the accurate "Dumping Databases" stage.
+        expect((ctx.setStage as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0])).toContain('Dumping Databases');
     });
 
     it('sets metadata label to "1 DBs" for a single database in array form', async () => {

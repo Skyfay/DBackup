@@ -15,6 +15,7 @@ import { formatBytes } from "@/lib/utils";
 import { calculateFileChecksum } from "@/lib/crypto/checksum";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
+import { PIPELINE_STAGES } from "@/lib/core/logs";
 
 const log = logger.child({ step: "combined-dump" });
 
@@ -129,12 +130,14 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
             }
         }
 
-        const totalUnits = dbNames.length + ctx.sources.length;
-        let completedUnits = 0;
-        const setOverallProgress = (fractionalUnitsDone: number) => {
-            if (totalUnits === 0) return;
-            const percent = Math.round((fractionalUnitsDone / totalUnits) * 100);
-            ctx.updateStageProgress(Math.min(100, Math.max(0, percent)));
+        // Two visible phases, so a file-only backup never reports "Dumping Databases" and a
+        // db-only one never reports "Collecting Files". Each phase's progress is relative to
+        // its own work, filling its stage bar independently.
+        const dbTotal = dbNames.length;
+        const dirTotal = ctx.sources.length;
+        const setPhaseProgress = (done: number, total: number) => {
+            if (total === 0) return;
+            ctx.updateStageProgress(Math.min(100, Math.max(0, Math.round((done / total) * 100))));
         };
 
         // Postgres applies its own native compression (pg_dump -Z) unless explicitly disabled via
@@ -145,6 +148,8 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
             : false;
 
         // ── Database dumps (one per selected database - Multi-DB fully supported) ──
+        if (dbTotal > 0) ctx.setStage(PIPELINE_STAGES.DUMPING);
+        let dbDone = 0;
         for (const dbName of dbNames) {
             const format = DB_FORMAT_BY_ADAPTER[job.source!.adapterId] ?? "sql";
             const dest = path.join(workDir, "databases", `${dbName}.${format}`);
@@ -155,12 +160,15 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
             await ctx.sourceAdapter!.dumpOne!(dumpConfigWithVersion, dbName, dest, (msg, level, type, details) => ctx.log(msg, level, type, details));
 
             entries.push({ kind: "database", dbName, path: dest, format, nativeCompression: nativeCompressionActive });
-            completedUnits++;
-            setOverallProgress(completedUnits);
+            dbDone++;
+            setPhaseProgress(dbDone, dbTotal);
             ctx.log(`Completed dump for: ${dbName}`, 'success');
         }
 
         // ── Directory sources (each entirely independent - order doesn't matter) ──
+        // ── Directory sources (each entirely independent - order doesn't matter) ──
+        if (dirTotal > 0) ctx.setStage(PIPELINE_STAGES.COLLECTING);
+        let dirDone = 0;
         for (const source of ctx.sources) {
             const displayPath = source.remotePath || "/";
             const label = `${source.configName}: ${displayPath}`;
@@ -168,7 +176,7 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
             ctx.log(`${logPrefix} Starting collection...`, 'info', 'storage');
 
             const localDir = path.join(workDir, "sources", source.jobSourceId);
-            const unitBase = completedUnits;
+            const unitBase = dirDone;
 
             // A snapshot, when the source is configured for one. Everything below reads
             // through `readConfig`, which is either the plain config or the one overlaid
@@ -209,7 +217,7 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
                     const localFraction = totalBytes > 0
                         ? processedBytes / totalBytes
                         : (totalFiles > 0 ? processedFiles / totalFiles : 0);
-                    setOverallProgress(unitBase + localFraction);
+                    setPhaseProgress(unitBase + localFraction, dirTotal);
                     ctx.updateDetail(`${label}: ${processedFiles}/${totalFiles} files, ${formatBytes(processedBytes)}/${formatBytes(totalBytes)}`);
                 },
                 (msg, level, type, details) => ctx.log(`${logPrefix} ${msg}`, level, type ?? 'storage', details),
@@ -280,8 +288,8 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
                 files: fileIndex,
             });
 
-            completedUnits++;
-            setOverallProgress(completedUnits);
+            dirDone++;
+            setPhaseProgress(dirDone, dirTotal);
             ctx.log(`${logPrefix} Collected ${result.files} file(s), ${formatBytes(result.bytes)}`, 'success', 'storage');
         }
 

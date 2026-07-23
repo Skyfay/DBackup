@@ -27,6 +27,8 @@ const fs = require("fs");
 const path = require("path");
 const zlib = require("zlib");
 const crypto = require("crypto");
+const stream = require("stream");
+const { pipeline } = require("stream/promises");
 
 // ── Format constants (see the spec document) ──────────────────────────────
 const TAR_BLOCK = 512;
@@ -193,6 +195,9 @@ function readAt(fd, offset, size) {
 
 function openArchive(archivePath, hexKey) {
     const fd = fs.openSync(archivePath, "r");
+    // Kept so entries can be opened as a stream: a multi-GB file must never be held in
+    // memory in one piece, which is what a recovery tool is most likely to meet.
+    const filePath = archivePath;
     const fileSize = fs.statSync(archivePath).size;
 
     const members = walkMembers(fd, fileSize);
@@ -251,7 +256,7 @@ function openArchive(archivePath, hexKey) {
         else if (parsed.k === "f") index.files.push(parsed);
     }
 
-    return { fd, manifest, index, keys, chain: new Map() };
+    return { fd, filePath, manifest, index, keys, chain: new Map() };
 }
 
 /** Addresses an entry across a chain. Ordinals repeat between archives. */
@@ -282,22 +287,139 @@ function openChain(archivePath, index, hexKey) {
     return { chain, missing };
 }
 
-/** Returns the plaintext bytes of one physical entry, from this archive or a chain sibling. */
+/**
+ * Returns the plaintext bytes of one physical entry, from this archive or a chain sibling.
+ *
+ * Buffers the entry whole, so it is only used for bundles - a few MB at most. Anything
+ * that can be arbitrarily large goes through streamEntryToFile instead.
+ */
 function readEntry(archive, ordinal, fromArchive) {
-    const target = fromArchive ? archive.chain.get(fromArchive) : archive;
-    if (!target) {
-        throw new Error(`Archive '${fromArchive}' is part of this backup's chain but is not in this folder`);
-    }
-
-    const entry = target.index.entries.get(entryKey(undefined, ordinal))
-        ?? archive.index.entries.get(entryKey(fromArchive, ordinal));
-    if (!entry) throw new Error(`Index references missing entry ${ordinal}`);
+    const { target, entry } = resolveEntry(archive, ordinal, fromArchive);
 
     let payload = readAt(target.fd, entry.off, entry.size);
     if (entry.sealed) {
         payload = openEntry(payload, target.keys.dataKey, target.manifest.encryption.noncePrefix, entry.n);
     }
     return decompress(payload, entry.comp);
+}
+
+
+/**
+ * Transform that unseals an entry as it flows past, instead of buffering it whole.
+ *
+ * The authentication tag is the last 16 bytes of the entry, so the final chunk cannot be
+ * deciphered until the stream ends. Everything before it is passed through as it arrives,
+ * and `final()` at the end is what proves the data was not tampered with.
+ */
+function createUnsealStream(key, noncePrefixHex, ordinal) {
+    const decipher = crypto.createDecipheriv("aes-256-gcm", key, buildNonce(noncePrefixHex, ordinal));
+    let tail = Buffer.alloc(0);
+
+    return new stream.Transform({
+        transform(chunk, _encoding, callback) {
+            const buffered = tail.length > 0 ? Buffer.concat([tail, chunk]) : chunk;
+
+            if (buffered.length <= TAG_LENGTH) {
+                tail = Buffer.from(buffered);
+                callback();
+                return;
+            }
+
+            const splitAt = buffered.length - TAG_LENGTH;
+            tail = Buffer.from(buffered.subarray(splitAt));
+            try {
+                callback(null, decipher.update(buffered.subarray(0, splitAt)));
+            } catch {
+                callback(new Error(`Failed to decrypt entry ${ordinal}`));
+            }
+        },
+        flush(callback) {
+            if (tail.length !== TAG_LENGTH) {
+                callback(new Error(`Entry ${ordinal} is truncated`));
+                return;
+            }
+            try {
+                decipher.setAuthTag(tail);
+                this.push(decipher.final());
+                callback();
+            } catch {
+                callback(new Error(
+                    `Authentication failed for entry ${ordinal}. Either the key is wrong or the archive is damaged.`
+                ));
+            }
+        },
+    });
+}
+
+function createDecompressStream(kind) {
+    if (!kind) return null;
+    if (kind === "GZIP") return zlib.createGunzip();
+    if (kind === "BROTLI") return zlib.createBrotliDecompress();
+    throw new Error(`Unsupported compression: ${kind}`);
+}
+
+/**
+ * Writes one entry straight to disk, in constant memory.
+ *
+ * Written to a temporary file and renamed only once the stream has finished, so the
+ * verify-before-visible property of the buffered path survives: AES-GCM only authenticates
+ * at the end, and a half-written file that failed its tag must never be mistaken for a
+ * restored one.
+ */
+async function streamEntryToFile(target, entry, targetPath, expectedChecksum) {
+    const partial = `${targetPath}.partial`;
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+
+    const hash = crypto.createHash("sha256");
+    const stages = [fs.createReadStream(target.filePath, { start: entry.off, end: entry.off + entry.size - 1 })];
+
+    if (entry.sealed) {
+        stages.push(createUnsealStream(target.keys.dataKey, target.manifest.encryption.noncePrefix, entry.n));
+    }
+    const decompress = createDecompressStream(entry.comp);
+    if (decompress) stages.push(decompress);
+
+    stages.push(new stream.Transform({
+        transform(chunk, _encoding, callback) {
+            hash.update(chunk);
+            callback(null, chunk);
+        },
+    }));
+    stages.push(fs.createWriteStream(partial));
+
+    try {
+        await pipeline(stages);
+    } catch (error) {
+        fs.rmSync(partial, { force: true });
+        throw error;
+    }
+
+    const actual = hash.digest("hex");
+    if (expectedChecksum && actual !== expectedChecksum) {
+        fs.rmSync(partial, { force: true });
+        return { ok: false, actual };
+    }
+
+    fs.renameSync(partial, targetPath);
+    return { ok: true, actual };
+}
+
+
+/**
+ * Resolves the archive an ordinal lives in - this one, or a sibling of its chain.
+ *
+ * Ordinals restart at 1 in every archive, so an entry carried forward from an earlier
+ * snapshot is only addressable together with the archive it came from.
+ */
+function resolveEntry(archive, ordinal, fromArchive) {
+    const target = fromArchive ? archive.chain.get(fromArchive) : archive;
+    if (!target) {
+        throw new Error(`Archive '${fromArchive}' is part of this backup's chain but is not in this folder`);
+    }
+    const entry = target.index.entries.get(entryKey(undefined, ordinal))
+        ?? archive.index.entries.get(entryKey(fromArchive, ordinal));
+    if (!entry) throw new Error(`Index references missing entry ${ordinal}`);
+    return { target, entry };
 }
 
 /** Returns the plaintext bytes of one logical file, slicing it out of a bundle if needed. */
@@ -392,7 +514,7 @@ function commandList(archivePath, hexKey) {
     }
 }
 
-function commandExtract(archivePath, outputDir, hexKey, patterns) {
+async function commandExtract(archivePath, outputDir, hexKey, patterns) {
     const archive = openArchive(archivePath, hexKey);
     try {
         // Resolved before anything is written, so a broken chain is reported by name up
@@ -412,8 +534,8 @@ function commandExtract(archivePath, outputDir, hexKey, patterns) {
         for (const db of archive.index.databases) {
             if (patterns.length > 0 && !matchesAny(`databases/${db.name}`, patterns)) continue;
             const target = path.join(outputDir, "databases", `${db.name}.${db.format === "custom" ? "dump" : db.format}`);
-            fs.mkdirSync(path.dirname(target), { recursive: true });
-            fs.writeFileSync(target, readEntry(archive, db.n));
+            const resolved = resolveEntry(archive, db.n, undefined);
+            await streamEntryToFile(resolved.target, resolved.entry, target, undefined);
             console.log(`database  ${db.name} -> ${target}`);
             extracted++;
         }
@@ -429,17 +551,28 @@ function commandExtract(archivePath, outputDir, hexKey, patterns) {
                 continue;
             }
 
-            const content = readFile(archive, file);
-            if (file.h) {
-                const actual = crypto.createHash("sha256").update(content).digest("hex");
-                if (actual !== file.h) {
+            const resolved = resolveEntry(archive, file.n, file.a);
+
+            if (resolved.entry.bundle) {
+                // A bundle holds many small files (64 KB each at most) and is sliced by
+                // offset, so random access needs it in memory - a few MB at worst.
+                const content = readFile(archive, file);
+                if (file.h && crypto.createHash("sha256").update(content).digest("hex") !== file.h) {
                     console.error(`CHECKSUM MISMATCH: ${file.p}`);
                     mismatches++;
                 }
+                fs.mkdirSync(path.dirname(target), { recursive: true });
+                fs.writeFileSync(target, content);
+            } else {
+                // Everything else streams: a single file here can be tens of gigabytes,
+                // and a recovery tool that needs as much RAM as the file is no use.
+                const result = await streamEntryToFile(resolved.target, resolved.entry, target, file.h);
+                if (!result.ok) {
+                    console.error(`CHECKSUM MISMATCH: ${file.p} (not written)`);
+                    mismatches++;
+                    continue;
+                }
             }
-
-            fs.mkdirSync(path.dirname(target), { recursive: true });
-            fs.writeFileSync(target, content);
             extracted++;
         }
 
@@ -473,7 +606,7 @@ Incremental backups are stored as a chain in one folder. Point this tool at the 
 you want and keep the other archives in the same folder - it resolves them itself.`);
 }
 
-function main() {
+async function main() {
     const args = process.argv.slice(2);
     if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
         usage();
@@ -493,7 +626,7 @@ function main() {
             if (!args[1] || !args[2]) throw new Error("Missing archive path or output directory");
             const rest = args.slice(3);
             const hexKey = isHexKey(rest[0]) ? rest.shift() : undefined;
-            commandExtract(args[1], args[2], hexKey, rest);
+            await commandExtract(args[1], args[2], hexKey, rest);
             return;
         }
 
@@ -505,4 +638,7 @@ function main() {
     }
 }
 
-main();
+main().catch((error) => {
+    console.error(`\nError: ${error.message}`);
+    process.exitCode = 1;
+});

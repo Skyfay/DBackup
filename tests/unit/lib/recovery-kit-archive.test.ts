@@ -188,6 +188,49 @@ describe("recovery kit: restore_archive.js", () => {
         expect(stderr).toMatch(/authentication failed|checksum mismatch/i);
     });
 
+    it("leaves no half-written file behind when a large entry fails to authenticate", async () => {
+        // Streaming writes plaintext before the authentication tag at the end of the entry
+        // can be checked, so the output only becomes visible once it verified. Anything
+        // else would leave a partial file that looks like a restored one.
+        const archivePath = await buildArchive(true, "NONE");
+        const raw = await fs.readFile(archivePath);
+        raw[Math.floor(raw.length / 2)] ^= 0xff;
+        await fs.writeFile(archivePath, raw);
+
+        const outDir = path.join(workDir, "out");
+        await runScript(["--extract", archivePath, outDir, KEY_HEX]);
+
+        const leftovers: string[] = [];
+        const walk = async (dir: string) => {
+            for (const e of await fs.readdir(dir, { withFileTypes: true }).catch(() => [])) {
+                const abs = path.join(dir, e.name);
+                if (e.isDirectory()) await walk(abs);
+                else if (e.name.endsWith(".partial")) leftovers.push(abs);
+            }
+        };
+        await walk(outDir);
+        expect(leftovers).toEqual([]);
+    });
+
+    it("does not write a streamed file whose checksum does not match", async () => {
+        // The index records the plaintext hash. If the bytes that come out disagree, the
+        // file is wrong even when the archive authenticates - so it must not be presented
+        // as recovered.
+        const archivePath = await buildArchive(false, "NONE");
+        const raw = await fs.readFile(archivePath);
+        // large.bin is past the bundling threshold, so it is its own streamed entry.
+        const needle = raw.indexOf(Buffer.from(FIXTURE["www/assets/large.bin"].subarray(0, 32)));
+        expect(needle, "expected to find the large file's payload").toBeGreaterThan(0);
+        raw[needle + 16] ^= 0xff;
+        await fs.writeFile(archivePath, raw);
+
+        const outDir = path.join(workDir, "out");
+        const { stderr } = await runScript(["--extract", archivePath, outDir, KEY_HEX]);
+
+        expect(stderr).toMatch(/checksum mismatch/i);
+        await expect(fs.access(path.join(outDir, "src-1", "www/assets/large.bin"))).rejects.toThrow();
+    });
+
     it("rejects a v1 archive with a pointer to the older tool", async () => {
         const fake = path.join(workDir, "v1.tar");
         const { createMultiDbTar } = await import("@/lib/adapters/database/common/tar-utils");

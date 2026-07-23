@@ -31,6 +31,12 @@ The two formats differ because file backups encrypt each file individually, whic
 makes it possible to pull a single file out of a large backup. The format is fully
 documented in the [Archive Format reference](/developer-guide/reference/archive-format).
 
+`restore_archive.js` streams every entry it extracts, so a backup containing a 50 GB VM
+image needs no more memory than one containing text files - which matters precisely when
+you are recovering onto whatever machine happens to be available. Files are written to a
+temporary name and only put in place once their authentication tag and recorded checksum
+both verify, so a damaged archive never leaves something that looks like a recovered file.
+
 ## Why You Need It
 
 ### Disaster Scenarios

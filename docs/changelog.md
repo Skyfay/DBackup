@@ -71,7 +71,7 @@ All notable changes to DBackup are documented here.
 
 ### 🔄 Changed
 
-- **sources**: The Sources page groups databases and directories under two tabs instead of stacking two tables, matching the Vault and Templates pages. They stay separate tables because each has columns, actions and a permission the other does not - database sources show an engine version and open the Database Explorer, directory sources show storage history and are governed by the destinations permission.
+- **navigation**: Sources, Destinations and Notifications are now one page, **Connections**, with a tab per kind: Databases, Directory Sources, Backup Destinations and Notifications. Adapters are grouped by what they are rather than by the direction a job happens to use them in, which is what made a database "a source" even when restoring into it. The old routes redirect to the matching tab, and the active tab lives in the URL (`?tab=`) so links and bookmarks keep working. Each tab keeps its own table, because they differ in columns, actions and the permission that governs them.
 - **destinations**: A storage adapter now has one exclusive role instead of two independent toggles. The two role switches in the adapter form are a single Role choice, and the Destinations and Sources pages each list only their own. The roles cannot be combined because a destination writes job and chain folders into its configured path while a source reads folders out of it - one adapter doing both would let a job back up its own archives.
 
 ### 🗑️ Removed
@@ -85,6 +85,7 @@ All notable changes to DBackup are documented here.
 - **wiki**: Added a Backup Modes guide covering incremental backups, chain storage, retention behaviour and when DBackup falls back to a full backup.
 - **api**: Documented the restore endpoint's new `scope` parameter, and corrected `targetSourceId` from unconditionally required to required only when the restore includes a database.
 - **wiki**: Documented the destination/directory-source roles on both overview pages, including how to use one server for both.
+- **wiki**: Updated every navigation instruction in the user guide for the new Connections page and its tabs.
 - **api**: Documented `storageRole` on the adapter schemas and the new `role` query parameter of the adapter listing endpoint.
 
 ### 🧪 Tests
@@ -93,6 +94,7 @@ All notable changes to DBackup are documented here.
 - **destinations**: Added tests for the adapter role - the listing filter, the guard that refuses a role change while a job depends on it, and the clone keeping or flipping the role.
 - **jobs**: Added tests for the new destination-role validation, covering a destination pointing at a directory source and at an adapter that does not exist.
 - **lint-guards**: Added a guard that fails the build when new code enumerates storage adapters for backup purposes without filtering by role, with an explicit allow-list for the health check and the listing endpoint.
+- **lint-guards**: Added a guard that fails the build when anything links to the retired `/dashboard/sources`, `/dashboard/destinations` or `/dashboard/notifications` routes, and that checks their redirect stubs are still in place.
 
 ### 🐳 Docker
 

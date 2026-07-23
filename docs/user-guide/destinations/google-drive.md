@@ -41,7 +41,7 @@ Open the target folder in Google Drive - the Folder ID is the last part of the U
 
 ## Setup Guide
 
-1. Go to **Destinations** → **Add Destination** → **Google Drive**
+1. Go to **Connections** → **Backup Destinations** → **Add New** → **Google Drive**
 2. Enter Client ID and Client Secret → **Save**
 3. Click **Authorize with Google** - you'll be redirected to Google
 4. Sign in and grant DBackup access to manage its files

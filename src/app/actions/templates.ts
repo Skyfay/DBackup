@@ -68,7 +68,7 @@ export async function createRetentionPolicy(input: {
     }
     revalidatePath("/dashboard/vault");
     revalidatePath("/dashboard/jobs");
-    revalidatePath("/dashboard/destinations");
+    revalidatePath("/dashboard/connections");
     return { success: true as const, data: policy };
   } catch (e: unknown) {
     return { success: false as const, error: getErrorMessage(e) };
@@ -102,7 +102,7 @@ export async function updateRetentionPolicy(
     }
     revalidatePath("/dashboard/vault");
     revalidatePath("/dashboard/jobs");
-    revalidatePath("/dashboard/destinations");
+    revalidatePath("/dashboard/connections");
     return { success: true as const, data: policy };
   } catch (e: unknown) {
     return { success: false as const, error: getErrorMessage(e) };
@@ -129,7 +129,7 @@ export async function deleteRetentionPolicy(id: string) {
     }
     revalidatePath("/dashboard/vault");
     revalidatePath("/dashboard/jobs");
-    revalidatePath("/dashboard/destinations");
+    revalidatePath("/dashboard/connections");
     return { success: true as const };
   } catch (e: unknown) {
     return { success: false as const, error: getErrorMessage(e) };

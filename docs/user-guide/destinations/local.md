@@ -11,7 +11,7 @@ Store backups on the local filesystem of the server running DBackup. Simplest op
 
 ## Setup Guide
 
-1. Go to **Destinations** → **Add Destination** → **Local Storage**
+1. Go to **Connections** → **Backup Destinations** → **Add New** → **Local Storage**
 2. Enter a name and (optionally) customize the **Base Path**
 3. Click **Test** to verify write access
 

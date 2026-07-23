@@ -31,7 +31,7 @@ Hetzner Object Storage requires a [Credential Profile](/user-guide/security/cred
 2. **Generate S3 credentials**: Go to **Object Storage** → **Settings** → **Generate credentials**
    - Copy the **Access Key** and **Secret Key** immediately (shown only once)
 3. **Create an `ACCESS_KEY` credential profile** in **Settings → Vault → Credentials** with those keys ([guide](/user-guide/security/credential-profiles))
-4. Go to **Destinations** → **Add Destination** → **Hetzner Object Storage**
+4. Go to **Connections** → **Backup Destinations** → **Add New** → **Hetzner Object Storage**
 5. Select your **Region**, enter the Bucket name, then select the credential profile in the **Primary Credential** picker
 6. Enter a **Path Prefix** (required - e.g. `backups` or `dbackup/prod`)
 6. Click **Test** to verify the connection

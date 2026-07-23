@@ -18,7 +18,7 @@ DBackup supports a wide variety of database engines.
 
 ## Directory Sources
 
-The Sources page has a second tab, **Directories**: storage adapters whose
+The Connections page has a **Directory Sources** tab: storage adapters whose
 folders can be backed up as files rather than as a database dump. They use the same
 backends as [Storage Destinations](/user-guide/destinations/) but are configured as their
 own adapters, because the two roles use the configured path differently - a destination
@@ -34,7 +34,7 @@ Beyond configuring sources for backups, DBackup includes a **Database Explorer**
 
 ## Adding a Source
 
-1. Navigate to **Sources** → **Add Source**
+1. Navigate to **Connections** → **Databases** → **Add New**
 2. Select the database type
 3. Choose **Connection Mode**: Direct or SSH (see below)
 4. Fill in connection details (host, port, credentials)

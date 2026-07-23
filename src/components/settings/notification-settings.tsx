@@ -304,7 +304,7 @@ export function NotificationSettings() {
           {channels.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No notification channels configured yet.{" "}
-              <Link href="/dashboard/notifications" className="text-primary underline hover:text-primary/80">
+              <Link href="/dashboard/connections?tab=notifications" className="text-primary underline hover:text-primary/80">
                 Create a Notification adapter
               </Link>{" "}
               (e.g. Email, Discord) first.

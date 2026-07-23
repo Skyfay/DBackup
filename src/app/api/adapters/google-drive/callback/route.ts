@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     if (!session?.user) {
         log.warn("Unauthenticated Google OAuth callback attempt");
         return NextResponse.redirect(
-            `${origin}/dashboard/destinations?oauth=error&message=${encodeURIComponent("Authentication required. Please log in and try again.")}`
+            `${origin}/dashboard/connections?tab=destinations&oauth=error&message=${encodeURIComponent("Authentication required. Please log in and try again.")}`
         );
     }
 
@@ -35,14 +35,14 @@ export async function GET(req: NextRequest) {
     if (error) {
         log.warn("Google OAuth denied by user", { error });
         return NextResponse.redirect(
-            `${origin}/dashboard/destinations?oauth=error&message=${encodeURIComponent("Authorization was denied by the user.")}`
+            `${origin}/dashboard/connections?tab=destinations&oauth=error&message=${encodeURIComponent("Authorization was denied by the user.")}`
         );
     }
 
     if (!code || !state) {
         log.warn("Missing code or state in Google OAuth callback");
         return NextResponse.redirect(
-            `${origin}/dashboard/destinations?oauth=error&message=${encodeURIComponent("Missing authorization code or state.")}`
+            `${origin}/dashboard/connections?tab=destinations&oauth=error&message=${encodeURIComponent("Missing authorization code or state.")}`
         );
     }
 
@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
         if (!tokens.refresh_token) {
             log.warn("No refresh token received from Google", { credentialId: state });
             return NextResponse.redirect(
-                `${origin}/dashboard/destinations?oauth=error&message=${encodeURIComponent("No refresh token received. Please revoke app access in your Google Account settings and try again.")}`
+                `${origin}/dashboard/connections?tab=destinations&oauth=error&message=${encodeURIComponent("No refresh token received. Please revoke app access in your Google Account settings and try again.")}`
             );
         }
 
@@ -76,13 +76,13 @@ export async function GET(req: NextRequest) {
         log.info("Google Drive OAuth completed successfully", { credentialId: state });
 
         return NextResponse.redirect(
-            `${origin}/dashboard/destinations?oauth=success&message=${encodeURIComponent("Google Drive authorized successfully!")}`
+            `${origin}/dashboard/connections?tab=destinations&oauth=success&message=${encodeURIComponent("Google Drive authorized successfully!")}`
         );
     } catch (err) {
         log.error("Google OAuth callback failed", {}, err instanceof Error ? err : undefined);
         const message = err instanceof Error ? err.message : "OAuth callback failed";
         return NextResponse.redirect(
-            `${origin}/dashboard/destinations?oauth=error&message=${encodeURIComponent(message)}`
+            `${origin}/dashboard/connections?tab=destinations&oauth=error&message=${encodeURIComponent(message)}`
         );
     }
 }

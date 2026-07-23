@@ -44,7 +44,7 @@ Rsync requires a [Credential Profile](/user-guide/security/credential-profiles) 
    sudo mkdir -p /backups/dbackup
    sudo chown dbackup: /backups/dbackup
    ```
-4. Go to **Destinations** → **Add Destination** → **Rsync**
+4. Go to **Connections** → **Backup Destinations** → **Add New** → **Rsync**
 5. Enter Host and select the credential profile in the **Primary Credential** picker
 6. Set **Path Prefix** to the remote directory (e.g. `/backups/dbackup`)
 7. (Optional) Add custom **Options** for bandwidth limiting or other flags

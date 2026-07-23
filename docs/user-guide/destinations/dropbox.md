@@ -30,7 +30,7 @@ Apps with "App folder" access can only read/write within their own folder (`/App
 
 ## Setup Guide
 
-1. Go to **Destinations** → **Add Destination** → **Dropbox**
+1. Go to **Connections** → **Backup Destinations** → **Add New** → **Dropbox**
 2. Enter App Key and App Secret → **Save**
 3. Click **Authorize with Dropbox** - you'll be redirected to Dropbox
 4. Sign in and grant DBackup access

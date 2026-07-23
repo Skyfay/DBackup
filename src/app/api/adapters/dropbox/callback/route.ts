@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
     if (!session?.user) {
         log.warn("Unauthenticated Dropbox OAuth callback attempt");
         return NextResponse.redirect(
-            `${origin}/dashboard/destinations?oauth=error&message=${encodeURIComponent("Authentication required. Please log in and try again.")}`
+            `${origin}/dashboard/connections?tab=destinations&oauth=error&message=${encodeURIComponent("Authentication required. Please log in and try again.")}`
         );
     }
 
@@ -34,14 +34,14 @@ export async function GET(req: NextRequest) {
     if (error) {
         log.warn("Dropbox OAuth denied by user", { error, errorDescription });
         return NextResponse.redirect(
-            `${origin}/dashboard/destinations?oauth=error&message=${encodeURIComponent(errorDescription || "Authorization was denied by the user.")}`
+            `${origin}/dashboard/connections?tab=destinations&oauth=error&message=${encodeURIComponent(errorDescription || "Authorization was denied by the user.")}`
         );
     }
 
     if (!code || !state) {
         log.warn("Missing code or state in Dropbox OAuth callback");
         return NextResponse.redirect(
-            `${origin}/dashboard/destinations?oauth=error&message=${encodeURIComponent("Missing authorization code or state.")}`
+            `${origin}/dashboard/connections?tab=destinations&oauth=error&message=${encodeURIComponent("Missing authorization code or state.")}`
         );
     }
 
@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
             const errorBody = await tokenRes.text();
             log.error("Dropbox token exchange failed", { status: tokenRes.status, body: errorBody });
             return NextResponse.redirect(
-                `${origin}/dashboard/destinations?oauth=error&message=${encodeURIComponent(`Token exchange failed: ${tokenRes.status}`)}`
+                `${origin}/dashboard/connections?tab=destinations&oauth=error&message=${encodeURIComponent(`Token exchange failed: ${tokenRes.status}`)}`
             );
         }
 
@@ -80,7 +80,7 @@ export async function GET(req: NextRequest) {
         if (!tokenData.refresh_token) {
             log.warn("No refresh token received from Dropbox", { credentialId: state });
             return NextResponse.redirect(
-                `${origin}/dashboard/destinations?oauth=error&message=${encodeURIComponent("No refresh token received. Ensure the app has 'offline' access configured.")}`
+                `${origin}/dashboard/connections?tab=destinations&oauth=error&message=${encodeURIComponent("No refresh token received. Ensure the app has 'offline' access configured.")}`
             );
         }
 
@@ -92,13 +92,13 @@ export async function GET(req: NextRequest) {
         log.info("Dropbox OAuth completed successfully", { credentialId: state });
 
         return NextResponse.redirect(
-            `${origin}/dashboard/destinations?oauth=success&message=${encodeURIComponent("Dropbox authorized successfully!")}`
+            `${origin}/dashboard/connections?tab=destinations&oauth=success&message=${encodeURIComponent("Dropbox authorized successfully!")}`
         );
     } catch (err) {
         log.error("Dropbox OAuth callback failed", {}, err instanceof Error ? err : undefined);
         const message = err instanceof Error ? err.message : "OAuth callback failed";
         return NextResponse.redirect(
-            `${origin}/dashboard/destinations?oauth=error&message=${encodeURIComponent(message)}`
+            `${origin}/dashboard/connections?tab=destinations&oauth=error&message=${encodeURIComponent(message)}`
         );
     }
 }

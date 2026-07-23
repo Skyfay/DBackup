@@ -47,7 +47,7 @@ there, while a source reads from that same path - and a source set to "Back up e
 reads the path itself. One adapter doing both would mean a job backing up its own previous
 archives, growing without limit.
 
-Destinations are managed here; directory sources live on the **Sources** page.
+Both live on the **Connections** page, on the **Backup Destinations** and **Directory Sources** tabs.
 
 ::: tip Same server for both
 Pick **Create as Directory Source** on a destination's row (or the reverse on a source) to
@@ -57,7 +57,7 @@ for one server is intentional: they point at different paths and are monitored s
 
 ## Adding a Destination
 
-1. Navigate to **Destinations** → **Add New**
+1. Navigate to **Connections** → **Backup Destinations** → **Add New**
 2. Select the storage type
 3. Fill in configuration details
 4. Leave **Role** on *Backup Destination*

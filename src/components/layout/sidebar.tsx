@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { LayoutDashboard, Database, HardDrive, FolderOpen, CalendarClock, History, Settings, Bell, ChevronsUpDown, LogOut, Moon, Sun, Monitor, Users, User, Lock, BookOpen, SearchCode, Rocket, ArrowUpCircle, FileCode2, Globe, LayoutTemplate } from "lucide-react"
+import { LayoutDashboard, Database, FolderOpen, CalendarClock, History, Settings, ChevronsUpDown, LogOut, Moon, Sun, Monitor, Users, User, Lock, BookOpen, SearchCode, Rocket, ArrowUpCircle, FileCode2, Globe, LayoutTemplate } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { useSession, signOut } from "@/lib/auth/client"
@@ -54,9 +54,10 @@ const sidebarGroups: SidebarGroup[] = [
     {
         label: "Backup",
         items: [
-            { icon: Database, label: "Sources", href: "/dashboard/sources", permission: PERMISSIONS.SOURCES.VIEW },
-            { icon: HardDrive, label: "Destinations", href: "/dashboard/destinations", permission: PERMISSIONS.DESTINATIONS.READ },
-            { icon: Bell, label: "Notifications", href: "/dashboard/notifications", permission: PERMISSIONS.NOTIFICATIONS.READ },
+            // Databases, storage in either role, and notification channels all live under
+            // one entry - they are the same kind of thing (something DBackup connects to)
+            // and only differ in what they connect to.
+            { icon: Database, label: "Connections", href: "/dashboard/connections", permission: [PERMISSIONS.SOURCES.VIEW, PERMISSIONS.DESTINATIONS.READ, PERMISSIONS.NOTIFICATIONS.READ] },
             { icon: CalendarClock, label: "Jobs", href: "/dashboard/jobs", permission: PERMISSIONS.JOBS.READ },
         ],
     },

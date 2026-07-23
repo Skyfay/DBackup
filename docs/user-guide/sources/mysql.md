@@ -126,7 +126,7 @@ For backup-only operations, `SELECT`, `SHOW VIEW`, `TRIGGER`, and `LOCK TABLES` 
 
 #### Direct Mode
 
-1. Go to **Sources** → **Add Source**
+1. Go to **Connections** → **Databases** → **Add New**
 2. Select **MySQL** or **MariaDB**
 3. Keep Connection Mode as **Direct**
 4. Enter connection details
@@ -136,7 +136,7 @@ For backup-only operations, `SELECT`, `SHOW VIEW`, `TRIGGER`, and `LOCK TABLES` 
 
 #### SSH Mode
 
-1. Go to **Sources** → **Add Source**
+1. Go to **Connections** → **Databases** → **Add New**
 2. Select **MySQL** or **MariaDB**
 3. Set Connection Mode to **SSH**
 4. In the **SSH Connection** tab: enter SSH host, username, and authentication details

@@ -19,7 +19,7 @@ WebDAV requires a [Credential Profile](/user-guide/security/credential-profiles)
 
 1. Create a `USERNAME_PASSWORD` credential profile in **Settings → Vault → Credentials** ([guide](/user-guide/security/credential-profiles))
 2. Obtain the WebDAV URL from your provider (see examples below)
-3. Go to **Destinations** → **Add Destination** → **WebDAV**
+3. Go to **Connections** → **Backup Destinations** → **Add New** → **WebDAV**
 4. Enter the **URL** and select the credential profile in the **Primary Credential** picker
 5. (Optional) Set a **Path Prefix** to organize backups in a subfolder
 6. Click **Test** to verify the connection

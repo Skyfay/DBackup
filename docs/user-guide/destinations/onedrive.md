@@ -52,7 +52,7 @@ Or recreate the App Registration with the correct setting (third option).
 
 ## Setup Guide
 
-1. Go to **Destinations** → **Add Destination** → **Microsoft OneDrive**
+1. Go to **Connections** → **Backup Destinations** → **Add New** → **Microsoft OneDrive**
 2. Enter Client ID and Client Secret → **Save**
 3. Click **Authorize with Microsoft** - you'll be redirected to Microsoft
 4. Sign in and accept the requested permissions

@@ -1,18 +1,10 @@
-import { AdapterManager } from "@/components/adapter/adapter-manager";
-import { getUserPermissions } from "@/lib/auth/access-control";
-import { PERMISSIONS } from "@/lib/auth/permissions";
+import { redirect } from "next/navigation";
+import { CONNECTION_TABS } from "@/components/adapter/connections-tabs";
 
-export default async function NotificationsPage() {
-    const permissions = await getUserPermissions();
-    const canManage = permissions.includes(PERMISSIONS.NOTIFICATIONS.WRITE);
-
-    return (
-        <AdapterManager
-            type="notification"
-            title="Notifications"
-            description="Configure channels to receive alerts about your backups."
-            canManage={canManage}
-            permissions={permissions}
-        />
-    )
+/**
+ * Kept so bookmarks, documentation links and anything else pointing at the old
+ * Notifications page still lands somewhere useful.
+ */
+export default function NotificationsPage() {
+    redirect(`/dashboard/connections?tab=${CONNECTION_TABS.NOTIFICATIONS}`);
 }

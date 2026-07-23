@@ -11,6 +11,7 @@ const { mockClient, mockPipeline } = vi.hoisted(() => ({
         exists: vi.fn(),
         createDirectory: vi.fn(),
         createReadStream: vi.fn(),
+        createWriteStream: vi.fn((_path: string, _opts?: unknown) => ({ on: vi.fn(), end: vi.fn() })),
         stat: vi.fn(),
     },
     mockPipeline: vi.fn().mockResolvedValue(undefined),
@@ -20,17 +21,21 @@ vi.mock("webdav", () => ({
     createClient: vi.fn(() => mockClient),
 }));
 
-vi.mock("fs/promises", () => ({
-    default: {
+vi.mock("fs/promises", () => {
+    const api = {
         readFile: vi.fn().mockResolvedValue(Buffer.from("backup data")),
-    },
-    readFile: vi.fn().mockResolvedValue(Buffer.from("backup data")),
-}));
+        stat: vi.fn().mockResolvedValue({ size: 11 }),
+    };
+    return { default: api, ...api };
+});
 
-vi.mock("fs", () => ({
-    createWriteStream: vi.fn(() => ({ on: vi.fn(), end: vi.fn() })),
-    default: { createWriteStream: vi.fn(() => ({ on: vi.fn(), end: vi.fn() })) },
-}));
+vi.mock("fs", () => {
+    const api = {
+        createWriteStream: vi.fn(() => ({ on: vi.fn(), end: vi.fn() })),
+        createReadStream: vi.fn(() => ({ on: vi.fn(), pipe: vi.fn() })),
+    };
+    return { default: api, ...api };
+});
 
 vi.mock("stream/promises", () => ({
     pipeline: mockPipeline,
@@ -69,25 +74,24 @@ describe("WebDAVAdapter", () => {
 
     describe("upload()", () => {
         it("returns true on successful upload", async () => {
-            mockClient.putFileContents.mockResolvedValue(undefined);
-
             const result = await WebDAVAdapter.upload(config, "/tmp/backup.sql", "Job/backup.sql");
 
             expect(result).toBe(true);
-            expect(mockClient.putFileContents).toHaveBeenCalled();
+            // Streamed rather than read into a Buffer - a backup archive can exceed memory.
+            expect(mockClient.createWriteStream).toHaveBeenCalled();
+            expect(mockClient.putFileContents).not.toHaveBeenCalled();
         });
 
         it("creates parent directory when it does not exist", async () => {
             mockClient.exists.mockResolvedValue(false);
-            mockClient.putFileContents.mockResolvedValue(undefined);
-
+            
             await WebDAVAdapter.upload(config, "/tmp/backup.sql", "Job/backup.sql");
 
             expect(mockClient.createDirectory).toHaveBeenCalled();
         });
 
-        it("returns false when putFileContents throws", async () => {
-            mockClient.putFileContents.mockRejectedValue(new Error("Server Error"));
+        it("returns false when the upload stream fails", async () => {
+            mockPipeline.mockRejectedValue(new Error("Server Error"));
 
             const result = await WebDAVAdapter.upload(config, "/tmp/backup.sql", "Job/backup.sql");
 
@@ -95,8 +99,7 @@ describe("WebDAVAdapter", () => {
         });
 
         it("calls onProgress(100) after successful upload", async () => {
-            mockClient.putFileContents.mockResolvedValue(undefined);
-            const onProgress = vi.fn();
+                        const onProgress = vi.fn();
 
             await WebDAVAdapter.upload(config, "/tmp/backup.sql", "Job/backup.sql", onProgress);
 
@@ -104,11 +107,10 @@ describe("WebDAVAdapter", () => {
         });
 
         it("respects pathPrefix in destination path", async () => {
-            mockClient.putFileContents.mockResolvedValue(undefined);
-
+            
             await WebDAVAdapter.upload(config, "/tmp/backup.sql", "Job/backup.sql");
 
-            const destinationArg = mockClient.putFileContents.mock.calls[0][0];
+            const destinationArg = mockClient.createWriteStream.mock.calls[0][0];
             expect(destinationArg).toContain("backups");
         });
     });
@@ -283,12 +285,11 @@ describe("WebDAVAdapter", () => {
     describe("upload() without pathPrefix", () => {
         it("uses root path when no pathPrefix is set", async () => {
             const noPrefix = { ...config, pathPrefix: undefined };
-            mockClient.putFileContents.mockResolvedValue(undefined);
-
+            
             const result = await WebDAVAdapter.upload(noPrefix, "/tmp/backup.sql", "backup.sql");
 
             expect(result).toBe(true);
-            const destArg = mockClient.putFileContents.mock.calls[0][0];
+            const destArg = mockClient.createWriteStream.mock.calls[0][0];
             expect(destArg).not.toContain("backups");
         });
     });

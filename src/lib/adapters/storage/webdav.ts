@@ -1,7 +1,7 @@
 import { StorageAdapter, FileInfo } from "@/lib/core/interfaces";
 import { WebDAVSchema } from "@/lib/adapters/definitions";
 import { createClient, WebDAVClient, FileStat } from "webdav";
-import { createWriteStream } from "fs";
+import { createReadStream, createWriteStream } from "fs";
 import { Transform, Readable } from "stream";
 import fs from "fs/promises";
 import path from "path";
@@ -60,8 +60,24 @@ export const WebDAVAdapter: StorageAdapter = {
 
             if (onLog) onLog(`Starting WebDAV upload to: ${destination}`, "info", "storage");
 
-            const fileBuffer = await fs.readFile(localPath);
-            await client.putFileContents(destination, fileBuffer);
+            // Streamed, not read into a Buffer: a backup archive is routinely larger than
+            // the machine's memory, and buffering it here would fail exactly on the large
+            // backups that matter most. Every other adapter already uploads from a stream.
+            const { size } = await fs.stat(localPath);
+            let sent = 0;
+            const tracker = new Transform({
+                transform(chunk, _encoding, callback) {
+                    sent += chunk.length;
+                    if (onProgress && size > 0) onProgress(Math.min(100, Math.round((sent / size) * 100)));
+                    callback(null, chunk);
+                },
+            });
+
+            await pipeline(
+                createReadStream(localPath),
+                tracker,
+                client.createWriteStream(destination, { overwrite: true })
+            );
 
             if (onProgress) onProgress(100);
             if (onLog) onLog("WebDAV upload completed successfully", "info", "storage");

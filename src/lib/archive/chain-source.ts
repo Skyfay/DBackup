@@ -18,6 +18,7 @@ import { AdapterConfig, StorageAdapter } from "@/lib/core/interfaces";
 import { openStorageArchiveSource, ManagedArchiveSource } from "./storage-source";
 import { openArchiveEntry, groupFilesByEntry, readArchiveManifest } from "./reader";
 import { readAll } from "./sources";
+import { mapWithConcurrency } from "@/lib/concurrency";
 import { ArchiveByteSource, ArchiveIndex, ArchiveManifest, IndexFileLine } from "./types";
 
 export interface OpenedChainArchive {
@@ -117,11 +118,20 @@ export interface OpenedSnapshot {
  * - Within an archive, bundled entries are read once into memory (the writer caps them at
  *   a few MB) and sliced, while standalone entries stream, so a multi-gigabyte file never
  *   has to fit in RAM.
+ *
+ * `concurrency` parallelises the entries **within** one archive - over a network destination
+ * the per-entry round trip, not the bandwidth, is the limit, so ranged reads overlap well.
+ * It never crosses the archive boundary: archives are still opened one at a time, so the
+ * peak-disk guarantee holds unchanged. Callers whose output is order-dependent (the tar
+ * download stream) pass 1 and get the historical strictly-serial behaviour. Note that at
+ * concurrency N the per-file staging in the storage-restore callers holds up to N temp
+ * files at once - bounded by the same setting.
  */
 export async function forEachSnapshotFile(
     snapshot: OpenedSnapshot,
     files: readonly { file: IndexFileLine }[],
-    visit: (file: IndexFileLine, content: NodeJS.ReadableStream) => Promise<void>
+    visit: (file: IndexFileLine, content: NodeJS.ReadableStream) => Promise<void>,
+    concurrency = 1
 ): Promise<void> {
     for (const [archiveName, group] of groupFilesByArchive(files as { file: IndexFileLine }[])) {
         // The snapshot's own archive is already open; siblings are opened and released
@@ -132,7 +142,8 @@ export async function forEachSnapshotFile(
                 : await openChainArchive(snapshot.chain, archiveName);
 
         try {
-            for (const [key, entryFiles] of groupFilesByEntry(group.map((g) => g.file))) {
+            const entryGroups = [...groupFilesByEntry(group.map((g) => g.file))];
+            await mapWithConcurrency(entryGroups, concurrency, async ([key, entryFiles]) => {
                 const entry = snapshot.index.entries.get(key);
                 if (!entry) throw new Error(`Archive index is inconsistent: missing entry ${key}`);
 
@@ -141,7 +152,7 @@ export async function forEachSnapshotFile(
                         entryFiles[0],
                         await openArchiveEntry(opened.source, opened.manifest, entry, opened.masterKey)
                     );
-                    continue;
+                    return;
                 }
 
                 const payload = await readAll(
@@ -151,7 +162,7 @@ export async function forEachSnapshotFile(
                     const start = file.o ?? 0;
                     await visit(file, Readable.from([payload.subarray(start, start + (file.l ?? payload.length))]));
                 }
-            }
+            });
         } finally {
             if (opened.dispose) await opened.dispose();
         }

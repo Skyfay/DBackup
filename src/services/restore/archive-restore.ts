@@ -27,6 +27,7 @@ import { LogLevel, LogType, RESTORE_STAGES } from "@/lib/core/logs";
 import { shouldRestoreDatabase, getTargetDatabaseName } from "@/lib/adapters/database/common/tar-utils";
 import { openArchiveEntry } from "@/lib/archive/reader";
 import { forEachSnapshotFile, hashingStream } from "@/lib/archive/chain-source";
+import { getMaxConcurrentFiles } from "@/lib/settings/file-concurrency";
 import { resolveSelection } from "@/lib/archive/browse";
 import { entryKey, IndexFileLine } from "@/lib/archive/types";
 import { getTempDir } from "@/lib/temp-dir";
@@ -195,6 +196,9 @@ export async function restoreArchiveSnapshot(
             const perSourceFailed = new Map<string, number>();
             let done = 0;
 
+            // Files stream and stage independently, so several transfer at once - this is the
+            // network round-trip win the user sees restoring to S3/R2.
+            const concurrency = await getMaxConcurrentFiles();
             await forEachSnapshotFile(archive, workItems, async (file, content) => {
                 const target = targets.get(file.src)!;
                 const stagePath = path.join(getTempDir(), `restore-${process.pid}-${crypto.randomUUID()}`);
@@ -226,7 +230,7 @@ export async function restoreArchiveSnapshot(
 
                 done++;
                 updateDetail(`Files: ${done}/${workItems.length} restored`);
-            });
+            }, concurrency);
 
             for (const dir of selectedDirs) {
                 if (!targets.has(dir.src)) continue; // target resolution already failed above

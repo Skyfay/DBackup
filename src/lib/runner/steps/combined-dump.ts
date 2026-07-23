@@ -16,6 +16,7 @@ import { calculateFileChecksum } from "@/lib/crypto/checksum";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { PIPELINE_STAGES } from "@/lib/core/logs";
+import { getMaxConcurrentFiles } from "@/lib/settings/file-concurrency";
 
 const log = logger.child({ step: "combined-dump" });
 
@@ -166,8 +167,10 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
         }
 
         // ── Directory sources (each entirely independent - order doesn't matter) ──
-        // ── Directory sources (each entirely independent - order doesn't matter) ──
         if (dirTotal > 0) ctx.setStage(PIPELINE_STAGES.COLLECTING);
+        // Files within a source are downloaded in parallel; over a network source the
+        // per-file round trip dominates, so this is where most of the collection time is won.
+        const fileConcurrency = dirTotal > 0 ? await getMaxConcurrentFiles() : 1;
         let dirDone = 0;
         for (const source of ctx.sources) {
             const displayPath = source.remotePath || "/";
@@ -221,7 +224,7 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
                     ctx.updateDetail(`${label}: ${processedFiles}/${totalFiles} files, ${formatBytes(processedBytes)}/${formatBytes(totalBytes)}`);
                 },
                 (msg, level, type, details) => ctx.log(`${logPrefix} ${msg}`, level, type ?? 'storage', details),
-                shouldDownload ? { shouldDownload } : undefined
+                { concurrency: fileConcurrency, ...(shouldDownload ? { shouldDownload } : {}) }
             );
 
             // A file the source would not hand over is missing from this backup. Naming each

@@ -3,6 +3,7 @@ import path from "path";
 import { minimatch } from "minimatch";
 import { StorageAdapter, AdapterConfig, DirectoryDownloadOptions, DirectoryDownloadResult, DirectoryFileEntry } from "@/lib/core/interfaces";
 import { LogLevel, LogType } from "@/lib/core/logs";
+import { mapWithConcurrency } from "@/lib/concurrency";
 
 /**
  * Returns true if relativePath matches any of the given glob patterns.
@@ -76,27 +77,31 @@ export async function downloadDirectoryGeneric(
     const totalFiles = entries.length;
     let processedBytes = 0;
     let processedFiles = 0;
-
-    const resultEntries: DirectoryFileEntry[] = [];
-    const failures: { path: string; error: string }[] = [];
-
     let skippedFiles = 0;
 
-    for (const entry of entries) {
+    // Each file yields exactly one outcome; mapWithConcurrency keeps them in input order, so
+    // the resulting entries/failures lists have the same layout the old serial loop produced,
+    // independent of which download finished first.
+    type Outcome =
+        | { kind: "entry"; entry: DirectoryFileEntry }
+        | { kind: "failure"; failure: { path: string; error: string } };
+
+    const bump = (bytes: number) => {
+        // Runs synchronously between awaits, so the shared counters stay consistent under
+        // parallelism - Node never interleaves these statements.
+        processedBytes += bytes;
+        processedFiles++;
+        onProgress?.(processedBytes, totalBytes, processedFiles, totalFiles);
+    };
+
+    const outcomes = await mapWithConcurrency(entries, options?.concurrency ?? 1, async (entry): Promise<Outcome> => {
         // Incremental backups skip files the chain already holds. They still belong to the
         // snapshot, so they are reported as unchanged rather than dropped - the archive
         // writer carries them forward by reference.
         if (options?.shouldDownload && !options.shouldDownload(entry)) {
             skippedFiles++;
-            processedFiles++;
-            onProgress?.(processedBytes, totalBytes, processedFiles, totalFiles);
-            resultEntries.push({
-                relativePath: entry.relativePath,
-                size: entry.size,
-                lastModified: entry.lastModified,
-                unchanged: true,
-            });
-            continue;
+            bump(0);
+            return { kind: "entry", entry: { relativePath: entry.relativePath, size: entry.size, lastModified: entry.lastModified, unchanged: true } };
         }
 
         // The relative path comes from the remote server's listing, so it is not trusted:
@@ -108,8 +113,7 @@ export async function downloadDirectoryGeneric(
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : String(error);
             onLog?.(`Refused to collect '${entry.relativePath}': ${message}`, "error", "security");
-            failures.push({ path: entry.relativePath, error: message });
-            continue;
+            return { kind: "failure", failure: { path: entry.relativePath, error: message } };
         }
         await fs.mkdir(path.dirname(localFilePath), { recursive: true });
 
@@ -118,15 +122,18 @@ export async function downloadDirectoryGeneric(
             // Recorded, not swallowed: the file is absent from the archive, and a backup
             // that hides that is worse than one that admits it.
             onLog?.(`Failed to download ${entry.sourcePath}`, "error", "storage");
-            failures.push({ path: entry.relativePath, error: "the source did not return the file" });
-            continue;
+            return { kind: "failure", failure: { path: entry.relativePath, error: "the source did not return the file" } };
         }
 
-        processedBytes += entry.size;
-        processedFiles++;
-        onProgress?.(processedBytes, totalBytes, processedFiles, totalFiles);
+        bump(entry.size);
+        return { kind: "entry", entry: { relativePath: entry.relativePath, size: entry.size, lastModified: entry.lastModified } };
+    });
 
-        resultEntries.push({ relativePath: entry.relativePath, size: entry.size, lastModified: entry.lastModified });
+    const resultEntries: DirectoryFileEntry[] = [];
+    const failures: { path: string; error: string }[] = [];
+    for (const outcome of outcomes) {
+        if (outcome.kind === "entry") resultEntries.push(outcome.entry);
+        else failures.push(outcome.failure);
     }
 
     if (skippedFiles > 0) {

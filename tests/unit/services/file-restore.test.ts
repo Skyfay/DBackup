@@ -19,6 +19,8 @@ const SOURCE_ID = "src-1";
 const prismaMock = {
     adapterConfig: { findUnique: vi.fn() },
     jobSource: { findUnique: vi.fn() },
+    // getMaxConcurrentFiles reads this; unset means the code's default (4) is used.
+    systemSetting: { findUnique: vi.fn().mockResolvedValue(null) },
 };
 vi.mock("@/lib/prisma", () => ({ default: prismaMock }));
 

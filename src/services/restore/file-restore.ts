@@ -26,6 +26,7 @@ import { forEachSnapshotFile, hashingStream, ChainReaderOptions } from "@/lib/ar
 import { checkChainCompleteness } from "@/lib/archive/chain";
 import { resolveSelection, totalSize } from "@/lib/archive/browse";
 import { getProfileMasterKey } from "@/services/backup/encryption-service";
+import { getMaxConcurrentFiles } from "@/lib/settings/file-concurrency";
 import { archiveIndexService } from "@/services/backup/archive-index-service";
 import { getTempDir } from "@/lib/temp-dir";
 import { ArchiveIndex, ArchiveManifest, IndexFileLine } from "@/lib/archive/types";
@@ -372,6 +373,10 @@ export async function restoreFilesToStorage(
     let restored = 0;
     let restoredBytes = 0;
 
+    // Write-back stages each file independently, so several run at once - the round-trip win
+    // when restoring to a network destination.
+    const concurrency = await getMaxConcurrentFiles();
+
     try {
         await forEachSnapshotFile(archive, files, async (file, content) => {
             const target = targets.get(file.src);
@@ -404,7 +409,7 @@ export async function restoreFilesToStorage(
             } finally {
                 await fs.unlink(stagePath).catch(() => { });
             }
-        });
+        }, concurrency);
     } finally {
         await archive.dispose();
     }

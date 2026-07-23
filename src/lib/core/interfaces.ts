@@ -381,6 +381,13 @@ export interface DirectoryDownloadOptions {
      * it is what turns that storage saving into a bandwidth saving as well.
      */
     shouldDownload?: (entry: { relativePath: string; size: number; lastModified: Date }) => boolean;
+    /**
+     * How many files to transfer at once. Over a network destination the per-file round trip,
+     * not the bandwidth, is the limit, so downloading several in parallel is much faster.
+     * Defaults to serial (1) when unset - the generic loop's historical behaviour. Adapters
+     * with their own downloadDirectory (Rsync) ignore it.
+     */
+    concurrency?: number;
 }
 
 /** Result of downloading an entire remote directory tree to a local directory. */

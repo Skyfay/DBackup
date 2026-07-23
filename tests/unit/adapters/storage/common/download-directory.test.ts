@@ -137,6 +137,59 @@ describe("downloadDirectoryGeneric", () => {
 
         expect(mockFsMkdir).toHaveBeenCalledWith(expect.stringContaining(`sub${"/"}deep`), { recursive: true });
     });
+
+    it("downloads files in parallel up to the concurrency limit", async () => {
+        // Each download blocks on a shared gate so several are provably in flight at once;
+        // the peak in-flight count must match the requested concurrency, not exceed it.
+        const files = Array.from({ length: 12 }, (_, i) => makeFile(`Job/f${i}.txt`, 10));
+        let inFlight = 0;
+        let peak = 0;
+        const adapter = makeAdapter(files, async () => {
+            inFlight++;
+            peak = Math.max(peak, inFlight);
+            await new Promise((r) => setTimeout(r, 5));
+            inFlight--;
+            return true;
+        });
+
+        const result = await downloadDirectoryGeneric(adapter, {}, "Job", "/local/job", undefined, undefined, undefined, { concurrency: 4 });
+
+        expect(peak).toBe(4);
+        expect(result.files).toBe(12);
+    });
+
+    it("defaults to serial when no concurrency is given", async () => {
+        // The mutation guard for the test above: without the option the loop must run one at
+        // a time, so this pins the historical behaviour and proves the option is what lifts it.
+        const files = Array.from({ length: 5 }, (_, i) => makeFile(`Job/f${i}.txt`, 10));
+        let inFlight = 0;
+        let peak = 0;
+        const adapter = makeAdapter(files, async () => {
+            inFlight++;
+            peak = Math.max(peak, inFlight);
+            await new Promise((r) => setTimeout(r, 2));
+            inFlight--;
+            return true;
+        });
+
+        await downloadDirectoryGeneric(adapter, {}, "Job", "/local/job");
+
+        expect(peak).toBe(1);
+    });
+
+    it("keeps result entries in listing order despite out-of-order completion", async () => {
+        // Later files finish first (shorter sleep), so if the result order tracked completion
+        // instead of input order this would come back reversed.
+        const files = [makeFile("Job/slow.txt", 10), makeFile("Job/fast.txt", 20)];
+        const adapter = makeAdapter(files, async (_c, remotePath: string) => {
+            await new Promise((r) => setTimeout(r, remotePath.endsWith("slow.txt") ? 10 : 1));
+            return true;
+        });
+
+        const result = await downloadDirectoryGeneric(adapter, {}, "Job", "/local/job", undefined, undefined, undefined, { concurrency: 2 });
+
+        expect(result.entries.map((e) => e.relativePath)).toEqual(["slow.txt", "fast.txt"]);
+    });
 });
 
 describe("downloadDirectory (dispatcher)", () => {

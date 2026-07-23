@@ -13,6 +13,7 @@ const log = logger.child({ action: "settings" });
 
 const settingsSchema = z.object({
     maxConcurrentJobs: z.coerce.number().min(1).max(10),
+    maxConcurrentFiles: z.coerce.number().min(1).max(16).optional(),
     disablePasskeyLogin: z.boolean().optional(),
     sessionDuration: z.coerce.number().min(3600).max(7776000).optional(), // 1h to 90d in seconds
     auditLogRetentionDays: z.coerce.number().min(1).max(1825).optional(),
@@ -44,6 +45,17 @@ export async function updateSystemSettings(data: z.infer<typeof settingsSchema>)
             update: { value: String(result.data.maxConcurrentJobs) },
             create: { key: "maxConcurrentJobs", value: String(result.data.maxConcurrentJobs) },
         });
+
+        // Max Concurrent Files Setting (default 4) - files transferred in parallel during
+        // file backup and restore. Higher is faster against network storage (S3/R2) at the
+        // cost of more connections and temp space.
+        if (result.data.maxConcurrentFiles !== undefined) {
+            await prisma.systemSetting.upsert({
+                where: { key: "maxConcurrentFiles" },
+                update: { value: String(result.data.maxConcurrentFiles) },
+                create: { key: "maxConcurrentFiles", value: String(result.data.maxConcurrentFiles) },
+            });
+        }
 
         // Session Duration Setting (default 604800 = 7 days, in seconds)
         if (result.data.sessionDuration !== undefined) {

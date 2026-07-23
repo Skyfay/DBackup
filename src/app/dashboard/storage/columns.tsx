@@ -94,6 +94,7 @@ export const getColumns = ({ onRestore, onDownloadSnapshot, onDownload, onDelete
             const name = row.original.sourceName;
             const type = row.original.sourceType;
             const combined = row.original.combined;
+            const dbInfo = row.original.dbInfo;
 
             // A combined backup carries per-kind counts; a plain database backup has none, so
             // it is treated as a single database source. The database name and the directory
@@ -102,6 +103,10 @@ export const getColumns = ({ onRestore, onDownloadSnapshot, onDownload, onDelete
             // read their source the same way instead of one showing a name and another a count.
             const dirCount = combined?.directorySources ?? 0;
             const hasDb = type !== "directory-only" && (combined ? combined.databases > 0 : Boolean(name && name !== "Unknown"));
+            // How many databases the backup holds. The engine (postgres/mysql/...) is already
+            // clear from the icon and covered by the Source Type filter, so the badge carries
+            // the count instead - the one thing the row could not otherwise show.
+            const dbCount = combined ? combined.databases : (typeof dbInfo?.count === "number" ? dbInfo.count : (hasDb ? 1 : 0));
 
             if (!hasDb && dirCount === 0) return <span className="text-muted-foreground">-</span>;
 
@@ -111,12 +116,14 @@ export const getColumns = ({ onRestore, onDownloadSnapshot, onDownload, onDelete
                         <div className="flex items-center gap-2">
                             <AdapterIcon adapterId={type ?? ""} className="h-3 w-3" />
                             <span>{name}</span>
-                            {type && <Badge variant="outline" className="text-[10px] h-5 px-1.5">{type}</Badge>}
+                            {dbCount > 0 && (
+                                <Badge variant="outline" className="text-[10px] h-5 px-1.5">{dbCount} DB{dbCount === 1 ? "" : "s"}</Badge>
+                            )}
                         </div>
                     )}
                     {dirCount > 0 && (
-                        <div className="flex items-center gap-2 text-muted-foreground">
-                            <FolderInput className="h-3 w-3" />
+                        <div className="flex items-center gap-2">
+                            <FolderInput className="h-3 w-3 text-muted-foreground" />
                             <span>{dirCount} directory source{dirCount === 1 ? "" : "s"}</span>
                         </div>
                     )}
@@ -132,22 +139,16 @@ export const getColumns = ({ onRestore, onDownloadSnapshot, onDownload, onDelete
         header: "Job context",
         cell: ({ row }) => {
             const name = row.original.jobName;
-            const dbLabel = row.original.dbInfo?.label;
 
-            if ((!name || name === "Unknown") && (!dbLabel || dbLabel === "Unknown"))
-                return <span className="text-muted-foreground text-xs">-</span>;
+            // Just the job name. What the backup contains (database count, directory count) now
+            // lives in the Source column, so the composition badge that used to sit here was a
+            // duplicate.
+            if (!name || name === "Unknown") return <span className="text-muted-foreground text-xs">-</span>;
 
             return (
                 <div className="flex items-center gap-2 text-sm">
-                    {name && name !== "Unknown" && (
-                         <>
-                            <HardDrive className="h-3 w-3 text-muted-foreground" />
-                            <span>{name}</span>
-                         </>
-                    )}
-                    {dbLabel && dbLabel !== "Unknown" && (
-                        <Badge variant="secondary" className="text-[10px] h-5 px-1.5">{dbLabel}</Badge>
-                    )}
+                    <HardDrive className="h-3 w-3 text-muted-foreground" />
+                    <span>{name}</span>
                 </div>
             );
         },

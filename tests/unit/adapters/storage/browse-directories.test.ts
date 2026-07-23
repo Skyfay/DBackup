@@ -56,7 +56,7 @@ vi.mock("@/lib/logging/logger", () => ({
 const { SMBAdapter } = await import("@/lib/adapters/storage/smb");
 const { FTPAdapter } = await import("@/lib/adapters/storage/ftp");
 const { WebDAVAdapter } = await import("@/lib/adapters/storage/webdav");
-const { S3GenericAdapter } = await import("@/lib/adapters/storage/s3");
+const { S3GenericAdapter, S3R2Adapter } = await import("@/lib/adapters/storage/s3");
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -178,5 +178,24 @@ describe("S3 browseDirectories", () => {
         expect(await S3GenericAdapter.browseDirectories!(config, "data")).toEqual([
             { name: "2026", path: "data/2026" },
         ]);
+    });
+
+    it("scopes browsing to the adapter's path prefix (R2)", async () => {
+        // R2/AWS/Hetzner previously dropped the prefix here, so browsing an adapter rooted
+        // at "test/" listed the whole bucket. It must list only what is under the prefix,
+        // and return paths relative to it.
+        const r2Config = {
+            accountId: "acc", bucket: "b", accessKeyId: "k", secretAccessKey: "s", pathPrefix: "test",
+        } as never;
+        s3Send.mockResolvedValue({ CommonPrefixes: [{ Prefix: "test/restore/" }], IsTruncated: false });
+
+        const result = await S3R2Adapter.browseDirectories!(r2Config, "");
+
+        // The listing request is scoped to the prefix...
+        const sent = s3Send.mock.calls[0][0] as { input: Record<string, unknown> };
+        expect(sent.input.Prefix).toBe("test/");
+        // ...and the returned folder is relative to it, so the picker and the backup/restore
+        // paths that consume it stay prefix-relative.
+        expect(result).toEqual([{ name: "restore", path: "restore" }]);
     });
 });

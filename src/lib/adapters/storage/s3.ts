@@ -492,6 +492,7 @@ export const S3AWSAdapter: StorageAdapter = {
         region: config.region,
         bucket: config.bucket,
         credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        pathPrefix: config.pathPrefix
     }, ...args),
     delete: (config, ...args) => s3Delete({
         region: config.region,
@@ -566,6 +567,7 @@ export const S3R2Adapter: StorageAdapter = {
         region: "auto",
         bucket: config.bucket,
         credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        pathPrefix: config.pathPrefix
     }, ...args),
     delete: (config, ...args) => s3Delete({
         endpoint: r2Endpoint(config.accountId, config.jurisdiction),
@@ -639,6 +641,7 @@ export const S3HetznerAdapter: StorageAdapter = {
         region: config.region,
         bucket: config.bucket,
         credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        pathPrefix: config.pathPrefix
     }, ...args),
     delete: (config, ...args) => s3Delete({
         endpoint: `https://${config.region}.your-objectstorage.com`,

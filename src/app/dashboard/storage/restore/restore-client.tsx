@@ -215,11 +215,14 @@ export function RestoreClient() {
         fetchSources();
     }, []);
 
-    // Fetch storage destinations (restore targets for directory entries)
+    // Restore targets for directory entries. Only directory sources: a file restore writes
+    // files back to a place where files live, which is the source role. A backup destination
+    // owns its path for archives, so dropping loose restored files into it would mix them
+    // with the backups - to restore onto such a server, configure it as a directory source.
     useEffect(() => {
         const fetchDestinations = async () => {
             try {
-                const res = await fetch("/api/adapters?type=storage");
+                const res = await fetch("/api/adapters?type=storage&role=SOURCE");
                 if (res.ok) {
                     setStorageDestinations(await res.json());
                 }
@@ -357,9 +360,11 @@ export function RestoreClient() {
                     setDirConfig(data.directories.map((d: DirectoryAnalysis) => ({
                         entryId: d.jobSourceId,
                         label: d.label,
-                        // Default restore target: the original location when its source
-                        // still exists ("put it back"), else the backup's own destination.
-                        targetConfigId: d.origin?.configId ?? destinationId,
+                        // Default restore target: the original location when its source still
+                        // exists ("put it back"). Otherwise left empty so the user picks a
+                        // directory source - the backup's own destination is not a valid file
+                        // target and no longer appears in the list.
+                        targetConfigId: d.origin?.configId ?? "",
                         targetPath: d.origin?.path ?? "",
                         selected: true,
                         selection: null,

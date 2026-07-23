@@ -115,6 +115,7 @@ describe('Step 05 - Per-Destination Retention', () => {
         vi.mocked(RetentionService.calculateRetention).mockReturnValue({
             keep: files.slice(0, 3),
             delete: files.slice(3),
+            keptForChain: [],
         });
 
         ctx.destinations = [
@@ -145,7 +146,7 @@ describe('Step 05 - Per-Destination Retention', () => {
             ...files.map(f => ({ ...f, name: f.name + '.index', path: f.path + '.index' })),
         ]);
 
-        vi.mocked(RetentionService.calculateRetention).mockReturnValue({ keep: files, delete: [] });
+        vi.mocked(RetentionService.calculateRetention).mockReturnValue({ keep: files, delete: [], keptForChain: [] });
 
         ctx.destinations = [
             createDestination({ retention: { mode: 'SIMPLE', simple: { keepCount: 3 } } }),
@@ -165,7 +166,7 @@ describe('Step 05 - Per-Destination Retention', () => {
     it('removes every sidecar when deleting a backup', async () => {
         const files = makeBackupFiles(1);
         mockList.mockResolvedValue(files);
-        vi.mocked(RetentionService.calculateRetention).mockReturnValue({ keep: [], delete: files });
+        vi.mocked(RetentionService.calculateRetention).mockReturnValue({ keep: [], delete: files, keptForChain: [] });
 
         ctx.destinations = [
             createDestination({ retention: { mode: 'SIMPLE', simple: { keepCount: 0 } } }),
@@ -190,9 +191,9 @@ describe('Step 05 - Per-Destination Retention', () => {
 
         // First dest: SIMPLE keep 3
         vi.mocked(RetentionService.calculateRetention)
-            .mockReturnValueOnce({ keep: files.slice(0, 3), delete: files.slice(3) })
+            .mockReturnValueOnce({ keep: files.slice(0, 3), delete: files.slice(3), keptForChain: [] })
             // Second dest: SIMPLE keep 1
-            .mockReturnValueOnce({ keep: files.slice(0, 1), delete: files.slice(1) });
+            .mockReturnValueOnce({ keep: files.slice(0, 1), delete: files.slice(1), keptForChain: [] });
 
         ctx.destinations = [
             createDestination({
@@ -229,6 +230,7 @@ describe('Step 05 - Per-Destination Retention', () => {
         vi.mocked(RetentionService.calculateRetention).mockReturnValue({
             keep: files.slice(0, 1),
             delete: files.slice(1),
+            keptForChain: [],
         });
 
         ctx.destinations = [

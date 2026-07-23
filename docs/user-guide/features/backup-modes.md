@@ -121,10 +121,43 @@ archives in the same folder.
 ## Retention
 
 Retention still evaluates individual snapshots - `keepDaily: 7` means 7 days, not 7 chains.
-A chain is only deleted once **every** one of its snapshots has expired.
+A chain is only deleted once **every** one of its snapshots has expired, so in practice
+**a chain lives until its newest member ages out.** Locking any snapshot pins its whole
+chain the same way.
 
-The practical consequence: slightly more is kept than you asked for, because a chain
-lingers until its newest member ages out. Locking any snapshot pins its whole chain.
+### Worked example: keep 3, full every 7 days, daily schedule
+
+| Day | New backup | Policy keeps | Old chain |
+| :--- | :--- | :--- | :--- |
+| 7 | A7 | A7, A6, A5 | pinned |
+| 8 | **B1** - new chain | B1, A7, A6 | pinned via A7, A6 |
+| 9 | B2 | B2, B1, A7 | pinned via A7 |
+| 10 | B3 | B3, B2, B1 | **deleted - A1 to A7 all go** |
+
+The old chain survives to day 10, not day 3. At the peak the destination holds nine
+backups instead of three - one full plus its deltas, not nine full copies.
+
+Worst case: `keepCount + (fullEveryDays - 1)` backups.
+
+### With GFS this matters more
+
+A weekly, monthly or yearly slot that lands in the middle of a chain pins the **whole**
+chain for as long as that one snapshot is kept. With `monthly: 12` that can mean twelve
+chains held in full, each a full plus its incrementals - roughly *number of slots x chain
+length* instead of *number of slots*.
+
+So the two settings pull in opposite directions: a **longer** full interval saves storage
+under a simple count policy, but costs more under GFS, because every pinned slot drags a
+longer chain along with it.
+
+### Seeing it
+
+The retention log names the backups that only survive because of their chain:
+
+```
+[NAS] Retention: 2 incremental chain(s) present - a chain is only deleted once all of its snapshots expire.
+[NAS] Retention: 5 backup(s) past the policy are kept because their chain is still in use: full-2026-07-15.tar, inc-2026-07-16.tar, ...
+```
 
 ## When DBackup falls back to a full backup
 

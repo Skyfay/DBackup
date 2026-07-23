@@ -117,11 +117,20 @@ async function applyRetentionForDestination(ctx: RunnerContext, dest: Destinatio
         ctx.log(`${destLabel} Retention: Found file: ${f.name} (${f.lastModified.toISOString()})`);
     }
 
-    const { keep, delete: filesToDelete } = RetentionService.calculateRetention(backupFiles, policy, timezone);
+    const { keep, delete: filesToDelete, keptForChain } = RetentionService.calculateRetention(backupFiles, policy, timezone);
 
     const chainCount = new Set(backupFiles.map(f => f.chainId).filter(Boolean)).size;
     if (chainCount > 0) {
         ctx.log(`${destLabel} Retention: ${chainCount} incremental chain(s) present - a chain is only deleted once all of its snapshots expire.`);
+    }
+    // Named individually, because "why are there more backups here than my policy allows"
+    // is otherwise unanswerable from the outside. These are held back by their chain, not
+    // by the policy, and they go as soon as the chain's newest snapshot expires.
+    if (keptForChain.length > 0) {
+        ctx.log(
+            `${destLabel} Retention: ${keptForChain.length} backup(s) past the policy are kept because their chain is still in use: ${keptForChain.map(f => f.name).join(', ')}`,
+            'info'
+        );
     }
     ctx.log(`${destLabel} Retention: Keeping ${keep.length}, Deleting ${filesToDelete.length}.`);
 

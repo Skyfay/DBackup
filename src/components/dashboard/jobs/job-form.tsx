@@ -1491,6 +1491,9 @@ interface DestinationRowProps {
 
 function DestinationRow({ index, form, destinations, usedDestIds, isExpanded, onToggleExpand, onRemove, canRemove }: DestinationRowProps) {
     const [destOpen, setDestOpen] = useState(false);
+    // Chains change what a retention policy actually retains, so the note below only makes
+    // sense - and only appears - for an incremental job.
+    const isIncremental = form.watch("backupMode") === "INCREMENTAL";
     const currentConfigId = form.watch(`destinations.${index}.configId`);
     const currentDest = destinations.find(d => d.id === currentConfigId);
 
@@ -1594,6 +1597,15 @@ function DestinationRow({ index, form, destinations, usedDestIds, isExpanded, on
                         <p className="text-xs text-muted-foreground">
                             Select a retention policy to automatically clean up old backups at this destination.
                         </p>
+                        {/* Without this the destination looks like it is ignoring the policy:
+                            the count is right for standalone backups but not for chains. */}
+                        {isIncremental && (
+                            <p className="text-xs text-muted-foreground">
+                                This job is incremental, so a chain is only deleted once its newest
+                                backup expires - the destination temporarily holds more backups than
+                                the policy alone would keep. The retention log names them.
+                            </p>
+                        )}
                     </div>
                 </CollapsibleContent>
             </Collapsible>

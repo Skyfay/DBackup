@@ -6,7 +6,7 @@ import { RunnerContext, DestinationContext } from '@/lib/runner/types';
 
 vi.mock('@/services/backup/retention-service', () => ({
     RetentionService: {
-        calculateRetention: vi.fn().mockReturnValue({ keep: [], delete: [] }),
+        calculateRetention: vi.fn().mockReturnValue({ keep: [], delete: [], keptForChain: [] }),
     },
 }));
 
@@ -151,6 +151,7 @@ describe('stepRetention', () => {
         (RetentionService.calculateRetention as ReturnType<typeof vi.fn>).mockReturnValue({
             keep: [{ name: 'backup2.sql', path: '/backups/backup2.sql' }],
             delete: [fileToDelete],
+            keptForChain: [],
         });
 
         const dest = makeDestination();
@@ -167,10 +168,7 @@ describe('stepRetention', () => {
 
     it('logs the selected retention template name when applying policy', async () => {
         const { RetentionService } = await import('@/services/backup/retention-service');
-        (RetentionService.calculateRetention as ReturnType<typeof vi.fn>).mockReturnValue({
-            keep: [],
-            delete: [],
-        });
+        (RetentionService.calculateRetention as ReturnType<typeof vi.fn>).mockReturnValue({ keep: [], delete: [], keptForChain: [] });
 
         const dest = makeDestination({
             retention: { mode: 'SMART', smart: { daily: 1, weekly: 1, monthly: 1, yearly: 0 } } as any,
@@ -191,6 +189,7 @@ describe('stepRetention', () => {
         (RetentionService.calculateRetention as ReturnType<typeof vi.fn>).mockReturnValue({
             keep: [],
             delete: [{ name: 'old.sql', path: '/backups/old.sql', size: 100, lastModified: new Date() }],
+            keptForChain: [],
         });
 
         const dest = makeDestination({
@@ -233,10 +232,7 @@ describe('stepRetention', () => {
             size: 1024,
             lastModified: new Date(),
         };
-        (RetentionService.calculateRetention as ReturnType<typeof vi.fn>).mockReturnValue({
-            keep: [file],
-            delete: [],
-        });
+        (RetentionService.calculateRetention as ReturnType<typeof vi.fn>).mockReturnValue({ keep: [file], delete: [], keptForChain: [] });
 
         const dest = makeDestination({
             adapter: {
@@ -257,10 +253,7 @@ describe('stepRetention', () => {
 
     it('ignores read errors when checking locked status', async () => {
         const { RetentionService } = await import('@/services/backup/retention-service');
-        (RetentionService.calculateRetention as ReturnType<typeof vi.fn>).mockReturnValue({
-            keep: [],
-            delete: [],
-        });
+        (RetentionService.calculateRetention as ReturnType<typeof vi.fn>).mockReturnValue({ keep: [], delete: [], keptForChain: [] });
 
         const dest = makeDestination({
             adapter: {
@@ -283,6 +276,7 @@ describe('stepRetention', () => {
         (RetentionService.calculateRetention as ReturnType<typeof vi.fn>).mockReturnValue({
             keep: [],
             delete: [{ name: 'old.sql', path: '/backups/old.sql', size: 100, lastModified: new Date() }],
+            keptForChain: [],
         });
 
         const dest = makeDestination();
@@ -304,6 +298,7 @@ describe('stepRetention', () => {
         (RetentionService.calculateRetention as ReturnType<typeof vi.fn>).mockReturnValue({
             keep: [],
             delete: [{ name: 'old.sql', path: '/backups/old.sql', size: 100, lastModified: new Date() }],
+            keptForChain: [],
         });
 
         const dest = makeDestination();

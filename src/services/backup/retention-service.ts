@@ -8,17 +8,33 @@ type FileWithReasons = {
     reasons: string[];
 };
 
+/** Marks a file the policy itself would have dropped, kept only to keep its chain intact. */
+const CHAIN_KEEP_REASON = 'Part of a retained incremental chain';
+
+export interface RetentionResult {
+    keep: FileInfo[];
+    delete: FileInfo[];
+    /**
+     * Subset of `keep` that the policy alone would have deleted - these survive only
+     * because another snapshot of their chain is still needed. Reported so a destination
+     * holding more backups than the policy says is explainable rather than surprising.
+     */
+    keptForChain: FileInfo[];
+}
+
 export class RetentionService {
     /**
      * Calculates which files to keep and which to delete based on the policy.
      * @param files List of backup files (metadata)
      * @param policy The retention policy configuration
      * @param timezone IANA timezone string used for day/week/month/year bucketing (defaults to 'UTC')
-     * @returns Object with lists of file paths to keep and delete
+     * @returns The files to keep and to delete, plus the ones kept only because a chain
+     *          they belong to is still needed - the reason a destination can hold more
+     *          backups than the policy asks for, which is otherwise invisible.
      */
-    static calculateRetention(files: FileInfo[], policy: RetentionConfiguration, timezone: string = 'UTC'): { keep: FileInfo[]; delete: FileInfo[] } {
+    static calculateRetention(files: FileInfo[], policy: RetentionConfiguration, timezone: string = 'UTC'): RetentionResult {
         if (!policy || policy.mode === 'NONE') {
-            return { keep: files, delete: [] };
+            return { keep: files, delete: [], keptForChain: [] };
         }
 
         // Separate locked files (Always keep, do not count towards policy)
@@ -44,10 +60,14 @@ export class RetentionService {
 
         const keptFromPolicy = processedFiles.filter(f => f.keep).map(f => f.file);
         const deletedFromPolicy = processedFiles.filter(f => !f.keep).map(f => f.file);
+        const keptForChain = processedFiles
+            .filter(f => f.reasons.includes(CHAIN_KEEP_REASON))
+            .map(f => f.file);
 
         return {
             keep: [...keptFromPolicy, ...lockedFiles], // Add locked files to keep list
-            delete: deletedFromPolicy
+            delete: deletedFromPolicy,
+            keptForChain,
         };
     }
 
@@ -75,7 +95,7 @@ export class RetentionService {
             if (entry.keep || !entry.file.chainId) continue;
             if (!chainsToKeep.has(entry.file.chainId)) continue;
             entry.keep = true;
-            entry.reasons.push('Part of a retained incremental chain');
+            entry.reasons.push(CHAIN_KEEP_REASON);
         }
     }
 

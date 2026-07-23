@@ -65,6 +65,8 @@ All notable changes to DBackup are documented here.
 
 ### 🎨 Improvements
 
+- **retention**: The retention log now names the backups that survive only because their incremental chain is still in use, so a destination holding more backups than its policy allows is explainable instead of looking like the policy is being ignored. The job form points this out on incremental jobs.
+
 - **adapters**: Dropped the Role column from the adapter tables. Both storage pages now list a single role, so the column repeated the same value in every row.
 
 - **storage**: The Storage Explorer's backup count badge now reflects combined database + directory archives (e.g. "2 DBs + 2 Dirs") instead of a misleading database-only count.
@@ -88,6 +90,7 @@ All notable changes to DBackup are documented here.
 - **api**: Documented the restore endpoint's new `scope` parameter, and corrected `targetSourceId` from unconditionally required to required only when the restore includes a database.
 - **wiki**: Documented the destination/directory-source roles on both overview pages, including how to use one server for both.
 - **wiki**: Updated every navigation instruction in the user guide for the new Connections page and its tabs.
+- **wiki**: Documented how retention and incremental chains interact, with a worked example and the amplifying effect GFS slots have on chain storage.
 - **wiki**: Rewrote the "Detect changes by content" section to separate the transfer decision from the storage decision, name the cases that actually need it, and point out that a full backup re-checks everything.
 - **api**: Documented `storageRole` on the adapter schemas and the new `role` query parameter of the adapter listing endpoint.
 
@@ -95,6 +98,7 @@ All notable changes to DBackup are documented here.
 
 - **restore**: Added unit tests for the restore scope rules - when a combined backup asks what to restore, and how the restore page interprets the resulting parameter.
 - **destinations**: Added tests for the adapter role - the listing filter, the guard that refuses a role change while a job depends on it, and the clone keeping or flipping the role.
+- **retention**: Added tests for the chain-kept report - which backups it names, and that it stays empty for standalone backups and for chains the policy keeps on its own.
 - **backup**: Added a test for an incremental run re-reading a file whose timestamp moved backwards at an unchanged size.
 - **jobs**: Added tests for the new destination-role validation, covering a destination pointing at a directory source and at an adapter that does not exist.
 - **lint-guards**: Added a guard that fails the build when new code enumerates storage adapters for backup purposes without filtering by role, with an explicit allow-list for the health check and the listing endpoint.

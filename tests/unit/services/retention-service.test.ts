@@ -675,6 +675,45 @@ describe('RetentionService - incremental chains', () => {
         expect(result.keep).toHaveLength(4);
     });
 
+    it('reports which files the policy would have dropped but the chain holds back', () => {
+        // The number that explains a destination holding more backups than the policy
+        // allows. Without it the retention log looks like it is ignoring the policy.
+        const files = [
+            file('full-1.tar', 1, 'chain-a'),
+            file('inc-2.tar', 2, 'chain-a'),
+            file('inc-3.tar', 3, 'chain-a'),
+            file('inc-4.tar', 4, 'chain-a'),
+        ];
+
+        const result = RetentionService.calculateRetention(files, { mode: 'SIMPLE', simple: { keepCount: 2 } });
+
+        expect(result.keptForChain.map((f) => f.name).sort()).toEqual(['full-1.tar', 'inc-2.tar']);
+        // Everything reported is genuinely being kept.
+        for (const held of result.keptForChain) {
+            expect(result.keep).toContain(held);
+        }
+    });
+
+    it('reports nothing extra when the policy keeps whole chains on its own', () => {
+        const files = [
+            file('new-full.tar', 10, 'chain-new'),
+            file('new-inc.tar', 11, 'chain-new'),
+        ];
+
+        const result = RetentionService.calculateRetention(files, { mode: 'SIMPLE', simple: { keepCount: 2 } });
+
+        expect(result.keptForChain).toEqual([]);
+    });
+
+    it('reports nothing extra for backups that are not part of a chain', () => {
+        const files = [file('a.sql', 1), file('b.sql', 2), file('c.sql', 3)];
+
+        const result = RetentionService.calculateRetention(files, { mode: 'SIMPLE', simple: { keepCount: 1 } });
+
+        expect(result.keptForChain).toEqual([]);
+        expect(result.delete).toHaveLength(2);
+    });
+
     it('deletes a whole chain once all of its snapshots have expired', () => {
         const files = [
             file('old-full.tar', 1, 'chain-old'),

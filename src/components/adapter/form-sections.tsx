@@ -169,6 +169,90 @@ function DisableVerificationSwitch({
  * reads folders out of that same root. One config doing both would let a job collect its
  * own archives, so there is no "both" and no "neither".
  */
+/**
+ * Shadow copy toggle for a directory source.
+ *
+ * The switch cannot be turned on until the server has confirmed it can deliver one -
+ * enabling it blind would configure a job that fails on its next run, because a backup
+ * relying on snapshots is aborted rather than quietly taken without one.
+ */
+function SnapshotSwitch({
+    enabled,
+    onChange,
+    adapterId,
+    getConfig,
+}: {
+    enabled: boolean;
+    onChange: (enabled: boolean) => void;
+    adapterId: string;
+    getConfig: () => { config: Record<string, unknown>; primaryCredentialId: string | null; sshCredentialId: string | null };
+}) {
+    const [checking, setChecking] = useState(false);
+    // Null until checked in this session. An already-enabled adapter was verified when it
+    // was saved, so it stays on without re-checking every time the form opens.
+    const [available, setAvailable] = useState<boolean | null>(null);
+    const [message, setMessage] = useState<string | null>(null);
+
+    const runCheck = async () => {
+        setChecking(true);
+        setMessage(null);
+        try {
+            const { config, primaryCredentialId, sshCredentialId } = getConfig();
+            const res = await fetch("/api/adapters/check-snapshot", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ adapterId, config, primaryCredentialId, sshCredentialId }),
+            });
+            const data = await res.json();
+            setAvailable(!!data.supported);
+            setMessage(data.message ?? null);
+            if (!data.supported) onChange(false);
+        } catch (error: unknown) {
+            setAvailable(false);
+            setMessage(error instanceof Error ? error.message : "The check could not be run.");
+            onChange(false);
+        } finally {
+            setChecking(false);
+        }
+    };
+
+    const canEnable = enabled || available === true;
+
+    return (
+        <div className="rounded-lg border p-4 space-y-3">
+            <div className="flex items-center justify-between gap-4">
+                <div className="space-y-0.5">
+                    <Label htmlFor="use-vss">Read from a shadow copy (VSS)</Label>
+                    <p className="text-sm text-muted-foreground">
+                        Asks the file server for a point-in-time snapshot and backs that up instead of
+                        the live share, so open files can be read and the backup reflects a single
+                        moment. Needs Windows Server 2012 or newer with the File Server VSS Agent
+                        Service, or Samba 4.2+, and an account with backup privileges.
+                    </p>
+                </div>
+                <Switch
+                    id="use-vss"
+                    className="shrink-0"
+                    checked={enabled}
+                    disabled={!canEnable}
+                    onCheckedChange={onChange}
+                />
+            </div>
+            <div className="flex items-center gap-3">
+                <Button type="button" variant="outline" size="sm" onClick={runCheck} disabled={checking}>
+                    {checking ? "Checking..." : "Check availability"}
+                </Button>
+                {available === null && !enabled && (
+                    <span className="text-xs text-muted-foreground">Run the check to enable this.</span>
+                )}
+            </div>
+            {message && (
+                <p className={cn("text-xs", available ? "text-muted-foreground" : "text-destructive")}>{message}</p>
+            )}
+        </div>
+    );
+}
+
 function AdapterRolePicker({
     storageRole,
     onStorageRoleChange,
@@ -757,13 +841,15 @@ export function StorageFormContent({
     onPrimaryChange,
     onSshChange: _onSshChange,
 }: { adapter: AdapterDefinition; initialData?: AdapterConfig; healthNotificationsDisabled?: boolean; onHealthNotificationsDisabledChange?: (disabled: boolean) => void; skipVerification?: boolean; onSkipVerificationChange?: (disabled: boolean) => void; storageRole?: StorageRole; onStorageRoleChange?: (role: StorageRole) => void } & CredentialPickerHostProps) {
-    const { watch } = useFormContext();
+    const { watch, setValue, getValues } = useFormContext();
     const authType = watch("config.authType");
     const storageClass = watch("config.storageClass");
     const isArchivedStorageClass = storageClass === "GLACIER" || storageClass === "DEEP_ARCHIVE";
+    // SMB is the only adapter that can snapshot today (via MS-FSRVP).
+    const supportsSnapshots = adapter.id === 'smb';
     const hasRealConfigKeys = hasFields(adapter, STORAGE_CONFIG_KEYS);
     // Always show Configuration tab for storage adapters (health check, verification and the role picker live there)
-    const hasConfigKeys = hasRealConfigKeys || !!onHealthNotificationsDisabledChange || !!onSkipVerificationChange || !!onStorageRoleChange;
+    const hasConfigKeys = hasRealConfigKeys || !!onHealthNotificationsDisabledChange || !!onSkipVerificationChange || !!onStorageRoleChange || supportsSnapshots;
     const isGoogleDrive = adapter.id === 'google-drive';
     const isDropbox = adapter.id === 'dropbox';
     const isOneDrive = adapter.id === 'onedrive';
@@ -895,6 +981,20 @@ export function StorageFormContent({
                         <AdapterRolePicker
                             storageRole={storageRole ?? STORAGE_ROLES.DESTINATION}
                             onStorageRoleChange={onStorageRoleChange}
+                        />
+                    )}
+                    {/* Only for a directory source: a snapshot of the place backups are
+                        written to serves no purpose. */}
+                    {supportsSnapshots && storageRole === STORAGE_ROLES.SOURCE && (
+                        <SnapshotSwitch
+                            enabled={!!watch("config.useVss")}
+                            onChange={(on) => setValue("config.useVss", on, { shouldDirty: true })}
+                            adapterId={adapter.id}
+                            getConfig={() => ({
+                                config: (getValues("config") ?? {}) as Record<string, unknown>,
+                                primaryCredentialId: primaryCredentialId ?? null,
+                                sshCredentialId: _sshCredentialId ?? null,
+                            })}
                         />
                     )}
                 </TabsContent>

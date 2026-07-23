@@ -34,6 +34,7 @@ All notable changes to DBackup are documented here.
 - **restore**: The restore page now shows a file tree per directory source, so a restore can cover everything, single folders or individual files - with a per-selection size summary and a `.tar.gz` download option.
 - **restore**: Directory restore targets can now be picked with a folder browser, and a one-click "Use original location" fills in where the files were originally collected from.
 - **restore**: Clicking Restore on a backup that contains both databases and directory sources now offers a choice between restoring everything, only the databases or only the files, instead of always opening the page with both halves.
+- **smb**: Directory sources on SMB shares can now be read from a VSS shadow copy instead of the live share, so open files are readable and the backup reflects a single point in time. Uses MS-FSRVP, needs no agent on the file server, and the switch only unlocks once the server has confirmed it can deliver one. A run whose snapshot turns out to be unavailable fails rather than silently backing up the live share.
 - **destinations**: Added a "Create as Directory Source" action (and its reverse on the Sources page) that copies a storage adapter into the opposite role including its credentials, so the same server can serve both purposes without being set up twice by hand.
 
 ### 🐛 Bug Fixes
@@ -90,6 +91,7 @@ All notable changes to DBackup are documented here.
 - **api**: Documented the restore endpoint's new `scope` parameter, and corrected `targetSourceId` from unconditionally required to required only when the restore includes a database.
 - **wiki**: Documented the destination/directory-source roles on both overview pages, including how to use one server for both.
 - **wiki**: Updated every navigation instruction in the user guide for the new Connections page and its tabs.
+- **wiki**: Documented shadow copies for SMB directory sources - what they solve, the server-side requirements, and the deliberate hard failure when one cannot be taken.
 - **wiki**: Documented how retention and incremental chains interact, with a worked example and the amplifying effect GFS slots have on chain storage.
 - **wiki**: Rewrote the "Detect changes by content" section to separate the transfer decision from the storage decision, name the cases that actually need it, and point out that a full backup re-checks everything.
 - **api**: Documented `storageRole` on the adapter schemas and the new `role` query parameter of the adapter listing endpoint.
@@ -98,6 +100,7 @@ All notable changes to DBackup are documented here.
 
 - **restore**: Added unit tests for the restore scope rules - when a combined backup asks what to restore, and how the restore page interprets the resulting parameter.
 - **destinations**: Added tests for the adapter role - the listing filter, the guard that refuses a role change while a job depends on it, and the clone keeping or flipping the role.
+- **smb**: Added tests for the FSRVP exchange - parsing rpcclient's output against Samba's own format strings, the mandatory recovery-complete call, password scrubbing, and the release path on success, failure and cancellation.
 - **retention**: Added tests for the chain-kept report - which backups it names, and that it stays empty for standalone backups and for chains the policy keeps on its own.
 - **backup**: Added a test for an incremental run re-reading a file whose timestamp moved backwards at an unchanged size.
 - **jobs**: Added tests for the new destination-role validation, covering a destination pointing at a directory source and at an adapter that does not exist.

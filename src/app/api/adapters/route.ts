@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isStorageRole } from "@/lib/core/storage-roles";
+import { isStorageRole, STORAGE_ROLES } from "@/lib/core/storage-roles";
+import { validateSnapshotConfig } from "@/lib/adapters/snapshot-validation";
 import prisma from "@/lib/prisma";
 import { encryptConfig } from "@/lib/crypto";
 import { toAdapterListItem } from "@/lib/adapters/dto";
@@ -101,6 +102,24 @@ export async function POST(req: NextRequest) {
             }
             if (e instanceof NotFoundError) {
                 return NextResponse.json({ error: e.message }, { status: 404 });
+            }
+            throw e;
+        }
+
+        // A snapshot-enabled config is only accepted when the server can actually deliver
+        // one - the form's gate alone would be bypassable through this endpoint.
+        try {
+            const configForCheck = typeof config === 'string' ? JSON.parse(config) : config;
+            await validateSnapshotConfig(
+                adapterId,
+                configForCheck,
+                isStorageRole(storageRole) ? storageRole : STORAGE_ROLES.DESTINATION,
+                primaryCredentialId ?? null,
+                sshCredentialId ?? null
+            );
+        } catch (e) {
+            if (e instanceof ValidationError) {
+                return NextResponse.json({ error: e.message }, { status: 400 });
             }
             throw e;
         }

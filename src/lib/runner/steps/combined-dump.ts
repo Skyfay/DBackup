@@ -170,6 +170,11 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
             const localDir = path.join(workDir, "sources", source.jobSourceId);
             const unitBase = completedUnits;
 
+            // A snapshot, when the source is configured for one. Everything below reads
+            // through `readConfig`, which is either the plain config or the one overlaid
+            // onto the exposed snapshot - the collection itself does not know the difference.
+            const readConfig = await acquireSnapshot(ctx, source, logPrefix);
+
             // Incremental runs skip files the chain already holds. The decision uses the
             // listing (size and mtime), so an unchanged file is never transferred - which
             // is where the bandwidth saving comes from, on top of the storage saving.
@@ -196,7 +201,7 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
 
             const result = await downloadDirectory(
                 source.adapter,
-                source.config,
+                readConfig,
                 source.remotePath,
                 localDir,
                 source.excludePatterns,
@@ -348,4 +353,52 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
     } finally {
         await cleanupTempDir(workDir).catch((e) => log.warn("Failed to clean up combined-dump work directory", { workDir }, wrapError(e)));
     }
+}
+
+/**
+ * Creates a snapshot for a directory source that asks for one, and returns the config the
+ * collection should read through.
+ *
+ * Throws when a source is configured for snapshots but cannot get one. That is deliberate:
+ * a job that promises point-in-time consistency must not quietly produce a backup without
+ * it. The failure is loud, and the job's failure notification carries it.
+ *
+ * The handle is parked on the context immediately, before anything else can fail, so
+ * `stepCleanup` releases it no matter how the run ends.
+ */
+async function acquireSnapshot(
+    ctx: RunnerContext,
+    source: RunnerContext["sources"][number],
+    logPrefix: string
+): Promise<Record<string, unknown>> {
+    if (source.config?.useVss !== true) return source.config;
+
+    const { adapter, config, remotePath } = source;
+    if (!adapter.createSnapshot || !adapter.supportsSnapshot || !adapter.releaseSnapshot) {
+        throw new Error(`${source.configName}: shadow copies are enabled but adapter '${adapter.id}' cannot create them`);
+    }
+
+    const support = await adapter.supportsSnapshot(config, remotePath);
+    if (!support.supported) {
+        throw new Error(`${source.configName}: shadow copies are enabled but unavailable - ${support.message}`);
+    }
+
+    // A run killed before cleanup leaves its snapshot behind, and the server refuses a new
+    // one while the old set is open. Clear those first or every later backup fails.
+    if (adapter.findOrphanedSnapshots) {
+        const orphans = await adapter.findOrphanedSnapshots(config, remotePath).catch(() => []);
+        for (const orphan of orphans) {
+            ctx.log(`${logPrefix} Removing a shadow copy left over from an earlier run (${orphan.label})`, 'warning', 'storage');
+            await adapter.releaseSnapshot(config, orphan).catch((e: unknown) => {
+                ctx.log(`${logPrefix} Could not remove the leftover shadow copy: ${e instanceof Error ? e.message : String(e)}`, 'warning', 'storage');
+            });
+        }
+    }
+
+    const handle = await adapter.createSnapshot(config, remotePath);
+    ctx.shadowCopies = ctx.shadowCopies ?? [];
+    ctx.shadowCopies.push({ configId: source.configId, configName: source.configName, adapter, config, handle });
+    ctx.log(`${logPrefix} Reading from shadow copy ${handle.label}`, 'info', 'storage');
+
+    return { ...config, ...handle.configOverride };
 }

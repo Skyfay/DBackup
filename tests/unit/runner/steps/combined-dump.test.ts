@@ -350,6 +350,120 @@ describe('executeCombinedDump', () => {
     });
 });
 
+describe('executeCombinedDump - shadow copies', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        planChainMock.mockResolvedValue({ type: 'full', chainId: 'chain-1', index: 0, chainDir: 'chain-x' });
+    });
+
+    /** A directory source asking for a snapshot, with the adapter's snapshot methods as spies. */
+    function snapshotSource(overrides: {
+        supported?: boolean;
+        orphans?: { id: string; configOverride: Record<string, unknown>; label: string }[];
+        createSnapshot?: ReturnType<typeof vi.fn>;
+        releaseSnapshot?: ReturnType<typeof vi.fn>;
+    } = {}) {
+        const base = makeFakeStorageAdapter({ 'a.txt': 'AAAA' });
+        const createSnapshot = overrides.createSnapshot ?? vi.fn().mockResolvedValue({
+            id: 'set-1|copy-1|\\\\server\\share',
+            configOverride: { address: '//server/share@snap' },
+            label: '\\\\server\\share@snap',
+        });
+        const releaseSnapshot = overrides.releaseSnapshot ?? vi.fn().mockResolvedValue(undefined);
+        const adapter = {
+            ...base,
+            supportsSnapshot: vi.fn().mockResolvedValue({
+                supported: overrides.supported ?? true,
+                message: overrides.supported === false ? 'File Server VSS Agent Service is not running' : 'ok',
+            }),
+            createSnapshot,
+            releaseSnapshot,
+            findOrphanedSnapshots: vi.fn().mockResolvedValue(overrides.orphans ?? []),
+        } as any;
+        return { adapter, createSnapshot, releaseSnapshot };
+    }
+
+    it('reads through the snapshot instead of the live share', async () => {
+        const { adapter, createSnapshot } = snapshotSource();
+        const ctx = makeCtx({
+            sourceAdapter: undefined,
+            sources: [makeDirectorySource({ adapter, config: { address: '//server/share', useVss: true } })],
+            job: makeJob({ source: null }),
+        });
+
+        await executeCombinedDump(ctx);
+        createdTempFiles.push(ctx.tempFile!);
+
+        expect(createSnapshot).toHaveBeenCalledTimes(1);
+        // Collection got the overlaid address, not the original one.
+        const usedConfig = adapter.downloadDirectory.mock.calls[0][0];
+        expect(usedConfig.address).toBe('//server/share@snap');
+    });
+
+    it('parks the handle on the context so cleanup can release it', async () => {
+        const { adapter } = snapshotSource();
+        const ctx = makeCtx({
+            sourceAdapter: undefined,
+            sources: [makeDirectorySource({ adapter, config: { address: '//server/share', useVss: true } })],
+            job: makeJob({ source: null }),
+        });
+
+        await executeCombinedDump(ctx);
+        createdTempFiles.push(ctx.tempFile!);
+
+        expect(ctx.shadowCopies).toHaveLength(1);
+        expect(ctx.shadowCopies![0].handle.label).toContain('snap');
+    });
+
+    it('aborts the run when snapshots are enabled but unavailable', async () => {
+        // Deliberately loud: a job promising point-in-time consistency must not quietly
+        // produce a backup without it.
+        const { adapter, createSnapshot } = snapshotSource({ supported: false });
+        const ctx = makeCtx({
+            sourceAdapter: undefined,
+            sources: [makeDirectorySource({ adapter, config: { address: '//server/share', useVss: true } })],
+            job: makeJob({ source: null }),
+        });
+
+        await expect(executeCombinedDump(ctx)).rejects.toThrow('File Server VSS Agent Service is not running');
+        expect(createSnapshot).not.toHaveBeenCalled();
+    });
+
+    it('clears a snapshot left behind by an earlier run before creating a new one', async () => {
+        // FSRVP refuses a new set while one is open, so a leftover would block every
+        // future backup of this share.
+        const orphan = { id: 'old-set|old-copy|\\\\server\\share', configOverride: {}, label: '\\\\server\\share' };
+        const { adapter, releaseSnapshot, createSnapshot } = snapshotSource({ orphans: [orphan] });
+        const ctx = makeCtx({
+            sourceAdapter: undefined,
+            sources: [makeDirectorySource({ adapter, config: { address: '//server/share', useVss: true } })],
+            job: makeJob({ source: null }),
+        });
+
+        await executeCombinedDump(ctx);
+        createdTempFiles.push(ctx.tempFile!);
+
+        expect(releaseSnapshot).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: 'old-set|old-copy|\\\\server\\share' }));
+        expect(createSnapshot).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves a source without the option completely alone', async () => {
+        const { adapter, createSnapshot } = snapshotSource();
+        const ctx = makeCtx({
+            sourceAdapter: undefined,
+            sources: [makeDirectorySource({ adapter, config: { address: '//server/share' } })],
+            job: makeJob({ source: null }),
+        });
+
+        await executeCombinedDump(ctx);
+        createdTempFiles.push(ctx.tempFile!);
+
+        expect(adapter.supportsSnapshot).not.toHaveBeenCalled();
+        expect(createSnapshot).not.toHaveBeenCalled();
+        expect(ctx.shadowCopies ?? []).toHaveLength(0);
+    });
+});
+
 describe('executeCombinedDump - incremental change detection', () => {
     const sha = (text: string) => createHash('sha256').update(text).digest('hex');
 

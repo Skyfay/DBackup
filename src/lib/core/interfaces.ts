@@ -399,6 +399,27 @@ export interface DirectoryBrowseEntry {
     path: string;
 }
 
+/**
+ * A point-in-time copy of a source tree, so a backup reads a stable snapshot instead of a
+ * tree that keeps changing underneath it.
+ *
+ * Held by the runner for the duration of the collection and released in `stepCleanup`,
+ * which runs in the runner's `finally` - so a snapshot outlives neither a failure nor a
+ * cancellation.
+ */
+export interface SnapshotHandle {
+    /** Opaque id the adapter needs to release this snapshot again. */
+    id: string;
+    /**
+     * Config fields to overlay while reading. A snapshot is usually exposed somewhere else
+     * entirely - FSRVP hands out a separate UNC path - so collection reads the same
+     * relative paths against an overlaid config rather than a rewritten remote path.
+     */
+    configOverride: Record<string, unknown>;
+    /** Human-readable location, for the execution log. */
+    label: string;
+}
+
 export interface StorageAdapter extends BaseAdapter {
     type: 'storage';
     /**
@@ -501,6 +522,26 @@ export interface StorageAdapter extends BaseAdapter {
      * picker, which falls back to plain manual path entry.
      */
     browseDirectories?(config: AdapterConfig, subPath: string): Promise<DirectoryBrowseEntry[]>;
+
+    /**
+     * Reports whether this server can produce a point-in-time snapshot of the given path.
+     *
+     * Checked before the option can be enabled at all, and again before every backup that
+     * relies on it - a service can be stopped or a permission revoked after the fact.
+     */
+    supportsSnapshot?(config: AdapterConfig, remotePath: string): Promise<{ supported: boolean; message: string }>;
+
+    /** Creates and exposes a snapshot. The caller must release it, whatever else happens. */
+    createSnapshot?(config: AdapterConfig, remotePath: string): Promise<SnapshotHandle>;
+
+    /** Releases a snapshot. Must tolerate one that is already gone. */
+    releaseSnapshot?(config: AdapterConfig, handle: SnapshotHandle): Promise<void>;
+
+    /**
+     * Finds snapshots this adapter left behind on the server, so a run killed before it
+     * could clean up does not block the next one. Returns handles ready for release.
+     */
+    findOrphanedSnapshots?(config: AdapterConfig, remotePath: string): Promise<SnapshotHandle[]>;
 }
 
 /**

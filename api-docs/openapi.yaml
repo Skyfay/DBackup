@@ -483,6 +483,55 @@ paths:
                           type: integer
 
   # ─── Adapters ──────────────────────────────────────────────────
+  /adapters/check-snapshot:
+    post:
+      tags: [Adapters]
+      summary: Check Snapshot Availability
+      description: |
+        Asks a storage server whether it can produce point-in-time snapshots of its path.
+
+        Currently only SMB, via MS-FSRVP. The snapshot option cannot be enabled on an
+        adapter until this reports `supported: true`, and the same check runs again when
+        the adapter is saved.
+      operationId: checkAdapterSnapshot
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [adapterId, config]
+              properties:
+                adapterId:
+                  type: string
+                  example: smb
+                config:
+                  type: object
+                  description: Adapter connection configuration
+                primaryCredentialId:
+                  type: string
+                sshCredentialId:
+                  type: string
+      responses:
+        "200":
+          description: Probe result. Also returned when the server is unreachable - an unavailable snapshot service is an answer, not an error.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  supported:
+                    type: boolean
+                  message:
+                    type: string
+                    example: "\\\\fileserver\\data supports shadow copies (FSRVP 1-1)."
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /adapters:
     get:
       tags: [Adapters]

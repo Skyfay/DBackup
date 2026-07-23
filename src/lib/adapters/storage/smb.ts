@@ -1,4 +1,5 @@
-import { StorageAdapter, StorageSession, FileInfo } from "@/lib/core/interfaces";
+import { StorageAdapter, StorageSession, FileInfo, SnapshotHandle } from "@/lib/core/interfaces";
+import { probeSnapshotSupport, createShadowCopy, releaseShadowCopy, findOrphanedShadowCopies } from "./smb-vss";
 import { SMBSchema } from "@/lib/adapters/definitions";
 import SambaClient from "samba-client";
 import path from "path";
@@ -288,5 +289,26 @@ export const SMBAdapter: StorageAdapter = {
             await client.deleteFile(destination).catch(() => {});
             await fs.unlink(tmpPath).catch(() => {});
         }
+    },
+
+    // ── Shadow copies (MS-FSRVP) ─────────────────────────────────────────────
+    // Only useful for a directory source: snapshotting the place backups are written to
+    // gains nothing. The role check lives in the form and the API, not here - the adapter
+    // just exposes the capability.
+
+    async supportsSnapshot(config: SMBConfig): Promise<{ supported: boolean; message: string }> {
+        return probeSnapshotSupport(config);
+    },
+
+    async createSnapshot(config: SMBConfig): Promise<SnapshotHandle> {
+        return createShadowCopy(config);
+    },
+
+    async releaseSnapshot(config: SMBConfig, handle: SnapshotHandle): Promise<void> {
+        return releaseShadowCopy(config, handle);
+    },
+
+    async findOrphanedSnapshots(config: SMBConfig): Promise<SnapshotHandle[]> {
+        return findOrphanedShadowCopies(config);
     },
 };

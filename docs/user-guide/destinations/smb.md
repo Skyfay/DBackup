@@ -48,6 +48,48 @@ Synology, QNAP, TrueNAS, and OpenMediaVault all support SMB shares. Create a ded
 - All credentials are stored AES-256-GCM encrypted in the database
 - `smbclient` must be available in the DBackup container (included in the default Docker image)
 
+## Shadow copies (VSS)
+
+Available when the SMB adapter is a **directory source**. Backing up a live share means
+reading a tree that keeps changing: open files cannot be read, and files collected at the
+start and at the end of a long run do not belong to the same moment. For media or documents
+that rarely matters; for a share holding a running application - a file-based database, PST
+files, VM images - it produces a backup that does not restore cleanly.
+
+With the option on, DBackup asks the file server for a point-in-time snapshot
+(**MS-FSRVP**, the same mechanism Synology Active Backup uses), reads the backup from that
+snapshot, and releases it afterwards. No agent is installed on the server.
+
+### Requirements
+
+| Requirement | Note |
+| :--- | :--- |
+| Windows Server 2012 or newer | Or Samba 4.2+ configured as an FSRVP server |
+| **File Server VSS Agent Service** | A role service, **not** installed by default |
+| An account with backup privileges | Plain read access on the share is not enough |
+| RPC reachable through the firewall | The request does not travel over the SMB share itself |
+
+### Enabling it
+
+The switch stays disabled until **Check availability** succeeds - the server is asked
+directly, so a missing agent service or insufficient rights shows up while configuring
+rather than during the first backup. The same check runs again when the adapter is saved,
+so it cannot be bypassed through the API.
+
+::: warning A job configured for shadow copies fails without one
+If snapshots turn out to be unavailable at backup time - the agent service stopped, rights
+revoked, the server replaced - the run **fails** instead of quietly backing up the live
+share. A backup that claims point-in-time consistency and does not have it is worse than a
+missing one, and the job's failure notification tells you about it.
+:::
+
+### Cleanup
+
+The snapshot is released when the run ends, whether it succeeded, failed or was cancelled.
+Should DBackup be killed outright, the leftover is detected and removed before the next
+backup of that share - which matters, because the server refuses a new snapshot while an
+old one is still open. `vssadmin list shadows` on the server shows what is currently held.
+
 ## Troubleshooting
 
 ### Connection Refused

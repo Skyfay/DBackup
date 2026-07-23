@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { STORAGE_ROLES, isStorageRole } from "@/lib/core/storage-roles";
+import { STORAGE_ROLES, isStorageRole, type StorageRole } from "@/lib/core/storage-roles";
+import { validateSnapshotConfig } from "@/lib/adapters/snapshot-validation";
 import prisma from "@/lib/prisma";
 import { encryptConfig, decryptConfig, mergeSecrets } from "@/lib/crypto";
 import { toAdapterListItem } from "@/lib/adapters/dto";
@@ -159,6 +160,9 @@ export async function PUT(
         // (decrypted) config before re-encrypting so we never clobber a real
         // secret with an encrypted empty string (data-loss bug).
         let configString: string | undefined;
+        // Kept in scope for the snapshot check below, which has to probe with the real
+        // secrets rather than the redacted ones the form submits.
+        let mergedPlainConfig: Record<string, unknown> | undefined;
         if (config !== undefined) {
             const incomingConfig = typeof config === 'string' ? JSON.parse(config) : config;
             let existingDecrypted: unknown = {};
@@ -168,6 +172,7 @@ export async function PUT(
                 log.warn("Failed to decrypt existing config during update; secret merge skipped", { adapterId: params.id }, wrapError(e));
             }
             const mergedConfig = mergeSecrets(incomingConfig, existingDecrypted);
+            mergedPlainConfig = mergedConfig as Record<string, unknown>;
             configString = JSON.stringify(encryptConfig(mergedConfig));
         }
 
@@ -197,6 +202,27 @@ export async function PUT(
                         error: `Cannot turn this into a destination: it is used as a directory source in ${linkedSources.map(s => s.job.name).join(', ')}.`
                     }, { status: 400 });
                 }
+            }
+        }
+
+        // Same gate as on create: the config that ends up stored has to be one the server
+        // can honour, whichever endpoint wrote it.
+        if (mergedPlainConfig !== undefined) {
+            try {
+                const effectiveRole = isStorageRole(storageRole) ? storageRole : (existingAdapter.storageRole as StorageRole);
+                const configForCheck = mergedPlainConfig;
+                await validateSnapshotConfig(
+                    existingAdapter.adapterId,
+                    configForCheck,
+                    effectiveRole,
+                    primaryCredentialId ?? null,
+                    sshCredentialId ?? null
+                );
+            } catch (e) {
+                if (e instanceof ValidationError) {
+                    return NextResponse.json({ success: false, error: e.message }, { status: 400 });
+                }
+                throw e;
             }
         }
 

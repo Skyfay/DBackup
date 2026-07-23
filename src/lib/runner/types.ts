@@ -1,5 +1,5 @@
 import type { ChainPlan } from "@/services/backup/chain-planner";
-import { DatabaseAdapter, StorageAdapter } from "@/lib/core/interfaces";
+import { DatabaseAdapter, StorageAdapter, SnapshotHandle } from "@/lib/core/interfaces";
 import { Job, AdapterConfig, Execution, JobDestination, JobSource, NotificationTemplate, NotificationTemplateChannel, JobNotificationTemplate } from "@prisma/client";
 import { LogEntry, LogLevel, LogType, PipelineStage } from "@/lib/core/logs";
 import { RetentionConfiguration } from "@/lib/core/retention";
@@ -81,6 +81,11 @@ export interface RunnerContext {
     sourceAdapter?: DatabaseAdapter;
     // NEW, additive - empty array for every job without directory sources (the 99% case today).
     sources: DirectorySourceContext[];
+    /**
+     * Snapshots created for this run, released in `stepCleanup` - which the runner calls
+     * from its `finally`, so they go on success, failure and cancellation alike.
+     */
+    shadowCopies?: { configId: string; configName: string; adapter: StorageAdapter; config: Record<string, unknown>; handle: SnapshotHandle }[];
     destinations: DestinationContext[];
 
     // File paths

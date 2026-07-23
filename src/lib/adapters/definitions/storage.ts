@@ -61,6 +61,9 @@ export const SMBSchema = z.object({
     domain: z.string().optional().describe("Workgroup or domain name"),
     maxProtocol: z.enum(["SMB3", "SMB2", "NT1"]).default("SMB3").describe("Maximum SMB protocol version"),
     pathPrefix: z.string().optional().describe("Remote destination folder"),
+    // Directory sources only, and only accepted once the server has been probed - see the
+    // check-snapshot route. Snapshotting a backup destination gains nothing.
+    useVss: z.boolean().default(false).describe("Read from a VSS shadow copy instead of the live share"),
 });
 
 export const WebDAVSchema = z.object({

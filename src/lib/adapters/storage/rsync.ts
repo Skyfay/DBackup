@@ -1,5 +1,7 @@
 import { StorageAdapter, StorageSession, FileInfo, DirectoryDownloadResult, DirectoryFileEntry, DirectoryBrowseEntry } from "@/lib/core/interfaces";
-import { RsyncSchema } from "@/lib/adapters/definitions";
+import { RsyncSchema, type SFTPConfig } from "@/lib/adapters/definitions";
+import { connectSFTP } from "./sftp";
+import { Readable } from "stream";
 import Rsync from "rsync";
 import { exec, execFile } from "child_process";
 import { promisify } from "util";
@@ -514,6 +516,39 @@ export const RsyncAdapter: StorageAdapter = {
         } finally {
             if (keyFile) await fs.unlink(keyFile).catch(() => {});
             await fs.unlink(tmpPath).catch(() => {});
+        }
+    },
+
+    /**
+     * Serves a byte range by opening SFTP on the same SSH server.
+     *
+     * rsync has no notion of partial reads, but this adapter always speaks SSH - same host,
+     * port and credentials - and SFTP is a subsystem of that server. So a single-file
+     * restore can fetch just that file instead of the whole archive, provided the server
+     * offers the subsystem. Where it does not (a hardened rsync-only account, say), this
+     * throws and the caller falls back to fetching the archive once.
+     */
+    async downloadRange(config: RsyncConfig, remotePath: string, start: number, end: number): Promise<NodeJS.ReadableStream> {
+        // An empty range is legal - a zero-length file's archive entry produces one.
+        if (end < start) return Readable.from([]);
+
+        const sftp = await connectSFTP(config as unknown as SFTPConfig);
+        const source = config.pathPrefix ? path.posix.join(config.pathPrefix, remotePath) : remotePath;
+
+        try {
+            // createReadStream's `end` is inclusive, matching the capability's contract.
+            const stream = sftp.createReadStream(source, { start, end }) as NodeJS.ReadableStream;
+            // The session has to outlive the stream, so it is closed on completion rather
+            // than in a finally block here.
+            const close = () => { void sftp.end().catch(() => { }); };
+            stream.on("end", close);
+            stream.on("error", close);
+            stream.on("close", close);
+            return stream;
+        } catch (error) {
+            await sftp.end().catch(() => { });
+            log.error("Rsync ranged download via SFTP failed", { host: config.host, remotePath, start, end }, wrapError(error));
+            throw error;
         }
     },
 

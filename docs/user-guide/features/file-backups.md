@@ -22,14 +22,14 @@ to configure and how a restore behaves:
 | :--- | :---: | :---: |
 | Local Filesystem | ✅ | ✅ |
 | SFTP | ✅ | ✅ |
-| SMB / Samba | ✅ | ❌ |
+| Rsync (SSH) | ✅ | ✅ |
 | FTP / FTPS | ✅ | ✅ |
 | WebDAV | ✅ | ✅ |
 | Amazon S3 / S3-compatible | ✅ | ✅ |
 | Google Drive | ✅ | ✅ |
 | Dropbox | ✅ | ✅ |
 | Microsoft OneDrive | ✅ | ✅ |
-| Rsync (SSH) | ✅ | ❌ |
+| SMB / Samba | ✅ | ❌ |
 
 ### Pick folders by browsing
 
@@ -48,9 +48,19 @@ touches the machine the files came from - that machine may not even exist any mo
 
 The column that matters for large backups. It describes the adapter holding the **backup**,
 not the one being restored *to*. Adapters that can serve byte ranges fetch just the bytes of
-the files you picked; the other two download the whole archive first and take the files out
-of it afterwards. Pulling a 5 MB file out of a 200 GB backup is a handful of small requests
-on S3 - and a 200 GB download on SMB.
+the files you picked; SMB downloads the whole archive first and takes the files out of it
+afterwards. Pulling a 5 MB file out of a 200 GB backup is a handful of small requests on S3
+- and a 200 GB download on SMB.
+
+Rsync is the odd one out: rsync itself has no concept of a partial read, but this adapter
+always speaks SSH, and SFTP is a subsystem of that same server - so the range is fetched
+over SFTP with the credentials already configured. If the server offers no SFTP subsystem,
+the restore falls back to downloading the archive once instead of failing.
+
+SMB is the remaining gap, and it is a limitation of the client rather than the protocol:
+SMB2 reads take an offset and a length, but `smbclient` - the tool this adapter drives -
+exposes no way to ask for one. Nothing is lost apart from transfer volume: file-level
+restore works, it just fetches the archive first.
 
 ::: tip Source and destination are judged separately
 This column only matters where backups are **written**. If your NAS is the *source* of the

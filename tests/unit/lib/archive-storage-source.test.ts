@@ -53,6 +53,26 @@ function plainAdapter(archivePath: string, calls: { downloads: number }): Storag
     } as unknown as StorageAdapter;
 }
 
+/**
+ * Declares range support but cannot deliver it - an SSH server without an SFTP subsystem,
+ * an expired token, a proxy that strips Range headers.
+ */
+function brokenRangeAdapter(archivePath: string, calls: { rangeAttempts: number; downloads: number }): StorageAdapter {
+    return {
+        id: "broken-range", type: "storage", name: "Broken Range", configSchema: {} as never,
+        upload: vi.fn(), list: vi.fn(), delete: vi.fn(), test: vi.fn(),
+        download: async (_config: unknown, _remotePath: string, localPath: unknown) => {
+            calls.downloads++;
+            await fs.copyFile(archivePath, localPath as string);
+            return true;
+        },
+        downloadRange: async () => {
+            calls.rangeAttempts++;
+            throw new Error("Range requests are not available on this server");
+        },
+    } as unknown as StorageAdapter;
+}
+
 async function buildArchive(encrypted: boolean) {
     const sourceDir = path.join(workDir, "src");
     await fs.mkdir(sourceDir, { recursive: true });
@@ -138,6 +158,45 @@ describe("openStorageArchiveSource", () => {
         } finally {
             await managed.dispose();
         }
+    });
+
+    it("falls back to fetching the archive when a ranged read fails at runtime", async () => {
+        // Declaring the capability is not the same as having it. Failing the restore here
+        // would be the wrong answer when a plain download would have worked.
+        const { archivePath, contents, size } = await buildArchive(true);
+        const calls = { rangeAttempts: 0, downloads: 0 };
+        const adapter = brokenRangeAdapter(archivePath, calls);
+
+        const managed = await openStorageArchiveSource(adapter, {} as never, "backup.tar", size);
+        try {
+            const manifest = await readArchiveManifest(managed.source);
+            const index = await readArchiveIndex(managed.source, manifest, { masterKey: MASTER_KEY });
+
+            for (const [rel, expected] of Object.entries(contents)) {
+                const line = index.files.find((f) => f.p === rel)!;
+                const actual = await readArchiveFile(managed.source, manifest, index, line, MASTER_KEY);
+                expect(actual.equals(expected), `content mismatch for ${rel}`).toBe(true);
+            }
+
+            expect(calls.rangeAttempts).toBeGreaterThan(0);
+            // Fetched once, not once per read.
+            expect(calls.downloads).toBe(1);
+        } finally {
+            await managed.dispose();
+        }
+    });
+
+    it("removes the fallback temp file on dispose", async () => {
+        const { archivePath, size } = await buildArchive(false);
+        const calls = { rangeAttempts: 0, downloads: 0 };
+        const before = (await fs.readdir(os.tmpdir())).filter((f) => f.startsWith("archive-fetch-")).length;
+
+        const managed = await openStorageArchiveSource(brokenRangeAdapter(archivePath, calls), {} as never, "backup.tar", size);
+        await readArchiveManifest(managed.source);
+        await managed.dispose();
+
+        const after = (await fs.readdir(os.tmpdir())).filter((f) => f.startsWith("archive-fetch-")).length;
+        expect(after).toBe(before);
     });
 
     it("produces byte-identical results on both paths", async () => {

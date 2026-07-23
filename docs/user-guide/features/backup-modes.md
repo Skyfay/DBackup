@@ -113,9 +113,9 @@ Every snapshot is a complete, restorable point in time - the Storage Explorer sh
 per snapshot with its full size, not just what that archive stores. Restoring reads from
 whichever archives of the chain hold the data, automatically.
 
-On destinations that support ranged reads only the needed bytes are transferred. On the
-others (SMB, Rsync) each referenced archive is fetched once. See
-[Storage Explorer](/user-guide/features/storage-explorer#browse-files) for the full list.
+On destinations that support ranged reads only the needed bytes are transferred. On SMB,
+which cannot, each referenced archive is fetched once. See
+[File & Folder Backups](/user-guide/features/file-backups) for the per-adapter list.
 
 Backups made without DBackup are restored the same way: point the
 [Recovery Kit](/user-guide/security/recovery-kit) at the snapshot and keep the other

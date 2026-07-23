@@ -21,7 +21,15 @@ interface SFTPConfig {
     pathPrefix?: string;
 }
 
-const connectSFTP = async (config: SFTPConfig): Promise<Client> => {
+/**
+ * Opens an SFTP session.
+ *
+ * Exported because the Rsync adapter needs it too: rsync here is always carried over SSH
+ * with the same credentials, and SFTP is a subsystem of that same SSH server - which is
+ * what lets an rsync destination serve byte ranges despite rsync itself having no such
+ * concept.
+ */
+export const connectSFTP = async (config: SFTPConfig): Promise<Client> => {
     // PKCS#8 encrypted keys (BEGIN ENCRYPTED PRIVATE KEY) are not supported by
     // ssh2-sftp-client. Decrypt them in-memory via Node.js crypto first.
     let privateKey = config.privateKey;

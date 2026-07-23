@@ -19,9 +19,12 @@ import { registry } from "@/lib/core/registry";
 import { AdapterConfig as AdapterConfigType, StorageAdapter } from "@/lib/core/interfaces";
 import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { getTempDir } from "@/lib/temp-dir";
-import { NotFoundError } from "@/lib/logging/errors";
+import { NotFoundError, wrapError } from "@/lib/logging/errors";
+import { logger } from "@/lib/logging/logger";
 import { localFileSource } from "./sources";
 import { ArchiveByteSource } from "./types";
+
+const log = logger.child({ module: "archive/storage-source" });
 
 export interface ManagedArchiveSource {
     source: ArchiveByteSource;
@@ -61,27 +64,53 @@ export async function openStorageArchiveSource(
     remotePath: string,
     size?: number
 ): Promise<ManagedArchiveSource> {
+    const fetchWhole = async (): Promise<{ file: string; source: ArchiveByteSource }> => {
+        const tempFile = path.join(getTempDir(), `archive-fetch-${process.pid}-${crypto.randomUUID()}-${path.basename(remotePath)}`);
+        const downloaded = await adapter.download(config, remotePath, tempFile);
+        if (!downloaded) {
+            await fs.unlink(tempFile).catch(() => { });
+            throw new Error(`Failed to download archive '${remotePath}' from ${adapter.id}`);
+        }
+        return { file: tempFile, source: await localFileSource(tempFile) };
+    };
+
     if (adapter.downloadRange) {
+        // Declaring the capability is not the same as having it at this moment: an SSH
+        // server may have no SFTP subsystem, a token may have expired, a proxy in front of
+        // an HTTP destination may refuse Range requests. Rather than failing the restore,
+        // the first ranged read that errors falls back to fetching the archive once - the
+        // behaviour of an adapter without ranges at all.
+        let fallback: { file: string; source: ArchiveByteSource } | null = null;
+
         return {
             ranged: true,
             source: {
                 size,
-                read: (start, end) => adapter.downloadRange!(config, remotePath, start, end),
+                read: async (start, end) => {
+                    if (fallback) return fallback.source.read(start, end);
+                    try {
+                        return await adapter.downloadRange!(config, remotePath, start, end);
+                    } catch (error: unknown) {
+                        log.warn(
+                            "Ranged read failed, falling back to fetching the whole archive",
+                            { adapter: adapter.id, remotePath },
+                            wrapError(error)
+                        );
+                        fallback = await fetchWhole();
+                        return fallback.source.read(start, end);
+                    }
+                },
             },
-            dispose: async () => { },
+            dispose: async () => {
+                if (fallback) await fs.unlink(fallback.file).catch(() => { });
+            },
         };
     }
 
-    const tempFile = path.join(getTempDir(), `archive-fetch-${process.pid}-${crypto.randomUUID()}-${path.basename(remotePath)}`);
-    const downloaded = await adapter.download(config, remotePath, tempFile);
-    if (!downloaded) {
-        await fs.unlink(tempFile).catch(() => { });
-        throw new Error(`Failed to download archive '${remotePath}' from ${adapter.id}`);
-    }
-
+    const whole = await fetchWhole();
     return {
         ranged: false,
-        source: await localFileSource(tempFile),
-        dispose: async () => { await fs.unlink(tempFile).catch(() => { }); },
+        source: whole.source,
+        dispose: async () => { await fs.unlink(whole.file).catch(() => { }); },
     };
 }

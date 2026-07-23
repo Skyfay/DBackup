@@ -476,6 +476,38 @@ describe('StorageService', () => {
             expect(result[0].dbInfo).toEqual({ count: 0, label: '1 Directory Source' });
         });
 
+        it('should read compression and encryption from a v2 archive metadata block', async () => {
+            // A seekable (v2) archive applies both per entry, so the top-level compression and
+            // encryption fields are absent - the real state lives under `archive`. The explorer
+            // must fall back to it, otherwise a GZIP-compressed encrypted file backup shows
+            // neither in the listing.
+            const mockFiles: FileInfo[] = [
+                { name: 'backup.tar', path: 'backup.tar', size: 1024, lastModified: new Date() },
+                { name: 'backup.tar.meta.json', path: 'backup.tar.meta.json', size: 100, lastModified: new Date() }
+            ];
+            const sidecarData = {
+                jobName: 'FileBackup',
+                sourceType: 'postgres',
+                combined: { databases: 1, directorySources: 1 },
+                // No top-level compression/encryption - only the archive block carries them.
+                archive: { formatVersion: 2, indexFile: '.index', encrypted: true, profileId: 'prof-1', compression: 'GZIP', files: 130 },
+            };
+            const adapter = makeAdapter({
+                list: vi.fn().mockResolvedValue(mockFiles),
+                read: vi.fn().mockResolvedValue(JSON.stringify(sidecarData)),
+            });
+            prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig({ config: '{}' }));
+            prismaMock.job.findMany.mockResolvedValue([]);
+            prismaMock.execution.findMany.mockResolvedValue([]);
+            vi.mocked(registry.get).mockReturnValue(adapter);
+
+            const result = await service.listFilesWithMetadata('conf-123');
+
+            expect(result[0].compression).toBe('GZIP');
+            expect(result[0].isEncrypted).toBe(true);
+            expect(result[0].encryptionProfileId).toBe('prof-1');
+        });
+
         it('should enrich file from execution metadata when no sidecar exists', async () => {
             const file: FileInfo = { name: 'backup.sql', path: 'backups/MyJob/backup.sql', size: 1024, lastModified: new Date() };
             const adapter = makeAdapter({

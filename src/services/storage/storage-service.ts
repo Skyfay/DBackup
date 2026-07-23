@@ -65,7 +65,9 @@ export type RichFileInfo = FileInfo & {
  * Bump whenever `enrichSingleFile` starts writing a field the UI depends on.
  * - 1: `combined` and `backupType` (restore scope picker, Type column)
  * - 2: S3 list() now returns paths relative to the adapter's path prefix instead of full
- *      bucket keys, so cached rows keyed by the old full-key path must be discarded.
+ *      bucket keys, so cached rows keyed by the old full-key path must be discarded. Also
+ *      populates compression/encryption from a v2 archive's `archive.*` fields, so rows
+ *      cached without them are rebuilt.
  */
 const CACHE_SCHEMA_VERSION = 2;
 
@@ -259,9 +261,13 @@ export class StorageService {
                 }
             }
 
-            if (sidecar.encryption?.enabled) isEncrypted = true;
-            encryptionProfileId = sidecar.encryption?.profileId;
-            compression = sidecar.compression;
+            // A v2 (seekable) archive applies compression and encryption per entry, so the
+            // whole-archive top-level fields stay unset - the real state lives under
+            // `archive`. Fall back to it, otherwise a combined file backup shows no
+            // compression and no encryption in the explorer even when both are on.
+            if (sidecar.encryption?.enabled || sidecar.archive?.encrypted) isEncrypted = true;
+            encryptionProfileId = sidecar.encryption?.profileId ?? sidecar.archive?.profileId;
+            compression = sidecar.compression ?? sidecar.archive?.compression;
 
             return {
                 ...file,

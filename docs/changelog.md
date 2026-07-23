@@ -63,12 +63,15 @@ All notable changes to DBackup are documented here.
 
 ### 🎨 Improvements
 
+- **adapters**: Dropped the Role column from the adapter tables. Both storage pages now list a single role, so the column repeated the same value in every row.
+
 - **storage**: The Storage Explorer's backup count badge now reflects combined database + directory archives (e.g. "2 DBs + 2 Dirs") instead of a misleading database-only count.
 - **restore**: Restoring from a seekable archive no longer downloads the whole backup - only the selected databases and files are transferred on destinations that support byte ranges.
 - **storage**: Every backup now records whether it is full or incremental, so the Storage Explorer's Type column is filled for database-only backups too instead of showing a dash.
 
 ### 🔄 Changed
 
+- **sources**: The Sources page groups databases and directories under two tabs instead of stacking two tables, matching the Vault and Templates pages. They stay separate tables because each has columns, actions and a permission the other does not - database sources show an engine version and open the Database Explorer, directory sources show storage history and are governed by the destinations permission.
 - **destinations**: A storage adapter now has one exclusive role instead of two independent toggles. The two role switches in the adapter form are a single Role choice, and the Destinations and Sources pages each list only their own. The roles cannot be combined because a destination writes job and chain folders into its configured path while a source reads folders out of it - one adapter doing both would let a job back up its own archives.
 
 ### 🗑️ Removed

@@ -18,7 +18,7 @@ DBackup supports a wide variety of database engines.
 
 ## Directory Sources
 
-The Sources page has a second section, **Directory Sources**: storage adapters whose
+The Sources page has a second tab, **Directories**: storage adapters whose
 folders can be backed up as files rather than as a database dump. They use the same
 backends as [Storage Destinations](/user-guide/destinations/) but are configured as their
 own adapters, because the two roles use the configured path differently - a destination

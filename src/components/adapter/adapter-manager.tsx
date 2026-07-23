@@ -29,7 +29,7 @@ import { StorageHistoryModal } from "@/components/dashboard/widgets/storage-hist
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { CloneDialog } from "@/components/ui/clone-dialog";
 
-export function AdapterManager({ type, title, description, canManage = true, permissions = [], roleFilter, defaultRole }: AdapterManagerProps) {
+export function AdapterManager({ type, title, description, canManage = true, permissions = [], roleFilter, defaultRole, hidePageHeading = false }: AdapterManagerProps) {
     const [configs, setConfigs] = useState<AdapterConfig[]>([]);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [isPickerOpen, setIsPickerOpen] = useState(false);
@@ -263,18 +263,6 @@ export function AdapterManager({ type, title, description, canManage = true, per
                 );
             }
         },
-        // Roles column (storage adapters only) - shows both role badges regardless of
-        // which page (Sources/Destinations) is used to manage the adapter, so a glance
-        // at either page shows its full role set without cross-referencing the other.
-        ...(type === 'storage' ? [{
-            id: "role",
-            header: "Role",
-            cell: ({ row }: { row: any }) => (
-                <Badge variant="outline">
-                    {storageRoleLabel(row.original.storageRole ?? STORAGE_ROLES.DESTINATION)}
-                </Badge>
-            )
-        }] as ColumnDef<AdapterConfig>[] : []),
         // Database Version Column
         ...(type === 'database' ? [{
             id: "version",
@@ -395,12 +383,14 @@ export function AdapterManager({ type, title, description, canManage = true, per
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h2 className="text-3xl font-bold tracking-tight">{title}</h2>
-                    <p className="text-muted-foreground">{description}</p>
+            {!hidePageHeading && (
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h2 className="text-3xl font-bold tracking-tight">{title}</h2>
+                        <p className="text-muted-foreground">{description}</p>
+                    </div>
                 </div>
-            </div>
+            )}
 
             <CredentialUpgradeBanner configs={configs} />
 
@@ -429,7 +419,10 @@ export function AdapterManager({ type, title, description, canManage = true, per
                         <div className="flex justify-between items-center">
                             <div>
                                 <CardTitle>{title}</CardTitle>
-                                <CardDescription>Manage your {type} configurations.</CardDescription>
+                                {/* With the page heading hidden the caller's description has
+                                    nowhere else to go, so the card carries it instead of the
+                                    generic line - which would otherwise duplicate the heading. */}
+                                <CardDescription>{hidePageHeading ? description : `Manage your ${type} configurations.`}</CardDescription>
                             </div>
                             {canManage && (
                                 <Button onClick={() => { setEditingId(null); setSelectedAdapterForNew(null); setIsPickerOpen(true); }}>

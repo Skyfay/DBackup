@@ -28,4 +28,6 @@ export interface AdapterManagerProps {
     roleFilter?: StorageRole;
     /** Storage adapters only: the role a config created from this manager instance starts with. */
     defaultRole?: StorageRole;
+    /** Set when the surrounding page owns the heading, e.g. several managers under one set of tabs. */
+    hidePageHeading?: boolean;
 }

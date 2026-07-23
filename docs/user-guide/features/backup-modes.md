@@ -35,22 +35,43 @@ With the default of 7 and a daily schedule you get one full and six incrementals
 
 ### Detect changes by content
 
-An incremental run answers two separate questions per file:
+An incremental run filters every file twice, and the two filters are not interchangeable:
+**a checksum can only be taken from a file that was actually fetched.** So the checksum is
+never the first filter - it only ever sees what the first filter let through.
 
-| Question | Off (default) | On |
-| :--- | :--- | :--- |
-| Fetch it from the source? | Only if its size or timestamp differs | Always |
-| Store its bytes again? | Only if its checksum differs | Only if its checksum differs |
+With the switch **off**, out of 1000 files of which 3 really changed:
 
-The second question is **always** answered by checksum, whichever way the switch is set. A
-file that was touched but not edited is never stored twice - the switch does not change
-that, and turning it on saves no additional storage.
+```
+1000 files
+   ↓  Filter 1: size and timestamp   (a guess - the file is not read)
+   5 fetched                          (the 3 real ones + 2 that were only touched)
+   ↓  Filter 2: checksum              (reads what was fetched)
+   3 stored
+```
 
-What the switch changes is only whether a file is fetched at all. Off, DBackup trusts the
-directory listing; on, it reads every file every run.
+The other 995 are never touched. Filter 2 never sees them, because there are no bytes to
+checksum.
+
+With the switch **on**:
+
+```
+1000 files
+   ↓  Filter 1 skipped
+1000 fetched
+   ↓  Filter 2: checksum
+   3 stored
+```
+
+**The same 3 files are stored either way.** Turning the switch on saves no extra storage -
+it only changes how much crossed the wire, 5 files against 1000.
+
+So the switch does not turn the checksum on. It turns the *guess* off. Filter 1 is what
+makes an incremental backup cheap in the first place, and it is a guess made without
+reading the file - which is exactly why it can be wrong.
 
 **Leave it off** unless your source can change a file without changing its size *or* its
-timestamp. That needs both to hold at once, which is rare:
+timestamp. Such a file is never fetched, so the checksum never gets to see it and the
+backup keeps the old version. It needs both to hold at once, which is rare:
 
 - FTP servers reporting timestamps only to the minute, where an edit lands within the same
   minute and keeps the file's length

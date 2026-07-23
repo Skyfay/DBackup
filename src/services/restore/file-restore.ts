@@ -250,6 +250,11 @@ export async function streamFileRestore(input: FileRestoreInput): Promise<NodeJS
     const tarPack = pack();
     const gzip = createGzip();
     tarPack.pipe(gzip);
+    // .pipe() does not carry an error from tarPack across to gzip, and gzip is the only
+    // stream the caller holds. Forward it by hand so a mid-stream failure destroys gzip
+    // instead of surfacing as an unhandled 'error' on tarPack that crashes the process.
+    // The route then tears down the web response with it, which is the intended outcome.
+    tarPack.on("error", (err) => { if (!gzip.destroyed) gzip.destroy(err); });
 
     // Produced in the background so the response can start flowing immediately. Errors are
     // pushed into the stream rather than thrown, since the caller already holds it.
@@ -260,18 +265,23 @@ export async function streamFileRestore(input: FileRestoreInput): Promise<NodeJS
                 let digest: string | undefined;
                 await pipeline(content, hashingStream((d) => { digest = d; }), entry);
 
+                // The checksum is the last line of defence. For an encrypted archive the
+                // AEAD tag already caught any corruption, but for an unencrypted one this is
+                // the only check - so a mismatch aborts the download rather than handing the
+                // user a broken file dressed up as a success.
                 if (file.h && digest && digest !== file.h) {
-                    // The entry's AEAD tag already rules out corruption in transit, so a
-                    // mismatch here means the archive was written wrong. Worth shouting about.
-                    log.error("Restored file does not match its recorded checksum", {
-                        file: file.p, expected: file.h, actual: digest,
-                    });
+                    throw new Error(
+                        `Restored file '${file.p}' does not match its recorded checksum - the archive is corrupt`
+                    );
                 }
             });
             tarPack.finalize();
         } catch (e: unknown) {
-            log.error("File restore stream failed", { file: input.file }, wrapError(e));
-            tarPack.destroy(wrapError(e));
+            const wrapped = wrapError(e);
+            log.error("File restore stream failed", { file: input.file }, wrapped);
+            // Destroy the pack with the error; pipeline forwards it to gzip, which the caller
+            // and the HTTP response are watching.
+            tarPack.destroy(wrapped);
         } finally {
             await archive.dispose();
         }

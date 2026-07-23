@@ -22,7 +22,7 @@ import path from "path";
 import crypto from "crypto";
 import fs from "fs/promises";
 import { createReadStream, createWriteStream } from "fs";
-import { Readable } from "stream";
+import { PassThrough, Readable, pipeline as pipelineCb } from "stream";
 import { pipeline } from "stream/promises";
 import { pack, Pack } from "tar-stream";
 import zlib from "zlib";
@@ -176,8 +176,15 @@ function planEntries(entries: ArchiveSourceEntry[], encrypted: boolean, compress
  * up front and the source file streams straight through.
  */
 async function materialize(entry: PlannedEntry, sealKey: Buffer | null, noncePrefix: Buffer | null): Promise<MaterializedEntry> {
-    const seal = (stream: NodeJS.ReadableStream): NodeJS.ReadableStream =>
-        sealKey && noncePrefix ? stream.pipe(sealEntry(sealKey, noncePrefix, entry.ordinal)) : stream;
+    // Built with pipeline, not stream.pipe(): a read error on the underlying source (a
+    // collected file deleted before it is archived) must reach the returned stream instead
+    // of firing as an unhandled 'error' on the source and taking the backup process down.
+    const seal = (stream: NodeJS.ReadableStream): NodeJS.ReadableStream => {
+        if (!sealKey || !noncePrefix) return stream;
+        const out = new PassThrough();
+        pipelineCb(stream, sealEntry(sealKey, noncePrefix, entry.ordinal), out, () => { /* surfaced on out */ });
+        return out;
+    };
     const withTag = (size: number): number => (sealKey ? sealedSize(size) : size);
 
     if (entry.origin.kind === "bundle") {
@@ -225,13 +232,9 @@ async function materialize(entry: PlannedEntry, sealKey: Buffer | null, noncePre
 /** Streams one already-materialized entry into the tar. */
 async function writeMember(tarPack: Pack, name: string, size: number, open: () => NodeJS.ReadableStream): Promise<void> {
     const entry = tarPack.entry({ name, size });
-    await new Promise<void>((resolve, reject) => {
-        const source = open();
-        source.on("error", reject);
-        entry.on("error", reject);
-        entry.on("finish", () => resolve());
-        source.pipe(entry);
-    });
+    // pipeline wires error handling across both ends and resolves when the tar entry
+    // finishes, so a source read failure rejects here rather than crashing the process.
+    await pipeline(open(), entry as NodeJS.WritableStream);
 }
 
 /**

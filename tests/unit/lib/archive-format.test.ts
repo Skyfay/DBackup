@@ -452,3 +452,33 @@ describe("edge cases", () => {
         await expect(readArchiveManifest(await localFileSource(notAnArchive))).rejects.toThrow(/not a v2 archive/i);
     });
 });
+
+describe("createArchive - a source read failure fails the backup, not the process", () => {
+    it("rejects when reading a source entry errors mid-stream", async () => {
+        // The read succeeds at stat but errors when the stream is consumed - reproduced with
+        // an entry whose path is a directory (stat ok, createReadStream emits EISDIR). Sized
+        // above the bundling threshold so it becomes its own streamed entry rather than a
+        // buffered bundle. With encryption the failing read sits upstream of the seal
+        // transform, so a plain .pipe() would strand the 'error' and crash the backup
+        // process; the pipeline-based chain must reject cleanly instead.
+        await fs.mkdir(path.join(sourceDir, "as_file"), { recursive: true });
+
+        const files: SourceFileEntry[] = [{
+            path: "as_file",
+            size: BUNDLE_FILE_MAX_SIZE * 3,
+            mtime: "2026-07-22T10:00:00.000Z",
+            checksum: "0".repeat(64),
+        }];
+
+        const entries: ArchiveSourceEntry[] = [{
+            kind: "directory", jobSourceId: "src-uuid-1", label: "SFTP",
+            localPath: sourceDir, excludePatterns: [], files,
+        }];
+
+        await expect(createArchive(entries, path.join(workDir, "out.tar"), {
+            sourceType: "directory-only",
+            compression: "NONE",
+            encryption: { masterKey: MASTER_KEY, profileId: PROFILE_ID },
+        })).rejects.toThrow();
+    });
+});

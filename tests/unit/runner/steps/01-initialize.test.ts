@@ -251,6 +251,7 @@ describe('stepInitialize', () => {
                 sources: [
                     {
                         id: 'jsrc-1', configId: 'storage-1', priority: 0, path: '/data', excludePatterns: '["*.tmp"]',
+                        excludePatternPresets: [],
                         config: { id: 'storage-1', adapterId: 'sftp', config: '{}', name: 'SFTP Server', type: 'storage' },
                     },
                 ],
@@ -283,10 +284,12 @@ describe('stepInitialize', () => {
                 sources: [
                     {
                         id: 'jsrc-1', configId: 'ghost-1', priority: 0, path: '/data', excludePatterns: '[]',
+                        excludePatternPresets: [],
                         config: { id: 'ghost-1', adapterId: 'ghost-adapter', config: '{}', name: 'Ghost', type: 'storage' },
                     },
                     {
                         id: 'jsrc-2', configId: 'storage-1', priority: 1, path: '/other', excludePatterns: '[]',
+                        excludePatternPresets: [],
                         config: { id: 'storage-1', adapterId: 'sftp', config: '{}', name: 'SFTP Server', type: 'storage' },
                     },
                 ],
@@ -313,6 +316,7 @@ describe('stepInitialize', () => {
                 sources: [
                     {
                         id: 'jsrc-1', configId: 'ghost-1', priority: 0, path: '/data', excludePatterns: '[]',
+                        excludePatternPresets: [],
                         config: { id: 'ghost-1', adapterId: 'ghost-adapter', config: '{}', name: 'Ghost', type: 'storage' },
                     },
                 ],
@@ -335,6 +339,7 @@ describe('stepInitialize', () => {
                 sources: [
                     {
                         id: 'jsrc-1', configId: 'storage-1', priority: 0, path: '/data', excludePatterns: '[]',
+                        excludePatternPresets: [],
                         config: { id: 'storage-1', adapterId: 'sftp', config: '{}', name: 'SFTP Server', type: 'storage' },
                     },
                 ],

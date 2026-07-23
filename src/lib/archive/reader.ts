@@ -7,7 +7,7 @@
  * the entry that holds it.
  */
 
-import { Transform, TransformCallback } from "stream";
+import { PassThrough, Transform, TransformCallback, pipeline } from "stream";
 import { getDecompressionStream } from "@/lib/crypto/compression";
 import { deriveArchiveKeys } from "@/lib/crypto/kdf";
 import { openEntry } from "@/lib/crypto/entry-cipher";
@@ -176,6 +176,27 @@ function sliceStream(offset: number, length: number): Transform {
 }
 
 /**
+ * Runs a source through a chain of transforms and returns a single readable.
+ *
+ * Built with `stream.pipeline` rather than chained `.pipe()`: `.pipe()` does not forward
+ * error events, so an error on an intermediate stage - an AEAD tag that fails, gunzip
+ * choking on corrupt bytes - would have no listener and take the whole process down with an
+ * uncaught exception. `pipeline` destroys the returned stream with that error instead, so a
+ * caller's single error handler on the returned stream catches a failure from any stage,
+ * and a corrupt archive fails the restore rather than the server.
+ */
+function chainStreams(source: NodeJS.ReadableStream, stages: NodeJS.ReadWriteStream[]): NodeJS.ReadableStream {
+    if (stages.length === 0) return source;
+
+    const out = new PassThrough();
+    // pipeline destroys `out` with the error, which surfaces on the returned stream. The
+    // array form is used because a spread of a typed array is not accepted by the variadic
+    // overloads.
+    pipeline([source, ...stages, out], () => { /* handled by the caller via `out` */ });
+    return out;
+}
+
+/**
  * Opens one physical entry as a plaintext, decompressed stream.
  *
  * Fetches exactly the entry's byte range, so the rest of the archive is never transferred.
@@ -187,20 +208,22 @@ export async function openArchiveEntry(
     masterKey?: Buffer
 ): Promise<NodeJS.ReadableStream> {
     const keys = archiveKeysFor(manifest, masterKey);
-    let stream = await source.read(entry.off, entry.off + entry.size - 1);
+    const raw = await source.read(entry.off, entry.off + entry.size - 1);
+
+    const stages: NodeJS.ReadWriteStream[] = [];
 
     if (entry.sealed) {
         if (!keys) throw new Error(`Entry ${entry.n} is sealed but the archive reports no encryption`);
-        stream = stream.pipe(openEntry(keys.dataKey, keys.noncePrefix, entry.n));
+        stages.push(openEntry(keys.dataKey, keys.noncePrefix, entry.n));
     }
 
     if (entry.comp) {
         const decompress = getDecompressionStream(entry.comp);
         if (!decompress) throw new Error(`Unsupported compression type: ${entry.comp}`);
-        stream = stream.pipe(decompress);
+        stages.push(decompress);
     }
 
-    return stream;
+    return chainStreams(raw, stages);
 }
 
 /**
@@ -223,7 +246,9 @@ export async function openArchiveFile(
 
     const stream = await openArchiveEntry(source, manifest, entry, masterKey);
     if (file.o === undefined || file.l === undefined) return stream;
-    return stream.pipe(sliceStream(file.o, file.l));
+    // Same reasoning as chainStreams: a `.pipe()` here would strand an error from the
+    // entry stream, so the slice is attached with pipeline instead.
+    return chainStreams(stream, [sliceStream(file.o, file.l)]);
 }
 
 /** Convenience wrapper returning a file's full contents. */

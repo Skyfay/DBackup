@@ -124,8 +124,8 @@ describe('JobService', () => {
         it('should return list of jobs ordered by creation date', async () => {
             // Arrange
             const mockJobs = [
-                { id: '1', name: 'Job 1' },
-                { id: '2', name: 'Job 2' }
+                { id: '1', name: 'Job 1', sources: [] },
+                { id: '2', name: 'Job 2', sources: [] }
             ];
             prismaMock.job.findMany.mockResolvedValue(mockJobs as any);
 
@@ -153,7 +153,7 @@ describe('JobService', () => {
 
     describe('getJobById', () => {
         it('should return a job when found', async () => {
-            const mockJob = { id: 'job-1', name: 'Test Job', source: {}, destinations: [], notifications: [] };
+            const mockJob = { id: 'job-1', name: 'Test Job', source: {}, destinations: [], notifications: [], sources: [] };
             prismaMock.job.findUnique.mockResolvedValue(mockJob as any);
 
             const result = await service.getJobById('job-1');
@@ -230,7 +230,13 @@ describe('JobService', () => {
                     data: expect.objectContaining({
                         sourceId: null,
                         sources: {
-                            create: [{ configId: 'storage-1', priority: 0, path: '/data', excludePatterns: '["*.tmp"]' }],
+                            create: [{
+                                configId: 'storage-1',
+                                priority: 0,
+                                path: '/data',
+                                excludePatterns: '["*.tmp"]',
+                                excludePatternPresets: { connect: [] },
+                            }],
                         },
                     }),
                 })

@@ -205,6 +205,58 @@ describe("streamFileRestore", () => {
         await expect(streamFileRestore(input(["does/not/exist"], { kind: "download" })))
             .rejects.toThrow(/no files matched/i);
     });
+
+    /** Drains a stream to completion, resolving on end and rejecting on error. */
+    const drain = (stream: NodeJS.ReadableStream) => new Promise<void>((resolve, reject) => {
+        stream.on("data", () => { /* discard */ });
+        stream.on("end", resolve);
+        stream.on("error", reject);
+    });
+
+    it("aborts the download when a file fails its checksum, instead of handing it over", async () => {
+        // Unencrypted, so there is no AEAD tag - the recorded checksum is the only
+        // integrity check. A corrupted file must fail the download, not stream through as a
+        // success dressed up in a valid-looking tar.gz.
+        await buildFixture(false);
+        // Flip a byte inside the large (own-entry) file's payload, past the manifest.
+        const raw = await fs.readFile(archivePath);
+        raw[Math.floor(raw.length * 0.5)] ^= 0xff;
+        await fs.writeFile(archivePath, raw);
+
+        const stream = await streamFileRestore(input(["www"], { kind: "download" }));
+        await expect(drain(stream)).rejects.toThrow();
+    });
+
+    it("does not crash the process when the stream fails mid-production", async () => {
+        // A ranged read that dies partway (dropped connection, permission change) must
+        // surface as a stream error the caller catches, never an unhandled 'error' that
+        // takes the process down.
+        await buildFixture(true);
+
+        // Wrap the working adapter so the failure lands after the archive is open (the
+        // first ranged read serves the manifest), i.e. mid-production once the stream has
+        // already been returned to the caller - the exact case that must not crash.
+        const base = makeAdapter();
+        let rangeReads = 0;
+        registryGet.mockReturnValue({
+            ...base,
+            downloadRange: async (c: unknown, r: string, start: number, end: number) => {
+                rangeReads++;
+                if (rangeReads >= 2) {
+                    return new Readable({
+                        read() {
+                            this.push(Buffer.from("partial"));
+                            this.destroy(new Error("ranged read dropped mid-stream"));
+                        },
+                    });
+                }
+                return base.downloadRange!(c, r, start, end);
+            },
+        } as unknown as StorageAdapter);
+
+        const stream = await streamFileRestore(input(["www"], { kind: "download" }));
+        await expect(drain(stream)).rejects.toThrow();
+    });
 });
 
 describe("restoreFilesToStorage", () => {

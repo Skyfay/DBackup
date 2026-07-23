@@ -528,3 +528,91 @@ describe("S3 download progress tracker transform body", () => {
         expect(onProgress).toHaveBeenCalled();
     });
 });
+
+// --- pathPrefix: the adapter root, honoured symmetrically across every operation ---
+//
+// The regression this pins: list() used to return full bucket keys (prefix included) while
+// download/delete consumed them raw. That leaked the prefix into stored file paths - a
+// directory backup rooted at prefix "test" recorded "test/Images/..." and restoring it built
+// a second "test" folder. Object storage has no real directories, so the adapter has to
+// impose the same "paths are relative to the configured root" contract every other adapter
+// already keeps.
+describe("S3 pathPrefix is the adapter root", () => {
+    beforeEach(() => vi.clearAllMocks());
+
+    const prefixed = { ...genericConfig, pathPrefix: "test" };
+
+    it("list() returns paths relative to the prefix, not full bucket keys", async () => {
+        mockSend.mockResolvedValue({
+            Contents: [
+                { Key: "test/Images/a.jpg", Size: 10, LastModified: new Date() },
+                { Key: "test/Java/b.jar", Size: 20, LastModified: new Date() },
+            ],
+        });
+
+        const result = await S3GenericAdapter.list(prefixed, "");
+
+        expect(result.map((f) => f.path)).toEqual(["Images/a.jpg", "Java/b.jar"]);
+        // The listing itself is still scoped to the prefix.
+        expect(mockSend.mock.calls[0][0].Prefix).toBe("test/");
+    });
+
+    it("download() re-applies the prefix to a prefix-relative path", async () => {
+        const body = Readable.from(["x"]);
+        (body as any).transformToString = vi.fn();
+        mockSend.mockResolvedValue({ Body: body, ContentLength: 1 });
+
+        await S3GenericAdapter.download(prefixed, "Images/a.jpg", "/tmp/out");
+
+        expect(mockSend.mock.calls[0][0].Key).toBe("test/Images/a.jpg");
+    });
+
+    it("delete() re-applies the prefix", async () => {
+        mockSend.mockResolvedValue({});
+        await S3GenericAdapter.delete(prefixed, "Images/a.jpg");
+        expect(mockSend.mock.calls[0][0].Key).toBe("test/Images/a.jpg");
+    });
+
+    it("read() re-applies the prefix", async () => {
+        mockSend.mockResolvedValue({ Body: { transformToString: vi.fn().mockResolvedValue("{}") } });
+        await S3GenericAdapter.read!(prefixed, "Images/a.jpg.meta.json");
+        expect(mockSend.mock.calls[0][0].Key).toBe("test/Images/a.jpg.meta.json");
+    });
+
+    it("downloadRange() re-applies the prefix", async () => {
+        const body = Readable.from(["x"]);
+        mockSend.mockResolvedValue({ Body: body });
+        await S3R2Adapter.downloadRange!({ ...r2Config, pathPrefix: "test" }, "job/full-0.tar", 0, 9);
+        expect(mockSend.mock.calls[0][0].Key).toBe("test/job/full-0.tar");
+        expect(mockSend.mock.calls[0][0].Range).toBe("bytes=0-9");
+    });
+
+    // The load-bearing property: whatever list() hands back can be fed straight into
+    // download() and lands on the exact object it came from. If either half stopped honouring
+    // the prefix, this key would drift (missing prefix) or double it ("test/test/...").
+    it("round-trips a listed path back to its original key (R2, the reported case)", async () => {
+        const r2Prefixed = { ...r2Config, pathPrefix: "test" };
+        mockSend.mockResolvedValue({ Contents: [{ Key: "test/Images/a.jpg", Size: 10, LastModified: new Date() }] });
+        const listed = await S3R2Adapter.list(r2Prefixed, "");
+        expect(listed[0].path).toBe("Images/a.jpg");
+
+        mockSend.mockClear();
+        const body = Readable.from(["x"]);
+        (body as any).transformToString = vi.fn();
+        mockSend.mockResolvedValue({ Body: body, ContentLength: 1 });
+        await S3R2Adapter.download(r2Prefixed, listed[0].path, "/tmp/out");
+
+        expect(mockSend.mock.calls[0][0].Key).toBe("test/Images/a.jpg");
+    });
+
+    it("is a no-op when no prefix is configured", async () => {
+        mockSend.mockResolvedValue({ Contents: [{ Key: "Images/a.jpg", Size: 10, LastModified: new Date() }] });
+        const listed = await S3GenericAdapter.list(genericConfig, "");
+        expect(listed[0].path).toBe("Images/a.jpg");
+
+        mockSend.mockClear();
+        mockSend.mockResolvedValue({});
+        await S3GenericAdapter.delete(genericConfig, "Images/a.jpg");
+        expect(mockSend.mock.calls[0][0].Key).toBe("Images/a.jpg");
+    });
+});

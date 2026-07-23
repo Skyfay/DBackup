@@ -64,8 +64,10 @@ export type RichFileInfo = FileInfo & {
  *
  * Bump whenever `enrichSingleFile` starts writing a field the UI depends on.
  * - 1: `combined` and `backupType` (restore scope picker, Type column)
+ * - 2: S3 list() now returns paths relative to the adapter's path prefix instead of full
+ *      bucket keys, so cached rows keyed by the old full-key path must be discarded.
  */
-const CACHE_SCHEMA_VERSION = 1;
+const CACHE_SCHEMA_VERSION = 2;
 
 interface CachedListing {
     v: number;

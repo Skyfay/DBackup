@@ -52,7 +52,9 @@ function makeSnapshot() {
 
 /** Builds N file work-items all living in the given archive (undefined = snapshot's own). */
 function filesInArchive(archiveName: string | undefined, count: number) {
-    return Array.from({ length: count }, (_, i) => ({ file: { p: `${archiveName ?? "self"}-${i}.bin`, a: archiveName, s: 1 } }));
+    return Array.from({ length: count }, (_, i) => ({
+        file: { p: `${archiveName ?? "self"}-${i}.bin`, a: archiveName, s: 1 } as never,
+    }));
 }
 
 beforeEach(() => {

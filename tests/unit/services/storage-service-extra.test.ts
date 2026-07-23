@@ -326,7 +326,7 @@ describe('StorageService - extra coverage', () => {
             prismaMock.storageListCache.findUnique.mockResolvedValue({
                 adapterConfigId: 'conf-123',
                 filesJson: JSON.stringify({
-                    v: 1,
+                    v: 2,
                     files: [{ name: 'backup.sql', path: 'backup.sql', size: 100, lastModified: new Date() }],
                 }),
                 cachedAt: new Date(),
@@ -455,7 +455,7 @@ describe('StorageService - extra coverage', () => {
             ];
             prismaMock.storageListCache.findUnique.mockResolvedValue({
                 adapterConfigId: 'conf-123',
-                filesJson: JSON.stringify({ v: 1, files: cachedFiles }),
+                filesJson: JSON.stringify({ v: 2, files: cachedFiles }),
                 cachedAt: new Date(), // fresh
             } as any);
 
@@ -473,7 +473,7 @@ describe('StorageService - extra coverage', () => {
             ];
             prismaMock.storageListCache.findUnique.mockResolvedValue({
                 adapterConfigId: 'conf-123',
-                filesJson: JSON.stringify({ v: 1, files: cachedFiles }),
+                filesJson: JSON.stringify({ v: 2, files: cachedFiles }),
                 cachedAt: staleDate,
             } as any);
 
@@ -510,7 +510,7 @@ describe('StorageService - extra coverage', () => {
         it('bypasses cache when bypassCache=true', async () => {
             prismaMock.storageListCache.findUnique.mockResolvedValue({
                 adapterConfigId: 'conf-123',
-                filesJson: JSON.stringify({ v: 1, files: [{ name: 'cached.sql', path: 'cached.sql', size: 100, lastModified: new Date().toISOString() }] }),
+                filesJson: JSON.stringify({ v: 2, files: [{ name: 'cached.sql', path: 'cached.sql', size: 100, lastModified: new Date().toISOString() }] }),
                 cachedAt: new Date(),
             } as any);
 

@@ -9,85 +9,35 @@ All notable changes to DBackup are documented here.
 >
 > ⚠️ **Breaking:** Combined backups now write a third sidecar file next to the backup (`<backup>.index`) on every destination, alongside the existing `.meta.json`. It holds the archive's file index. Retention and storage tooling that assumes exactly two files per backup needs updating.
 >
-> ⚠️ **Breaking:** Jobs using the new incremental mode store their backups in one folder per chain, named `<job>/chain-<timestamp>/`, with a `full-` or `inc-` filename prefix. Jobs in the default full-backup mode keep the existing flat layout.
+> ⚠️ **Breaking:** Jobs using the new incremental mode store their backups in one folder per chain, named `<job>/chain-<timestamp>/`, with a `full-`/`inc-` prefix and the snapshot's position in the chain. Jobs in the default full-backup mode keep the existing flat layout.
 
 ### ✨ Features
 
-- **jobs**: Backup jobs can now include one or more directory sources (SFTP, SMB, WebDAV, Rsync, or Local Filesystem) alongside or instead of a database source, backed up into a single combined archive per execution. Configure them in the new "Sources" tab of the job form. Storage adapters can be flagged as directory backup sources in addition to backup destinations, shown as a new "Directory Sources" section on the Sources page and as role badges on the Destinations page.
-- **restore**: Combined database + directory archives can be restored in one pass from the same restore dialog - select which databases and directory sources to restore, each with its own restore target and a conflict check against existing files at the destination path.
-- **jobs**: Added an explicit "Backup Type" selector (Database Only / Directories Only / Database + Directories) to the Sources tab, replacing reactive disabled-button hints with upfront guidance.
-- **jobs**: Creating and editing a backup job now opens a dedicated full page instead of a modal, giving the Sources tab room for the new folder tree.
-- **storage**: Directory sources can now be picked via an always-visible Synology-style checkbox folder tree (Local, SFTP, Rsync, Google Drive, Dropbox, OneDrive), editable at any time directly in the Sources tab instead of a one-shot picker dialog.
-- **templates**: Added Exclude Pattern Presets, reusable templates of glob patterns that can be linked to any directory source - editing a preset later retroactively applies to every source that references it, same as naming templates and schedule presets.
-- **jobs**: The directory source folder browser now reflects every row already configured for that adapter, no matter which row's "Browse" button opened it - checking a new folder adds a row, unchecking one removes it, instead of only ever appending rows.
-- **jobs**: Added a "Back up everything" option to the directory source folder browser, backing up an entire adapter's root as a single source instead of requiring one row per folder.
-- **templates**: A directory source can now link multiple Exclude Pattern Presets at once, matching the multi-template picker already used for notifications.
-- **backup**: Combined database + directory backups now use a seekable archive format that compresses and encrypts each entry individually, so a single file can be read out of a large backup without downloading or decrypting the rest.
-- **backup**: Combined backups now write a `<backup>.index` sidecar listing every file's path, size, modification time and checksum, so browsing a backup's contents no longer downloads the archive.
-- **backup**: Encrypted combined archives derive a fresh key per archive and use counter-based nonces, making nonce reuse impossible by construction.
-- **backup**: Small files in encrypted combined archives are packed into shared bundles, removing the per-file overhead and compression-ratio penalty of backups with many small files.
-- **storage**: Backups with directory sources can now be browsed file by file in the Storage Explorer, and individual files or folders restored on their own - as a `.tar.gz` download, back to their original location, or into any configured destination.
-- **storage**: Storage adapters can now serve byte ranges, so a single-file restore transfers only that file instead of the whole backup. Implemented for S3, SFTP, WebDAV, Google Drive, OneDrive, FTP, Dropbox and the local filesystem, with an automatic fallback for SMB and Rsync.
-- **vault**: The Recovery Kit now also ships `restore_archive.js`, which lists and extracts file backups offline with nothing but Node.js.
-- **jobs**: Directory sources can now be backed up incrementally, storing only files that changed since the last run. Opt-in per job, with a configurable full-backup interval, and a mode that detects changes by content instead of timestamps.
-- **storage**: The Storage Explorer now shows incremental snapshots with their complete size and a Full/Incremental badge, and offers a download that assembles the complete snapshot out of its chain.
-- **restore**: The restore page now shows a file tree per directory source, so a restore can cover everything, single folders or individual files - with a per-selection size summary and a `.tar.gz` download option.
-- **restore**: Directory restore targets can now be picked with a folder browser, and a one-click "Use original location" fills in where the files were originally collected from.
-- **restore**: Clicking Restore on a backup that contains both databases and directory sources now offers a choice between restoring everything, only the databases or only the files, instead of always opening the page with both halves.
-- **smb**: Directory sources on SMB shares can now be read from a VSS shadow copy instead of the live share, so open files are readable and the backup reflects a single point in time. Uses MS-FSRVP, needs no agent on the file server, and the switch only unlocks once the server has confirmed it can deliver one. A run whose snapshot turns out to be unavailable fails rather than silently backing up the live share.
-- **destinations**: Added a "Create as Directory Source" action (and its reverse on the Sources page) that copies a storage adapter into the opposite role including its credentials, so the same server can serve both purposes without being set up twice by hand.
+- **jobs**: Backup jobs can now back up **directories and files**, not just databases. A job can have one or more directory sources (SFTP, SMB, WebDAV, Rsync, Local Filesystem) alongside or instead of a database, collected into a single archive per run. Folders are picked from a checkbox tree, and reusable **Exclude Pattern Presets** keep glob lists in one place - editing a preset applies to every source that links it.
+- **backup**: File backups use a new **seekable archive format**. Compression and encryption are applied to each entry rather than to the archive as a whole, and a `<backup>.index` sidecar lists every file with its size, timestamp and checksum. That is what makes it possible to browse a backup without downloading it and to restore one file out of a 100 GB archive. Encrypted archives derive a fresh key per archive with counter-based nonces, keep no cleartext paths or checksums anywhere, and pack small files into shared bundles.
+- **restore**: The restore page covers everything in a backup: pick individual databases, whole directory sources, single folders or single files, each with its own target. Files can go back to their original location, into any configured destination, or come down as a `.tar.gz`. A backup holding both databases and files asks up front which half you want.
+- **storage**: Storage adapters can serve **byte ranges**, so restoring one file transfers that file instead of the whole backup. Implemented for S3, SFTP, WebDAV, Google Drive, OneDrive, FTP, Dropbox and the local filesystem, with an automatic full-download fallback for SMB and Rsync.
+- **jobs**: Directory sources can be backed up **incrementally**, storing only what changed since the last run. Opt-in per job, with a configurable full-backup interval and an option to detect changes by content instead of timestamps. Each chain lives in its own folder and is retained and deleted as a unit, so a snapshot can never lose the archives it depends on.
+- **smb**: Directory sources on SMB shares can be read from a **VSS shadow copy** instead of the live share, so open files are readable and the backup reflects a single point in time. Uses MS-FSRVP and needs no agent on the file server. The option only unlocks once the server confirms it can deliver one, and a run whose snapshot turns out to be unavailable fails rather than quietly backing up the live share.
+- **vault**: The Recovery Kit now ships `restore_archive.js`, which lists and extracts file backups offline with nothing but Node.js. It streams every entry, so recovering a backup that holds a 50 GB file needs no more memory than one holding text files, and a file only appears once its authentication tag and checksum both verify.
+- **destinations**: New "Create as Directory Source" action (and its reverse) copies a storage adapter into the opposite role including its credentials, so one server can serve both purposes without being set up twice.
+- **jobs**: Creating and editing a backup job now opens a dedicated page instead of a modal, giving the folder tree room to work.
 
 ### 🐛 Bug Fixes
 
-- **jobs**: Fixed a crash when expanding a directory source's exclude-pattern filter while editing an existing job.
-- **jobs**: Fixed linked Exclude Pattern Presets being silently dropped when creating or updating a job, so the link never actually applied.
-- **jobs**: Fixed external compression being force-disabled for combined jobs whenever PostgreSQL native compression was active, even when the job also had directory sources whose files should still be compressed.
-- **backup**: Fixed the storage listing cache update after an upload being fired without awaiting it, which left its failures unhandled and could let it outlive the backup run that produced it.
-- **backup**: Fixed the archive index sidecar being counted as a backup file by retention, the Storage Explorer, integrity checks and storage statistics, which could cause retention to delete real backups prematurely.
-- **storage**: Deleting a backup now removes every sidecar belonging to it, instead of leaving orphaned index files behind.
-- **retention**: Incremental chains are now retained and deleted as a unit, so a snapshot can never lose the archives it depends on.
-- **restore**: Fixed restoring only directories out of a database + directory backup being blocked until a database and target server were selected.
-- **local-filesystem**: Fixed restore targets written with a leading slash (such as the suggested `/restore`) being rejected as path traversal - a leading slash means the adapter's own root, as it already did for every other adapter.
-- **restore**: Fixed the progress view getting stuck on "Downloading" for backups with directory sources, and reporting a download that never happens for them.
-- **storage**: Fixed the Storage Explorer serving listing rows cached by an older version, which left new columns and actions (backup type, restore scope choice) missing until the cache happened to expire. Outdated caches are now rebuilt on first load after an update.
-- **jobs**: Fixed the toggle in the Incremental backups and Skip Verification rows overlapping their description text, which pushed the switch under the last line on narrower dialogs.
-- **backup**: Fixed archives containing an entry of 8 GiB or more - a large VM image or an uncompressed dump - recording wrong offsets for every entry after it. TAR writes such sizes in base-256 rather than octal, which the header walk read as zero and lost its place. The standalone recovery kit had the same defect and could not list those archives at all.
-- **backup**: Fixed a file the source refuses to hand over being dropped from the archive in silence while the job still reported Success. Each one is now named in the log and the execution is reported as Partial - a backup that is quietly incomplete is the failure that only surfaces when it is needed.
-- **backup**: Fixed two concurrent jobs sharing temp file paths while writing archives, so with more than one job running at a time each could end up with the other's compressed entries. The same collision applied to index sidecar downloads, which the restore page triggers by itself.
-- **storage**: Deleting a backup that other snapshots of its incremental chain build on is now refused, naming them. Retention already deleted chains as a unit; the explorer's delete did not, and the chain's full backup is its largest row.
-- **jobs**: Fixed every job save regenerating the ids of its directory sources. Those ids are what an archive index uses to attribute files, so an unrelated edit - renaming a job, changing its schedule - forced a full backup and broke "restore to original location" for every earlier backup.
-- **restore**: Restoring into a storage destination now refuses paths that escape the chosen target directory, matching the guard local extraction has always had. An index sitting unencrypted beside its archive is editable by anyone with write access to the destination.
-- **backup**: File collection now refuses paths from a source listing that escape the working directory, so a compromised or hostile source server cannot write outside it.
-- **backup**: Incremental archive names now carry their position in the chain, so a naming template with day granularity can no longer have one run overwrite an archive that later snapshots reference.
 - **webdav**: Fixed uploads reading the whole backup into memory before sending it, which made a backup larger than the machine's RAM fail on this destination alone. Uploads now stream, as every other destination already did.
-- **vault**: Fixed the recovery kit reading each archive entry into memory in one piece, so recovering a backup that held a large file needed as much RAM as the file itself and failed outright past 2 GiB. Entries are now streamed - measured at 169 MB peak for a 400 MB file and 192 MB for a 1.2 GB one - and written to a temporary name that is only put in place once the authentication tag and checksum verify.
-- **backup**: Fixed incremental backups treating a file as unchanged when its modification time moved backwards at an unchanged size, which silently kept the stale version. Any timestamp difference now counts as a change, matching rsync.
-- **storage**: Fixed directory sources appearing wherever backup destinations are listed - the Storage Explorer (where their files were shown as backups, delete button included), the Destinations page, Storage Usage on the dashboard, and the config backup target picker.
-- **storage**: Fixed storage alerts treating directory sources as destinations, which made "Missing Backup" fire indefinitely for a location that never receives one.
-- **system-tasks**: Fixed the hourly storage cache warmup and the destination-wide integrity check walking directory sources, which can hold no backups.
-- **destinations**: Fixed cloning a storage adapter losing its role, so a cloned directory source came back as a backup destination.
-- **jobs**: Fixed backup destinations never being validated, which allowed a job to write its backups into a directory source it also reads from.
-- **restore**: Fixed "Files Only" failing outright and "Databases Only" finishing as Partial when restoring from a backup that contains both. The restore request now states which half it covers, instead of the untouched half being read as "restore all of it".
+- **local-filesystem**: Fixed restore targets written with a leading slash (such as the suggested `/restore`) being rejected as path traversal - a leading slash means the adapter's own root, as it already did for every other adapter.
+- **backup**: Fixed the storage listing cache update after an upload being fired without awaiting it, which left its failures unhandled and could let it outlive the backup run that produced it.
 
 ### 🔒 Security
 
-- **backup**: File paths, database names and content checksums no longer appear in cleartext anywhere in an encrypted combined backup, including its archive member names and index sidecar.
-- **local-filesystem**: Tightened the path containment check, which accepted a sibling directory whose name merely started with the configured base path.
-
-### 🎨 Improvements
-
-- **retention**: The retention log now names the backups that survive only because their incremental chain is still in use, so a destination holding more backups than its policy allows is explainable instead of looking like the policy is being ignored. The job form points this out on incremental jobs.
-
-- **adapters**: Dropped the Role column from the adapter tables. Both storage pages now list a single role, so the column repeated the same value in every row.
-
-- **storage**: The Storage Explorer's backup count badge now reflects combined database + directory archives (e.g. "2 DBs + 2 Dirs") instead of a misleading database-only count.
-- **restore**: Restoring from a seekable archive no longer downloads the whole backup - only the selected databases and files are transferred on destinations that support byte ranges.
-- **storage**: Every backup now records whether it is full or incremental, so the Storage Explorer's Type column is filled for database-only backups too instead of showing a dash.
+- **local-filesystem**: Tightened the path containment check, which accepted a sibling directory whose name merely started with the configured base path (a job pointed at `/srv/data` could reach `/srv/dataEVIL`).
 
 ### 🔄 Changed
 
-- **navigation**: Sources, Destinations and Notifications are now one page, **Connections**, with a tab per kind: Databases, Directory Sources, Backup Destinations and Notifications. Adapters are grouped by what they are rather than by the direction a job happens to use them in, which is what made a database "a source" even when restoring into it. The old routes redirect to the matching tab, and the active tab lives in the URL (`?tab=`) so links and bookmarks keep working. Each tab keeps its own table, because they differ in columns, actions and the permission that governs them.
-- **destinations**: A storage adapter now has one exclusive role instead of two independent toggles. The two role switches in the adapter form are a single Role choice, and the Destinations and Sources pages each list only their own. The roles cannot be combined because a destination writes job and chain folders into its configured path while a source reads folders out of it - one adapter doing both would let a job back up its own archives.
+- **navigation**: Sources, Destinations and Notifications are now one page, **Connections**, with a tab per kind: Databases, Directory Sources, Backup Destinations and Notifications. Adapters are grouped by what they are rather than by the direction a job happens to use them in - which is what made a database "a source" even when restoring into it. The old routes redirect to the matching tab, and the active tab lives in the URL so links and bookmarks keep working.
+- **destinations**: A storage adapter now has one exclusive role, backup destination or directory source, instead of two independent toggles. They cannot be combined because a destination owns its configured path - the runner writes job and chain folders into it - while a source only reads folders out of it, so one adapter doing both would let a job back up its own archives. Existing adapters are migrated automatically.
+- **retention**: The retention log now names backups that survive only because their incremental chain is still in use, so a destination holding more than its policy allows is explainable instead of looking broken.
 
 ### 🗑️ Removed
 
@@ -95,30 +45,16 @@ All notable changes to DBackup are documented here.
 
 ### 📝 Documentation
 
-- **wiki**: Added an Archive Format reference documenting the seekable archive layout, key derivation and index format byte by byte, so backups stay recoverable independently of DBackup.
-- **wiki**: Updated the Recovery Kit and Storage Explorer guides for file-level browsing and restore.
-- **wiki**: Added a Backup Modes guide covering incremental backups, chain storage, retention behaviour and when DBackup falls back to a full backup.
-- **api**: Documented the restore endpoint's new `scope` parameter, and corrected `targetSourceId` from unconditionally required to required only when the restore includes a database.
-- **wiki**: Documented the destination/directory-source roles on both overview pages, including how to use one server for both.
-- **wiki**: Updated every navigation instruction in the user guide for the new Connections page and its tabs.
-- **wiki**: Documented shadow copies for SMB directory sources - what they solve, the server-side requirements, and the deliberate hard failure when one cannot be taken.
-- **wiki**: Documented how retention and incremental chains interact, with a worked example and the amplifying effect GFS slots have on chain storage.
-- **wiki**: Rewrote the "Detect changes by content" section to separate the transfer decision from the storage decision, name the cases that actually need it, and point out that a full backup re-checks everything.
-- **api**: Documented `storageRole` on the adapter schemas and the new `role` query parameter of the adapter listing endpoint.
+- **wiki**: New **Archive Format** reference documenting the archive layout, key derivation and index format byte by byte, so a backup stays recoverable independently of DBackup - including the TAR header detail that trips up hand-written readers on entries past 8 GiB.
+- **wiki**: New **Backup Modes** guide covering incremental backups, chain storage, how retention interacts with chains, and when DBackup falls back to a full backup.
+- **wiki**: Updated the Recovery Kit, Storage Explorer, Restore, SMB and adapter overview guides for file backups, shadow copies and the Connections page.
+- **api**: Documented the restore endpoint's `scope` parameter, `storageRole` on the adapter schemas, and the new snapshot-availability and adapter-role endpoints.
 
 ### 🧪 Tests
 
-- **restore**: Added unit tests for the restore scope rules - when a combined backup asks what to restore, and how the restore page interprets the resulting parameter.
-- **destinations**: Added tests for the adapter role - the listing filter, the guard that refuses a role change while a job depends on it, and the clone keeping or flipping the role.
-- **backup**: Added a regression test for TAR entries at the base-256 size boundary, built from a hand-written header so it needs no 8 GiB of disk, plus tests for collection failures downgrading a run, chain-aware deletion, source-id stability across job edits, and the restore path guard.
-- **vault**: Added tests that a failed extraction leaves no half-written file behind and that a streamed file failing its checksum is not written at all.
-- **backup**: Added a round-trip test that extracts an archive with real `tar` and reads it back with the standalone recovery kit, using paths past 100 characters, unicode, spaces and empty files - the two recovery promises that only running them can verify.
-- **smb**: Added tests for the FSRVP exchange - parsing rpcclient's output against Samba's own format strings, the mandatory recovery-complete call, password scrubbing, and the release path on success, failure and cancellation.
-- **retention**: Added tests for the chain-kept report - which backups it names, and that it stays empty for standalone backups and for chains the policy keeps on its own.
-- **backup**: Added a test for an incremental run re-reading a file whose timestamp moved backwards at an unchanged size.
-- **jobs**: Added tests for the new destination-role validation, covering a destination pointing at a directory source and at an adapter that does not exist.
-- **lint-guards**: Added a guard that fails the build when new code enumerates storage adapters for backup purposes without filtering by role, with an explicit allow-list for the health check and the listing endpoint.
-- **lint-guards**: Added a guard that fails the build when anything links to the retired `/dashboard/sources`, `/dashboard/destinations` or `/dashboard/notifications` routes, and that checks their redirect stubs are still in place.
+- **backup**: Round-trip coverage for the archive format against awkward inputs - paths past 100 characters, unicode, spaces, empty files - verified with real `tar` and the standalone recovery kit, since "an unencrypted archive extracts with `tar -xf`" and "the kit reads what the writer emits" are promises only running them can prove.
+- **backup**: Regression coverage for the format's edge cases: TAR entries at the 8 GiB size boundary, incremental chains spanning several archives, chain-aware retention and deletion, restore path guards, and the SMB shadow copy lifecycle including release on failure and cancellation.
+- **lint-guards**: New guards that fail the build when code enumerates storage adapters without filtering by role, or links to the retired Sources/Destinations/Notifications routes.
 
 ### 🐳 Docker
 

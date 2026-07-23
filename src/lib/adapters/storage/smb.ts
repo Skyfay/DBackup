@@ -1,4 +1,4 @@
-import { StorageAdapter, StorageSession, FileInfo, SnapshotHandle } from "@/lib/core/interfaces";
+import { StorageAdapter, StorageSession, FileInfo, DirectoryBrowseEntry, SnapshotHandle } from "@/lib/core/interfaces";
 import { probeSnapshotSupport, createShadowCopy, releaseShadowCopy, findOrphanedShadowCopies } from "./smb-vss";
 import { SMBSchema } from "@/lib/adapters/definitions";
 import SambaClient from "samba-client";
@@ -165,6 +165,36 @@ export const SMBAdapter: StorageAdapter = {
             return null;
         } finally {
             await fs.unlink(tmpPath).catch(() => {});
+        }
+    },
+
+    async browseDirectories(config: SMBConfig, subPath: string = ""): Promise<DirectoryBrowseEntry[]> {
+        try {
+            const client = createClient(config);
+            const normalize = (p: string) => p.replace(/\\/g, "/");
+
+            const prefix = config.pathPrefix ? normalize(config.pathPrefix) : "";
+            const base = prefix
+                ? prefix + (subPath ? "/" + normalize(subPath) : "")
+                : normalize(subPath);
+
+            // smbclient's "dir" needs a glob: "folder/*" lists the folder's contents,
+            // while "folder" alone would only match the entry itself.
+            const items = await client.list(base ? base + "/*" : "*");
+
+            return items
+                // The attribute string carries "D" for a directory, alongside flags like
+                // "A" (archive) or "H" (hidden), so it is tested rather than compared.
+                .filter((item: { name: string; type: string }) =>
+                    item.type.includes("D") && item.name !== "." && item.name !== "..")
+                .map((item: { name: string }) => ({
+                    name: item.name,
+                    path: subPath ? `${subPath}/${item.name}` : item.name,
+                }));
+        } catch (error: unknown) {
+            const safe = sanitizeSmbError(error, config.password);
+            log.error("SMB browseDirectories failed", { address: config.address, subPath }, wrapError(safe));
+            throw safe;
         }
     },
 

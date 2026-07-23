@@ -1,4 +1,4 @@
-import { StorageAdapter, FileInfo, UploadOptions } from "@/lib/core/interfaces";
+import { StorageAdapter, FileInfo, DirectoryBrowseEntry, UploadOptions } from "@/lib/core/interfaces";
 import { S3GenericSchema, S3AWSSchema, S3R2Schema, S3HetznerSchema } from "@/lib/adapters/definitions";
 import { S3Client, ListObjectsV2Command, GetObjectCommand, DeleteObjectCommand, PutObjectCommand, HeadObjectCommand, HeadBucketCommand, StorageClass } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
@@ -105,6 +105,53 @@ async function s3List(internalConfig: S3InternalConfig, dir: string = ""): Promi
         })).filter(f => f.name && f.size > 0); // Filter folders or empty keys
     } catch (error) {
         log.error("S3 list failed", { bucket: internalConfig.bucket, prefix: listPrefix }, wrapError(error));
+        throw error;
+    } finally {
+        client.destroy();
+    }
+}
+
+/**
+ * Lists one level of "folders" below a prefix.
+ *
+ * Object storage has no directories - a key is a flat string. Asking S3 for a delimiter
+ * makes it group keys by the next `/` and return those groups as CommonPrefixes, which is
+ * the same tree the console shows. Pagination matters here: a bucket with many prefixes
+ * returns them across several pages, and stopping at the first would silently hide folders.
+ */
+async function s3BrowseDirectories(
+    internalConfig: S3InternalConfig,
+    subPath: string = ""
+): Promise<DirectoryBrowseEntry[]> {
+    const client = S3ClientFactory.create(internalConfig);
+    const base = S3ClientFactory.getTargetKey(internalConfig, subPath);
+    const listPrefix = base && !base.endsWith("/") ? `${base}/` : base;
+
+    try {
+        const entries: DirectoryBrowseEntry[] = [];
+        let continuationToken: string | undefined;
+
+        do {
+            const response = await client.send(new ListObjectsV2Command({
+                Bucket: internalConfig.bucket,
+                Prefix: listPrefix,
+                Delimiter: "/",
+                ContinuationToken: continuationToken,
+            }));
+
+            for (const group of response.CommonPrefixes ?? []) {
+                if (!group.Prefix) continue;
+                const name = group.Prefix.slice(listPrefix.length).replace(/\/$/, "");
+                if (!name) continue;
+                entries.push({ name, path: subPath ? `${subPath}/${name}` : name });
+            }
+
+            continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+        } while (continuationToken);
+
+        return entries;
+    } catch (error) {
+        log.error("S3 browseDirectories failed", { bucket: internalConfig.bucket, subPath }, wrapError(error));
         throw error;
     } finally {
         client.destroy();
@@ -363,6 +410,14 @@ export const S3GenericAdapter: StorageAdapter = {
         forcePathStyle: config.forcePathStyle,
         pathPrefix: config.pathPrefix
     }, ...args),
+    browseDirectories: (config, ...args) => s3BrowseDirectories({
+        endpoint: config.endpoint,
+        region: config.region,
+        bucket: config.bucket,
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        forcePathStyle: config.forcePathStyle,
+        pathPrefix: config.pathPrefix
+    }, ...args),
     delete: (config, ...args) => s3Delete({
         endpoint: config.endpoint,
         region: config.region,
@@ -429,6 +484,11 @@ export const S3AWSAdapter: StorageAdapter = {
         credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
     }, ...args),
     downloadRange: (config, ...args) => s3DownloadRange({
+        region: config.region,
+        bucket: config.bucket,
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+    }, ...args),
+    browseDirectories: (config, ...args) => s3BrowseDirectories({
         region: config.region,
         bucket: config.bucket,
         credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
@@ -501,6 +561,12 @@ export const S3R2Adapter: StorageAdapter = {
         bucket: config.bucket,
         credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
     }, ...args),
+    browseDirectories: (config, ...args) => s3BrowseDirectories({
+        endpoint: r2Endpoint(config.accountId, config.jurisdiction),
+        region: "auto",
+        bucket: config.bucket,
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+    }, ...args),
     delete: (config, ...args) => s3Delete({
         endpoint: r2Endpoint(config.accountId, config.jurisdiction),
         region: "auto",
@@ -563,6 +629,12 @@ export const S3HetznerAdapter: StorageAdapter = {
         credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
     }, ...args),
     downloadRange: (config, ...args) => s3DownloadRange({
+        endpoint: `https://${config.region}.your-objectstorage.com`,
+        region: config.region,
+        bucket: config.bucket,
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+    }, ...args),
+    browseDirectories: (config, ...args) => s3BrowseDirectories({
         endpoint: `https://${config.region}.your-objectstorage.com`,
         region: config.region,
         bucket: config.bucket,

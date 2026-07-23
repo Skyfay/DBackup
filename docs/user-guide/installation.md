@@ -29,7 +29,7 @@ services:
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
       - BETTER_AUTH_URL=https://localhost:3000
-      # - DISABLE_HTTPS=true  # Optional: Use plain HTTP instead of HTTPS
+      # - DISABLE_HTTPS=true  # Use plain HTTP - required behind a reverse proxy
       # - TZ=Europe/Zurich  # Optional: Server timezone
     volumes:
       - ./data:/data              # All persistent data (db, storage, certs)
@@ -92,7 +92,7 @@ Access the application at [https://localhost:3000](https://localhost:3000) (acce
 | `TZ` | ❌ | Server timezone for logs. Default: `UTC` |
 | `TMPDIR` | ❌ | Temp directory for large backups. Default: `/tmp` |
 | `LOG_LEVEL` | ❌ | Logging verbosity: `debug`, `info`, `warn`, `error`. Default: `info` |
-| `DISABLE_HTTPS` | ❌ | Set to `true` to use plain HTTP. Default: `false` (HTTPS) |
+| `DISABLE_HTTPS` | ❌ | Set to `true` to use plain HTTP. Default: `false` (HTTPS). **Set this when running behind a reverse proxy** - see [Reverse Proxy Setup](#reverse-proxy-setup) |
 | `PUID` | ❌ | User ID the container runs as. Default: `1001` |
 | `PGID` | ❌ | Group ID the container runs as. Default: `1001` |
 
@@ -270,6 +270,27 @@ If public access is required, ensure you have:
 - Two-factor authentication via SSO (see [SSO Configuration](/developer-guide/advanced/sso))
 - Rate limiting and IP restrictions
 - Regular security audits
+:::
+
+::: warning Set `DISABLE_HTTPS=true` behind a proxy
+By default DBackup terminates TLS itself and serves **HTTPS** on port 3000 with a
+self-signed certificate. Behind a reverse proxy that is almost never what you want: the
+proxy already terminates TLS, and it will refuse the self-signed certificate on the way to
+the container - typically as a `502 Bad Gateway`, an SSL handshake error, or an endlessly
+loading page with nothing useful in the DBackup log.
+
+Set `DISABLE_HTTPS=true` so DBackup serves plain HTTP, and let the proxy handle
+certificates. The examples below all assume this:
+
+```yaml
+environment:
+  - DISABLE_HTTPS=true
+```
+
+Leave it unset only if you point the browser straight at the container, or if your proxy is
+configured to talk HTTPS upstream and to accept a self-signed certificate (`proxy_pass
+https://...` plus `proxy_ssl_verify off` in nginx, `serversTransport.insecureSkipVerify` in
+Traefik).
 :::
 
 ### Nginx

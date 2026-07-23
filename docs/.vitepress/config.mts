@@ -172,6 +172,8 @@ export default defineConfig({
           text: 'Features',
           collapsed: false,
           items: [
+            { text: 'File & Folder Backups', link: '/user-guide/features/file-backups' },
+            { text: 'Backup Modes', link: '/user-guide/features/backup-modes' },
             { text: 'Storage Explorer', link: '/user-guide/features/storage-explorer' },
             { text: 'Database Explorer', link: '/user-guide/features/database-explorer' },
             { text: 'Backup Verification', link: '/user-guide/features/backup-verification' },
@@ -183,7 +185,6 @@ export default defineConfig({
             { text: 'Rate Limits', link: '/user-guide/features/rate-limits' },
             { text: 'API Keys', link: '/user-guide/features/api-keys' },
             { text: 'Webhook Triggers', link: '/user-guide/features/webhook-triggers' },
-            { text: 'Backup Modes', link: '/user-guide/features/backup-modes' },
             { text: 'API Reference', link: '/user-guide/features/api-reference' }
           ]
         },

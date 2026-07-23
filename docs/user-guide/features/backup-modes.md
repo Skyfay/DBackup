@@ -1,6 +1,9 @@
 # Backup Modes
 
 Jobs with directory sources can store either a complete copy every run, or only what
+
+New to file backups? [File & Folder Backups](/user-guide/features/file-backups) covers
+setting one up and what each adapter supports.
 changed since the last one.
 
 ## Full vs Incremental

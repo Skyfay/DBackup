@@ -1,4 +1,4 @@
-import { StorageAdapter, FileInfo } from "@/lib/core/interfaces";
+import { StorageAdapter, FileInfo, DirectoryBrowseEntry } from "@/lib/core/interfaces";
 import { WebDAVSchema } from "@/lib/adapters/definitions";
 import { createClient, WebDAVClient, FileStat } from "webdav";
 import { createReadStream, createWriteStream } from "fs";
@@ -148,6 +148,28 @@ export const WebDAVAdapter: StorageAdapter = {
         } catch {
             // Quietly fail if file not found (expected for missing .meta.json)
             return null;
+        }
+    },
+
+    async browseDirectories(config: WebDAVConfig, subPath: string = ""): Promise<DirectoryBrowseEntry[]> {
+        try {
+            const client = getClient(config);
+            const prefix = config.pathPrefix || "";
+            const startDir = prefix
+                ? path.posix.join("/", prefix, subPath)
+                : (subPath ? path.posix.join("/", subPath) : "/");
+
+            // Depth 1: the collection's own children, which is exactly one tree level.
+            const items = await client.getDirectoryContents(startDir) as FileStat[];
+            return items
+                .filter((item) => item.type === "directory")
+                .map((item) => ({
+                    name: item.basename,
+                    path: subPath ? `${subPath}/${item.basename}` : item.basename,
+                }));
+        } catch (error: unknown) {
+            log.error("WebDAV browseDirectories failed", { url: config.url, subPath }, wrapError(error));
+            throw error;
         }
     },
 

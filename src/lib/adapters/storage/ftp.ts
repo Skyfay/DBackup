@@ -1,4 +1,4 @@
-import { StorageAdapter, StorageSession, FileInfo } from "@/lib/core/interfaces";
+import { StorageAdapter, StorageSession, FileInfo, DirectoryBrowseEntry } from "@/lib/core/interfaces";
 import { FTPSchema } from "@/lib/adapters/definitions";
 import { Client, FileInfo as FTPFileInfo } from "basic-ftp";
 import { createReadStream, createWriteStream } from "fs";
@@ -271,6 +271,28 @@ export const FTPAdapter: StorageAdapter = {
         } finally {
             if (client) client.close();
             await fs.unlink(tmpPath).catch(() => {});
+        }
+    },
+
+    async browseDirectories(config: FTPConfig, subPath: string = ""): Promise<DirectoryBrowseEntry[]> {
+        let client: Client | null = null;
+        try {
+            client = await connectFTP(config);
+            const prefix = config.pathPrefix ? config.pathPrefix.replace(/\\/g, "/") : "";
+            const startDir = prefix ? path.posix.join(prefix, subPath) : (subPath || "/");
+
+            const items = await client.list(startDir);
+            return items
+                .filter((item) => item.isDirectory && item.name !== "." && item.name !== "..")
+                .map((item) => ({
+                    name: item.name,
+                    path: subPath ? `${subPath}/${item.name}` : item.name,
+                }));
+        } catch (error: unknown) {
+            log.error("FTP browseDirectories failed", { host: config.host, subPath }, wrapError(error));
+            throw wrapError(error);
+        } finally {
+            if (client) client.close();
         }
     },
 

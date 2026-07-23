@@ -134,6 +134,9 @@ archive:
 | :--- | :--- |
 | Local Filesystem, S3 (and compatible), SFTP, WebDAV, Google Drive, OneDrive, FTP, Dropbox | SMB, Rsync |
 
+The full per-adapter picture, including which ones offer a folder browser when configuring
+a source, is in [File & Folder Backups](/user-guide/features/file-backups).
+
 ### Download
 
 1. Click **Download** button

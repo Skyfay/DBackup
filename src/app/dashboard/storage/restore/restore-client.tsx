@@ -473,25 +473,28 @@ export function RestoreClient() {
         const selections = buildSelections();
         if (selections.length === 0) return;
 
-        const toastId = toast.loading('Assembling selection...');
+        const toastId = toast.loading('Preparing selection...');
         try {
+            // Two steps on purpose. This call only validates the selection and returns a
+            // handle; the browser then fetches the archive itself, so the bytes go straight
+            // to disk via its download manager instead of through the page. A selection can
+            // be far larger than this machine's RAM, which buffering it here would require.
             const res = await fetch(`/api/storage/${destinationId}/restore-files`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ file: file.path, selections, target: { kind: 'download' } }),
+                body: JSON.stringify({ file: file.path, selections, target: { kind: 'download' }, prepare: true }),
             });
-            if (!res.ok) {
-                const failure = await res.json().catch(() => ({ error: 'Download failed' }));
-                throw new Error(failure.error || 'Download failed');
+            const payload = await res.json().catch(() => ({ error: 'Download failed' }));
+            if (!res.ok || !payload?.data?.token) {
+                throw new Error(payload.error || 'Download failed');
             }
-            const blob = await res.blob();
-            const url = URL.createObjectURL(blob);
+
             const anchorEl = document.createElement('a');
-            anchorEl.href = url;
-            anchorEl.download = `${file.name.replace(/\.[^.]+$/, '')}-files.tar.gz`;
+            anchorEl.href = `/api/storage/${destinationId}/restore-files?token=${encodeURIComponent(payload.data.token)}`;
+            anchorEl.download = payload.data.fileName;
             anchorEl.click();
-            URL.revokeObjectURL(url);
-            toast.success('Download started', { id: toastId });
+
+            toast.success('Download started - see your browser downloads for progress', { id: toastId });
         } catch (e: unknown) {
             toast.error(e instanceof Error ? e.message : String(e), { id: toastId });
         }

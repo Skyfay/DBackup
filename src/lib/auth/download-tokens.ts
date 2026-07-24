@@ -7,6 +7,12 @@
 
 import crypto from "crypto";
 
+/** Selected paths within a directory source, mirrored structurally to keep this layer standalone. */
+export interface DownloadSelection {
+    src: string;
+    paths?: string[];
+}
+
 interface DownloadToken {
     storageId: string;
     file: string;
@@ -14,6 +20,16 @@ interface DownloadToken {
     createdAt: number;
     expiresAt: number;
     used: boolean;
+    /**
+     * Present for archive-selection downloads, which extract chosen files out of a backup
+     * rather than fetching one stored file.
+     */
+    selection?: {
+        /** The token is only honoured for the session that created it. */
+        userId: string;
+        selections?: DownloadSelection[];
+        fileName: string;
+    };
 }
 
 // Token validity: 5 minutes
@@ -81,6 +97,53 @@ export function consumeDownloadToken(token: string): DownloadToken | null {
     // Call markTokenUsed() after successful download
 
     return data;
+}
+
+/**
+ * Parks a validated file selection so the browser can fetch it as a plain GET.
+ *
+ * A selection is far too large for a query string, but the download has to be a normal
+ * navigation for the browser's own download manager to take it - which is the point: the
+ * response is written straight to disk instead of being buffered in the tab, so a selection
+ * larger than the machine's RAM stays downloadable.
+ */
+export function generateSelectionDownloadToken(params: {
+    storageId: string;
+    file: string;
+    userId: string;
+    fileName: string;
+    selections?: DownloadSelection[];
+}): string {
+    const token = crypto.randomBytes(32).toString("hex");
+    const now = Date.now();
+
+    tokenStore.set(token, {
+        storageId: params.storageId,
+        file: params.file,
+        decrypt: false,
+        createdAt: now,
+        expiresAt: now + TOKEN_TTL_MS,
+        used: false,
+        selection: { userId: params.userId, selections: params.selections, fileName: params.fileName },
+    });
+
+    return token;
+}
+
+/**
+ * Resolves a selection token for the session presenting it.
+ *
+ * Deliberately not consumed on use - a browser that retries or resumes the download would
+ * otherwise fail on the second attempt. The short TTL and the owner check bound it instead,
+ * so a leaked token is worthless without that user's session.
+ */
+export function consumeSelectionDownloadToken(
+    token: string,
+    userId: string
+): (DownloadToken & { selection: NonNullable<DownloadToken["selection"]> }) | null {
+    const data = consumeDownloadToken(token);
+    if (!data?.selection || data.selection.userId !== userId) return null;
+    return data as DownloadToken & { selection: NonNullable<DownloadToken["selection"]> };
 }
 
 /**

@@ -311,26 +311,27 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
             return;
         }
 
-        const toastId = toast.loading(`Assembling ${file.name}...`);
+        const toastId = toast.loading(`Preparing ${file.name}...`);
         try {
+            // Prepare, then let the browser fetch it. A whole snapshot is exactly the case
+            // where buffering the response in the tab falls over - it can be many gigabytes,
+            // and the browser's download manager writes it straight to disk instead.
             const res = await fetch(`/api/storage/${selectedDestination}/restore-files`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ file: file.path, target: { kind: "download" } }),
+                body: JSON.stringify({ file: file.path, target: { kind: "download" }, prepare: true }),
             });
-            if (!res.ok) {
-                const failure = await res.json().catch(() => ({ error: "Download failed" }));
-                throw new Error(failure.error || "Download failed");
+            const payload = await res.json().catch(() => ({ error: "Download failed" }));
+            if (!res.ok || !payload?.data?.token) {
+                throw new Error(payload.error || "Download failed");
             }
 
-            const blob = await res.blob();
-            const url = URL.createObjectURL(blob);
             const anchor = document.createElement("a");
-            anchor.href = url;
-            anchor.download = `${file.name.replace(/\.[^.]+$/, "")}-snapshot.tar.gz`;
+            anchor.href = `/api/storage/${selectedDestination}/restore-files?token=${encodeURIComponent(payload.data.token)}`;
+            anchor.download = payload.data.fileName;
             anchor.click();
-            URL.revokeObjectURL(url);
-            toast.success("Download started", { id: toastId });
+
+            toast.success("Download started - see your browser downloads for progress", { id: toastId });
         } catch (e: unknown) {
             toast.error(e instanceof Error ? e.message : String(e), { id: toastId });
         }

@@ -121,7 +121,9 @@ export function FolderPickerDialog({ open, onOpenChange, configId, configName, o
                     ))}
                 </div>
 
-                <ScrollArea className="min-h-0 flex-1 rounded-md border">
+                {/* Fixed height rather than flex-1 alone: a folder with many children was
+                    growing the list past the dialog and pushing the footer out of view. */}
+                <ScrollArea className="h-80 min-h-0 flex-1 rounded-md border">
                     <div className="p-1">
                         {loading ? (
                             <div className="space-y-2 p-2">

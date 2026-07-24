@@ -93,30 +93,67 @@ function driveItemPath(filePath: string): string {
  * Ensures all parent folders exist for a given path.
  * Checks each segment via GET first; only creates if it doesn't exist.
  */
+/**
+ * In-flight folder creations, keyed by the full path being ensured.
+ *
+ * Looking a folder up and creating it when absent spans an await, so restoring several files
+ * into the same folder at once would have every one of them find nothing and create its own.
+ * Graph renames rather than merges on a name clash, so that surfaces as "Images 1", "Images 2"
+ * beside the real one. Sharing the promise makes the others wait for the first.
+ */
+const folderCreations = new Map<string, Promise<void>>();
+
 async function ensureFolderExists(client: Client, folderPath: string): Promise<void> {
     const segments = folderPath.split("/").filter(Boolean);
     let currentPath = "";
 
     for (const segment of segments) {
         const targetPath = currentPath ? `${currentPath}/${segment}` : segment;
+        const parentPath = currentPath;
 
-        // Check if the folder already exists
-        try {
-            await client
-                .api(`/me/drive/root:/${targetPath}:`)
-                .select("id,folder")
-                .get();
-            // Folder exists - continue to next segment
-        } catch {
-            // Folder doesn't exist - create it
-            const parentApiPath = currentPath
-                ? `/me/drive/root:/${currentPath}:/children`
+        const inFlight = folderCreations.get(targetPath);
+        if (inFlight) {
+            await inFlight;
+            currentPath = targetPath;
+            continue;
+        }
+
+        const creation = (async () => {
+            // Check if the folder already exists
+            try {
+                await client
+                    .api(`/me/drive/root:/${targetPath}:`)
+                    .select("id,folder")
+                    .get();
+                return; // Folder exists - continue to next segment
+            } catch {
+                // Folder doesn't exist - create it
+            }
+
+            const parentApiPath = parentPath
+                ? `/me/drive/root:/${parentPath}:/children`
                 : "/me/drive/root/children";
 
-            await client.api(parentApiPath).post({
-                name: segment,
-                folder: {},
-            });
+            try {
+                await client.api(parentApiPath).post({
+                    name: segment,
+                    folder: {},
+                    // Without this Graph silently renames a clash to "segment 1" instead of
+                    // failing, which is how a duplicate would slip in despite the check above.
+                    "@microsoft.graph.conflictBehavior": "fail",
+                });
+            } catch (e: unknown) {
+                // Someone else created it first - which is the outcome we wanted anyway.
+                const status = (e as { statusCode?: number })?.statusCode;
+                if (status !== 409) throw e;
+            }
+        })();
+
+        folderCreations.set(targetPath, creation);
+        try {
+            await creation;
+        } finally {
+            folderCreations.delete(targetPath);
         }
 
         currentPath = targetPath;

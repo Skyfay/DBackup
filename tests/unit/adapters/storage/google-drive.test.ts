@@ -763,4 +763,68 @@ describe("GoogleDriveAdapter", () => {
             expect(onProgress).toHaveBeenCalled();
         });
     });
+
+    /**
+     * Restoring writes many files at once, and Drive identifies a folder by its id rather than
+     * its name - two folders called "Images" under the same parent are legal and the API
+     * creates both without complaint. Looking a folder up and creating it when missing spans an
+     * await, so without coordination every concurrent upload finds nothing and makes its own,
+     * scattering the restored tree across duplicates.
+     */
+    describe("concurrent uploads into the same folder", () => {
+        const folderCreates = () =>
+            mockDrive.files.create.mock.calls.filter(
+                (call: any) => call[0]?.requestBody?.mimeType === "application/vnd.google-apps.folder"
+            );
+
+        beforeEach(() => {
+            // Nothing exists yet, and the lookup takes a moment - which is the window that
+            // used to let every caller decide to create the folder.
+            mockDrive.files.list.mockImplementation(async () => {
+                await new Promise((r) => setTimeout(r, 5));
+                return { data: { files: [] } };
+            });
+            mockDrive.files.create.mockImplementation(async (params: any) => ({
+                data: { id: params?.requestBody?.mimeType ? "created-folder-id" : "created-file-id" },
+            }));
+            mockFs.stat.mockResolvedValue({ size: 10 });
+        });
+
+        it("creates the shared folder once, not once per file", async () => {
+            await Promise.all([
+                GoogleDriveAdapter.upload(validConfig, "/tmp/a.jpg", "Images/a.jpg"),
+                GoogleDriveAdapter.upload(validConfig, "/tmp/b.jpg", "Images/b.jpg"),
+                GoogleDriveAdapter.upload(validConfig, "/tmp/c.jpg", "Images/c.jpg"),
+                GoogleDriveAdapter.upload(validConfig, "/tmp/d.jpg", "Images/d.jpg"),
+            ]);
+
+            expect(folderCreates()).toHaveLength(1);
+        });
+
+        it("puts every file in that one folder", async () => {
+            await Promise.all([
+                GoogleDriveAdapter.upload(validConfig, "/tmp/a.jpg", "Images/a.jpg"),
+                GoogleDriveAdapter.upload(validConfig, "/tmp/b.jpg", "Images/b.jpg"),
+            ]);
+
+            const fileCreates = mockDrive.files.create.mock.calls.filter(
+                (call: any) => !call[0]?.requestBody?.mimeType
+            );
+            expect(fileCreates).toHaveLength(2);
+            for (const call of fileCreates) {
+                expect(call[0].requestBody.parents).toEqual(["created-folder-id"]);
+            }
+        });
+
+        it("still resolves nested paths as one chain", async () => {
+            await Promise.all([
+                GoogleDriveAdapter.upload(validConfig, "/tmp/a.jar", "Java/lib/a.jar"),
+                GoogleDriveAdapter.upload(validConfig, "/tmp/b.jar", "Java/lib/b.jar"),
+            ]);
+
+            // One "Java", one "lib" - not one pair per file.
+            expect(folderCreates()).toHaveLength(2);
+            expect(folderCreates().map((c: any) => c[0].requestBody.name)).toEqual(["Java", "lib"]);
+        });
+    });
 });

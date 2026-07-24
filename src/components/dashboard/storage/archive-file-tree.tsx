@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChevronRight, ChevronDown, Folder, FileText } from "lucide-react";
 import { formatBytes } from "@/lib/utils";
@@ -193,9 +194,11 @@ export function ArchiveFileTree({
                 />
                 <span className="text-sm font-medium">All files</span>
             </div>
-            <div className="max-h-72 overflow-y-auto p-1">
-                {renderLevel("", 0)}
-            </div>
+            <ScrollArea className="h-72">
+                <div className="p-1">
+                    {renderLevel("", 0)}
+                </div>
+            </ScrollArea>
         </div>
     );
 }

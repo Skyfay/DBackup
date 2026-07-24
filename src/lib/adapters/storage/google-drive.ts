@@ -45,6 +45,64 @@ function createDriveClient(config: GoogleDriveConfig): drive_v3.Drive {
  * folders as needed. Returns the final folder ID.
  * If folderId is set, uses that as root. Otherwise uses Drive root.
  */
+/**
+ * In-flight folder resolutions, keyed by parent id and segment name.
+ *
+ * Drive identifies a folder by its id, not by its name, so two folders called "Images" under
+ * the same parent are perfectly legal and the API creates both without complaint. Looking a
+ * folder up and creating it when absent is therefore a read-modify-write across an await:
+ * with several files being restored at once, every one of them sees "no such folder" and
+ * makes its own, and the restored tree ends up scattered across duplicates.
+ *
+ * Sharing the promise makes the second caller wait for the first one's folder instead of
+ * creating a rival. Entries are dropped once settled, so a folder deleted between restores is
+ * looked up again rather than remembered wrongly.
+ */
+const folderResolutions = new Map<string, Promise<string>>();
+
+async function resolveSegment(
+    drive: drive_v3.Drive,
+    parentId: string,
+    segment: string
+): Promise<string> {
+    const key = `${parentId}/${segment}`;
+    const inFlight = folderResolutions.get(key);
+    if (inFlight) return inFlight;
+
+    const resolution = (async () => {
+        // Search for existing folder (escape \ before ' to prevent query injection)
+        const query = `name='${segment.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+        const res = await drive.files.list({
+            q: query,
+            fields: "files(id, name)",
+            spaces: "drive",
+        });
+
+        if (res.data.files && res.data.files.length > 0) {
+            // Several matches mean duplicates already exist, from an earlier run or made by
+            // hand. Always taking the first keeps a restore landing in one place.
+            return res.data.files[0].id!;
+        }
+
+        const folder = await drive.files.create({
+            requestBody: {
+                name: segment,
+                mimeType: "application/vnd.google-apps.folder",
+                parents: [parentId],
+            },
+            fields: "id",
+        });
+        return folder.data.id!;
+    })();
+
+    folderResolutions.set(key, resolution);
+    try {
+        return await resolution;
+    } finally {
+        folderResolutions.delete(key);
+    }
+}
+
 async function resolveOrCreatePath(
     drive: drive_v3.Drive,
     baseFolderId: string | undefined,
@@ -60,28 +118,7 @@ async function resolveOrCreatePath(
     let currentParent = parentId;
 
     for (const segment of segments) {
-        // Search for existing folder (escape \ before ' to prevent query injection)
-        const query = `name='${segment.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}' and '${currentParent}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-        const res = await drive.files.list({
-            q: query,
-            fields: "files(id, name)",
-            spaces: "drive",
-        });
-
-        if (res.data.files && res.data.files.length > 0) {
-            currentParent = res.data.files[0].id!;
-        } else {
-            // Create folder
-            const folder = await drive.files.create({
-                requestBody: {
-                    name: segment,
-                    mimeType: "application/vnd.google-apps.folder",
-                    parents: [currentParent],
-                },
-                fields: "id",
-            });
-            currentParent = folder.data.id!;
-        }
+        currentParent = await resolveSegment(drive, currentParent, segment);
     }
 
     return currentParent;

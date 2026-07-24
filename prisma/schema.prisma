@@ -283,12 +283,15 @@ model Group {
 }
 
 model TwoFactor {
-  id          String  @id
-  secret      String
-  backupCodes String
-  userId      String  @unique
-  verified    Boolean @default(false)
-  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                      String    @id
+  secret                  String
+  backupCodes             String
+  userId                  String    @unique
+  verified                Boolean   @default(false)
+  // Rate limiting fields required by better-auth >= 1.6 two-factor plugin.
+  failedVerificationCount Int       @default(0)
+  lockedUntil             DateTime?
+  user                    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Passkey {

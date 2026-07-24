@@ -30,6 +30,7 @@ All notable changes to DBackup are documented here.
 - **webdav**: Fixed uploads reading the whole backup into memory before sending it, which made a backup larger than the machine's RAM fail on this destination alone. Uploads now stream, as every other destination already did.
 - **local-filesystem**: Fixed restore targets written with a leading slash (such as the suggested `/restore`) being rejected as path traversal - a leading slash means the adapter's own root, as it already did for every other adapter.
 - **backup**: Fixed the storage listing cache update after an upload being fired without awaiting it, which left its failures unhandled and could let it outlive the backup run that produced it.
+- **auth**: Fixed two-factor authentication failing since v2.10.1 with an empty error in the UI and an `Unknown argument 'failedVerificationCount'` database error in the logs. The Better Auth update added lockout tracking to the two-factor record, but the matching columns were never added to the schema, so both enabling 2FA and verifying TOTP or backup codes failed. Failed attempts are now counted and the lockout works as intended.
 
 ### 🔒 Security
 

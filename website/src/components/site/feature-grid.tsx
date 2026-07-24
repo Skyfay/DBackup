@@ -3,6 +3,7 @@ import {
   CalendarClock,
   Cloud,
   Database,
+  FolderTree,
   LayoutDashboard,
   RotateCcw,
   ShieldCheck,
@@ -17,6 +18,7 @@ import { FEATURES } from "@/lib/content";
 
 const FEATURE_ICONS: Record<string, LucideIcon> = {
   "Database Backup": Database,
+  "File & Folder Backup": FolderTree,
   "Storage & Destinations": Cloud,
   "Restore & Recovery": RotateCcw,
   "Monitoring & Visibility": LayoutDashboard,
@@ -33,7 +35,7 @@ export function FeatureGrid() {
       <SectionHeading
         eyebrow="Features"
         title="Everything a self-hosted backup needs"
-        description="One tool for scheduling, encrypting, storing, and restoring backups across every database you run."
+        description="One tool for scheduling, encrypting, storing, and restoring backups - every database you run, and the files that belong to them."
       />
 
       <Reveal>

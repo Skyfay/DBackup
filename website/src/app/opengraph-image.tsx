@@ -2,7 +2,7 @@ import { ImageResponse } from "next/og";
 import { TAGLINE } from "@/lib/content";
 
 export const dynamic = "force-static";
-export const alt = "DBackup - Database Backup Automation";
+export const alt = "DBackup - Database & File Backup Automation";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -51,7 +51,7 @@ export default async function Image() {
             maxWidth: 950,
           }}
         >
-          Self-hosted database backups, without the lock-in.
+          Self-hosted backups for your databases and files, without the lock-in.
         </div>
         <div
           style={{

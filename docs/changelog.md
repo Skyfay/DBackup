@@ -55,6 +55,12 @@ All notable changes to DBackup are documented here.
 - **wiki**: New **File & Folder Backups** page with a per-adapter table of what each one supports - whether restoring a single file fetches just that file or has to download the whole archive first. It also spells out that the file tree shown when restoring comes from the backup's index sidecar and therefore works for every adapter.
 - **wiki**: The reverse proxy section now states that `DISABLE_HTTPS=true` is needed in almost every proxy setup. DBackup serves HTTPS with a self-signed certificate by default, which a proxy rejects - usually as a 502 with nothing helpful in the log.
 - **api**: Documented the restore endpoint's `scope` parameter, `storageRole` on the adapter schemas, and the new snapshot-availability and adapter-role endpoints.
+- **website**: Repositioned for database **and** file backups - hero, tagline, features, integrations, FAQ, footer and page metadata now cover directory sources.
+- **blog**: New post on why incremental backups store whole changed files instead of deduplicated chunks, what that costs in storage, and when a chunk-based tool is the better choice.
+- **README**: Added a File & Folder Backup feature section, a Directory Sources overview, and file-level restore to the recovery section.
+- **wiki**: The documentation home page now covers file backups, incremental chains, per-adapter directory source support, and how the archive format keeps the no-lock-in promise.
+- **wiki**: Backup Modes explains why whole changed files are stored rather than deduplicated chunks, with the storage cost spelled out per situation.
+- **wiki**: Fixed the opening paragraph of the Backup Modes page, which had a sentence split across the intro note.
 
 ### 🧪 Tests
 

@@ -1,5 +1,5 @@
 export const TAGLINE =
-  "Self-hosted database backup automation with encryption, compression, and smart retention.";
+  "Self-hosted backup automation for databases and files, with encryption, compression, and smart retention.";
 
 export const GITHUB_REPO = "Skyfay/DBackup";
 export const DOCS_URL = "https://docs.dbackup.app";
@@ -21,14 +21,19 @@ export const FEATURES = [
       "9 database engines, selective per-database backup, multi-database jobs with a unified TAR format, AES-256-GCM encryption, GZIP/Brotli compression, and SSH remote execution.",
   },
   {
+    title: "File & Folder Backup",
+    description:
+      "Back up directories from any storage adapter alongside your databases in one job, with a folder tree picker, reusable exclude presets, incremental chains, and VSS shadow copies on SMB.",
+  },
+  {
     title: "Storage & Destinations",
     description:
-      "13 storage adapters, multi-destination jobs for redundancy, a Storage Explorer to browse and download backups, and alerts for usage spikes or missing backups.",
+      "13 storage adapters, usable as backup destinations or as directory sources, multi-destination jobs for redundancy, a Storage Explorer, and alerts for usage spikes or missing backups.",
   },
   {
     title: "Restore & Recovery",
     description:
-      "One-click restore, database remapping, version compatibility checks, SHA-256/MD5 integrity verification, and a Recovery Kit for restoring without DBackup itself.",
+      "Restore a whole backup, a single database, or one file out of a 100 GB archive without downloading it, plus integrity verification and a Recovery Kit for restoring without DBackup itself.",
   },
   {
     title: "Monitoring & Visibility",
@@ -133,6 +138,16 @@ export const FAQS = [
     question: "Which databases are supported?",
     answer:
       "MySQL, MariaDB, PostgreSQL, MongoDB, SQLite, Redis, Valkey, Microsoft SQL Server, and Firebird (beta), with more engines added regularly.",
+  },
+  {
+    question: "Can DBackup back up files and folders, not just databases?",
+    answer:
+      "Yes. Any storage adapter can serve as a directory source - local paths, SFTP, SMB, FTP, WebDAV, S3, Google Drive, Dropbox, OneDrive, or rsync over SSH. Files and databases can share one job, so the dump and the data directory that belongs to it land in the same archive and the same restore point. There is no agent to install: DBackup reads whatever those protocols reach.",
+  },
+  {
+    question: "Does DBackup deduplicate like restic or Borg?",
+    answer:
+      "Not globally, and that is a deliberate trade. Incremental backups store whole changed files and reference unchanged ones in earlier archives of the same chain, so every archive stays a plain TAR you can open with tar -xf or a documented format one Node.js script reads. A chunk store would save more space but would make the backup a repository only its own tool can open - which is the lock-in DBackup exists to avoid.",
   },
   {
     question: "Is there a hosted or cloud version?",

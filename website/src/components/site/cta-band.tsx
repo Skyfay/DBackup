@@ -8,7 +8,7 @@ export function CtaBand() {
   return (
     <section className="mx-auto max-w-6xl px-6 py-20 text-center sm:py-24">
       <SectionHeading
-        title="Back up your databases the way you actually want to"
+        title="Back up your databases and files the way you actually want to"
         description="Self-hosted, open source, and yours to run - free of charge, forever."
       />
       <div className="mt-8 flex flex-wrap items-center justify-center gap-3">

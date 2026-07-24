@@ -6,7 +6,7 @@ import { Nav } from "@/components/site/nav";
 import { Footer } from "@/components/site/footer";
 import { JsonLd } from "@/components/site/json-ld";
 import { SITE_URL } from "@/lib/site";
-import { GITHUB_REPO, DISCORD_URL } from "@/lib/content";
+import { GITHUB_REPO, DISCORD_URL, TAGLINE } from "@/lib/content";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -19,13 +19,12 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const TAGLINE =
-  "Self-hosted database backup automation with encryption, compression, and smart retention.";
+const SITE_TITLE = "DBackup - Database & File Backup Automation";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "DBackup - Database Backup Automation",
+    default: SITE_TITLE,
     template: "%s | DBackup",
   },
   description: TAGLINE,
@@ -34,7 +33,7 @@ export const metadata: Metadata = {
     apple: "/favicon/favicon-256x256.png",
   },
   openGraph: {
-    title: "DBackup - Database Backup Automation",
+    title: SITE_TITLE,
     description: TAGLINE,
     url: SITE_URL,
     siteName: "DBackup",
@@ -42,7 +41,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "DBackup - Database Backup Automation",
+    title: SITE_TITLE,
     description: TAGLINE,
   },
 };

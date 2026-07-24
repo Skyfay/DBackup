@@ -47,8 +47,8 @@ export function Footer() {
               <span className="font-semibold">DBackup</span>
             </div>
             <p className="mt-3 max-w-xs text-sm text-muted-foreground">
-              Self-hosted database backup automation with encryption,
-              compression, and smart retention.
+              Self-hosted backup automation for databases and files, with
+              encryption, compression, and smart retention.
             </p>
             <div className="mt-4 flex items-center gap-2">
               <GithubStarsWidget />

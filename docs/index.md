@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: "DBackup"
-  text: "Database Backup Automation"
-  tagline: Self-hosted solution for automating database backups with encryption, compression, and smart retention policies.
+  text: "Database & File Backup Automation"
+  tagline: Self-hosted solution for automating database and file backups with encryption, compression, and smart retention policies.
   actions:
     - theme: brand
       text: User Guide
@@ -20,18 +20,24 @@ features:
   - icon: 🗄️
     title: Multi-Database Support
     details: Supports MySQL, MariaDB, PostgreSQL, MongoDB, SQLite, Redis, Valkey, Microsoft SQL Server, and Firebird (beta).
+  - icon: 📁
+    title: File & Folder Backups
+    details: Back up directories from any storage adapter alongside your databases in one job. Folder tree picker, reusable exclude presets, and VSS shadow copies on SMB sources.
+  - icon: 🧩
+    title: Incremental Backups
+    details: Directory sources can store only what changed since the last run. Each chain lives in its own folder and is retained and deleted as a unit, so a snapshot can never lose the archives it depends on.
   - icon: 🔒
     title: Backup Encryption
     details: AES-256-GCM encryption for backup files with managed Encryption Profiles, key rotation, and offline Recovery Kits for manual decryption without DBackup.
   - icon: 🔓
     title: No Vendor Lock-In
-    details: Backups are standard database dumps, no proprietary format. Decrypt with a standalone Node.js script and your Recovery Kit, even without DBackup.
+    details: Database backups are standard dumps, file backups are plain TAR archives - no proprietary format. Unencrypted, tar -xf is enough. Encrypted, one standalone Node.js script and your Recovery Kit are.
   - icon: 📦
     title: Compression
     details: Built-in GZIP and Brotli compression to reduce backup size and storage costs.
   - icon: ☁️
     title: Flexible Storage
-    details: 13+ storage adapters including S3, Google Drive, Dropbox, OneDrive, SFTP, Rsync, WebDAV, SMB, FTP, and local filesystem.
+    details: 13+ storage adapters including S3, Google Drive, Dropbox, OneDrive, SFTP, Rsync, WebDAV, SMB, FTP, and local filesystem - usable as backup destinations or as directory sources.
   - icon: 🔀
     title: Multi-Destination Jobs
     details: Each backup job can target multiple storage destinations simultaneously for redundancy or off-site copies.
@@ -43,7 +49,7 @@ features:
     details: 9 notification adapters including Discord, Slack, Teams, Telegram, Gotify, ntfy, Webhook, SMS, and Email (SMTP).
   - icon: 🔄
     title: Restore
-    details: Browse backup history, verify checksums, download files, or restore directly to a database. Supports database remapping and standalone offline recovery.
+    details: Restore a whole backup, a single database, a folder, or one file out of a 100 GB archive without downloading it. Supports database remapping and standalone offline recovery.
   - icon: 👥
     title: Multi-User & RBAC
     details: Granular permission system with user groups, SSO/OIDC support (Authentik, PocketID, Keycloak, Generic), and audit logging.
@@ -131,6 +137,25 @@ Then open [https://localhost:3000](https://localhost:3000) and create your first
 | **Microsoft SQL Server** | 2017, 2019, 2022, Azure SQL Edge | Direct (+ SSH file transfer) | Yes |
 | **Firebird** (Beta) | 3.x, 4.x, 5.x | Direct, SSH | Yes (pre-configured aliases) |
 
+== 📁 Directory Sources
+
+Every storage adapter can also be a **directory source**. What differs is how a restore behaves - adapters that serve byte ranges fetch just the file you asked for:
+
+| Adapter | Browse folders | Restore one file without fetching the whole archive |
+| :--- | :---: | :---: |
+| **Local Filesystem** | ✅ | ✅ |
+| **SFTP** | ✅ | ✅ |
+| **Rsync (SSH)** | ✅ | ✅ |
+| **FTP / FTPS** | ✅ | ✅ |
+| **WebDAV** | ✅ | ✅ |
+| **Amazon S3 / S3-compatible** | ✅ | ✅ |
+| **Google Drive** | ✅ | ✅ |
+| **Dropbox** | ✅ | ✅ |
+| **Microsoft OneDrive** | ✅ | ✅ |
+| **SMB / Samba** | ✅ | ❌ (fetches the archive once) |
+
+→ [File & Folder Backups](/user-guide/features/file-backups) for setup and the full comparison.
+
 == ☁️ Storage
 
 | Destination | Details |
@@ -167,19 +192,29 @@ Then open [https://localhost:3000](https://localhost:3000) and create your first
 
 ## Your Backups, Your Control
 
-DBackup is designed as a convenience layer, not a dependency. Every backup it creates is a **standard database dump** (SQL, BSON, RDB, etc.), the same format you'd get from running `pg_dump`, `mysqldump`, or `mongodump` yourself.
+DBackup is designed as a convenience layer, not a dependency.
 
-Even encrypted backups use **open AES-256-GCM** with a simple sidecar `.meta.json` file for the IV and auth tag. If DBackup is ever unavailable, you can still:
+**Database backups** are a **standard dump** (SQL, BSON, RDB, etc.), the same format you'd get from running `pg_dump`, `mysqldump`, or `mongodump` yourself. Even encrypted, they use **open AES-256-GCM** with a simple sidecar `.meta.json` file for the IV and auth tag. If DBackup is ever unavailable, you can still:
 
 1. **Decrypt** any backup with the included standalone Node.js script (zero external dependencies)
 2. **Decompress** automatically (GZIP or Brotli is handled by the same script)
 3. **Import** the resulting dump directly with your database's native CLI tool
 
-The **[Recovery Kit](/user-guide/security/recovery-kit)** (downloadable from Vault) bundles everything you need: your encryption key, the decryption script, and platform-specific helper scripts for Windows, Linux, and macOS.
+**File backups** are a **plain TAR archive**. Unencrypted, `tar -xf backup.tar` is the whole recovery procedure. Encrypted, the layout is specified byte by byte in the [Archive Format reference](/developer-guide/reference/archive-format), and the Recovery Kit's `restore_archive.js` is an independent implementation of that document - it lists and extracts single files with nothing but Node.js.
+
+The **[Recovery Kit](/user-guide/security/recovery-kit)** (downloadable from Vault) bundles everything you need: your encryption key, both scripts, and platform-specific helpers for Windows, Linux, and macOS.
 
 ::: tip
 Download your Recovery Kit after creating an Encryption Profile and store it offline (USB drive, password manager, printed). It's your safety net if DBackup or the server it runs on is no longer accessible.
 :::
+
+### The promise has a price
+
+Incremental backups store **whole changed files** and reference unchanged ones in earlier archives of the same chain. They do not use a content-addressed chunk store the way restic, Borg or Kopia do.
+
+That costs storage: a renamed file is stored again, a one-byte change in a 10 GB file re-stores 10 GB, and nothing is deduplicated across jobs or chains. What it buys is that every archive stays a file you can open by hand, deleting a backup is deleting files rather than garbage collection, and a chain is a folder you can copy in any file browser.
+
+If your data is mostly large binaries with small internal changes, a chunk-based tool is the better fit and we would rather say so. See [the reasoning in full](https://dbackup.app/blog/no-global-deduplication), or [Backup Modes](/user-guide/features/backup-modes) for what this means in practice.
 
 ## Architecture at a Glance
 

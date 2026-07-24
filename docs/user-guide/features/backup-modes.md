@@ -1,10 +1,10 @@
 # Backup Modes
 
 Jobs with directory sources can store either a complete copy every run, or only what
+changed since the last one.
 
 New to file backups? [File & Folder Backups](/user-guide/features/file-backups) covers
 setting one up and what each adapter supports.
-changed since the last one.
 
 ## Full vs Incremental
 
@@ -177,6 +177,32 @@ This is automatic and logged in the execution. It happens when:
 
 All of these mean the previous snapshot is no longer a trustworthy basis, so DBackup starts
 over rather than building on it.
+
+## Why whole files instead of deduplicated chunks
+
+An incremental run stores **whole changed files**. restic, Borg and Kopia instead split
+files into content-addressed chunks and store each distinct chunk once, which is
+considerably more efficient - and turns the backup into a repository that only a tool
+implementing that format can open.
+
+DBackup trades the efficiency for the archive staying a file you can open by hand:
+unencrypted, `tar -xf` is enough; encrypted, the
+[Archive Format](/developer-guide/reference/archive-format) is documented byte by byte and
+the Recovery Kit reads it. Deleting a backup is deleting files rather than garbage
+collection, and a chain is a folder you can copy anywhere.
+
+What it costs:
+
+| Situation | Stored again |
+| :--- | :--- |
+| File renamed or moved | The whole file - paths identify files here |
+| One byte changed in a 10 GB file | 10 GB - there is no sub-file delta |
+| Same file in two directory sources | Twice - no deduplication across sources, jobs or chains |
+| New chain starts | Everything |
+
+Per-entry compression and [small-file bundling](/developer-guide/reference/archive-format)
+keep the ordinary case reasonable. If your data is mostly large binaries with small internal
+changes, a chunk-based tool is the better fit.
 
 ## Next Steps
 

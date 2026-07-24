@@ -23,13 +23,13 @@ export async function Hero() {
 
       <div className="mx-auto max-w-6xl px-6 pt-20 pb-16 text-center">
         <h1 className="mx-auto max-w-3xl text-3xl font-bold leading-[1.05] tracking-tight sm:text-4xl md:text-5xl lg:text-6xl">
-          Self-hosted database backups,{" "}
+          Self-hosted backups for your databases and files,{" "}
           <span className="text-primary">without the lock-in.</span>
         </h1>
         <p className="mx-auto mt-4 max-w-2xl text-lg text-muted-foreground">
-          Self-hosted, multi-database backups with Direct or SSH connection
-          modes, a full REST API, and a Recovery Kit that works with or
-          without DBackup.
+          Dump the database and archive the directory that belongs to it in one
+          job, one schedule, one restore point. Incremental, encrypted, and
+          restorable file by file - with or without DBackup.
         </p>
 
         <div className="mt-6 flex justify-center">

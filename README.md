@@ -5,7 +5,7 @@
 <h1 align="center">DBackup</h1>
 
 <p align="center">
-  <strong>Self-hosted database backup automation with encryption, compression, and smart retention.</strong>
+  <strong>Self-hosted backup automation for databases and files, with encryption, compression, and smart retention.</strong>
 </p>
 
 <p align="center">
@@ -45,11 +45,13 @@
 
 ### What is DBackup?
 
-DBackup is a comprehensive, self-hosted backup solution designed to automate and secure your database backups. It provides AES-256-GCM encryption, flexible storage options, and intelligent retention policies to ensure your data is always protected and recoverable.
+DBackup is a comprehensive, self-hosted backup solution for **databases and the files that belong to them**. It provides AES-256-GCM encryption, flexible storage options, and intelligent retention policies to ensure your data is always protected and recoverable.
 
-Whether you're running a single MySQL database or managing multiple PostgreSQL, MongoDB, and SQL Server instances, DBackup offers a unified interface with real-time monitoring, granular access control, and seamless restore capabilities.
+Whether you're running a single MySQL database or managing multiple PostgreSQL, MongoDB, and SQL Server instances, DBackup offers a unified interface with real-time monitoring, granular access control, and seamless restore capabilities. A job can also collect **directories and files** from any storage adapter - local paths, SFTP, SMB, FTP, WebDAV, S3, Google Drive, Dropbox, OneDrive, or rsync over SSH - so an application's dump and its data directory land in the same archive, at the same point in time, with one retention policy over both. There is no agent to install.
 
-**No vendor lock-in by design** - every backup is a standard database dump (SQL, BSON, RDB, etc.) encrypted with open AES-256-GCM. If DBackup is ever unavailable, you can decrypt and restore your backups with a single Node.js script and the key from your Recovery Kit. No proprietary formats, no dependencies on DBackup itself.
+**No vendor lock-in by design** - every database backup is a standard dump (SQL, BSON, RDB, etc.) and every file backup is a plain TAR archive, both encrypted with open AES-256-GCM. Unencrypted, `tar -xf` is all you need. Encrypted, the format is specified byte by byte and the Recovery Kit reads it with a single Node.js script and your key. No proprietary formats, no dependencies on DBackup itself.
+
+That promise shapes the architecture: incremental backups store whole changed files rather than deduplicated chunks, which uses more storage than a chunk-based tool like restic or Borg but keeps every backup an archive you can open by hand. See [the reasoning behind that trade](https://dbackup.app/blog/no-global-deduplication).
 
 <div align="center">
   <video src="https://github.com/user-attachments/assets/1f6ba8c7-8b66-4b43-a0de-d4c4e0617205" width="800" autoplay muted loop playsinline></video>
@@ -66,6 +68,15 @@ Whether you're running a single MySQL database or managing multiple PostgreSQL, 
 - **GZIP & Brotli Compression** - Reduce backup size and storage costs with built-in compression
 - **SSH Remote Execution** - Run backup tools directly on the remote database host via SSH, eliminating the need to expose database ports to the DBackup server
 
+### 📁 File & Folder Backup
+
+- **Directory Sources** - Any storage adapter can serve as a source: back up local paths, SFTP, SMB, FTP, WebDAV, S3, Google Drive, Dropbox, OneDrive, or rsync over SSH, with folders picked from a checkbox tree
+- **Databases and Files in One Job** - One run produces one archive holding the dumps and the directory trees side by side, so an app's database and its data directory share a restore point
+- **Incremental Backups** - Store only what changed since the last run, with a configurable full-backup interval and chains that are retained and deleted as a unit
+- **Single-File Restore** - Browse a backup's file tree without downloading it and restore one file out of a 100 GB archive, transferring only that file on destinations that serve byte ranges
+- **Exclude Pattern Presets** - Reusable glob lists for caches, logs, and anything else you don't want stored - edit the preset, every source using it follows
+- **SMB Shadow Copies** - Read from a VSS snapshot instead of the live share, so open files are readable and the backup reflects a single point in time, with no agent on the file server
+
 ### ☁️ Storage & Destinations
 
 - **13+ Storage Adapters** - S3, Cloudflare R2, Hetzner, Google Drive, Dropbox, OneDrive, SFTP, FTP, WebDAV, SMB, Rsync, and local filesystem
@@ -76,11 +87,12 @@ Whether you're running a single MySQL database or managing multiple PostgreSQL, 
 ### 🔄 Restore & Recovery
 
 - **One-Click Restore** - Restore directly from the Storage Explorer to any configured database target
+- **Granular File Restore** - Pick whole directory sources, single folders, or individual files, each with its own target: back to the original location, into any destination, or as a `.tar.gz` download
 - **Database Remapping** - Restore databases under different names or map multiple databases to new targets
 - **Version Compatibility Check** - Pre-restore validation warns about version mismatches before execution
 - **Integrity Verification** - Post-upload SHA-256/MD5 checksum validation after every backup, plus scheduled full integrity scans across all stored backups (Jobs mode or full storage scan)
-- **No Vendor Lock-In** - Backups are standard database dumps encrypted with open AES-256-GCM. Decrypt and import manually with just Node.js, no DBackup required
-- **Recovery Kit** - Downloadable ZIP with your encryption key and a standalone decryption script for disaster recovery without DBackup
+- **No Vendor Lock-In** - Database backups are standard dumps, file backups are plain TAR archives, both encrypted with open AES-256-GCM. Decrypt and restore manually with just Node.js, no DBackup required
+- **Recovery Kit** - Downloadable ZIP with your encryption key and standalone scripts that decrypt dumps and list or extract single files from archives, offline
 
 ### 📊 Monitoring & Visibility
 
@@ -172,6 +184,14 @@ Open [https://localhost:3000](https://localhost:3000) and create your admin acco
 | SQLite | 3.x | Local, SSH | Yes |
 | Microsoft SQL Server | 2017, 2019, 2022, Azure SQL Edge | Direct (+ SSH for file transfer) | Yes |
 | Firebird (beta) | 3.x, 4.x, 5.x | Direct, SSH | Yes (pre-configured aliases) |
+
+## 📁 Directory Sources
+
+**Every storage adapter listed below can also be a directory source**, with a live folder tree for picking what to back up. An adapter holds one role at a time, source or destination, so a job can never back up its own archives. The same server can serve both roles as two adapters - the "Create as Directory Source" action copies one over, credentials included.
+
+The role matters for restores: adapters that serve byte ranges fetch only the file you asked for, while SMB downloads the archive once and takes the file out of it afterwards. That applies to the adapter *holding the backup*, not the one the files came from.
+
+📖 **Details**: [File & Folder Backups](https://docs.dbackup.app/user-guide/features/file-backups) • [Backup Modes](https://docs.dbackup.app/user-guide/features/backup-modes) • [Archive Format](https://docs.dbackup.app/developer-guide/reference/archive-format)
 
 ## ☁️ Supported Destinations
 

@@ -110,6 +110,8 @@ export const getColumns = ({ onRestore, onDownloadSnapshot, onDownload, onDelete
 
             if (!hasDb && dirCount === 0) return <span className="text-muted-foreground">-</span>;
 
+            // Both kinds render the same way - icon, what it is, and how many - so neither
+            // reads as the more important one.
             return (
                 <div className="flex flex-col gap-0.5 text-sm">
                     {hasDb && (
@@ -123,8 +125,9 @@ export const getColumns = ({ onRestore, onDownloadSnapshot, onDownload, onDelete
                     )}
                     {dirCount > 0 && (
                         <div className="flex items-center gap-2">
-                            <FolderInput className="h-3 w-3 text-muted-foreground" />
-                            <span>{dirCount} directory source{dirCount === 1 ? "" : "s"}</span>
+                            <FolderInput className="h-3 w-3" />
+                            <span>Directory source{dirCount === 1 ? "" : "s"}</span>
+                            <Badge variant="outline" className="text-[10px] h-5 px-1.5">{dirCount} Dir{dirCount === 1 ? "" : "s"}</Badge>
                         </div>
                     )}
                 </div>

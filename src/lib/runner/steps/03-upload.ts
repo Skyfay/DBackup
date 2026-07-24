@@ -13,6 +13,7 @@ import { formatBytes } from "@/lib/utils";
 import { calculateFileChecksums } from "@/lib/crypto/checksum";
 import { PIPELINE_STAGES } from "@/lib/core/logs";
 import { INDEX_SIDECAR_SUFFIX } from "@/lib/archive/format";
+import { chainSegment } from "@/lib/templates/naming-template-engine";
 import { withStorageSession } from "./upload-helpers";
 import { verificationService } from "@/services/storage/verification-service";
 
@@ -204,8 +205,16 @@ export async function stepUpload(ctx: RunnerContext) {
     // day granularity plus two runs a day would otherwise have the second archive
     // overwrite the first, silently gutting every snapshot that references it. The
     // zero-padded position also makes `ls` show a chain in order.
-    const remotePath = ctx.chain && ctx.chain.type !== undefined && ctx.job!.backupMode === "INCREMENTAL"
-        ? `${job.name}/${ctx.chain.chainDir}/${ctx.chain.type === "full" ? "full" : "inc"}-${String(ctx.chain.index).padStart(3, "0")}-${path.basename(ctx.tempFile)}`
+    //
+    // A template can place it itself via the {chain} token; then it is already in the name
+    // and prefixing again would duplicate it. Without the token the position is prepended, so
+    // the uniqueness guarantee never depends on how the template happens to be written.
+    const inChain = Boolean(ctx.chain && ctx.chain.type !== undefined && ctx.job!.backupMode === "INCREMENTAL");
+    const chainPrefix = inChain && !ctx.chainInFileName
+        ? `${chainSegment(ctx.chain!.type, ctx.chain!.index)}-`
+        : "";
+    const remotePath = inChain
+        ? `${job.name}/${ctx.chain!.chainDir}/${chainPrefix}${path.basename(ctx.tempFile)}`
         : `${job.name}/${path.basename(ctx.tempFile)}`;
     const totalDests = ctx.destinations.length;
 

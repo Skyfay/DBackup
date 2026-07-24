@@ -179,6 +179,44 @@ describe('stepUpload', () => {
         await expect(stepUpload(ctx)).rejects.toThrow('Context not ready for upload');
     });
 
+    /**
+     * Where a chain member lands. The position has to appear exactly once: it is how chain
+     * members address each other, so a duplicated or missing segment breaks the references
+     * that every incremental snapshot is built on.
+     */
+    describe('incremental chain layout', () => {
+        const chain = { chainId: 'c1', type: 'incremental' as const, index: 2, chainDir: 'chain-2026-05-07T10-00-00-000' };
+
+        it('prepends the position when the naming template did not place it', async () => {
+            const ctx = makeCtx({ tempFile: '/tmp/Test_Job_2026-05-07.tar', chain, chainInFileName: false } as never);
+            (ctx.job as any).backupMode = 'INCREMENTAL';
+
+            await stepUpload(ctx);
+
+            expect(ctx.finalRemotePath).toBe('Test Job/chain-2026-05-07T10-00-00-000/inc-002-Test_Job_2026-05-07.tar');
+        });
+
+        it('does not prepend it again when the template already placed it', async () => {
+            // The {chain} token put the segment in the filename; prefixing here as well would
+            // produce "inc-002-Test_Job_..._inc-002.tar".
+            const ctx = makeCtx({ tempFile: '/tmp/Test_Job_2026-05-07_inc-002.tar', chain, chainInFileName: true } as never);
+            (ctx.job as any).backupMode = 'INCREMENTAL';
+
+            await stepUpload(ctx);
+
+            expect(ctx.finalRemotePath).toBe('Test Job/chain-2026-05-07T10-00-00-000/Test_Job_2026-05-07_inc-002.tar');
+        });
+
+        it('keeps the flat layout for a job that is not in incremental mode', async () => {
+            const ctx = makeCtx({ tempFile: '/tmp/Test_Job_2026-05-07.tar' });
+            (ctx.job as any).backupMode = 'FULL';
+
+            await stepUpload(ctx);
+
+            expect(ctx.finalRemotePath).toBe('Test Job/Test_Job_2026-05-07.tar');
+        });
+    });
+
     it('sets stage to UPLOADING when no compression or encryption is configured', async () => {
         const ctx = makeCtx();
         (ctx.job as any).compression = 'NONE';

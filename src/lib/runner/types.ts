@@ -102,6 +102,12 @@ export interface RunnerContext {
      * recorded on the Execution so retention can reason about chains.
      */
     chain?: ChainPlan;
+    /**
+     * True when the job's naming template placed the chain position in the filename via the
+     * {chain} token. The upload step then skips its own prefix, so the position appears once
+     * and where the user put it.
+     */
+    chainInFileName?: boolean;
     finalRemotePath?: string;
 
     // Result Data

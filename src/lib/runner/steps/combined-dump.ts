@@ -47,12 +47,9 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
     const sourceLabel = job.source ? `${job.source.name} (${job.source.type})` : "no database source";
     ctx.log(`Starting combined dump: ${sourceLabel} + ${ctx.sources.length} directory source(s)...`);
 
-    const { tempFile } = await resolveBackupFilename(job);
-    ctx.tempFile = tempFile;
-    ctx.log(`Prepared temporary path: ${tempFile}`);
-
     // Decide full vs incremental before anything is collected - it changes what has to be
-    // transferred at all.
+    // transferred at all, and the naming template may want to place the chain position in
+    // the filename, so the plan has to exist before the name is resolved.
     const plan = await planChain({
         job: {
             id: job.id,
@@ -72,6 +69,17 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
         ctx.log(`Full backup: ${plan.reason}`, 'warning');
     }
     ctx.chain = plan;
+
+    // The chain position is only part of the name for a job that actually builds chains; a
+    // full-mode job resolves {chain} to nothing.
+    const isChained = ((job as { backupMode?: string }).backupMode ?? "FULL") === "INCREMENTAL";
+    const { tempFile, chainInFileName } = await resolveBackupFilename(
+        job,
+        isChained ? { type: plan.type, index: plan.index } : undefined
+    );
+    ctx.tempFile = tempFile;
+    ctx.chainInFileName = chainInFileName;
+    ctx.log(`Prepared temporary path: ${tempFile}`);
 
     // Files whose bytes already live in an earlier archive of the chain. Collected while
     // walking the sources, then turned into carried index lines below.

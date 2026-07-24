@@ -40,6 +40,7 @@ import { ColumnDef } from "@tanstack/react-table";
 import { DateDisplay } from "@/components/utils/date-display";
 import {
   NAMING_TOKEN_GROUPS,
+  patternUsesChain,
   previewPattern,
 } from "@/lib/templates/naming-template-engine";
 
@@ -268,7 +269,14 @@ export function NamingTemplateDialog({
   const [isSaving, setIsSaving] = useState(false);
   const patternInputRef = useRef<HTMLInputElement>(null);
 
-  const preview = useMemo(() => `${previewPattern(pattern)}.sql`, [pattern]);
+  // With {chain} in the pattern both outcomes matter: what an incremental run produces, and
+  // what everything else produces once the token and its separator fall away.
+  const usesChain = useMemo(() => patternUsesChain(pattern), [pattern]);
+  const preview = useMemo(
+    () => `${previewPattern(pattern, usesChain ? "inc-001" : "")}.sql`,
+    [pattern, usesChain]
+  );
+  const previewWithoutChain = useMemo(() => `${previewPattern(pattern)}.sql`, [pattern]);
 
   useEffect(() => {
     if (open) {
@@ -387,6 +395,17 @@ export function NamingTemplateDialog({
               <div className="flex items-center h-9 w-full rounded-md border border-input bg-muted/40 px-3 text-sm font-mono text-muted-foreground">
                 <span className="truncate">{preview}</span>
               </div>
+              {usesChain && (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    Above: an incremental run. Every other job drops the token together with
+                    the separator next to it:
+                  </p>
+                  <div className="flex items-center h-9 w-full rounded-md border border-input bg-muted/40 px-3 text-sm font-mono text-muted-foreground">
+                    <span className="truncate">{previewWithoutChain}</span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

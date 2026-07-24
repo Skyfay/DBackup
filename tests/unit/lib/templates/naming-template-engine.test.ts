@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   applyNamingPattern,
   previewPattern,
+  chainSegment,
+  patternUsesChain,
   NAMING_TOKEN_GROUPS,
 } from "@/lib/templates/naming-template-engine";
 
@@ -183,6 +185,82 @@ describe("naming-template-engine", () => {
       } finally {
         String.prototype.replace = original;
       }
+    });
+  });
+
+  /**
+   * The {chain} token lets a template decide where the incremental position goes. The
+   * separator rule is what makes it usable at all: written at the end of a pattern it would
+   * otherwise leave a dangling "_" on every non-incremental backup.
+   */
+  describe("{chain} token", () => {
+    const fixedDate = new Date("2026-05-07T14:30:45Z");
+    const apply = (pattern: string, chain = "") =>
+      applyNamingPattern(pattern, "MyJob", "mydb", fixedDate, "UTC", chain);
+
+    it("inserts the chain segment where the token stands", () => {
+      expect(apply("{job_name}_{chain}", "inc-001")).toBe("MyJob_inc-001");
+      expect(apply("{chain}_{job_name}", "full-000")).toBe("full-000_MyJob");
+    });
+
+    it("drops a trailing separator when there is no chain", () => {
+      // The case that made the token awkward: the pattern ends with _{chain}.
+      expect(apply("{job_name}_yyyy-MM-dd_{chain}")).toBe("MyJob_2026-05-07");
+    });
+
+    it("drops a leading separator when there is no chain", () => {
+      expect(apply("{chain}-{job_name}")).toBe("MyJob");
+    });
+
+    it("keeps exactly one separator when the token sits between two", () => {
+      expect(apply("{job_name}_{chain}_yyyy")).toBe("MyJob_2026");
+    });
+
+    it("leaves a dot alone - it usually belongs to the extension", () => {
+      // Eating the dot would turn "name.{chain}.sql" into "namesql".
+      expect(apply("{job_name}.{chain}")).toBe("MyJob.");
+      expect(apply("{job_name}.{chain}", "inc-002")).toBe("MyJob.inc-002");
+    });
+
+    it("supports a bare {chain} pattern for an incremental run", () => {
+      expect(apply("{chain}", "inc-003")).toBe("inc-003");
+    });
+
+    it("falls back to a usable name when the pattern collapses to nothing", () => {
+      // "{chain}" alone on a full-mode job would otherwise produce just ".tar".
+      expect(apply("{chain}")).toBe("MyJob_2026-05-07_14-30-45");
+    });
+
+    it("still returns an empty string for an empty pattern", () => {
+      // The collapse fallback must not change the contract for an empty pattern.
+      expect(apply("")).toBe("");
+    });
+
+    it("does not treat the literal token text as date tokens", () => {
+      expect(apply("{chain}", "full-000")).toBe("full-000");
+    });
+  });
+
+  describe("patternUsesChain", () => {
+    it("detects whether the template positions the chain itself", () => {
+      expect(patternUsesChain("{job_name}_{chain}")).toBe(true);
+      expect(patternUsesChain("{job_name}_yyyy-MM-dd")).toBe(false);
+    });
+  });
+
+  describe("chainSegment", () => {
+    it("zero-pads the position so a plain ls lists a chain in order", () => {
+      expect(chainSegment("full", 0)).toBe("full-000");
+      expect(chainSegment("incremental", 1)).toBe("inc-001");
+      expect(chainSegment("incremental", 42)).toBe("inc-042");
+      expect(chainSegment("incremental", 123)).toBe("inc-123");
+    });
+  });
+
+  describe("previewPattern with a chain", () => {
+    it("shows both outcomes of the same pattern", () => {
+      expect(previewPattern("{job_name}_{chain}", "inc-001")).toBe("JobName_inc-001");
+      expect(previewPattern("{job_name}_{chain}")).toBe("JobName");
     });
   });
 });

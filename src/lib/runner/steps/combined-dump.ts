@@ -315,11 +315,23 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
             ctx.log(`Per-entry encryption enabled. Profile ID: ${encryptionProfileId}`);
         }
 
+        // Packing compresses and encrypts every entry, which on a large source takes real
+        // time. Without its own stage the run looked stuck at "Collecting Files" at 100%,
+        // so it reports as its own step - the slot 03-upload leaves unused for this archive,
+        // because both passes already happened here.
+        ctx.setStage(PIPELINE_STAGES.PROCESSING);
         ctx.log(`Creating combined archive with ${dbNames.length} database(s) and ${ctx.sources.length} directory source(s)...`);
         const { manifest, index, indexBytes } = await createArchive(entries, tempFile, {
             sourceType: job.source ? job.source.adapterId : DIRECTORY_ONLY_SOURCE_TYPE,
             engineVersion,
             compression: (job.compression as "NONE" | "GZIP" | "BROTLI" | undefined) ?? "NONE",
+            // Entries compress ahead of the sequential tar write, bounded by the same setting
+            // that limits parallel file transfers.
+            concurrency: fileConcurrency,
+            onProgress: (done, total, label) => {
+                ctx.updateStageProgress(Math.min(100, Math.round((done / total) * 100)));
+                ctx.updateDetail(`Packing ${done}/${total}: ${label}`);
+            },
             ...(encryptionProfileId
                 ? { encryption: { masterKey: await getProfileMasterKey(encryptionProfileId), profileId: encryptionProfileId } }
                 : {}),

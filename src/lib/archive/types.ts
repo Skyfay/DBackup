@@ -278,6 +278,17 @@ export interface CreateArchiveOptions {
     };
     /** Omit for a standalone full backup. */
     chain?: ChainInfo & { carried?: CarriedIndexContent };
+    /**
+     * How many entries may be compressed ahead of the writer.
+     *
+     * The tar itself is always written one entry after another - the byte offsets that make
+     * the archive seekable come from that order - but compressing an entry is independent
+     * work, so it can run ahead. Defaults to 1, which is the original strictly serial
+     * behaviour. At N, up to N compressed temp files exist at once.
+     */
+    concurrency?: number;
+    /** Reports entries written so far, for the runner's live progress display. */
+    onProgress?: (done: number, total: number, label: string) => void;
 }
 
 export interface CreateArchiveResult {

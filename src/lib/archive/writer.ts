@@ -229,6 +229,18 @@ async function materialize(entry: PlannedEntry, sealKey: Buffer | null, noncePre
     return { storedSize: withTag(stats.size), open: () => seal(createReadStream(tempFile)), tempFile };
 }
 
+/**
+ * What to call an entry in the live progress display.
+ *
+ * Deliberately derived from the origin rather than from the tar member name: in an encrypted
+ * archive the member name is opaque by design, so it would show the user nothing.
+ */
+function entryLabel(entry: PlannedEntry): string {
+    if (entry.origin.kind === "database") return entry.origin.dbName;
+    if (entry.origin.kind === "file") return entry.origin.file.path;
+    return `${entry.origin.parts.length} small file${entry.origin.parts.length === 1 ? "" : "s"}`;
+}
+
 /** Streams one already-materialized entry into the tar. */
 async function writeMember(tarPack: Pack, name: string, size: number, open: () => NodeJS.ReadableStream): Promise<void> {
     const entry = tarPack.entry({ name, size });
@@ -324,20 +336,52 @@ export async function createArchive(
     const writePromise = pipeline(tarPack, createWriteStream(destinationPath));
     const materializedByOrdinal = new Map<number, { storedSize: number; parts?: MaterializedEntry["parts"] }>();
 
+    // Compressing an entry is independent work, so it runs ahead of the writer; appending to
+    // the tar stays strictly in order, because the byte offsets that make the archive
+    // seekable come from that order. `pending[i]` holds the in-flight materialization of
+    // planned[i], and at most `lookahead` of them exist at once - which also bounds how many
+    // compressed temp files sit on disk.
+    const lookahead = Math.max(1, Math.min(Math.floor(options.concurrency ?? 1) || 1, planned.length));
+    const pending: (Promise<MaterializedEntry> | undefined)[] = new Array(planned.length);
+    const startMaterialize = (index: number) => {
+        if (index >= planned.length) return;
+        const started = materialize(planned[index], keys?.dataKey ?? null, noncePrefix);
+        // A look-ahead failure must not surface as an unhandled rejection while the writer is
+        // still busy with an earlier entry. Attaching a handler marks it handled; awaiting it
+        // below still rejects with the original error.
+        started.catch(() => { });
+        pending[index] = started;
+    };
+
     try {
         const manifestBuffer = Buffer.from(JSON.stringify(manifest, null, 2), "utf-8");
         await writeMember(tarPack, MANIFEST_MEMBER, manifestBuffer.length, () => Readable.from([manifestBuffer]));
 
-        for (const entry of planned) {
-            const materialized = await materialize(entry, keys?.dataKey ?? null, noncePrefix);
+        for (let i = 0; i < lookahead; i++) startMaterialize(i);
+
+        for (let i = 0; i < planned.length; i++) {
+            const entry = planned[i];
+            const materialized = await pending[i]!;
+            pending[i] = undefined;
+            startMaterialize(i + lookahead);
+
             try {
                 await writeMember(tarPack, entry.member, materialized.storedSize, materialized.open);
                 materializedByOrdinal.set(entry.ordinal, { storedSize: materialized.storedSize, parts: materialized.parts });
             } finally {
                 if (materialized.tempFile) await fs.unlink(materialized.tempFile).catch(() => { });
             }
+
+            options.onProgress?.(i + 1, planned.length, entryLabel(entry));
         }
     } finally {
+        // Entries compressed ahead but never written - an error cut the loop short - still
+        // have a temp file on disk.
+        for (const inFlight of pending) {
+            if (!inFlight) continue;
+            const leftover = await inFlight.catch(() => undefined);
+            if (leftover?.tempFile) await fs.unlink(leftover.tempFile).catch(() => { });
+        }
         tarPack.push(null);
         await writePromise;
     }

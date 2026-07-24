@@ -197,7 +197,9 @@ describe('executeCombinedDump', () => {
         await executeCombinedDump(ctx);
         createdTempFiles.push(ctx.tempFile!);
 
-        expect(stagesSet(ctx)).toEqual(['Dumping Databases', 'Collecting Files']);
+        // Packing is its own phase: it compresses and encrypts every entry, which is not
+        // instant, and reporting it as still "Collecting Files" made the run look stuck.
+        expect(stagesSet(ctx)).toEqual(['Dumping Databases', 'Collecting Files', 'Processing']);
     });
 
     it('shows only the file phase for a directory-only backup', async () => {
@@ -211,7 +213,7 @@ describe('executeCombinedDump', () => {
         createdTempFiles.push(ctx.tempFile!);
 
         // Never "Dumping Databases" - the complaint that started this.
-        expect(stagesSet(ctx)).toEqual(['Collecting Files']);
+        expect(stagesSet(ctx)).toEqual(['Collecting Files', 'Processing']);
     });
 
     it('combines multiple database dumps and a directory source into one v2 archive', async () => {

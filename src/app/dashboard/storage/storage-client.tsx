@@ -170,34 +170,30 @@ export function StorageClient({ canDownload, canRestore, canDelete }: StorageCli
     const performDecryptedDownload = useCallback(async (file: FileInfo, keyResolution: KeyResolutionResult | null) => {
         if (!canDownload) return;
         const baseUrl = `/api/storage/${selectedDestination}/download`;
-        const fileParam = encodeURIComponent(file.path);
 
         try {
-            let response: Response;
-
-            if (keyResolution?.type === "rawKey") {
-                response = await fetch(baseUrl, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ file: file.path, rawKeyHex: keyResolution.keyHex }),
-                });
-            } else {
-                const url = `${baseUrl}?file=${fileParam}&decrypt=true`
-                    + (keyResolution?.type === "profile" ? `&profileIdOverride=${encodeURIComponent(keyResolution.profileId)}` : "");
-                response = await fetch(url);
-            }
+            // Fetch and decrypt server-side first; this call returns JSON, never the backup.
+            // That is what lets the key dialog still work while the transfer itself stays a
+            // plain browser download - a decrypted backup can be many gigabytes, and pulling
+            // it through the page would mean holding all of it in this tab.
+            const response = await fetch(baseUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    file: file.path,
+                    prepare: true,
+                    ...(keyResolution?.type === "rawKey" ? { rawKeyHex: keyResolution.keyHex } : {}),
+                    ...(keyResolution?.type === "profile" ? { profileIdOverride: keyResolution.profileId } : {}),
+                }),
+            });
 
             if (response.ok) {
-                const blob = await response.blob();
-                const disposition = response.headers.get("Content-Disposition") ?? "";
-                const filenameMatch = disposition.match(/filename="([^"]+)"/);
-                const filename = filenameMatch?.[1] ?? file.name.replace(/\.enc$/, "");
-                const objectUrl = URL.createObjectURL(blob);
+                const payload = await response.json().catch(() => ({}));
+                if (!payload?.data?.token) throw new Error(payload.error ?? "Download failed");
+
                 const anchor = document.createElement("a");
-                anchor.href = objectUrl;
-                anchor.download = filename;
+                anchor.href = `${baseUrl}?token=${encodeURIComponent(payload.data.token)}`;
                 anchor.click();
-                URL.revokeObjectURL(objectUrl);
                 setDecryptKeyDialogOpen(false);
             } else if (response.status === 422) {
                 const data: { code?: string; profileId?: string; error?: string } = await response.json().catch(() => ({}));

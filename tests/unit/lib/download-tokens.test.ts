@@ -5,7 +5,9 @@ import {
     markTokenUsed,
     getTokenStoreSize,
     generateSelectionDownloadToken,
-    consumeSelectionDownloadToken
+    consumeSelectionDownloadToken,
+    generateFileDownloadToken,
+    consumeFileDownloadToken
 } from '@/lib/auth/download-tokens';
 
 describe('Download Tokens', () => {
@@ -359,5 +361,78 @@ describe('Selection download tokens', () => {
         const token = generateSelectionDownloadToken({ ...params, selections: undefined });
 
         expect(consumeSelectionDownloadToken(token, 'user-1')?.selection.selections).toBeUndefined();
+    });
+});
+
+/**
+ * Tokens for a file that was already fetched and decrypted.
+ *
+ * The decrypting download has to learn whether a key is needed before it can transfer
+ * anything, and that answer only exists after the attempt. Doing the work first and handing
+ * over a token keeps the key dialog working while the transfer stays a plain browser
+ * download - so a multi-gigabyte backup is never held in the page.
+ */
+describe('Prepared file download tokens', () => {
+    const params = {
+        storageId: 'cfg-1',
+        file: 'Job/backup.sql.enc',
+        userId: 'user-1',
+        tempFile: '/tmp/backup.sql_123',
+        fileName: 'backup.sql',
+        contentType: 'application/octet-stream',
+    };
+
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it('returns the prepared file to the session that asked for it', () => {
+        const token = generateFileDownloadToken(params);
+
+        const claim = consumeFileDownloadToken(token, 'user-1');
+
+        expect(claim?.storageId).toBe('cfg-1');
+        expect(claim?.localFile.tempFile).toBe('/tmp/backup.sql_123');
+        expect(claim?.localFile.fileName).toBe('backup.sql');
+        expect(claim?.localFile.contentType).toBe('application/octet-stream');
+    });
+
+    it('refuses a token presented by a different user', () => {
+        const token = generateFileDownloadToken(params);
+
+        expect(consumeFileDownloadToken(token, 'someone-else')).toBeNull();
+    });
+
+    it('does not accept the other token kinds', () => {
+        // Each kind carries different data; crossing them would either hand out the wrong
+        // file or dereference something that is not there.
+        const selection = generateSelectionDownloadToken({
+            storageId: 'cfg-1', file: 'Job/backup.tar', userId: 'user-1', fileName: 'x.tar.gz',
+        });
+        const plain = generateDownloadToken('cfg-1', '/backup.sql');
+
+        expect(consumeFileDownloadToken(selection, 'user-1')).toBeNull();
+        expect(consumeFileDownloadToken(plain, 'user-1')).toBeNull();
+        expect(consumeSelectionDownloadToken(generateFileDownloadToken(params), 'user-1')).toBeNull();
+    });
+
+    it('stops honouring a token once it has expired', () => {
+        const now = Date.now();
+        vi.setSystemTime(now);
+        const token = generateFileDownloadToken(params);
+
+        vi.setSystemTime(now + 5 * 60 * 1000 + 1);
+
+        expect(consumeFileDownloadToken(token, 'user-1')).toBeNull();
+    });
+
+    it('stops honouring a token once the download has collected it', () => {
+        // Single use here, unlike a selection token: the temp file is deleted as it is
+        // streamed, so a second attempt would find nothing anyway.
+        const token = generateFileDownloadToken(params);
+        expect(consumeFileDownloadToken(token, 'user-1')).not.toBeNull();
+
+        markTokenUsed(token);
+
+        expect(consumeFileDownloadToken(token, 'user-1')).toBeNull();
     });
 });

@@ -119,6 +119,28 @@ describe("downloadDirectoryGeneric", () => {
         expect(result.entries[0].relativePath).toBe("a.txt");
     });
 
+    it("hides an adapter's per-file info chatter but keeps its warnings and errors", async () => {
+        // A chatty adapter (Google Drive logs a start and a finish per file) would otherwise
+        // put hundreds of lines in the execution history. Progress is reported separately, so
+        // only warnings and errors earn a history line here.
+        type Log = (msg: string, level?: string) => void;
+        const files = [makeFile("Job/a.txt", 100), makeFile("Job/b.txt", 100)];
+        const adapter = makeAdapter(files, (async (_c: unknown, remotePath: string, _l: string, _p: unknown, onLog?: Log) => {
+            onLog?.(`Starting download: ${remotePath}`, "info");
+            onLog?.(`Download completed: ${remotePath}`, "info");
+            if (remotePath === "Job/b.txt") onLog?.("Retrying after a transient error", "warning");
+            return true;
+        }) as never);
+
+        const onLog = vi.fn();
+        await downloadDirectoryGeneric(adapter, {}, "Job", "/local/job", undefined, undefined, onLog);
+
+        const messages = onLog.mock.calls.map((c) => c[0] as string);
+        expect(messages.some((m) => m.includes("Starting download"))).toBe(false);
+        expect(messages.some((m) => m.includes("Download completed"))).toBe(false);
+        expect(messages).toContain("Retrying after a transient error");
+    });
+
     it("reports progress after each successful file", async () => {
         const files = [makeFile("Job/a.txt", 100), makeFile("Job/b.txt", 200)];
         const adapter = makeAdapter(files);

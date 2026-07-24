@@ -94,6 +94,15 @@ export async function downloadDirectoryGeneric(
         onProgress?.(processedBytes, totalBytes, processedFiles, totalFiles);
     };
 
+    // Per-file "started/finished" chatter from an adapter would put one or two lines in the
+    // execution history for every file collected - hundreds of lines for a real source, which
+    // is why S3 and local stay silent here. Progress is already reported per file via
+    // onProgress and summarised at the end, so only warnings and errors are worth a history
+    // line; those still come through.
+    const fileOnLog: OnLog | undefined = onLog
+        ? (msg, level, type, details) => { if (level && level !== "info") onLog(msg, level, type, details); }
+        : undefined;
+
     const outcomes = await mapWithConcurrency(entries, options?.concurrency ?? 1, async (entry): Promise<Outcome> => {
         // Incremental backups skip files the chain already holds. They still belong to the
         // snapshot, so they are reported as unchanged rather than dropped - the archive
@@ -117,7 +126,7 @@ export async function downloadDirectoryGeneric(
         }
         await fs.mkdir(path.dirname(localFilePath), { recursive: true });
 
-        const success = await adapter.download(config, entry.sourcePath, localFilePath, undefined, onLog);
+        const success = await adapter.download(config, entry.sourcePath, localFilePath, undefined, fileOnLog);
         if (!success) {
             // Recorded, not swallowed: the file is absent from the archive, and a backup
             // that hides that is worse than one that admits it.

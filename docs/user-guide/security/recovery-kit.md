@@ -159,15 +159,29 @@ A mismatch is reported and the command exits non-zero.
 
 ### Incremental chains
 
-Incremental backups are stored as a chain in one folder. Point the tool at the snapshot you
-want and keep the other archives beside it - it resolves them itself:
+Incremental backups are stored as a chain in one folder: one full backup plus the changes
+made after it. Point the tool at the **newest** archive to get the complete, current state -
+every file at its latest version, merged into a single output folder. There is no separate
+step to replay the chain.
+
+```bash
+node restore_archive.js --extract ./chain-2026-07-15/inc-2026-07-17.tar ./restored <key>
+```
+
+Each archive describes the whole snapshot and reads every file from whichever archive of the
+chain actually stores its bytes. To recover an older state, point at that archive instead -
+each one rebuilds the snapshot as it was at its own point in time.
+
+Keep the archives of a chain together in one folder; that is how they find each other, so
+copying "a backup" means copying the whole folder.
 
 ```bash
 node restore_archive.js --list ./chain-2026-07-15/inc-2026-07-17.tar <key>
 ```
 
 The listing names every archive the snapshot needs and marks any that are missing, so a gap
-is visible before you start extracting rather than halfway through.
+is visible before you start extracting rather than halfway through. A missing archive aborts
+the extract by name instead of writing an incomplete restore.
 
 ::: tip Unencrypted archives need no kit at all
 If the job had no encryption profile, the archive is a plain TAR:

@@ -247,9 +247,16 @@ describe("recovery kit: restore_archive.js", () => {
 describe("recovery kit: incremental chains", () => {
     const SRC = "src-1";
 
-    /** Builds full-1.tar plus inc-2.tar in the same folder, as DBackup lays them out. */
-    async function buildChain() {
+    /**
+     * Builds full-1.tar plus inc-2.tar in the same folder, as DBackup lays them out.
+     *
+     * `encrypted: false` produces the same chain without an encryption profile - the case a
+     * user hits when the job has no profile, where the kit must still resolve the chain
+     * without being given a key.
+     */
+    async function buildChain({ encrypted = true }: { encrypted?: boolean } = {}) {
         const { carryForward, fileKey } = await import("@/lib/archive/chain");
+        const encryption = encrypted ? { encryption: { masterKey: MASTER_KEY, profileId: "p1" } } : {};
 
         const chainDir = path.join(workDir, "chain-2026-07-15");
         await fs.mkdir(chainDir, { recursive: true });
@@ -275,7 +282,7 @@ describe("recovery kit: incremental chains", () => {
             path.join(chainDir, "full-1.tar"),
             {
                 sourceType: "directory-only", compression: "GZIP",
-                encryption: { masterKey: MASTER_KEY, profileId: "p1" },
+                ...encryption,
                 chain: { id: "c1", type: "full", index: 0 },
             }
         );
@@ -286,7 +293,7 @@ describe("recovery kit: incremental chains", () => {
             path.join(chainDir, "inc-2.tar"),
             {
                 sourceType: "directory-only", compression: "GZIP",
-                encryption: { masterKey: MASTER_KEY, profileId: "p1" },
+                ...encryption,
                 chain: {
                     id: "c1", type: "incremental", base: "full-1.tar", index: 1,
                     carried: carryForward(full.index, "full-1.tar", new Set([fileKey(SRC, "kept.txt")])),
@@ -319,6 +326,30 @@ describe("recovery kit: incremental chains", () => {
         // kept.txt lives in full-1.tar, changed.bin in inc-2.tar - both come back intact.
         expect(await fs.readFile(path.join(outDir, SRC, "kept.txt"))).toEqual(contents.kept);
         expect(await fs.readFile(path.join(outDir, SRC, "changed.bin"))).toEqual(contents.changed);
+    });
+
+    it("resolves an unencrypted chain with no key at all", async () => {
+        // Encryption is optional, and the chain resolution must not quietly depend on it -
+        // a job without an encryption profile has to be recoverable the same way.
+        const { chainDir, contents } = await buildChain({ encrypted: false });
+        const outDir = path.join(workDir, "out");
+
+        const { code, stderr } = await runScript(["--extract", path.join(chainDir, "inc-2.tar"), outDir]);
+
+        expect(stderr).toBe("");
+        expect(code).toBe(0);
+        expect(await fs.readFile(path.join(outDir, SRC, "kept.txt"))).toEqual(contents.kept);
+        expect(await fs.readFile(path.join(outDir, SRC, "changed.bin"))).toEqual(contents.changed);
+    });
+
+    it("needs only the archives the snapshot actually references, not the whole chain", async () => {
+        // deps is built from the file lines, so it names exactly the archives holding bytes
+        // this snapshot points at. That is what --list reports, and what must be present.
+        const { chainDir } = await buildChain();
+        const { stdout } = await runScript(["--list", path.join(chainDir, "inc-2.tar"), KEY_HEX]);
+
+        expect(stdout).toMatch(/Needs 1 other archive\(s\)/);
+        expect(stdout).toContain("full-1.tar");
     });
 
     it("names the missing archive instead of restoring a partial snapshot", async () => {

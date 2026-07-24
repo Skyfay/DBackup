@@ -148,6 +148,29 @@ Extract just part of it (patterns accept * and **, and a folder name takes every
 Every extracted file is checked against the checksum recorded when the backup was made.
 The key argument can be left out for unencrypted archives.
 
+### If the backup is a FOLDER holding several .tar files
+
+That is an incremental chain: one full backup plus the changes made after it, for example
+
+    MyJob/chain-2026-07-24T03-00-00-000/
+        ..._full-000.tar     the full backup the chain is built on
+        ..._inc-001.tar      what changed after it
+        ..._inc-002.tar      what changed after that
+
+Point the tool at the NEWEST archive, not at the full one, and you get the complete, current
+state - every file at its latest version, merged into one folder:
+
+    node restore_archive.js --extract ..._inc-002.tar ./restored <key>
+
+Each archive knows the whole snapshot and pulls every file out of whichever archive actually
+holds it. To recover an OLDER state instead, point at that archive - each one rebuilds the
+snapshot as it was at its own moment in time.
+
+Keep all archives of a chain TOGETHER in one folder; that is how they find each other.
+Copying "a backup" here means copying the whole folder. '--list' shows the position of an
+archive in its chain and which other archives it needs, and marks any that are absent. If
+one is missing, the extract stops and names it rather than writing an incomplete restore.
+
 ### Without this kit at all
 An UNENCRYPTED archive of this type is a plain TAR:
     tar -xf backup.tar

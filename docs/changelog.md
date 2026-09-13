@@ -17,6 +17,11 @@ All notable changes to DBackup are documented here.
 - **history**: The Status filter on Activity Logs and System Tasks now offers **Partial**, which was missing even though partial runs appear in the list.
 - **ui**: Long connection, destination and template names in dropdowns are now cut off with an ellipsis instead of overflowing into neighbouring fields and buttons. ([#158](https://github.com/Skyfay/DBackup/issues/158))
 
+### 🔒 Security
+
+- **deps**: Next.js is updated to 16.3.5, which closes two critical advisories in the image optimizer and on Windows hosts. The bundled sharp is raised to 0.35.4 for the same libheif fix.
+- **deps**: nodemailer is updated to 9.1.1 and the pinned brace-expansion versions are raised, closing four high advisories in the email notifier and in file source exclude patterns.
+
 ### 🔄 Changed
 
 - **api**: `GET /api/history` accepts `page`, `pageSize`, `scope`, `type`, `status`, `trigger`, `search` and `facets` query parameters and returns the total count. Without parameters it still returns the newest 100 executions.

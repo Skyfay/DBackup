@@ -9,6 +9,7 @@ All notable changes to DBackup are documented here.
 
 - **history**: Activity Logs, System Tasks and Notification Logs now page through the whole history on the server instead of stopping at the newest 100 entries. Nothing was ever deleted, older runs were only hidden.
 - **history**: The Status filter on Activity Logs and System Tasks now offers **Partial**, which was missing even though partial runs appear in the list.
+- **ui**: Long connection, destination and template names in dropdowns are now cut off with an ellipsis instead of overflowing into neighbouring fields and buttons. ([#158](https://github.com/Skyfay/DBackup/issues/158))
 
 ### 🔄 Changed
 

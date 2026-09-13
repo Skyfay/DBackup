@@ -76,7 +76,7 @@ export function RetentionPolicyPicker({
             role="combobox"
             aria-expanded={open}
             disabled={loading}
-            className="w-full justify-between font-normal"
+            className="w-full min-w-0 justify-between font-normal"
           >
             {loading ? (
               <span className="flex items-center gap-2 text-muted-foreground">
@@ -84,14 +84,14 @@ export function RetentionPolicyPicker({
                 Loading...
               </span>
             ) : isDefault ? (
-              <span className="flex items-center gap-2">
-                <Timer className="h-3.5 w-3.5 text-muted-foreground" />
-                {defaultPolicy ? `Default (${defaultPolicy.name})` : "No retention (keep all)"}
+              <span className="flex items-center gap-2 min-w-0">
+                <Timer className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <span className="truncate">{defaultPolicy ? `Default (${defaultPolicy.name})` : "No retention (keep all)"}</span>
               </span>
             ) : selected ? (
-              <span className="flex items-center gap-2">
-                <Timer className="h-3.5 w-3.5 text-muted-foreground" />
-                {selected.name}
+              <span className="flex items-center gap-2 min-w-0">
+                <Timer className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <span className="truncate">{selected.name}</span>
               </span>
             ) : (
               <span className="text-muted-foreground">{placeholder}</span>

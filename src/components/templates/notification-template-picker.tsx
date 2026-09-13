@@ -97,7 +97,7 @@ export function NotificationTemplatePicker({
             role="combobox"
             aria-expanded={open}
             disabled={loading}
-            className="w-full justify-between font-normal"
+            className="w-full min-w-0 justify-between font-normal"
           >
             {loading ? (
               <span className="flex items-center gap-2 text-muted-foreground">
@@ -105,10 +105,10 @@ export function NotificationTemplatePicker({
                 Loading...
               </span>
             ) : selected ? (
-              <span className="flex items-center gap-2">
-                <Bell className="h-3.5 w-3.5 text-muted-foreground" />
-                {selected.name}
-                <Badge variant="secondary" className="text-xs">
+              <span className="flex items-center gap-2 min-w-0">
+                <Bell className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <span className="truncate">{selected.name}</span>
+                <Badge variant="secondary" className="text-xs shrink-0">
                   {selected.channels.length} channel{selected.channels.length !== 1 ? "s" : ""}
                 </Badge>
               </span>

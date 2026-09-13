@@ -1522,7 +1522,7 @@ function DestinationRow({ index, form, destinations, usedDestIds, isExpanded, on
                                         variant="outline"
                                         role="combobox"
                                         aria-expanded={destOpen}
-                                        className={cn("w-full justify-between h-9", !field.value && "text-muted-foreground")}
+                                        className={cn("w-full min-w-0 justify-between h-9", !field.value && "text-muted-foreground")}
                                     >
                                         {currentDest ? (
                                             <span className="flex items-center gap-2 min-w-0">
@@ -1667,7 +1667,7 @@ function DirectorySourceRow({ index, form, directorySourceOptions, isExpanded, o
                                         variant="outline"
                                         role="combobox"
                                         aria-expanded={adapterOpen}
-                                        className={cn("w-full justify-between h-9", !field.value && "text-muted-foreground")}
+                                        className={cn("w-full min-w-0 justify-between h-9", !field.value && "text-muted-foreground")}
                                     >
                                         {currentAdapter ? (
                                             <span className="flex items-center gap-2 min-w-0">

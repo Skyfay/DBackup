@@ -449,9 +449,9 @@ export function StorageClient({ canDownload, canRestore, canDelete, canManageVau
                                     className="w-full justify-between"
                                 >
                                     {selectedDestination ? (
-                                        <span className="flex items-center gap-2">
-                                            <AdapterIcon adapterId={destinations.find((dest) => dest.id === selectedDestination)?.adapterId ?? ""} className="h-4 w-4" />
-                                            {destinations.find((dest) => dest.id === selectedDestination)?.name}
+                                        <span className="flex items-center gap-2 min-w-0">
+                                            <AdapterIcon adapterId={destinations.find((dest) => dest.id === selectedDestination)?.adapterId ?? ""} className="h-4 w-4 shrink-0" />
+                                            <span className="truncate">{destinations.find((dest) => dest.id === selectedDestination)?.name}</span>
                                         </span>
                                     ) : "Select Destination..."}
                                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />

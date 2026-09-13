@@ -95,7 +95,7 @@ export function ExcludePatternPresetPicker({ value, onChange, placeholder = "Add
             size="sm"
             aria-expanded={open}
             disabled={loading}
-            className="w-full justify-between font-normal h-8"
+            className="w-full min-w-0 justify-between font-normal h-8"
           >
             {loading ? (
               <span className="flex items-center gap-2 text-muted-foreground text-xs">

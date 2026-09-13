@@ -186,11 +186,19 @@ export async function performExecution(executionId: string, jobId: string) {
         const prevStart = stageStartTimes.get(currentStage);
         if (prevStart && currentStage !== stage) {
             const durationMs = Date.now() - prevStart;
+            // The status is already Failed or Cancelled when the finalize step
+            // moves on to notifications, so the stage that threw must not be
+            // closed with a green "completed" line under its own error.
+            const outcome = ctx?.status === "Failed"
+                ? { level: "error" as const, word: "failed" }
+                : ctx?.status === "Cancelled"
+                    ? { level: "warning" as const, word: "aborted" }
+                    : { level: "success" as const, word: "completed" };
             const entry: LogEntry = {
                 timestamp: new Date().toISOString(),
-                level: "success",
+                level: outcome.level,
                 type: "general",
-                message: `${currentStage} completed (${formatDuration(durationMs)})`,
+                message: `${currentStage} ${outcome.word} (${formatDuration(durationMs)})`,
                 stage: currentStage,
                 durationMs,
             };

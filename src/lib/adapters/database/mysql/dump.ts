@@ -13,6 +13,7 @@ import {
     cleanupTempDir,
 } from "../common/tar-utils";
 import { TarFileEntry } from "../common/types";
+import { awaitDumpProcess } from "../common/dump-process";
 import { MYSQL_DUMP, withAuthArgs } from "./args";
 
 /** Extended config with runtime fields */
@@ -58,19 +59,7 @@ async function dumpSingleDatabase(
             onLog(msg);
         });
 
-        await new Promise<void>((resolve, reject) => {
-            writeStream.on('error', reject);
-            writeStream.on('finish', resolve);
-            proc.exit().then(
-                ({ code, signal }) => {
-                    if (code !== 0) {
-                        writeStream.destroy();
-                        reject(new Error(`${dumpBin} exited with code ${code ?? 'null'}${signal ? ` (signal: ${signal})` : ''}`));
-                    }
-                },
-                reject,
-            );
-        });
+        await awaitDumpProcess(proc, writeStream, dumpBin);
     });
 
     const stats = await fs.stat(destinationPath);

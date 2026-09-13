@@ -57,6 +57,24 @@ function dumpHost(kind: HostKind, opts: { stdout?: string; stderr?: string; code
     return createFakeHost({ kind, onSpawn: () => opts });
 }
 
+/**
+ * A host whose exit code arrives only after stdout has closed and been flushed,
+ * which is the order a real connect-time failure produces. The fake host's
+ * default exit resolves immediately and never exercises that race.
+ */
+function lateExitHost(kind: HostKind, code: number): FakeHost {
+    const host = createFakeHost({ kind });
+    const spawn = host.spawn.bind(host);
+    host.spawn = async (argv, opts) => {
+        const proc = await spawn(argv, opts);
+        return {
+            ...proc,
+            exit: () => new Promise((resolve) => setTimeout(() => resolve({ code }), 20)),
+        };
+    };
+    return host;
+}
+
 describe.each<HostKind>(["direct", "ssh"])("MySQL dump over a %s host", (kind) => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -111,6 +129,13 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL dump over a %s host", (kind) =
 
     it("fails when the dump binary exits non-zero", async () => {
         const result = await dump(baseConfig, "/tmp/out.sql", dumpHost(kind, { code: 1 }));
+
+        expect(result.success).toBe(false);
+        expect(result.error).toContain("exited with code 1");
+    });
+
+    it("fails when the dump binary exits non-zero after its output was already flushed", async () => {
+        const result = await dump(baseConfig, "/tmp/out.sql", lateExitHost(kind, 1));
 
         expect(result.success).toBe(false);
         expect(result.error).toContain("exited with code 1");

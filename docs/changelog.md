@@ -7,6 +7,8 @@ All notable changes to DBackup are documented here.
 
 ### 🐛 Bug Fixes
 
+- **postgres**: A `pg_dump` that fails at connect time, for an unreachable host or a wrong password, now fails the backup instead of shipping an empty file to every destination as a successful run. The same race is closed for `mysqldump` on MySQL and MariaDB. ([#154](https://github.com/Skyfay/DBackup/issues/154))
+- **runner**: The stage a backup failed in is now closed with a red **failed** line in the execution log instead of a green **completed** one.
 - **history**: Activity Logs, System Tasks and Notification Logs now page through the whole history on the server instead of stopping at the newest 100 entries. Nothing was ever deleted, older runs were only hidden.
 - **history**: The Status filter on Activity Logs and System Tasks now offers **Partial**, which was missing even though partial runs appear in the list.
 - **ui**: Long connection, destination and template names in dropdowns are now cut off with an ellipsis instead of overflowing into neighbouring fields and buttons. ([#158](https://github.com/Skyfay/DBackup/issues/158))

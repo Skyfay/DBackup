@@ -63,6 +63,7 @@ export const PERMISSIONS = {
   JOBS:         { READ: "jobs:read", WRITE: "jobs:write", EXECUTE: "jobs:execute" },
   STORAGE:      { READ: "storage:read", DOWNLOAD: "storage:download", RESTORE: "storage:restore", DELETE: "storage:delete" },
   HISTORY:      { READ: "history:read" },
+  DASHBOARD:    { READ: "dashboard:read" },
   AUDIT:        { READ: "audit:read" },
   NOTIFICATIONS:{ READ: "notifications:read", WRITE: "notifications:write" },
   VAULT:        { READ: "vault:read", WRITE: "vault:write" },
@@ -278,6 +279,7 @@ export function SourceManager({ canCreate, canDelete }: Props) {
 | `jobs:write` | Create, edit, delete jobs |
 | `jobs:execute` | Manually trigger backups |
 | `history:read` | View execution history |
+| `dashboard:read` | Read overview statistics through `GET /api/dashboard/stats` |
 
 ### Storage & Recovery
 
@@ -340,7 +342,7 @@ Recommended group templates:
 ["users:read", "users:write", "groups:read", "groups:write",
  "sources:view", "sources:read", "sources:write",
  "destinations:read", "destinations:write",
- "jobs:read", "jobs:write", "jobs:execute", "history:read",
+ "jobs:read", "jobs:write", "jobs:execute", "history:read", "dashboard:read",
  "storage:read", "storage:download", "storage:restore", "storage:delete",
  "notifications:read", "notifications:write",
  "vault:read", "vault:write",

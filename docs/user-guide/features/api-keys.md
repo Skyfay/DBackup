@@ -37,6 +37,7 @@ API keys provide a secure alternative to session-based authentication for progra
 | Trigger + monitor | `jobs:execute`, `history:read` |
 | Full automation | `jobs:read`, `jobs:execute`, `history:read`, `storage:read` |
 | Read-only monitoring | `jobs:read`, `history:read` |
+| Dashboard widget (statistics only) | `dashboard:read` |
 
 ## Managing API Keys
 
@@ -96,6 +97,7 @@ API keys use the same permission system as user groups. The key can only perform
 | `jobs:write` | Create, edit, delete jobs |
 | `jobs:execute` | Trigger backup jobs |
 | `history:read` | View execution history and poll status |
+| `dashboard:read` | Read dashboard statistics (totals only) |
 | `sources:read` | List database sources |
 | `destinations:read` | List storage destinations |
 | `storage:read` | Browse stored backups |

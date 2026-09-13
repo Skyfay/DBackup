@@ -31,6 +31,9 @@ export const PERMISSIONS = {
   HISTORY: {
     READ: "history:read",
   },
+  DASHBOARD: {
+    READ: "dashboard:read",
+  },
   AUDIT: {
     READ: "audit:read",
   },
@@ -88,6 +91,7 @@ export type Permission =
   | typeof PERMISSIONS.STORAGE.RESTORE
   | typeof PERMISSIONS.STORAGE.DELETE
   | typeof PERMISSIONS.HISTORY.READ
+  | typeof PERMISSIONS.DASHBOARD.READ
   | typeof PERMISSIONS.AUDIT.READ
   | typeof PERMISSIONS.NOTIFICATIONS.READ
   | typeof PERMISSIONS.NOTIFICATIONS.WRITE
@@ -136,6 +140,9 @@ export const AVAILABLE_PERMISSIONS = [
   { id: PERMISSIONS.STORAGE.DELETE, label: "Delete Backups", category: "Storage" },
   { id: PERMISSIONS.HISTORY.READ, label: "View Execution History", category: "History" },
   { id: PERMISSIONS.AUDIT.READ, label: "View Audit Logs", category: "Audit" },
+
+  // Dashboard
+  { id: PERMISSIONS.DASHBOARD.READ, label: "Read Dashboard Statistics via API", category: "Dashboard" },
 
   // Notifications
   { id: PERMISSIONS.NOTIFICATIONS.READ, label: "View Notifications", category: "Notifications" },

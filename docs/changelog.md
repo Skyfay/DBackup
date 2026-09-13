@@ -5,6 +5,10 @@ All notable changes to DBackup are documented here.
 ## vNEXT
 *Release: In Progress*
 
+### ✨ Features
+
+- **api**: New `GET /api/dashboard/stats` endpoint returns the figures from the dashboard overview cards for homepage widgets and monitoring. It needs the new `dashboard:read` permission. ([#155](https://github.com/Skyfay/DBackup/issues/155))
+
 ### 🐛 Bug Fixes
 
 - **postgres**: A `pg_dump` that fails at connect time, for an unreachable host or a wrong password, now fails the backup instead of shipping an empty file to every destination as a successful run. The same race is closed for `mysqldump` on MySQL and MariaDB. ([#154](https://github.com/Skyfay/DBackup/issues/154))

@@ -76,6 +76,7 @@ For the full endpoint documentation with request/response schemas, examples, and
 | Jobs | `GET/POST/PUT/DELETE /api/jobs` | CRUD + trigger backups |
 | Executions | `GET /api/executions/:id` | Poll execution status |
 | History | `GET /api/history` | List execution history, paged with `page`, `pageSize`, `scope`, `type`, `status`, `trigger`, `search` and `facets` |
+| Dashboard | `GET /api/dashboard/stats`, `GET /api/dashboard/calendar` | Overview statistics and calendar heatmap |
 | Adapters | `GET/POST/PUT/DELETE /api/adapters` | Sources, destinations & notifications |
 | Connection Testing | `POST /api/adapters/test-connection` | Test adapter connections |
 | Storage Explorer | `GET/POST/DELETE /api/storage/:id/*` | Browse, download, delete, restore backups |
@@ -135,3 +136,34 @@ URL=$(curl -s -X POST "${BASE_URL}/api/storage/${STORAGE_ID}/download-url" \
 # 4. Download
 wget -O latest_backup.sql.gz "$URL"
 ```
+
+### Show Statistics on a Homepage Dashboard
+
+Create an API key with only `dashboard:read` and point your dashboard widget at the stats endpoint:
+
+```bash
+curl -s "${BASE_URL}/api/dashboard/stats" \
+  -H "Authorization: Bearer ${API_KEY}"
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "totalJobs": 8,
+    "activeSchedules": 8,
+    "totalSnapshots": 122,
+    "totalStorageBytes": 55179592335,
+    "successRate30d": 100,
+    "success24h": 29,
+    "failed24h": 0,
+    "storageUpdatedAt": "2026-09-13T10:00:00.000Z"
+  }
+}
+```
+
+Any dashboard that can send an `Authorization` header works, for example the [Homepage Custom API widget](https://gethomepage.dev/widgets/services/customapi/). The figures are nested under `data`, so map the fields from there.
+
+::: tip Storage figures
+`totalSnapshots` and `totalStorageBytes` come from the storage statistics cache, which refreshes hourly by default and after every backup. Polling more often does not make them more current.
+:::

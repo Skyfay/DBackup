@@ -73,7 +73,7 @@ Rules:
 - Self-service actions where any authenticated user may act on their own data are exempt, and must be annotated `/** @no-permission-required */` with a justification.
 - Intentionally public routes (health check, auth callbacks, OAuth redirects) need an explicit comment saying why.
 
-Permission categories: `USERS`, `GROUPS`, `SOURCES`, `DESTINATIONS`, `JOBS`, `STORAGE`, `HISTORY`, `AUDIT`, `NOTIFICATIONS`, `VAULT`, `PROFILE`, `SETTINGS`, `API_KEYS`. Storage has extra verbs (`DOWNLOAD`, `RESTORE`, `DELETE`), jobs have `EXECUTE`.
+Permission categories: `USERS`, `GROUPS`, `SOURCES`, `DESTINATIONS`, `JOBS`, `STORAGE`, `HISTORY`, `DASHBOARD`, `AUDIT`, `NOTIFICATIONS`, `VAULT`, `PROFILE`, `SETTINGS`, `API_KEYS`. Storage has extra verbs (`DOWNLOAD`, `RESTORE`, `DELETE`), jobs have `EXECUTE`.
 
 ## Validation
 

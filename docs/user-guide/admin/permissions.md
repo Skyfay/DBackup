@@ -104,6 +104,14 @@ Users in deleted group lose all permissions until reassigned.
 | `storage:delete` | Delete backup files |
 | `history:read` | View execution history |
 
+### Dashboard
+
+| Permission | Description |
+| :--- | :--- |
+| `dashboard:read` | Read the overview statistics through the API (`GET /api/dashboard/stats`) |
+
+The dashboard overview page itself needs no permission. `dashboard:read` exists so an API key for a homepage widget can read the totals without access to jobs, history, or storage.
+
 ### Notifications
 
 | Permission | Description |

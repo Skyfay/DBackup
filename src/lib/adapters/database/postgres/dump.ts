@@ -10,6 +10,7 @@ import {
     cleanupTempDir,
 } from "../common/tar-utils";
 import { TarFileEntry, TarManifest } from "../common/types";
+import { awaitDumpProcess } from "../common/dump-process";
 import { PostgresConfig } from "@/lib/adapters/definitions";
 import { getDatabases } from "./connection";
 import { PG_DUMP, buildConnectionArgs, pgEnv } from "./args";
@@ -100,21 +101,15 @@ async function dumpSingleDatabase(
         }
     });
 
-    await new Promise<void>((resolve, reject) => {
-        writeStream.on('error', reject);
-        writeStream.on('finish', resolve);
-        proc.exit().then(
-            ({ code, signal }) => {
-                if (code !== 0) {
-                    writeStream.destroy();
-                    reject(new Error(
-                        `pg_dump for ${dbName} exited with code ${code ?? 'null'}${signal ? ` (signal: ${signal})` : ''}`,
-                    ));
-                }
-            },
-            reject,
-        );
-    });
+    await awaitDumpProcess(proc, writeStream, `pg_dump for ${dbName}`);
+
+    // Custom format always starts with a PGDMP header, so an empty file can
+    // only mean pg_dump wrote nothing. Second line of defence behind the exit
+    // code, for the case where the tool reports success anyway.
+    const stats = await fs.stat(outputPath);
+    if (stats.size === 0) {
+        throw new Error(`Dump file for ${dbName} is empty. Check logs/permissions.`);
+    }
 }
 
 /** Split a user-supplied option string, honouring single and double quotes. */

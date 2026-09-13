@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback, useRef } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import {
     Dialog,
     DialogContent,
@@ -12,6 +12,10 @@ import { DataTable } from "@/components/ui/data-table";
 import { createColumns, createSystemTaskColumns, Execution } from "./columns";
 import { createNotificationLogColumns, NotificationLogRow } from "./notification-log-columns";
 import { NotificationPreview } from "./notification-preview";
+import { usePagedList, type PagedQuery } from "./use-paged-list";
+import { loadExecutions, loadNotificationLogs, loadExecution } from "./history-api";
+import type { ExecutionHistoryFacets } from "@/services/system/execution-history-service";
+import type { NotificationLogFacets } from "@/services/notifications/notification-log-service";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Loader2, Square, Copy, Download, Bell, CheckCircle2, XCircle } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
@@ -39,15 +43,11 @@ export default function HistoryPage() {
 }
 
 function HistoryContent() {
-    const [executions, setExecutions] = useState<Execution[]>([]);
-    const [systemTasks, setSystemTasks] = useState<Execution[]>([]);
     const [systemTimezone, setSystemTimezone] = useState("UTC");
     const [selectedLog, setSelectedLog] = useState<Execution | null>(null);
     const [selectedLogEntries, setSelectedLogEntries] = useState<LogEntry[]>([]);
     const [activeTab, setActiveTab] = useState("activity");
 
-    // Notification log state
-    const [notificationLogs, setNotificationLogs] = useState<NotificationLogRow[]>([]);
     const [selectedNotification, setSelectedNotification] = useState<NotificationLogRow | null>(null);
     const [isCancelling, setIsCancelling] = useState(false);
     // Per-execution notification results (shown in log dialog)
@@ -56,97 +56,80 @@ function HistoryContent() {
     const searchParams = useSearchParams();
     const router = useRouter();
 
-    // Auto-open logic
+    // Each tab is its own server-side page. Only the visible tab fetches and polls, and a
+    // poll returns exactly the rows on screen, so the cost of a tick no longer grows with the
+    // size of the history.
+    const onExecutionsLoaded = useCallback((result: { systemTimezone?: string }) => {
+        if (result.systemTimezone) setSystemTimezone(result.systemTimezone);
+    }, []);
+    const loadActivity = useCallback((q: PagedQuery) => loadExecutions("activity", q), []);
+    const loadSystem = useCallback((q: PagedQuery) => loadExecutions("system", q), []);
+
+    const [activityPollMs, setActivityPollMs] = useState(5000);
+    const [systemPollMs, setSystemPollMs] = useState(5000);
+
+    // Counts shown next to each filter option. Served with every page, since the browser no
+    // longer holds the rows they would otherwise be derived from.
+    const [activityFacets, setActivityFacets] = useState<ExecutionHistoryFacets | null>(null);
+    const [systemFacets, setSystemFacets] = useState<ExecutionHistoryFacets | null>(null);
+    const [notificationFacets, setNotificationFacets] = useState<NotificationLogFacets | null>(null);
+
+    // Poll 2s while a run on the visible page is live, 5s otherwise.
+    const pollFor = useCallback((rows: Execution[]) =>
+        rows.some((e) => e.status === "Running" || e.status === "Pending") ? 2000 : 5000, []);
+
+    type ExecutionsResult = { rows: Execution[]; systemTimezone?: string; facets?: ExecutionHistoryFacets };
+    const activity = usePagedList<Execution>({
+        load: loadActivity,
+        enabled: activeTab === "activity",
+        pollMs: activityPollMs,
+        onLoaded: (r) => {
+            const result = r as ExecutionsResult;
+            onExecutionsLoaded(result);
+            setActivityPollMs(pollFor(result.rows));
+            if (result.facets) setActivityFacets(result.facets);
+        },
+    });
+    const system = usePagedList<Execution>({
+        load: loadSystem,
+        enabled: activeTab === "system",
+        pollMs: systemPollMs,
+        onLoaded: (r) => {
+            const result = r as ExecutionsResult;
+            onExecutionsLoaded(result);
+            setSystemPollMs(pollFor(result.rows));
+            if (result.facets) setSystemFacets(result.facets);
+        },
+    });
+    const notifications = usePagedList<NotificationLogRow>({
+        load: loadNotificationLogs,
+        enabled: activeTab === "notifications",
+        pollMs: 5000,
+        onLoaded: (r) => {
+            const facets = (r as { facets?: NotificationLogFacets }).facets;
+            if (facets) setNotificationFacets(facets);
+        },
+    });
+
+    // Auto-open from ?executionId=. The run may sit on any page, so it is fetched by id.
     const executionId = searchParams.get("executionId");
-
-    // Sync selectedLog with latest executions data to enable live updates in modal.
-    // Compared by the fields the dialog actually renders rather than by stringifying the whole
-    // row - that ran on every poll and every unrelated re-render.
     useEffect(() => {
-        if (!selectedLog) return;
-        const allExecs = [...executions, ...systemTasks];
-        const updatedLog = allExecs.find(e => e.id === selectedLog.id);
-        if (!updatedLog) return;
-
-        const changed = updatedLog.status !== selectedLog.status
-            || updatedLog.metadata !== selectedLog.metadata
-            || updatedLog.endedAt !== selectedLog.endedAt
-            || updatedLog.path !== selectedLog.path;
-        if (changed) setSelectedLog(updatedLog);
-    }, [executions, systemTasks, selectedLog]);
-
-    useEffect(() => {
-        if (executionId && (executions.length > 0 || systemTasks.length > 0)) {
-            const found = [...executions, ...systemTasks].find(e => e.id === executionId);
-            if (found && !selectedLog) {
-                setSelectedLog(found);
-                router.replace("/dashboard/history", { scroll: false });
-            }
-        }
-    }, [executions, systemTasks, executionId, selectedLog, router]);
-
-    const fetchInFlight = useRef(false);
-
-    const fetchHistory = useCallback(async () => {
-        if (fetchInFlight.current) return; // Prevent stacking requests
-        fetchInFlight.current = true;
-        try {
-            const res = await fetch("/api/history");
-            if (res.ok) {
-                const data = await res.json();
-                const systemTypes = ["IntegrityCheck", "Verification"];
-                setSystemTasks(data.executions.filter((e: Execution) => systemTypes.includes(e.type ?? "")));
-                setExecutions(data.executions.filter((e: Execution) => !systemTypes.includes(e.type ?? "")));
-                setSystemTimezone(data.systemTimezone);
-            }
-        } catch (_e) {
-            log.error("Failed to load execution history", {}, wrapError(_e));
-        } finally {
-            fetchInFlight.current = false;
-        }
-    }, []);
-
-    const fetchNotificationLogs = useCallback(async () => {
-        try {
-            const res = await fetch("/api/notification-logs?pageSize=100");
-            if (res.ok) {
-                const result = await res.json();
-                setNotificationLogs(result.data);
-            }
-        } catch (_e) {
-            log.error("Failed to load notification logs", {}, wrapError(_e));
-        }
-    }, []);
-
-    // Poll history: 5s default, 2s when any job or system task is running for live feel
-    const hasRunningJob = useMemo(
-        () => [...executions, ...systemTasks].some(e => e.status === "Running" || e.status === "Pending"),
-        [executions, systemTasks]
-    );
-
-    useEffect(() => {
-        fetchHistory();
-        const interval = setInterval(() => {
-            // A hidden tab is polling for nobody, and browsers throttle its timers anyway -
-            // which made the first update after switching back arrive stale.
-            if (typeof document !== "undefined" && document.hidden) return;
-            fetchHistory();
-        }, hasRunningJob ? 2000 : 5000);
-
-        const onVisible = () => { if (!document.hidden) fetchHistory(); };
-        document.addEventListener("visibilitychange", onVisible);
-        return () => {
-            clearInterval(interval);
-            document.removeEventListener("visibilitychange", onVisible);
-        };
-    }, [fetchHistory, hasRunningJob]);
+        if (!executionId) return;
+        let cancelled = false;
+        loadExecution(executionId).then((found) => {
+            if (cancelled) return;
+            if (found) setSelectedLog(found);
+            router.replace("/dashboard/history", { scroll: false });
+        });
+        return () => { cancelled = true; };
+    }, [executionId, router]);
 
     // The open execution's log, fetched on its own.
     //
-    // The list endpoint no longer carries log blobs, so this is where the log viewer's content
-    // comes from. Scoped to the one open dialog, which is the only place a full log is ever
-    // shown, and stopped as soon as the run reaches a terminal state - a finished log does not
-    // change again.
+    // The list endpoint carries no log blobs, so this is where the log viewer's content comes
+    // from. It also keeps the dialog's status, progress and timestamps current while the run is
+    // live, independent of which list page is loaded, and stops as soon as the run reaches a
+    // terminal state - a finished log does not change again.
     const selectedId = selectedLog?.id ?? null;
     const selectedIsLive = selectedLog?.status === "Running" || selectedLog?.status === "Pending";
 
@@ -156,6 +139,23 @@ function HistoryContent() {
             if (!res.ok) return;
             const result = await res.json();
             if (Array.isArray(result?.data?.logs)) setSelectedLogEntries(result.data.logs);
+            const d = result?.data;
+            if (!d) return;
+            setSelectedLog((current) => {
+                if (!current || current.id !== id) return current;
+                const changed = d.status !== current.status
+                    || (d.metadata ?? undefined) !== current.metadata
+                    || (d.endedAt ?? undefined) !== current.endedAt
+                    || (d.path ?? undefined) !== current.path;
+                if (!changed) return current;
+                return {
+                    ...current,
+                    status: d.status,
+                    metadata: d.metadata ?? undefined,
+                    endedAt: d.endedAt ?? undefined,
+                    path: d.path ?? undefined,
+                };
+            });
         } catch (e) {
             log.error("Failed to load execution logs", {}, wrapError(e));
         }
@@ -177,15 +177,6 @@ function HistoryContent() {
         return () => clearInterval(interval);
     }, [selectedId, selectedIsLive, fetchSelectedLogs]);
 
-    // Fetch notification logs when that tab becomes active
-    useEffect(() => {
-        if (activeTab === "notifications") {
-            fetchNotificationLogs();
-            const interval = setInterval(fetchNotificationLogs, 5000);
-            return () => clearInterval(interval);
-        }
-    }, [activeTab, fetchNotificationLogs]);
-
     // Fetch per-execution notification results when a completed execution dialog opens.
     useEffect(() => {
         if (!selectedLog || selectedLog.status === "Running" || selectedLog.status === "Pending") {
@@ -198,6 +189,8 @@ function HistoryContent() {
             .catch(() => {});
     }, [selectedLog]);
 
+    const refreshExecutions = activeTab === "system" ? system.refresh : activity.refresh;
+
     const handleCancelExecution = useCallback(async (executionId: string) => {
         setIsCancelling(true);
         try {
@@ -207,7 +200,7 @@ function HistoryContent() {
             const data = await res.json();
             if (data.success) {
                 toast.success("Cancellation signal sent");
-                fetchHistory();
+                refreshExecutions();
             } else {
                 toast.error(data.error || "Failed to cancel execution");
             }
@@ -216,7 +209,7 @@ function HistoryContent() {
         } finally {
             setIsCancelling(false);
         }
-    }, [fetchHistory]);
+    }, [refreshExecutions]);
 
     const handleCopyLogs = useCallback(() => {
         if (!selectedLog) return;
@@ -267,61 +260,67 @@ function HistoryContent() {
         []
     );
 
+    // Options carry their server-side count. Zero until the first page has arrived.
+    const withCounts = (options: { label: string; value: string }[], counts: Record<string, number> | undefined) =>
+        options.map((o) => ({ ...o, count: counts?.[o.value] ?? 0 }));
+
     const filterableColumns = useMemo(() => [
         {
             id: "type",
             title: "Type",
-            options: [
+            options: withCounts([
                 { label: "Backup", value: "Backup" },
                 { label: "Restore", value: "Restore" },
-            ]
+            ], activityFacets?.type),
         },
         {
             id: "status",
             title: "Status",
-            options: [
+            options: withCounts([
                 { label: "Success", value: "Success" },
+                { label: "Partial", value: "Partial" },
                 { label: "Failed", value: "Failed" },
                 { label: "Running", value: "Running" },
                 { label: "Cancelled", value: "Cancelled" },
-            ]
+            ], activityFacets?.status),
         },
         {
             id: "trigger",
             title: "Trigger",
-            options: [
+            options: withCounts([
                 { label: "Manual", value: "Manual" },
                 { label: "Scheduler", value: "Scheduler" },
                 { label: "API Key", value: "Api" },
-            ]
+            ], activityFacets?.trigger),
         },
-    ], []);
+    ], [activityFacets]);
 
     const systemTaskFilterableColumns = useMemo(() => [
         {
             id: "status",
             title: "Status",
-            options: [
+            options: withCounts([
                 { label: "Success", value: "Success" },
+                { label: "Partial", value: "Partial" },
                 { label: "Failed", value: "Failed" },
                 { label: "Running", value: "Running" },
-            ],
+            ], systemFacets?.status),
         },
         {
             id: "trigger",
             title: "Trigger",
-            options: [
+            options: withCounts([
                 { label: "Manual", value: "Manual" },
                 { label: "Scheduler", value: "Scheduler" },
-            ],
+            ], systemFacets?.trigger),
         },
-    ], []);
+    ], [systemFacets]);
 
     const notificationFilterableColumns = useMemo(() => [
         {
             id: "adapterId",
             title: "Adapter",
-            options: [
+            options: withCounts([
                 { label: "Email", value: "email" },
                 { label: "Discord", value: "discord" },
                 { label: "Slack", value: "slack" },
@@ -331,17 +330,17 @@ function HistoryContent() {
                 { label: "Gotify", value: "gotify" },
                 { label: "Webhook", value: "generic-webhook" },
                 { label: "SMS", value: "twilio-sms" },
-            ]
+            ], notificationFacets?.adapterId),
         },
         {
             id: "status",
             title: "Status",
-            options: [
+            options: withCounts([
                 { label: "Sent", value: "Success" },
                 { label: "Failed", value: "Failed" },
-            ]
+            ], notificationFacets?.status),
         },
-    ], []);
+    ], [notificationFacets]);
 
     // Keyed on the raw string so it is re-parsed only when the server actually sent a new one,
     // not on every render caused by an unrelated piece of state on this page.
@@ -383,11 +382,19 @@ function HistoryContent() {
                         <CardContent>
                             <DataTable
                                 columns={columns}
-                                data={executions}
+                                data={activity.rows}
                                 searchKey="jobName"
                                 filterableColumns={filterableColumns}
-                                autoResetPageIndex={false}
-                                onRefresh={fetchHistory}
+                                manualPagination
+                                manualFiltering
+                                pagination={activity.pagination}
+                                onPaginationChange={activity.setPagination}
+                                columnFilters={activity.columnFilters}
+                                onColumnFiltersChange={activity.onColumnFiltersChange}
+                                pageCount={activity.pageCount}
+                                rowCount={activity.total}
+                                onRefresh={activity.refresh}
+                                isLoading={activity.isLoading}
                             />
                         </CardContent>
                     </Card>
@@ -402,11 +409,19 @@ function HistoryContent() {
                         <CardContent>
                             <DataTable
                                 columns={systemTaskColumns}
-                                data={systemTasks}
+                                data={system.rows}
                                 searchKey="taskName"
                                 filterableColumns={systemTaskFilterableColumns}
-                                autoResetPageIndex={false}
-                                onRefresh={fetchHistory}
+                                manualPagination
+                                manualFiltering
+                                pagination={system.pagination}
+                                onPaginationChange={system.setPagination}
+                                columnFilters={system.columnFilters}
+                                onColumnFiltersChange={system.onColumnFiltersChange}
+                                pageCount={system.pageCount}
+                                rowCount={system.total}
+                                onRefresh={system.refresh}
+                                isLoading={system.isLoading}
                             />
                         </CardContent>
                     </Card>
@@ -423,11 +438,19 @@ function HistoryContent() {
                         <CardContent>
                             <DataTable
                                 columns={notificationColumns}
-                                data={notificationLogs}
+                                data={notifications.rows}
                                 searchKey="title"
                                 filterableColumns={notificationFilterableColumns}
-                                autoResetPageIndex={false}
-                                onRefresh={fetchNotificationLogs}
+                                manualPagination
+                                manualFiltering
+                                pagination={notifications.pagination}
+                                onPaginationChange={notifications.setPagination}
+                                columnFilters={notifications.columnFilters}
+                                onColumnFiltersChange={notifications.onColumnFiltersChange}
+                                pageCount={notifications.pageCount}
+                                rowCount={notifications.total}
+                                onRefresh={notifications.refresh}
+                                isLoading={notifications.isLoading}
                             />
                         </CardContent>
                     </Card>

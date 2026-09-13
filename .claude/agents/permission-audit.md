@@ -57,6 +57,7 @@ await checkPermissionWithContext(ctx, PERMISSIONS.CATEGORY.ACTION);
 | Jobs | `jobs:read` | `jobs:write` | `jobs:execute` |
 | Storage | `storage:read` | `storage:delete` | `storage:download`, `storage:restore` |
 | History | `history:read` | - | - |
+| Dashboard | `dashboard:read` | - | - |
 | Audit | `audit:read` | - | - |
 | Notifications | `notifications:read` | `notifications:write` | - |
 | Vault | `vault:read` | `vault:write` | - |

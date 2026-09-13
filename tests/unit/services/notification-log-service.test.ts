@@ -132,6 +132,51 @@ describe('getNotificationLogs()', () => {
         );
     });
 
+    it('matches any of several adapters when the filter is a list', async () => {
+        prismaMock.notificationLog.findMany.mockResolvedValue([]);
+        prismaMock.notificationLog.count.mockResolvedValue(0);
+
+        await getNotificationLogs({ adapterId: ['slack', 'discord'] });
+
+        expect(prismaMock.notificationLog.findMany).toHaveBeenCalledWith(
+            expect.objectContaining({ where: expect.objectContaining({ adapterId: { in: ['slack', 'discord'] } }) })
+        );
+    });
+
+    it('ignores an empty filter list', async () => {
+        prismaMock.notificationLog.findMany.mockResolvedValue([]);
+        prismaMock.notificationLog.count.mockResolvedValue(0);
+
+        await getNotificationLogs({ adapterId: [], status: [''] });
+
+        expect(prismaMock.notificationLog.findMany).toHaveBeenCalledWith(
+            expect.objectContaining({ where: {} })
+        );
+    });
+
+    it('searches the title', async () => {
+        prismaMock.notificationLog.findMany.mockResolvedValue([]);
+        prismaMock.notificationLog.count.mockResolvedValue(0);
+
+        await getNotificationLogs({ search: '  nightly ' });
+
+        expect(prismaMock.notificationLog.findMany).toHaveBeenCalledWith(
+            expect.objectContaining({ where: expect.objectContaining({ title: { contains: 'nightly' } }) })
+        );
+    });
+
+    it('caps the page size at 100', async () => {
+        prismaMock.notificationLog.findMany.mockResolvedValue([]);
+        prismaMock.notificationLog.count.mockResolvedValue(0);
+
+        const result = await getNotificationLogs({ page: 2, pageSize: 1000 });
+
+        expect(result.pageSize).toBe(100);
+        expect(prismaMock.notificationLog.findMany).toHaveBeenCalledWith(
+            expect.objectContaining({ skip: 100, take: 100 })
+        );
+    });
+
     it('applies eventType filter', async () => {
         prismaMock.notificationLog.findMany.mockResolvedValue([]);
         prismaMock.notificationLog.count.mockResolvedValue(0);

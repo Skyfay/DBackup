@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: DBackup API
-  version: 3.3.0
+  version: 3.3.1
   description: |
     REST API for DBackup - a self-hosted database backup automation platform with encryption, compression, and smart retention.
 
@@ -543,6 +543,82 @@ paths:
                           type: integer
                         partial:
                           type: integer
+
+  /dashboard/stats:
+    get:
+      tags: [Dashboard]
+      summary: Dashboard Statistics
+      description: |
+        Returns the figures shown on the dashboard overview cards. Intended for homepage
+        widgets and monitoring, so a key for this endpoint needs no access to jobs, history,
+        or storage.
+
+        `totalSnapshots` and `totalStorageBytes` come from the storage statistics cache, which
+        is refreshed hourly by default and after backups, retention runs, and file deletions.
+        `storageUpdatedAt` tells how old they are.
+
+        **Required permission:** `dashboard:read`
+      operationId: getDashboardStats
+      security:
+        - BearerAuth: []
+      responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "200":
+          description: Dashboard statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      totalJobs:
+                        type: integer
+                        description: Configured backup jobs
+                        example: 8
+                      activeSchedules:
+                        type: integer
+                        description: Enabled jobs with a schedule
+                        example: 8
+                      totalSnapshots:
+                        type: integer
+                        description: Backup files across all destinations
+                        example: 122
+                      totalStorageBytes:
+                        type: integer
+                        format: int64
+                        description: Size of all backup files across all destinations, in bytes
+                        example: 55179592335
+                      successRate30d:
+                        type: integer
+                        minimum: 0
+                        maximum: 100
+                        description: |
+                          Percentage of successful executions in the last 30 days, counting only
+                          successful and failed runs. `100` when there were none.
+                        example: 100
+                      success24h:
+                        type: integer
+                        description: Successful executions in the last 24 hours
+                        example: 29
+                      failed24h:
+                        type: integer
+                        description: Failed executions in the last 24 hours
+                        example: 0
+                      storageUpdatedAt:
+                        type: [string, "null"]
+                        format: date-time
+                        description: |
+                          When the storage figures were last refreshed. `null` when no scan has
+                          completed yet, in which case the figures are estimated from execution history.
+                        example: "2026-09-13T10:00:00.000Z"
 
   # ─── Adapters ──────────────────────────────────────────────────
   /adapters/check-snapshot:

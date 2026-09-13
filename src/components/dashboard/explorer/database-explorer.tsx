@@ -192,10 +192,10 @@ export function DatabaseExplorer({ sources, canBrowse }: DatabaseExplorerProps) 
                                 className="w-full justify-between"
                             >
                                 {selectedAdapter ? (
-                                    <span className="flex items-center gap-2">
-                                        <AdapterIcon adapterId={selectedAdapter.adapterId} className="h-4 w-4" />
-                                        {selectedAdapter.name}
-                                        <span className="text-xs text-muted-foreground">({selectedAdapter.adapterId})</span>
+                                    <span className="flex items-center gap-2 min-w-0">
+                                        <AdapterIcon adapterId={selectedAdapter.adapterId} className="h-4 w-4 shrink-0" />
+                                        <span className="truncate">{selectedAdapter.name}</span>
+                                        <span className="text-xs text-muted-foreground shrink-0">({selectedAdapter.adapterId})</span>
                                     </span>
                                 ) : (
                                     "Select Source..."

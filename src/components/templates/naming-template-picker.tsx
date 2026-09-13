@@ -77,7 +77,7 @@ export function NamingTemplatePicker({ value, onChange, placeholder, allowNone }
             role="combobox"
             aria-expanded={open}
             disabled={loading}
-            className="w-full justify-between font-normal"
+            className="w-full min-w-0 justify-between font-normal"
           >
             {loading ? (
               <span className="flex items-center gap-2 text-muted-foreground">
@@ -85,20 +85,20 @@ export function NamingTemplatePicker({ value, onChange, placeholder, allowNone }
                 Loading...
               </span>
             ) : selected ? (
-              <span className="flex items-center gap-2">
-                <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-                {selected.name}
+              <span className="flex items-center gap-2 min-w-0">
+                <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <span className="truncate">{selected.name}</span>
                 {selected.isDefault && (
-                  <Badge variant="outline" className="text-xs ml-1 border-yellow-500 text-yellow-600">
+                  <Badge variant="outline" className="text-xs ml-1 shrink-0 border-yellow-500 text-yellow-600">
                     Default
                   </Badge>
                 )}
               </span>
             ) : defaultTemplate ? (
-              <span className="flex items-center gap-2">
-                <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-muted-foreground">{defaultTemplate.name}</span>
-                <Badge variant="outline" className="text-xs ml-1 border-yellow-500/50 text-yellow-600/70">
+              <span className="flex items-center gap-2 min-w-0">
+                <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <span className="truncate text-muted-foreground">{defaultTemplate.name}</span>
+                <Badge variant="outline" className="text-xs ml-1 shrink-0 border-yellow-500/50 text-yellow-600/70">
                   Default
                 </Badge>
               </span>

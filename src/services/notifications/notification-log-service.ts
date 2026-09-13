@@ -6,6 +6,7 @@
  */
 
 import prisma from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 
@@ -32,11 +33,17 @@ export interface NotificationLogEntry {
 export interface NotificationLogQuery {
   page?: number;
   pageSize?: number;
-  adapterId?: string;
-  eventType?: string;
-  status?: string;
+  /** One value or several, matched as any-of. */
+  adapterId?: string | string[];
+  eventType?: string | string[];
+  status?: string | string[];
   executionId?: string;
+  /** Free text, matched against the notification title. */
+  search?: string;
 }
+
+export const NOTIFICATION_LOG_MAX_PAGE_SIZE = 100;
+export const NOTIFICATION_LOG_DEFAULT_PAGE_SIZE = 50;
 
 // ── Write ──────────────────────────────────────────────────────
 
@@ -73,17 +80,61 @@ export async function recordNotificationLog(
 
 // ── Read ───────────────────────────────────────────────────────
 
+/** A single value stays an equality match, several become an any-of match. */
+function toList(value: string | string[] | undefined): string | { in: string[] } | undefined {
+  if (value === undefined) return undefined;
+  const list = (Array.isArray(value) ? value : [value]).map((v) => v.trim()).filter(Boolean);
+  if (list.length === 0) return undefined;
+  return list.length === 1 ? list[0] : { in: list };
+}
+
+function normalizePageSize(value: number | undefined): number {
+  if (!value || !Number.isFinite(value) || value < 1) return NOTIFICATION_LOG_DEFAULT_PAGE_SIZE;
+  return Math.min(Math.floor(value), NOTIFICATION_LOG_MAX_PAGE_SIZE);
+}
+
+/** Prisma `where` for a query. Exported for tests. */
+export function buildNotificationLogWhere(query: NotificationLogQuery): Prisma.NotificationLogWhereInput {
+  const { adapterId, eventType, status, executionId, search } = query;
+  const where: Prisma.NotificationLogWhereInput = {};
+  const adapterIds = toList(adapterId);
+  if (adapterIds) where.adapterId = adapterIds;
+  const eventTypes = toList(eventType);
+  if (eventTypes) where.eventType = eventTypes;
+  const statuses = toList(status);
+  if (statuses) where.status = statuses;
+  if (executionId) where.executionId = executionId;
+  const term = search?.trim();
+  if (term) where.title = { contains: term };
+  return where;
+}
+
+/** Counts per value for the faceted filters on the Notification Logs tab. */
+export interface NotificationLogFacets {
+  adapterId: Record<string, number>;
+  status: Record<string, number>;
+}
+
+/** Per-option counts. Each column honours every other active filter but not its own. */
+export async function getNotificationLogFacets(query: NotificationLogQuery = {}): Promise<NotificationLogFacets> {
+  const count = async (column: "adapterId" | "status") => {
+    const where = buildNotificationLogWhere({ ...query, [column]: undefined });
+    const groups = await prisma.notificationLog.groupBy({ by: [column], where, _count: { _all: true } });
+    const result: Record<string, number> = {};
+    for (const g of groups) result[g[column]] = g._count._all;
+    return result;
+  };
+  const [adapterId, status] = await Promise.all([count("adapterId"), count("status")]);
+  return { adapterId, status };
+}
+
 /**
  * Fetch notification logs with pagination and optional filters.
  */
 export async function getNotificationLogs(query: NotificationLogQuery = {}) {
-  const { page = 1, pageSize = 50, adapterId, eventType, status, executionId } = query;
-
-  const where: Record<string, unknown> = {};
-  if (adapterId) where.adapterId = adapterId;
-  if (eventType) where.eventType = eventType;
-  if (status) where.status = status;
-  if (executionId) where.executionId = executionId;
+  const page = query.page && query.page > 0 ? Math.floor(query.page) : 1;
+  const pageSize = normalizePageSize(query.pageSize);
+  const where = buildNotificationLogWhere(query);
 
   const [data, total] = await Promise.all([
     prisma.notificationLog.findMany({

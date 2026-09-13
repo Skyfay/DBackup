@@ -128,7 +128,7 @@ export function CredentialPicker({
                         role="combobox"
                         aria-expanded={open}
                         disabled={loading}
-                        className="w-full justify-between font-normal"
+                        className="w-full min-w-0 justify-between font-normal"
                     >
                         {loading ? (
                             <span className="flex items-center gap-2 text-muted-foreground">
@@ -136,7 +136,7 @@ export function CredentialPicker({
                                 Loading...
                             </span>
                         ) : selected ? (
-                            selected.name
+                            <span className="truncate">{selected.name}</span>
                         ) : (
                             <span className="text-muted-foreground">None</span>
                         )}

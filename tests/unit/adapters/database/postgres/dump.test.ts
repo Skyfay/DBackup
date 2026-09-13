@@ -54,6 +54,24 @@ function dumpHost(kind: HostKind, opts: { stderr?: string; code?: number } = {})
     return createFakeHost({ kind, onSpawn: () => opts });
 }
 
+/**
+ * A host whose exit code arrives only after stdout has closed and been flushed,
+ * which is the order a real connect-time failure produces. The fake host's
+ * default exit resolves immediately and never exercises that race.
+ */
+function lateExitHost(kind: HostKind, code: number): FakeHost {
+    const host = createFakeHost({ kind });
+    const spawn = host.spawn.bind(host);
+    host.spawn = async (argv, opts) => {
+        const proc = await spawn(argv, opts);
+        return {
+            ...proc,
+            exit: () => new Promise((resolve) => setTimeout(() => resolve({ code }), 20)),
+        };
+    };
+    return host;
+}
+
 describe.each<HostKind>(["direct", "ssh"])("PostgreSQL dump over a %s host", (kind) => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -117,6 +135,21 @@ describe.each<HostKind>(["direct", "ssh"])("PostgreSQL dump over a %s host", (ki
 
         expect(result.success).toBe(false);
         expect(result.error).toContain("exited with code 1");
+    });
+
+    it("fails when pg_dump exits non-zero after its output was already flushed", async () => {
+        const result = await dump(baseConfig as never, "/tmp/out.dump", lateExitHost(kind, 1));
+
+        expect(result.success).toBe(false);
+        expect(result.error).toContain("exited with code 1");
+    });
+
+    it("fails when pg_dump exits zero but wrote nothing", async () => {
+        mockFsStat.mockResolvedValue({ size: 0 });
+        const result = await dump(baseConfig as never, "/tmp/out.dump", dumpHost(kind));
+
+        expect(result.success).toBe(false);
+        expect(result.error).toContain("is empty");
     });
 
     it("forwards real stderr but filters NOTICE lines", async () => {

@@ -2,6 +2,38 @@
 
 All notable changes to DBackup are documented here.
 
+## v3.3.1 - Dashboard Stats Endpoint, Bug and Security Fixes
+*Released: Sep 13, 2026*
+
+### ✨ Features
+
+- **api**: New `GET /api/dashboard/stats` endpoint returns the figures from the dashboard overview cards for homepage widgets and monitoring. It needs the new `dashboard:read` permission. ([#155](https://github.com/Skyfay/DBackup/issues/155))
+
+### 🐛 Bug Fixes
+
+- **postgres**: A `pg_dump` that fails at connect time, for an unreachable host or a wrong password, now fails the backup instead of shipping an empty file to every destination as a successful run. The same race is closed for `mysqldump` on MySQL and MariaDB. ([#154](https://github.com/Skyfay/DBackup/issues/154))
+- **runner**: The stage a backup failed in is now closed with a red **failed** line in the execution log instead of a green **completed** one.
+- **history**: Activity Logs, System Tasks and Notification Logs now page through the whole history on the server instead of stopping at the newest 100 entries. Nothing was ever deleted, older runs were only hidden.
+- **history**: The Status filter on Activity Logs and System Tasks now offers **Partial**, which was missing even though partial runs appear in the list.
+- **ui**: Long connection, destination and template names in dropdowns are now cut off with an ellipsis instead of overflowing into neighbouring fields and buttons. ([#158](https://github.com/Skyfay/DBackup/issues/158))
+
+### 🔒 Security
+
+- **deps**: Next.js is updated to 16.3.5, which closes two critical advisories in the image optimizer and on Windows hosts. The bundled sharp is raised to 0.35.4 for the same libheif fix.
+- **deps**: nodemailer is updated to 9.1.1 and the pinned brace-expansion versions are raised, closing four high advisories in the email notifier and in file source exclude patterns.
+
+### 🔄 Changed
+
+- **api**: `GET /api/history` accepts `page`, `pageSize`, `scope`, `type`, `status`, `trigger`, `search` and `facets` query parameters and returns the total count. Without parameters it still returns the newest 100 executions.
+
+### 🐳 Docker
+
+- **Image**: `skyfay/dbackup:v3.3.1`
+- **Also tagged as**: `latest`, `v3`
+- **CI Image**: `skyfay/dbackup:ci`
+- **Platforms**: linux/amd64, linux/arm64
+
+
 ## v3.3.0 - Azure SQL Database Support, S3 Upload Rework and General Improvements
 *Released: Aug 15, 2026*
 

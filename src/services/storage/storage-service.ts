@@ -788,6 +788,8 @@ export class StorageService {
                 return { success: true, isZip: false, fileName };
             }
 
+            // LEGACY-FORMAT(shared): Whole-file decryption. Older database backups need it, and so do config
+            // backups, which still use that format.
             const success = await adapter.download(config, remotePath, localDestination);
             if (!success) return { success: false };
 
@@ -860,6 +862,8 @@ export class StorageService {
             }
        }
 
+       // LEGACY-FORMAT(shared): An encrypted file downloaded as-is, zipped with its metadata. Serves older
+       // database backups and config backups alike.
        if (remotePath.endsWith('.enc')) {
            const tempDir = path.dirname(localDestination);
            const baseName = path.basename(remotePath);

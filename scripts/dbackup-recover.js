@@ -736,6 +736,7 @@ function matchesAny(filePath, patterns) {
  *
  * @returns Absolute paths of everything written.
  */
+// LEGACY-FORMAT(shared): Whole-file decryption for older database backups and config backups.
 async function restoreWholeFile(inputPath, hexKey, outputDir, databases) {
     const metaPath = `${inputPath}.meta.json`;
     if (!fs.existsSync(metaPath)) {
@@ -816,6 +817,8 @@ async function restoreWholeFile(inputPath, hexKey, outputDir, databases) {
  *
  * @returns Paths written, or null when the file is not a multi-database archive.
  */
+// LEGACY-FORMAT(read): Unpacks the multi-database TAR that database-only jobs wrote before the
+// seekable archive.
 async function unpackMultiDbTar(tarPath, outputDir, selection) {
     let fd;
     let members;

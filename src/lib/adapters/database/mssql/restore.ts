@@ -78,6 +78,9 @@ export async function prepareRestore(config: MSSQLRestoreConfig, databases: stri
 /**
  * Restore MSSQL database from .bak file
  */
+// LEGACY-FORMAT(read): Restores backups written before the seekable archive, a single dump
+// file or a TAR of dumps. New backups go through restoreOne(). Remove once those backups no
+// longer need restoring.
 export async function restore(
     config: MSSQLRestoreConfig,
     sourcePath: string,

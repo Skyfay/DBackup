@@ -31,6 +31,8 @@ export interface BackupMetadata {
     originalFileName: string;
     sourceId: string;
     locked?: boolean;
+    // LEGACY-FORMAT(shared): Whole-file compression and encryption. Older database backups carry these,
+    // and so do config backups, which still use that format. Keep them for the config backups.
     compression?: 'GZIP' | 'BROTLI';
     encryption?: {
         enabled: boolean;
@@ -40,6 +42,7 @@ export interface BackupMetadata {
         authTag: string;
     };
     /** Multi-DB TAR archive metadata */
+    // LEGACY-FORMAT(read): Only set on older multi-database TAR backups.
     multiDb?: {
         format: 'tar';
         /** Database names contained in the archive */
@@ -285,6 +288,8 @@ export interface DatabaseAdapter extends BaseAdapter {
      * @param onLog Optional callback for live logs
      * @param onProgress Optional callback for progress (0-100)
      */
+    // LEGACY-FORMAT(write): No job calls dump() anymore, every backup is produced by dumpOne().
+    // Remove it from the interface and from every adapter.
     dump(config: AdapterConfig, destinationPath: string, host: ExecutionHost, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void, onProgress?: (percentage: number) => void): Promise<BackupResult>;
 
     /**
@@ -295,11 +300,15 @@ export interface DatabaseAdapter extends BaseAdapter {
      * @param onLog Optional callback for live logs
      * @param onProgress Optional callback for progress (0-100)
      */
+    // LEGACY-FORMAT(read): Only backups written before the seekable archive reach restore(). New
+    // backups are restored through restoreOne(). Remove it once those backups no longer need restoring.
     restore(config: AdapterConfig, sourcePath: string, host: ExecutionHost, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void, onProgress?: (percentage: number, detail?: string) => void): Promise<BackupResult>;
 
     /**
      * Optional method to analyze a dump file and return contained databases
      */
+    // LEGACY-FORMAT(read): Lists the databases of a backup file written before the seekable
+    // archive. A seekable archive is listed from its index instead.
     analyzeDump?: (sourcePath: string) => Promise<string[]>;
 
     /**

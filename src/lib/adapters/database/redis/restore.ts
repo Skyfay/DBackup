@@ -75,6 +75,8 @@ export async function prepareRestore(
  * - Docker volume mounting for containerized Redis
  * - Using RESTORE command for individual keys (very slow)
  */
+// LEGACY-FORMAT(read): Part of DatabaseAdapter.restore, which only older backups reach.
+// restoreOne() wraps it, so move the body into restoreOne() when restore() leaves the interface.
 export async function restore(
     config: RedisRestoreConfig,
     sourcePath: string,

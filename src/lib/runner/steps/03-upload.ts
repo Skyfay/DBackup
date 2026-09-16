@@ -58,6 +58,10 @@ export async function stepUpload(ctx: RunnerContext) {
         ctx.updateStageProgress(percent);
     });
 
+    // LEGACY-FORMAT(write): The whole-file compression and encryption below only ran for the older
+    // backup formats. Every job now produces a seekable archive, which isSeekableArchive exempts, so
+    // this is unreachable. Remove it along with the compression, encryption and multiDb fields it
+    // writes into the metadata sidecar.
     // 1. Compression Step
     let compressionMeta: CompressionType | undefined = undefined;
     if (compression && compression !== 'NONE') {

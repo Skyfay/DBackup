@@ -42,6 +42,9 @@ interface RestoreItem {
  * Every target is a database that does not exist yet, which prepareRestore has
  * already verified. SqlPackage creates it as part of the import.
  */
+// LEGACY-FORMAT(read): Restores backups written before the seekable archive, a single dump
+// file or a TAR of dumps. New backups go through restoreOne(). Remove once those backups no
+// longer need restoring.
 export async function restore(
     config: AzureSQLRestoreConfig,
     sourcePath: string,
@@ -237,6 +240,8 @@ function resolveSingleTarget(config: AzureSQLRestoreConfig): string {
  * Implementing this saves the analyze route a full download of the archive purely
  * to answer what is inside it.
  */
+// LEGACY-FORMAT(read): Lists the databases of a backup file written before the seekable
+// archive. A seekable archive is listed from its index instead.
 export async function analyzeDump(sourcePath: string): Promise<string[]> {
     try {
         if (await isMultiDbTar(sourcePath)) {

@@ -72,6 +72,7 @@ export function RedisRestoreWizard({ file, destinationId, onCancel, engineName =
     const engineLower = engineName.toLowerCase();
     // A seekable archive downloads as the RDB entry it holds, named after the backup, not as
     // the archive file itself.
+    // LEGACY-FORMAT(read): The file.name branch is for Redis backups written before the seekable archive.
     const downloadedName = file.hasFileIndex
         ? databaseDownloadFileName(file.name, REDIS_SNAPSHOT_ENTRY, "rdb")
         : file.name;

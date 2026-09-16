@@ -9,7 +9,7 @@ Node.js runtime exist - DBackup itself is not required.
 ::: info Which backups use this format
 Every backup job writes a v2 archive, whether it backs up databases, directory sources or both. Each database is its own entry, so a single database can be restored or downloaded by byte range.
 
-Backups written by earlier versions for jobs that backed up **only databases** use the older format: a single dump file, or a plain multi-database TAR (manifest version 1), compressed and encrypted as a whole. DBackup still restores and downloads them, and `dbackup-recover.js --decrypt` recovers them offline.
+Backups written by earlier versions for jobs that backed up **only databases** use the older format: a single dump file, or a plain multi-database TAR (manifest version 1), compressed and encrypted as a whole. DBackup still restores and downloads them, and `dbackup-recover.js --decrypt` recovers them offline. The code that exists only for them is listed in [Older Backup Formats](/developer-guide/reference/legacy-backup-formats).
 :::
 
 ## Design goals

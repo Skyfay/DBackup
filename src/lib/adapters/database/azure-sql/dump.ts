@@ -31,6 +31,8 @@ const CONSISTENCY_NOTICE =
  * into the shared multi-database TAR with a real manifest, which is what lets the
  * runner rename the file and record the database names without opening it.
  */
+// LEGACY-FORMAT(write): Writes a backup in the format used before the seekable archive.
+// No job calls it anymore, only tests do. Remove it together with DatabaseAdapter.dump.
 export async function dump(
     config: AzureSQLConfig,
     destinationPath: string,

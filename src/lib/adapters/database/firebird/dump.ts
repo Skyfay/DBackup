@@ -80,6 +80,8 @@ export async function dumpOne(
     return { size: result.size };
 }
 
+// LEGACY-FORMAT(write): Writes a backup in the format used before the seekable archive.
+// No job calls it anymore, only tests do. Remove it together with DatabaseAdapter.dump.
 export async function dump(
     config: FirebirdDumpConfig,
     destinationPath: string,

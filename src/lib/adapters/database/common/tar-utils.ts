@@ -5,6 +5,10 @@
  * src/lib/archive/). No job writes it anymore, but backups in it stay restorable, and every
  * adapter's restore() reads them through the helpers here. The restore pipeline tells the two
  * apart from the backup's metadata, and refuses a v2 manifest that reaches the v1 path.
+ *
+ * LEGACY-FORMAT(read): Everything in this file serves the older format, except createTempDir,
+ * cleanupTempDir, shouldRestoreDatabase and getTargetDatabaseName, which the seekable archive
+ * uses too. Move those four elsewhere before deleting the file.
  */
 
 import { createReadStream, createWriteStream, existsSync } from "fs";
@@ -32,6 +36,9 @@ export const MANIFEST_FILENAME = "manifest.json";
  * @param options - Options including sourceType and engineVersion
  * @returns The created manifest
  */
+// LEGACY-FORMAT(write): Builds the multi-database TAR no job writes anymore. The adapters' dump()
+// and the tests that need an older backup as a fixture still use it. Keep a copy for those tests
+// until the read side is removed too.
 export async function createMultiDbTar(
     files: TarFileEntry[],
     destinationPath: string,

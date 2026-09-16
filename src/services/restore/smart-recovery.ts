@@ -32,6 +32,8 @@ export function legacyStreamVerifier(
  * A thin binding of the shared resolver to this format's verifier - the ordering, the
  * Smart Recovery walk and the error it raises all live in `resolveBackupKey`.
  */
+// LEGACY-FORMAT(shared): Key discovery for whole-file encryption. Older database backups and config
+// backups both depend on it.
 export async function resolveDecryptionKey(
     encryptionMeta: NonNullable<BackupMetadata['encryption']>,
     tempFile: string,
@@ -54,6 +56,7 @@ export const HEAD_PROBE_SIZE = 1024;
  * Same check against bytes already in hand, for callers that fetched the head themselves
  * rather than having the whole backup on disk - a ranged read from a storage adapter, say.
  */
+// LEGACY-FORMAT(shared): Serves older database backups and config backups alike.
 export function legacyHeadVerifier(
     encryptionMeta: StreamCipherParams,
     head: Buffer,

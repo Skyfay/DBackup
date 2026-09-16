@@ -28,7 +28,7 @@ All notable changes to DBackup are documented here.
 
 ### 📝 Documentation
 
-- **docs**: The restore, Storage Explorer, Recovery Kit, API and archive format guides describe single database restores and downloads out of a seekable archive.
+- **docs**: The restore, Storage Explorer, Recovery Kit, API and archive format guides describe single database restores and downloads out of a seekable archive. A new developer page lists the code that still serves the older backup formats.
 
 ### 🧪 Tests
 

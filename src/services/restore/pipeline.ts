@@ -195,6 +195,8 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
                     log("Detected seekable (v2) archive.", 'info');
                 }
 
+                // LEGACY-FORMAT(read): The encryption, compression and checksum fields below only exist on
+                // database backups written before the seekable archive.
                 if (!seekableArchive && metadata.encryption && metadata.encryption.enabled) {
                     isEncrypted = true;
                     encryptionMeta = metadata.encryption;
@@ -236,6 +238,8 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
             const message = e instanceof Error ? e.message : String(e);
             log(`Warning: Failed to check sidecar metadata: ${message}`, 'warning');
 
+            // LEGACY-FORMAT(read): Guessing from the extension only helps an older backup whose metadata
+            // could not be read.
             // Fallback: Extension based detection
             if (file.endsWith('.enc')) {
                 log("Fallback: Detected encryption via .enc extension", 'warning');
@@ -311,6 +315,11 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
             return;
         }
         // --- END SEEKABLE (v2) ARCHIVE ---
+
+        // LEGACY-FORMAT(read): Everything below restores backups written before the seekable archive.
+        // Full download, whole-file checksum, decryption, decompression, then adapter.restore(). Once
+        // those backups no longer need restoring, a backup without an archive marker can be rejected
+        // here instead, and the missing-sidecar guard below becomes that rejection.
 
         log(`Downloading backup file: ${file}...`, 'info');
         const downloadStartTime = Date.now();

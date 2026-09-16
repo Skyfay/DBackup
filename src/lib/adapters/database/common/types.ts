@@ -7,6 +7,8 @@
  *
  * No job writes this format anymore, every backup is a seekable v2 archive whose types live
  * in src/lib/archive/types.ts. These types remain for restoring older backups.
+ *
+ * LEGACY-FORMAT(read): The whole file goes when older backups no longer need restoring.
  */
 
 /**

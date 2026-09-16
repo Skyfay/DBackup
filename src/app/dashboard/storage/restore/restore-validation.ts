@@ -31,6 +31,8 @@ export interface RestoreValidationInput {
 }
 
 export interface RestoreValidity {
+    // LEGACY-FORMAT(read): Only older database backups end up in classic mode. Once those are gone it is
+    // always false and the branches depending on it can go.
     /** v1 archives and plain dumps: nothing was analyzed, classic semantics apply. */
     classicMode: boolean;
     dbTargetNeeded: boolean;

@@ -33,6 +33,8 @@ export function databaseCountOf(file: DownloadableBackup): number {
 }
 
 export function getDownloadOptions(file: DownloadableBackup): DownloadOptions {
+    // LEGACY-FORMAT(shared): Rows without a file index are older database backups and config backups.
+    // Keep this branch for the config backups.
     if (!file.hasFileIndex) {
         return {
             raw: { label: file.isEncrypted ? "Download Encrypted (.enc)" : "Download" },

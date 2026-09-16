@@ -3,6 +3,9 @@ import crypto from 'crypto';
 
 const ALGORITHM = 'aes-256-gcm';
 
+// LEGACY-FORMAT(shared): Whole-file AES-GCM. No database backup is written this way anymore, but
+// config backups are, and older database backups are read with it. Seekable archives use
+// entry-cipher.ts instead.
 export interface EncryptionStreamResult {
   stream: Transform;
   getAuthTag: () => Buffer;

@@ -80,7 +80,9 @@ Every backup is a seekable archive (`src/lib/archive/`). The runner calls `dumpO
 
 ### Older backups (read only)
 
-Database-only jobs used to write a single dump file, or a TAR with `manifest.json` plus one dump per database (`database/common/tar-utils.ts`, `database/common/types.ts`). No job writes these anymore, but every adapter's `restore()` must keep reading them, so existing backups stay restorable. Do not remove that branch from an adapter.
+Database-only jobs used to write a single dump file, or a TAR with `manifest.json` plus one dump per database (`database/common/tar-utils.ts`, `database/common/types.ts`). No job writes these anymore, but every adapter's `restore()` must keep reading them, so existing backups stay restorable. Do not remove that branch from an adapter on the side.
+
+Code that exists only for these formats carries a `LEGACY-FORMAT(write|read|shared)` comment. Mark new code of that kind the same way, and remove it only by following `docs/developer-guide/reference/legacy-backup-formats.md`.
 
 ## Security
 

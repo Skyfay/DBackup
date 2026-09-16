@@ -40,6 +40,8 @@ async function backupExisting(
     }
 }
 
+// LEGACY-FORMAT(read): Part of DatabaseAdapter.restore, which only older backups reach.
+// restoreOne() wraps it, so move the body into restoreOne() when restore() leaves the interface.
 export const restore: DatabaseAdapter["restore"] = async (config, sourcePath, host, onLog, onProgress) => {
     const startedAt = new Date();
     const logs: string[] = [];

@@ -13,6 +13,8 @@ import { getDatabases } from "./connection";
  * temp file whose bytes are fetched and cleaned up afterwards. The SSH path used
  * to do that by hand and then stream the file back with `cat`.
  */
+// LEGACY-FORMAT(write): Part of DatabaseAdapter.dump, which no job calls anymore. dumpOne()
+// wraps it, so move the body into dumpOne() when dump() leaves the interface.
 export const dump: DatabaseAdapter["dump"] = async (config, destinationPath, host, onLog, onProgress) => {
     const startedAt = new Date();
     const logs: string[] = [];

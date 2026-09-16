@@ -16,6 +16,8 @@ import { AdapterError } from "@/lib/logging/errors";
  *
  * Note: the RDB contains ALL databases (0-15), not only the selected one.
  */
+// LEGACY-FORMAT(write): Part of DatabaseAdapter.dump, which no job calls anymore. dumpOne()
+// wraps it, so move the body into dumpOne() when dump() leaves the interface.
 export async function dump(
     config: RedisConfig,
     destinationPath: string,

@@ -96,6 +96,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
                         // index is read from the downloaded archive instead.
                     }
 
+                    // LEGACY-FORMAT(read): Shortcuts for older backups, which list their databases in the metadata.
                     if (!seekableArchiveMeta && !(meta.combined && meta.combined.directorySources > 0)) {
                         if (meta.databases) {
                              if (Array.isArray(meta.databases.names) && meta.databases.names.length > 0) {
@@ -139,6 +140,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
             if (summary) return NextResponse.json(summary);
         }
 
+        // LEGACY-FORMAT(read): Analyzing a downloaded file only applies to backups written before the
+        // seekable archive.
         let databases: string[] = [];
 
         // Try to find the correct adapter to analyze the file

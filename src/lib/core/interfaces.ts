@@ -31,6 +31,8 @@ export interface BackupMetadata {
     originalFileName: string;
     sourceId: string;
     locked?: boolean;
+    // LEGACY-FORMAT(shared): Whole-file compression and encryption. Older database backups carry these,
+    // and so do config backups, which still use that format. Keep them for the config backups.
     compression?: 'GZIP' | 'BROTLI';
     encryption?: {
         enabled: boolean;
@@ -40,6 +42,7 @@ export interface BackupMetadata {
         authTag: string;
     };
     /** Multi-DB TAR archive metadata */
+    // LEGACY-FORMAT(read): Only set on older multi-database TAR backups.
     multiDb?: {
         format: 'tar';
         /** Database names contained in the archive */
@@ -285,6 +288,8 @@ export interface DatabaseAdapter extends BaseAdapter {
      * @param onLog Optional callback for live logs
      * @param onProgress Optional callback for progress (0-100)
      */
+    // LEGACY-FORMAT(write): No job calls dump() anymore, every backup is produced by dumpOne().
+    // Remove it from the interface and from every adapter.
     dump(config: AdapterConfig, destinationPath: string, host: ExecutionHost, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void, onProgress?: (percentage: number) => void): Promise<BackupResult>;
 
     /**
@@ -295,11 +300,15 @@ export interface DatabaseAdapter extends BaseAdapter {
      * @param onLog Optional callback for live logs
      * @param onProgress Optional callback for progress (0-100)
      */
+    // LEGACY-FORMAT(read): Only backups written before the seekable archive reach restore(). New
+    // backups are restored through restoreOne(). Remove it once those backups no longer need restoring.
     restore(config: AdapterConfig, sourcePath: string, host: ExecutionHost, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void, onProgress?: (percentage: number, detail?: string) => void): Promise<BackupResult>;
 
     /**
      * Optional method to analyze a dump file and return contained databases
      */
+    // LEGACY-FORMAT(read): Lists the databases of a backup file written before the seekable
+    // archive. A seekable archive is listed from its index instead.
     analyzeDump?: (sourcePath: string) => Promise<string[]>;
 
     /**
@@ -315,11 +324,9 @@ export interface DatabaseAdapter extends BaseAdapter {
     getTableData?: (config: AdapterConfig, options: TableDataOptions, host: ExecutionHost) => Promise<TableDataResult>;
 
     /**
-     * Optional: dumps a single named database to a plain local file, without any
-     * TAR/manifest wrapping. Adapters that implement this expose the same per-database
-     * logic `dump()` already uses internally for its own multi-DB case - it is a capability
-     * export, not new dump logic. Presence of this method is what makes a database source
-     * combinable with directory sources (JobSource) in one backup job.
+     * Dumps a single named database to a plain local file, without any TAR/manifest
+     * wrapping. Every backup is a seekable archive holding one entry per database, and this
+     * is how each entry is produced. Throws on failure.
      */
     dumpOne?(
         config: AdapterConfig,
@@ -330,9 +337,8 @@ export interface DatabaseAdapter extends BaseAdapter {
     ): Promise<{ size: number }>;
 
     /**
-     * Optional: restores a single plain dump file (as produced by dumpOne) into a single
-     * target database. Counterpart to dumpOne - required for the same combined-backup
-     * capability during restore.
+     * Restores a single plain dump file (as produced by dumpOne) into a single target
+     * database. Counterpart to dumpOne, used for every seekable archive. Throws on failure.
      * @param originalDbName The database's original name at backup time (needed by adapters
      * that must rewrite embedded USE/CREATE DATABASE statements when restoring to a renamed target).
      */
@@ -345,6 +351,14 @@ export interface DatabaseAdapter extends BaseAdapter {
         onProgress?: (percentage: number, detail?: string) => void,
         originalDbName?: string
     ): Promise<void>;
+
+    /**
+     * Optional: the entries a backup of this source consists of, for sources whose snapshot
+     * cannot be split per database. Redis writes one RDB holding every logical database, and
+     * a SQLite source is a single file. Without it, the job's selection is used, or
+     * getDatabases() when nothing is selected.
+     */
+    listDumpEntries?(config: AdapterConfig, selected: string[], host: ExecutionHost): Promise<string[]>;
 }
 
 export type FileInfo = {

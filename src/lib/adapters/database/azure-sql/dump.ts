@@ -31,6 +31,8 @@ const CONSISTENCY_NOTICE =
  * into the shared multi-database TAR with a real manifest, which is what lets the
  * runner rename the file and record the database names without opening it.
  */
+// LEGACY-FORMAT(write): Writes a backup in the format used before the seekable archive.
+// No job calls it anymore, only tests do. Remove it together with DatabaseAdapter.dump.
 export async function dump(
     config: AzureSQLConfig,
     destinationPath: string,
@@ -91,6 +93,34 @@ export async function dump(
             completedAt: new Date(),
         };
     }
+}
+
+/**
+ * Export one database to a plain BACPAC at destinationPath, without the multi-database TAR.
+ *
+ * The consistency notice is logged for every database, because each export is its own
+ * window in which writes can make the package inconsistent.
+ */
+export async function dumpOne(
+    config: AzureSQLConfig,
+    dbName: string,
+    destinationPath: string,
+    host: ExecutionHost,
+    onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void,
+): Promise<{ size: number }> {
+    const log = (msg: string, level: LogLevel = "info", type: LogType = "general", details?: string) =>
+        onLog?.(msg, level, type, details);
+
+    log(CONSISTENCY_NOTICE, "warning");
+    await host.captureOutput(destinationPath, {}, (hostPath) =>
+        resolveExporter().exportDatabase(config, dbName, hostPath, host, log),
+    );
+
+    const stats = await fs.stat(destinationPath);
+    if (stats.size === 0) {
+        throw new Error("Export produced an empty file. Check the run log for SqlPackage errors.");
+    }
+    return { size: stats.size };
 }
 
 /** The job's database selection, or every user database when nothing was picked. */

@@ -1,10 +1,11 @@
 import type { ExecutionHost } from "@/lib/transport";
 import { BackupResult } from "@/lib/core/interfaces";
 import { LogLevel, LogType } from "@/lib/core/logs";
-import { assertBackupSupported, executeQuery, executeParameterizedQuery, executeQueryWithMessages, type SqlServerMessage } from "./connection";
+import { assertBackupSupported, executeParameterizedQuery } from "./connection";
 import { getDialect } from "./dialects";
-import { assertValidDatabaseName, toPhysicalFileName } from "./identifiers";
-import { buildMoveTargets, getInstanceDefaultPaths, joinServerPath, serverDirname, type MoveTarget } from "./server-paths";
+import { assertValidDatabaseName } from "./identifiers";
+import { joinServerPath } from "./server-paths";
+import { restoreBakFromServer } from "./restore-bak";
 import { isCompositeHost } from "@/lib/transport";
 import fs from "fs/promises";
 import { createReadStream, createWriteStream } from "fs";
@@ -77,6 +78,9 @@ export async function prepareRestore(config: MSSQLRestoreConfig, databases: stri
 /**
  * Restore MSSQL database from .bak file
  */
+// LEGACY-FORMAT(read): Restores backups written before the seekable archive, a single dump
+// file or a TAR of dumps. New backups go through restoreOne(). Remove once those backups no
+// longer need restoring.
 export async function restore(
     config: MSSQLRestoreConfig,
     sourcePath: string,
@@ -193,60 +197,7 @@ export async function restore(
                 const targetDb = targetDatabases.find(t => t.original === bakFile.dbName)
                     || targetDatabases[0]; // Fallback to first target if no match
 
-                log(`Restoring from: ${bakFile.serverPath}`);
-
-                // Get file list from backup to determine logical names
-                const fileListQuery = `RESTORE FILELISTONLY FROM DISK = N'${bakFile.serverPath.replace(/'/g, "''")}'`;
-                const fileListResult = await executeQuery(config, host, fileListQuery);
-
-                const logicalFiles = fileListResult.recordset.map((row: any) => ({
-                    logicalName: row.LogicalName,
-                    type: row.Type, // D = Data, L = Log
-                    physicalName: row.PhysicalName,
-                }));
-
-                log(`Backup contains ${logicalFiles.length} file(s)`);
-
-                log(`Restoring database: ${targetDb.original} -> ${targetDb.target}`);
-
-                // Only a rename needs MOVE. Restoring under the original name
-                // leaves the files where the backup already says they belong.
-                let moveOptions: MoveTarget[] | undefined;
-                if (targetDb.original !== targetDb.target) {
-                    // The target name becomes a filename here, so path separators have
-                    // to go - same substitution SQL Server applies to its own files.
-                    const fileBaseName = toPhysicalFileName(targetDb.target);
-                    const defaults = await getInstanceDefaultPaths(config, host);
-                    moveOptions = buildMoveTargets(logicalFiles, fileBaseName, defaults);
-
-                    const directory = moveOptions.length > 0 ? serverDirname(moveOptions[0].physicalPath) : null;
-                    if (directory) log(`Placing database files in: ${directory}`);
-                }
-
-                const restoreQuery = dialect.getRestoreQuery(targetDb.target, bakFile.serverPath, {
-                    replace: true,
-                    recovery: true,
-                    stats: 10,
-                    moveFiles: moveOptions,
-                });
-
-                log(`Executing restore`, "info", "command", restoreQuery);
-
-                try {
-                    // Use requestTimeout=0 (no timeout) - large DB restores can run for hours.
-                    // Stream progress messages in real-time so the UI shows live updates.
-                    await executeQueryWithMessages(config, host, restoreQuery, undefined, 0, (msg: SqlServerMessage) => {
-                        if (msg.message) {
-                            log(`SQL Server: ${msg.message}`, "info", "general");
-                        }
-                    });
-
-                    log(`Restore completed for: ${targetDb.target}`);
-                } catch (error: unknown) {
-                    const message = error instanceof Error ? error.message : String(error);
-                    log(`Restore failed for ${targetDb.target}: ${message}`, "error");
-                    throw error;
-                }
+                await restoreBakFromServer(config, host, dialect, bakFile.serverPath, targetDb, log);
 
                 // Remove this target from the list so we don't restore to it again
                 const idx = targetDatabases.indexOf(targetDb);

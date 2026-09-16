@@ -265,6 +265,7 @@ export default defineConfig({
           items: [
             { text: 'Environment Variables', link: '/developer-guide/reference/environment' },
             { text: 'Archive Format', link: '/developer-guide/reference/archive-format' },
+            { text: 'Older Backup Formats', link: '/developer-guide/reference/legacy-backup-formats' },
             { text: 'Database Schema', link: '/developer-guide/reference/schema' },
             { text: 'Supported Versions', link: '/developer-guide/reference/versions' },
             { text: 'Testing Guide', link: '/developer-guide/reference/testing' }

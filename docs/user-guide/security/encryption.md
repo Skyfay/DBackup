@@ -72,13 +72,22 @@ All future backups will be encrypted.
 
 ### Encrypted Backup Files
 
-Encrypted backups have the extension `.enc`:
+Every backup is a seekable archive that encrypts each database dump and each file as a separate entry, so one entry can be read without decrypting the rest. The archive keeps its `.tar` name, and the encryption parameters are stored inside it and in its `.meta.json`:
+```
+backup_2024-01-15.tar
+backup_2024-01-15.tar.index
+backup_2024-01-15.tar.meta.json
+```
+
+The layout is specified in the [Archive Format reference](/developer-guide/reference/archive-format).
+
+Backups written by earlier versions for database-only jobs are encrypted as a whole and carry the extension `.enc`:
 ```
 backup_2024-01-15.sql.gz.enc
 backup_2024-01-15.sql.gz.enc.meta.json
 ```
 
-The `.meta.json` file contains:
+Their `.meta.json` file contains:
 ```json
 {
   "encryption": {

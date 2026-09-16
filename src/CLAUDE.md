@@ -181,7 +181,7 @@ interface RestoreInput {
   file: string;
   targetSourceId: string;
   targetDatabaseName?: string;
-  databaseMapping?: Record<string, string>;   // multi-DB rename
+  databaseMapping?: Record<string, string> | DatabaseMappingEntry[]; // normalized to entries by RestoreService
   privilegedAuth?: { user: string; password: string }; // for CREATE DATABASE
 }
 ```

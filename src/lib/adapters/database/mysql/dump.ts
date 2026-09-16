@@ -86,6 +86,8 @@ export async function dumpOne(
     return { size: result.size };
 }
 
+// LEGACY-FORMAT(write): Writes a backup in the format used before the seekable archive.
+// No job calls it anymore, only tests do. Remove it together with DatabaseAdapter.dump.
 export async function dump(config: MySQLDumpConfig, destinationPath: string, _host: ExecutionHost, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void, _onProgress?: (percentage: number) => void): Promise<BackupResult> {
     const startedAt = new Date();
     const logs: string[] = [];

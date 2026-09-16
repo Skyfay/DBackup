@@ -317,6 +317,9 @@ export async function restoreOne(
     await restoreSingleFile(config, filePath, targetDbName, _host, onLog ?? (() => {}), onProgress, originalDbName);
 }
 
+// LEGACY-FORMAT(read): Restores backups written before the seekable archive, a single dump
+// file or a TAR of dumps. New backups go through restoreOne(). Remove once those backups no
+// longer need restoring.
 export async function restore(config: MySQLRestoreConfig, sourcePath: string, _host: ExecutionHost, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void, onProgress?: (percentage: number, detail?: string) => void): Promise<BackupResult> {
     const startedAt = new Date();
     const logs: string[] = [];

@@ -32,10 +32,15 @@ function decryptedFileName(file: string, isZip: boolean, decrypt = true): string
     return downloadFilename;
 }
 
-/** Shared helper: stream the tempFile back as a download response and schedule cleanup. */
-function buildDownloadResponse(tempFile: string, file: string, decrypt: boolean, isZip: boolean) {
+/**
+ * Shared helper: stream the tempFile back as a download response and schedule cleanup.
+ *
+ * `fileName` wins when the service named the result itself, which is what a database dump
+ * pulled out of a seekable archive does.
+ */
+function buildDownloadResponse(tempFile: string, file: string, decrypt: boolean, isZip: boolean, fileName?: string) {
     const stat = fs.statSync(tempFile);
-    const downloadFilename = decryptedFileName(file, isZip, decrypt);
+    const downloadFilename = fileName ?? decryptedFileName(file, isZip, decrypt);
 
     const fileStream = fs.createReadStream(tempFile);
     const readableStream = new ReadableStream({
@@ -122,6 +127,8 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
         const file = searchParams.get("file");
         const decrypt = searchParams.get("decrypt") === "true";
         const profileIdOverride = searchParams.get("profileIdOverride") || undefined;
+        // Which database dump a decrypted download of a seekable archive should contain.
+        const database = searchParams.get("database") || undefined;
 
         if (!file || file.includes('..') || file.startsWith('/')) {
              return NextResponse.json({ error: "Invalid file path" }, { status: 400 });
@@ -134,14 +141,14 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
 
         // Delegate logic to Service with decrypt flag
         // Note: storageService handles config retrieval, decryption and adapter lookup
-        const result = await storageService.downloadFile(params.id, file, tempFile, decrypt, { profileIdOverride });
+        const result = await storageService.downloadFile(params.id, file, tempFile, decrypt, { profileIdOverride, database });
 
         if (!result.success) {
              await fsPromises.unlink(tempFile).catch(() => {});
              return NextResponse.json({ error: "Download failed" }, { status: 500 });
         }
 
-        return buildDownloadResponse(tempFile, file, decrypt, result.isZip ?? false);
+        return buildDownloadResponse(tempFile, file, decrypt, result.isZip ?? false, result.fileName);
 
     } catch (error: unknown) {
         if (tempFile) {
@@ -168,6 +175,8 @@ const postBodySchema = z.object({
     rawKeyHex: z.string().regex(/^[0-9a-fA-F]{64}$/, "Must be a 64-character hex string (32 bytes).").optional(),
     /** Decrypt with a different vault profile than the one recorded in the backup. */
     profileIdOverride: z.string().min(1).optional(),
+    /** For a seekable archive, the database dump to download. Optional when it holds only one. */
+    database: z.string().min(1).optional(),
     /**
      * Fetch and decrypt into a temp file and return a token, rather than the bytes. The
      * browser then collects the finished file itself, so it never passes through the page.
@@ -194,7 +203,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
             return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid request body" }, { status: 400 });
         }
 
-        const { file, rawKeyHex, profileIdOverride, prepare } = parsed.data;
+        const { file, rawKeyHex, profileIdOverride, database, prepare } = parsed.data;
 
         if (file.includes('..') || file.startsWith('/')) {
             return NextResponse.json({ error: "Invalid file path" }, { status: 400 });
@@ -204,7 +213,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         const tempName = `${path.basename(file)}_${Date.now()}`;
         tempFile = path.join(tempDir, tempName);
 
-        const result = await storageService.downloadFile(params.id, file, tempFile, true, { rawKeyHex, profileIdOverride });
+        const result = await storageService.downloadFile(params.id, file, tempFile, true, { rawKeyHex, profileIdOverride, database });
 
         if (!result.success) {
             await fsPromises.unlink(tempFile).catch(() => {});
@@ -221,7 +230,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
                 file,
                 userId: ctx.userId,
                 tempFile,
-                fileName: decryptedFileName(file, isZip),
+                fileName: result.fileName ?? decryptedFileName(file, isZip),
                 contentType: isZip ? "application/zip" : "application/octet-stream",
             });
             tempFile = null;
@@ -229,7 +238,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
             return NextResponse.json({ success: true, data: { token } });
         }
 
-        return buildDownloadResponse(tempFile, file, true, result.isZip ?? false);
+        return buildDownloadResponse(tempFile, file, true, result.isZip ?? false, result.fileName);
 
     } catch (error: unknown) {
         if (tempFile) {

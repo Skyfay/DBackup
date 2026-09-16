@@ -130,7 +130,7 @@ services:
 1. DBackup sends `BACKUP DATABASE` command to SQL Server
 2. SQL Server writes `.bak` file to `/var/opt/mssql/backup`
 3. DBackup reads the file from `/mssql-backups` (same volume)
-4. DBackup processes (compress/encrypt) and uploads to destination
+4. DBackup packs it into the backup archive (compress/encrypt) and uploads to destination
 5. Cleanup: Original `.bak` file is deleted
 
 ### SSH File Transfer (Remote Server)
@@ -173,12 +173,12 @@ If SQL Server is installed **directly on the host** (bare-metal/VM), you can use
 1. DBackup sends `BACKUP DATABASE` command to SQL Server
 2. SQL Server writes `.bak` file to the backup path on its filesystem
 3. DBackup connects via SSH/SFTP and downloads the `.bak` file
-4. DBackup processes (compress/encrypt) and uploads to destination
+4. DBackup packs it into the backup archive (compress/encrypt) and uploads to destination
 5. Cleanup: Remote `.bak` file is deleted via SSH
 
 #### How It Works (Restore)
 
-1. DBackup downloads the backup from storage
+1. DBackup reads the database's `.bak` out of the backup, by byte range where the destination supports it
 2. DBackup connects via SSH/SFTP and uploads the `.bak` file to the backup path
 3. DBackup sends `RESTORE DATABASE` command to SQL Server
 4. SQL Server reads the `.bak` file from the backup path
@@ -499,10 +499,12 @@ Configure source:
 
 ## Restore
 
+Each database is backed up to its own `.bak` and stored as one entry of the backup's seekable archive, so one database can be restored or downloaded out of a backup of many without reading the others. Backups written by earlier versions are a single `.bak`, or a `.tar` of `.bak` files for several databases, and remain restorable.
+
 To restore a SQL Server backup:
 
 1. Go to **Storage Explorer**
-2. Find your `.bak` backup file
+2. Find your backup
 3. Click **Restore**
 4. Select target database configuration
 5. Choose:

@@ -6,11 +6,13 @@ Restore databases from your backups.
 
 DBackup can restore backups directly to database servers. The restore process:
 
-1. Downloads backup from storage
+1. Reads the selected databases out of the backup
 2. Decrypts (if encrypted)
 3. Decompresses (if compressed)
 4. Executes restore commands
 5. Verifies completion
+
+Backups are seekable archives that store every database as its own entry. On destinations that serve byte ranges, restoring one database out of a backup of a whole server transfers only that database. Backups written by earlier versions are downloaded in full first, as they always were.
 
 ## Starting a Restore
 
@@ -110,8 +112,9 @@ Regular restore uses the source configuration credentials.
 ### Pipeline
 
 ```
-1. Download
-   └── Fetch from storage destination
+1. Read
+   └── Fetch the selected entries by byte range
+   └── Older backups: download the whole file
 
 2. Decrypt (if needed)
    └── Use encryption profile
@@ -120,18 +123,21 @@ Regular restore uses the source configuration credentials.
 3. Decompress (if needed)
    └── Gzip or Brotli
 
-4. Pre-flight Checks
+4. Integrity Check
+   └── Compare each dump with its recorded SHA-256
+
+5. Pre-flight Checks
    └── Version compatibility
    └── Permission verification
 
-5. Restore
+6. Restore
    └── Execute database-specific restore
 
-6. Verification
+7. Verification
    └── Check for errors
    └── Validate completion
 
-7. Cleanup
+8. Cleanup
    └── Remove temp files
 ```
 
@@ -279,10 +285,11 @@ Move database between servers:
 
 When restoring a backup containing multiple databases:
 
-1. **Automatic Detection**: DBackup detects Multi-DB TAR archives
+1. **Automatic Detection**: DBackup lists the databases from the backup's index, or from the TAR manifest of an older backup
 2. **Database Selection**: Choose which databases to restore
 3. **Rename Support**: Map databases to different names
 4. **Progress Tracking**: Per-database progress indication
+5. **Download**: With the download permission, each row also offers the database as a plain dump
 
 ```
 Multi-DB Backup Contents:
@@ -294,7 +301,9 @@ Multi-DB Backup Contents:
 └─────────────────────────────────────────┘
 ```
 
-Each selected database is restored individually, allowing granular control over what gets restored and where.
+Each selected database is restored individually, allowing granular control over what gets restored and where. Only the selected databases are read from the destination, so restoring one customer's database out of a shared server's backup does not wait for all the others to download.
+
+Through the API, a restore of exactly one database can still name its target with `targetDatabaseName` alone. With several databases selected that field is ignored, and `databaseMapping` renames them instead.
 
 ## Troubleshooting
 

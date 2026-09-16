@@ -22,24 +22,23 @@ export async function stepUpload(ctx: RunnerContext) {
     if (!ctx.job || ctx.destinations.length === 0 || !ctx.tempFile) throw new Error("Context not ready for upload");
 
     const job = ctx.job;
-    // Combined (DB + directory source) archives apply BOTH compression and encryption per
-    // entry inside the archive itself (see combined-dump.ts / createArchive), so neither
-    // whole-file pass runs here.
+    // A seekable archive applies BOTH compression and encryption per entry inside the archive
+    // itself (see combined-dump.ts / createArchive), so neither whole-file pass runs here.
     //
     // For compression that would merely waste CPU re-compressing compressed bytes. For
     // encryption it would be actively destructive: a whole-file AES-GCM stream makes the
-    // archive unseekable, and an unseekable archive cannot serve a single file without a
-    // full download and a full decrypt - which is the entire point of the format.
+    // archive unseekable, and an unseekable archive cannot serve a single file or database
+    // without a full download and a full decrypt - which is the entire point of the format.
     //
-    // ctx.metadata.combined is only ever set by executeCombinedDump(), so its presence is
-    // the correct signal.
-    const isCombinedArchive = !!ctx.metadata?.combined;
-    const compression = isCombinedArchive ? ("NONE" as CompressionType) : ((job as any).compression as CompressionType);
+    // Keyed on the archive marker rather than on `combined`, which only a backup with
+    // directory sources records.
+    const isSeekableArchive = ctx.metadata?.archive?.formatVersion === 2;
+    const compression = isSeekableArchive ? ("NONE" as CompressionType) : ((job as any).compression as CompressionType);
 
     // Determine Action Label for UI
     const actions: string[] = [];
     if (compression && compression !== 'NONE') actions.push("Compressing");
-    if (job.encryptionProfileId && !isCombinedArchive) actions.push("Encrypting");
+    if (job.encryptionProfileId && !isSeekableArchive) actions.push("Encrypting");
     const processingLabel = actions.length > 0 ? actions.join(" & ") : "Processing";
 
     if (actions.length > 0) {
@@ -59,6 +58,10 @@ export async function stepUpload(ctx: RunnerContext) {
         ctx.updateStageProgress(percent);
     });
 
+    // LEGACY-FORMAT(write): The whole-file compression and encryption below only ran for the older
+    // backup formats. Every job now produces a seekable archive, which isSeekableArchive exempts, so
+    // this is unreachable. Remove it along with the compression, encryption and multiDb fields it
+    // writes into the metadata sidecar.
     // 1. Compression Step
     let compressionMeta: CompressionType | undefined = undefined;
     if (compression && compression !== 'NONE') {
@@ -75,7 +78,7 @@ export async function stepUpload(ctx: RunnerContext) {
     let encryptionMeta: BackupMetadata['encryption'] = undefined;
     let getAuthTagCallback: (() => Buffer) | null = null;
 
-    if (job.encryptionProfileId && !isCombinedArchive) {
+    if (job.encryptionProfileId && !isSeekableArchive) {
         try {
             ctx.log(`Encryption enabled. Profile ID: ${job.encryptionProfileId}`);
 
@@ -173,8 +176,8 @@ export async function stepUpload(ctx: RunnerContext) {
         multiDb: ctx.metadata?.multiDb,
         combined: ctx.metadata?.combined,
         archive: ctx.metadata?.archive,
-        // Every backup carries a type. Only jobs with directory sources can currently
-        // produce an incremental, so everything else is a full by construction.
+        // Every backup carries a type. Only jobs with directory sources can produce an
+        // incremental, so everything else is a full by construction.
         backupType: ctx.chain?.type ?? 'full',
         ...(ctx.chain && job.backupMode === "INCREMENTAL"
             ? {
@@ -306,7 +309,9 @@ export async function stepUpload(ctx: RunnerContext) {
                     size: ctx.dumpSize ?? 0,
                     lastModified: new Date(),
                     ...describeBackupFromMetadata(path.basename(remotePath), metadata),
-                    ...(typeof ctx.metadata?.logicalSize === 'number' ? { logicalSize: ctx.metadata.logicalSize } : {}),
+                    // Only a chain member has a snapshot larger than its own file. Anywhere else
+                    // the plaintext size would read as content carried in from other backups.
+                    ...(inChain && typeof ctx.metadata?.logicalSize === 'number' ? { logicalSize: ctx.metadata.logicalSize } : {}),
                 };
                 await storageService.appendStorageListCacheEntry(dest.configId, richEntry);
             } catch (e: unknown) {

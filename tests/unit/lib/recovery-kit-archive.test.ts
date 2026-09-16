@@ -245,6 +245,40 @@ describe("recovery kit: dbackup-recover.js", () => {
         await expect(fs.access(path.join(outDir, "src-1", "www/assets/large.bin"))).rejects.toThrow();
     });
 
+    it("does not write a database dump whose checksum does not match", async () => {
+        const archivePath = await buildArchive(false, "NONE");
+        const raw = await fs.readFile(archivePath);
+        const needle = raw.indexOf(Buffer.from("CREATE TABLE t (id INT);"));
+        expect(needle, "expected to find the dump's payload").toBeGreaterThan(0);
+        raw[needle] ^= 0xff;
+        await fs.writeFile(archivePath, raw);
+
+        const outDir = path.join(workDir, "out");
+        const { stderr, code } = await runScript(["--extract", archivePath, outDir, KEY_HEX, "databases/appdb"]);
+
+        expect(stderr).toMatch(/checksum mismatch: database appdb/i);
+        expect(code).not.toBe(0);
+        await expect(fs.access(path.join(outDir, "databases", "appdb.sql"))).rejects.toThrow();
+    });
+
+    it("keeps a database whose name holds path separators inside the output folder", async () => {
+        const dumpPath = path.join(workDir, "evil.sql");
+        await fs.writeFile(dumpPath, "SELECT 1;\n");
+        const archivePath = path.join(workDir, "evil.tar");
+        await createArchive(
+            [{ kind: "database", dbName: "../../escaped", path: dumpPath, format: "sql" }],
+            archivePath,
+            { sourceType: "firebird", compression: "NONE" }
+        );
+
+        const outDir = path.join(workDir, "nested", "out");
+        const { code } = await runScript(["--extract", archivePath, outDir]);
+
+        expect(code).toBe(0);
+        expect(await fs.readFile(path.join(outDir, "databases", "_._.._escaped.sql"), "utf-8")).toBe("SELECT 1;\n");
+        await expect(fs.access(path.join(workDir, "escaped.sql"))).rejects.toThrow();
+    });
+
     it("points a v1 archive at the mode that handles it", async () => {
         const fake = path.join(workDir, "v1.tar");
         const { createMultiDbTar } = await import("@/lib/adapters/database/common/tar-utils");

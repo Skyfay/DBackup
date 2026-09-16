@@ -56,9 +56,8 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog"
+import { isCombinableWithDirectories } from "@/lib/adapters/combinable"
 
-/** Database adapters whose dumpOne()/restoreOne() capability supports combining with directory sources in one job. */
-const COMBINABLE_DB_ADAPTERS = ["mysql", "mariadb", "postgres", "mongodb", "firebird"];
 
 /** Which kind of source(s) this job backs up - purely client-side UI state, not persisted. */
 type SourceMode = "db" | "dirs" | "both";
@@ -455,7 +454,7 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
         } else if (dirsEnabled) {
             const currentSourceId = form.getValues("sourceId");
             const currentSource = sources.find(s => s.id === currentSourceId);
-            if (currentSource && !COMBINABLE_DB_ADAPTERS.includes(currentSource.adapterId)) {
+            if (currentSource && !isCombinableWithDirectories(currentSource.adapterId)) {
                 form.setValue("sourceId", "", { shouldDirty: true, shouldValidate: true });
                 form.setValue("databases", [], { shouldDirty: true });
                 setAvailableDatabases([]);
@@ -477,7 +476,7 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
         } else if (dbEnabled) {
             const currentSourceId = form.getValues("sourceId");
             const currentSource = sources.find(s => s.id === currentSourceId);
-            if (currentSource && !COMBINABLE_DB_ADAPTERS.includes(currentSource.adapterId)) {
+            if (currentSource && !isCombinableWithDirectories(currentSource.adapterId)) {
                 form.setValue("sourceId", "", { shouldDirty: true, shouldValidate: true });
                 form.setValue("databases", [], { shouldDirty: true });
                 setAvailableDatabases([]);
@@ -544,7 +543,7 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
     // In "both" mode only combinable DB adapters (dumpOne()/restoreOne() support) are offered, so the
     // combination is valid by construction - JobService.validateJobSources remains the server-side backstop.
     const sourcePickerOptions = sourceMode === "both"
-        ? sources.filter(s => COMBINABLE_DB_ADAPTERS.includes(s.adapterId))
+        ? sources.filter(s => isCombinableWithDirectories(s.adapterId))
         : sources;
     const isPgSource = selectedSource?.adapterId === "postgres";
     const pgMajorVersion = isPgSource ? parsePgMajorVersion(selectedSource?.metadata) : null;

@@ -34,7 +34,6 @@ import {
     BUNDLE_FILE_MAX_SIZE,
     BUNDLE_TARGET_SIZE,
     DATABASE_MEMBER_PREFIX,
-    EXTENSION_BY_FORMAT,
     FIRST_DATA_ORDINAL,
     INDEX_MEMBER,
     MANIFEST_MEMBER,
@@ -43,6 +42,8 @@ import {
 } from "./format";
 import { buildUstarHeader, tarPadding, walkTarHeaders, TAR_TRAILER } from "./tar-blocks";
 import { serializeIndex } from "./index-file";
+import { hashingStream } from "./hashing";
+import { databaseDumpFileName } from "./dump-names";
 import {
     ArchiveIndex,
     ArchiveManifest,
@@ -93,6 +94,11 @@ interface MaterializedEntry {
     tempFile?: string;
     /** Byte ranges within the decompressed payload, in bundle-part order. */
     parts?: { offset: number; length: number }[];
+    /**
+     * SHA-256 of the plaintext, for database dumps. Only known once the bytes have been read,
+     * which for an uncompressed dump is not until the member has been written.
+     */
+    plainDigest?: () => string | undefined;
 }
 
 /**
@@ -115,7 +121,9 @@ function planEntries(entries: ArchiveSourceEntry[], encrypted: boolean, compress
             const comp = entry.nativeCompression ? undefined : compression;
             planned.push({
                 ordinal,
-                member: memberName(`${DATABASE_MEMBER_PREFIX}${entry.dbName}.${EXTENSION_BY_FORMAT[entry.format]}`, comp),
+                // The name is sanitized because an unencrypted archive publishes it as a real
+                // path, and `tar -xf` would follow a database called `../../x` out of the folder.
+                member: memberName(`${DATABASE_MEMBER_PREFIX}${databaseDumpFileName(entry.dbName, entry.format)}`, comp),
                 comp,
                 origin: { kind: "database", dbName: entry.dbName, format: entry.format, localPath: entry.path },
             });
@@ -244,9 +252,23 @@ async function materialize(entry: PlannedEntry, sealKey: Buffer | null, noncePre
 
     const localPath = entry.origin.localPath;
 
+    // A dump gets the same plaintext checksum a file gets from its collector. Hashed on the
+    // way through rather than in a separate read, because a dump can be tens of gigabytes.
+    // Files are not hashed here: their checksum was already taken when they were collected.
+    let digest: string | undefined;
+    const isDatabase = entry.origin.kind === "database";
+    const read = (): NodeJS.ReadableStream => {
+        const raw = createReadStream(localPath);
+        if (!isDatabase) return raw;
+        const out = new PassThrough();
+        pipelineCb(raw, hashingStream((d) => { digest = d; }), out, () => { /* surfaced on out */ });
+        return out;
+    };
+    const plainDigest = isDatabase ? () => digest : undefined;
+
     if (!entry.comp) {
         const stats = await fs.stat(localPath);
-        return { storedSize: withTag(stats.size), open: () => seal(createReadStream(localPath)) };
+        return { storedSize: withTag(stats.size), open: () => seal(read()), plainDigest };
     }
 
     // Ordinals restart at 1 for every archive, so pid + ordinal is not unique: two jobs
@@ -258,10 +280,10 @@ async function materialize(entry: PlannedEntry, sealKey: Buffer | null, noncePre
     );
     const compressStream = getCompressionStream(entry.comp);
     if (!compressStream) throw new Error(`Unsupported compression type: ${entry.comp}`);
-    await pipeline(createReadStream(localPath), compressStream, createWriteStream(tempFile));
+    await pipeline(read(), compressStream, createWriteStream(tempFile));
 
     const stats = await fs.stat(tempFile);
-    return { storedSize: withTag(stats.size), open: () => seal(createReadStream(tempFile)), tempFile };
+    return { storedSize: withTag(stats.size), open: () => seal(createReadStream(tempFile)), tempFile, plainDigest };
 }
 
 /**
@@ -398,7 +420,7 @@ export async function createArchive(
     // once the header walk has produced exact offsets for everything written here.
     const tarPack = pack();
     const writePromise = pipeline(tarPack, createWriteStream(destinationPath));
-    const materializedByOrdinal = new Map<number, { storedSize: number; parts?: MaterializedEntry["parts"] }>();
+    const materializedByOrdinal = new Map<number, { storedSize: number; parts?: MaterializedEntry["parts"]; digest?: string }>();
 
     // Compressing an entry is independent work, so it runs ahead of the writer; appending to
     // the tar stays strictly in order, because the byte offsets that make the archive
@@ -435,9 +457,19 @@ export async function createArchive(
 
             try {
                 await writeMember(tarPack, entry.member, materialized.storedSize, materialized.open);
-                materializedByOrdinal.set(entry.ordinal, { storedSize: materialized.storedSize, parts: materialized.parts });
+                materializedByOrdinal.set(entry.ordinal, {
+                    storedSize: materialized.storedSize,
+                    parts: materialized.parts,
+                    digest: materialized.plainDigest?.(),
+                });
             } finally {
                 if (materialized.tempFile) await fs.unlink(materialized.tempFile).catch(() => { });
+            }
+
+            // Nothing reads a dump again once its member is written: its size was taken before
+            // the manifest and the header walk below only reads the archive.
+            if (entry.origin.kind === "database") {
+                await options.onDatabaseDumpWritten?.(entry.origin.localPath);
             }
 
             options.onProgress?.(i + 1, planned.length, entryLabel(entry));
@@ -470,6 +502,7 @@ export async function createArchive(
 
     const entryLines: IndexEntryLine[] = [];
     const fileLines: IndexFileLine[] = [];
+    const databaseLineByOrdinal = new Map(databaseLines.map((line) => [line.n, line]));
 
     for (const entry of planned) {
         const materialized = materializedByOrdinal.get(entry.ordinal)!;
@@ -489,7 +522,10 @@ export async function createArchive(
             ...(entry.origin.kind === "bundle" ? { bundle: true as const } : {}),
         });
 
-        if (entry.origin.kind === "file") {
+        if (entry.origin.kind === "database") {
+            const line = databaseLineByOrdinal.get(entry.ordinal);
+            if (line && materialized.digest) line.h = materialized.digest;
+        } else if (entry.origin.kind === "file") {
             const { file, src } = entry.origin;
             fileLines.push({
                 k: "f", src, p: file.path, s: file.size, m: file.mtime,

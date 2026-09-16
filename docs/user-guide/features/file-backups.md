@@ -222,10 +222,7 @@ own numbers will differ; the ranking above is the part that carries over.
 
 ## What ends up in the archive
 
-Directory backups use the seekable archive format: each file is compressed and encrypted
-on its own, and an index sidecar lists every path, size, timestamp and checksum. That is
-what makes browsing a backup cheap - listing an archive reads a few megabytes whatever its size - and
-what makes restoring one file out of it possible.
+Every backup uses the seekable archive format, and directory backups are no exception: each file is compressed and encrypted on its own, and an index sidecar lists every path, size, timestamp and checksum. That is what makes browsing a backup cheap - listing an archive reads a few megabytes whatever its size - and what makes restoring one file out of it possible. Database dumps of the same job sit in the same archive as entries of their own.
 
 Because compression is decided per file, formats that are already compressed - video,
 photos, archives, Office documents - are stored as-is rather than packed a second time for

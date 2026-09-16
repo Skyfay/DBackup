@@ -534,6 +534,40 @@ describe('stepUpload', () => {
         });
     });
 
+    it('never compresses or encrypts a seekable archive of databases alone as a whole file', async () => {
+        // Such an archive records no `combined` block. The guard has to key on the archive
+        // marker, or a whole-file AES-GCM pass would make every database-only backup unseekable.
+        const ctx = makeCtx({ tempFile: '/tmp/Test_Job_2026-09-16.tar' });
+        (ctx.job as any).compression = 'GZIP';
+        (ctx.job as any).encryptionProfileId = 'profile-1';
+        ctx.metadata = {
+            ...ctx.metadata,
+            archive: { formatVersion: 2, indexFile: '.index', encrypted: true, profileId: 'profile-1', compression: 'GZIP' },
+        };
+
+        await stepUpload(ctx);
+
+        expect(ctx.tempFile).toBe('/tmp/Test_Job_2026-09-16.tar');
+        expect(ctx.setStage).not.toHaveBeenCalledWith('Processing');
+    });
+
+    it('does not show a standalone backup as holding content from other backups', async () => {
+        // The plaintext size of a compressed dump is larger than its file. Only a chain member
+        // may carry it into the listing, where a larger logical size means carried content.
+        const { storageService } = await import('@/services/storage/storage-service');
+        const ctx = makeCtx({ tempFile: '/tmp/Test_Job_2026-09-16.tar' });
+        ctx.metadata = {
+            ...ctx.metadata,
+            logicalSize: 999_999,
+            archive: { formatVersion: 2, indexFile: '.index', encrypted: false },
+        };
+
+        await stepUpload(ctx);
+
+        const appended = (storageService.appendStorageListCacheEntry as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+        expect(appended).not.toHaveProperty('logicalSize');
+    });
+
     it('includes multiDb metadata in the written sidecar', async () => {
         const fsPromises = await import('fs/promises');
         const ctx = makeCtx();

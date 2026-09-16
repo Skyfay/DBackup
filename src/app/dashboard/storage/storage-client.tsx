@@ -39,6 +39,8 @@ import { Label } from "@/components/ui/label";
 import { getColumns, FileInfo, RestoreMode } from "./columns";
 import { lockBackup } from "@/app/actions/storage/lock";
 import { DownloadLinkModal } from "@/components/dashboard/storage/download-link-modal";
+import { DatabaseDownloadDialog } from "@/components/dashboard/storage/database-download-dialog";
+import { startPreparedArchiveDownload } from "@/components/dashboard/storage/prepared-download";
 import { IntegrityModal } from "@/components/dashboard/storage/integrity-modal";
 import { StorageHistoryTab } from "@/components/dashboard/storage/storage-history-tab";
 import { StorageSettingsTab } from "@/components/dashboard/storage/storage-settings-tab";
@@ -91,6 +93,11 @@ export function StorageClient({ canDownload, canRestore, canDelete, canManageVau
 
     // Download Link Modal State
     const [downloadLinkFile, setDownloadLinkFile] = useState<FileInfo | null>(null);
+    /** Set when the link is for one database out of a seekable archive. */
+    const [downloadLinkDatabase, setDownloadLinkDatabase] = useState<string | undefined>(undefined);
+
+    // Database picker for backups holding several databases
+    const [databaseDownloadFile, setDatabaseDownloadFile] = useState<FileInfo | null>(null);
 
     // Integrity Modal State
     const [verifyModalFile, setVerifyModalFile] = useState<FileInfo | null>(null);
@@ -253,7 +260,16 @@ export function StorageClient({ canDownload, canRestore, canDelete, canManageVau
             toast.error("Permission denied");
             return;
         }
+        setDownloadLinkDatabase(undefined);
         setDownloadLinkFile(file);
+    }, [canDownload]);
+
+    const handleDownloadDatabase = useCallback((file: FileInfo) => {
+        if (!canDownload) {
+            toast.error("Permission denied");
+            return;
+        }
+        setDatabaseDownloadFile(file);
     }, [canDownload]);
 
     const handleVerify = useCallback((file: FileInfo) => {
@@ -297,39 +313,20 @@ export function StorageClient({ canDownload, canRestore, canDelete, canManageVau
             return;
         }
 
-        const toastId = toast.loading(`Preparing ${file.name}...`);
-        try {
-            // Prepare, then let the browser fetch it. A whole snapshot is exactly the case
-            // where buffering the response in the tab falls over - it can be many gigabytes,
-            // and the browser's download manager writes it straight to disk instead.
-            const res = await fetch(`/api/storage/${selectedDestination}/restore-files`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ file: file.path, target: { kind: "download" }, prepare: true, ...keyOverrideBody(keyResolution) }),
-            });
-
+        // A whole snapshot is exactly the case where buffering the response in the tab falls
+        // over - it can be many gigabytes - so the browser fetches the prepared result itself.
+        await startPreparedArchiveDownload({
+            destinationId: selectedDestination,
+            body: { file: file.path, ...keyOverrideBody(keyResolution) },
             // Unpacking the archive needs its key, so this can ask for one just like a
             // decrypted download can.
-            if (await keyRecovery.intercept(res, (result) => handleDownloadSnapshot(file, result))) {
-                setPendingKeyFile(file);
-                toast.dismiss(toastId);
-                return;
-            }
-
-            const payload = await res.json().catch(() => ({ error: "Download failed" }));
-            if (!res.ok || !payload?.data?.token) {
-                throw new Error(payload.error || "Download failed");
-            }
-
-            const anchor = document.createElement("a");
-            anchor.href = `/api/storage/${selectedDestination}/restore-files?token=${encodeURIComponent(payload.data.token)}`;
-            anchor.download = payload.data.fileName;
-            anchor.click();
-
-            toast.success("Download started - see your browser downloads for progress", { id: toastId });
-        } catch (e: unknown) {
-            toast.error(e instanceof Error ? e.message : String(e), { id: toastId });
-        }
+            intercept: async (res) => {
+                const tookOver = await keyRecovery.intercept(res, (result) => handleDownloadSnapshot(file, result));
+                if (tookOver) setPendingKeyFile(file);
+                return tookOver;
+            },
+            preparingLabel: `Preparing ${file.name}...`,
+        });
     }, [canDownload, selectedDestination]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const bulkActions = useMemo<BulkAction<FileInfo>[]>(() => {
@@ -383,6 +380,7 @@ export function StorageClient({ canDownload, canRestore, canDelete, canManageVau
     const columns = useMemo(() => getColumns({
         onRestore: handleRestoreClick,
         onDownloadSnapshot: handleDownloadSnapshot,
+        onDownloadDatabase: handleDownloadDatabase,
         onDownload: handleDownload,
         onDelete: handleDeleteClick,
         onToggleLock: handleToggleLock,
@@ -391,7 +389,7 @@ export function StorageClient({ canDownload, canRestore, canDelete, canManageVau
         canDownload,
         canRestore,
         canDelete
-    }), [handleRestoreClick, handleDownloadSnapshot, handleDownload, handleDeleteClick, handleToggleLock, handleGenerateLink, handleVerify, canDownload, canRestore, canDelete]);
+    }), [handleRestoreClick, handleDownloadSnapshot, handleDownloadDatabase, handleDownload, handleDeleteClick, handleToggleLock, handleGenerateLink, handleVerify, canDownload, canRestore, canDelete]);
 
     const filterableColumns = useMemo(() => {
         const jobs = Array.from(new Set(files.map(f => f.jobName).filter(Boolean).filter(n => n !== "Unknown"))) as string[];
@@ -648,9 +646,31 @@ export function StorageClient({ canDownload, canRestore, canDelete, canManageVau
                         path: downloadLinkFile.path,
                         size: downloadLinkFile.size,
                         isEncrypted: downloadLinkFile.isEncrypted,
+                        hasFileIndex: downloadLinkFile.hasFileIndex,
+                        combined: downloadLinkFile.combined,
+                        dbInfo: downloadLinkFile.dbInfo,
                     }}
+                    database={downloadLinkDatabase}
                 />
             )}
+
+            {/* Database picker */}
+            <DatabaseDownloadDialog
+                open={!!databaseDownloadFile}
+                onOpenChange={(o) => { if (!o) setDatabaseDownloadFile(null); }}
+                destinationId={selectedDestination}
+                file={databaseDownloadFile}
+                keyOverride={keyRecovery.override}
+                interceptKeyRequest={async (res, retry) => {
+                    const tookOver = await keyRecovery.intercept(res, retry);
+                    if (tookOver) setPendingKeyFile(databaseDownloadFile);
+                    return tookOver;
+                }}
+                onGenerateLink={canDownload && databaseDownloadFile ? (database) => {
+                    setDownloadLinkDatabase(database);
+                    setDownloadLinkFile(databaseDownloadFile);
+                } : undefined}
+            />
 
             {/* Integrity Modal */}
             {verifyModalFile && (

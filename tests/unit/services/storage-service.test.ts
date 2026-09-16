@@ -110,6 +110,13 @@ vi.mock('@/lib/logging/errors', async (importOriginal) => ({
     wrapError: vi.fn((e: any) => e),
 }));
 
+// Seekable archive downloads are covered on real archives in archive-download.test.ts. Here
+// only the hand-off from a decrypted download is under test.
+const mockWriteDatabaseDump = vi.fn();
+vi.mock('@/services/restore/archive-download', () => ({
+    writeDatabaseDump: (...args: any[]) => mockWriteDatabaseDump(...args),
+}));
+
 // ── Helpers ────────────────────────────────────────────────────
 
 function makeDbConfig(overrides?: Record<string, any>) {
@@ -883,6 +890,27 @@ describe('StorageService', () => {
 
                 expect(result).toMatchObject({ success: true, isZip: false });
                 expect(mockGetProfileMasterKey).not.toHaveBeenCalled();
+            });
+
+            it('serves one database dump for a seekable archive instead of the archive itself', async () => {
+                const meta = { archive: { formatVersion: 2, indexFile: '.index', encrypted: true } };
+                const adapter = makeAdapter({
+                    download: vi.fn().mockResolvedValue(true),
+                    read: vi.fn().mockResolvedValue(JSON.stringify(meta)),
+                });
+                prismaMock.adapterConfig.findUnique.mockResolvedValue(makeDbConfig());
+                vi.mocked(registry.get).mockReturnValue(adapter);
+                mockWriteDatabaseDump.mockResolvedValue({ fileName: 'nightly_shop.sql' });
+
+                const result = await service.downloadFile('conf-123', 'jobs/nightly.tar', '/local/out', true, { database: 'shop', profileIdOverride: 'p2' });
+
+                expect(result).toEqual({ success: true, isZip: false, fileName: 'nightly_shop.sql' });
+                expect(mockWriteDatabaseDump).toHaveBeenCalledWith(
+                    { storageConfigId: 'conf-123', file: 'jobs/nightly.tar', database: 'shop', keyOverride: { rawKeyHex: undefined, profileId: 'p2' } },
+                    '/local/out'
+                );
+                // The archive itself is never fetched whole for this.
+                expect(adapter.download).not.toHaveBeenCalledWith(expect.anything(), 'jobs/nightly.tar', expect.anything());
             });
 
             it('should decrypt file using standard encryption format', async () => {

@@ -98,6 +98,9 @@ export async function restoreOne(
     await restoreSingleFile(config, filePath, targetDbName, _host, onLog ?? (() => {}), onProgress);
 }
 
+// LEGACY-FORMAT(read): Restores backups written before the seekable archive, a single dump
+// file or a TAR of dumps. New backups go through restoreOne(). Remove once those backups no
+// longer need restoring.
 export async function restore(
     config: FirebirdRestoreConfig,
     sourcePath: string,

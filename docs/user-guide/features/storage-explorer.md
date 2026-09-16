@@ -50,6 +50,12 @@ Filter backups by:
 
 Main backup data:
 ```
+backup_2024-01-15T12-00-00.tar         # Seekable archive, written by every job
+backup_2024-01-15T12-00-00.tar.index   # Its index, read for browsing and restoring
+```
+
+Every backup is a seekable archive holding each database dump, and each file of a directory source, as its own compressed and encrypted entry. Backups written by earlier versions for database-only jobs are single files instead, and stay fully restorable and downloadable:
+```
 backup_2024-01-15T12-00-00.sql       # Plain SQL
 backup_2024-01-15T12-00-00.sql.gz    # Compressed
 backup_2024-01-15T12-00-00.sql.gz.enc # Encrypted
@@ -139,17 +145,23 @@ a source, is in [File & Folder Backups](/user-guide/features/file-backups).
 
 ### Download
 
-1. Click **Download** button
-2. File downloads to your browser
-3. Decryption happens automatically (if encrypted)
-4. Decompression is **not** automatic
+The **Download** button opens a menu whose options depend on the backup.
 
-For encrypted files, you'll see a dropdown with options:
-- **Download Encrypted (.enc)**: Downloads the raw encrypted file
-- **Download Decrypted**: Decrypts before download
+For a seekable archive:
+- **Download Encrypted Archive** or **Download Archive (.tar)**: The stored archive, exactly as it is
+- **Download Decrypted Dump** or **Download Dump**: For a backup of a single database, that database as a plain dump, decrypted and decompressed
+- **Download Database...**: For a backup of several databases, a list of them with a download and a wget / curl link per database. Only the chosen database is read from the destination.
+- **Download Contents** or **Download Decrypted Contents**: Everything in the backup as a `.tar.gz`, with dumps under `databases/`
 - **wget / curl Link**: Opens the Download Link modal
 
-To decompress locally:
+A downloaded dump is named after the backup and the database, for example `nightly_2026-09-16_shop.sql`.
+
+For a backup written by an earlier version:
+- **Download Encrypted (.enc)**: Downloads the raw encrypted file
+- **Download Decrypted**: Decrypts before download, decompression is **not** automatic
+- **wget / curl Link**: Opens the Download Link modal
+
+To decompress an older backup locally:
 ```bash
 # Gzip
 gunzip backup.sql.gz
@@ -167,10 +179,12 @@ For downloading backups directly to a remote server (e.g., during Redis restore)
 1. Click **Download** button on any backup
 2. Select **wget / curl Link** from the dropdown
 3. Choose download format:
-   - **Decrypted**: File will be decrypted server-side (recommended)
-   - **Encrypted (.enc)**: Downloads raw encrypted file
+   - **Decrypted** or **Database dump**: Decrypted server-side (recommended)
+   - **Encrypted (.enc)** or **Encrypted archive**: Downloads the raw stored file
 4. Click **Generate Download Link**
 5. Copy the provided wget or curl command
+
+For a backup of several databases, open **Download Database...** and use the link button next to the database you need.
 
 **Generated Commands:**
 ```bash
@@ -179,6 +193,10 @@ wget -O "backup.sql.gz" "https://your-server/api/storage/public-download?token=.
 
 # curl
 curl -o "backup.sql.gz" "https://your-server/api/storage/public-download?token=..."
+
+# A database dump keeps the name the server gives it
+wget --content-disposition "https://your-server/api/storage/public-download?token=..."
+curl -OJ "https://your-server/api/storage/public-download?token=..."
 ```
 
 **Important:**

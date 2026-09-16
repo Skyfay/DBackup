@@ -1,7 +1,7 @@
 import { DatabaseAdapter } from "@/lib/core/interfaces";
 import { AzureSQLSchema } from "@/lib/adapters/definitions";
-import { dump } from "./dump";
-import { restore, analyzeDump } from "./restore";
+import { dump, dumpOne } from "./dump";
+import { restore, restoreOne, analyzeDump } from "./restore";
 import { prepareRestore } from "./preflight";
 import { test, getDatabases } from "./connection";
 import { getDatabasesWithStats } from "./catalog";
@@ -27,7 +27,9 @@ export const AzureSQLAdapter: DatabaseAdapter = {
     configSchema: AzureSQLSchema,
     credentials: { primary: "USERNAME_PASSWORD" },
     dump,
+    dumpOne,
     restore,
+    restoreOne,
     prepareRestore,
     test,
     getDatabases,

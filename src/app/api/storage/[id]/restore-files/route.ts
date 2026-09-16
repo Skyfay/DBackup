@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { Readable } from "stream";
-import path from "path";
 import { z } from "zod";
 import { registerAdapters } from "@/lib/adapters";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
-import { planFileRestore, restoreFilesToStorage, streamFileRestore, FileRestoreInput } from "@/services/restore/file-restore";
+import { planFileRestore, restoreFilesToStorage, FileRestoreInput } from "@/services/restore/file-restore";
+import { openArchiveDownload, planArchiveDownload, type ArchiveDownload } from "@/services/restore/archive-download";
 import { generateSelectionDownloadToken, consumeSelectionDownloadToken } from "@/lib/auth/download-tokens";
 import { keyRequiredResponse } from "@/lib/server/key-required-response";
 import { attachmentDisposition } from "@/lib/server/content-disposition";
@@ -27,11 +27,19 @@ const TargetSchema = z.discriminatedUnion("kind", [
 
 const RestoreFilesSchema = z.object({
     file: z.string().min(1).refine((v) => !v.includes("..") && !v.startsWith("/"), "Invalid file path"),
-    /** Omit to restore the complete snapshot. An entry without paths means that whole source. */
+    /**
+     * Omit together with `databases` to restore the complete snapshot. An entry without paths
+     * means that whole source.
+     */
     selections: z.array(z.object({
         src: z.string().min(1),
         paths: z.array(z.string().min(1)).min(1).optional(),
     })).min(1).optional(),
+    /**
+     * Database dumps to download, by name. Exactly one and no `selections` downloads that
+     * dump on its own, anything else a tar.gz.
+     */
+    databases: z.array(z.string().min(1)).min(1).optional(),
     target: TargetSchema,
     /** Glob patterns whose matching files are left out of the restore entirely. */
     excludePatterns: z.array(z.string()).optional(),
@@ -44,7 +52,23 @@ const RestoreFilesSchema = z.object({
      * fetch the archive itself via GET and stream it to disk. Download targets only.
      */
     prepare: z.boolean().optional(),
+}).refine((body) => !body.databases || body.target.kind === "download", {
+    message: "Database dumps can only be downloaded, not written to a storage destination",
+    path: ["databases"],
 });
+
+/** Response for a download, streamed with whatever length is known up front. */
+function downloadResponse(download: ArchiveDownload): NextResponse {
+    return new NextResponse(Readable.toWeb(download.stream as Readable) as ReadableStream, {
+        headers: {
+            "Content-Type": download.contentType,
+            "Content-Disposition": attachmentDisposition(download.fileName),
+            // A tar.gz is produced on the fly, so only a single dump has a known length.
+            ...(download.contentLength !== undefined ? { "Content-Length": String(download.contentLength) } : {}),
+            "Cache-Control": "no-store",
+        },
+    });
+}
 
 /**
  * Restores selected files out of a backup.
@@ -64,7 +88,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         if (!parsed.success) {
             return NextResponse.json({ success: false, error: parsed.error.issues[0]?.message ?? "Invalid request" }, { status: 400 });
         }
-        const { file, selections, target, excludePatterns, dryRun, prepare, profileIdOverride } = parsed.data;
+        const { file, selections, databases, target, excludePatterns, dryRun, prepare, profileIdOverride } = parsed.data;
 
         // A download only reads the backup, so it needs the download permission. Writing
         // files back into a storage destination is a restore and is gated accordingly.
@@ -74,7 +98,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         );
 
         const input: FileRestoreInput = {
-            storageConfigId: id, file, selections, excludePatterns, target,
+            storageConfigId: id, file, selections, databases, excludePatterns, target,
             ...(profileIdOverride ? { keyOverride: { profileId: profileIdOverride } } : {}),
         };
 
@@ -87,30 +111,24 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
             // a selection that matches nothing, or a snapshot missing an archive of its
             // chain, fails now - as a message the user can read - instead of halfway into a
             // download the browser has already started writing to disk.
-            const plan = await planFileRestore(input);
-            const fileName = `${path.basename(file).replace(/\.[^.]+$/, "")}-files.tar.gz`;
-            const token = generateSelectionDownloadToken({ storageId: id, file, userId: ctx.userId, fileName, selections, excludePatterns, profileIdOverride });
+            const { fileName, contentType, ...plan } = await planArchiveDownload(input);
+            const token = generateSelectionDownloadToken({
+                storageId: id, file, userId: ctx.userId, fileName, contentType,
+                selections, databases, excludePatterns, profileIdOverride,
+            });
 
             return NextResponse.json({ success: true, data: { token, fileName, ...plan } });
         }
 
         if (target.kind === "download") {
-            const archiveName = path.basename(file).replace(/\.[^.]+$/, "");
-            const stream = await streamFileRestore(input);
+            const download = await openArchiveDownload(input);
 
             await auditService.log(
                 ctx.userId, AUDIT_ACTIONS.EXPORT, AUDIT_RESOURCES.DESTINATION,
-                { action: "file_restore_download", file, selections }, id
+                { action: "file_restore_download", file, selections, databases }, id
             );
 
-            return new NextResponse(Readable.toWeb(stream as Readable) as ReadableStream, {
-                headers: {
-                    "Content-Type": "application/gzip",
-                    "Content-Disposition": attachmentDisposition(`${archiveName}-files.tar.gz`),
-                    // Length is unknown up front because the payload is produced on the fly.
-                    "Cache-Control": "no-store",
-                },
-            });
+            return downloadResponse(download);
         }
 
         const result = await restoreFilesToStorage(input);
@@ -161,10 +179,11 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
             );
         }
 
-        const stream = await streamFileRestore({
+        const download = await openArchiveDownload({
             storageConfigId: id,
             file: claim.file,
             selections: claim.selection.selections,
+            databases: claim.selection.databases,
             excludePatterns: claim.selection.excludePatterns,
             target: { kind: "download" },
             ...(claim.selection.profileIdOverride
@@ -174,17 +193,11 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
 
         await auditService.log(
             ctx.userId, AUDIT_ACTIONS.EXPORT, AUDIT_RESOURCES.DESTINATION,
-            { action: "file_restore_download", file: claim.file, selections: claim.selection.selections }, id
+            { action: "file_restore_download", file: claim.file, selections: claim.selection.selections, databases: claim.selection.databases }, id
         );
 
-        return new NextResponse(Readable.toWeb(stream as Readable) as ReadableStream, {
-            headers: {
-                "Content-Type": "application/gzip",
-                "Content-Disposition": attachmentDisposition(claim.selection.fileName),
-                // Length is unknown up front because the payload is produced on the fly.
-                "Cache-Control": "no-store",
-            },
-        });
+        // The name the prepare step promised, so the browser saves what the user was shown.
+        return downloadResponse({ ...download, fileName: claim.selection.fileName });
     } catch (e: unknown) {
         log.error("Prepared file download failed", { configId: id }, wrapError(e));
         return NextResponse.json({ success: false, error: getErrorMessage(e) }, { status: 500 });

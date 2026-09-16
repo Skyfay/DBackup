@@ -13,5 +13,10 @@ export default async function RestorePage() {
 
     // Decides whether the key recovery dialog may offer to save a typed key, since doing so
     // creates a vault profile.
-    return <RestoreClient canManageVault={permissions.includes(PERMISSIONS.VAULT.WRITE)} />;
+    return (
+        <RestoreClient
+            canManageVault={permissions.includes(PERMISSIONS.VAULT.WRITE)}
+            canDownload={permissions.includes(PERMISSIONS.STORAGE.DOWNLOAD)}
+        />
+    );
 }

@@ -291,14 +291,14 @@ describe('JobService', () => {
                 { id: 'storage-1', name: 'SFTP Server', type: 'storage', storageRole: 'SOURCE' },
                 { id: 'dest-1', name: 'Backup NAS', type: 'storage', storageRole: 'DESTINATION' },
             ] as any);
-            // sqlite has no dumpOne capability - not combinable in v1
-            prismaMock.adapterConfig.findUnique.mockResolvedValue({ id: 'src-sqlite', adapterId: 'sqlite' } as any);
+            // Redis restores through a manual wizard that cannot put files back.
+            prismaMock.adapterConfig.findUnique.mockResolvedValue({ id: 'src-redis', adapterId: 'redis' } as any);
 
             await expect(
                 service.createJob({
-                    name: 'Sqlite Plus Directory Job',
+                    name: 'Redis Plus Directory Job',
                     schedule: '0 0 * * *',
-                    sourceId: 'src-sqlite',
+                    sourceId: 'src-redis',
                     destinations: [{ configId: 'dest-1', priority: 0, retention: '{}' }],
                     sources: [{ configId: 'storage-1', priority: 0, path: '/data' }],
                 })

@@ -48,14 +48,14 @@ export async function GET(req: NextRequest) {
 
         log.debug("Token validated", { storageId: tokenData.storageId, file: tokenData.file, decrypt: tokenData.decrypt });
 
-        const { storageId, file, decrypt } = tokenData;
+        const { storageId, file, decrypt, database } = tokenData;
 
         const tempDir = os.tmpdir();
         const tempName = `${path.basename(file)}_${Date.now()}`;
         tempFile = path.join(tempDir, tempName);
 
         // Download the file
-        const result = await storageService.downloadFile(storageId, file, tempFile, decrypt);
+        const result = await storageService.downloadFile(storageId, file, tempFile, decrypt, { database });
 
         if (!result.success) {
             await fsPromises.unlink(tempFile).catch(() => {});
@@ -69,10 +69,12 @@ export async function GET(req: NextRequest) {
         const stat = await fsPromises.stat(tempFile);
         log.debug("Download successful, token marked as used", { fileSize: stat.size });
 
-        // Determine filename
+        // Determine filename. A dump pulled out of a seekable archive arrives already named.
         let downloadFilename = path.basename(file);
 
-        if (result.isZip) {
+        if (result.fileName) {
+            downloadFilename = result.fileName;
+        } else if (result.isZip) {
             downloadFilename = downloadFilename.replace(/\.enc$/, "") + ".zip";
             if (!downloadFilename.endsWith(".zip")) downloadFilename += ".zip";
         } else if (decrypt && downloadFilename.endsWith(".enc")) {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { AuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
+import { AuthContext, checkAnyPermissionWithContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PermissionError, ApiKeyError, AuthenticationError } from "@/lib/logging/errors";
 import { PERMISSIONS, AVAILABLE_PERMISSIONS } from "@/lib/auth/permissions";
 
@@ -372,6 +372,33 @@ describe("Access Control", () => {
   // ========================================================================
   // getCurrentUserWithGroup()
   // ========================================================================
+  describe("checkAnyPermissionWithContext", () => {
+    const readOnly = [PERMISSIONS.STORAGE.RESTORE, PERMISSIONS.STORAGE.DOWNLOAD] as const;
+    const ctxWith = (permissions: string[], isSuperAdmin = false): AuthContext => ({
+      userId: "user-1",
+      permissions,
+      isSuperAdmin,
+      authMethod: "apikey",
+    });
+
+    it("lets a download-only integration read a backup's contents", () => {
+      expect(() => checkAnyPermissionWithContext(ctxWith([PERMISSIONS.STORAGE.DOWNLOAD]), readOnly)).not.toThrow();
+    });
+
+    it("lets a restore-only user read a backup's contents", () => {
+      expect(() => checkAnyPermissionWithContext(ctxWith([PERMISSIONS.STORAGE.RESTORE]), readOnly)).not.toThrow();
+    });
+
+    it("refuses a user holding neither, naming both", () => {
+      expect(() => checkAnyPermissionWithContext(ctxWith([PERMISSIONS.STORAGE.READ]), readOnly))
+        .toThrow(new PermissionError(`${PERMISSIONS.STORAGE.RESTORE} or ${PERMISSIONS.STORAGE.DOWNLOAD}`));
+    });
+
+    it("lets a SuperAdmin session through", () => {
+      expect(() => checkAnyPermissionWithContext(ctxWith([], true), readOnly)).not.toThrow();
+    });
+  });
+
   describe("getCurrentUserWithGroup", () => {
     it("should return null when session throws", async () => {
       mockGetSession.mockRejectedValue(new Error("headers unavailable"));

@@ -5,8 +5,10 @@
  * - manifest.json: Metadata about the archive and contained databases
  * - Individual dump files per database (format depends on adapter)
  *
- * Jobs with directory sources use the seekable v2 archive instead - its types live in
- * src/lib/archive/types.ts.
+ * No job writes this format anymore, every backup is a seekable v2 archive whose types live
+ * in src/lib/archive/types.ts. These types remain for restoring older backups.
+ *
+ * LEGACY-FORMAT(read): The whole file goes when older backups no longer need restoring.
  */
 
 /**

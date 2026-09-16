@@ -6,7 +6,7 @@ import { registry } from "@/lib/core/registry";
 import { StorageAdapter, BackupMetadata } from "@/lib/core/interfaces";
 import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import prisma from "@/lib/prisma";
-import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
+import { getAuthContext, checkAnyPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { archiveIndexService } from "@/services/backup/archive-index-service";
 import { keyRequiredResponse } from "@/lib/server/key-required-response";
@@ -42,7 +42,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     const { id } = await props.params;
 
     try {
-        checkPermissionWithContext(ctx, PERMISSIONS.STORAGE.RESTORE);
+        // Read-only: listing what a backup holds is part of restoring it and of downloading from it.
+        checkAnyPermissionWithContext(ctx, [PERMISSIONS.STORAGE.RESTORE, PERMISSIONS.STORAGE.DOWNLOAD]);
 
         const parsed = BrowseSchema.safeParse(await req.json());
         if (!parsed.success) {

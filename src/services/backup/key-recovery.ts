@@ -178,6 +178,7 @@ async function buildVerifier(
         });
     }
 
+    // LEGACY-FORMAT(shared): Whole-file encryption, used by older database backups and by config backups.
     const cipher = streamCipherParams(meta);
     if (!cipher) {
         throw new ValidationError("This backup is not encrypted, so it needs no key.", { field: "file" });

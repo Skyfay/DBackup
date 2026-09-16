@@ -134,8 +134,38 @@ URL=$(curl -s -X POST "${BASE_URL}/api/storage/${STORAGE_ID}/download-url" \
   -d "{\"file\": \"${LATEST}\"}" | jq -r '.url')
 
 # 4. Download
-wget -O latest_backup.sql.gz "$URL"
+wget --content-disposition "$URL"
 ```
+
+For a backup of a single database, this downloads the dump itself, decrypted and decompressed, named after the backup and the database. A backup of several databases needs the database named, see the next section.
+
+### Download a Single Database
+
+An API key with only `storage:download` is enough. Only the chosen database is read from the destination, however many databases the backup holds.
+
+```bash
+# 1. List the databases in a backup
+curl -s -X POST "${BASE_URL}/api/storage/${STORAGE_ID}/analyze" \
+  -H "Authorization: Bearer ${API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d "{\"file\": \"${BACKUP}\"}" | jq '.databaseDetails'
+
+# 2a. Stream one dump straight to disk
+curl -s -X POST "${BASE_URL}/api/storage/${STORAGE_ID}/restore-files" \
+  -H "Authorization: Bearer ${API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d "{\"file\": \"${BACKUP}\", \"databases\": [\"customer_shop_prod\"], \"target\": {\"kind\": \"download\"}}" \
+  -OJ
+
+# 2b. Or get a single-use link for a server that has no API key
+URL=$(curl -s -X POST "${BASE_URL}/api/storage/${STORAGE_ID}/download-url" \
+  -H "Authorization: Bearer ${API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d "{\"file\": \"${BACKUP}\", \"database\": \"customer_shop_prod\"}" | jq -r '.url')
+wget --content-disposition "$URL"
+```
+
+Naming several databases in `databases` returns them together as a `.tar.gz`. Backups written by earlier versions for database-only jobs are single files, so they can only be downloaded whole.
 
 ### Show Statistics on a Homepage Dashboard
 

@@ -55,6 +55,24 @@ describe("getDialect", () => {
     it("returns MySQL80Dialect for unknown adapterId without version", () => {
         expect(getDialect("unknown")).toBeInstanceOf(MySQL80Dialect);
     });
+
+    it("returns the base dialect for MySQL before 5.5.3", () => {
+        // utf8mb4 arrived in 5.5.3, older servers must not get the 8.0 charset flag (#151).
+        expect(getDialect("mysql", "5.1.66")).toBeInstanceOf(MySQLBaseDialect);
+        expect(getDialect("mysql", "5.1.66")).not.toBeInstanceOf(MySQL80Dialect);
+        expect(getDialect("mysql", "5.5.2")).not.toBeInstanceOf(MySQL80Dialect);
+    });
+
+    it("returns MySQL80Dialect for MySQL 5.5.3 up to 5.6", () => {
+        expect(getDialect("mysql", "5.5.3")).toBeInstanceOf(MySQL80Dialect);
+        expect(getDialect("mysql", "5.6.51")).toBeInstanceOf(MySQL80Dialect);
+    });
+
+    it("omits the charset flag from dump args for MySQL before 5.5.3", () => {
+        const args = getDialect("mysql", "5.1.66").getDumpArgs(baseMySQLConfig, ["mydb"]);
+        expect(args.some((a) => a.startsWith("--default-character-set"))).toBe(false);
+        expect(args).toContain("--databases");
+    });
 });
 
 // --- MySQLBaseDialect ---
@@ -241,6 +259,15 @@ describe("MySQL80Dialect", () => {
             const args = dialect.getDumpArgs(baseMySQLConfig, ["mydb"]);
             expect(args).toContain("--protocol=tcp");
             expect(args).toContain("--databases");
+        });
+
+        it("lets a --default-character-set in the options override utf8mb4", () => {
+            const args = dialect.getDumpArgs(
+                { ...baseMySQLConfig, options: "--default-character-set=utf8" },
+                ["mydb"],
+            );
+            const charsetFlags = args.filter((a) => a.startsWith("--default-character-set"));
+            expect(charsetFlags).toEqual(["--default-character-set=utf8"]);
         });
     });
 });

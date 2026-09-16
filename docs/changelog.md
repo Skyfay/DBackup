@@ -22,6 +22,7 @@ All notable changes to DBackup are documented here.
 - **api**: A `databaseMapping` sent as an object of renames to `POST /api/storage/{id}/restore` is now applied. Restores of backups with directory sources ignored it before and restored every database under its original name.
 - **storage**: A prepared download that is cancelled in the browser no longer leaves its temp file behind on the server.
 - **backup**: An incremental chain whose full backup is missing from the execution history now starts a new chain instead of growing past its maximum age.
+- **MySQL**: Dumps against a MySQL server older than 5.5.3 no longer force the `utf8mb4` character set, and a `--default-character-set` in the Additional Options now overrides the default. The job also warns when the detected version is below the supported minimum. ([#151](https://github.com/Skyfay/DBackup/issues/151))
 
 ### 🔒 Security
 

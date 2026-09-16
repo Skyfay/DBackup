@@ -111,6 +111,27 @@ describe.each<HostKind>(["direct", "ssh"])("MySQL dump over a %s host", (kind) =
         expect(host.calls.spawn[0]).toContain("--net-buffer-length=16384");
     });
 
+    it("skips the utf8mb4 flag and warns for MySQL below 5.5.3", async () => {
+        // utf8mb4 does not exist before 5.5.3, an old mysqldump rejects the flag
+        // and the dump comes back empty (#151).
+        const host = dumpHost(kind);
+        const onLog = vi.fn();
+        await dump({ ...baseConfig, detectedVersion: "5.1.66" } as never, "/tmp/out.sql", host, onLog);
+
+        expect(host.calls.spawn[0]).not.toContain("--default-character-set=utf8mb4");
+        const warning = onLog.mock.calls.find(([, level]) => level === "warning");
+        expect(warning?.[0]).toContain("5.1.66");
+        expect(warning?.[0]).toContain("5.7");
+    });
+
+    it("does not warn about the version for a supported MySQL", async () => {
+        const host = dumpHost(kind);
+        const onLog = vi.fn();
+        await dump({ ...baseConfig, detectedVersion: "8.0.44" } as never, "/tmp/out.sql", host, onLog);
+
+        expect(onLog.mock.calls.some(([, level]) => level === "warning")).toBe(false);
+    });
+
     it("appends extra options from the config", async () => {
         const host = dumpHost(kind);
         await dump({ ...baseConfig, options: "--single-transaction --quick" } as never, "/tmp/out.sql", host);

@@ -3278,10 +3278,24 @@ components:
           type: string
           description: Override target DB name (single-DB backups)
         databaseMapping:
-          type: object
-          additionalProperties:
-            type: string
-          description: "Rename mapping for multi-DB restores (`{ \"old_name\": \"new_name\" }`)"
+          description: |
+            Which databases to restore and under which names. Either an object of renames, `{ "old_name": "new_name" }`, which restores exactly the databases it names, or a list of entries where only entries with `selected: true` are restored. Omit it to restore every database in the backup.
+          oneOf:
+            - type: object
+              additionalProperties:
+                type: string
+            - type: array
+              items:
+                type: object
+                required: [originalName]
+                properties:
+                  originalName:
+                    type: string
+                  targetName:
+                    type: string
+                    description: Defaults to originalName
+                  selected:
+                    type: boolean
           example:
             old_db: new_db
         privilegedAuth:

@@ -1,4 +1,5 @@
 import type { TriggerInfo } from "@/lib/runner";
+import type { DatabaseMappingEntry } from "./database-mapping";
 
 /** Selects a directory entry (from a seekable v2 archive) to restore, and where to. */
 export interface DirectoryRestoreMapping {
@@ -35,7 +36,11 @@ export interface RestoreInput {
      * archive (or the caller's selection) includes at least one database entry. */
     targetSourceId?: string;
     targetDatabaseName?: string;
-    databaseMapping?: Record<string, string> | any[];
+    /**
+     * Which databases to restore and under which names. Callers may send an object of renames,
+     * RestoreService turns it into a list of entries before anything reads it.
+     */
+    databaseMapping?: Record<string, string> | DatabaseMappingEntry[];
     /** Directory entries to restore from a combined (v2) archive - see DirectoryRestoreMapping. */
     directoryMapping?: DirectoryRestoreMapping[];
     /**

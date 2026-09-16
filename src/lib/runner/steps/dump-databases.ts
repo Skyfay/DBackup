@@ -103,6 +103,7 @@ export async function dumpDatabases(ctx: RunnerContext, workDir: string): Promis
     try {
         const selected = parseJobDatabases(job.databases);
         let dbNames: string[] = [];
+        let discoveryError: string | undefined;
 
         if (adapter.listDumpEntries) {
             dbNames = await adapter.listDumpEntries(sourceConfig, selected, host);
@@ -113,13 +114,18 @@ export async function dumpDatabases(ctx: RunnerContext, workDir: string): Promis
             try {
                 dbNames = await adapter.getDatabases(sourceConfig, host);
             } catch (e: unknown) {
-                const message = e instanceof Error ? e.message : String(e);
-                ctx.log(`Warning: Could not auto-discover databases: ${message}`, "warning");
+                discoveryError = e instanceof Error ? e.message : String(e);
+                ctx.log(`Warning: Could not auto-discover databases: ${discoveryError}`, "warning");
             }
         }
 
         if (dbNames.length === 0) {
-            throw new Error("No databases found to back up. Select the databases in the job explicitly.");
+            // Listing databases needs its own privilege, which a least-privilege backup user
+            // often lacks, MongoDB's listDatabases being the usual case. Every database has to
+            // be dumped by name, so the job cannot fall back to dumping whatever the user sees.
+            throw new Error(discoveryError
+                ? `Could not list the databases on this server (${discoveryError}). Select the databases to back up in the job, or grant the backup user the right to list databases.`
+                : "No databases found to back up. Select the databases in the job explicitly.");
         }
         ctx.log(`Databases to dump: ${dbNames.join(", ")}`);
 

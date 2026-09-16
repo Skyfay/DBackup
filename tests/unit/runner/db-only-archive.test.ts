@@ -200,4 +200,14 @@ describe('a job that backs up databases only', () => {
 
         await expect(runDbOnlyJob({ databases: '[]' }, adapter)).rejects.toThrow(/No databases found to back up/);
     });
+
+    it('asks for an explicit selection when the backup user may not list databases', async () => {
+        // A least-privilege MongoDB user without listDatabases. Every database is dumped by
+        // name, so there is nothing to fall back to.
+        const adapter = fakeMysql({ getDatabases: vi.fn().mockRejectedValue(new Error('not authorized on admin to execute command listDatabases')) });
+
+        await expect(runDbOnlyJob({ databases: '[]' }, adapter))
+            .rejects.toThrow(/Could not list the databases on this server \(not authorized.*\)\. Select the databases to back up in the job/);
+        expect(adapter.dumpOne).not.toHaveBeenCalled();
+    });
 });

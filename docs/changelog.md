@@ -16,6 +16,7 @@ All notable changes to DBackup are documented here.
 ### 🐛 Bug Fixes
 
 - **backup**: Backups with directory sources recorded their uncompressed size as the backup size. They now record the size of the stored archive.
+- **api**: A `databaseMapping` sent as an object of renames to `POST /api/storage/{id}/restore` is now applied. Restores of backups with directory sources ignored it before and restored every database under its original name.
 
 ### 🔒 Security
 
@@ -25,6 +26,7 @@ All notable changes to DBackup are documented here.
 
 - **backup**: Every backup job now writes the seekable archive format, including jobs that back up only databases. Backups in the older formats stay restorable and downloadable.
 - **storage**: Analyzing and browsing a backup accept the `storage:download` permission as well as `storage:restore`.
+- **mongodb**: A job without a database selection now fails with a message asking to select the databases when the backup user cannot list them. Before, `mongodump` ran without a database and backed up whatever that user could read.
 
 ### 📝 Documentation
 

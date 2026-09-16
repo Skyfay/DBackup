@@ -13,30 +13,41 @@ All notable changes to DBackup are documented here.
 - **storage**: A single database can be downloaded out of a backup from the Storage Explorer, the restore page or the API with the `storage:download` permission. ([#138](https://github.com/Skyfay/DBackup/issues/138))
 - **jobs**: Microsoft SQL Server, Azure SQL Database and SQLite sources can now be combined with directory sources in one job.
 - **vault**: Encryption profiles can be renamed and their description edited from the Encryption Vault. ([#161](https://github.com/Skyfay/DBackup/issues/161))
+- **history**: Execution logs and History entries can be cleaned up automatically after a set period under Settings → General → Data Retention. Runs that a job still builds on are always kept.
+- **settings**: A new Database section under Settings → General shows the size of the DBackup database and optimizes it with VACUUM. SuperAdmins can also download a copy of the database file.
 
 ### 🐛 Bug Fixes
 
 - **backup**: Backups with directory sources recorded their uncompressed size as the backup size. They now record the size of the stored archive.
 - **api**: A `databaseMapping` sent as an object of renames to `POST /api/storage/{id}/restore` is now applied. Restores of backups with directory sources ignored it before and restored every database under its original name.
+- **storage**: A prepared download that is cancelled in the browser no longer leaves its temp file behind on the server.
+- **backup**: An incremental chain whose full backup is missing from the execution history now starts a new chain instead of growing past its maximum age.
 
 ### 🔒 Security
 
 - **recovery-kit**: `--extract` no longer writes a database dump outside the output folder when the database name contains path separators.
+
+### 🎨 Improvements
+
+- **history**: History, the dashboard and the job queue stay fast on instances with tens of thousands of runs.
 
 ### 🔄 Changed
 
 - **backup**: Every backup job now writes the seekable archive format, including jobs that back up only databases. Backups in the older formats stay restorable and downloadable.
 - **storage**: Analyzing and browsing a backup accept the `storage:download` permission as well as `storage:restore`.
 - **mongodb**: A job without a database selection now fails with a message asking to select the databases when the backup user cannot list them. Before, `mongodump` ran without a database and backed up whatever that user could read.
+- **settings**: The retention settings moved from Job Execution into their own Data Retention card with clearer names, where the health check retention can now be set too. Detailed execution logs older than 90 days are now removed by default while the runs stay in History.
 
 ### 📝 Documentation
 
 - **docs**: The restore, Storage Explorer, Recovery Kit, API and archive format guides describe single database restores and downloads out of a seekable archive. A new developer page lists the code that still serves the older backup formats.
 - **docs**: The encryption guide describes renaming an encryption profile.
+- **docs**: A new guide explains what each data retention setting removes and how to optimize or download the DBackup database.
 
 ### 🧪 Tests
 
 - **tests**: New integration test dumps, packs, extracts and restores one database of every test container through the seekable archive.
+- **tests**: New unit tests cover execution history cleanup, database maintenance, the database download route and cancelled downloads.
 
 ### 🐳 Docker
 

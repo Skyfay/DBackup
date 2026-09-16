@@ -106,7 +106,7 @@ if (success) {
 
 ### Retention
 
-Logs are automatically deleted once a day by the `CLEAN_OLD_LOGS` system task, not on every health check run. Default retention is 2 days, configurable via the `healthcheck.logRetentionDays` system setting.
+Logs are automatically deleted once a day by the `CLEAN_OLD_LOGS` system task, not on every health check run. Default retention is 2 days, configurable as **Health Check History** under Settings → General → Data Retention (`healthcheck.logRetentionDays`).
 
 ## System Task Integration
 

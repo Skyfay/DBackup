@@ -280,8 +280,14 @@ model Execution {
   metadata     String?             // JSON: encryption metadata, checksums, etc.
   triggerType  String?             // "Manual" | "Scheduler" | "Api"
   triggerLabel String?             // e.g. user name, API key name, "Scheduler"
+  logsPurgedAt DateTime?           // Set when data retention cleared `logs`
 
   job          Job?      @relation(...)
+
+  @@index([startedAt])
+  @@index([status, startedAt])
+  @@index([jobId, startedAt])
+  @@index([logsPurgedAt, startedAt])
 }
 ```
 

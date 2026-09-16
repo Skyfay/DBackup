@@ -2,7 +2,7 @@ import { auth } from "@/lib/auth";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { getUserPermissions } from "@/lib/auth/access-control";
+import { getCurrentUserWithGroup, getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { isEmailLoginDisabled } from "@/lib/auth/env-flags";
 import prisma from "@/lib/prisma";
@@ -16,6 +16,14 @@ import { CertificateSettings } from "@/components/settings/certificate-settings"
 import { PrivacySettings } from "@/components/settings/privacy-settings";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getRateLimitConfig } from "@/lib/rate-limit/server";
+import { DataRetentionCard } from "@/components/settings/data-retention-card";
+import { DatabaseCard } from "@/components/settings/database-card";
+import { getDataRetentionOverview } from "@/services/system/data-retention-service";
+import { getDatabaseInfo } from "@/services/system/database-service";
+import { logger } from "@/lib/logging/logger";
+import { wrapError } from "@/lib/logging/errors";
+
+const log = logger.child({ page: "settings" });
 
 export default async function SettingsPage() {
     const headersList = await headers();
@@ -31,6 +39,8 @@ export default async function SettingsPage() {
     if (!permissions.includes(PERMISSIONS.SETTINGS.READ)) {
         redirect("/dashboard");
     }
+    const canManageSettings = permissions.includes(PERMISSIONS.SETTINGS.WRITE);
+    const isSuperAdmin = (await getCurrentUserWithGroup())?.group?.name === "SuperAdmin";
 
     // Load Settings
     const maxJobsSetting = await prisma.systemSetting.findUnique({ where: { key: "maxConcurrentJobs" } });
@@ -52,15 +62,6 @@ export default async function SettingsPage() {
     const sessionDurationSetting = await prisma.systemSetting.findUnique({ where: { key: "auth.sessionDuration" } });
     const sessionDuration = sessionDurationSetting ? parseInt(sessionDurationSetting.value) : 604800;
 
-    const retentionSetting = await prisma.systemSetting.findUnique({ where: { key: "audit.retentionDays" } });
-    const auditLogRetentionDays = retentionSetting ? parseInt(retentionSetting.value) : 90;
-
-    const snapshotRetentionSetting = await prisma.systemSetting.findUnique({ where: { key: "storage.snapshotRetentionDays" } });
-    const storageSnapshotRetentionDays = snapshotRetentionSetting ? parseInt(snapshotRetentionSetting.value) : 90;
-
-    const notifLogRetentionSetting = await prisma.systemSetting.findUnique({ where: { key: "notification.logRetentionDays" } });
-    const notificationLogRetentionDays = notifLogRetentionSetting ? parseInt(notifLogRetentionSetting.value) : 90;
-
     const checkUpdatesSetting = await prisma.systemSetting.findUnique({ where: { key: "general.checkForUpdates" } });
     const checkForUpdates = checkUpdatesSetting ? checkUpdatesSetting.value === 'true' : true;
 
@@ -75,6 +76,13 @@ export default async function SettingsPage() {
 
     const instanceNameSetting = await prisma.systemSetting.findUnique({ where: { key: "general.instanceName" } });
     const instanceName = instanceNameSetting?.value || "";
+
+    const dataRetention = await getDataRetentionOverview();
+    // Size figures come from the file system. A failure there should not take the whole page down.
+    const databaseInfo = await getDatabaseInfo().catch((error: unknown) => {
+        log.warn("Failed to read database info", {}, wrapError(error));
+        return null;
+    });
 
     // Load Config Backup Settings
     const configEnabled = await prisma.systemSetting.findUnique({ where: { key: "config.backup.enabled" } });
@@ -150,15 +158,23 @@ export default async function SettingsPage() {
                         initialDisablePasskeyLogin={disablePasskeyLogin}
                         emailLoginDisabledByEnv={emailLoginDisabledByEnv}
                         initialSessionDuration={sessionDuration}
-                        initialAuditLogRetentionDays={auditLogRetentionDays}
-                        initialStorageSnapshotRetentionDays={storageSnapshotRetentionDays}
-                        initialNotificationLogRetentionDays={notificationLogRetentionDays}
                         initialCheckForUpdates={checkForUpdates}
                         initialShowQuickSetup={showQuickSetup}
                         initialSystemTimezone={systemTimezone}
                         initialFilenamePattern={filenamePattern}
                         initialInstanceName={instanceName}
-                    />
+                    >
+                        <DataRetentionCard
+                            initialValues={dataRetention.values}
+                            counts={dataRetention.counts}
+                            canManage={canManageSettings}
+                        />
+                        <DatabaseCard
+                            initialInfo={databaseInfo}
+                            canManage={canManageSettings}
+                            isSuperAdmin={isSuperAdmin}
+                        />
+                    </SystemSettingsForm>
                 </TabsContent>
                 <TabsContent value="notifications" className="space-y-4">
                     <NotificationSettings />

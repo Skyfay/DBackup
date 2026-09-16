@@ -99,6 +99,8 @@ export async function GET(
                 size: execution.size ? Number(execution.size) : null,
                 path: execution.path ?? null,
                 error,
+                // Set when data retention cleared the log. `logs` is then an empty array.
+                logsPurgedAt: execution.logsPurgedAt?.toISOString() ?? null,
             },
         };
 

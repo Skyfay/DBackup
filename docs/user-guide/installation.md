@@ -209,7 +209,7 @@ Without a mount, all of that lands inside the container's writable layer on the 
 :::
 
 ::: info SQLite WAL mode
-DBackup runs its internal SQLite database in [WAL (Write-Ahead Logging)](https://www.sqlite.org/wal.html) mode by default for better read/write concurrency. This creates two extra files next to the database, `dbackup.db-wal` and `dbackup.db-shm`, inside `/data/db`. They are normal and required while the app is running - do not delete them manually. Back up or copy the whole `db` folder together (not just the `.db` file) to avoid losing uncommitted writes. Set `SQLITE_WAL_MODE=false` to disable WAL mode if your storage backend doesn't support it (e.g. some network shares/NFS mounts).
+DBackup runs its internal SQLite database in [WAL (Write-Ahead Logging)](https://www.sqlite.org/wal.html) mode by default for better read/write concurrency. This creates two extra files next to the database, `dbackup.db-wal` and `dbackup.db-shm`, inside `/data/db`. They are normal and required while the app is running - do not delete them manually. Back up or copy the whole `db` folder together (not just the `.db` file) to avoid losing uncommitted writes, or use **Download Database** under [Settings → General → Database](/user-guide/admin/data-retention#download-database) for a single consistent file. Set `SQLITE_WAL_MODE=false` to disable WAL mode if your storage backend doesn't support it (e.g. some network shares/NFS mounts).
 :::
 
 ## Health Check

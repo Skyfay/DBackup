@@ -245,7 +245,13 @@ model Execution {
   baseArchive  String?   // Filename of the predecessor, not an Execution id
   chainIndex   Int?      // Position in the chain, full = 0
   logicalSize  BigInt?   // Full snapshot size, as opposed to `size` which is what was stored
+  logsPurgedAt DateTime? // Set when data retention cleared `logs`, so the UI can tell it apart from a run without logs
   job          Job?      @relation(fields: [jobId], references: [id])
+
+  @@index([startedAt])
+  @@index([status, startedAt])
+  @@index([jobId, startedAt])
+  @@index([logsPurgedAt, startedAt])
 }
 
 model User {

@@ -3,7 +3,6 @@ import { registerAdapters } from "@/lib/adapters";
 import { storageService } from "@/services/storage/storage-service";
 import { getTempDir } from "@/lib/temp-dir";
 import path from "path";
-import fs from "fs";
 import fsPromises from "fs/promises";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
@@ -12,7 +11,7 @@ import { logger } from "@/lib/logging/logger";
 import { wrapError, getErrorMessage } from "@/lib/logging/errors";
 import { generateFileDownloadToken, consumeFileDownloadToken, markTokenUsed } from "@/lib/auth/download-tokens";
 import { keyRequiredResponse } from "@/lib/server/key-required-response";
-import { attachmentDisposition } from "@/lib/server/content-disposition";
+import { tempFileDownloadResponse } from "@/lib/server/temp-file-response";
 import { z } from "zod";
 
 const log = logger.child({ route: "storage/download" });
@@ -39,58 +38,8 @@ function decryptedFileName(file: string, isZip: boolean, decrypt = true): string
  * pulled out of a seekable archive does.
  */
 function buildDownloadResponse(tempFile: string, file: string, decrypt: boolean, isZip: boolean, fileName?: string) {
-    const stat = fs.statSync(tempFile);
     const downloadFilename = fileName ?? decryptedFileName(file, isZip, decrypt);
-
-    const fileStream = fs.createReadStream(tempFile);
-    const readableStream = new ReadableStream({
-        start(controller) {
-            fileStream.on('data', (chunk: Buffer | string) => controller.enqueue(typeof chunk === 'string' ? Buffer.from(chunk) : chunk));
-            fileStream.on('end', () => {
-                controller.close();
-                fsPromises.unlink(tempFile).catch(() => {});
-            });
-            fileStream.on('error', (err) => {
-                controller.error(err);
-                fsPromises.unlink(tempFile).catch(() => {});
-            });
-        }
-    });
-
-    return new NextResponse(readableStream, {
-        headers: {
-            "Content-Disposition": attachmentDisposition(downloadFilename),
-            "Content-Type": isZip ? "application/zip" : "application/octet-stream",
-            "Content-Length": String(stat.size),
-        }
-    });
-}
-
-/** Streams a file a prepare step already produced, then removes it. */
-function buildPreparedResponse(tempFile: string, fileName: string, contentType: string) {
-    const stat = fs.statSync(tempFile);
-    const fileStream = fs.createReadStream(tempFile);
-    const readableStream = new ReadableStream({
-        start(controller) {
-            fileStream.on('data', (chunk: Buffer | string) => controller.enqueue(typeof chunk === 'string' ? Buffer.from(chunk) : chunk));
-            fileStream.on('end', () => {
-                controller.close();
-                fsPromises.unlink(tempFile).catch(() => { });
-            });
-            fileStream.on('error', (err) => {
-                controller.error(err);
-                fsPromises.unlink(tempFile).catch(() => { });
-            });
-        }
-    });
-
-    return new NextResponse(readableStream, {
-        headers: {
-            "Content-Disposition": attachmentDisposition(fileName),
-            "Content-Type": contentType,
-            "Content-Length": String(stat.size),
-        }
-    });
+    return tempFileDownloadResponse(tempFile, downloadFilename, isZip ? "application/zip" : "application/octet-stream");
 }
 
 export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
@@ -121,7 +70,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
                 );
             }
             markTokenUsed(token);
-            return buildPreparedResponse(claim.localFile.tempFile, claim.localFile.fileName, claim.localFile.contentType);
+            return tempFileDownloadResponse(claim.localFile.tempFile, claim.localFile.fileName, claim.localFile.contentType);
         }
 
         const file = searchParams.get("file");

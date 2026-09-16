@@ -20,6 +20,7 @@ import { archiveIndexService } from "./archive-index-service";
 import { ArchiveIndex } from "@/lib/archive/types";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
+import { latestChainSnapshotWhere } from "./chain-query";
 
 const log = logger.child({ service: "ChainPlanner" });
 
@@ -49,7 +50,8 @@ interface PreviousSnapshot {
     chainIndex: number;
     /** Remote path of the archive, e.g. "job/chain-.../inc-2.tar". */
     remotePath: string;
-    chainStartedAt: Date;
+    /** Null when the chain's full is no longer in the execution history. */
+    chainStartedAt: Date | null;
     /** Remote path of the chain's full backup, which every snapshot depends on. */
     fullPath: string | null;
 }
@@ -57,13 +59,7 @@ interface PreviousSnapshot {
 /** Newest successful snapshot of the job's current chain, if there is one. */
 async function findPreviousSnapshot(jobId: string): Promise<PreviousSnapshot | null> {
     const previous = await prisma.execution.findFirst({
-        where: {
-            jobId,
-            type: "Backup",
-            status: { in: ["Success", "Partial"] },
-            chainId: { not: null },
-            path: { not: null },
-        },
+        where: latestChainSnapshotWhere(jobId),
         orderBy: { startedAt: "desc" },
     });
     if (!previous?.chainId || !previous.path) return null;
@@ -78,7 +74,7 @@ async function findPreviousSnapshot(jobId: string): Promise<PreviousSnapshot | n
         chainId: previous.chainId,
         chainIndex: previous.chainIndex ?? 0,
         remotePath: previous.path,
-        chainStartedAt: chainStart?.startedAt ?? previous.startedAt,
+        chainStartedAt: chainStart?.startedAt ?? null,
         fullPath: chainStart?.path ?? null,
     };
 }
@@ -155,6 +151,10 @@ export async function planChain(input: ChainPlanInput): Promise<ChainPlan> {
 
     const previous = await findPreviousSnapshot(input.job.id);
     if (!previous) return fresh("no previous backup to build on");
+
+    // Without the full's record the chain's age is unknown. Guessing it from a later snapshot
+    // would make the chain look younger than it is and keep it growing past fullEveryDays.
+    if (!previous.chainStartedAt) return fresh("the chain's full backup is no longer in the execution history");
 
     const ageDays = (input.now.getTime() - previous.chainStartedAt.getTime()) / 86_400_000;
     if (ageDays >= input.job.fullEveryDays) {

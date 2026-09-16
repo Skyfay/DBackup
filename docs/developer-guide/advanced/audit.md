@@ -126,15 +126,9 @@ await auditService.log(
 
 ## Retention Policy
 
-The audit service automatically cleans up old entries based on the system setting `audit.retentionDays`:
+Old entries are removed by `auditService.cleanOldLogs(retentionDays)` based on the system setting `audit.retentionDays` (default 90 days, **Audit Log** under Settings → General → Data Retention).
 
-```typescript
-// Default: 90 days
-const retentionDays = await getSystemSetting('audit.retentionDays', 90);
-await auditService.cleanup(retentionDays);
-```
-
-This runs as a system task (`system.audit_cleanup`).
+This runs as part of the "Clean Old Data" system task (`system.clean_audit_logs`), together with the other data retention settings.
 
 ## API Endpoints
 

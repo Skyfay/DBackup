@@ -8,6 +8,7 @@ import type { RestoreInput } from "./types";
 import { preflightRestore } from "./preflight";
 import { runRestorePipeline } from "./pipeline";
 import { normalizeDatabaseMapping } from "./database-mapping";
+import { assertNoDatabaseMaintenance } from "@/lib/server/database-maintenance";
 
 const svcLog = logger.child({ service: "RestoreService" });
 
@@ -41,6 +42,9 @@ export class RestoreService {
             type: 'general',
             stage: 'Initializing'
         };
+
+        // Checked right before the run is recorded, since the preflight above can take a while.
+        assertNoDatabaseMaintenance("restore");
 
         // Start Logging Execution
         const execution = await prisma.execution.create({

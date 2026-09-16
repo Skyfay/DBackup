@@ -74,6 +74,29 @@ describe('Download Tokens', () => {
         });
     });
 
+    describe('database downloads', () => {
+        it('carries the database a wget link was created for', () => {
+            const token = generateDownloadToken('storage-1', 'jobs/nightly.tar', true, 'shop');
+            expect(consumeDownloadToken(token)).toMatchObject({ file: 'jobs/nightly.tar', decrypt: true, database: 'shop' });
+        });
+
+        it('leaves the database out of a link for a whole file', () => {
+            const token = generateDownloadToken('storage-1', 'jobs/nightly.sql.gz', true);
+            expect(consumeDownloadToken(token)).not.toHaveProperty('database');
+        });
+
+        it('carries the chosen databases and response type through a prepared download', () => {
+            const token = generateSelectionDownloadToken({
+                storageId: 'storage-1', file: 'jobs/nightly.tar', userId: 'user-1',
+                fileName: 'nightly_shop.sql', contentType: 'application/octet-stream', databases: ['shop'],
+            });
+
+            expect(consumeSelectionDownloadToken(token, 'user-1')?.selection).toMatchObject({
+                databases: ['shop'], fileName: 'nightly_shop.sql', contentType: 'application/octet-stream',
+            });
+        });
+    });
+
     describe('consumeDownloadToken', () => {
         it('should return null for non-existent token', () => {
             const result = consumeDownloadToken('non-existent-token');

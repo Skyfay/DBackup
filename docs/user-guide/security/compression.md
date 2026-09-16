@@ -69,7 +69,9 @@ Brotli's lead over Gzip grows the more repetition there is:
 
 ### File Extensions
 
-Compressed backups have extensions:
+Every backup is a seekable archive that compresses each database dump and each file on its own, so the archive keeps its `.tar` name. In an unencrypted archive the entries carry the extension instead, for example `databases/shop.sql.gz`.
+
+Backups written by earlier versions for database-only jobs are compressed as a whole and have extensions:
 - Gzip: `backup.sql.gz`
 - Brotli: `backup.sql.br`
 
@@ -79,8 +81,7 @@ With encryption:
 
 ## Already-Compressed Formats
 
-In a file or folder backup, every file is compressed on its own. Files whose format is
-already compressed are stored as-is instead, even when the job has compression enabled.
+Every file of a directory source is compressed on its own. Files whose format is already compressed are stored as-is instead, even when the job has compression enabled. The same goes for database dumps the engine already compressed: PostgreSQL custom-format dumps with compression on, MongoDB archives and Azure SQL BACPACs.
 
 Recompressing them gains a fraction of a percent at best, and costs the full CPU time plus a
 complete extra write and read of the file through a temporary file. On a photo or video

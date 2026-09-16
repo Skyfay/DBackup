@@ -1500,6 +1500,10 @@ paths:
       description: |
         Creates a temporary, single-use download link that works without authentication.
         The token expires after 5 minutes and is consumed on first use.
+
+        A decrypted link to a seekable archive downloads one database dump rather than the archive. Name it with `database`, which may be omitted when the backup holds exactly one database and no files. The response names the file after the backup and the database, so use `wget --content-disposition` or `curl -OJ` to keep that name.
+
+        **Required permission:** `storage:download`
       operationId: generateDownloadUrl
       security:
         - BearerAuth: []
@@ -1520,6 +1524,10 @@ paths:
                 decrypt:
                   type: boolean
                   default: true
+                database:
+                  type: string
+                  description: For a decrypted download of a seekable archive, the database dump to download
+                  example: "shop_production"
       responses:
         "401":
           $ref: "#/components/responses/Unauthorized"
@@ -1614,7 +1622,10 @@ paths:
     post:
       tags: [Storage Explorer]
       summary: Analyze Backup
-      description: Extract database names from a backup file (used for restore UI).
+      description: |
+        Lists the databases, and for a seekable archive the directory sources, a backup contains. A seekable archive is answered from its index without downloading the backup.
+
+        **Required permission:** `storage:restore` or `storage:download`
       operationId: analyzeBackup
       security:
         - BearerAuth: []
@@ -1651,6 +1662,171 @@ paths:
                     items:
                       type: string
                     example: ["mydb", "app_production"]
+                  databaseDetails:
+                    type: array
+                    description: Seekable archives only. Each database with its dump format and plaintext size.
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                          example: "app_production"
+                        format:
+                          type: string
+                          enum: [sql, custom, archive, bak, fbk, bacpac, rdb, sqlite]
+                        size:
+                          type: integer
+                          example: 52428800
+
+  /storage/{id}/restore-files:
+    post:
+      tags: [Storage Explorer]
+      summary: Restore or Download Archive Contents
+      description: |
+        Reads files and database dumps out of a seekable archive, fetching only the selected entries from the destination where it supports byte ranges.
+
+        With `target.kind` set to `download` the selection is streamed back. Exactly one entry in `databases` and no `selections` returns that database dump on its own, decrypted and decompressed. Anything else returns a `.tar.gz`, and sending neither `selections` nor `databases` returns the complete snapshot. With `prepare: true` the response is a token instead of the bytes, to be fetched with `GET` on the same path.
+
+        The other targets write files back into a storage destination. Database dumps can only be downloaded.
+
+        **Required permission:** `storage:download` for a download, `storage:restore` otherwise
+      operationId: restoreArchiveFiles
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [file, target]
+              properties:
+                file:
+                  type: string
+                  description: Backup file path
+                  example: "backups/shared-mysql-01/nightly_2026-09-16.tar"
+                selections:
+                  type: array
+                  description: Files to include, per directory source. An entry without paths means that whole source.
+                  items:
+                    type: object
+                    required: [src]
+                    properties:
+                      src:
+                        type: string
+                        description: Directory source id from the archive index
+                      paths:
+                        type: array
+                        items:
+                          type: string
+                databases:
+                  type: array
+                  description: Database dumps to include, by name. Download targets only.
+                  items:
+                    type: string
+                  example: ["customer_shop_prod"]
+                target:
+                  type: object
+                  required: [kind]
+                  properties:
+                    kind:
+                      type: string
+                      enum: [download, origin, storage]
+                    configId:
+                      type: string
+                      description: Storage destination, for kind `storage`
+                    basePath:
+                      type: string
+                      description: Path within that destination, for kind `storage`
+                excludePatterns:
+                  type: array
+                  items:
+                    type: string
+                dryRun:
+                  type: boolean
+                  description: Resolve the selection and report its size without reading anything
+                prepare:
+                  type: boolean
+                  description: Return a token for a `GET` download instead of the bytes
+                profileIdOverride:
+                  type: string
+                  description: Vault profile to open the backup with
+      responses:
+        "200":
+          description: The selection as a single dump or a `.tar.gz`, or JSON for `dryRun`, `prepare` and storage targets
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+            application/gzip:
+              schema:
+                type: string
+                format: binary
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      token:
+                        type: string
+                      fileName:
+                        type: string
+                        example: "nightly_2026-09-16_customer_shop_prod.sql"
+                      fileCount:
+                        type: integer
+                      databaseCount:
+                        type: integer
+                      totalBytes:
+                        type: integer
+                      fullDownload:
+                        type: boolean
+                      output:
+                        type: string
+                        enum: [dump, tar]
+        "400":
+          description: Invalid request, or `databases` combined with a storage target
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    get:
+      tags: [Storage Explorer]
+      summary: Collect Prepared Download
+      description: |
+        Streams a download prepared with `prepare: true`. The token belongs to the session or API key that created it and expires after 5 minutes.
+
+        **Required permission:** `storage:download`
+      operationId: collectArchiveDownload
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The prepared dump or `.tar.gz`
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "410":
+          description: Token expired or unknown
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /storage/{id}/verify:
     post:

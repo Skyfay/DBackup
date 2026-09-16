@@ -2,7 +2,9 @@ import path from "path";
 import prisma from "@/lib/prisma";
 import { getTempDir } from "@/lib/temp-dir";
 import { applyNamingPattern, chainSegment, patternUsesChain } from "@/lib/templates/naming-template-engine";
-import { JobWithRelations } from "../types";
+import fs from "fs/promises";
+import { formatBytes } from "@/lib/utils";
+import { JobWithRelations, RunnerContext } from "../types";
 
 export interface ResolvedBackupFilename {
     tempDir: string;
@@ -16,11 +18,9 @@ export interface ResolvedBackupFilename {
 }
 
 /**
- * Resolves the final backup filename/temp path for a job, using the same timezone/naming
- * pattern resolution 02-dump.ts uses for its own (untouched) single-adapter path. Used only by
- * the combined dump path (executeCombinedDump) - a combined archive is always a TAR regardless
- * of which database adapter (if any) is involved, so the extension is hardcoded rather than
- * derived from an adapterId.
+ * Resolves the final backup filename and temp path for a job from its naming template. Every
+ * backup is a seekable archive, which is a TAR whatever the source, so the extension is fixed
+ * rather than derived from an adapter.
  */
 export async function resolveBackupFilename(
     job: JobWithRelations,
@@ -58,7 +58,7 @@ export async function resolveBackupFilename(
     return { tempDir, tempFile, fileName, chainInFileName: patternUsesChain(pattern) };
 }
 
-/** Parses Job.databases (a JSON string array) defensively, same convention as 02-dump.ts. */
+/** Parses Job.databases (a JSON string array) defensively. */
 export function parseJobDatabases(databasesJson: string | null | undefined): string[] {
     try {
         const parsed = JSON.parse(databasesJson || "[]");
@@ -66,4 +66,23 @@ export function parseJobDatabases(databasesJson: string | null | undefined): str
     } catch {
         return [];
     }
+}
+
+/**
+ * Shows how far a running dump has got, by watching its file grow.
+ *
+ * Adapters write their dump straight to disk and report no byte counts of their own, so the
+ * file size is the only live progress there is. Returns the function that stops watching.
+ */
+export function watchDumpSize(ctx: RunnerContext, file: string, label: string): () => void {
+    const startedAt = Date.now();
+    const timer = setInterval(() => {
+        fs.stat(file).then((stats) => {
+            if (stats.size === 0) return;
+            const elapsed = (Date.now() - startedAt) / 1000;
+            const speed = elapsed > 0 ? Math.round(stats.size / elapsed) : 0;
+            ctx.updateDetail(`${label}: ${formatBytes(stats.size)} dumped - ${formatBytes(speed)}/s`);
+        }, () => { /* not written yet */ });
+    }, 800);
+    return () => clearInterval(timer);
 }

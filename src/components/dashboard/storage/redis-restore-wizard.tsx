@@ -19,6 +19,8 @@ import {
 import { FileInfo } from "@/app/dashboard/storage/columns";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { databaseDownloadFileName } from "@/lib/archive/dump-names";
+import { REDIS_SNAPSHOT_ENTRY } from "@/lib/adapters/database/redis/constants";
 
 interface RedisRestoreWizardProps {
     file: FileInfo;
@@ -68,6 +70,11 @@ function CommandBlock({ command, label }: { command: string; label?: string }) {
 
 export function RedisRestoreWizard({ file, destinationId, onCancel, engineName = "Redis" }: RedisRestoreWizardProps) {
     const engineLower = engineName.toLowerCase();
+    // A seekable archive downloads as the RDB entry it holds, named after the backup, not as
+    // the archive file itself.
+    const downloadedName = file.hasFileIndex
+        ? databaseDownloadFileName(file.name, REDIS_SNAPSHOT_ENTRY, "rdb")
+        : file.name;
     const cliBin = `${engineLower}-cli`;
     const STEPS = buildSteps(engineName);
     const [currentStep, setCurrentStep] = useState<WizardStep>("intro");
@@ -309,11 +316,11 @@ export function RedisRestoreWizard({ file, destinationId, onCancel, engineName =
                             <div className="space-y-3">
                                 <CommandBlock
                                     label="Linux (default path):"
-                                    command={`sudo cp ~/Downloads/${file.name} /var/lib/${engineLower}/dump.rdb\nsudo chown ${engineLower}:${engineLower} /var/lib/${engineLower}/dump.rdb`}
+                                    command={`sudo cp ~/Downloads/${downloadedName} /var/lib/${engineLower}/dump.rdb\nsudo chown ${engineLower}:${engineLower} /var/lib/${engineLower}/dump.rdb`}
                                 />
                                 <CommandBlock
                                     label="Docker:"
-                                    command={`docker cp ~/Downloads/${file.name} <container>:/data/dump.rdb`}
+                                    command={`docker cp ~/Downloads/${downloadedName} <container>:/data/dump.rdb`}
                                 />
                             </div>
 

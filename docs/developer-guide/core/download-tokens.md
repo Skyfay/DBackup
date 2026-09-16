@@ -41,8 +41,11 @@ import { generateDownloadToken } from "@/lib/auth/download-tokens";
 // - storageId: Storage adapter config ID
 // - file: File path within storage
 // - decrypt: Whether to decrypt on download (default: true)
-const token = generateDownloadToken(storageId, filePath, decrypt);
+// - database: For a seekable archive, the database dump to download (optional)
+const token = generateDownloadToken(storageId, filePath, decrypt, database);
 ```
+
+A seekable archive has no decrypted form as a whole, so a decrypted token for one resolves to a single database dump: the one named by `database`, or the archive's only database when it holds exactly one and no files. The dump is named after the backup and the database, for example `nightly_2026-09-16_shop.sql`, which is why the generated commands use `wget --content-disposition` and `curl -OJ` for it.
 
 ### Token Data Structure
 
@@ -51,6 +54,7 @@ interface DownloadToken {
     storageId: string;    // Storage adapter ID
     file: string;         // File path
     decrypt: boolean;     // Decrypt before streaming
+    database?: string;    // Seekable archives: the dump to extract
     createdAt: number;    // Unix timestamp
     expiresAt: number;    // Unix timestamp (createdAt + 5 min)
     used: boolean;        // Single-use flag

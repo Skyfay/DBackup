@@ -4,6 +4,7 @@ import { scheduler } from "@/lib/server/scheduler";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { registry } from "@/lib/core/registry";
+import { isCombinableWithDirectories } from "@/lib/adapters/combinable";
 import { registerAdapters } from "@/lib/adapters";
 import { runBulk, type BulkResult } from "@/lib/core/bulk";
 import type { DatabaseAdapter } from "@/lib/core/interfaces";
@@ -173,7 +174,7 @@ export class JobService {
     /**
      * Enforces the "a job needs at least one source" invariant and validates that:
      * - every directory source points at a storage adapter whose role is SOURCE
-     * - a database source combined with directory sources actually supports combination (dumpOne)
+     * - a database source combined with directory sources is on the combinable list
      * This mirrors the destinations.length===0 guard already enforced at runner init time
      * (defense in depth), plus the source-role/combinability checks this feature introduces.
      */
@@ -204,7 +205,7 @@ export class JobService {
                 throw new Error(`Source adapter "${effectiveSourceId}" not found.`);
             }
             const adapter = registry.get(sourceConfig.adapterId) as DatabaseAdapter | undefined;
-            if (!adapter?.dumpOne) {
+            if (!adapter?.dumpOne || !isCombinableWithDirectories(sourceConfig.adapterId)) {
                 throw new Error(`Database adapter "${sourceConfig.adapterId}" does not support combined backups with directory sources.`);
             }
         }

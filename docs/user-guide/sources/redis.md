@@ -95,11 +95,12 @@ Primary Credential: my-redis-password  (USERNAME_PASSWORD profile)
 
 ## Backup File Format
 
-Redis backups are stored as `.rdb` files - the native Redis snapshot format:
+A Redis backup is one RDB snapshot, the native Redis format, and it always contains every logical database of the server whichever ones the job selected. It is stored inside a seekable archive as a single entry named `dump`:
 
-- **Uncompressed**: `backup_2026-02-02.rdb`
-- **Compressed**: `backup_2026-02-02.rdb.gz`
-- **Encrypted**: `backup_2026-02-02.rdb.gz.enc`
+- **Archive**: `backup_2026-02-02.tar`, compressed and encrypted per entry as the job configures
+- **Downloaded dump**: `backup_2026-02-02_dump.rdb`, from **Download Dump** in the Storage Explorer
+
+Backups written by earlier versions are plain files (`backup_2026-02-02.rdb`, `.rdb.gz` or `.rdb.gz.enc`) and restore through the same wizard.
 
 ## Restore Limitations
 
@@ -114,7 +115,7 @@ DBackup provides a **Restore Wizard** that guides you through the manual restore
 
 ### Restore Process (Manual)
 
-1. **Download the backup** from Storage Explorer
+1. **Download the backup** from Storage Explorer with **Download Dump**, or **Download Decrypted** for an older backup
 2. **Stop the Redis server**: `redis-cli SHUTDOWN NOSAVE`
 3. **Replace the RDB file**: Copy backup to Redis data directory (usually `/var/lib/redis/dump.rdb`)
 4. **Start Redis**: `systemctl start redis` or `redis-server`

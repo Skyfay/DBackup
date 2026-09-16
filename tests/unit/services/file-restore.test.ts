@@ -170,7 +170,7 @@ describe("planFileRestore", () => {
         await fs.writeFile(archivePath + ".meta.json", JSON.stringify({ version: 1, sourceType: "mysql" }));
 
         await expect(planFileRestore(input(["www"], { kind: "download" })))
-            .rejects.toThrow(/does not support file-level restore/i);
+            .rejects.toThrow(/predates the seekable archive format/i);
     });
 });
 
@@ -205,7 +205,7 @@ describe("streamFileRestore", () => {
     it("rejects a selection that matches nothing", async () => {
         await buildFixture(true);
         await expect(streamFileRestore(input(["does/not/exist"], { kind: "download" })))
-            .rejects.toThrow(/no files matched/i);
+            .rejects.toThrow(/nothing matched/i);
     });
 
     /** Drains a stream to completion, resolving on end and rejecting on error. */

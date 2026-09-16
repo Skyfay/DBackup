@@ -59,6 +59,27 @@ const INFO_INDEX = "dbackup/archive/v2/index";
 
 const padded = (size) => Math.ceil(size / TAR_BLOCK) * TAR_BLOCK;
 
+/** Dump filename extension per format. Mirrors EXTENSION_BY_FORMAT in src/lib/archive/format.ts. */
+const DUMP_EXTENSIONS = {
+    sql: "sql",
+    custom: "dump",
+    archive: "archive",
+    bak: "bak",
+    fbk: "fbk",
+    bacpac: "bacpac",
+    rdb: "rdb",
+    sqlite: "sqlite",
+};
+
+/**
+ * Makes a database name usable as a single path segment. Mirrors safeNameSegment in
+ * src/lib/archive/dump-names.ts, so a dump lands under the same name DBackup gives it.
+ */
+function safeNameSegment(name) {
+    const replaced = String(name).replace(/[/\\\u0000-\u001f\u007f]/g, "_").replace(/^\./, "_");
+    return replaced.length > 0 ? replaced : "_";
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // Crypto
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1581,9 +1602,24 @@ async function commandExtract(archivePath, outputDir, hexKey, patterns) {
 
         for (const db of archive.index.databases) {
             if (patterns.length > 0 && !matchesAny(`databases/${db.name}`, patterns)) continue;
-            const target = path.join(outputDir, "databases", `${db.name}.${db.format === "custom" ? "dump" : db.format}`);
+
+            // A database name comes from the backed-up server and can hold path separators,
+            // so it is flattened and the result checked like any file path below.
+            const extension = safeNameSegment(DUMP_EXTENSIONS[db.format] || db.format);
+            const target = path.resolve(outputDir, "databases", `${safeNameSegment(db.name)}.${extension}`);
+            const root = path.resolve(outputDir);
+            if (!target.startsWith(root + path.sep)) {
+                console.error(`SKIPPED (unsafe name): ${db.name}`);
+                continue;
+            }
+
             const resolved = resolveEntry(archive, db.n, undefined);
-            await streamEntryToFile(resolved.target, resolved.entry, target, undefined);
+            const result = await streamEntryToFile(resolved.target, resolved.entry, target, db.h);
+            if (!result.ok) {
+                console.error(`CHECKSUM MISMATCH: database ${db.name} (not written)`);
+                mismatches++;
+                continue;
+            }
             console.log(`database  ${db.name} -> ${target}`);
             extracted++;
         }

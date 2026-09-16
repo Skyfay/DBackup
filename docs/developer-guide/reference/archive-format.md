@@ -1,24 +1,22 @@
 # Archive Format
 
-Byte-level specification of the seekable archive format (manifest version 2) that DBackup
-writes for jobs with directory sources.
+Byte-level specification of the seekable archive format (manifest version 2) that DBackup writes for every backup job.
 
 This document is the contract. The Recovery Kit's `dbackup-recover.js` is an independent
 implementation of it, and your backups remain recoverable as long as this document and a
 Node.js runtime exist - DBackup itself is not required.
 
 ::: info Which backups use this format
-Jobs with **directory sources** produce a v2 archive. Jobs that back up **only databases**
-keep producing the older format: a single dump file, or a plain multi-database TAR
-(manifest version 1), compressed and encrypted as a whole. Those are decrypted with
-`dbackup-recover.js --decrypt` instead.
+Every backup job writes a v2 archive, whether it backs up databases, directory sources or both. Each database is its own entry, so a single database can be restored or downloaded by byte range.
+
+Backups written by earlier versions for jobs that backed up **only databases** use the older format: a single dump file, or a plain multi-database TAR (manifest version 1), compressed and encrypted as a whole. DBackup still restores and downloads them, and `dbackup-recover.js --decrypt` recovers them offline.
 :::
 
 ## Design goals
 
 | Goal | How the format achieves it |
 | :--- | :--- |
-| Restore one file without downloading the backup | The archive is never compressed or encrypted as a whole, and the index records each entry's exact byte offset |
+| Restore one file or one database without downloading the backup | The archive is never compressed or encrypted as a whole, and the index records each entry's exact byte offset |
 | Browse contents without downloading the backup | A small index sidecar sits next to the archive |
 | Encrypted backups leak nothing | Member names are opaque, and the index (paths, sizes, checksums) is encrypted |
 | Recoverable without DBackup | Documented format plus a standalone script, no server or database |
@@ -71,8 +69,11 @@ Encrypted archives use opaque names on purpose. TAR headers are not encrypted, s
 paths there would publish the file listing next to the encrypted data and make the sealed
 index pointless.
 
-`<ext>` is `sql`, `dump` (PostgreSQL custom format), `archive` (MongoDB), `bak` (MSSQL),
-`bacpac` (Azure SQL Database) or `fbk` (Firebird).
+`<ext>` is `sql`, `dump` (PostgreSQL custom format), `archive` (MongoDB), `bak` (MSSQL), `bacpac` (Azure SQL Database), `fbk` (Firebird), `rdb` (Redis and Valkey) or `sqlite` (SQLite).
+
+`<name>` is the database name with `/`, `\`, NUL and control characters replaced by `_`, and a leading `.` replaced by `_` as well. A Firebird alias such as `/data/shop.fdb` therefore becomes one flat member, and a name like `../x` can never climb out of the folder `tar -xf` extracts into. The index keeps the real name. Readers take the member name from the index `e` line rather than rebuilding it.
+
+Redis and Valkey store one RDB snapshot holding every logical database of the server, so their archive has a single database entry named `dump`. A SQLite source is one file, and its entry is named after that file.
 
 ## manifest.json
 
@@ -179,7 +180,7 @@ One object per line streams in constant memory.
 {"k":"e","n":7,"a":"full-000-2026-07-15.tar","member":"d/000007","off":9216,"size":4096,"sealed":true}
 
 // Database dump
-{"k":"db","name":"appdb","format":"custom","n":1,"s":4211000}
+{"k":"db","name":"appdb","format":"custom","n":1,"s":4211000,"h":"<sha256>"}
 
 // Directory source
 {"k":"d","src":"<jobSourceId>","label":"SFTP: /var/www","fileCount":48120,"totalSize":91234567,"excludePatterns":["*.log"]}
@@ -203,6 +204,8 @@ One object per line streams in constant memory.
 | `p` / `s` / `m` / `h` | File path, uncompressed size, mtime, SHA-256 of the plaintext |
 | `o` / `l` | Byte range within the *decompressed* entry. Only for bundled files. |
 | `lnk` | Symbolic link target, raw and unresolved. Its presence marks the line as a link. |
+| `name` / `format` | Database name as the server reported it, and its dump format (`sql`, `custom`, `archive`, `bak`, `fbk`, `bacpac`, `rdb`, `sqlite`) |
+| `db` line `s` / `h` | Size of the dump as the adapter wrote it, and the SHA-256 of those bytes. `h` is absent on archives written before dumps carried a checksum. A reader verifies it before handing a dump to a database, since an unencrypted archive has no other integrity check. |
 
 Separating physical entries (`e`) from logical files (`f`) is what makes bundling possible:
 many `f` lines can point at one `e` line.

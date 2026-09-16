@@ -396,13 +396,118 @@ describe('restoreArchiveSnapshot', () => {
         ).rejects.toThrow('Missing targetSourceId');
     });
 
-    it('throws when the target database adapter does not support combined restores', async () => {
+    it('throws when the target database adapter cannot restore from a seekable archive', async () => {
         const { sourceAdapter } = await buildRemoteBackup(['db1']);
         wire({ 'source-fs': sourceAdapter, mysql: { id: 'mysql', type: 'database' } }); // no restoreOne
 
         await expect(
             restoreArchiveSnapshot(makeInput({ targetSourceId: 'target-db-1' }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() })
-        ).rejects.toThrow('does not support combined restores');
+        ).rejects.toThrow('cannot restore from this backup format');
+    });
+
+    it('restores a single database under the plain target name an API caller sends', async () => {
+        const { sourceAdapter } = await buildRemoteBackup(['shop']);
+        const dbAdapter = makeFakeDbAdapter();
+        wire({ 'source-fs': sourceAdapter, mysql: dbAdapter });
+
+        const result = await restoreArchiveSnapshot(
+            makeInput({ targetSourceId: 'target-db-1', targetDatabaseName: 'shop_staging' }),
+            { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() }
+        );
+
+        expect(result.status).toBe('Success');
+        expect(dbAdapter.prepareRestore).toHaveBeenCalledWith(expect.anything(), ['shop_staging'], expect.anything());
+        expect(dbAdapter.restoreOne.mock.calls[0][2]).toBe('shop_staging');
+        expect(dbAdapter.restoreOne.mock.calls[0][6]).toBe('shop');
+    });
+
+    it('keeps every database name when a plain target name is sent for several databases', async () => {
+        const { sourceAdapter } = await buildRemoteBackup(['shop', 'blog']);
+        const dbAdapter = makeFakeDbAdapter();
+        wire({ 'source-fs': sourceAdapter, mysql: dbAdapter });
+        const log = vi.fn();
+
+        await restoreArchiveSnapshot(
+            makeInput({ targetSourceId: 'target-db-1', targetDatabaseName: 'renamed' }),
+            { log, updateDetail: vi.fn(), setStage: vi.fn() }
+        );
+
+        expect(dbAdapter.restoreOne.mock.calls.map((c: unknown[]) => c[2])).toEqual(['shop', 'blog']);
+        expect(log.mock.calls.some((c: unknown[]) => c[1] === 'warning' && String(c[0]).includes("'renamed' ignored"))).toBe(true);
+    });
+
+    it('lets the mapping win over a plain target name', async () => {
+        const { sourceAdapter } = await buildRemoteBackup(['shop']);
+        const dbAdapter = makeFakeDbAdapter();
+        wire({ 'source-fs': sourceAdapter, mysql: dbAdapter });
+
+        await restoreArchiveSnapshot(makeInput({
+            targetSourceId: 'target-db-1',
+            targetDatabaseName: 'ignored',
+            databaseMapping: [{ originalName: 'shop', targetName: 'shop_copy', selected: true }],
+        }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() });
+
+        expect(dbAdapter.restoreOne.mock.calls[0][2]).toBe('shop_copy');
+    });
+
+    it('hands the adapter a dump file carrying the extension of its format', async () => {
+        const { sourceAdapter } = await buildRemoteBackup(['shop']);
+        let seenPath = '';
+        let seenContent = '';
+        const dbAdapter = makeFakeDbAdapter({
+            restoreOne: vi.fn(async (_conf: unknown, filePath: string) => {
+                seenPath = filePath;
+                seenContent = await fs.readFile(filePath, 'utf-8');
+            }),
+        });
+        wire({ 'source-fs': sourceAdapter, mysql: dbAdapter });
+
+        await restoreArchiveSnapshot(makeInput({ targetSourceId: 'target-db-1' }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() });
+
+        expect(seenPath.endsWith('.sql')).toBe(true);
+        expect(seenContent).toBe('-- dump of shop');
+        await expect(fs.access(seenPath)).rejects.toThrow();
+    });
+
+    it('refuses to restore a dump whose bytes do not match the recorded checksum', async () => {
+        const { sourceAdapter, workDir } = await buildRemoteBackup(['shop']);
+        const tarPath = path.join(workDir, 'backup.tar');
+        const raw = await fs.readFile(tarPath);
+        const at = raw.indexOf(Buffer.from('-- dump of shop'));
+        raw[at + 3] = 'X'.charCodeAt(0);
+        await fs.writeFile(tarPath, raw);
+
+        const dbAdapter = makeFakeDbAdapter();
+        wire({ 'source-fs': sourceAdapter, mysql: dbAdapter });
+
+        const result = await restoreArchiveSnapshot(makeInput({ targetSourceId: 'target-db-1' }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() });
+
+        expect(result.status).toBe('Failed');
+        expect(result.errors[0].error).toMatch(/checksum mismatch/i);
+        expect(dbAdapter.restoreOne).not.toHaveBeenCalled();
+    });
+
+    it('moves one progress bar across every database instead of restarting it per dump', async () => {
+        const { sourceAdapter } = await buildRemoteBackup(['shop', 'blog']);
+        const dbAdapter = makeFakeDbAdapter({
+            restoreOne: vi.fn(async (_c: unknown, _f: string, _t: string, _h: unknown, _l: unknown, onProgress?: (p: number, d?: string) => void) => {
+                onProgress?.(50, 'halfway');
+            }),
+        });
+        wire({ 'source-fs': sourceAdapter, mysql: dbAdapter });
+        const updateProgress = vi.fn();
+
+        await restoreArchiveSnapshot(
+            makeInput({ targetSourceId: 'target-db-1' }),
+            { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn(), updateProgress }
+        );
+
+        expect(updateProgress.mock.calls).toEqual([
+            [25, 'shop: halfway'],
+            [50],
+            [75, 'blog: halfway'],
+            [100],
+        ]);
     });
 
     it('refuses a backup without a v2 archive marker in its metadata', async () => {
@@ -414,7 +519,7 @@ describe('restoreArchiveSnapshot', () => {
 
         await expect(
             restoreArchiveSnapshot(makeInput({ targetSourceId: 'target-db-1' }), { log: vi.fn(), updateDetail: vi.fn(), setStage: vi.fn() })
-        ).rejects.toThrow(/does not support file-level restore/i);
+        ).rejects.toThrow(/predates the seekable archive format/i);
     });
 
     it('restores only the databases and leaves the directories untouched at scope "databases"', async () => {

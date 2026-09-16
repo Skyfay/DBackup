@@ -9,7 +9,7 @@ import { getTempDir } from "@/lib/temp-dir";
 import path from "path";
 import fs from "fs";
 import { headers } from "next/headers";
-import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
+import { getAuthContext, checkAnyPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { archiveIndexService } from "@/services/backup/archive-index-service";
 import { keyRequiredResponse } from "@/lib/server/key-required-response";
@@ -28,7 +28,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     const params = await props.params;
     let tempFile: string | null = null;
     try {
-        checkPermissionWithContext(ctx, PERMISSIONS.STORAGE.RESTORE);
+        // Read-only: listing what a backup holds is part of restoring it and of downloading from it.
+        checkAnyPermissionWithContext(ctx, [PERMISSIONS.STORAGE.RESTORE, PERMISSIONS.STORAGE.DOWNLOAD]);
 
         const body = await req.json();
         // profileIdOverride: the vault profile the user picked after being asked for a key.

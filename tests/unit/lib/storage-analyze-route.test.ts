@@ -7,10 +7,10 @@ vi.mock("@/lib/adapters", () => ({
 }));
 
 const mockGetAuthContext = vi.fn();
-const mockCheckPermissionWithContext = vi.fn();
+const mockCheckAnyPermissionWithContext = vi.fn();
 vi.mock("@/lib/auth/access-control", () => ({
     getAuthContext: (...args: any[]) => mockGetAuthContext(...args),
-    checkPermissionWithContext: (...args: any[]) => mockCheckPermissionWithContext(...args),
+    checkAnyPermissionWithContext: (...args: any[]) => mockCheckAnyPermissionWithContext(...args),
 }));
 
 vi.mock("next/headers", () => ({
@@ -19,7 +19,7 @@ vi.mock("next/headers", () => ({
 
 vi.mock("@/lib/auth/permissions", () => ({
     PERMISSIONS: {
-        STORAGE: { RESTORE: "storage:restore" },
+        STORAGE: { RESTORE: "storage:restore", DOWNLOAD: "storage:download" },
     },
 }));
 
@@ -86,6 +86,17 @@ describe("POST /api/storage/[id]/analyze - combined (manifest v2) archives", () 
         mockDownload.mockResolvedValue(true);
         // No sidecar metadata by default - forces the full download + manifest-read path.
         mockRead.mockRejectedValue(new Error("not found"));
+    });
+
+    it("accepts either the restore or the download permission, since listing is read-only", async () => {
+        mockRead.mockResolvedValue(JSON.stringify({ databases: { names: ["shop"] } }));
+
+        await POST(createRequest({ file: "backups/job1/shop.sql" }), createProps());
+
+        expect(mockCheckAnyPermissionWithContext).toHaveBeenCalledWith(
+            expect.anything(),
+            ["storage:restore", "storage:download"]
+        );
     });
 
     it("answers from the index sidecar without downloading the archive", async () => {

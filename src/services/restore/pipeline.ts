@@ -256,7 +256,16 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
             // The stage is set inside restoreArchiveSnapshot, which knows whether it is
             // restoring databases, files, or both - so a file-only restore no longer shows
             // "Restoring Databases".
-            const result = await restoreArchiveSnapshot(input, { log, updateDetail, setStage });
+            const result = await restoreArchiveSnapshot(input, {
+                log,
+                updateDetail,
+                setStage,
+                updateProgress: (percent, detail) => {
+                    currentProgress = percent;
+                    if (detail !== undefined) currentDetail = detail;
+                    flushLogs();
+                },
+            });
 
             if (result.status === "Failed") {
                 log(`Restore failed: no entries could be restored (${result.errors.map(e => e.error).join('; ')})`, 'error');
@@ -455,19 +464,32 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
 
         // --- MULTI-DB TAR DETECTION (v1, cosmetic - the actual selective restore logic lives
         // inside each adapter's own restore(), see mysql/restore.ts etc.) ---
+        let tarManifest: Awaited<ReturnType<typeof readTarManifest>> = null;
         try {
             if (await isMultiDbTar(tempFile)) {
-                const manifest = await readTarManifest(tempFile);
-                if (manifest) {
-                    log(`Multi-DB TAR archive detected: ${manifest.databases.length} databases`, 'info');
-                    manifest.databases.forEach(db => {
-                        log(`  - ${db.name} (${db.format}, ${db.size} bytes)`, 'info');
-                    });
-                }
+                tarManifest = await readTarManifest(tempFile);
             }
         } catch (e: unknown) {
             const message = e instanceof Error ? e.message : String(e);
             log(`Note: Could not check for Multi-DB TAR format: ${message}`, 'info');
+        }
+
+        // A seekable archive also starts with a manifest.json, so it looks like a v1 TAR
+        // here. It only ever gets this far when its .meta.json could not be read, and every
+        // adapter's restore() would then misread it - MSSQL would even try to restore its
+        // entries as .bak files. Stopped before any target database is touched.
+        if ((tarManifest as { version?: number } | null)?.version === 2) {
+            throw new Error(
+                "This backup is a seekable archive, but its .meta.json sidecar could not be read. " +
+                "Restoring it needs that file next to the backup. The Recovery Kit can still extract the archive with --extract."
+            );
+        }
+
+        if (tarManifest) {
+            log(`Multi-DB TAR archive detected: ${tarManifest.databases.length} databases`, 'info');
+            tarManifest.databases.forEach(db => {
+                log(`  - ${db.name} (${db.format}, ${db.size} bytes)`, 'info');
+            });
         }
         // --- END MULTI-DB TAR DETECTION ---
 

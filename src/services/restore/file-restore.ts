@@ -23,15 +23,20 @@ import { BackupMetadata, StorageAdapter, AdapterConfig } from "@/lib/core/interf
 import { openStorageArchiveSource, resolveStorageAdapter, ManagedArchiveSource } from "@/lib/archive/storage-source";
 import { parseArchiveIndex, readArchiveManifest, readEmbeddedIndexBytes } from "@/lib/archive/reader";
 import { createDestinationSessions } from "./destination-sessions";
-import { forEachSnapshotFile, hashingStream, ChainReaderOptions } from "@/lib/archive/chain-source";
+import { forEachSnapshotFile, ChainReaderOptions } from "@/lib/archive/chain-source";
+import { hashingStream } from "@/lib/archive/hashing";
 import { checkChainCompleteness } from "@/lib/archive/chain";
-import { resolveSelection, totalSize } from "@/lib/archive/browse";
-import { matchesAnyExcludePattern } from "@/lib/exclude-patterns";
+import { totalSize } from "@/lib/archive/browse";
+import { resolveContents, downloadShape, type FileRestoreSelection } from "./archive-selection";
+import { databaseDumpFileName } from "@/lib/archive/dump-names";
+import { DATABASE_MEMBER_PREFIX } from "@/lib/archive/format";
+import { entryKey } from "@/lib/archive/types";
+import { openArchiveEntry } from "@/lib/archive/reader";
 import { archiveIndexVerifier, KeyOverride, resolveBackupKey } from "@/services/backup/key-resolution";
 import { resolveTransferConcurrency } from "@/lib/adapters/transfer-concurrency";
 import { archiveIndexService } from "@/services/backup/archive-index-service";
 import { getTempDir } from "@/lib/temp-dir";
-import { ArchiveIndex, ArchiveManifest, IndexFileLine, metadataFromIndex, partitionSymlinks } from "@/lib/archive/types";
+import { ArchiveIndex, ArchiveManifest, metadataFromIndex, partitionSymlinks } from "@/lib/archive/types";
 import { logger } from "@/lib/logging/logger";
 import { wrapError, NotFoundError, ValidationError } from "@/lib/logging/errors";
 import fs from "fs/promises";
@@ -48,15 +53,7 @@ export type FileRestoreTarget =
     /** Into any configured storage adapter, under a chosen path. */
     | { kind: "storage"; configId: string; basePath: string };
 
-export interface FileRestoreSelection {
-    /** JobSource id of the directory source. */
-    src: string;
-    /**
-     * Selected paths relative to that source's root. A directory selects everything below
-     * it. Absent means the whole source.
-     */
-    paths?: string[];
-}
+export type { FileRestoreSelection } from "./archive-selection";
 
 export interface FileRestoreInput {
     /** Storage adapter holding the backup. */
@@ -64,10 +61,16 @@ export interface FileRestoreInput {
     /** Remote path of the backup archive. */
     file: string;
     /**
-     * Files to restore. Omit to restore the complete snapshot, which for an incremental
-     * means every file it describes, wherever in the chain the bytes live.
+     * Files to restore. Omit together with `databases` to restore the complete snapshot,
+     * which for an incremental means every file it describes, wherever in the chain the
+     * bytes live.
      */
     selections?: FileRestoreSelection[];
+    /**
+     * Database dumps to include, by the name recorded in the archive. Downloads only - a
+     * dump has no meaning written back into a file destination.
+     */
+    databases?: string[];
     /**
      * Glob patterns whose matching files are left out, same syntax as a backup's exclude
      * patterns so a preset works on both sides.
@@ -82,7 +85,7 @@ export interface FileRestoreInput {
 }
 
 /** Everything needed to read files out of a snapshot, plus how to release it. */
-interface OpenedArchive extends ManagedArchiveSource {
+export interface OpenedArchive extends ManagedArchiveSource {
     manifest: ArchiveManifest;
     index: ArchiveIndex;
     masterKey?: Buffer;
@@ -152,7 +155,7 @@ export async function openArchiveForRestore(
 
     if (meta.archive?.formatVersion !== 2) {
         throw new ValidationError(
-            "This backup does not support file-level restore. Only backups with directory sources created by a recent version can be browsed and restored file by file.",
+            "This backup predates the seekable archive format, so single files or databases cannot be read out of it. Restore or download it as a whole instead.",
             { field: "file" }
         );
     }
@@ -214,57 +217,34 @@ export async function openArchiveForRestore(
     }
 }
 
-/** Expands the caller's selection into concrete index lines, keyed by directory source. */
-function resolveFiles(
-    index: ArchiveIndex,
-    selections?: FileRestoreSelection[],
-    excludePatterns?: string[]
-): { src: string; file: IndexFileLine }[] {
-    const patterns = (excludePatterns ?? []).filter((p) => p.trim().length > 0);
-    const keep = (file: IndexFileLine) => patterns.length === 0 || !matchesAnyExcludePattern(file.p, patterns);
-
-    // No selection means the whole snapshot. This is what the Storage Explorer's download
-    // uses, so a user gets the complete contents rather than an incremental's delta.
-    if (!selections || selections.length === 0) {
-        return index.files.filter(keep).map((file) => ({ src: file.src, file }));
-    }
-
-    const resolved: { src: string; file: IndexFileLine }[] = [];
-    const seen = new Set<string>();
-
-    for (const selection of selections) {
-        const files = selection.paths && selection.paths.length > 0
-            ? resolveSelection(index, selection.src, selection.paths)
-            : index.files.filter((f) => f.src === selection.src);
-        for (const file of files) {
-            if (!keep(file)) continue;
-            const key = `${file.src}::${file.p}`;
-            if (seen.has(key)) continue;
-            seen.add(key);
-            resolved.push({ src: selection.src, file });
-        }
-    }
-
-    return resolved;
-}
-
 export interface FileRestorePlan {
     fileCount: number;
+    databaseCount: number;
+    /** Plaintext bytes across the selected files and dumps. */
     totalBytes: number;
     /** True when the archive was fetched whole because the adapter cannot serve ranges. */
     fullDownload: boolean;
+    /** Whether a download of this selection is a single raw dump or a tar.gz. */
+    output: "dump" | "tar";
+}
+
+/** What a selection covers in an archive that is already open. */
+export function describeSelection(archive: Pick<OpenedArchive, "index" | "ranged">, input: FileRestoreInput): FileRestorePlan {
+    const { files, databases } = resolveContents(archive.index, input);
+    return {
+        fileCount: files.length,
+        databaseCount: databases.length,
+        totalBytes: totalSize(files.map((f) => f.file)) + databases.reduce((sum, d) => sum + d.s, 0),
+        fullDownload: !archive.ranged,
+        output: downloadShape(input),
+    };
 }
 
 /** Resolves a selection without restoring anything, for confirmation dialogs. */
 export async function planFileRestore(input: FileRestoreInput): Promise<FileRestorePlan> {
     const archive = await openArchiveForRestore(input.storageConfigId, input.file, input.keyOverride);
     try {
-        const files = resolveFiles(archive.index, input.selections, input.excludePatterns);
-        return {
-            fileCount: files.length,
-            totalBytes: totalSize(files.map((f) => f.file)),
-            fullDownload: !archive.ranged,
-        };
+        return describeSelection(archive, input);
     } finally {
         await archive.dispose();
     }
@@ -279,11 +259,18 @@ export async function planFileRestore(input: FileRestoreInput): Promise<FileRest
  */
 export async function streamFileRestore(input: FileRestoreInput): Promise<NodeJS.ReadableStream> {
     const archive = await openArchiveForRestore(input.storageConfigId, input.file, input.keyOverride);
-    const files = resolveFiles(archive.index, input.selections, input.excludePatterns);
-
-    if (files.length === 0) {
+    let contents: ReturnType<typeof resolveContents>;
+    try {
+        contents = resolveContents(archive.index, input);
+    } catch (e: unknown) {
         await archive.dispose();
-        throw new ValidationError("No files matched the selection", { field: "selections" });
+        throw e;
+    }
+    const { files, databases } = contents;
+
+    if (files.length === 0 && databases.length === 0) {
+        await archive.dispose();
+        throw new ValidationError("Nothing matched the selection", { field: "selections" });
     }
 
     const bySrc = new Map(files.map((f) => [f.file, f.src]));
@@ -304,6 +291,27 @@ export async function streamFileRestore(input: FileRestoreInput): Promise<NodeJS
     // pushed into the stream rather than thrown, since the caller already holds it.
     void (async () => {
         try {
+            // Dumps first. They always live in the snapshot's own archive, never in a chain
+            // sibling, so they need nothing from the chain reader.
+            for (const database of databases) {
+                const entry = archive.index.entries.get(entryKey(undefined, database.n));
+                if (!entry) throw new Error(`Archive index is inconsistent: database '${database.name}' has no entry`);
+
+                const member = tarPack.entry({
+                    name: `${DATABASE_MEMBER_PREFIX}${databaseDumpFileName(database.name, database.format)}`,
+                    size: database.s,
+                });
+                let digest: string | undefined;
+                await pipeline(
+                    await openArchiveEntry(archive.source, archive.manifest, entry, archive.masterKey),
+                    hashingStream((d) => { digest = d; }),
+                    member
+                );
+                if (database.h && digest !== database.h) {
+                    throw new Error(`Database dump '${database.name}' does not match its recorded checksum - the archive is corrupt`);
+                }
+            }
+
             await forEachSnapshotFile(archive, payloads, async (file, content) => {
                 const entry = tarPack.entry({ name: `${bySrc.get(file) ?? file.src}/${file.p}`, size: file.s });
                 let digest: string | undefined;
@@ -416,8 +424,12 @@ export async function restoreFilesToStorage(
         throw new ValidationError("Use streamFileRestore() for browser downloads", { field: "target" });
     }
 
+    if (input.databases && input.databases.length > 0) {
+        throw new ValidationError("Database dumps can only be downloaded, not written to a storage destination", { field: "databases" });
+    }
+
     const archive = await openArchiveForRestore(input.storageConfigId, input.file, input.keyOverride);
-    const files = resolveFiles(archive.index, input.selections, input.excludePatterns);
+    const { files } = resolveContents(archive.index, input);
     const targets = await resolveTargets(input, [...new Set(files.map((f) => f.src))]);
 
     if (files.length === 0) {

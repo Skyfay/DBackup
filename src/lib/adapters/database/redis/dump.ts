@@ -4,6 +4,8 @@ import { LogLevel, LogType } from "@/lib/core/logs";
 import fs from "fs/promises";
 import { RedisConfig } from "@/lib/adapters/definitions";
 import { REDIS_CLI, buildConnectionArgs, maskSecrets } from "./args";
+import { REDIS_SNAPSHOT_ENTRY } from "./constants";
+import { AdapterError } from "@/lib/logging/errors";
 
 /**
  * Dump Redis using an RDB snapshot.
@@ -79,4 +81,27 @@ export async function dump(
             completedAt: new Date(),
         };
     }
+}
+
+/**
+ * A Redis backup is always one snapshot of the whole server, whichever logical databases
+ * the job selected, so it is always exactly one entry.
+ */
+export async function listDumpEntries(): Promise<string[]> {
+    return [REDIS_SNAPSHOT_ENTRY];
+}
+
+/** RDB snapshot of the whole server, thrown on failure as the seekable archive writer expects. */
+export async function dumpOne(
+    config: RedisConfig,
+    _dbName: string,
+    destinationPath: string,
+    host: ExecutionHost,
+    onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void
+): Promise<{ size: number }> {
+    const result = await dump(config, destinationPath, host, onLog);
+    if (!result.success) {
+        throw new AdapterError("redis", "dump", result.error ?? "RDB backup failed");
+    }
+    return { size: result.size ?? 0 };
 }

@@ -12,8 +12,7 @@
  */
 
 import path from "path";
-import crypto from "crypto";
-import { Readable, Transform, TransformCallback } from "stream";
+import { Readable } from "stream";
 import { AdapterConfig, StorageAdapter } from "@/lib/core/interfaces";
 import { openStorageArchiveSource, ManagedArchiveSource } from "./storage-source";
 import { openArchiveEntry, groupFilesByEntry, readArchiveManifest } from "./reader";
@@ -210,23 +209,4 @@ export async function forEachSnapshotFile(
             if (opened.dispose) await opened.dispose();
         }
     }
-}
-
-/**
- * Hashes what flows through it, so a restored file can be checked against the checksum
- * recorded in its index line. For unencrypted archives this is the only integrity check a
- * file gets - there is no AEAD tag protecting it.
- */
-export function hashingStream(onDigest: (digest: string) => void): Transform {
-    const hash = crypto.createHash("sha256");
-    return new Transform({
-        transform(chunk: Buffer, _encoding, callback: TransformCallback) {
-            hash.update(chunk);
-            callback(null, chunk);
-        },
-        flush(callback: TransformCallback) {
-            onDigest(hash.digest("hex"));
-            callback();
-        },
-    });
 }

@@ -175,10 +175,9 @@ node dbackup-recover.js --extract backup.tar ./restored 'www/**'
 node dbackup-recover.js --extract backup.tar ./restored docs
 ```
 
-Every extracted file is verified against the checksum recorded when the backup was made. A
-mismatch is reported and the command exits non-zero.
+Every extracted file and database dump is verified against the checksum recorded when the backup was made. A mismatch is reported, the file is not written, and the command exits non-zero. Dump checksums exist in backups written since every job became a seekable archive, and only a recently downloaded kit checks them, so download the kit again after updating DBackup.
 
-`--decrypt` handles a database backup encrypted as a single file. It decompresses in the
+`--decrypt` handles a database backup written by an earlier version, encrypted as a single file. It decompresses in the
 same pass, and a backup holding several databases is unpacked into one dump per database -
 the output is always ready to feed to `mysql`, `psql` or `mongorestore`, never a `.gz` or a
 `.tar` to take apart first.
@@ -189,15 +188,14 @@ Name it, and nothing else is written. Which form you use depends on where the da
 lives, and `--list` tells you which databases a backup contains:
 
 ```bash
-# A database-only backup (a .tar of dumps)
-node dbackup-recover.js --decrypt AllDbs.tar.enc ./restored shop
-
-# A database inside a file backup, addressed under the databases/ prefix
+# Any backup written by a current version, addressed under the databases/ prefix
 node dbackup-recover.js --extract backup.tar ./restored databases/shop
+
+# A database-only backup written by an earlier version (a .tar of dumps, encrypted as a whole)
+node dbackup-recover.js --decrypt AllDbs.tar.enc ./restored shop
 ```
 
-Naming a database in the second form also keeps the archive's directory sources out of the
-restore, so you get the dump on its own.
+Naming a database in the first form also keeps the archive's directory sources and every other database out of the restore, so you get the dump on its own. A database whose name contains `/` or `\` is written with those characters replaced by `_`.
 
 The key is read from `master.key` next to the tool. Pass it as an extra argument to override,
 or leave it out entirely for unencrypted backups.
@@ -243,10 +241,9 @@ encrypted.
 
 ## How It Works
 
-There are two shapes of backup, and the tool tells them apart on its own. What follows is
-only needed if you want to write your own recovery code.
+There are two shapes of backup, and the tool tells them apart on its own. What follows is only needed if you want to write your own recovery code.
 
-### Database-only backups
+### Backups written by earlier versions for database-only jobs
 
 One stream: the dump, optionally compressed, optionally encrypted with AES-256-GCM as a
 whole. Everything needed to open it apart from the key is in the `.meta.json` next to it.
@@ -265,14 +262,12 @@ whole. Everything needed to open it apart from the key is in the `.meta.json` ne
 Decrypt with the IV and authentication tag from that file, then decompress. A job backing
 up several databases produces a TAR of dumps, so unpack that afterwards as well.
 
-### File backups
+### Seekable archives
 
-A seekable archive that encrypts each entry separately, which is what makes it possible to
-pull one file out of a large backup. It is a different job entirely, specified byte by byte
-in the [Archive Format reference](/developer-guide/reference/archive-format).
+Every backup written by a current version, whether it holds databases, files or both. It encrypts each entry separately, which is what makes it possible to pull one file or one database out of a large backup. It is a different job entirely, specified byte by byte in the [Archive Format reference](/developer-guide/reference/archive-format).
 
 ::: warning
-The single-stream approach below does **not** work on a file backup. Decrypting it as one
+The single-stream approach below does **not** work on a seekable archive. Decrypting it as one
 blob produces nothing usable - use the Recovery Kit, or implement the format from that
 reference.
 :::
@@ -363,7 +358,7 @@ archives it could not find, and `--list` shows the full set a snapshot depends o
 
 ## Decrypting Without Node.js
 
-Only for **database-only** backups - a file backup needs the archive format, see above.
+Only for database-only backups written by earlier versions. A seekable archive needs the archive format, see above.
 
 ### Python
 

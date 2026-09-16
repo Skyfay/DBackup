@@ -315,11 +315,9 @@ export interface DatabaseAdapter extends BaseAdapter {
     getTableData?: (config: AdapterConfig, options: TableDataOptions, host: ExecutionHost) => Promise<TableDataResult>;
 
     /**
-     * Optional: dumps a single named database to a plain local file, without any
-     * TAR/manifest wrapping. Adapters that implement this expose the same per-database
-     * logic `dump()` already uses internally for its own multi-DB case - it is a capability
-     * export, not new dump logic. Presence of this method is what makes a database source
-     * combinable with directory sources (JobSource) in one backup job.
+     * Dumps a single named database to a plain local file, without any TAR/manifest
+     * wrapping. Every backup is a seekable archive holding one entry per database, and this
+     * is how each entry is produced. Throws on failure.
      */
     dumpOne?(
         config: AdapterConfig,
@@ -330,9 +328,8 @@ export interface DatabaseAdapter extends BaseAdapter {
     ): Promise<{ size: number }>;
 
     /**
-     * Optional: restores a single plain dump file (as produced by dumpOne) into a single
-     * target database. Counterpart to dumpOne - required for the same combined-backup
-     * capability during restore.
+     * Restores a single plain dump file (as produced by dumpOne) into a single target
+     * database. Counterpart to dumpOne, used for every seekable archive. Throws on failure.
      * @param originalDbName The database's original name at backup time (needed by adapters
      * that must rewrite embedded USE/CREATE DATABASE statements when restoring to a renamed target).
      */
@@ -345,6 +342,14 @@ export interface DatabaseAdapter extends BaseAdapter {
         onProgress?: (percentage: number, detail?: string) => void,
         originalDbName?: string
     ): Promise<void>;
+
+    /**
+     * Optional: the entries a backup of this source consists of, for sources whose snapshot
+     * cannot be split per database. Redis writes one RDB holding every logical database, and
+     * a SQLite source is a single file. Without it, the job's selection is used, or
+     * getDatabases() when nothing is selected.
+     */
+    listDumpEntries?(config: AdapterConfig, selected: string[], host: ExecutionHost): Promise<string[]>;
 }
 
 export type FileInfo = {

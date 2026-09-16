@@ -1,14 +1,10 @@
 /**
  * TAR Archive Utilities for Multi-DB Backups (manifest v1)
  *
- * Provides functions to create and extract TAR archives containing multiple database dumps
- * with a manifest file. This is the released format that every database-only job produces,
- * and it is deliberately left alone.
- *
- * Jobs with directory sources produce the seekable v2 archive instead - see
- * src/lib/archive/, which supports per-entry compression and encryption, byte-exact
- * offsets, and file-level restore. readManifestVersion() at the bottom of this file is the
- * switch between the two.
+ * The format database-only jobs wrote before every backup became a seekable v2 archive (see
+ * src/lib/archive/). No job writes it anymore, but backups in it stay restorable, and every
+ * adapter's restore() reads them through the helpers here. The restore pipeline tells the two
+ * apart from the backup's metadata, and refuses a v2 manifest that reaches the v1 path.
  */
 
 import { createReadStream, createWriteStream, existsSync } from "fs";
@@ -456,24 +452,4 @@ export function getTargetDatabaseName(
 
     const entry = mapping.find((m) => m.originalName === dbName);
     return entry?.targetName || dbName;
-}
-
-// ── Archive format version ────────────────────────────────────────────────
-
-/**
- * Read only the archive format version from a TAR's manifest.json, without fully typing the
- * result. Reuses readTarManifest()'s existing stream-until-manifest-found logic, which is
- * correct for both the v1 shape handled in this file and the v2 (seekable archive) shape
- * handled in src/lib/archive/, since it is a plain JSON.parse either way.
- *
- * This is the switch the restore pipeline uses to pick between the v1 path below and the
- * v2 path in src/lib/archive/.
- *
- * @param filePath - Path to the TAR archive
- * @returns The manifest's `version` field, or null if no valid manifest.json is present
- */
-export async function readManifestVersion(filePath: string): Promise<number | null> {
-    const manifest = await readTarManifest(filePath);
-    if (!manifest) return null;
-    return (manifest as unknown as { version: number }).version;
 }

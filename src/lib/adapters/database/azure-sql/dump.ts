@@ -93,6 +93,34 @@ export async function dump(
     }
 }
 
+/**
+ * Export one database to a plain BACPAC at destinationPath, without the multi-database TAR.
+ *
+ * The consistency notice is logged for every database, because each export is its own
+ * window in which writes can make the package inconsistent.
+ */
+export async function dumpOne(
+    config: AzureSQLConfig,
+    dbName: string,
+    destinationPath: string,
+    host: ExecutionHost,
+    onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void,
+): Promise<{ size: number }> {
+    const log = (msg: string, level: LogLevel = "info", type: LogType = "general", details?: string) =>
+        onLog?.(msg, level, type, details);
+
+    log(CONSISTENCY_NOTICE, "warning");
+    await host.captureOutput(destinationPath, {}, (hostPath) =>
+        resolveExporter().exportDatabase(config, dbName, hostPath, host, log),
+    );
+
+    const stats = await fs.stat(destinationPath);
+    if (stats.size === 0) {
+        throw new Error("Export produced an empty file. Check the run log for SqlPackage errors.");
+    }
+    return { size: stats.size };
+}
+
 /** The job's database selection, or every user database when nothing was picked. */
 async function resolveDatabases(
     config: AzureSQLConfig,

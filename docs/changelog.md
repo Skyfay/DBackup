@@ -5,6 +5,35 @@ All notable changes to DBackup are documented here.
 ## vNEXT
 *Release: In Progress*
 
+> ⚠️ **Breaking:** Jobs that back up only databases now write a seekable `.tar` archive instead of a single `.sql.gz.enc` style file or a TAR of dumps. Restoring and downloading inside DBackup work for old and new backups alike, but scripts that pick up backup files directly have to handle the new layout. An encrypted archive is read with the Recovery Kit's `--extract` mode, so download a fresh Recovery Kit, since older kits do not verify dump checksums. An unencrypted archive unpacks with plain `tar -xf`.
+
+### ✨ Features
+
+- **restore**: Single databases can be restored out of a multi-database backup, and only that database is read from the destination. ([#140](https://github.com/Skyfay/DBackup/issues/140))
+- **storage**: A single database can be downloaded out of a backup from the Storage Explorer, the restore page or the API with the `storage:download` permission. ([#138](https://github.com/Skyfay/DBackup/issues/138))
+- **jobs**: Microsoft SQL Server, Azure SQL Database and SQLite sources can now be combined with directory sources in one job.
+
+### 🐛 Bug Fixes
+
+- **backup**: Backups with directory sources recorded their uncompressed size as the backup size. They now record the size of the stored archive.
+
+### 🔒 Security
+
+- **recovery-kit**: `--extract` no longer writes a database dump outside the output folder when the database name contains path separators.
+
+### 🔄 Changed
+
+- **backup**: Every backup job now writes the seekable archive format, including jobs that back up only databases. Backups in the older formats stay restorable and downloadable.
+- **storage**: Analyzing and browsing a backup accept the `storage:download` permission as well as `storage:restore`.
+
+### 📝 Documentation
+
+- **docs**: The restore, Storage Explorer, Recovery Kit, API and archive format guides describe single database restores and downloads out of a seekable archive.
+
+### 🧪 Tests
+
+- **tests**: New integration test dumps, packs, extracts and restores one database of every test container through the seekable archive.
+
 ### 🐳 Docker
 
 - **Image**: `skyfay/dbackup:vNEXT`

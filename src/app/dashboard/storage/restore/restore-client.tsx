@@ -37,6 +37,7 @@ import { computeRestoreValidity } from "./restore-validation";
 import { parseRestoreScope, normalizeRestoreScope } from "@/components/dashboard/storage/restore-scope";
 import { EncryptionKeyResolutionDialog, type KeyResolutionResult } from "@/components/common/encryption-key-resolution-dialog";
 import { keyOverrideBody, useEncryptionKeyRecovery, type KeyOverrideBody } from "@/hooks/use-encryption-key-recovery";
+import { startPreparedArchiveDownload } from "@/components/dashboard/storage/prepared-download";
 
 interface DatabaseInfo {
     name: string;
@@ -100,9 +101,11 @@ interface RestorePlan {
 interface RestoreClientProps {
     /** Whether this user may create vault profiles, which key recovery does. */
     canManageVault?: boolean;
+    /** Whether this user may download backups, which offers each database as a dump. */
+    canDownload?: boolean;
 }
 
-export function RestoreClient({ canManageVault = false }: RestoreClientProps) {
+export function RestoreClient({ canManageVault = false, canDownload = false }: RestoreClientProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const { autoRedirectOnJobStart } = useUserPreferences();
@@ -213,6 +216,9 @@ export function RestoreClient({ canManageVault = false }: RestoreClientProps) {
     // touch them, so the section would only offer choices with no effect.
     const isDirectoryOnly = resolvedSourceType.toLowerCase() === 'directory-only' || !wantsDatabases;
     const hasDirectories = directories.length > 0;
+    // Only a seekable archive holds each database as its own entry. An older backup is one
+    // file, so there is no single dump to hand out of it.
+    const canDownloadDumps = canDownload && !!file?.hasFileIndex;
 
     // Restore validity - the rules live in restore-validation.ts so they are testable.
     // A database target server is only required when at least one database is actually
@@ -570,37 +576,24 @@ export function RestoreClient({ canManageVault = false }: RestoreClientProps) {
         const selections = buildSelections();
         if (selections.length === 0) return;
 
-        const toastId = toast.loading('Preparing selection...');
-        try {
-            // Two steps on purpose. This call only validates the selection and returns a
-            // handle; the browser then fetches the archive itself, so the bytes go straight
-            // to disk via its download manager instead of through the page. A selection can
-            // be far larger than this machine's RAM, which buffering it here would require.
-            const res = await fetch(`/api/storage/${destinationId}/restore-files`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ file: file.path, selections, excludePatterns, target: { kind: 'download' }, prepare: true, ...applyKeyResolution(resolvedKey) }),
-            });
+        await startPreparedArchiveDownload({
+            destinationId,
+            body: { file: file.path, selections, excludePatterns, ...applyKeyResolution(resolvedKey) },
+            intercept: (res) => interceptKeyRequest(res, (result) => handleDownloadSelection(result)),
+            preparingLabel: 'Preparing selection...',
+        });
+    };
 
-            if (await interceptKeyRequest(res, (result) => handleDownloadSelection(result))) {
-                toast.dismiss(toastId);
-                return;
-            }
+    /** Downloads one database out of the backup as its plain dump, read by byte range. */
+    const handleDownloadDatabase = async (database: string, resolvedKey?: KeyResolutionResult) => {
+        if (!file) return;
 
-            const payload = await res.json().catch(() => ({ error: 'Download failed' }));
-            if (!res.ok || !payload?.data?.token) {
-                throw new Error(payload.error || 'Download failed');
-            }
-
-            const anchorEl = document.createElement('a');
-            anchorEl.href = `/api/storage/${destinationId}/restore-files?token=${encodeURIComponent(payload.data.token)}`;
-            anchorEl.download = payload.data.fileName;
-            anchorEl.click();
-
-            toast.success('Download started - see your browser downloads for progress', { id: toastId });
-        } catch (e: unknown) {
-            toast.error(e instanceof Error ? e.message : String(e), { id: toastId });
-        }
+        await startPreparedArchiveDownload({
+            destinationId,
+            body: { file: file.path, databases: [database], ...applyKeyResolution(resolvedKey) },
+            intercept: (res) => interceptKeyRequest(res, (result) => handleDownloadDatabase(database, result)),
+            preparingLabel: `Preparing ${database}...`,
+        });
     };
 
     // Debounced conflict check: does the chosen restore target already contain files?
@@ -1038,6 +1031,7 @@ export function RestoreClient({ canManageVault = false }: RestoreClientProps) {
                                                             <TableHead className="w-8"></TableHead>
                                                             <TableHead>Target DB Name</TableHead>
                                                             <TableHead className="w-24 text-center">Status</TableHead>
+                                                            {canDownloadDumps && <TableHead className="w-10"></TableHead>}
                                                         </TableRow>
                                                     </TableHeader>
                                                     <TableBody>
@@ -1102,6 +1096,26 @@ export function RestoreClient({ canManageVault = false }: RestoreClientProps) {
                                                                             </Badge>
                                                                         )}
                                                                     </TableCell>
+                                                                    {canDownloadDumps && (
+                                                                        <TableCell className="py-2.5">
+                                                                            <TooltipProvider>
+                                                                                <Tooltip>
+                                                                                    <TooltipTrigger asChild>
+                                                                                        <Button
+                                                                                            variant="ghost"
+                                                                                            size="icon"
+                                                                                            className="h-8 w-8"
+                                                                                            onClick={() => void handleDownloadDatabase(db.name)}
+                                                                                        >
+                                                                                            <Download className="h-4 w-4" />
+                                                                                            <span className="sr-only">Download {db.name}</span>
+                                                                                        </Button>
+                                                                                    </TooltipTrigger>
+                                                                                    <TooltipContent>Download this database as a dump</TooltipContent>
+                                                                                </Tooltip>
+                                                                            </TooltipProvider>
+                                                                        </TableCell>
+                                                                    )}
                                                                 </TableRow>
                                                             );
                                                         })}

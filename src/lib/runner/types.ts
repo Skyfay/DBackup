@@ -84,10 +84,9 @@ export interface RunnerContext {
     updateDetail: (detail: string) => void;
     updateStageProgress: (internalPercent: number) => void;
 
-    // UNCHANGED meaning - the optional single database source. Its presence/absence is what
-    // routes 02-dump.ts between the untouched single-adapter path and the new combined path.
+    /** The optional database source. Each of its databases becomes one archive entry. */
     sourceAdapter?: DatabaseAdapter;
-    // NEW, additive - empty array for every job without directory sources (the 99% case today).
+    /** Directory sources. An empty array for every job that backs up databases only. */
     sources: DirectorySourceContext[];
     /**
      * Snapshots created for this run, released in `stepCleanup` - which the runner calls
@@ -113,13 +112,13 @@ export interface RunnerContext {
     // File paths
     tempFile?: string;
     /**
-     * Local path of the seekable archive's index sidecar, set only by the combined dump
-     * path. Uploaded next to the backup file so browsing and file-level restore never have
+     * Local path of the seekable archive's index sidecar, set by the dump step for every
+     * backup. Uploaded next to the backup file so browsing and file-level restore never have
      * to download the archive itself.
      */
     indexFile?: string;
     /**
-     * Incremental chain decision for this run, set only by the combined dump path.
+     * Incremental chain decision for this run, set only for jobs with directory sources.
      * Determines the remote directory and the archive's `full-`/`inc-` prefix, and is
      * recorded on the Execution so retention can reason about chains.
      */

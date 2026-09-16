@@ -42,6 +42,9 @@ interface RestoreItem {
  * Every target is a database that does not exist yet, which prepareRestore has
  * already verified. SqlPackage creates it as part of the import.
  */
+// LEGACY-FORMAT(read): Restores backups written before the seekable archive, a single dump
+// file or a TAR of dumps. New backups go through restoreOne(). Remove once those backups no
+// longer need restoring.
 export async function restore(
     config: AzureSQLRestoreConfig,
     sourcePath: string,
@@ -56,16 +59,11 @@ export async function restore(
         onLog?.(msg, level, type, details);
     };
 
-    // The privileged credentials are handed over nested, never flattened, so the
-    // adapter has to apply them itself. Same pattern as mysql and postgres.
-    const effectiveConfig: AzureSQLConfig = config.privilegedAuth
-        ? { ...config, user: config.privilegedAuth.user, password: config.privilegedAuth.password }
-        : config;
+    const effectiveConfig = applyPrivilegedAuth(config);
 
     let stagingDir: string | null = null;
 
     try {
-        const exporter = resolveExporter();
         let items: RestoreItem[];
 
         if (await isMultiDbTar(sourcePath)) {
@@ -80,14 +78,7 @@ export async function restore(
         }
 
         for (const item of items) {
-            log(`Restoring into ${item.targetName}`);
-            await dropExistingDatabase(effectiveConfig, item.targetName, host, log);
-            // stageInput is a no-op on a DirectHost, so this hands SqlPackage the
-            // very file the pipeline already downloaded.
-            await host.stageInput(item.localPath, {}, (hostPath) =>
-                exporter.importDatabase(effectiveConfig, hostPath, item.targetName, host, log, onProgress),
-            );
-            log(`Restore completed for ${item.targetName}`);
+            await importInto(effectiveConfig, item.localPath, item.targetName, host, log, onProgress);
         }
 
         log("Restore finished successfully");
@@ -100,6 +91,55 @@ export async function restore(
     } finally {
         if (stagingDir) await cleanupTempDir(stagingDir);
     }
+}
+
+/**
+ * Import a single BACPAC, as produced by dumpOne, into `targetDbName`.
+ *
+ * Throws instead of returning a result, which is the contract the seekable archive
+ * restore expects from every adapter.
+ */
+export async function restoreOne(
+    config: AzureSQLRestoreConfig,
+    filePath: string,
+    targetDbName: string,
+    host: ExecutionHost,
+    onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void,
+    onProgress?: (percentage: number, detail?: string) => void,
+): Promise<void> {
+    const log = (msg: string, level: LogLevel = "info", type: LogType = "general", details?: string) =>
+        onLog?.(msg, level, type, details);
+    validateDatabaseName(targetDbName);
+    await importInto(applyPrivilegedAuth(config), filePath, targetDbName, host, log, onProgress);
+}
+
+/**
+ * The privileged credentials are handed over nested, never flattened, so the adapter has
+ * to apply them itself. Same pattern as mysql and postgres.
+ */
+function applyPrivilegedAuth(config: AzureSQLRestoreConfig): AzureSQLConfig {
+    return config.privilegedAuth
+        ? { ...config, user: config.privilegedAuth.user, password: config.privilegedAuth.password }
+        : config;
+}
+
+/** Replace one database with the contents of a local BACPAC. */
+async function importInto(
+    config: AzureSQLConfig,
+    localPath: string,
+    targetName: string,
+    host: ExecutionHost,
+    log: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void,
+    onProgress?: (percentage: number, detail?: string) => void,
+): Promise<void> {
+    log(`Restoring into ${targetName}`);
+    await dropExistingDatabase(config, targetName, host, log);
+    // stageInput is a no-op on a DirectHost, so this hands SqlPackage the very file
+    // the pipeline already downloaded.
+    await host.stageInput(localPath, {}, (hostPath) =>
+        resolveExporter().importDatabase(config, hostPath, targetName, host, log, onProgress),
+    );
+    log(`Restore completed for ${targetName}`);
 }
 
 /**
@@ -200,6 +240,8 @@ function resolveSingleTarget(config: AzureSQLRestoreConfig): string {
  * Implementing this saves the analyze route a full download of the archive purely
  * to answer what is inside it.
  */
+// LEGACY-FORMAT(read): Lists the databases of a backup file written before the seekable
+// archive. A seekable archive is listed from its index instead.
 export async function analyzeDump(sourcePath: string): Promise<string[]> {
     try {
         if (await isMultiDbTar(sourcePath)) {

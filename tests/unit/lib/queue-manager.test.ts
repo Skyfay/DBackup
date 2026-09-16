@@ -42,6 +42,7 @@ vi.mock('@/lib/logging/logger', () => ({
 
 // 2. Import System Under Test
 import { processQueue } from '@/lib/execution/queue-manager';
+import { beginDatabaseMaintenance, endDatabaseMaintenance } from '@/lib/server/database-maintenance';
 
 describe('Queue Manager Concurrency', () => {
     beforeEach(() => {
@@ -150,6 +151,18 @@ describe('Queue Manager Concurrency', () => {
 
         // Should bail out before querying pending jobs
         expect(vi.mocked(prisma.execution.findMany)).not.toHaveBeenCalled();
+        expect(mockPerformExecution).not.toHaveBeenCalled();
+    });
+    it('holds pending jobs back while database maintenance holds the connection', async () => {
+        mockIsShutdownRequested.mockReturnValue(false);
+        beginDatabaseMaintenance();
+        try {
+            await processQueue();
+        } finally {
+            endDatabaseMaintenance();
+        }
+
+        expect(vi.mocked(prisma.systemSetting.findUnique)).not.toHaveBeenCalled();
         expect(mockPerformExecution).not.toHaveBeenCalled();
     });
 });

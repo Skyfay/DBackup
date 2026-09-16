@@ -24,10 +24,12 @@ import {
     HardDrive,
     FileLock2,
     FileCheck,
+    Database,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn, formatBytes } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { getDownloadOptions } from "@/components/dashboard/storage/download-options";
 
 interface DownloadLinkModalProps {
     open: boolean;
@@ -38,7 +40,12 @@ interface DownloadLinkModalProps {
         path: string;
         size: number;
         isEncrypted?: boolean;
+        hasFileIndex?: boolean;
+        combined?: { databases: number; directorySources: number };
+        dbInfo?: { count: string | number; label: string };
     };
+    /** For a seekable archive, the one database the link downloads. */
+    database?: string;
 }
 
 type DownloadMode = "encrypted" | "decrypted";
@@ -48,10 +55,17 @@ export function DownloadLinkModal({
     onOpenChange,
     storageId,
     file,
+    database,
 }: DownloadLinkModalProps) {
+    // A seekable archive has no decrypted form as a whole. Its decrypted link is always one
+    // database dump, which the server names, so there is nothing to predict here.
+    const seekable = !!file.hasFileIndex;
+    const hasDecryptedForm = !!database || !!getDownloadOptions(file).decrypted;
+    const defaultMode: DownloadMode = hasDecryptedForm ? "decrypted" : "encrypted";
+
     const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
     const [isGenerating, setIsGenerating] = useState(false);
-    const [mode, setMode] = useState<DownloadMode>(file.isEncrypted ? "decrypted" : "encrypted");
+    const [mode, setMode] = useState<DownloadMode>(defaultMode);
     const [copied, setCopied] = useState<string | null>(null);
     const [expiresAt, setExpiresAt] = useState<Date | null>(null);
     const [timeLeft, setTimeLeft] = useState<number>(0);
@@ -60,11 +74,11 @@ export function DownloadLinkModal({
     useEffect(() => {
         if (open) {
             setDownloadUrl(null);
-            setMode(file.isEncrypted ? "decrypted" : "encrypted");
+            setMode(defaultMode);
             setCopied(null);
             setExpiresAt(null);
         }
-    }, [open, file]);
+    }, [open, file, defaultMode]);
 
     // Countdown timer for expiration
     useEffect(() => {
@@ -92,7 +106,7 @@ export function DownloadLinkModal({
             const res = await fetch(`/api/storage/${storageId}/download-url`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ file: file.path, decrypt }),
+                body: JSON.stringify({ file: file.path, decrypt, ...(decrypt && database ? { database } : {}) }),
             });
 
             if (res.ok) {
@@ -108,7 +122,7 @@ export function DownloadLinkModal({
         } finally {
             setIsGenerating(false);
         }
-    }, [storageId, file.path, mode]);
+    }, [storageId, file.path, mode, database]);
 
     const copyToClipboard = useCallback((text: string, id: string) => {
         navigator.clipboard.writeText(text);
@@ -127,8 +141,14 @@ export function DownloadLinkModal({
     }, [file.name, mode]);
 
     const outputFilename = getOutputFilename();
-    const wgetCommand = downloadUrl ? `wget -O "${outputFilename}" "${downloadUrl}"` : "";
-    const curlCommand = downloadUrl ? `curl -o "${outputFilename}" "${downloadUrl}"` : "";
+    // A dump is named by the server after the database it holds, so the commands keep that name.
+    const serverNamed = seekable && mode === "decrypted";
+    const wgetCommand = !downloadUrl ? "" : serverNamed
+        ? `wget --content-disposition "${downloadUrl}"`
+        : `wget -O "${outputFilename}" "${downloadUrl}"`;
+    const curlCommand = !downloadUrl ? "" : serverNamed
+        ? `curl -OJ "${downloadUrl}"`
+        : `curl -o "${outputFilename}" "${downloadUrl}"`;
 
     const formatTimeLeft = (seconds: number): string => {
         const mins = Math.floor(seconds / 60);
@@ -170,12 +190,24 @@ export function DownloadLinkModal({
                                         Encrypted
                                     </Badge>
                                 )}
+                                {database && (
+                                    <Badge variant="secondary" className="h-5 px-1.5 text-[10px] max-w-full truncate">
+                                        <Database className="h-3 w-3 mr-1 shrink-0" />
+                                        {database}
+                                    </Badge>
+                                )}
                             </div>
                         </div>
                     </div>
 
-                    {/* Mode Selection (only for encrypted files) */}
-                    {file.isEncrypted && (
+                    {seekable && !hasDecryptedForm && (
+                        <p className="text-xs text-muted-foreground">
+                            This link downloads the whole archive. To fetch one database out of it, use Download Database in the download menu.
+                        </p>
+                    )}
+
+                    {/* Mode Selection: encrypted legacy files, or a seekable archive holding a dump */}
+                    {!database && (seekable ? hasDecryptedForm : file.isEncrypted) && (
                         <div className="space-y-3">
                             <Label className="text-sm font-medium">Download Format</Label>
                             <RadioGroup
@@ -195,7 +227,7 @@ export function DownloadLinkModal({
                                 >
                                     <RadioGroupItem value="decrypted" id="decrypted" />
                                     <FileCheck className="h-4 w-4 text-green-500" />
-                                    <span className="text-sm">Decrypted</span>
+                                    <span className="text-sm">{seekable ? "Database dump" : "Decrypted"}</span>
                                 </Label>
                                 <Label
                                     htmlFor="encrypted"
@@ -206,7 +238,7 @@ export function DownloadLinkModal({
                                 >
                                     <RadioGroupItem value="encrypted" id="encrypted" />
                                     <FileLock2 className="h-4 w-4 text-amber-500" />
-                                    <span className="text-sm">Encrypted (.enc)</span>
+                                    <span className="text-sm">{seekable ? (file.isEncrypted ? "Encrypted archive" : "Archive (.tar)") : "Encrypted (.enc)"}</span>
                                 </Label>
                             </RadioGroup>
                         </div>

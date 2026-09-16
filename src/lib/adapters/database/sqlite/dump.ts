@@ -1,6 +1,8 @@
+import { AdapterError } from "@/lib/logging/errors";
 import { DatabaseAdapter } from "@/lib/core/interfaces";
 import { LogLevel, LogType } from "@/lib/core/logs";
 import fs from "fs/promises";
+import { getDatabases } from "./connection";
 
 /**
  * SQLite backup via the sqlite3 `.backup` dot command, which takes a consistent
@@ -11,6 +13,8 @@ import fs from "fs/promises";
  * temp file whose bytes are fetched and cleaned up afterwards. The SSH path used
  * to do that by hand and then stream the file back with `cat`.
  */
+// LEGACY-FORMAT(write): Part of DatabaseAdapter.dump, which no job calls anymore. dumpOne()
+// wraps it, so move the body into dumpOne() when dump() leaves the interface.
 export const dump: DatabaseAdapter["dump"] = async (config, destinationPath, host, onLog, onProgress) => {
     const startedAt = new Date();
     const logs: string[] = [];
@@ -68,4 +72,21 @@ export const dump: DatabaseAdapter["dump"] = async (config, destinationPath, hos
             completedAt: new Date(),
         };
     }
+};
+
+/**
+ * The single entry a SQLite source backs up. The file is the database, so its name is the
+ * only entry there is, whatever the job's selection says.
+ */
+export const listDumpEntries: NonNullable<DatabaseAdapter["listDumpEntries"]> = async (config, _selected, host) => {
+    return getDatabases(config, host);
+};
+
+/** Snapshot of the configured file, thrown on failure as the seekable archive writer expects. */
+export const dumpOne: NonNullable<DatabaseAdapter["dumpOne"]> = async (config, _dbName, destinationPath, host, onLog) => {
+    const result = await dump(config, destinationPath, host, onLog);
+    if (!result.success) {
+        throw new AdapterError("sqlite", "dump", result.error ?? "SQLite dump failed");
+    }
+    return { size: result.size ?? 0 };
 };

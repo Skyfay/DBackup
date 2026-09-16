@@ -22,6 +22,11 @@ interface DownloadToken {
     expiresAt: number;
     used: boolean;
     /**
+     * For a decrypted download of a seekable archive, the database dump to extract. Absent
+     * means the archive's only database, which is what a single-database job holds.
+     */
+    database?: string;
+    /**
      * Present for archive-selection downloads, which extract chosen files out of a backup
      * rather than fetching one stored file.
      */
@@ -29,6 +34,8 @@ interface DownloadToken {
         /** The token is only honoured for the session that created it. */
         userId: string;
         selections?: DownloadSelection[];
+        /** Database dumps to include, by the name recorded in the archive. */
+        databases?: string[];
         /** Carried with the token so the browser's GET applies the same exclusions. */
         excludePatterns?: string[];
         /**
@@ -37,6 +44,8 @@ interface DownloadToken {
          */
         profileIdOverride?: string;
         fileName: string;
+        /** A single dump is sent as-is, anything else as a tar.gz. Absent on older tokens. */
+        contentType?: string;
     };
     /**
      * Present for a download that was already fetched and decrypted into a temp file, so the
@@ -73,7 +82,7 @@ const tokenStore = globalForTokens.downloadTokenStore;
 /**
  * Generate a new download token
  */
-export function generateDownloadToken(storageId: string, file: string, decrypt: boolean = true): string {
+export function generateDownloadToken(storageId: string, file: string, decrypt: boolean = true, database?: string): string {
     const token = crypto.randomBytes(32).toString("hex");
     const now = Date.now();
 
@@ -81,6 +90,7 @@ export function generateDownloadToken(storageId: string, file: string, decrypt: 
         storageId,
         file,
         decrypt,
+        ...(database ? { database } : {}),
         createdAt: now,
         expiresAt: now + TOKEN_TTL_MS,
         used: false
@@ -131,7 +141,9 @@ export function generateSelectionDownloadToken(params: {
     file: string;
     userId: string;
     fileName: string;
+    contentType?: string;
     selections?: DownloadSelection[];
+    databases?: string[];
     excludePatterns?: string[];
     profileIdOverride?: string;
 }): string {
@@ -148,9 +160,11 @@ export function generateSelectionDownloadToken(params: {
         selection: {
             userId: params.userId,
             selections: params.selections,
+            databases: params.databases,
             excludePatterns: params.excludePatterns,
             profileIdOverride: params.profileIdOverride,
             fileName: params.fileName,
+            contentType: params.contentType,
         },
     });
 

@@ -12,7 +12,8 @@ import fs from "fs/promises";
 import path from "path";
 import { createWriteStream } from "fs";
 import { pipeline } from "stream/promises";
-import { DATABASE_MEMBER_PREFIX, EXTENSION_BY_FORMAT, SOURCE_MEMBER_PREFIX } from "./format";
+import { DATABASE_MEMBER_PREFIX, SOURCE_MEMBER_PREFIX } from "./format";
+import { databaseDumpFileName } from "./dump-names";
 import { groupFilesByEntry, openArchiveEntry, openArchiveFile, readArchiveIndex, readArchiveManifest } from "./reader";
 import { groupFilesByArchive, OpenedChainArchive } from "./chain-source";
 import { localFileSource, readAll } from "./sources";
@@ -116,10 +117,7 @@ export async function extractArchiveFrom(
         const entry = index.entries.get(entryKey(undefined, database.n));
         if (!entry) throw new Error(`Archive index is inconsistent: database '${database.name}' references missing entry ${database.n}`);
 
-        const target = safeJoin(
-            extractDir,
-            `${DATABASE_MEMBER_PREFIX}${database.name}.${EXTENSION_BY_FORMAT[database.format]}`
-        );
+        const target = safeJoin(extractDir, `${DATABASE_MEMBER_PREFIX}${databaseDumpFileName(database.name, database.format)}`);
         await writeStreamTo(await openArchiveEntry(source, manifest, entry, options?.masterKey), target);
         databaseFiles.push({ entry: database, path: target });
     }

@@ -280,6 +280,30 @@ describe("GET /api/executions/[id]", () => {
     expect(body.data.logs).toEqual(logEntries);
   });
 
+  it("tells the dialog when data retention removed the log", async () => {
+    mockGetAuthContext.mockResolvedValue({
+      userId: "user-1",
+      permissions: ["history:read"],
+      isSuperAdmin: false,
+      authMethod: "session",
+    });
+    mockCheckPermissionWithContext.mockReturnValue(undefined);
+    mockFindUnique.mockResolvedValue({
+      ...baseExecution,
+      status: "Success",
+      endedAt: new Date("2026-02-15T10:05:00Z"),
+      logs: "[]",
+      logsPurgedAt: new Date("2026-05-16T00:00:00Z"),
+    });
+
+    const url = "http://localhost:3000/api/executions/exec-1?includeLogs=true";
+    const response = await GET(createRequest(url), createProps());
+    const body = await response.json();
+
+    expect(body.data.logs).toEqual([]);
+    expect(body.data.logsPurgedAt).toBe("2026-05-16T00:00:00.000Z");
+  });
+
   it("should return empty logs array when logs are unparseable and includeLogs=true", async () => {
     mockGetAuthContext.mockResolvedValue({
       userId: "user-1",

@@ -4,6 +4,7 @@ import { LogLevel, LogType } from "@/lib/core/logs";
 import { REDIS_CLI, buildConnectionArgs } from "./args";
 import { logger } from "@/lib/logging/logger";
 import { RedisConfig } from "@/lib/adapters/definitions";
+import { AdapterError } from "@/lib/logging/errors";
 
 const log = logger.child({ adapter: "redis", module: "restore" });
 
@@ -74,6 +75,8 @@ export async function prepareRestore(
  * - Docker volume mounting for containerized Redis
  * - Using RESTORE command for individual keys (very slow)
  */
+// LEGACY-FORMAT(read): Part of DatabaseAdapter.restore, which only older backups reach.
+// restoreOne() wraps it, so move the body into restoreOne() when restore() leaves the interface.
 export async function restore(
     config: RedisRestoreConfig,
     sourcePath: string,
@@ -171,5 +174,23 @@ export async function restore(
             startedAt,
             completedAt: new Date(),
         };
+    }
+}
+
+/**
+ * Counterpart to dumpOne. Redis cannot load an RDB remotely, so this runs the same manual
+ * restore guidance as restore() and only throws when that preparation itself failed.
+ */
+export async function restoreOne(
+    config: RedisRestoreConfig,
+    filePath: string,
+    _targetDbName: string,
+    host: ExecutionHost,
+    onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void,
+    onProgress?: (percentage: number, detail?: string) => void
+): Promise<void> {
+    const result = await restore(config, filePath, host, onLog, onProgress);
+    if (!result.success) {
+        throw new AdapterError("redis", "restore", result.error ?? "Restore preparation failed");
     }
 }

@@ -7,7 +7,6 @@ import { DatabaseAdapter } from "@/lib/core/interfaces";
 import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { updateService } from "./update-service";
 import { healthCheckService } from "./healthcheck-service";
-import { auditService } from "../audit-service";
 import { notify } from "@/services/notifications/system-notification-service";
 import { NOTIFICATION_EVENTS } from "@/lib/notifications/types";
 import { getNotificationConfig } from "@/services/notifications/system-notification-service";
@@ -16,6 +15,8 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { recordVersionIfChanged } from "./db-version-service";
+import { runDataRetention } from "./data-retention-service";
+import { isDatabaseMaintenanceActive } from "@/lib/server/database-maintenance";
 
 const log = logger.child({ service: "SystemTaskService" });
 
@@ -65,7 +66,7 @@ export const DEFAULT_TASK_CONFIG = {
         runOnStartup: true,
         enabled: true,
         label: "Clean Old Data",
-        description: "Removes old audit logs and storage snapshots beyond their configured retention periods to prevent disk filling."
+        description: "Removes execution logs, execution history, audit logs, notification history, storage usage history and health check history beyond the retention periods set under Settings > General > Data Retention. Backup files are not affected."
     },
     [SYSTEM_TASKS.CHECK_FOR_UPDATES]: {
         interval: "0 0 * * *", // Daily at midnight
@@ -223,6 +224,13 @@ export class SystemTaskService {
     }
 
     async runTask(taskId: string, triggerType?: "Manual" | "Scheduler", triggerLabel?: string): Promise<string | undefined> {
+        // VACUUM or a database download holds Prisma's only connection. A task started now
+        // would just queue behind it until the pool timeout fails it.
+        if (isDatabaseMaintenanceActive()) {
+            log.info("Skipping system task during database maintenance", { taskId });
+            return undefined;
+        }
+
         log.info("Running system task", { taskId });
         await this.setTaskLastRunAt(taskId);
 
@@ -325,64 +333,7 @@ export class SystemTaskService {
     }
 
     private async runCleanOldLogs() {
-        // Clean audit logs
-        try {
-            const auditSetting = await prisma.systemSetting.findUnique({ where: { key: "audit.retentionDays" } });
-            const auditRetentionDays = auditSetting ? parseInt(auditSetting.value) : 90;
-
-            log.info("Cleaning old audit logs", { retentionDays: auditRetentionDays });
-            const deleted = await auditService.cleanOldLogs(auditRetentionDays);
-            log.info("Audit log cleanup completed", { deletedCount: deleted.count });
-        } catch (error: unknown) {
-            log.error("Failed to clean audit logs", {}, wrapError(error));
-        }
-
-        // Clean old storage snapshots
-        try {
-            const snapshotSetting = await prisma.systemSetting.findUnique({ where: { key: "storage.snapshotRetentionDays" } });
-            const snapshotRetentionDays = snapshotSetting ? parseInt(snapshotSetting.value) : 90;
-
-            log.info("Cleaning old storage snapshots", { retentionDays: snapshotRetentionDays });
-            const { cleanupOldSnapshots } = await import("@/services/dashboard-service");
-            const snapshotsDeleted = await cleanupOldSnapshots(snapshotRetentionDays);
-            if (snapshotsDeleted > 0) {
-                log.info("Storage snapshot cleanup completed", { deletedCount: snapshotsDeleted });
-            }
-        } catch (error: unknown) {
-            log.error("Failed to clean storage snapshots", {}, wrapError(error));
-        }
-
-        // Clean old health check logs
-        try {
-            const healthCheckSetting = await prisma.systemSetting.findUnique({ where: { key: "healthcheck.logRetentionDays" } });
-            const healthCheckRetentionDays = healthCheckSetting ? parseInt(healthCheckSetting.value) : 2;
-
-            log.info("Cleaning old health check logs", { retentionDays: healthCheckRetentionDays });
-            const healthCheckDeleted = await healthCheckService.cleanOldLogs(healthCheckRetentionDays);
-            if (healthCheckDeleted > 0) {
-                log.info("Health check log cleanup completed", { deletedCount: healthCheckDeleted });
-            }
-        } catch (error: unknown) {
-            log.error("Failed to clean health check logs", {}, wrapError(error));
-        }
-
-        // Clean old notification logs
-        try {
-            const notifSetting = await prisma.systemSetting.findUnique({ where: { key: "notification.logRetentionDays" } });
-            const notifRetentionDays = notifSetting ? parseInt(notifSetting.value) : 90;
-
-            log.info("Cleaning old notification logs", { retentionDays: notifRetentionDays });
-            const cutoff = new Date();
-            cutoff.setDate(cutoff.getDate() - notifRetentionDays);
-            const result = await prisma.notificationLog.deleteMany({
-                where: { sentAt: { lt: cutoff } },
-            });
-            if (result.count > 0) {
-                log.info("Notification log cleanup completed", { deletedCount: result.count });
-            }
-        } catch (error: unknown) {
-            log.error("Failed to clean notification logs", {}, wrapError(error));
-        }
+        await runDataRetention();
     }
 
     private async runCheckForUpdates() {

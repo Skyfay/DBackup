@@ -9,6 +9,10 @@ Configure MySQL or MariaDB databases for backup using `mysqldump` / `mariadb-dum
 | **MySQL** | 5.7, 8.0, 8.4, 9.0 |
 | **MariaDB** | 10.x, 11.x |
 
+::: tip Older MySQL servers
+MySQL below 5.7 is not supported, but dumps are not blocked either. When the detected server version is below 5.5.3, DBackup leaves out the `utf8mb4` character set flag that those servers do not know. If the dump still fails on the character set, for example because the version could not be detected or the client in the DBackup image defaults to `utf8mb4`, add `--default-character-set=utf8` to **Additional Options** to override it yourself.
+:::
+
 ## Connection Modes
 
 | Mode | Description |

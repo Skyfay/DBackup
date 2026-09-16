@@ -16,6 +16,7 @@ import { pipeline } from "stream/promises";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { importConfiguration } from "./import";
+import { assertNoDatabaseMaintenance } from "@/lib/server/database-maintenance";
 
 const svcLog = logger.child({ service: "ConfigService" });
 
@@ -30,6 +31,8 @@ export async function restoreFromStorage(
   decryptionProfileId?: string,
   options?: RestoreOptions
 ): Promise<string> {
+
+  assertNoDatabaseMaintenance("systemRestore");
 
   // 1. Create Execution Record
   const execution = await prisma.execution.create({

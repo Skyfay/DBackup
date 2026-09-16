@@ -204,6 +204,7 @@ export default defineConfig({
             { text: 'User Management', link: '/user-guide/admin/users' },
             { text: 'Groups & Permissions', link: '/user-guide/admin/permissions' },
             { text: 'SSO / OIDC', link: '/user-guide/admin/sso' },
+            { text: 'Data Retention & Database', link: '/user-guide/admin/data-retention' },
             { text: 'Templates', link: '/user-guide/features/templates' }
           ]
         }
@@ -265,6 +266,7 @@ export default defineConfig({
           items: [
             { text: 'Environment Variables', link: '/developer-guide/reference/environment' },
             { text: 'Archive Format', link: '/developer-guide/reference/archive-format' },
+            { text: 'Older Backup Formats', link: '/developer-guide/reference/legacy-backup-formats' },
             { text: 'Database Schema', link: '/developer-guide/reference/schema' },
             { text: 'Supported Versions', link: '/developer-guide/reference/versions' },
             { text: 'Testing Guide', link: '/developer-guide/reference/testing' }

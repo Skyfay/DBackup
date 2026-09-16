@@ -42,9 +42,9 @@ Encryption is always on and the server certificate is always verified. Neither i
 
 ## Backup file format
 
-A single database is stored as a `.bacpac`, which is a ZIP containing `model.xml` and the table data. Because it is already compressed, DBackup stores it as-is and skips its own compression pass.
+Each database is exported to its own `.bacpac`, which is a ZIP containing `model.xml` and the table data, and stored as one entry of the backup's seekable archive. Because a BACPAC is already compressed, DBackup stores it as-is and skips its own compression. The archive's index lets the restore screen list the databases without downloading the backup, and a single database can be restored or downloaded without reading the others.
 
-Selecting several databases produces one BACPAC per database, packed into a `.tar` with a manifest. The manifest is what lets the restore screen list the databases without downloading the archive.
+Backups written by earlier versions store a single database as a plain `.bacpac` and several databases as a `.tar` of BACPACs with a manifest. Both remain restorable.
 
 ## Consistency
 

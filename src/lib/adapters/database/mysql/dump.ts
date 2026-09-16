@@ -15,6 +15,22 @@ import {
 import { TarFileEntry } from "../common/types";
 import { awaitDumpProcess } from "../common/dump-process";
 import { MYSQL_DUMP, withAuthArgs } from "./args";
+import { compareVersions } from "@/lib/utils";
+
+/** Oldest MySQL version the adapter is documented and tested against. */
+const MYSQL_MIN_VERSION = "5.7";
+
+/**
+ * Whether the detected version is a MySQL server below the documented minimum.
+ * MariaDB reports its own version scheme and is never flagged here.
+ */
+function isBelowSupportedMySQL(config: MySQLDumpConfig): boolean {
+    const version = config.detectedVersion;
+    if (!version || config.type === 'mariadb' || version.toLowerCase().includes('mariadb')) {
+        return false;
+    }
+    return compareVersions(version, MYSQL_MIN_VERSION) < 0;
+}
 
 /** Extended config with runtime fields */
 type MySQLDumpConfig = (MySQLConfig | MariaDBConfig) & {
@@ -34,6 +50,15 @@ async function dumpSingleDatabase(
 ): Promise<{ success: boolean; size: number }> {
     const dumpBin = await host.which(...MYSQL_DUMP);
     const dialect = getDialect(config.type === 'mariadb' ? 'mariadb' : 'mysql', config.detectedVersion);
+    if (isBelowSupportedMySQL(config)) {
+        // Informational only. The dump still runs, and a failing client reports
+        // its own error with the exit code, but the version is the first thing
+        // to check when it does.
+        onLog(
+            `MySQL ${config.detectedVersion} detected, the documented minimum is ${MYSQL_MIN_VERSION}. Dump flags may be incompatible with this server.`,
+            'warning',
+        );
+    }
     // Both transports now get the version-aware dialect flags. The SSH path used
     // to hand-roll a smaller argument set and miss them entirely.
     const args = dialect.getDumpArgs(config, [dbName], host);
@@ -86,6 +111,8 @@ export async function dumpOne(
     return { size: result.size };
 }
 
+// LEGACY-FORMAT(write): Writes a backup in the format used before the seekable archive.
+// No job calls it anymore, only tests do. Remove it together with DatabaseAdapter.dump.
 export async function dump(config: MySQLDumpConfig, destinationPath: string, _host: ExecutionHost, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void, _onProgress?: (percentage: number) => void): Promise<BackupResult> {
     const startedAt = new Date();
     const logs: string[] = [];

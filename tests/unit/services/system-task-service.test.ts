@@ -19,8 +19,8 @@ vi.mock('@/services/system/healthcheck-service', () => ({
         cleanOldLogs: vi.fn().mockResolvedValue(0),
     },
 }));
-vi.mock('@/services/audit-service', () => ({
-    auditService: { cleanOldLogs: vi.fn().mockResolvedValue({ count: 0 }) },
+vi.mock('@/services/system/data-retention-service', () => ({
+    runDataRetention: vi.fn().mockResolvedValue({}),
 }));
 vi.mock('@/services/notifications/system-notification-service', () => ({
     notify: vi.fn(),
@@ -221,39 +221,27 @@ describe('SystemTaskService', () => {
             expect(healthCheckService.performHealthCheck).toHaveBeenCalledTimes(1);
         });
 
-        it('calls auditService.cleanOldLogs for CLEAN_OLD_LOGS', async () => {
-            const { auditService } = await import('@/services/audit-service');
-            prismaMock.systemSetting.findUnique.mockResolvedValue(null);
-            prismaMock.notificationLog.deleteMany.mockResolvedValue({ count: 0 });
+        it('applies the data retention settings for CLEAN_OLD_LOGS', async () => {
+            const { runDataRetention } = await import('@/services/system/data-retention-service');
 
             await service.runTask(SYSTEM_TASKS.CLEAN_OLD_LOGS);
 
-            expect(auditService.cleanOldLogs).toHaveBeenCalled();
+            expect(runDataRetention).toHaveBeenCalledTimes(1);
         });
 
-        it('cleans notification logs with custom retention days', async () => {
-            prismaMock.systemSetting.findUnique
-                .mockResolvedValueOnce(null) // audit retention
-                .mockResolvedValueOnce(null) // snapshot retention
-                .mockResolvedValueOnce(null) // healthcheck retention
-                .mockResolvedValueOnce({ key: 'notification.logRetentionDays', value: '30' } as any);
-            prismaMock.notificationLog.deleteMany.mockResolvedValue({ count: 5 });
-
-            await service.runTask(SYSTEM_TASKS.CLEAN_OLD_LOGS);
-
-            expect(prismaMock.notificationLog.deleteMany).toHaveBeenCalledWith(
-                expect.objectContaining({ where: { sentAt: { lt: expect.any(Date) } } })
-            );
-        });
-
-        it('calls healthCheckService.cleanOldLogs for CLEAN_OLD_LOGS', async () => {
+        it('skips system tasks while database maintenance holds the connection', async () => {
             const { healthCheckService } = await import('@/services/system/healthcheck-service');
-            prismaMock.systemSetting.findUnique.mockResolvedValue(null);
-            prismaMock.notificationLog.deleteMany.mockResolvedValue({ count: 0 });
+            const { beginDatabaseMaintenance, endDatabaseMaintenance } = await import('@/lib/server/database-maintenance');
+            vi.mocked(healthCheckService.performHealthCheck).mockClear();
 
-            await service.runTask(SYSTEM_TASKS.CLEAN_OLD_LOGS);
+            beginDatabaseMaintenance();
+            try {
+                await service.runTask(SYSTEM_TASKS.HEALTH_CHECK);
+            } finally {
+                endDatabaseMaintenance();
+            }
 
-            expect(healthCheckService.cleanOldLogs).toHaveBeenCalledWith(2);
+            expect(healthCheckService.performHealthCheck).not.toHaveBeenCalled();
         });
 
         it('calls updateService.checkForUpdates for CHECK_FOR_UPDATES', async () => {
@@ -551,31 +539,6 @@ describe('SystemTaskService', () => {
             prismaMock.systemSetting.upsert.mockResolvedValue({} as any);
 
             await expect(service.runTask('system.unknown_task')).resolves.toBeUndefined();
-        });
-
-        it('handles auditService.cleanOldLogs failure gracefully', async () => {
-            const { auditService } = await import('@/services/audit-service');
-            vi.mocked(auditService.cleanOldLogs).mockRejectedValueOnce(new Error('DB error'));
-            prismaMock.systemSetting.findUnique.mockResolvedValue(null);
-            prismaMock.notificationLog.deleteMany.mockResolvedValue({ count: 0 });
-
-            await expect(service.runTask(SYSTEM_TASKS.CLEAN_OLD_LOGS)).resolves.toBeUndefined();
-        });
-
-        it('handles cleanupOldSnapshots failure gracefully', async () => {
-            const { cleanupOldSnapshots } = await import('@/services/dashboard-service');
-            vi.mocked(cleanupOldSnapshots).mockRejectedValueOnce(new Error('Storage error'));
-            prismaMock.systemSetting.findUnique.mockResolvedValue(null);
-            prismaMock.notificationLog.deleteMany.mockResolvedValue({ count: 0 });
-
-            await expect(service.runTask(SYSTEM_TASKS.CLEAN_OLD_LOGS)).resolves.toBeUndefined();
-        });
-
-        it('handles notificationLog.deleteMany failure gracefully', async () => {
-            prismaMock.systemSetting.findUnique.mockResolvedValue(null);
-            prismaMock.notificationLog.deleteMany.mockRejectedValueOnce(new Error('DB write failed'));
-
-            await expect(service.runTask(SYSTEM_TASKS.CLEAN_OLD_LOGS)).resolves.toBeUndefined();
         });
 
         it('notifies with non-zero reminderIntervalHours for update_available event', async () => {

@@ -4,54 +4,38 @@ Database adapters handle the dump and restore operations for different database 
 
 ## Available Adapters
 
-| Adapter | ID | CLI Tools Required | SSH Mode | File Extension |
+| Adapter | ID | CLI Tools Required | SSH Mode | Dump Format |
 | :--- | :--- | :--- | :--- | :--- |
-| MySQL | `mysql` | `mysql`, `mysqldump` | ✅ | `.sql` |
-| MariaDB | `mariadb` | `mysql`, `mysqldump` | ✅ | `.sql` |
-| PostgreSQL | `postgres` | `psql`, `pg_dump`, `pg_restore` | ✅ | `.sql` |
-| MongoDB | `mongodb` | `mongodump`, `mongorestore` | ✅ | `.archive` |
-| SQLite | `sqlite` | None (file copy) | ✅ | `.db` |
-| MSSQL | `mssql` | None (TDS protocol) | ✅ (TDS tunnelled) | `.bak` |
-| Azure SQL Database | `azure-sql` | `sqlpackage` | ❌ (public PaaS endpoint) | `.bacpac` |
-| Redis | `redis` | `redis-cli` | ✅ | `.rdb` |
-| Firebird | `firebird` | `gbak`, `isql` | ✅ | `.fbk` |
+| MySQL | `mysql` | `mysql`, `mysqldump` | ✅ | `sql` |
+| MariaDB | `mariadb` | `mysql`, `mysqldump` | ✅ | `sql` |
+| PostgreSQL | `postgres` | `psql`, `pg_dump`, `pg_restore` | ✅ | `custom` |
+| MongoDB | `mongodb` | `mongodump`, `mongorestore` | ✅ | `archive` |
+| SQLite | `sqlite` | None (file copy) | ✅ | `sqlite` |
+| MSSQL | `mssql` | None (TDS protocol) | ✅ (TDS tunnelled) | `bak` |
+| Azure SQL Database | `azure-sql` | `sqlpackage` | ❌ (public PaaS endpoint) | `bacpac` |
+| Redis | `redis` | `redis-cli` | ✅ | `rdb` |
+| Firebird | `firebird` | `gbak`, `isql` | ✅ | `fbk` |
 
-## Backup File Extensions
+## Backup Format
 
-Each adapter uses an appropriate file extension that reflects the actual backup format. This is handled by the `backup-extensions.ts` utility:
+Every backup is a seekable archive (see the [Archive Format reference](/developer-guide/reference/archive-format)). The runner calls `dumpOne()` once per database, and each dump becomes its own entry, compressed and encrypted on its own. That is what lets a restore or a download read a single database by byte range.
 
-```typescript
-import { getBackupFileExtension } from "@/lib/backup-extensions";
+Each adapter declares the format of its dump in `DB_FORMAT_BY_ADAPTER` in `src/lib/runner/steps/dump-databases.ts`. The format decides the extension the dump carries inside the archive, in a download and in the temp file a restore hands to the engine's tools:
 
-// Returns the extension without leading dot
-getBackupFileExtension("mysql");    // "sql"
-getBackupFileExtension("redis");    // "rdb"
-getBackupFileExtension("mongodb");  // "archive"
-getBackupFileExtension("sqlite");   // "db"
-getBackupFileExtension("mssql");    // "bak"
-getBackupFileExtension("azure-sql"); // "bacpac"
-getBackupFileExtension("firebird"); // "fbk"
-```
+| Format | Extension | Adapters | Stored as-is |
+|--------|-----------|----------|--------------|
+| `sql` | `.sql` | MySQL, MariaDB | |
+| `custom` | `.dump` | PostgreSQL | ✅ unless compression is `NONE` |
+| `archive` | `.archive` | MongoDB | ✅ (`--gzip`) |
+| `bak` | `.bak` | MSSQL | |
+| `bacpac` | `.bacpac` | Azure SQL Database | ✅ (a ZIP) |
+| `rdb` | `.rdb` | Redis, Valkey | |
+| `sqlite` | `.sqlite` | SQLite | |
+| `fbk` | `.fbk` | Firebird | |
 
-### Extension Mapping
+"Stored as-is" means the dump is already compressed, so the job's compression is not applied to it again.
 
-| Adapter | Extension | Reason |
-|---------|-----------|--------|
-| MySQL/MariaDB | `.sql` | Standard SQL dump format |
-| PostgreSQL | `.sql` | SQL dump (or `.dump` for custom format) |
-| MSSQL | `.bak` | Native SQL Server backup format |
-| Azure SQL Database | `.bacpac` | SqlPackage data-tier application export, a ZIP so it is never recompressed |
-| MongoDB | `.archive` | mongodump `--archive` format |
-| Redis | `.rdb` | Redis Database snapshot format |
-| SQLite | `.db` | Direct database file copy |
-| Firebird | `.fbk` | Native `gbak` backup format |
-
-### Final Filename Examples
-
-With compression and encryption enabled:
-- MySQL: `backup_2026-02-02.sql.gz.enc`
-- Redis: `backup_2026-02-02.rdb.gz.enc`
-- MongoDB: `backup_2026-02-02.archive.gz.enc`
+Adapters whose snapshot cannot be split per database implement `listDumpEntries()` to say what one backup consists of. Redis and Valkey return a single entry, because one RDB holds every logical database. SQLite returns the file's name.
 
 ## Interface
 
@@ -93,6 +77,12 @@ interface DatabaseAdapter {
     onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void,
     onProgress?: (percentage: number) => void
   ): Promise<BackupResult>;
+
+  // One database at a time, for the seekable archive. Both throw on failure.
+  dumpOne?(config: unknown, dbName: string, destinationPath: string, host: ExecutionHost, onLog?): Promise<{ size: number }>;
+  restoreOne?(config: unknown, filePath: string, targetDbName: string, host: ExecutionHost, onLog?, onProgress?, originalDbName?: string): Promise<void>;
+  // Optional: the entries a backup consists of, for sources that cannot be split per database
+  listDumpEntries?(config: unknown, selected: string[], host: ExecutionHost): Promise<string[]>;
 
   // Connection tests
   test?(config: unknown, host: ExecutionHost): Promise<TestResult>;  // Full write/delete test (~15 s timeout)
@@ -243,7 +233,7 @@ const databases = await withHost(adapter, config, async (host) => {
 });
 ```
 
-**One connection per job run.** The scope wraps several adapter calls, so a combined backup of N databases performs one handshake instead of N+2. Scopes live in `runner/steps/02-dump.ts`, `runner/steps/combined-dump.ts`, and the restore pipeline. The dump scope ends **before** the upload step, so no SSH connection hangs open during a multi-hour upload.
+**One connection per job run.** The scope wraps several adapter calls, so a backup of N databases performs one handshake instead of N+2. Scopes live in `runner/steps/dump-databases.ts`, the restore pipeline, and `services/restore/archive-restore-databases.ts`. The dump scope ends **before** the upload step, so no SSH connection hangs open during a multi-hour upload.
 
 For code holding a `BaseAdapter` from the registry (health checks, connection-test routes), use the helpers in `transport/adapter-invoke.ts`:
 
@@ -807,14 +797,15 @@ async getDatabases(config): Promise<string[]> {
 ## Adding a New Database Adapter
 
 1. **Create schema** in `src/lib/adapters/definitions/database.ts`
-2. **Create adapter** in `src/lib/adapters/database/`
-3. **Register** in `src/lib/adapters/index.ts`
-4. **Add tests** in `tests/integration/adapters/`
-5. **Add container** to `docker-compose.test.yml` if needed
+2. **Create adapter** in `src/lib/adapters/database/`, including `dumpOne()` and `restoreOne()`. Every backup needs both, and `tests/unit/adapters/database/archive-capabilities.test.ts` fails without them.
+3. **Declare the dump format** in `DB_FORMAT_BY_ADAPTER` (`src/lib/runner/steps/dump-databases.ts`), and mark it natively compressed there if it is
+4. **Register** in `src/lib/adapters/index.ts`
+5. **Add tests** in `tests/integration/adapters/`
+6. **Add container** to `docker-compose.test.yml` if needed
 
-## Multi-Database TAR Format
+## Multi-Database TAR Format (older backups)
 
-When backing up multiple databases, all adapters use a unified TAR archive format:
+No job writes this format anymore, but backups made by earlier versions use it and every adapter's `restore()` still reads it. When those versions backed up multiple databases, all adapters used a unified TAR archive format:
 
 ### TAR Archive Structure
 

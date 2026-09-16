@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm, useWatch } from "react-hook-form"
 import * as z from "zod"
-import { useMemo, useState } from "react"
+import { type ReactNode, useMemo, useState } from "react"
 import {
     Form,
     FormControl,
@@ -16,7 +16,7 @@ import {
 import { toast } from "sonner"
 import { updateSystemSettings } from "@/app/actions/settings/settings"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Shield, Cpu, Rocket, Database, ScrollText, HardDrive, Bell, Globe, Check, ChevronsUpDown, Tag } from "lucide-react"
+import { Shield, Cpu, Rocket, Globe, Check, ChevronsUpDown, Tag } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -42,9 +42,6 @@ const formSchema = z.object({
     stuckTimeoutMinutes: z.coerce.number().min(0).max(10080).default(360),
     disablePasskeyLogin: z.boolean().default(false),
     sessionDuration: z.coerce.number().min(3600).max(7776000).default(604800),
-    auditLogRetentionDays: z.coerce.number().min(1).max(1825).default(90),
-    storageSnapshotRetentionDays: z.coerce.number().min(7).max(1825).default(90),
-    notificationLogRetentionDays: z.coerce.number().min(7).max(1825).default(90),
     checkForUpdates: z.boolean().default(true),
     showQuickSetup: z.boolean().default(false),
     systemTimezone: z.string().default("UTC"),
@@ -57,9 +54,6 @@ interface SystemSettingsFormProps {
     initialStuckTimeoutMinutes?: number;
     initialDisablePasskeyLogin?: boolean;
     initialSessionDuration?: number;
-    initialAuditLogRetentionDays?: number;
-    initialStorageSnapshotRetentionDays?: number;
-    initialNotificationLogRetentionDays?: number;
     initialCheckForUpdates?: boolean;
     initialShowQuickSetup?: boolean;
     initialSystemTimezone?: string;
@@ -67,9 +61,11 @@ interface SystemSettingsFormProps {
     initialInstanceName?: string;
     /** Reflects DISABLE_EMAIL_LOGIN. Read-only here - it is set in the environment. */
     emailLoginDisabledByEnv?: boolean;
+    /** Cards with their own saving logic, rendered right after Job Execution. */
+    children?: ReactNode;
 }
 
-export function SystemSettingsForm({ initialMaxConcurrentJobs, initialStuckTimeoutMinutes = 360, initialDisablePasskeyLogin, initialSessionDuration = 604800, initialAuditLogRetentionDays = 90, initialStorageSnapshotRetentionDays = 90, initialNotificationLogRetentionDays = 90, initialCheckForUpdates = true, initialShowQuickSetup = false, initialSystemTimezone = "UTC", initialFilenamePattern = "{name}_yyyy-MM-dd_HH-mm-ss", initialInstanceName = "", emailLoginDisabledByEnv = false }: SystemSettingsFormProps) {
+export function SystemSettingsForm({ initialMaxConcurrentJobs, initialStuckTimeoutMinutes = 360, initialDisablePasskeyLogin, initialSessionDuration = 604800, initialCheckForUpdates = true, initialShowQuickSetup = false, initialSystemTimezone = "UTC", initialFilenamePattern = "{name}_yyyy-MM-dd_HH-mm-ss", initialInstanceName = "", emailLoginDisabledByEnv = false, children }: SystemSettingsFormProps) {
     const [openTimezone, setOpenTimezone] = useState(false);
     // Browsers disagree on which IANA name is canonical, so a zone stored from one browser can be
     // absent from another's list. Prepend the stored value when it is missing, otherwise it would
@@ -86,9 +82,6 @@ export function SystemSettingsForm({ initialMaxConcurrentJobs, initialStuckTimeo
             stuckTimeoutMinutes: initialStuckTimeoutMinutes,
             disablePasskeyLogin: initialDisablePasskeyLogin === true,
             sessionDuration: initialSessionDuration,
-            auditLogRetentionDays: initialAuditLogRetentionDays,
-            storageSnapshotRetentionDays: initialStorageSnapshotRetentionDays,
-            notificationLogRetentionDays: initialNotificationLogRetentionDays,
             checkForUpdates: initialCheckForUpdates === true,
             showQuickSetup: initialShowQuickSetup === true,
             systemTimezone: initialSystemTimezone || "UTC",
@@ -120,15 +113,6 @@ export function SystemSettingsForm({ initialMaxConcurrentJobs, initialStuckTimeo
             error: (err) => `Failed to save: ${err.message || 'Unknown error'}`
         });
     };
-
-    const formatRetention = (days: number) => {
-        if (days >= 365 && days % 365 === 0) return `${days / 365}y`;
-        return `${days}d`;
-    };
-
-    const auditLogRetentionDays = useWatch({ control: form.control, name: "auditLogRetentionDays" });
-    const storageSnapshotRetentionDays = useWatch({ control: form.control, name: "storageSnapshotRetentionDays" });
-    const notificationLogRetentionDays = useWatch({ control: form.control, name: "notificationLogRetentionDays" });
 
     return (
         <Form {...form}>
@@ -246,143 +230,6 @@ export function SystemSettingsForm({ initialMaxConcurrentJobs, initialStuckTimeo
                             )}
                         />
 
-                        <div>
-                            <FormLabel>Data Retention</FormLabel>
-                            <FormDescription>
-                                Automatically delete old data beyond the configured retention periods.
-                                Runs daily as part of the &quot;Clean Old Data&quot; system task.
-                            </FormDescription>
-                            <Popover>
-                                <PopoverTrigger asChild>
-                                    <Button variant="outline" className="mt-2 w-full justify-between">
-                                        <div className="flex items-center gap-2">
-                                            <Database className="h-4 w-4 text-muted-foreground" />
-                                            <span>Configure Retention Policies</span>
-                                        </div>
-                                        <span className="text-xs text-muted-foreground">
-                                            {formatRetention(auditLogRetentionDays)} / {formatRetention(storageSnapshotRetentionDays)} / {formatRetention(notificationLogRetentionDays)}
-                                        </span>
-                                    </Button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-80" align="start">
-                                    <div className="space-y-4">
-                                        <div className="space-y-2">
-                                            <h4 className="font-medium text-sm leading-none">Retention Policies</h4>
-                                            <p className="text-xs text-muted-foreground">
-                                                Set how long each data type is kept before automatic cleanup.
-                                            </p>
-                                        </div>
-
-                                        <FormField
-                                            control={form.control}
-                                            name="auditLogRetentionDays"
-                                            render={({ field }) => (
-                                                <FormItem>
-                                                    <div className="flex items-center gap-2">
-                                                        <ScrollText className="h-4 w-4 text-muted-foreground shrink-0" />
-                                                        <FormLabel className="text-sm">Audit Logs</FormLabel>
-                                                    </div>
-                                                    <Select
-                                                        onValueChange={(val) => handleAutoSave("auditLogRetentionDays", Number(val))}
-                                                        defaultValue={String(field.value)}
-                                                    >
-                                                        <FormControl>
-                                                            <SelectTrigger className="h-8">
-                                                                <SelectValue />
-                                                            </SelectTrigger>
-                                                        </FormControl>
-                                                        <SelectContent>
-                                                            <SelectItem value="30">30 Days</SelectItem>
-                                                            <SelectItem value="60">60 Days</SelectItem>
-                                                            <SelectItem value="90">90 Days (Default)</SelectItem>
-                                                            <SelectItem value="180">180 Days</SelectItem>
-                                                            <SelectItem value="365">1 Year</SelectItem>
-                                                            <SelectItem value="730">2 Years</SelectItem>
-                                                            <SelectItem value="1095">3 Years</SelectItem>
-                                                            <SelectItem value="1825">5 Years</SelectItem>
-                                                        </SelectContent>
-                                                    </Select>
-                                                    <FormMessage />
-                                                </FormItem>
-                                            )}
-                                        />
-
-                                        <FormField
-                                            control={form.control}
-                                            name="storageSnapshotRetentionDays"
-                                            render={({ field }) => (
-                                                <FormItem>
-                                                    <div className="flex items-center gap-2">
-                                                        <HardDrive className="h-4 w-4 text-muted-foreground shrink-0" />
-                                                        <FormLabel className="text-sm">Storage Snapshots</FormLabel>
-                                                    </div>
-                                                    <Select
-                                                        onValueChange={(val) => handleAutoSave("storageSnapshotRetentionDays", Number(val))}
-                                                        defaultValue={String(field.value)}
-                                                    >
-                                                        <FormControl>
-                                                            <SelectTrigger className="h-8">
-                                                                <SelectValue />
-                                                            </SelectTrigger>
-                                                        </FormControl>
-                                                        <SelectContent>
-                                                            <SelectItem value="7">7 Days</SelectItem>
-                                                            <SelectItem value="14">14 Days</SelectItem>
-                                                            <SelectItem value="30">30 Days</SelectItem>
-                                                            <SelectItem value="60">60 Days</SelectItem>
-                                                            <SelectItem value="90">90 Days (Default)</SelectItem>
-                                                            <SelectItem value="180">180 Days</SelectItem>
-                                                            <SelectItem value="365">1 Year</SelectItem>
-                                                            <SelectItem value="730">2 Years</SelectItem>
-                                                            <SelectItem value="1095">3 Years</SelectItem>
-                                                            <SelectItem value="1825">5 Years</SelectItem>
-                                                        </SelectContent>
-                                                    </Select>
-                                                    <FormMessage />
-                                                </FormItem>
-                                            )}
-                                        />
-
-                                        <FormField
-                                            control={form.control}
-                                            name="notificationLogRetentionDays"
-                                            render={({ field }) => (
-                                                <FormItem>
-                                                    <div className="flex items-center gap-2">
-                                                        <Bell className="h-4 w-4 text-muted-foreground shrink-0" />
-                                                        <FormLabel className="text-sm">Notification Logs</FormLabel>
-                                                    </div>
-                                                    <Select
-                                                        onValueChange={(val) => handleAutoSave("notificationLogRetentionDays", Number(val))}
-                                                        defaultValue={String(field.value)}
-                                                    >
-                                                        <FormControl>
-                                                            <SelectTrigger className="h-8">
-                                                                <SelectValue />
-                                                            </SelectTrigger>
-                                                        </FormControl>
-                                                        <SelectContent>
-                                                            <SelectItem value="7">7 Days</SelectItem>
-                                                            <SelectItem value="14">14 Days</SelectItem>
-                                                            <SelectItem value="30">30 Days</SelectItem>
-                                                            <SelectItem value="60">60 Days</SelectItem>
-                                                            <SelectItem value="90">90 Days (Default)</SelectItem>
-                                                            <SelectItem value="180">180 Days</SelectItem>
-                                                            <SelectItem value="365">1 Year</SelectItem>
-                                                            <SelectItem value="730">2 Years</SelectItem>
-                                                            <SelectItem value="1095">3 Years</SelectItem>
-                                                            <SelectItem value="1825">5 Years</SelectItem>
-                                                        </SelectContent>
-                                                    </Select>
-                                                    <FormMessage />
-                                                </FormItem>
-                                            )}
-                                        />
-                                    </div>
-                                </PopoverContent>
-                            </Popover>
-                        </div>
-
                         <FormField
                             control={form.control}
                             name="checkForUpdates"
@@ -405,6 +252,8 @@ export function SystemSettingsForm({ initialMaxConcurrentJobs, initialStuckTimeo
                         />
                     </CardContent>
                 </Card>
+
+                {children}
 
                 <Card>
                     <CardHeader>

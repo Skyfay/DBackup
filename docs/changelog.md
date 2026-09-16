@@ -2,7 +2,64 @@
 
 All notable changes to DBackup are documented here.
 
+## v3.4.0 - Single Database Restores and Downloads, Data Retention Improvement, and Bug Fixes
+
+*Released: Sep 16, 2026*
+
+> ⚠️ **Breaking:** Jobs that back up only databases now write a seekable `.tar` archive instead of a single `.sql.gz.enc` style file or a TAR of dumps. Restoring and downloading inside DBackup work for old and new backups alike, but scripts that pick up backup files directly have to handle the new layout. An encrypted archive is read with the Recovery Kit's `--extract` mode, so download a fresh Recovery Kit, since older kits do not verify dump checksums. An unencrypted archive unpacks with plain `tar -xf`.
+
+### ✨ Features
+
+- **restore**: Single databases can be restored out of a multi-database backup, and only that database is read from the destination. ([#140](https://github.com/Skyfay/DBackup/issues/140))
+- **storage**: A single database can be downloaded out of a backup from the Storage Explorer, the restore page or the API with the `storage:download` permission. ([#138](https://github.com/Skyfay/DBackup/issues/138))
+- **jobs**: Microsoft SQL Server, Azure SQL Database and SQLite sources can now be combined with directory sources in one job.
+- **vault**: Encryption profiles can be renamed and their description edited from the Encryption Vault. ([#161](https://github.com/Skyfay/DBackup/issues/161))
+- **history**: Execution logs and History entries can be cleaned up automatically after a set period under Settings → General → Data Retention. Runs that a job still builds on are always kept.
+- **settings**: A new Database section under Settings → General shows the size of the DBackup database and optimizes it with VACUUM. SuperAdmins can also download a copy of the database file.
+
+### 🐛 Bug Fixes
+
+- **backup**: Backups with directory sources recorded their uncompressed size as the backup size. They now record the size of the stored archive.
+- **api**: A `databaseMapping` sent as an object of renames to `POST /api/storage/{id}/restore` is now applied. Restores of backups with directory sources ignored it before and restored every database under its original name.
+- **storage**: A prepared download that is cancelled in the browser no longer leaves its temp file behind on the server.
+- **backup**: An incremental chain whose full backup is missing from the execution history now starts a new chain instead of growing past its maximum age.
+- **MySQL**: Dumps against a MySQL server older than 5.5.3 no longer force the `utf8mb4` character set, and a `--default-character-set` in the Additional Options now overrides the default. The job also warns when the detected version is below the supported minimum. ([#151](https://github.com/Skyfay/DBackup/issues/151))
+
+### 🔒 Security
+
+- **recovery-kit**: `--extract` no longer writes a database dump outside the output folder when the database name contains path separators.
+
+### 🎨 Improvements
+
+- **history**: History, the dashboard and the job queue stay fast on instances with tens of thousands of runs.
+
+### 🔄 Changed
+
+- **backup**: Every backup job now writes the seekable archive format, including jobs that back up only databases. Backups in the older formats stay restorable and downloadable.
+- **storage**: Analyzing and browsing a backup accept the `storage:download` permission as well as `storage:restore`.
+- **mongodb**: A job without a database selection now fails with a message asking to select the databases when the backup user cannot list them. Before, `mongodump` ran without a database and backed up whatever that user could read.
+- **settings**: The retention settings moved from Job Execution into their own Data Retention card with clearer names, where the health check retention can now be set too. Detailed execution logs older than 90 days are now removed by default while the runs stay in History.
+
+### 📝 Documentation
+
+- **docs**: The restore, Storage Explorer, Recovery Kit, API and archive format guides describe single database restores and downloads out of a seekable archive. A new developer page lists the code that still serves the older backup formats.
+- **docs**: The encryption guide describes renaming an encryption profile.
+- **docs**: A new guide explains what each data retention setting removes and how to optimize or download the DBackup database.
+
+### 🧪 Tests
+
+- **tests**: New integration test dumps, packs, extracts and restores one database of every test container through the seekable archive.
+- **tests**: New unit tests cover execution history cleanup, database maintenance, the database download route and cancelled downloads.
+
+### 🐳 Docker
+
+- **Image**: `skyfay/dbackup:v3.4.0`
+- **Also tagged as**: `latest`, `v3`
+- **CI Image**: `skyfay/dbackup:ci`
+- **Platforms**: linux/amd64, linux/arm64
+
 ## v3.3.1 - Dashboard Stats Endpoint, Bug and Security Fixes
+
 *Released: Sep 13, 2026*
 
 ### ✨ Features
@@ -33,8 +90,8 @@ All notable changes to DBackup are documented here.
 - **CI Image**: `skyfay/dbackup:ci`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v3.3.0 - Azure SQL Database Support, S3 Upload Rework and General Improvements
+
 *Released: Aug 15, 2026*
 
 > ⚠️ **Breaking:** Retention now decides how old a backup is from the creation time DBackup recorded in its `.meta.json`, not from the file's modification time on the destination. Where the two still agree, which is the normal case, the same backups are kept as before and nothing needs doing. Where they were pulled apart, by moving a destination or copying it without preserving timestamps, retention keeps a different set from the next run onwards. That is the intended fix, because a reset modification time collapses the whole history into a single bucket and costs almost all of it, but it does mean the first run after updating can delete backups the run before it kept. Open the retention step of that first run and look for lines naming a backup whose recorded time and modification time disagree. Lock anything you cannot lose before a destination is moved.
@@ -91,8 +148,8 @@ All notable changes to DBackup are documented here.
 - **CI Image**: `skyfay/dbackup:ci`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v3.2.0 - Docker Volumes Backup, SSH Key Generation, MongoDB Atlas Support, and Bug Fixes
+
 *Released: Aug 8, 2026*
 
 ### ✨ Features
@@ -143,8 +200,8 @@ All notable changes to DBackup are documented here.
 - **CI Image**: `skyfay/dbackup:ci`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v3.1.0 - SSH Connection Mode for MSSQL, SSH Transport rewrite, and Bug Fixes
+
 *Released: Aug 1, 2026*
 
 ### ✨ Features
@@ -201,8 +258,8 @@ All notable changes to DBackup are documented here.
 - **CI Image**: `skyfay/dbackup:ci`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v3.0.2 - Bug Fixes and Improvements for File Backups and MSSQL Restores
+
 *Released: Aug 1, 2026*
 
 ### 🐛 Bug Fixes
@@ -241,8 +298,8 @@ All notable changes to DBackup are documented here.
 - **CI Image**: `skyfay/dbackup:ci`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v3.0.1 - File Backup Reliability Fixes and SFTP Improvements
+
 *Released: July 28, 2026*
 
 ### ✨ Features
@@ -288,8 +345,8 @@ All notable changes to DBackup are documented here.
 - **CI Image**: `skyfay/dbackup:ci`
 - **Platforms**: linux/amd64, linux/arm64
 
+## v3.0.0 - File &amp; Folder Backups, Incremental Chains, and General Improvements &amp; Fixes
 
-## v3.0.0 - File & Folder Backups, Incremental Chains, and General Improvements & Fixes
 *Released: July 26, 2026*
 
 > **Note:** File backups introduce artefacts that did not exist before. A combined (database +
@@ -305,7 +362,7 @@ All notable changes to DBackup are documented here.
 > tool instead of two scripts, a menu that finds your backups and asks what to do with them,
 > launchers for all three systems, and support for the new file-backup and incremental formats.
 > An older kit cannot read a file backup at all. Your key has not changed, so the new kit is a drop-in
-> replacement - Vault > Encryption > Recovery Kit, then tick the profiles it should cover.
+> replacement - Vault &gt; Encryption &gt; Recovery Kit, then tick the profiles it should cover.
 
 ### ✨ Features
 
@@ -368,7 +425,6 @@ All notable changes to DBackup are documented here.
 ### 🔄 Changed
 
 - **rsync**: Transfers no longer compress in transit. `-z` costs CPU on both ends and changes nothing about what is stored - each archive entry is compressed in the packing stage afterwards - so it was the same work done twice, and it only pays off on data that compresses, which a backup source usually is not. Connections on a slow link with compressible data can add `-z` back under "Additional rsync options".
-
 - **templates**: The built-in "Standard" naming template now ends with `{chain}`, so an incremental backup reads `Job_2026-07-24_09-18-04_inc-001` instead of `inc-001-Job_2026-07-24_09-18-04`. Templates you created yourself are left untouched, as is a Standard template that was already edited.
 - **navigation**: Sources, Destinations and Notifications are now one page, **Connections**, with a tab per kind: Databases, Directory Sources, Backup Destinations and Notifications. Adapters are grouped by what they are rather than by the direction a job happens to use them in - which is what made a database "a source" even when restoring into it. The old routes redirect to the matching tab, and the active tab lives in the URL so links and bookmarks keep working.
 - **destinations**: A storage adapter now has one exclusive role, backup destination or directory source, instead of two independent toggles. They cannot be combined because a destination owns its configured path - the runner writes job and chain folders into it - while a source only reads folders out of it, so one adapter doing both would let a job back up its own archives. Existing adapters are migrated automatically.
@@ -381,28 +437,26 @@ All notable changes to DBackup are documented here.
 
 ### 📝 Documentation
 
-- **website**: Reframed the File & Folder Backup and Restore cards and answered the scope question in the FAQ: what the feature is for, and that an agentless full run stages the tree on the DBackup host, wants roughly twice the source size in free space, and moves every byte across the network twice - with restic and Borg named as the better tool for bulk media libraries.
+- **website**: Reframed the File &amp; Folder Backup and Restore cards and answered the scope question in the FAQ: what the feature is for, and that an agentless full run stages the tree on the DBackup host, wants roughly twice the source size in free space, and moves every byte across the network twice - with restic and Borg named as the better tool for bulk media libraries.
 - **wiki**: New **Archive Format** reference documenting the archive layout, key derivation and index format byte by byte, so a backup stays recoverable independently of DBackup - including the TAR header detail that trips up hand-written readers on entries past 8 GiB.
 - **wiki**: New **Backup Modes** guide covering incremental backups, chain storage, how retention interacts with chains, and when DBackup falls back to a full backup.
 - **wiki**: Updated the Recovery Kit, Storage Explorer, Restore, SMB and adapter overview guides for file backups, shadow copies and the Connections page.
-- **wiki**: New **File & Folder Backups** page with a per-adapter table of what each one supports - whether restoring a single file fetches just that file or has to download the whole archive first. It also spells out that the file tree shown when restoring comes from the backup's index sidecar and therefore works for every adapter. It also states what the feature is for and where it stops - an agentless full run stages the tree on the DBackup host, so it wants roughly twice the source size in free space and moves every byte across the network twice, with restic and Borg named as the better tool for bulk media libraries - and which adapter to pick, including what actually decides transfer speed and why the Parallel Transfers ceilings differ.
+- **wiki**: New **File &amp; Folder Backups** page with a per-adapter table of what each one supports - whether restoring a single file fetches just that file or has to download the whole archive first. It also spells out that the file tree shown when restoring comes from the backup's index sidecar and therefore works for every adapter. It also states what the feature is for and where it stops - an agentless full run stages the tree on the DBackup host, so it wants roughly twice the source size in free space and moves every byte across the network twice, with restic and Borg named as the better tool for bulk media libraries - and which adapter to pick, including what actually decides transfer speed and why the Parallel Transfers ceilings differ.
 - **wiki**: The reverse proxy section now states that `DISABLE_HTTPS=true` is needed in almost every proxy setup. DBackup serves HTTPS with a self-signed certificate by default, which a proxy rejects - usually as a 502 with nothing helpful in the log.
 - **api**: Documented the restore endpoint's `scope` parameter, `storageRole` on the adapter schemas, and the new snapshot-availability and adapter-role endpoints.
 - **website**: Repositioned for database **and** file backups - hero, tagline, features, integrations, FAQ, footer and page metadata now cover directory sources.
 - **blog**: New post on why incremental backups store whole changed files instead of deduplicated chunks, what that costs in storage, and when a chunk-based tool is the better choice.
-- **README**: Added a File & Folder Backup feature section, a Directory Sources overview, and file-level restore to the recovery section.
+- **README**: Added a File &amp; Folder Backup feature section, a Directory Sources overview, and file-level restore to the recovery section.
 - **wiki**: The documentation home page now covers file backups, incremental chains, per-adapter directory source support, and how the archive format keeps the no-lock-in promise.
 - **wiki**: Backup Modes explains why whole changed files are stored rather than deduplicated chunks, with the storage cost spelled out per situation.
 - **wiki**: Fixed the opening paragraph of the Backup Modes page, which had a sentence split across the intro note.
-- **wiki**: Compression now lists every format that is stored without compression, grouped by kind. File & Folder Backups links to it.
+- **wiki**: Compression now lists every format that is stored without compression, grouped by kind. File &amp; Folder Backups links to it.
 
 ### 🧪 Tests
 
 - **ui**: Coverage for bulk operations: the ordering that lets a whole incremental chain be deleted while a partial selection is still refused, the locked-backup guard, one scheduler refresh per batch instead of one per job, and the permission guards on every new bulk endpoint including the per-type check that stops a mixed connection selection from widening someone's access.
 - **lint-guards**: New guard that fails the build when the Recovery Kit's tool is missing from the repository or from the Docker image. A kit is assembled by reading it off disk and falls back to a placeholder when it is absent, so nothing else would have noticed.
-
 - Fixed the adapter DTO tests intermittently timing out in a full run. They reset the module registry before each of six tests, which re-evaluated the entire adapter graph - every storage, database and notification SDK - six times over. The graph now loads once per file.
-
 - **backup**: Round-trip coverage for the archive format against awkward inputs - paths past 100 characters, unicode, spaces, empty files - verified with real `tar` and the standalone recovery kit, since "an unencrypted archive extracts with `tar -xf`" and "the kit reads what the writer emits" are promises only running them can prove.
 - **backup**: Regression coverage for the format's edge cases: TAR entries at the 8 GiB size boundary, incremental chains spanning several archives, chain-aware retention and deletion, restore path guards, and the SMB shadow copy lifecycle including release on failure and cancellation.
 - **lint-guards**: New guards that fail the build when code enumerates storage adapters without filtering by role, or links to the retired Sources/Destinations/Notifications routes.
@@ -438,14 +492,14 @@ All notable changes to DBackup are documented here.
 - **CI Image**: `skyfay/dbackup:ci`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v2.10.1 - Webhook GET/HEAD Support, SSO Improvements, and Multiple Bug Fixes
+
 *Released: July 18, 2026*
 
 ### ✨ Features
 
 - **webhooks**: Generic Webhook notification channels now support `GET` and `HEAD` HTTP methods, for compatibility with heartbeat/push-monitoring services like Uptime Kuma and Healthchecks.io. Thanks @Shlok-Zanwar ([#123](https://github.com/Skyfay/DBackup/issues/123))
-- **SSO**: Added a new Profile > SSO tab where users can view, disconnect, and manually connect their linked identity provider accounts.
+- **SSO**: Added a new Profile &gt; SSO tab where users can view, disconnect, and manually connect their linked identity provider accounts.
 
 ### 🐛 Bug Fixes
 
@@ -482,8 +536,8 @@ All notable changes to DBackup are documented here.
 - **CI Image**: `skyfay/dbackup:ci`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v2.10.0 - Firebird Support, New Website, and Multiple Bug Fixes
+
 *Released: July 12, 2026*
 
 ### ✨ Features
@@ -511,8 +565,8 @@ All notable changes to DBackup are documented here.
 - **CI Image**: `skyfay/dbackup:ci`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v2.9.0 - Valkey Support, Storage Alert Fix, and Multiple Improvements
+
 *Released: July 4, 2026*
 
 ### ✨ Features
@@ -543,11 +597,11 @@ All notable changes to DBackup are documented here.
 - **CI Image**: `skyfay/dbackup:ci`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v2.8.0 - Notification Templates, Per-Job Event Filters, and Multiple Bug Fixes
+
 *Released: June 28, 2026*
 
-> ⚠️ **Breaking:** The per-job notification configuration has been replaced by Notification Templates, and existing job notification settings are **not** migrated automatically. After updating, every backup job loses its notification setup and must be reconfigured: create a Notification Template under **Templates -> Notification Templates** (assign channels and pick the Success/Partial/Failed events per channel), then assign it to each job via the job edit form. You can mark one template as the default so it is pre-selected for new jobs.
+> ⚠️ **Breaking:** The per-job notification configuration has been replaced by Notification Templates, and existing job notification settings are **not** migrated automatically. After updating, every backup job loses its notification setup and must be reconfigured: create a Notification Template under **Templates -&gt; Notification Templates** (assign channels and pick the Success/Partial/Failed events per channel), then assign it to each job via the job edit form. You can mark one template as the default so it is pre-selected for new jobs.
 
 ### ✨ Features
 
@@ -587,8 +641,8 @@ All notable changes to DBackup are documented here.
 - **CI Image**: `skyfay/dbackup:ci`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v2.7.2 - Multiple Bug Fixes, S3 Connection Stability Improvements, and Security Updates
+
 *Released: June 22, 2026*
 
 ### 🐛 Bug Fixes
@@ -609,8 +663,8 @@ All notable changes to DBackup are documented here.
 - **CI Image**: `skyfay/dbackup:ci`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v2.7.1 - Backup Calendar Heatmap, Partial Integrity Status, and Multiple Improvements
+
 *Released: June 20, 2026*
 
 ### ✨ Features
@@ -644,8 +698,8 @@ All notable changes to DBackup are documented here.
 - **CI Image**: `skyfay/dbackup:ci`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v2.7.0 - Backup Integrity Verification, Storage Explorer Caching, and Multiple Improvements
+
 *Released: June 14, 2026*
 
 ### ✨ Features
@@ -686,8 +740,8 @@ All notable changes to DBackup are documented here.
 - **CI Image**: `skyfay/dbackup:ci`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v2.6.0 - Security Update, Vault Credential Profiles, OAuth Improvements, and Multiple Bug Fixes
+
 *Released: June 6, 2026*
 
 > 🔒 **Security Update:** This release fixes a security vulnerability in DBackup's own code ([GHSA-cj5h-46h6-72wc](https://github.com/skyfay/DBackup/security/advisories/GHSA-cj5h-46h6-72wc)). Update as soon as possible.
@@ -727,8 +781,8 @@ All notable changes to DBackup are documented here.
 - **CI Image**: `skyfay/dbackup:ci`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v2.5.1 - Security Update, Smart Recovery Improvements, and Multiple Bug Fixes
+
 *Released: June 2, 2026*
 
 > 🔒 **Security Update:** This release fixes a security vulnerability in DBackup's own code ([GHSA-h929-x237-c5h2](https://github.com/skyfay/DBackup/security/advisories/GHSA-h929-x237-c5h2)). Update as soon as possible.
@@ -764,8 +818,8 @@ All notable changes to DBackup are documented here.
 - **CI Image**: `skyfay/dbackup:ci`
 - **Platforms**: linux/amd64, linux/arm64
 
+## v2.5.0 - Version History &amp; General Improvements
 
-## v2.5.0 - Version History & General Improvements
 *Released: May 31, 2026*
 
 ### ✨ Features
@@ -801,8 +855,8 @@ All notable changes to DBackup are documented here.
 - **CI Image**: `skyfay/dbackup:ci`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v2.4.1 - Multiple Bug Fixes across MSSQL, SMB, Retention, and Storage Adapters
+
 *Released: May 27, 2026*
 
 ### 🐛 Bug Fixes
@@ -832,8 +886,8 @@ All notable changes to DBackup are documented here.
 - **CI Image**: `skyfay/dbackup:ci`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v2.4.0 - Database Explorer Browser, Drill-down Data Viewer, and Bug Fixes
+
 *Released: May 25, 2026*
 
 ### ✨ Features
@@ -858,8 +912,8 @@ All notable changes to DBackup are documented here.
 - **CI Image**: `skyfay/dbackup:ci`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v2.3.3 - Multiple Bug Fixes across MSSQL, Redis, Email, and Storage Adapters
+
 *Released: May 19, 2026*
 
 ### 🐛 Bug Fixes
@@ -888,8 +942,8 @@ All notable changes to DBackup are documented here.
 - **CI Image**: `skyfay/dbackup:ci`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v2.3.2 - Backup Trigger Metadata, Job Trigger Locking, and Notification Improvements
+
 *Released: May 17, 2026*
 
 ### ✨ Features
@@ -924,8 +978,8 @@ All notable changes to DBackup are documented here.
 - **CI Image**: `skyfay/dbackup:ci`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v2.3.1 - General Improvements, MySQL/MariaDB SSH Mode Fixes and SSH Key Conversion
+
 *Released: May 11, 2026*
 
 ### 🎨 Improvements
@@ -955,8 +1009,8 @@ All notable changes to DBackup are documented here.
 - **CI Image**: `skyfay/dbackup:ci`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v2.3.0 - CI Image, Activity Log Trigger and General Improvements
+
 *Released: May 10, 2026*
 
 ### ✨ Features
@@ -987,8 +1041,8 @@ All notable changes to DBackup are documented here.
 - **CI Image**: `skyfay/dbackup:ci`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v2.2.1 - Scheduler Timezone Fixes, Smart Recovery Improvements, and more Bug Fixes
+
 *Released: May 9, 2026*
 
 ### ✨ Features
@@ -1016,11 +1070,11 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `latest`, `v2`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v2.2.0 - Templates System, Docker Image Update and Bug Fixes
+
 *Released: May 7, 2026*
 
-> ⚠️ **Breaking:** All existing per-destination inline retention configurations have been migrated to "Keep All (Unlimited)". The new Templates System requires retention to be configured by assigning a named **Retention Policy** to each job destination. Existing retention rules must be re-configured via **Templates -> Retention Policies**. You can also mark one policy as the system-wide default so it applies automatically to any destination that has no explicit policy assigned.
+> ⚠️ **Breaking:** All existing per-destination inline retention configurations have been migrated to "Keep All (Unlimited)". The new Templates System requires retention to be configured by assigning a named **Retention Policy** to each job destination. Existing retention rules must be re-configured via **Templates -&gt; Retention Policies**. You can also mark one policy as the system-wide default so it applies automatically to any destination that has no explicit policy assigned.
 
 ### ✨ Features
 
@@ -1059,8 +1113,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `latest`, `v2`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v2.1.1 - Docker Secrets support and SSH Credential Profile fixes
+
 *Released: May 5, 2026*
 
 ### ✨ Features
@@ -1085,8 +1139,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `latest`, `v2`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v2.1.0 - Backup Notification Subjects, Telegram Topic Support, and 2FA Setup UX
+
 *Released: May 5, 2026*
 
 ### ✨ Features
@@ -1111,8 +1165,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `latest`, `v2`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v2.0.1 - SSH Connection Fix with new Credential Profiles
+
 *Released: May 3, 2026*
 
 ### 🐛 Bug Fixes
@@ -1130,8 +1184,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `latest`, `v2`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v2.0.0 - Credential Profiles, Naming Template, Cloning, and Major Refactor
+
 *Released: May 3, 2026*
 
 > ⚠️ **Breaking:** Existing Sources, Destinations and Notifications that store credentials inline will require a Credential Profile to be assigned before they come back online. Create the matching profiles in the Security Vault, then assign them to each adapter via the edit form. This has to be done manually for each adapter, so take some time before upgrading. The new Credential Profile system is a critical security improvement that centralizes and encrypts all secrets in the Vault, but it does require some manual migration effort for existing adapters. New adapters created after the update will require credential profiles from the start.
@@ -1142,9 +1196,9 @@ All notable changes to DBackup are documented here.
 - **setup**: Added Credential Profile picker to the Quick Setup Wizard Source, Destination, and Notification steps - the picker now renders identically to the standalone "Add Source/Destination/Notification" dialogs, including SSH credential support. The selected profile IDs are included in the adapter creation payload.
 - **ui**: Added clone (copy) button to Sources, Destinations, Notifications, and Backup Jobs - cloning creates a duplicate with the name suffix "(Copy)" and carries over all settings including Vault credential references. Cloned jobs start as disabled to prevent accidental execution. Resolves [#34](https://github.com/Skyfay/DBackup/issues/34)
 - **storage**: Added `jurisdiction` field to the Cloudflare R2 adapter (`Standard`, `EU`, `FedRAMP`) - EU-jurisdiction buckets require the `*.eu.r2.cloudflarestorage.com` endpoint, without this setting they return "Access Denied" or "bucket does not exist"
-- **website**: Added a new Website https://dbackup.app
-- **scheduler**: Added a UI setting in Settings > General to configure the scheduler timezone without changing the `TZ` environment variable. When set, the DB value takes explicit priority over `TZ` for all cron jobs. Thanks @iberlob ([#41](https://github.com/Skyfay/DBackup/pull/41))
-- **backup**: Added a configurable filename pattern for backup files. Patterns support tokens (`{name}`, `{db_name}`, `yyyy`, `MM`, `dd`, `HH`, `mm`, `ss`) with a live preview and clickable token chips in Settings > General. Thanks @iberlob ([#41](https://github.com/Skyfay/DBackup/pull/41))
+- **website**: Added a new Website [https://dbackup.app](https://dbackup.app)
+- **scheduler**: Added a UI setting in Settings &gt; General to configure the scheduler timezone without changing the `TZ` environment variable. When set, the DB value takes explicit priority over `TZ` for all cron jobs. Thanks @iberlob ([#41](https://github.com/Skyfay/DBackup/pull/41))
+- **backup**: Added a configurable filename pattern for backup files. Patterns support tokens (`{name}`, `{db_name}`, `yyyy`, `MM`, `dd`, `HH`, `mm`, `ss`) with a live preview and clickable token chips in Settings &gt; General. Thanks @iberlob ([#41](https://github.com/Skyfay/DBackup/pull/41))
 - **2fa**: Added a "Can't scan? Copy the secret key" button to the 2FA setup dialog so users who cannot scan the QR code can manually enter the TOTP secret into their authenticator app. ([#39](https://github.com/Skyfay/DBackup/issues/39))
 
 ### 🐛 Bug Fixes
@@ -1201,8 +1255,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `latest`, `v2`
 - **Platforms**: linux/amd64, linux/arm64
 
+## v1.4.8 - Scheduler, Runner &amp; TLS Fixes
 
-## v1.4.8 - Scheduler, Runner & TLS Fixes
 *Released: April 24, 2026*
 
 ### 🐛 Bug Fixes
@@ -1226,8 +1280,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `latest`, `v1`
 - **Platforms**: linux/amd64, linux/arm64
 
+## v1.4.7 - PostgreSQL Compression, MSSQL Dump Fixes &amp; Docker Metadata
 
-## v1.4.7 - PostgreSQL Compression, MSSQL Dump Fixes & Docker Metadata
 *Released: April 22, 2026*
 
 ### ✨ Features
@@ -1252,8 +1306,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `latest`, `v1`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v1.4.6 - Issue Templates and extension corrections
+
 *Released: April 19, 2026*
 
 ### 🔄 Changed
@@ -1270,8 +1324,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `latest`, `v1`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v1.4.5 - SSH Backup Fixes with single database selection
+
 *Released: April 19, 2026*
 
 ### 🐛 Bug Fixes
@@ -1285,8 +1339,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `latest`, `v1`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v1.4.4 - HTTPS Redirect Loop Fix
+
 *Released: April 18, 2026*
 
 ### 🐛 Bug Fixes
@@ -1299,8 +1353,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `latest`, `v1`
 - **Platforms**: linux/amd64, linux/arm64
 
+## v1.4.3 - TypeScript Migration, Prisma Upgrade &amp; Security Fixes
 
-## v1.4.3 - TypeScript Migration, Prisma Upgrade & Security Fixes
 *Released: April 5, 2026*
 
 ### 🎨 Improvements
@@ -1328,8 +1382,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `latest`, `v1`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v1.4.2 - Security Fixes
+
 *Released: April 2, 2026*
 
 ### 🔒 Security
@@ -1354,8 +1408,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `latest`, `v1`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v1.4.1 - PostgreSQL Client Cleanup
+
 *Released: April 2, 2026*
 
 ### 🎨 Improvements
@@ -1377,8 +1431,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `latest`, `v1`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v1.4.0 - Live History Redesign
+
 *Released: March 31, 2026*
 
 ### ✨ Features
@@ -1405,8 +1459,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `latest`, `v1`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v1.3.0 - SSH Remote Execution
+
 *Released: March 29, 2026*
 
 ### ✨ Features
@@ -1457,8 +1511,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `latest`, `v1`
 - **Platforms**: linux/amd64, linux/arm64
 
+## v1.2.1 - Execution Cancellation, MSSQL Progress &amp; Dashboard Polish
 
-## v1.2.1 - Execution Cancellation, MSSQL Progress & Dashboard Polish
 *Released: March 26, 2026*
 
 ### ✨ Features
@@ -1469,7 +1523,7 @@ All notable changes to DBackup are documented here.
 ### 🐛 Bug Fixes
 
 - **mssql**: Fixed Database Explorer and Restore page showing 0 databases for MSSQL sources - replaced global singleton connection pool (`sql.connect()`) with independent per-operation pools (`new ConnectionPool()`) to prevent concurrent requests from closing each other's connections
-- **mssql**: Fixed large database backups/restores hanging and timing out - `BACKUP DATABASE` and `RESTORE DATABASE` queries now run without request timeout (previously limited to 5 minutes, causing failures on databases >5 GB)
+- **mssql**: Fixed large database backups/restores hanging and timing out - `BACKUP DATABASE` and `RESTORE DATABASE` queries now run without request timeout (previously limited to 5 minutes, causing failures on databases &gt;5 GB)
 - **explorer**: Fixed Database Explorer not displaying server version - removed broken parallel `test-connection` call and now uses version info returned by `database-stats` endpoint
 
 ### 🎨 Improvements
@@ -1483,8 +1537,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `latest`, `v1`
 - **Platforms**: linux/amd64, linux/arm64
 
+## v1.2.0 - HTTPS by Default, Certificate Management &amp; Per-Adapter Health Notifications
 
-## v1.2.0 - HTTPS by Default, Certificate Management & Per-Adapter Health Notifications
 *Released: March 25, 2026*
 
 > ⚠️ **Breaking:** Volume mounts have changed. Replace `./db:/app/db` and `./storage:/app/storage` with a single `./data:/data` mount. Then move the current data to the new structure after first startup. Update `BETTER_AUTH_URL` to `https://` - HTTPS is now the default protocol. Set `DISABLE_HTTPS=true` if you use a TLS-terminating reverse proxy but its not recommended in terms of security.
@@ -1516,8 +1570,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `latest`, `v1`
 - **Platforms**: linux/amd64, linux/arm64
 
+## v1.1.0 - Notification System Expansion &amp; UI Improvements
 
-## v1.1.0 - Notification System Expansion & UI Improvements
 *Released: March 24, 2026*
 
 ### ✨ Features
@@ -1549,8 +1603,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `latest`, `v1`
 - **Platforms**: linux/amd64, linux/arm64
 
+## v1.0.7 - PostgreSQL Version Mismatch Fix &amp; Docker Build Validation
 
-## v1.0.7 - PostgreSQL Version Mismatch Fix & Docker Build Validation
 *Released: March 22, 2026*
 
 ### 🐛 Bug Fixes
@@ -1567,8 +1621,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `latest`, `v1`
 - **Platforms**: linux/amd64, linux/arm64
 
+## v1.0.6 - Quick Setup fix &amp; Developer Tooling
 
-## v1.0.6 - Quick Setup fix & Developer Tooling
 *Released: March 22, 2026*
 
 ### ✨ Features
@@ -1597,7 +1651,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `latest`, `v1`
 - **Platforms**: linux/amd64, linux/arm64
 
-## v1.0.5 - Docker Permissions & Environment Variables
+## v1.0.5 - Docker Permissions &amp; Environment Variables
+
 *Released: March 20, 2026*
 
 ### ✨ Features
@@ -1621,6 +1676,7 @@ All notable changes to DBackup are documented here.
 - **Platforms**: linux/amd64, linux/arm64
 
 ## v1.0.4 - Hotfix Release
+
 *Released: March 20, 2026*
 
 ### 🐛 Bug Fixes
@@ -1637,7 +1693,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `latest`, `v1`
 - **Platforms**: linux/amd64, linux/arm64
 
-## v1.0.3 - Docker Optimization & MSSQL Improvements
+## v1.0.3 - Docker Optimization &amp; MSSQL Improvements
+
 *Released: March 19, 2026*
 
 ### 🐛 Bug Fixes
@@ -1670,7 +1727,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `latest`, `v1`
 - **Platforms**: linux/amd64, linux/arm64
 
-## v1.0.2 - Cleanup & File Extension Fix
+## v1.0.2 - Cleanup &amp; File Extension Fix
+
 *Released: March 17, 2026*
 
 ### 🐛 Bug Fixes
@@ -1701,8 +1759,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `latest`, `v1`
 - **Platforms**: linux/amd64, linux/arm64
 
+## v1.0.1 - Hotfix Release &amp; API Documentation
 
-## v1.0.1 - Hotfix Release & API Documentation
 *Released: March 14, 2026*
 
 ### 🐛 Bug Fixes
@@ -1721,7 +1779,7 @@ All notable changes to DBackup are documented here.
 
 - **API**: Full OpenAPI 3.1 spec with interactive Scalar reference at `/docs/api` and [api.dbackup.app](https://api.dbackup.app)
 - **user guide**: Getting Started rewritten and expanded into multi-page User Guide (Getting Started, First Steps, First Backup)
-- **README**: Revised feature list, added Community & Support section with Discord, GitLab Issues, and contact emails
+- **README**: Revised feature list, added Community &amp; Support section with Discord, GitLab Issues, and contact emails
 
 ### 🐳 Docker
 
@@ -1729,8 +1787,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `latest`, `v1`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v1.0.0 - First Stable Release
+
 *Released: March 10, 2026*
 
 🎉 **DBackup 1.0.0 - the first stable release.** Stabilizes the platform after the beta phase with quality-of-life fixes, stale execution recovery, update notifications, and dashboard polish.
@@ -1775,8 +1833,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `latest`, `v1`
 - **Platforms**: linux/amd64, linux/arm64
 
+## v0.9.9-beta - Storage Alerts, Notification Logs &amp; Restore Improvements
 
-## v0.9.9-beta - Storage Alerts, Notification Logs & Restore Improvements
 *Released: February 22, 2026*
 
 ### ✨ Features
@@ -1813,8 +1871,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `beta`
 - **Platforms**: linux/amd64, linux/arm64
 
+## v0.9.8-beta - Notification Adapters Expansion &amp; Quick Setup Wizard
 
-## v0.9.8-beta - Notification Adapters Expansion & Quick Setup Wizard
 *Released: February 20, 2026*
 
 ### ✨ Features
@@ -1845,8 +1903,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `beta`
 - **Platforms**: linux/amd64, linux/arm64
 
+## v0.9.7-beta - API Keys, Webhook Triggers, Adapter Picker &amp; Brand Icons
 
-## v0.9.7-beta - API Keys, Webhook Triggers, Adapter Picker & Brand Icons
 *Released: February 20, 2026*
 
 ### ✨ Features
@@ -1883,8 +1941,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `beta`
 - **Platforms**: linux/amd64, linux/arm64
 
+## v0.9.6-beta - Cloud Storage, Rsync &amp; Notification System
 
-## v0.9.6-beta - Cloud Storage, Rsync & Notification System
 *Released: February 15, 2026*
 
 ### ✨ Features
@@ -1892,7 +1950,7 @@ All notable changes to DBackup are documented here.
 - **notifications**: System notification framework for user logins, account creation, restore results, and system errors with per-event toggles
 - **email**: Multi-recipient tag/chip input with paste support for comma/semicolon-separated lists
 - **Google Drive**: OAuth 2.0 with encrypted refresh tokens, visual folder browser, and resumable uploads
-- **Dropbox**: OAuth 2.0 with visual folder browser and chunked uploads for files > 150 MB
+- **Dropbox**: OAuth 2.0 with visual folder browser and chunked uploads for files &gt; 150 MB
 - **OneDrive**: OAuth 2.0 for personal and organizational accounts with smart upload strategy
 - **rsync**: Delta transfer via rsync over SSH with Password, Private Key, or SSH Agent auth
 - **storage**: Usage history - area charts showing storage size over time (7d–1y) with automatic hourly snapshots
@@ -1918,8 +1976,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `beta`
 - **Platforms**: linux/amd64, linux/arm64
 
+## v0.9.5-beta - Dashboard Overhaul, Checksums &amp; Visual Analytics
 
-## v0.9.5-beta - Dashboard Overhaul, Checksums & Visual Analytics
 *Released: February 13, 2026*
 
 ### ✨ Features
@@ -1943,8 +2001,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `beta`
 - **Platforms**: linux/amd64, linux/arm64
 
+## v0.9.4-beta - Universal Download Links &amp; Logging System
 
-## v0.9.4-beta - Universal Download Links & Logging System
 *Released: February 6, 2026*
 
 ### ✨ Features
@@ -1973,13 +2031,13 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `beta`
 - **Platforms**: linux/amd64, linux/arm64
 
+## v0.9.3-beta - Redis Support, Restore UX &amp; Smart File Extensions
 
-## v0.9.3-beta - Redis Support, Restore UX & Smart File Extensions
 *Released: February 2, 2026*
 
 ### ✨ Features
 
-- **Redis**: RDB snapshot backups for Redis 6/7/8 with Standalone & Sentinel mode, ACL auth, TLS, and database index selection
+- **Redis**: RDB snapshot backups for Redis 6/7/8 with Standalone &amp; Sentinel mode, ACL auth, TLS, and database index selection
 - **Redis**: 6-step restore wizard with secure download links (5-min expiry) and platform-specific instructions
 - **backup**: Smart file extensions - adapter-specific extensions: `.sql`, `.bak`, `.archive`, `.rdb`, `.db`
 - **backup**: Token-based downloads - secure, single-use download links (5-min expiry) for wget/curl without session cookies
@@ -2001,8 +2059,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `beta`
 - **Platforms**: linux/amd64, linux/arm64
 
+## v0.9.2-beta - Branding &amp; Documentation
 
-## v0.9.2-beta - Branding & Documentation
 *Released: February 1, 2026*
 
 ### ✨ Features
@@ -2017,8 +2075,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `beta`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v0.9.1-beta - Unified Multi-DB TAR Architecture
+
 *Released: February 1, 2026*
 
 > ⚠️ **Breaking:** Multi-database backups now use TAR archives instead of inline SQL/dump streams. **Old multi-DB backups cannot be restored with v0.9.1+.** Single-database backups are not affected.
@@ -2042,8 +2100,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `beta`
 - **Platforms**: linux/amd64, linux/arm64
 
+## v0.9.0-beta - Microsoft SQL Server &amp; Self-Service Security
 
-## v0.9.0-beta - Microsoft SQL Server & Self-Service Security
 *Released: January 31, 2026*
 
 ### ✨ Features
@@ -2061,8 +2119,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `beta`
 - **Platforms**: linux/amd64, linux/arm64
 
+## v0.8.3-beta - Meta-Backups &amp; System Task Control
 
-## v0.8.3-beta - Meta-Backups & System Task Control
 *Released: January 30, 2026*
 
 ### ✨ Features
@@ -2077,8 +2135,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `beta`
 - **Platforms**: linux/amd64, linux/arm64
 
+## v0.8.2-beta - Keycloak, Encryption Imports &amp; Database Reset
 
-## v0.8.2-beta - Keycloak, Encryption Imports & Database Reset
 *Released: January 29, 2026*
 
 > ⚠️ **Breaking:** Database schema consolidated into a single init migration. **Delete existing `dev.db` and let the app re-initialize.** Data cannot be migrated automatically.
@@ -2098,8 +2156,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `beta`
 - **Platforms**: linux/amd64, linux/arm64
 
+## v0.8.1-beta - SQLite Support &amp; Remote File Browsing
 
-## v0.8.1-beta - SQLite Support & Remote File Browsing
 *Released: January 26, 2026*
 
 ### ✨ Features
@@ -2114,8 +2172,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `beta`
 - **Platforms**: linux/amd64, linux/arm64
 
-
 ## v0.8.0-beta - The First Beta
+
 *Released: January 25, 2026*
 
 🚀 First official Beta with enterprise-ready features.
@@ -2145,8 +2203,8 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `beta`
 - **Platforms**: linux/amd64, linux/arm64
 
+## v0.5.0-dev - RBAC System, Encryption Vault &amp; Core Overhaul
 
-## v0.5.0-dev - RBAC System, Encryption Vault & Core Overhaul
 *Released: January 24, 2026*
 
 ### ✨ Features
@@ -2163,3 +2221,4 @@ All notable changes to DBackup are documented here.
 - **backup**: Pipeline architecture - job runner refactored into modular steps with dedicated service layer
 - **queue**: Max 10 concurrent jobs with optimized MySQL/PostgreSQL streaming
 - **ui**: DataTables with faceted filtering, Command-based Popovers, and Recovery Kit card UI
+

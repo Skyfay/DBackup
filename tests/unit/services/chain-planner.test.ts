@@ -113,6 +113,15 @@ describe("planChain", () => {
             expect(plan).toMatchObject({ type: "full", reason: expect.stringMatching(/no previous backup/i) });
         });
 
+        it("the chain's full is no longer in the execution history", async () => {
+            // Guessing the chain's age from a later snapshot would keep it growing past fullEveryDays.
+            prismaMock.execution.findFirst.mockImplementation(async (args: { where: { chainIndex?: number } }) =>
+                args.where.chainIndex === 0 ? null : previousExecution()
+            );
+            const plan = await planChain(input());
+            expect(plan).toMatchObject({ type: "full", reason: expect.stringMatching(/no longer in the execution history/i) });
+        });
+
         it("the chain reached its maximum age", async () => {
             const plan = await planChain(input({ job: { ...input().job, fullEveryDays: 1 } }));
             expect(plan).toMatchObject({ type: "full", reason: expect.stringMatching(/maximum age/i) });

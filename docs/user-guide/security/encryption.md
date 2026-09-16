@@ -59,6 +59,16 @@ To restore access after reinstallation:
 3. Paste the 64-character hex key
 4. Click **Import**
 
+### Rename a Profile
+
+Click the pencil icon next to a profile to change its name or description. The key itself stays the same.
+
+Backups, jobs and Recovery Kits identify the key by the profile ID, so they keep working after a rename. A Recovery Kit downloaded earlier still lists the old name.
+
+::: warning Config Backup Import
+Importing a config backup matches encryption profiles by name. If the imported config backup contains a different profile with the same name as a local one, its jobs are linked to the local key.
+:::
+
 ## Using Encryption
 
 ### Enable on Job
@@ -72,13 +82,22 @@ All future backups will be encrypted.
 
 ### Encrypted Backup Files
 
-Encrypted backups have the extension `.enc`:
+Every backup is a seekable archive that encrypts each database dump and each file as a separate entry, so one entry can be read without decrypting the rest. The archive keeps its `.tar` name, and the encryption parameters are stored inside it and in its `.meta.json`:
+```
+backup_2024-01-15.tar
+backup_2024-01-15.tar.index
+backup_2024-01-15.tar.meta.json
+```
+
+The layout is specified in the [Archive Format reference](/developer-guide/reference/archive-format).
+
+Backups written by earlier versions for database-only jobs are encrypted as a whole and carry the extension `.enc`:
 ```
 backup_2024-01-15.sql.gz.enc
 backup_2024-01-15.sql.gz.enc.meta.json
 ```
 
-The `.meta.json` file contains:
+Their `.meta.json` file contains:
 ```json
 {
   "encryption": {

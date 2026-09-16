@@ -9,6 +9,8 @@
  * without a SQL Server connection. The actual database name is typically
  * stored in the backup metadata.
  */
+// LEGACY-FORMAT(read): Lists the databases of a backup file written before the seekable
+// archive. A seekable archive is listed from its index instead.
 export async function analyzeDump(_sourcePath: string): Promise<string[]> {
     // MSSQL .bak files are binary and cannot be analyzed without a SQL Server instance
     // The caller should use RESTORE HEADERONLY or RESTORE FILELISTONLY via a connection

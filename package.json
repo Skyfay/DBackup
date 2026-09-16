@@ -1,6 +1,6 @@
 {
   "name": "dbackup",
-  "version": "3.3.1",
+  "version": "3.4.0",
   "private": true,
   "scripts": {
     "dev": "prisma migrate deploy && prisma generate && next dev",
@@ -37,7 +37,8 @@
     "website:dev": "cd website && pnpm dev",
     "website:build": "cd website && pnpm build",
     "website:preview": "cd website && pnpm preview",
-    "update:check": "./scripts/check-updates.sh"
+    "update:check": "./scripts/check-updates.sh",
+    "setup:worktree": "bash scripts/setup-worktree.sh"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1095.0",

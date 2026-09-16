@@ -70,6 +70,9 @@ export const EXTENSION_BY_FORMAT: Record<DumpFormat, string> = {
     archive: "archive",
     bak: "bak",
     fbk: "fbk",
+    bacpac: "bacpac",
+    rdb: "rdb",
+    sqlite: "sqlite",
 };
 
 /** Zero-padded opaque member name for an entry ordinal, e.g. 1 -> "d/000001". */

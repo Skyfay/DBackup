@@ -25,7 +25,7 @@ import { parseIndex } from "@/lib/archive/index-file";
 import { browseLevel, BrowseEntry } from "@/lib/archive/browse";
 import { parseArchiveIndex, readArchiveIndex, readArchiveManifest, readEmbeddedIndexBytes } from "@/lib/archive/reader";
 import { localFileSource } from "@/lib/archive/sources";
-import { ArchiveIndex } from "@/lib/archive/types";
+import { ArchiveIndex, DumpFormat } from "@/lib/archive/types";
 import { archiveIndexVerifier, KeyOverride, resolveBackupKey } from "./key-resolution";
 import { logger } from "@/lib/logging/logger";
 import { EncryptionKeyRequiredError, wrapError } from "@/lib/logging/errors";
@@ -35,6 +35,8 @@ const log = logger.child({ service: "ArchiveIndexService" });
 /** What the restore dialog needs to render its entry pickers. */
 export interface ArchiveSummary {
     databases: string[];
+    /** The same databases with what a download dialog shows next to each name. */
+    databaseDetails: { name: string; format: DumpFormat; size: number }[];
     directories: {
         jobSourceId: string;
         label: string;
@@ -262,6 +264,7 @@ export class ArchiveIndexService {
 
         return {
             databases: index.databases.map((d) => d.name),
+            databaseDetails: index.databases.map((d) => ({ name: d.name, format: d.format, size: d.s })),
             directories: index.directories.map((d) => ({
                 jobSourceId: d.src,
                 label: d.label,

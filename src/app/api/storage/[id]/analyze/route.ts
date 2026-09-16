@@ -9,7 +9,7 @@ import { getTempDir } from "@/lib/temp-dir";
 import path from "path";
 import fs from "fs";
 import { headers } from "next/headers";
-import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
+import { getAuthContext, checkAnyPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { archiveIndexService } from "@/services/backup/archive-index-service";
 import { keyRequiredResponse } from "@/lib/server/key-required-response";
@@ -28,7 +28,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     const params = await props.params;
     let tempFile: string | null = null;
     try {
-        checkPermissionWithContext(ctx, PERMISSIONS.STORAGE.RESTORE);
+        // Read-only: listing what a backup holds is part of restoring it and of downloading from it.
+        checkAnyPermissionWithContext(ctx, [PERMISSIONS.STORAGE.RESTORE, PERMISSIONS.STORAGE.DOWNLOAD]);
 
         const body = await req.json();
         // profileIdOverride: the vault profile the user picked after being asked for a key.
@@ -95,6 +96,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
                         // index is read from the downloaded archive instead.
                     }
 
+                    // LEGACY-FORMAT(read): Shortcuts for older backups, which list their databases in the metadata.
                     if (!seekableArchiveMeta && !(meta.combined && meta.combined.directorySources > 0)) {
                         if (meta.databases) {
                              if (Array.isArray(meta.databases.names) && meta.databases.names.length > 0) {
@@ -138,6 +140,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
             if (summary) return NextResponse.json(summary);
         }
 
+        // LEGACY-FORMAT(read): Analyzing a downloaded file only applies to backups written before the
+        // seekable archive.
         let databases: string[] = [];
 
         // Try to find the correct adapter to analyze the file

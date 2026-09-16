@@ -1,9 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Download, RotateCcw, Trash2, Lock, FileLock2, FileCheck, Terminal, ShieldCheck, ShieldX, Shield, PackageOpen, Database, FolderInput, Layers } from "lucide-react";
+import { Download, RotateCcw, Trash2, Lock, FileLock2, ShieldCheck, ShieldX, Shield, Database, FolderInput, Layers } from "lucide-react";
 import { FileInfo } from "@/app/dashboard/storage/columns";
 import { needsRestoreScopeChoice, type RestoreMode } from "@/components/dashboard/storage/restore-scope";
+import { DownloadMenu } from "./download-menu";
 
 const ARCHIVED_STORAGE_CLASSES = ["GLACIER", "DEEP_ARCHIVE"];
 
@@ -13,6 +14,8 @@ interface ActionsCellProps {
     onRestore: (file: FileInfo, mode?: RestoreMode) => void;
     /** Materialises a complete snapshot out of its incremental chain. */
     onDownloadSnapshot?: (file: FileInfo) => void;
+    /** Opens the picker for one database out of a seekable archive holding several. */
+    onDownloadDatabase?: (file: FileInfo) => void;
     onDelete: (file: FileInfo) => void;
     onToggleLock?: (file: FileInfo) => void;
     onGenerateLink?: (file: FileInfo) => void;
@@ -27,6 +30,7 @@ export function ActionsCell({
     onDownload,
     onRestore,
     onDownloadSnapshot,
+    onDownloadDatabase,
     onDelete,
     onToggleLock,
     onGenerateLink,
@@ -113,88 +117,14 @@ export function ActionsCell({
                             <TooltipContent className="max-w-xs">{archivedTooltip}</TooltipContent>
                         </Tooltip>
                     </TooltipProvider>
-                ) : file.isEncrypted ? (
-                    <DropdownMenu>
-                        <TooltipProvider>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <DropdownMenuTrigger asChild>
-                                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                                            <Download className="h-4 w-4" />
-                                        </Button>
-                                    </DropdownMenuTrigger>
-                                </TooltipTrigger>
-                                <TooltipContent>Download Options</TooltipContent>
-                            </Tooltip>
-                        </TooltipProvider>
-                        <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => onDownload(file, false)}>
-                                <FileLock2 className="mr-2 h-4 w-4" />
-                                <span>Download Encrypted (.enc)</span>
-                            </DropdownMenuItem>
-                            {/* A file archive encrypts each entry on its own, so there is no
-                                decrypted form of the archive as a file. Its contents come out
-                                through the snapshot download instead, which unpacks it - and
-                                its chain - into a .tar.gz. */}
-                            {!file.hasFileIndex && (
-                                <DropdownMenuItem onClick={() => onDownload(file, true)}>
-                                    <FileCheck className="mr-2 h-4 w-4" />
-                                    <span>Download Decrypted</span>
-                                </DropdownMenuItem>
-                            )}
-                            {onDownloadSnapshot && (file.hasFileIndex || file.chain) && (
-                                <DropdownMenuItem onClick={() => onDownloadSnapshot(file)}>
-                                    <PackageOpen className="mr-2 h-4 w-4" />
-                                    <span>{file.hasFileIndex ? 'Download Decrypted Contents' : 'Download Complete Snapshot'}</span>
-                                </DropdownMenuItem>
-                            )}
-                            {onGenerateLink && (
-                                <>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem onClick={() => onGenerateLink(file)}>
-                                        <Terminal className="mr-2 h-4 w-4" />
-                                        <span>wget / curl Link</span>
-                                    </DropdownMenuItem>
-                                </>
-                            )}
-                        </DropdownMenuContent>
-                    </DropdownMenu>
                 ) : (
-                    <DropdownMenu>
-                        <TooltipProvider>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <DropdownMenuTrigger asChild>
-                                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                                            <Download className="h-4 w-4" />
-                                        </Button>
-                                    </DropdownMenuTrigger>
-                                </TooltipTrigger>
-                                <TooltipContent>Download Options</TooltipContent>
-                            </Tooltip>
-                        </TooltipProvider>
-                        <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => onDownload(file, false)}>
-                                <Download className="mr-2 h-4 w-4" />
-                                <span>Download</span>
-                            </DropdownMenuItem>
-                            {onDownloadSnapshot && (file.hasFileIndex || file.chain) && (
-                                <DropdownMenuItem onClick={() => onDownloadSnapshot(file)}>
-                                    <PackageOpen className="mr-2 h-4 w-4" />
-                                    <span>{file.hasFileIndex && !file.chain ? 'Download Contents' : 'Download Complete Snapshot'}</span>
-                                </DropdownMenuItem>
-                            )}
-                            {onGenerateLink && (
-                                <>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem onClick={() => onGenerateLink(file)}>
-                                        <Terminal className="mr-2 h-4 w-4" />
-                                        <span>wget / curl Link</span>
-                                    </DropdownMenuItem>
-                                </>
-                            )}
-                        </DropdownMenuContent>
-                    </DropdownMenu>
+                    <DownloadMenu
+                        file={file}
+                        onDownload={onDownload}
+                        onDownloadSnapshot={onDownloadSnapshot}
+                        onDownloadDatabase={onDownloadDatabase}
+                        onGenerateLink={onGenerateLink}
+                    />
                 )
             )}
 

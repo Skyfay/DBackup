@@ -5,6 +5,8 @@ import { wrapError } from "@/lib/logging/errors";
 
 const log = logger.child({ adapter: "mysql", module: "analyze" });
 
+// LEGACY-FORMAT(read): Lists the databases of a backup file written before the seekable
+// archive. A seekable archive is listed from its index instead.
 export async function analyzeDump(sourcePath: string): Promise<string[]> {
     // Check if this is a Multi-DB TAR archive
     if (await isMultiDbTar(sourcePath)) {

@@ -5,7 +5,7 @@ import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, getErrorMessage } from "@/lib/logging/errors";
+import { wrapError, getErrorMessage, ValidationError } from "@/lib/logging/errors";
 import prisma from "@/lib/prisma";
 
 const log = logger.child({ route: "storage/restore" });
@@ -57,6 +57,10 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         return NextResponse.json(result, { status: 202 });
 
     } catch (error: unknown) {
+        // A malformed request is the caller's to fix, not a server failure.
+        if (error instanceof ValidationError) {
+            return NextResponse.json({ error: error.message }, { status: 400 });
+        }
         log.error("Restore error", { storageId: params.id }, wrapError(error));
         return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
     }

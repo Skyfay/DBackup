@@ -155,3 +155,16 @@ export async function getNotificationLogs(query: NotificationLogQuery = {}) {
 export async function getNotificationLogById(id: string) {
   return prisma.notificationLog.findUnique({ where: { id } });
 }
+
+/**
+ * Delete notification log entries sent before the retention window.
+ * Called by the data retention cleanup.
+ */
+export async function cleanOldNotificationLogs(retentionDays: number): Promise<number> {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - retentionDays);
+  const result = await prisma.notificationLog.deleteMany({
+    where: { sentAt: { lt: cutoff } },
+  });
+  return result.count;
+}

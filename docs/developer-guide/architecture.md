@@ -359,6 +359,8 @@ Periodic Integrity Check:
 
 **Infrastructure:** `src/services/system/system-task-service.ts` + `src/lib/runner/system-task-runner.ts`
 
+`CLEAN_OLD_LOGS` applies every setting from `src/lib/core/data-retention.ts` through `src/services/system/data-retention-service.ts`. While VACUUM or a database download runs (`src/services/system/database-service.ts`), the flag in `src/lib/server/database-maintenance.ts` makes the queue hold back pending jobs, restores refuse to start and system tasks skip their run.
+
 ## Health Check System
 
 Every minute, the `HEALTH_CHECK` task pings all configured adapters and records results in `HealthCheckLog` (ONLINE / DEGRADED / OFFLINE + latency). Offline notifications are deduplicated with a 24 h cooldown.

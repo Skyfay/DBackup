@@ -20,9 +20,6 @@ const settingsSchema = z.object({
     stuckTimeoutMinutes: z.coerce.number().min(0).max(10080).optional(),
     disablePasskeyLogin: z.boolean().optional(),
     sessionDuration: z.coerce.number().min(3600).max(7776000).optional(), // 1h to 90d in seconds
-    auditLogRetentionDays: z.coerce.number().min(1).max(1825).optional(),
-    storageSnapshotRetentionDays: z.coerce.number().min(7).max(1825).optional(),
-    notificationLogRetentionDays: z.coerce.number().min(7).max(1825).optional(),
     checkForUpdates: z.boolean().optional(),
     showQuickSetup: z.boolean().optional(),
     systemTimezone: z.string()
@@ -71,33 +68,6 @@ export async function updateSystemSettings(data: z.infer<typeof settingsSchema>)
                 where: { key: "auth.disablePasskeyLogin" },
                 update: { value: String(result.data.disablePasskeyLogin) },
                 create: { key: "auth.disablePasskeyLogin", value: String(result.data.disablePasskeyLogin) },
-            });
-        }
-
-        // Audit Log Retention Setting (default 90)
-        if (result.data.auditLogRetentionDays !== undefined) {
-             await prisma.systemSetting.upsert({
-                where: { key: "audit.retentionDays" },
-                update: { value: String(result.data.auditLogRetentionDays) },
-                create: { key: "audit.retentionDays", value: String(result.data.auditLogRetentionDays) },
-            });
-        }
-
-        // Storage Snapshot Retention Setting (default 90)
-        if (result.data.storageSnapshotRetentionDays !== undefined) {
-             await prisma.systemSetting.upsert({
-                where: { key: "storage.snapshotRetentionDays" },
-                update: { value: String(result.data.storageSnapshotRetentionDays) },
-                create: { key: "storage.snapshotRetentionDays", value: String(result.data.storageSnapshotRetentionDays) },
-            });
-        }
-
-        // Notification Log Retention Setting (default 90)
-        if (result.data.notificationLogRetentionDays !== undefined) {
-             await prisma.systemSetting.upsert({
-                where: { key: "notification.logRetentionDays" },
-                update: { value: String(result.data.notificationLogRetentionDays) },
-                create: { key: "notification.logRetentionDays", value: String(result.data.notificationLogRetentionDays) },
             });
         }
 

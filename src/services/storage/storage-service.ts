@@ -5,6 +5,7 @@ import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { pipeline } from "stream/promises";
 import { createReadStream, createWriteStream, promises as fs } from "fs";
 import { resolveDecryptionKey } from "@/services/restore/smart-recovery";
+import { writeDatabaseDump } from "@/services/restore/archive-download";
 import { createDecryptionStream } from "@/lib/crypto/stream";
 import { CompressionType } from "@/lib/crypto/compression";
 import { getTempDir } from "@/lib/temp-dir";
@@ -12,7 +13,7 @@ import path from "path";
 import AdmZip from "adm-zip";
 import { registerAdapters } from "@/lib/adapters";
 import { logger } from "@/lib/logging/logger";
-import { EncryptionKeyRequiredError, ValidationError, getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { EncryptionKeyRequiredError, getErrorMessage, wrapError } from "@/lib/logging/errors";
 import { isBackupFile, sidecarPathsFor, chainFolderOf, METADATA_SIDECAR_SUFFIX } from "@/lib/core/backup-files";
 import { dependentsOf, fileNameOf } from "./bulk-delete-order";
 
@@ -736,7 +737,13 @@ export class StorageService {
     /**
      * Downloads a file from storage to a local path.
      */
-    async downloadFile(adapterConfigId: string, remotePath: string, localDestination: string, decrypt: boolean = false, options?: { profileIdOverride?: string; rawKeyHex?: string }): Promise<{ success: boolean; isZip?: boolean }> {
+    async downloadFile(
+        adapterConfigId: string,
+        remotePath: string,
+        localDestination: string,
+        decrypt: boolean = false,
+        options?: { profileIdOverride?: string; rawKeyHex?: string; database?: string }
+    ): Promise<{ success: boolean; isZip?: boolean; fileName?: string }> {
         const adapterConfig = await prisma.adapterConfig.findUnique({
            where: { id: adapterConfigId }
        });
@@ -767,17 +774,22 @@ export class StorageService {
             // nothing.
             const meta = await this.readBackupMetaSidecar(adapter, config, remotePath);
 
-            // A seekable (v2) archive encrypts each entry on its own, so there is no single
-            // stream to run through a decipher and no decrypted form of the archive itself.
-            // This used to fall through every branch below and return the untouched archive,
-            // which presented an encrypted download as a successful decrypted one.
+            // A seekable (v2) archive encrypts each entry on its own, so the archive itself has
+            // no decrypted form. What a decrypted download means for it is one database dump,
+            // fetched by byte range - the named one, or the only one a single-database job holds.
             if (meta?.archive?.formatVersion === 2) {
-                throw new ValidationError(
-                    "This backup is a file archive - its entries are encrypted individually, so the archive itself has no decrypted form. Use 'Download Complete Snapshot' to get its contents as a .tar.gz.",
-                    { field: "decrypt" }
+                const keyOverride = options?.rawKeyHex || options?.profileIdOverride
+                    ? { rawKeyHex: options.rawKeyHex, profileId: options.profileIdOverride }
+                    : undefined;
+                const { fileName } = await writeDatabaseDump(
+                    { storageConfigId: adapterConfigId, file: remotePath, database: options?.database, keyOverride },
+                    localDestination
                 );
+                return { success: true, isZip: false, fileName };
             }
 
+            // LEGACY-FORMAT(shared): Whole-file decryption. Older database backups need it, and so do config
+            // backups, which still use that format.
             const success = await adapter.download(config, remotePath, localDestination);
             if (!success) return { success: false };
 
@@ -850,6 +862,8 @@ export class StorageService {
             }
        }
 
+       // LEGACY-FORMAT(shared): An encrypted file downloaded as-is, zipped with its metadata. Serves older
+       // database backups and config backups alike.
        if (remotePath.endsWith('.enc')) {
            const tempDir = path.dirname(localDestination);
            const baseName = path.basename(remotePath);

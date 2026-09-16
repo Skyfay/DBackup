@@ -1,5 +1,7 @@
+import path from "path";
 import { DatabaseAdapter } from "@/lib/core/interfaces";
 import type { ExecutionHost } from "@/lib/transport";
+import { AdapterError } from "@/lib/logging/errors";
 
 export const prepareRestore: NonNullable<DatabaseAdapter["prepareRestore"]> = async () => {
     // SQLite needs no preparation: the restore replaces a single file.
@@ -38,6 +40,8 @@ async function backupExisting(
     }
 }
 
+// LEGACY-FORMAT(read): Part of DatabaseAdapter.restore, which only older backups reach.
+// restoreOne() wraps it, so move the body into restoreOne() when restore() leaves the interface.
 export const restore: DatabaseAdapter["restore"] = async (config, sourcePath, host, onLog, onProgress) => {
     const startedAt = new Date();
     const logs: string[] = [];
@@ -91,5 +95,34 @@ export const restore: DatabaseAdapter["restore"] = async (config, sourcePath, ho
             startedAt,
             completedAt: new Date(),
         };
+    }
+};
+
+/**
+ * Where a restore of this source lands, given a target name from the restore dialog.
+ *
+ * A SQLite source is one file and its database name is that file's name, so a different
+ * target name means a sibling file in the same directory. The same rule the classic restore
+ * pipeline applies. A name that is not a plain filename is refused, since it would place
+ * the file somewhere the source was never configured to write.
+ */
+export function resolveSqliteTargetPath(configPath: string, targetDbName: string | undefined, originalDbName: string | undefined): string {
+    if (!targetDbName || targetDbName === originalDbName || targetDbName === path.basename(configPath)) {
+        return configPath;
+    }
+    if (/[/\\]/.test(targetDbName) || targetDbName === "." || targetDbName === "..") {
+        throw new Error(`Invalid SQLite target name '${targetDbName}': expected a file name without a directory`);
+    }
+    return path.join(path.dirname(configPath), targetDbName);
+}
+
+/** Restores a snapshot produced by dumpOne, thrown on failure as the archive restore expects. */
+export const restoreOne: NonNullable<DatabaseAdapter["restoreOne"]> = async (
+    config, filePath, targetDbName, host, onLog, onProgress, originalDbName
+) => {
+    const targetPath = resolveSqliteTargetPath(config.path as string, targetDbName, originalDbName);
+    const result = await restore({ ...config, path: targetPath }, filePath, host, onLog, onProgress);
+    if (!result.success) {
+        throw new AdapterError("sqlite", "restore", result.error ?? "SQLite restore failed");
     }
 };

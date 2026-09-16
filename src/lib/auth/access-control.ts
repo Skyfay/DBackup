@@ -110,6 +110,18 @@ export function checkPermissionWithContext(ctx: AuthContext, permission: Permiss
 }
 
 /**
+ * Passes when the context holds at least one of the permissions.
+ *
+ * For read-only endpoints that serve two kinds of user: listing a backup's contents is part of
+ * restoring it and of downloading from it, and neither permission should imply the other.
+ */
+export function checkAnyPermissionWithContext(ctx: AuthContext, permissions: readonly Permission[]): void {
+  if (!permissions.some((permission) => hasPermissionWithContext(ctx, permission))) {
+    throw new PermissionError(permissions.join(" or "));
+  }
+}
+
+/**
  * Non-throwing form of `checkPermissionWithContext`, for a route that already
  * passed its own guard and needs to decide how much to do rather than whether
  * to answer at all.

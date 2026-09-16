@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { toast } from "sonner"
-import { Loader2, Lock, Plus, Trash2, AlertTriangle, ShieldCheck, Download, Copy, Eye, Import } from "lucide-react"
+import { Loader2, Lock, Plus, Trash2, AlertTriangle, ShieldCheck, Download, Copy, Eye, Import, Pencil } from "lucide-react"
 import { EncryptionProfile } from "@prisma/client"
 import { createEncryptionProfile, importEncryptionProfile, deleteEncryptionProfile, getEncryptionProfiles, revealMasterKey, bulkDeleteEncryptionProfiles } from "@/app/actions/backup/encryption"
 import { DateDisplay } from "@/components/utils/date-display"
@@ -17,6 +17,7 @@ import { unwrapBulkAction } from "@/lib/bulk-request"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { ColumnDef } from "@tanstack/react-table"
+import { EncryptionProfileEditDialog } from "@/components/settings/encryption-profile-edit-dialog"
 
 export function EncryptionProfilesList() {
     const [profiles, setProfiles] = useState<EncryptionProfile[]>([])
@@ -31,6 +32,9 @@ export function EncryptionProfilesList() {
     // Import Dialog State
     const [isImportOpen, setIsImportOpen] = useState(false)
     const [importKey, setImportKey] = useState("")
+
+    // Edit Dialog State
+    const [profileToEdit, setProfileToEdit] = useState<EncryptionProfile | null>(null)
 
     // Delete Dialog State
     const [profileToDelete, setProfileToDelete] = useState<EncryptionProfile | null>(null)
@@ -240,6 +244,10 @@ export function EncryptionProfilesList() {
                             )}
                         </Button>
 
+                        <Button variant="ghost" size="icon" onClick={() => setProfileToEdit(profile)} title="Edit profile">
+                            <Pencil className="h-4 w-4" />
+                        </Button>
+
                         <Button variant="ghost" size="icon" onClick={() => setProfileToDelete(profile)}>
                             <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
@@ -434,6 +442,12 @@ export function EncryptionProfilesList() {
                     </div>
                 </DialogContent>
             </Dialog>
+
+            <EncryptionProfileEditDialog
+                profile={profileToEdit}
+                onClose={() => setProfileToEdit(null)}
+                onSaved={fetchProfiles}
+            />
 
             {/* Delete Confirmation Dialog */}
             <Dialog open={!!profileToDelete} onOpenChange={(open) => !open && setProfileToDelete(null)}>

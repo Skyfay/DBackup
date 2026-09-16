@@ -15,7 +15,11 @@
 
 export type CompressionKind = "GZIP" | "BROTLI";
 
-export type DumpFormat = "sql" | "custom" | "archive" | "bak" | "fbk";
+/**
+ * On-disk format of a database dump entry. Part of the format contract: a value written here
+ * is read back by every DBackup version and by the Recovery Kit, so values are only ever added.
+ */
+export type DumpFormat = "sql" | "custom" | "archive" | "bak" | "fbk" | "bacpac" | "rdb" | "sqlite";
 
 // ── Manifest (cleartext, no user data) ────────────────────────────────────
 
@@ -147,6 +151,11 @@ export interface IndexDatabaseLine {
     n: number;
     /** Uncompressed dump size. */
     s: number;
+    /**
+     * SHA-256 of the dump as the adapter produced it. Absent on archives written before dumps
+     * carried one. Safe here for the same reason a file checksum is: the index is sealed.
+     */
+    h?: string;
 }
 
 /** A directory source. Describes the grouping, not the files themselves. */
@@ -409,6 +418,12 @@ export interface CreateArchiveOptions {
      * source, so it is the last place a cancelled run would otherwise sit and wait.
      */
     signal?: AbortSignal;
+    /**
+     * Called once a database dump has been written into the archive and its local file is no
+     * longer read. Lets the caller delete each dump as it goes, so a multi-database job does
+     * not hold every raw dump and the finished archive on disk at the same time.
+     */
+    onDatabaseDumpWritten?: (localPath: string) => Promise<void>;
 }
 
 export interface CreateArchiveResult {

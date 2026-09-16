@@ -17,7 +17,7 @@ import { loadExecutions, loadNotificationLogs, loadExecution } from "./history-a
 import type { ExecutionHistoryFacets } from "@/services/system/execution-history-service";
 import type { NotificationLogFacets } from "@/services/notifications/notification-log-service";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Loader2, Square, Copy, Download, Bell, CheckCircle2, XCircle } from "lucide-react";
+import { Loader2, Square, Copy, Download, Bell, CheckCircle2, XCircle, ScrollText } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { Progress } from "@/components/ui/progress";
 import { DateDisplay } from "@/components/utils/date-display";
@@ -46,6 +46,8 @@ function HistoryContent() {
     const [systemTimezone, setSystemTimezone] = useState("UTC");
     const [selectedLog, setSelectedLog] = useState<Execution | null>(null);
     const [selectedLogEntries, setSelectedLogEntries] = useState<LogEntry[]>([]);
+    // When data retention cleared the open run's log, so the dialog can say so instead of showing nothing.
+    const [selectedLogsPurgedAt, setSelectedLogsPurgedAt] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState("activity");
 
     const [selectedNotification, setSelectedNotification] = useState<NotificationLogRow | null>(null);
@@ -119,6 +121,7 @@ function HistoryContent() {
         loadExecution(executionId).then((found) => {
             if (cancelled) return;
             if (found) setSelectedLog(found);
+            else toast.error("This run could not be found. It may have been removed by data retention.");
             router.replace("/dashboard/history", { scroll: false });
         });
         return () => { cancelled = true; };
@@ -139,6 +142,7 @@ function HistoryContent() {
             if (!res.ok) return;
             const result = await res.json();
             if (Array.isArray(result?.data?.logs)) setSelectedLogEntries(result.data.logs);
+            setSelectedLogsPurgedAt(result?.data?.logsPurgedAt ?? null);
             const d = result?.data;
             if (!d) return;
             setSelectedLog((current) => {
@@ -164,6 +168,7 @@ function HistoryContent() {
     useEffect(() => {
         if (!selectedId) {
             setSelectedLogEntries([]);
+            setSelectedLogsPurgedAt(null);
             return;
         }
 
@@ -482,11 +487,11 @@ function HistoryContent() {
                             </div>
                             {selectedLog?.status !== "Running" && selectedLog?.status !== "Pending" && (
                                 <div className="flex items-center gap-2 shrink-0 pt-0.5 mr-6">
-                                    <Button variant="outline" size="sm" onClick={handleCopyLogs}>
+                                    <Button variant="outline" size="sm" onClick={handleCopyLogs} disabled={!!selectedLogsPurgedAt}>
                                         <Copy className="h-3.5 w-3.5 mr-1.5" />
                                         Copy
                                     </Button>
-                                    <Button variant="outline" size="sm" onClick={handleDownloadLog}>
+                                    <Button variant="outline" size="sm" onClick={handleDownloadLog} disabled={!!selectedLogsPurgedAt}>
                                         <Download className="h-3.5 w-3.5 mr-1.5" />
                                         Download .log
                                     </Button>
@@ -556,13 +561,25 @@ function HistoryContent() {
                     )}
 
                     <div className="flex-1 min-h-0 bg-background/5">
-                         <LogViewer
-                            logs={selectedLogEntries}
-                            status={selectedLog?.status}
-                            executionType={selectedLog?.type}
-                            systemTimezone={systemTimezone}
-                            className="h-full border-0 bg-transparent"
-                         />
+                        {selectedLogsPurgedAt ? (
+                            <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+                                <ScrollText className="h-8 w-8 text-muted-foreground" />
+                                <p className="text-sm font-medium">Detailed log removed</p>
+                                <p className="max-w-md text-sm text-muted-foreground">
+                                    The data retention policy cleared the step log of this run on{" "}
+                                    <DateDisplay date={selectedLogsPurgedAt} format="PP" />. Status, size and timestamps
+                                    are still kept. How long logs are kept is set under Settings, General, Data Retention.
+                                </p>
+                            </div>
+                        ) : (
+                            <LogViewer
+                                logs={selectedLogEntries}
+                                status={selectedLog?.status}
+                                executionType={selectedLog?.type}
+                                systemTimezone={systemTimezone}
+                                className="h-full border-0 bg-transparent"
+                            />
+                        )}
                     </div>
                 </DialogContent>
             </Dialog>

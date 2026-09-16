@@ -6,6 +6,8 @@ import { isMultiDbTar, readTarManifest } from "../common/tar-utils";
  * For TAR archives: reads the manifest
  * For single archives: returns empty (single DB archives don't contain DB list metadata)
  */
+// LEGACY-FORMAT(read): Lists the databases of a backup file written before the seekable
+// archive. A seekable archive is listed from its index instead.
 export async function analyzeDump(sourcePath: string): Promise<string[]> {
     // Check if this is a Multi-DB TAR archive
     const isTar = await isMultiDbTar(sourcePath);

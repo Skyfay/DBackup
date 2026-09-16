@@ -7,6 +7,8 @@ import { registerAdapters } from "@/lib/adapters";
 import type { RestoreInput } from "./types";
 import { preflightRestore } from "./preflight";
 import { runRestorePipeline } from "./pipeline";
+import { normalizeDatabaseMapping } from "./database-mapping";
+import { assertNoDatabaseMaintenance } from "@/lib/server/database-maintenance";
 
 const svcLog = logger.child({ service: "RestoreService" });
 
@@ -23,7 +25,10 @@ export type { RestoreInput };
  *   - pipeline.ts       → background download → decrypt → decompress → restore pipeline
  */
 export class RestoreService {
-    async restore(input: RestoreInput) {
+    async restore(rawInput: RestoreInput) {
+        // One mapping shape from here on, so the preflight checks the same databases the
+        // pipeline then restores.
+        const input: RestoreInput = { ...rawInput, databaseMapping: normalizeDatabaseMapping(rawInput.databaseMapping) };
         const { file } = input;
 
         // Pre-flight: throws on permission/version/type incompatibility.
@@ -37,6 +42,9 @@ export class RestoreService {
             type: 'general',
             stage: 'Initializing'
         };
+
+        // Checked right before the run is recorded, since the preflight above can take a while.
+        assertNoDatabaseMaintenance("restore");
 
         // Start Logging Execution
         const execution = await prisma.execution.create({

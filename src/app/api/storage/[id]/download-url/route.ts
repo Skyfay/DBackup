@@ -28,16 +28,20 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         checkPermissionWithContext(ctx, PERMISSIONS.STORAGE.DOWNLOAD);
 
         const body = await req.json();
-        const { file, decrypt = true } = body;
+        const { file, decrypt = true, database } = body;
 
         if (!file || typeof file !== 'string' || file.includes('..') || file.startsWith('/')) {
             return NextResponse.json({ error: "Invalid file path" }, { status: 400 });
+        }
+        if (database !== undefined && (typeof database !== 'string' || database.length === 0)) {
+            return NextResponse.json({ error: "Invalid database name" }, { status: 400 });
         }
 
         // Generate a temporary download token
         // decrypt=true means the file will be decrypted before download
         // decrypt=false means the file will be downloaded as-is (encrypted)
-        const token = generateDownloadToken(params.id, file, decrypt);
+        // database picks the dump a decrypted download of a seekable archive contains
+        const token = generateDownloadToken(params.id, file, decrypt, database);
 
         // Create public download URL with token
         const baseUrl = req.headers.get("origin") || "";

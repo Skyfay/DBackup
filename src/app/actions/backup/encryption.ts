@@ -12,6 +12,14 @@ import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { getErrorMessage } from "@/lib/logging/errors";
 import { BulkIdsSchema } from "@/lib/core/bulk-schema";
+import { z } from "zod";
+
+const UpdateEncryptionProfileSchema = z.object({
+    id: z.string().min(1),
+    name: z.string().trim().min(1).max(100),
+    // An emptied description field clears the description instead of storing "".
+    description: z.string().trim().max(500).nullable().optional().transform((value) => value || null),
+});
 
 /**
  * Returns all encryption profiles.
@@ -118,6 +126,47 @@ export async function importEncryptionProfile(name: string, keyHex: string, desc
                 AUDIT_ACTIONS.CREATE,
                 AUDIT_RESOURCES.SYSTEM,
                 { type: "EncryptionProfile", name, method: "Import" },
+                profile.id
+            );
+        }
+        revalidatePath("/dashboard/vault");
+        revalidatePath("/dashboard/settings");
+        revalidatePath("/dashboard/jobs");
+        return { success: true, data: profile };
+    } catch (e: unknown) {
+        return { success: false, error: getErrorMessage(e) };
+    }
+}
+
+/**
+ * Renames an encryption profile and updates its description.
+ * Requires VAULT:WRITE permission.
+ */
+export async function updateEncryptionProfile(id: string, input: { name: string; description?: string | null }) {
+    const headersList = await headers();
+    const session = await auth.api.getSession({ headers: headersList });
+    if (!session) return { success: false, error: "Unauthorized" };
+
+    await checkPermission(PERMISSIONS.VAULT.WRITE);
+
+    const parsed = UpdateEncryptionProfileSchema.safeParse({ id, ...input });
+    if (!parsed.success) return { success: false, error: "Invalid request" };
+
+    try {
+        const { profile, previousName } = await encryptionService.updateEncryptionProfile(parsed.data.id, {
+            name: parsed.data.name,
+            description: parsed.data.description,
+        });
+        if (session.user) {
+            await auditService.log(
+                session.user.id,
+                AUDIT_ACTIONS.UPDATE,
+                AUDIT_RESOURCES.SYSTEM,
+                {
+                    type: "EncryptionProfile",
+                    name: profile.name,
+                    ...(previousName !== profile.name ? { previousName } : {}),
+                },
                 profile.id
             );
         }

@@ -1,6 +1,7 @@
 import prisma from '@/lib/prisma';
 import { runBulk, type BulkResult } from '@/lib/core/bulk';
 import { encrypt, decrypt } from '@/lib/crypto';
+import { ConflictError, NotFoundError } from '@/lib/logging/errors';
 import crypto from 'crypto';
 
 /**
@@ -79,6 +80,45 @@ export async function getEncryptionProfile(id: string) {
     return await prisma.encryptionProfile.findUnique({
         where: { id }
     });
+}
+
+/**
+ * Updates the name and description of an encryption profile. The key itself never changes.
+ *
+ * Renaming is safe for existing backups because they record the profile id, not its name.
+ * Returns the previous name so callers can record the rename.
+ */
+export async function updateEncryptionProfile(
+  id: string,
+  updates: { name?: string; description?: string | null }
+) {
+  const existing = await prisma.encryptionProfile.findUnique({ where: { id } });
+  if (!existing) {
+    throw new NotFoundError("EncryptionProfile", id);
+  }
+
+  const patch: { name?: string; description?: string | null } = {};
+
+  if (updates.name !== undefined && updates.name !== existing.name) {
+    const conflict = await prisma.encryptionProfile.findFirst({
+      where: { name: updates.name, NOT: { id } },
+    });
+    if (conflict) {
+      throw new ConflictError(`An encryption profile with the name "${updates.name}" already exists.`);
+    }
+    patch.name = updates.name;
+  }
+
+  if (updates.description !== undefined) {
+    patch.description = updates.description;
+  }
+
+  const profile = await prisma.encryptionProfile.update({
+    where: { id },
+    data: patch,
+  });
+
+  return { profile, previousName: existing.name };
 }
 
 /**

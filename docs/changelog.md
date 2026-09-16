@@ -12,6 +12,7 @@ All notable changes to DBackup are documented here.
 - **restore**: Single databases can be restored out of a multi-database backup, and only that database is read from the destination. ([#140](https://github.com/Skyfay/DBackup/issues/140))
 - **storage**: A single database can be downloaded out of a backup from the Storage Explorer, the restore page or the API with the `storage:download` permission. ([#138](https://github.com/Skyfay/DBackup/issues/138))
 - **jobs**: Microsoft SQL Server, Azure SQL Database and SQLite sources can now be combined with directory sources in one job.
+- **vault**: Encryption profiles can be renamed and their description edited from the Encryption Vault. ([#161](https://github.com/Skyfay/DBackup/issues/161))
 
 ### 🐛 Bug Fixes
 
@@ -31,6 +32,7 @@ All notable changes to DBackup are documented here.
 ### 📝 Documentation
 
 - **docs**: The restore, Storage Explorer, Recovery Kit, API and archive format guides describe single database restores and downloads out of a seekable archive. A new developer page lists the code that still serves the older backup formats.
+- **docs**: The encryption guide describes renaming an encryption profile.
 
 ### 🧪 Tests
 

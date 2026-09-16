@@ -59,6 +59,16 @@ To restore access after reinstallation:
 3. Paste the 64-character hex key
 4. Click **Import**
 
+### Rename a Profile
+
+Click the pencil icon next to a profile to change its name or description. The key itself stays the same.
+
+Backups, jobs and Recovery Kits identify the key by the profile ID, so they keep working after a rename. A Recovery Kit downloaded earlier still lists the old name.
+
+::: warning Config Backup Import
+Importing a config backup matches encryption profiles by name. If the imported config backup contains a different profile with the same name as a local one, its jobs are linked to the local key.
+:::
+
 ## Using Encryption
 
 ### Enable on Job

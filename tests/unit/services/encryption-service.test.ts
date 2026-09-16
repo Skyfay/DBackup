@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createEncryptionProfile, importEncryptionProfile, getDecryptedMasterKey, getProfileMasterKey } from '@/services/backup/encryption-service';
+import { createEncryptionProfile, importEncryptionProfile, updateEncryptionProfile, getDecryptedMasterKey, getProfileMasterKey } from '@/services/backup/encryption-service';
+import { ConflictError, NotFoundError } from '@/lib/logging/errors';
 import prisma from '@/lib/prisma';
 import * as cryptoLib from '@/lib/crypto';
 import crypto from 'crypto';
@@ -12,6 +13,7 @@ vi.mock('@/lib/prisma', () => ({
       findUnique: vi.fn(),
       findFirst: vi.fn(),
       findMany: vi.fn(),
+      update: vi.fn(),
       delete: vi.fn(),
     }
   }
@@ -94,6 +96,54 @@ describe('Encryption Service', () => {
                     secretKey: mockEncrypted
                 }
             });
+        });
+    });
+
+    describe('updateEncryptionProfile', () => {
+        const existing = { id: '1', name: 'Old Name', description: 'Old Desc', secretKey: 'encrypted-stuff' };
+
+        it('should rename the profile and update the description without touching the key', async () => {
+            (prisma.encryptionProfile.findUnique as any).mockResolvedValue(existing);
+            (prisma.encryptionProfile.findFirst as any).mockResolvedValue(null);
+            (prisma.encryptionProfile.update as any).mockResolvedValue({ ...existing, name: 'New Name', description: 'New Desc' });
+
+            const result = await updateEncryptionProfile('1', { name: 'New Name', description: 'New Desc' });
+
+            expect(prisma.encryptionProfile.findFirst).toHaveBeenCalledWith({ where: { name: 'New Name', NOT: { id: '1' } } });
+            expect(prisma.encryptionProfile.update).toHaveBeenCalledWith({
+                where: { id: '1' },
+                data: { name: 'New Name', description: 'New Desc' }
+            });
+            expect(result.previousName).toBe('Old Name');
+            expect(result.profile.name).toBe('New Name');
+        });
+
+        it('should reject a name another profile already uses', async () => {
+            (prisma.encryptionProfile.findUnique as any).mockResolvedValue(existing);
+            (prisma.encryptionProfile.findFirst as any).mockResolvedValue({ id: '2', name: 'Taken' });
+
+            await expect(updateEncryptionProfile('1', { name: 'Taken' })).rejects.toThrow(ConflictError);
+            expect(prisma.encryptionProfile.update).not.toHaveBeenCalled();
+        });
+
+        it('should skip the name check when the name is unchanged', async () => {
+            (prisma.encryptionProfile.findUnique as any).mockResolvedValue(existing);
+            (prisma.encryptionProfile.update as any).mockResolvedValue({ ...existing, description: null });
+
+            await updateEncryptionProfile('1', { name: 'Old Name', description: null });
+
+            expect(prisma.encryptionProfile.findFirst).not.toHaveBeenCalled();
+            expect(prisma.encryptionProfile.update).toHaveBeenCalledWith({
+                where: { id: '1' },
+                data: { description: null }
+            });
+        });
+
+        it('should throw if profile not found', async () => {
+            (prisma.encryptionProfile.findUnique as any).mockResolvedValue(null);
+
+            await expect(updateEncryptionProfile('missing', { name: 'Any' })).rejects.toThrow(NotFoundError);
+            expect(prisma.encryptionProfile.update).not.toHaveBeenCalled();
         });
     });
 

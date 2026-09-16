@@ -390,8 +390,11 @@ describe("Access Control", () => {
     });
 
     it("refuses a user holding neither, naming both", () => {
-      expect(() => checkAnyPermissionWithContext(ctxWith([PERMISSIONS.STORAGE.READ]), readOnly))
-        .toThrow(new PermissionError(`${PERMISSIONS.STORAGE.RESTORE} or ${PERMISSIONS.STORAGE.DOWNLOAD}`));
+      // Matching a whole PermissionError instance would compare its timestamp
+      // too, which flakes whenever a millisecond passes between the two.
+      const refuse = () => checkAnyPermissionWithContext(ctxWith([PERMISSIONS.STORAGE.READ]), readOnly);
+      expect(refuse).toThrow(PermissionError);
+      expect(refuse).toThrow(`${PERMISSIONS.STORAGE.RESTORE} or ${PERMISSIONS.STORAGE.DOWNLOAD}`);
     });
 
     it("lets a SuperAdmin session through", () => {

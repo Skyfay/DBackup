@@ -61,11 +61,11 @@
   --popover-foreground: oklch(0.141 0.004 285.8);
   --primary: oklch(0.21 0.006 285.9); /* zinc-900 buttons */
   --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.967 0.001 286.4); /* #f4f4f5 */
+  --secondary: oklch(0.934 0.004 286); /* #e9e9ec, one step below the page so tab tracks and hovers show on it */
   --secondary-foreground: oklch(0.21 0.006 285.9);
-  --muted: oklch(0.967 0.001 286.4);
+  --muted: oklch(0.934 0.004 286);
   --muted-foreground: oklch(0.51 0.014 286); /* #65656e, readable on white and on the page */
-  --accent: oklch(0.967 0.001 286.4);
+  --accent: oklch(0.934 0.004 286);
   --accent-foreground: oklch(0.21 0.006 285.9);
   --destructive: oklch(0.577 0.245 27.325); /* Red */
   --success: oklch(0.65 0.17 160); /* Emerald for success states */

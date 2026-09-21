@@ -87,18 +87,18 @@ function JobActions({ job, canViewHistory, canExecute, runJob, startingJobId, pr
 /** The banner at the top of the dashboard: all good, or which jobs need attention and why. */
 export function StatusBanner({ health, canExecute, canViewHistory, canManageJobs }: StatusBannerProps) {
     const { runJob, startingJobId } = useRunJob();
-    // A banner listing several jobs starts folded to their names. It stays open through auto refreshes
-    // while the page is open, but every visit starts folded again.
+    // A problem banner starts folded to two lines, the errors and actions sit behind the toggle.
+    // It stays open through auto refreshes while the page is open, but every visit starts folded.
     const [expanded, setExpanded] = useState(false);
-    const listId = useId();
+    const detailsId = useId();
     const tone = TONES[health.state];
     const actionProps = { canViewHistory, canExecute, runJob, startingJobId };
 
     let title: string;
     let body: React.ReactNode = null;
     let actions: React.ReactNode = null;
-    // An open job list is tall, so the toggle moves up beside the title instead of centering on it.
-    let listOpen = false;
+    // Sits below the header at full width, so the buttons of a job line up with the toggle.
+    let details: React.ReactNode = null;
 
     if (health.state === "empty") {
         title = "No backup jobs yet";
@@ -127,22 +127,8 @@ export function StatusBanner({ health, canExecute, canViewHistory, canManageJobs
                 )}
             </p>
         );
-    } else if (health.jobs.length === 1) {
-        const [job] = health.jobs;
-        title = `${job.jobName} ${outcomeText(health.state, job)}`;
-        body = (
-            <>
-                {job.error && <p className="line-clamp-2 text-sm wrap-anywhere text-muted-foreground">{job.error}</p>}
-                <p className="text-sm text-muted-foreground"><LastClean job={job} /></p>
-            </>
-        );
-        actions = <JobActions job={job} {...actionProps} primary />;
     } else {
         const state = health.state;
-        const listed = health.jobs.slice(0, LISTED_JOBS);
-        const more = health.jobs.length - listed.length;
-        title = state === "failing" ? `${health.jobs.length} jobs are failing` : `${health.jobs.length} jobs finished partially`;
-        listOpen = expanded;
         actions = (
             <Button
                 variant="outline"
@@ -150,66 +136,85 @@ export function StatusBanner({ health, canExecute, canViewHistory, canManageJobs
                 className="w-full sm:w-auto"
                 onClick={() => setExpanded((open) => !open)}
                 aria-expanded={expanded}
-                aria-controls={listId}
+                aria-controls={detailsId}
             >
                 {expanded ? "Hide details" : "Show details"}
                 <ChevronDown className={cn("transition-transform", expanded && "rotate-180")} />
             </Button>
         );
-        body = !expanded ? (
-            <p className="truncate text-sm text-muted-foreground">{namesList(health.jobs)}</p>
-        ) : (
-            <div id={listId} className="space-y-0.5">
-                <ul className="mt-1 divide-y divide-border/60">
-                    {listed.map((job) => (
-                        <li key={job.jobId} className="flex flex-col gap-2 py-2.5 sm:flex-row sm:items-center sm:gap-4">
-                            <div className="min-w-0 flex-1 space-y-0.5">
-                                <p className="text-sm">
-                                    <span className="font-medium">{job.jobName}</span>{" "}
-                                    <span className="text-muted-foreground">{outcomeText(state, job)}</span>
-                                </p>
-                                {job.error && <p className="line-clamp-1 text-xs wrap-anywhere text-muted-foreground">{job.error}</p>}
-                                <p className="text-xs text-muted-foreground"><LastClean job={job} /></p>
-                            </div>
-                            <JobActions job={job} {...actionProps} primary={false} />
-                        </li>
-                    ))}
-                </ul>
-                {more > 0 && (
-                    <p className="text-sm text-muted-foreground">
-                        And {more} more
-                        {canViewHistory && (
-                            <>
-                                {" in "}
-                                <Link href="/dashboard/history" className="underline underline-offset-4 hover:text-foreground">History</Link>
-                            </>
+
+        if (health.jobs.length === 1) {
+            const [job] = health.jobs;
+            title = `${job.jobName} ${outcomeText(state, job)}`;
+            body = <p className="text-sm text-muted-foreground"><LastClean job={job} /></p>;
+            if (expanded) {
+                details = (
+                    <div className="flex flex-col gap-2 border-t border-border/60 pt-2.5 sm:flex-row sm:items-center sm:gap-4">
+                        <p className="min-w-0 flex-1 text-sm wrap-anywhere text-muted-foreground">
+                            {job.error ?? "No error message was recorded for this run."}
+                        </p>
+                        <JobActions job={job} {...actionProps} primary />
+                    </div>
+                );
+            }
+        } else {
+            const listed = health.jobs.slice(0, LISTED_JOBS);
+            const more = health.jobs.length - listed.length;
+            title = state === "failing" ? `${health.jobs.length} jobs are failing` : `${health.jobs.length} jobs finished partially`;
+            body = <p className="truncate text-sm text-muted-foreground">{namesList(health.jobs)}</p>;
+            if (expanded) {
+                details = (
+                    <>
+                        <ul className="divide-y divide-border/60 border-t border-border/60">
+                            {listed.map((job) => (
+                                <li key={job.jobId} className="flex flex-col gap-2 py-2.5 last:pb-0 sm:flex-row sm:items-center sm:gap-4">
+                                    <div className="min-w-0 flex-1 space-y-0.5">
+                                        <p className="text-sm">
+                                            <span className="font-medium">{job.jobName}</span>{" "}
+                                            <span className="text-muted-foreground">{outcomeText(state, job)}</span>
+                                        </p>
+                                        {job.error && <p className="line-clamp-1 text-xs wrap-anywhere text-muted-foreground">{job.error}</p>}
+                                        <p className="text-xs text-muted-foreground"><LastClean job={job} /></p>
+                                    </div>
+                                    <JobActions job={job} {...actionProps} primary={false} />
+                                </li>
+                            ))}
+                        </ul>
+                        {more > 0 && (
+                            <p className="pt-2.5 text-sm text-muted-foreground">
+                                And {more} more
+                                {canViewHistory && (
+                                    <>
+                                        {" in "}
+                                        <Link href="/dashboard/history" className="underline underline-offset-4 hover:text-foreground">History</Link>
+                                    </>
+                                )}
+                                .
+                            </p>
                         )}
-                        .
-                    </p>
-                )}
-            </div>
-        );
+                    </>
+                );
+            }
+        }
     }
 
     return (
-        <div
-            className={cn(
-                "relative flex flex-col gap-3 overflow-hidden rounded-xl border p-4 pl-5 shadow-sm sm:flex-row sm:gap-4 md:pl-6",
-                listOpen ? "sm:items-start" : "sm:items-center",
-                tone.frame
-            )}
-        >
+        <div className={cn("relative overflow-hidden rounded-xl border p-4 pl-5 shadow-sm md:pl-6", tone.frame)}>
             <span className={cn("absolute inset-y-0 left-0 w-1", tone.bar)} aria-hidden="true" />
-            <div className="flex min-w-0 flex-1 items-start gap-3">
-                <div className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg", tone.icon)}>
-                    <tone.Icon className="size-5" aria-hidden="true" />
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+                <div className="flex min-w-0 flex-1 items-start gap-3">
+                    <div className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg", tone.icon)}>
+                        <tone.Icon className="size-5" aria-hidden="true" />
+                    </div>
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                        <p className="font-semibold leading-snug">{title}</p>
+                        {body}
+                    </div>
                 </div>
-                <div className="min-w-0 flex-1 space-y-0.5">
-                    <p className="font-semibold leading-snug">{title}</p>
-                    {body}
-                </div>
+                {actions && <div className="flex shrink-0 sm:ml-auto">{actions}</div>}
             </div>
-            {actions && <div className="flex shrink-0 sm:ml-auto">{actions}</div>}
+            {/* Indented to the text column, the width of the icon plus its gap. */}
+            {details && <div id={detailsId} className="mt-3 sm:pl-12">{details}</div>}
         </div>
     );
 }

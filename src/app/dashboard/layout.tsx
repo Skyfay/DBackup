@@ -1,8 +1,9 @@
-import { Sidebar } from "@/components/layout/sidebar"
+import { AppSidebar } from "@/components/layout/app-sidebar"
 import { Header } from "@/components/layout/header"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { auth } from "@/lib/auth"
-import { headers } from "next/headers"
+import { cookies, headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { getUserPermissions, getCurrentUserWithGroup } from "@/lib/auth/access-control"
 import { updateService } from "@/services/system/update-service"
@@ -31,38 +32,42 @@ export default async function DashboardLayout({
     }
 
     // Run all queries in parallel to avoid sequential blocking
-    const [permissions, userWithGroup, updateInfo, sourceCount, quickSetupSetting] = await Promise.all([
+    const [permissions, userWithGroup, updateInfo, sourceCount, quickSetupSetting, cookieStore] = await Promise.all([
         getUserPermissions(),
         getCurrentUserWithGroup(),
         updateService.checkForUpdates(),
         prisma.adapterConfig.count({ where: { type: "database" } }),
         prisma.systemSetting.findUnique({ where: { key: "general.showQuickSetup" } }),
+        cookies(),
     ]);
 
     const isSuperAdmin = userWithGroup?.group?.name === "SuperAdmin";
     const forceShowQuickSetup = quickSetupSetting?.value === "true";
     const showQuickSetup = forceShowQuickSetup || sourceCount === 0;
+    // Written by SidebarProvider in ui/sidebar.tsx. Reading it here renders a collapsed sidebar collapsed from the first paint.
+    const sidebarOpen = cookieStore.get("dbackup_sidebar_state")?.value !== "false";
 
     return (
-        <div className="flex h-screen overflow-hidden">
-            <Sidebar
+        <SidebarProvider defaultOpen={sidebarOpen} className="h-svh overflow-hidden">
+            <AppSidebar
                 permissions={permissions}
                 isSuperAdmin={isSuperAdmin}
                 updateAvailable={updateInfo.updateAvailable}
                 currentVersion={updateInfo.currentVersion}
                 latestVersion={updateInfo.latestVersion}
                 showQuickSetup={showQuickSetup}
+                groupName={userWithGroup?.group?.name}
             />
-            <div className="flex-1 flex flex-col h-screen overflow-hidden">
+            <SidebarInset className="min-w-0 overflow-hidden">
                 <Header />
-                <ScrollArea className="flex-1 overflow-hidden">
-                    <main className="bg-muted/10 p-6">
+                <ScrollArea className="min-h-0 flex-1">
+                    <div className="p-6">
                         <div className="mx-auto space-y-6">
                             {children}
                         </div>
-                    </main>
+                    </div>
                 </ScrollArea>
-            </div>
-        </div>
+            </SidebarInset>
+        </SidebarProvider>
     )
 }

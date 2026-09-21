@@ -132,6 +132,7 @@
     "eslint-config-next": "16.3.5",
     "jsdom": "^29.1.1",
     "prisma": "^6.19.3",
+    "shadcn": "^4.21.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
     "vite": "^8.1.5",

@@ -9,6 +9,7 @@
 interface CacheEntry<T> {
     value: T;
     expiresAt: number;
+    survivesInvalidation: boolean;
 }
 
 interface CacheState {
@@ -16,6 +17,14 @@ interface CacheState {
     pending: Map<string, Promise<unknown>>;
     /** Bumped on every invalidation, so a load that started before it cannot store stale data. */
     generation: number;
+}
+
+export interface CacheOptions {
+    /**
+     * Keeps the entry when a finished backup clears the cache. Only for data a new run cannot
+     * change, like the counts of past calendar days.
+     */
+    survivesInvalidation?: boolean;
 }
 
 // Stored on globalThis so the runner and the pages share one cache, even across module reloads.
@@ -26,22 +35,37 @@ const state: CacheState = (globalForCache.__dbackupDashboardCache ??= {
     generation: 0,
 });
 
+/** Keys that embed a date roll over daily, so expired entries are dropped instead of piling up. */
+function pruneExpired(now: number): void {
+    for (const [key, entry] of state.entries) {
+        if (entry.expiresAt <= now) state.entries.delete(key);
+    }
+}
+
 /**
  * Returns the cached value for `key`, or runs `load` once and caches its result for `ttlMs`.
  * Concurrent callers share the same in-flight load. A failed load is not cached.
  */
-export async function cached<T>(key: string, ttlMs: number, load: () => Promise<T>): Promise<T> {
+export async function cached<T>(
+    key: string,
+    ttlMs: number,
+    load: () => Promise<T>,
+    options: CacheOptions = {},
+): Promise<T> {
     const entry = state.entries.get(key) as CacheEntry<T> | undefined;
     if (entry && entry.expiresAt > Date.now()) return entry.value;
 
     const inFlight = state.pending.get(key) as Promise<T> | undefined;
     if (inFlight) return inFlight;
 
+    const survivesInvalidation = options.survivesInvalidation === true;
     const generation = state.generation;
     const promise = load()
         .then((value) => {
-            if (state.generation === generation) {
-                state.entries.set(key, { value, expiresAt: Date.now() + ttlMs });
+            if (survivesInvalidation || state.generation === generation) {
+                const now = Date.now();
+                pruneExpired(now);
+                state.entries.set(key, { value, expiresAt: now + ttlMs, survivesInvalidation });
             }
             return value;
         })
@@ -53,9 +77,11 @@ export async function cached<T>(key: string, ttlMs: number, load: () => Promise<
     return promise;
 }
 
-/** Drops every cached dashboard value. Called when a backup finishes. */
+/** Drops every cached dashboard value a new run can change. Called when a backup finishes. */
 export function invalidateDashboardCache(): void {
     state.generation++;
-    state.entries.clear();
+    for (const [key, entry] of state.entries) {
+        if (!entry.survivesInvalidation) state.entries.delete(key);
+    }
     state.pending.clear();
 }

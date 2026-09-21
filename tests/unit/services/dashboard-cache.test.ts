@@ -53,6 +53,16 @@ describe("dashboard cache", () => {
         expect(fresh).toHaveBeenCalledTimes(1);
     });
 
+    it("keeps entries marked to survive a finished backup, such as past calendar days", async () => {
+        const load = vi.fn().mockResolvedValue("past days");
+
+        await cached("calendar-history:survives", 60_000, load, { survivesInvalidation: true });
+        invalidateDashboardCache();
+
+        expect(await cached("calendar-history:survives", 60_000, load, { survivesInvalidation: true })).toBe("past days");
+        expect(load).toHaveBeenCalledTimes(1);
+    });
+
     it("does not cache a failed load", async () => {
         const load = vi.fn().mockRejectedValueOnce(new Error("db locked")).mockResolvedValueOnce("value");
 

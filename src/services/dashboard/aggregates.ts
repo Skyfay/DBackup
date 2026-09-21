@@ -1,6 +1,6 @@
 import prisma from "@/lib/prisma";
 import { subDays, subHours } from "date-fns";
-import { formatInTimeZone } from "date-fns-tz";
+import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import {
     getActivityData,
     getStorageVolume,
@@ -16,7 +16,13 @@ import type { CalendarDay, RunSummary } from "./types";
 export const AGGREGATES_TTL_MS = 60_000;
 export const RUNS_PER_JOB = 12;
 const ACTIVITY_DAYS = 14;
-const CALENDAR_DAYS = 12 * 7;
+/** The calendar shows as many weeks as fit its width, up to a year. */
+const CALENDAR_DAYS = 53 * 7;
+/**
+ * Past calendar days only change when data retention removes runs, so they are cached for an hour
+ * and survive a finished backup. Only today's counts are part of the short-lived aggregates.
+ */
+const CALENDAR_HISTORY_TTL_MS = 60 * 60 * 1000;
 const STORAGE_TREND_DAYS = 30;
 /** The average duration covers this many recent successful backups, so its cost does not grow with history. */
 const DURATION_SAMPLE = 100;
@@ -59,19 +65,11 @@ async function loadTimezone(): Promise<string> {
     return setting?.value || "UTC";
 }
 
-async function loadCalendar(timezone: string, now: Date): Promise<Aggregates["calendar"]> {
-    // One extra day covers the offset between UTC and the scheduler timezone.
-    const executions = await prisma.execution.findMany({
-        where: { type: "Backup", startedAt: { gte: subDays(now, CALENDAR_DAYS + 1) } },
-        select: { startedAt: true, status: true },
-    });
+function emptyDay(date: string): CalendarDay {
+    return { date, total: 0, completed: 0, failed: 0, partial: 0 };
+}
 
-    const days = new Map<string, CalendarDay>();
-    for (let offset = CALENDAR_DAYS - 1; offset >= 0; offset--) {
-        const date = dayKey(subDays(now, offset), timezone);
-        days.set(date, { date, total: 0, completed: 0, failed: 0, partial: 0 });
-    }
-
+function countDays(days: Map<string, CalendarDay>, executions: { startedAt: Date; status: string }[], timezone: string): void {
     for (const execution of executions) {
         const day = days.get(dayKey(execution.startedAt, timezone));
         if (!day) continue;
@@ -80,8 +78,44 @@ async function loadCalendar(timezone: string, now: Date): Promise<Aggregates["ca
         else if (execution.status === "Failed") day.failed++;
         else if (execution.status === "Partial") day.partial++;
     }
+}
 
-    return { days: Array.from(days.values()), today: dayKey(now, timezone) };
+async function loadCalendarHistory(timezone: string, today: string, startOfToday: Date, now: Date): Promise<CalendarDay[]> {
+    // One extra day covers the offset between UTC and the scheduler timezone.
+    const executions = await prisma.execution.findMany({
+        where: { type: "Backup", startedAt: { gte: subDays(now, CALENDAR_DAYS + 1), lt: startOfToday } },
+        select: { startedAt: true, status: true },
+    });
+
+    const days = new Map<string, CalendarDay>();
+    for (let offset = CALENDAR_DAYS - 1; offset >= 1; offset--) {
+        const date = dayKey(subDays(now, offset), timezone);
+        if (date < today) days.set(date, emptyDay(date));
+    }
+    countDays(days, executions, timezone);
+    return Array.from(days.values());
+}
+
+async function loadCalendar(timezone: string, now: Date): Promise<Aggregates["calendar"]> {
+    const today = dayKey(now, timezone);
+    const startOfToday = fromZonedTime(`${today}T00:00:00`, timezone);
+
+    const [history, todaysRuns] = await Promise.all([
+        cached(
+            `calendar-history:${timezone}:${today}`,
+            CALENDAR_HISTORY_TTL_MS,
+            () => loadCalendarHistory(timezone, today, startOfToday, now),
+            { survivesInvalidation: true },
+        ),
+        prisma.execution.findMany({
+            where: { type: "Backup", startedAt: { gte: startOfToday } },
+            select: { startedAt: true, status: true },
+        }),
+    ]);
+
+    const todayDays = new Map([[today, emptyDay(today)]]);
+    countDays(todayDays, todaysRuns, timezone);
+    return { days: [...history, todayDays.get(today)!], today };
 }
 
 async function loadRunStats(now: Date) {

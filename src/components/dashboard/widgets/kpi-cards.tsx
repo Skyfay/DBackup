@@ -39,10 +39,10 @@ function KpiCard({ label, href, value, unit, valueClassName, note, trend, trendC
                 )}
             </div>
             <div className="flex min-w-0 items-baseline gap-1.5">
-                <span className={cn("truncate font-mono text-2xl font-semibold tracking-tight tabular-nums md:text-3xl", valueClassName)}>
+                <span className={cn("truncate text-2xl font-semibold tracking-tight tabular-nums md:text-3xl", valueClassName)}>
                     {value}
                 </span>
-                {unit && <span className="shrink-0 font-mono text-sm text-muted-foreground">{unit}</span>}
+                {unit && <span className="shrink-0 text-sm text-muted-foreground tabular-nums">{unit}</span>}
             </div>
             <div className="flex min-w-0 items-center gap-1 text-xs">{note}</div>
             <Sparkline values={trend} className={cn("mt-auto pt-1", trendClassName)} fromZero={trendFromZero} />

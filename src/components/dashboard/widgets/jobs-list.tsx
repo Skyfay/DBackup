@@ -58,7 +58,7 @@ function LastRun({ run }: { run: RunSummary | null }) {
     return (
         <span className="flex flex-col items-end">
             <RelativeTime date={run.startedAt} />
-            {duration && <span className="font-mono text-[11px] text-muted-foreground/80">{duration}</span>}
+            {duration && <span className="text-[11px] text-muted-foreground/80 tabular-nums">{duration}</span>}
         </span>
     );
 }
@@ -71,10 +71,10 @@ export function JobsList({ rows, canViewJobs }: JobsListProps) {
 
     return (
         <div>
-            <div className={cn("hidden border-b bg-muted/40 px-5 py-2 font-mono text-[11px] tracking-wider text-muted-foreground uppercase md:grid md:gap-x-4", COLUMNS)}>
+            <div className={cn("hidden border-b px-5 pb-2 text-xs text-muted-foreground md:grid md:gap-x-4", COLUMNS)}>
                 <span>Job</span>
                 <span>Status</span>
-                <span>Last {RUN_SLOTS}</span>
+                <span>Last {RUN_SLOTS} runs</span>
                 <span className="text-right">Last run</span>
                 <span className="text-right">Next</span>
             </div>
@@ -88,7 +88,7 @@ export function JobsList({ rows, canViewJobs }: JobsListProps) {
                     const cells = (
                         <>
                             <div className="min-w-0">
-                                <p className={cn("truncate font-mono text-sm font-medium", !row.enabled && "text-muted-foreground")}>{row.name}</p>
+                                <p className={cn("truncate text-sm font-medium", !row.enabled && "text-muted-foreground")}>{row.name}</p>
                                 <p className="truncate text-xs text-muted-foreground">
                                     {row.sourceLabel} → {row.destinationLabel}
                                 </p>
@@ -104,7 +104,7 @@ export function JobsList({ rows, canViewJobs }: JobsListProps) {
                             <div className="hidden text-right text-xs text-muted-foreground md:block">
                                 <LastRun run={row.lastRun} />
                             </div>
-                            <div className="hidden text-right font-mono text-xs text-muted-foreground md:block">
+                            <div className="hidden text-right text-xs text-muted-foreground tabular-nums md:block">
                                 <NextRun row={row} />
                             </div>
                         </>

@@ -59,7 +59,7 @@ export function ActivityChart({ data }: { data: ActivityDataPoint[] }) {
                     minTickGap={28}
                     interval="preserveStartEnd"
                     fontSize={11}
-                    className="font-mono"
+                    className="tabular-nums"
                 />
                 <ChartTooltip
                     cursor={{ fill: "var(--muted)", opacity: 0.6 }}

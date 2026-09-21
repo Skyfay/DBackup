@@ -31,7 +31,7 @@ export function ExecutionsList({ executions, canViewHistory }: ExecutionsListPro
 
     return (
         <div>
-            <div className={cn("hidden border-b bg-muted/40 px-5 py-2 font-mono text-[11px] tracking-wider text-muted-foreground uppercase md:grid md:gap-x-4", COLUMNS)}>
+            <div className={cn("hidden border-b px-5 pb-2 text-xs text-muted-foreground md:grid md:gap-x-4", COLUMNS)}>
                 <span>Job</span>
                 <span>Status</span>
                 <span className="text-right">Took</span>
@@ -52,19 +52,19 @@ export function ExecutionsList({ executions, canViewHistory }: ExecutionsListPro
                     const cells = (
                         <>
                             <div className="min-w-0">
-                                <p className="truncate font-mono text-sm font-medium">{execution.jobName}</p>
+                                <p className="truncate text-sm font-medium">{execution.jobName}</p>
                                 <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
-                                <p className="truncate font-mono text-xs text-muted-foreground md:hidden" suppressHydrationWarning>
+                                <p className="truncate text-xs text-muted-foreground tabular-nums md:hidden" suppressHydrationWarning>
                                     {took} · {size} · <RelativeTime date={execution.startedAt} />
                                 </p>
                             </div>
                             <div className="justify-self-end md:justify-self-start">
                                 <ExecutionStatusBadge status={execution.status} />
                             </div>
-                            <span className="hidden text-right font-mono text-xs text-muted-foreground tabular-nums md:block" suppressHydrationWarning>
+                            <span className="hidden text-right text-xs text-muted-foreground tabular-nums md:block" suppressHydrationWarning>
                                 {took}
                             </span>
-                            <span className="hidden text-right font-mono text-xs text-muted-foreground tabular-nums md:block">{size}</span>
+                            <span className="hidden text-right text-xs text-muted-foreground tabular-nums md:block">{size}</span>
                             <RelativeTime date={execution.startedAt} className="hidden text-right text-xs text-muted-foreground md:block" />
                         </>
                     );

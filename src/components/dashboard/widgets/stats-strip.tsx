@@ -14,7 +14,7 @@ function Stat({ label, value, valueClassName, extra, className }: StatProps) {
         <div className={cn("min-w-0 bg-card px-4 py-3", className)}>
             <div className="truncate text-xs text-muted-foreground">{label}</div>
             <div className="mt-1 flex items-baseline gap-1.5">
-                <span className={cn("font-mono text-lg font-semibold tabular-nums", valueClassName)}>{value}</span>
+                <span className={cn("text-lg font-semibold tabular-nums", valueClassName)}>{value}</span>
                 {extra && <span className="truncate text-xs text-muted-foreground">{extra}</span>}
             </div>
         </div>

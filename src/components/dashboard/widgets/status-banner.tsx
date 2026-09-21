@@ -157,7 +157,7 @@ export function StatusBanner({ health, canExecute, canViewHistory, canManageJobs
                 </div>
                 <div className="min-w-0 space-y-0.5">
                     <p className="font-semibold leading-snug">{title}</p>
-                    {error && <p className="line-clamp-2 font-mono text-xs break-all text-muted-foreground">{error}</p>}
+                    {error && <p className="line-clamp-2 text-sm wrap-anywhere text-muted-foreground">{error}</p>}
                     <p className="text-sm text-muted-foreground">{detail}</p>
                 </div>
             </div>

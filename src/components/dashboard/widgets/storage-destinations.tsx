@@ -59,7 +59,7 @@ export function StorageDestinations({ entries, updatedAt, className }: StorageDe
                                             <AdapterIcon adapterId={entry.adapterId} className="size-4 shrink-0" />
                                             <span className="truncate text-sm font-medium">{entry.name}</span>
                                         </span>
-                                        <span className={cn("shrink-0 font-mono text-sm tabular-nums", stale && "text-muted-foreground")}>
+                                        <span className={cn("shrink-0 text-sm tabular-nums", stale && "text-muted-foreground")}>
                                             {neverScanned ? "-" : formatBytes(entry.size, 1)}
                                         </span>
                                     </div>

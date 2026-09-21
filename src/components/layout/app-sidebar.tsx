@@ -139,7 +139,7 @@ export function AppSidebar({ permissions = [], isSuperAdmin = false, updateAvail
                                 <div className="grid flex-1 text-left leading-tight">
                                     <span className="truncate text-sm font-semibold text-sidebar-foreground">DBackup</span>
                                     {currentVersion && (
-                                        <span className="truncate font-mono text-[11px] text-sidebar-foreground/60 dark:text-sidebar-foreground/55">v{currentVersion}</span>
+                                        <span className="truncate text-xs text-sidebar-foreground/60 dark:text-sidebar-foreground/55">v{currentVersion}</span>
                                     )}
                                 </div>
                             </Link>

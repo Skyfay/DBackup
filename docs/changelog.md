@@ -5,6 +5,11 @@ All notable changes to DBackup are documented here.
 ## vNEXT
 *Release: In Progress*
 
+### 🐛 Bug Fixes
+
+- **storage**: A destination that cannot be listed during the storage refresh keeps the size and backup count of its last successful scan instead of an estimate from the run history. The dashboard marks it as unreachable and says how old those values are.
+- **storage**: The storage scan of a local destination no longer fails when retention deletes a backup while it runs.
+
 ### 🎨 Improvements
 
 - **ui**: The sidebar collapses to icons with the new button in the header or Ctrl+B (⌘B on macOS), and small screens get it as a slide-in menu. Both themes use a new zinc color palette, and the interface uses the Geist font on every operating system.
@@ -16,7 +21,7 @@ All notable changes to DBackup are documented here.
 
 ### 📝 Documentation
 
-- **docs**: The start page and the data retention guide describe the new dashboard.
+- **docs**: The start page and the data retention guide describe the new dashboard, and the API reference explains the storage totals of an unreachable destination.
 
 ### 🐳 Docker
 

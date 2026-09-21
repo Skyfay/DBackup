@@ -195,5 +195,5 @@ curl -s "${BASE_URL}/api/dashboard/stats" \
 Any dashboard that can send an `Authorization` header works, for example the [Homepage Custom API widget](https://gethomepage.dev/widgets/services/customapi/). The figures are nested under `data`, so map the fields from there.
 
 ::: tip Storage figures
-`totalSnapshots` and `totalStorageBytes` come from the storage statistics cache, which refreshes hourly by default and after every backup. Polling more often does not make them more current.
+`totalSnapshots` and `totalStorageBytes` come from the storage statistics cache, which refreshes hourly by default and after every backup. Polling more often does not make them more current. A destination that cannot be listed during a refresh counts with the values of its last successful scan.
 :::

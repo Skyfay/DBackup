@@ -38,8 +38,13 @@ export interface StorageVolumeEntry {
   adapterId: string;
   size: number;
   count: number;
-  /** True when the live adapter scan failed and DB fallback data was used. Snapshots and alerts are skipped for these entries. */
+  /**
+   * True when the destination could not be listed at the last refresh. `size` and `count` then
+   * hold its last successful scan, taken at `lastScanAt`. Snapshots and alerts skip these entries.
+   */
   scanError?: boolean;
+  /** When the values of a failed scan were measured, null when the destination was never scanned. */
+  lastScanAt?: string | null;
 }
 
 export interface StorageSnapshotEntry {
@@ -303,12 +308,11 @@ export async function getStorageVolume(): Promise<StorageVolumeEntry[]> {
   }
 
   // No cache yet - do a live refresh to populate it (first load only)
-  // This ensures accurate data from the start instead of inaccurate DB estimation
   try {
     return await refreshStorageStatsCache();
   } catch {
-    // If live refresh fails entirely, fall back to DB estimation
-    return getStorageVolumeFromDB();
+    // If the live refresh fails entirely, show what every destination held at its last scan.
+    return getLastScannedStorageVolume();
   }
 }
 
@@ -368,31 +372,11 @@ export async function refreshStorageStatsCache(): Promise<StorageVolumeEntry[]> 
         count: backupFiles.length,
       };
     } catch (error) {
-      log.warn("Failed to query storage adapter, using DB fallback", {
+      log.warn("Failed to query storage adapter, keeping its last scanned values", {
         adapter: adapterConfig.name,
         adapterId: adapterConfig.adapterId,
       }, wrapError(error));
-
-      // Fall back to DB aggregation for this adapter
-      const executions = await prisma.execution.findMany({
-        where: {
-          status: "Success",
-          size: { not: null },
-          job: { destinations: { some: { configId: adapterConfig.id } } },
-        },
-        select: { size: true },
-      });
-
-      const totalSize = executions.reduce((sum, ex) => sum + Number(ex.size ?? 0), 0);
-
-      return {
-        configId: adapterConfig.id,
-        name: adapterConfig.name,
-        adapterId: adapterConfig.adapterId,
-        size: totalSize,
-        count: executions.length,
-        scanError: true,
-      };
+      return lastScannedEntry(adapterConfig);
     }
   });
 
@@ -419,39 +403,36 @@ export async function refreshStorageStatsCache(): Promise<StorageVolumeEntry[]> 
 }
 
 /**
- * DB-based storage volume estimation using the Execution table.
- * Used as initial fallback when no cache exists yet.
+ * The values of a destination's last successful scan, from its newest storage snapshot.
+ *
+ * Snapshots are only written for successful scans, so this is what the destination held when it
+ * was last reachable. A sum over the run history would count backups that retention deleted long
+ * ago. A destination without any snapshot reports zero and no scan date.
  */
-async function getStorageVolumeFromDB(): Promise<StorageVolumeEntry[]> {
+async function lastScannedEntry(adapterConfig: { id: string; name: string; adapterId: string }): Promise<StorageVolumeEntry> {
+  const snapshot = await prisma.storageSnapshot.findFirst({
+    where: { adapterConfigId: adapterConfig.id },
+    orderBy: { createdAt: "desc" },
+    select: { size: true, count: true, createdAt: true },
+  });
+
+  return {
+    configId: adapterConfig.id,
+    name: adapterConfig.name,
+    adapterId: adapterConfig.adapterId,
+    size: snapshot ? Number(snapshot.size) : 0,
+    count: snapshot?.count ?? 0,
+    scanError: true,
+    lastScanAt: snapshot?.createdAt.toISOString() ?? null,
+  };
+}
+
+/** Used when no cache exists yet and the live refresh failed as a whole. */
+async function getLastScannedStorageVolume(): Promise<StorageVolumeEntry[]> {
   const storageAdapters = await prisma.adapterConfig.findMany({
     where: { type: "storage", storageRole: STORAGE_ROLES.DESTINATION },
   });
-
-  if (storageAdapters.length === 0) return [];
-
-  const results: StorageVolumeEntry[] = [];
-
-  for (const adapterConfig of storageAdapters) {
-    const executions = await prisma.execution.findMany({
-      where: {
-        status: "Success",
-        size: { not: null },
-        job: { destinations: { some: { configId: adapterConfig.id } } },
-      },
-      select: { size: true },
-    });
-
-    const totalSize = executions.reduce((sum, ex) => sum + Number(ex.size ?? 0), 0);
-
-    results.push({
-      name: adapterConfig.name,
-      adapterId: adapterConfig.adapterId,
-      size: totalSize,
-      count: executions.length,
-    });
-  }
-
-  return results;
+  return Promise.all(storageAdapters.map(lastScannedEntry));
 }
 
 /**
@@ -558,8 +539,8 @@ async function saveStorageSnapshots(entries: StorageVolumeEntry[]): Promise<void
   const log = logger.child({ service: "StorageSnapshots" });
 
   try {
-    // Skip entries where the live adapter scan failed - their sizes come from DB fallback
-    // and are unreliable for snapshot history and spike detection.
+    // Skip entries whose scan failed. They repeat the values of an earlier scan, and storing them
+    // as a new measurement would fake a flat history and hide spikes from the alerts.
     const validEntries = entries.filter((entry) => entry.configId && !entry.scanError);
 
     if (validEntries.length < entries.length) {

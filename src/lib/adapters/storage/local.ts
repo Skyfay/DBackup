@@ -294,7 +294,13 @@ export const LocalFileSystemAdapter: StorageAdapter = {
                     // With recursive: true, entry.name is just the filename and parentPath is its directory.
                     const fullPath = path.join(entry.parentPath, entry.name);
                     const relativePath = path.relative(config.basePath, fullPath);
-                    const stats = await fs.stat(fullPath);
+                    // Retention or an upload can remove a file between readdir and stat. It is gone,
+                    // so it is left out instead of failing the whole listing.
+                    const stats = await fs.stat(fullPath).catch((error: NodeJS.ErrnoException) => {
+                        if (error.code === "ENOENT") return null;
+                        throw error;
+                    });
+                    if (!stats) continue;
 
                     files.push({
                         name: entry.name,
@@ -311,7 +317,7 @@ export const LocalFileSystemAdapter: StorageAdapter = {
             const nodeErr = error as NodeJS.ErrnoException;
             if (remotePath !== "" && nodeErr.code === "ENOENT") return [];
             // Any other error on a root listing or non-ENOENT failures: throw so the stats cache
-            // triggers its DB fallback and sets scanError=true, preventing a false 0-byte snapshot.
+            // keeps the last scanned values and sets scanError=true, preventing a false 0-byte snapshot.
             log.error("Local list failed", { remotePath }, wrapError(error));
             throw error;
         }

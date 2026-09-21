@@ -18,6 +18,7 @@ export function StorageDestinations({ entries, updatedAt, className }: StorageDe
     const [selected, setSelected] = useState<{ configId: string; name: string } | null>(null);
     const total = entries.reduce((sum, entry) => sum + entry.size, 0);
     const sorted = [...entries].sort((a, b) => b.size - a.size);
+    const unreachable = entries.filter((entry) => entry.scanError).length;
 
     return (
         <div className={cn("min-w-0 rounded-xl border bg-card p-4 text-card-foreground shadow-sm md:p-5", className)}>
@@ -26,6 +27,7 @@ export function StorageDestinations({ entries, updatedAt, className }: StorageDe
                     <h2 className="font-semibold">Storage by destination</h2>
                     <p className="text-sm text-muted-foreground">
                         {formatBytes(total, 1)} in {entries.length} destination{entries.length === 1 ? "" : "s"}
+                        {unreachable > 0 && `, ${unreachable} unreachable`}
                     </p>
                 </div>
                 {updatedAt && (
@@ -41,6 +43,9 @@ export function StorageDestinations({ entries, updatedAt, className }: StorageDe
                 <ul className="mt-4 space-y-1">
                     {sorted.map((entry) => {
                         const share = total > 0 ? (entry.size / total) * 100 : 0;
+                        // A failed scan keeps the values of the last successful one, shown muted with their age.
+                        const stale = entry.scanError === true;
+                        const neverScanned = stale && !entry.lastScanAt;
                         return (
                             <li key={entry.configId ?? entry.name}>
                                 <button
@@ -54,15 +59,33 @@ export function StorageDestinations({ entries, updatedAt, className }: StorageDe
                                             <AdapterIcon adapterId={entry.adapterId} className="size-4 shrink-0" />
                                             <span className="truncate text-sm font-medium">{entry.name}</span>
                                         </span>
-                                        <span className="shrink-0 font-mono text-sm tabular-nums">{formatBytes(entry.size, 1)}</span>
+                                        <span className={cn("shrink-0 font-mono text-sm tabular-nums", stale && "text-muted-foreground")}>
+                                            {neverScanned ? "-" : formatBytes(entry.size, 1)}
+                                        </span>
                                     </div>
                                     <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
                                         {/* Width is the computed share, the one value here that cannot be a class. */}
-                                        <div className="h-full rounded-full bg-foreground/80" style={{ width: `${Math.max(share, share > 0 ? 1 : 0)}%` }} />
+                                        <div
+                                            className={cn("h-full rounded-full", stale ? "bg-muted-foreground/40" : "bg-foreground/80")}
+                                            style={{ width: `${Math.max(share, share > 0 ? 1 : 0)}%` }}
+                                        />
                                     </div>
                                     <div className="mt-1 text-xs text-muted-foreground">
-                                        {entry.count.toLocaleString("en-US")} backup{entry.count === 1 ? "" : "s"}
-                                        {entry.scanError && " · live scan failed, estimated from history"}
+                                        {neverScanned ? (
+                                            <span className="text-warning">Unreachable, not scanned yet</span>
+                                        ) : (
+                                            <>
+                                                {entry.count.toLocaleString("en-US")} backup{entry.count === 1 ? "" : "s"}
+                                                {stale && (
+                                                    <>
+                                                        {" · "}
+                                                        <span className="text-warning">
+                                                            Unreachable, values from <RelativeTime date={entry.lastScanAt!} />
+                                                        </span>
+                                                    </>
+                                                )}
+                                            </>
+                                        )}
                                     </div>
                                 </button>
                             </li>

@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { CheckCircle2, CircleAlert, Loader2, Play, Plus, TriangleAlert } from "lucide-react";
+import { useId, useState } from "react";
+import { CheckCircle2, ChevronDown, CircleAlert, Loader2, Play, Plus, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DateDisplay } from "@/components/utils/date-display";
 import { cn } from "@/lib/utils";
@@ -39,6 +40,13 @@ function outcomeText(state: Unhealthy, job: UnhealthyJob): string {
 
 function LastClean({ job }: { job: UnhealthyJob }) {
     return job.lastSuccessAt ? <>Last clean run <RelativeTime date={job.lastSuccessAt} />.</> : <>No clean run on record.</>;
+}
+
+/** The job names on the folded banner, like "postgres-nightly, files and 2 more". */
+function namesList(jobs: UnhealthyJob[]): string {
+    const names = jobs.map((job) => job.jobName);
+    if (names.length <= LISTED_JOBS) return names.join(", ");
+    return `${names.slice(0, LISTED_JOBS).join(", ")} and ${names.length - LISTED_JOBS} more`;
 }
 
 interface JobActionsProps {
@@ -79,12 +87,18 @@ function JobActions({ job, canViewHistory, canExecute, runJob, startingJobId, pr
 /** The banner at the top of the dashboard: all good, or which jobs need attention and why. */
 export function StatusBanner({ health, canExecute, canViewHistory, canManageJobs }: StatusBannerProps) {
     const { runJob, startingJobId } = useRunJob();
+    // A banner listing several jobs starts folded to their names. It stays open through auto refreshes
+    // while the page is open, but every visit starts folded again.
+    const [expanded, setExpanded] = useState(false);
+    const listId = useId();
     const tone = TONES[health.state];
     const actionProps = { canViewHistory, canExecute, runJob, startingJobId };
 
     let title: string;
     let body: React.ReactNode = null;
     let actions: React.ReactNode = null;
+    // An open job list is tall, so the toggle moves up beside the title instead of centering on it.
+    let listOpen = false;
 
     if (health.state === "empty") {
         title = "No backup jobs yet";
@@ -128,8 +142,24 @@ export function StatusBanner({ health, canExecute, canViewHistory, canManageJobs
         const listed = health.jobs.slice(0, LISTED_JOBS);
         const more = health.jobs.length - listed.length;
         title = state === "failing" ? `${health.jobs.length} jobs are failing` : `${health.jobs.length} jobs finished partially`;
-        body = (
-            <>
+        listOpen = expanded;
+        actions = (
+            <Button
+                variant="outline"
+                size="sm"
+                className="w-full sm:w-auto"
+                onClick={() => setExpanded((open) => !open)}
+                aria-expanded={expanded}
+                aria-controls={listId}
+            >
+                {expanded ? "Hide details" : "Show details"}
+                <ChevronDown className={cn("transition-transform", expanded && "rotate-180")} />
+            </Button>
+        );
+        body = !expanded ? (
+            <p className="truncate text-sm text-muted-foreground">{namesList(health.jobs)}</p>
+        ) : (
+            <div id={listId} className="space-y-0.5">
                 <ul className="mt-1 divide-y divide-border/60">
                     {listed.map((job) => (
                         <li key={job.jobId} className="flex flex-col gap-2 py-2.5 sm:flex-row sm:items-center sm:gap-4">
@@ -157,14 +187,15 @@ export function StatusBanner({ health, canExecute, canViewHistory, canManageJobs
                         .
                     </p>
                 )}
-            </>
+            </div>
         );
     }
 
     return (
         <div
             className={cn(
-                "relative flex flex-col gap-3 overflow-hidden rounded-xl border p-4 pl-5 shadow-sm sm:flex-row sm:items-center sm:gap-4 md:pl-6",
+                "relative flex flex-col gap-3 overflow-hidden rounded-xl border p-4 pl-5 shadow-sm sm:flex-row sm:gap-4 md:pl-6",
+                listOpen ? "sm:items-start" : "sm:items-center",
                 tone.frame
             )}
         >

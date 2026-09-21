@@ -15,20 +15,25 @@ import type { CalendarDay, RunSummary } from "./types";
 /** How long the aggregates stay cached. A finished backup clears them earlier. */
 export const AGGREGATES_TTL_MS = 60_000;
 export const RUNS_PER_JOB = 12;
-const ACTIVITY_DAYS = 14;
+/** The activity chart switches between 14, 30 and 90 days, so the longest range is loaded. */
+const ACTIVITY_DAYS = 90;
 /** The calendar shows as many weeks as fit its width, up to a year. */
 const CALENDAR_DAYS = 53 * 7;
 /**
- * Past calendar days only change when data retention removes runs, so they are cached for an hour
- * and survive a finished backup. Only today's counts are part of the short-lived aggregates.
+ * Past days of the calendar and the activity chart only change when data retention removes runs,
+ * so they are cached for an hour and survive a finished backup. Only today's counts are part of
+ * the short-lived aggregates.
  */
-const CALENDAR_HISTORY_TTL_MS = 60 * 60 * 1000;
+const HISTORY_TTL_MS = 60 * 60 * 1000;
 const STORAGE_TREND_DAYS = 30;
 /** The average duration covers this many recent successful backups, so its cost does not grow with history. */
 const DURATION_SAMPLE = 100;
 
 export interface Aggregates {
     timezone: string;
+    /** Concurrent runs the queue allows, from the maxConcurrentJobs setting. */
+    maxConcurrentJobs: number;
+    /** One entry per day, oldest first, the last one is today. */
     activity: ActivityDataPoint[];
     calendar: { days: CalendarDay[]; today: string };
     successRate: { value: number | null; previous: number | null };
@@ -104,7 +109,7 @@ async function loadCalendar(timezone: string, now: Date): Promise<Aggregates["ca
     const [history, todaysRuns] = await Promise.all([
         cached(
             `calendar-history:${timezone}:${today}`,
-            CALENDAR_HISTORY_TTL_MS,
+            HISTORY_TTL_MS,
             () => loadCalendarHistory(timezone, today, startOfToday, now),
             { survivesInvalidation: true },
         ),
@@ -117,6 +122,40 @@ async function loadCalendar(timezone: string, now: Date): Promise<Aggregates["ca
     const todayDays = new Map([[today, emptyDay(today)]]);
     countDays(todayDays, todaysRuns, timezone);
     return { days: [...history, todayDays.get(today)!], today };
+}
+
+function countActivity(date: string, executions: { status: string }[]): ActivityDataPoint {
+    const point: ActivityDataPoint = { date, completed: 0, failed: 0, partial: 0, running: 0, pending: 0, cancelled: 0 };
+    for (const { status } of executions) {
+        if (status === "Success") point.completed++;
+        else if (status === "Failed") point.failed++;
+        else if (status === "Partial") point.partial++;
+        else if (status === "Running") point.running++;
+        else if (status === "Pending") point.pending++;
+        else if (status === "Cancelled") point.cancelled++;
+    }
+    return point;
+}
+
+async function loadActivity(timezone: string, now: Date): Promise<ActivityDataPoint[]> {
+    const today = dayKey(now, timezone);
+    const startOfToday = fromZonedTime(`${today}T00:00:00`, timezone);
+
+    const [history, todaysRuns] = await Promise.all([
+        cached(`activity-history:${timezone}:${today}`, HISTORY_TTL_MS, () => getActivityData(ACTIVITY_DAYS), {
+            survivesInvalidation: true,
+        }),
+        prisma.execution.findMany({ where: { startedAt: { gte: startOfToday } }, select: { status: true } }),
+    ]);
+
+    // The last cached day is today as it was when the cache was filled. It is replaced by live counts.
+    return [...history.slice(0, -1), countActivity(formatInTimeZone(now, timezone, "MMM d"), todaysRuns)];
+}
+
+async function loadMaxConcurrentJobs(): Promise<number> {
+    const setting = await prisma.systemSetting.findUnique({ where: { key: "maxConcurrentJobs" } });
+    const value = setting ? parseInt(setting.value, 10) : 1;
+    return Number.isFinite(value) && value > 0 ? value : 1;
 }
 
 async function loadRunStats(now: Date) {
@@ -207,14 +246,15 @@ async function loadRunsByJob(): Promise<Record<string, RunSummary[]>> {
 async function loadAggregates(): Promise<Aggregates> {
     const now = new Date();
     const timezone = await loadTimezone();
-    const [activity, calendar, runStats, storage, runsByJob] = await Promise.all([
-        getActivityData(ACTIVITY_DAYS),
+    const [activity, calendar, runStats, storage, runsByJob, maxConcurrentJobs] = await Promise.all([
+        loadActivity(timezone, now),
         loadCalendar(timezone, now),
         loadRunStats(now),
         loadStorage(timezone, now),
         loadRunsByJob(),
+        loadMaxConcurrentJobs(),
     ]);
-    return { timezone, activity, calendar, ...runStats, storage, runsByJob };
+    return { timezone, maxConcurrentJobs, activity, calendar, ...runStats, storage, runsByJob };
 }
 
 /** The history-based part of the dashboard, shared by every request until it expires or a backup finishes. */

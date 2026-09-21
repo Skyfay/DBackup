@@ -5,6 +5,7 @@ import { KpiCards } from "@/components/dashboard/widgets/kpi-cards";
 import { StatsStrip } from "@/components/dashboard/widgets/stats-strip";
 import { StatusBanner } from "@/components/dashboard/widgets/status-banner";
 import { StorageDestinations } from "@/components/dashboard/widgets/storage-destinations";
+import { UpcomingRuns } from "@/components/dashboard/widgets/upcoming-runs";
 import { getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getDashboardOverview } from "@/services/dashboard/overview-service";
@@ -36,6 +37,7 @@ export default async function DashboardPage() {
                     storageHref={canViewStorage ? "/dashboard/storage" : undefined}
                 />
                 <StatsStrip strip={overview.strip} />
+                <UpcomingRuns schedule={overview.upcoming} />
                 <div className="grid gap-4 md:gap-6 xl:grid-cols-3">
                     <ActivityPanel
                         className="xl:col-span-2"

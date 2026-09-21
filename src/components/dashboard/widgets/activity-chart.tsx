@@ -40,6 +40,9 @@ export function ActivityLegend({ data }: { data: ActivityDataPoint[] }) {
 
 /** Runs per day as stacked bars, with gaps between the segments. */
 export function ActivityChart({ data }: { data: ActivityDataPoint[] }) {
+    // Thinner bars over longer ranges need smaller corners and gaps, or the gaps swallow the bars.
+    const dense = data.length > 30;
+
     if (activeSeries(data).length === 0) {
         return (
             <div className="flex h-44 items-center justify-center text-sm text-muted-foreground md:h-52">
@@ -77,9 +80,9 @@ export function ActivityChart({ data }: { data: ActivityDataPoint[] }) {
                         dataKey={series.key}
                         stackId="runs"
                         fill={`var(--color-${series.key})`}
-                        radius={3}
+                        radius={dense ? 1 : 3}
                         stroke="var(--card)"
-                        strokeWidth={2}
+                        strokeWidth={dense ? 1 : 2}
                     />
                 ))}
             </BarChart>

@@ -104,6 +104,44 @@ export interface CalendarDay {
     partial: number;
 }
 
+export interface UpcomingJob {
+    id: string;
+    name: string;
+    /** Average length of the job's finished runs, used to predict overlaps. */
+    estimatedMs: number;
+    /** The job's newest outcome failed. */
+    likelyToFail: boolean;
+}
+
+/** One scheduled run. The job's name and flags live in `UpcomingSchedule.jobs`, once per job. */
+export interface UpcomingRun {
+    jobId: string;
+    at: string;
+}
+
+/** A stretch of time in which more runs want to be active than the queue has slots. */
+export interface ScheduleConflict {
+    from: string;
+    to: string;
+    /** Runs active at once at the peak of this window. */
+    demand: number;
+}
+
+export interface UpcomingSchedule {
+    windowStart: string;
+    /** The end of the longest range the card offers. Shorter ranges are cut in the browser. */
+    windowEnd: string;
+    /** Concurrent runs the queue allows. Extra runs wait, they do not fail. */
+    slots: number;
+    /** The jobs that have runs in the window. */
+    jobs: UpcomingJob[];
+    /** Oldest first. */
+    runs: UpcomingRun[];
+    conflicts: ScheduleConflict[];
+    /** True when a very frequent job has more runs in the window than are listed. */
+    truncated: boolean;
+}
+
 export interface DashboardOverview {
     health: DashboardHealth;
     kpis: DashboardKpis;
@@ -113,4 +151,5 @@ export interface DashboardOverview {
     jobs: { rows: DashboardJobRow[]; total: number };
     destinations: { entries: StorageVolumeEntry[]; updatedAt: string | null };
     calendar: { days: CalendarDay[]; today: string };
+    upcoming: UpcomingSchedule;
 }

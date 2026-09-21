@@ -19,6 +19,7 @@ const NOW = new Date("2026-09-21T10:00:00.000Z");
 function aggregates(overrides: Partial<Aggregates> = {}): Aggregates {
     return {
         timezone: "UTC",
+        maxConcurrentJobs: 1,
         activity: [
             { date: "Sep 20", completed: 4, failed: 0, partial: 0, running: 0, pending: 0, cancelled: 0 },
             // Five runs were live when the cache was filled. They have finished since.
@@ -161,6 +162,23 @@ describe("getDashboardOverview", () => {
         expect(prismaMock.adapterConfig.count).toHaveBeenCalledWith({
             where: { type: { in: ["database", "storage"] }, lastStatus: "OFFLINE" },
         });
+    });
+
+    it("builds the upcoming runs from the enabled schedules only", async () => {
+        const { upcoming } = await getDashboardOverview();
+
+        expect(upcoming.windowStart).toBe(NOW.toISOString());
+        expect(upcoming.slots).toBe(1);
+        // The paused job is left out. The other two run at 01:00 and 02:00, twice within 48 hours.
+        expect(upcoming.jobs.map((job) => job.id).sort()).toEqual(["files", "nightly"]);
+        expect(upcoming.runs.map((run) => run.at)).toEqual([
+            "2026-09-22T01:00:00.000Z",
+            "2026-09-22T02:00:00.000Z",
+            "2026-09-23T01:00:00.000Z",
+            "2026-09-23T02:00:00.000Z",
+        ]);
+        // files failed its last run.
+        expect(upcoming.jobs.find((job) => job.id === "files")?.likelyToFail).toBe(true);
     });
 
     it("compares stored backups and storage with the same day a week earlier", async () => {

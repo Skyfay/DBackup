@@ -41,6 +41,11 @@ export default function OverviewLoading() {
                 ))}
             </div>
 
+            <div className={cn(panel, "space-y-3 p-4 md:p-5")}>
+                <Skeleton className="h-4 w-36" />
+                <Skeleton className="h-24 w-full" />
+            </div>
+
             <div className="grid gap-4 md:gap-6 xl:grid-cols-3">
                 <div className={cn(panel, "space-y-4 p-4 md:p-5 xl:col-span-2")}>
                     <Skeleton className="h-4 w-32" />

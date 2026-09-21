@@ -13,6 +13,9 @@ import { JobsList } from "./jobs-list";
 
 type View = "executions" | "jobs";
 
+const RANGES = [14, 30, 90] as const;
+type Range = (typeof RANGES)[number];
+
 interface ActivityPanelProps {
     activity: ActivityDataPoint[];
     executions: LatestJobEntry[];
@@ -26,6 +29,8 @@ interface ActivityPanelProps {
 /** Runs per day on top, and below it a switch between the latest executions and the jobs. */
 export function ActivityPanel({ activity, executions, jobs, canViewHistory, canViewJobs, canExecute, className }: ActivityPanelProps) {
     const [view, setView] = useState<View>("executions");
+    const [range, setRange] = useState<Range>(14);
+    const shown = activity.slice(-range);
 
     const heading = view === "executions"
         ? { title: "Latest executions", description: `The ${executions.length} most recent runs` }
@@ -40,11 +45,20 @@ export function ActivityPanel({ activity, executions, jobs, canViewHistory, canV
                 <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
                     <div>
                         <h2 className="font-semibold">Jobs activity</h2>
-                        <p className="text-sm text-muted-foreground">Last {activity.length} days</p>
+                        <p className="text-sm text-muted-foreground">Last {range} days</p>
                     </div>
-                    <ActivityLegend data={activity} />
+                    <Tabs value={String(range)} onValueChange={(value) => setRange(Number(value) as Range)}>
+                        <TabsList className="h-8">
+                            {RANGES.map((days) => (
+                                <TabsTrigger key={days} value={String(days)} className="px-2.5 text-xs">
+                                    {days}d
+                                </TabsTrigger>
+                            ))}
+                        </TabsList>
+                    </Tabs>
                 </div>
-                <ActivityChart data={activity} />
+                <ActivityChart data={shown} />
+                <ActivityLegend data={shown} />
             </div>
 
             <Tabs value={view} onValueChange={(value) => setView(value as View)} className="gap-0 border-t">

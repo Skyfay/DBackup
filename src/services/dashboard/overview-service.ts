@@ -7,10 +7,15 @@ import { getLatestJobs, type ActivityDataPoint } from "@/services/dashboard-serv
 import { AGGREGATES_TTL_MS, RUNS_PER_JOB, getAggregates, toRunSummary } from "./aggregates";
 import { cached } from "./cache";
 import { deriveHealth, extractLastError, latestFinishedRun, mergeRuns } from "./health";
+import { buildUpcomingSchedule } from "./schedule";
 import { failedTrend, successRateTrend, valueDaysAgo } from "./trends";
-import type { DashboardHealth, DashboardJobRow, DashboardOverview, RunSummary } from "./types";
+import type { DashboardHealth, DashboardJobRow, DashboardOverview, RunSummary, UnhealthyJob } from "./types";
 
 const JOB_ROWS = 8;
+/** Unhealthy jobs the banner shows with their own error and actions. */
+const BANNER_JOBS = 3;
+/** The KPI sparklines cover two weeks, whatever range the activity chart shows. */
+const TREND_DAYS = 14;
 const LATEST_EXECUTIONS = 12;
 /** The adapter types the health check pings. Notification channels are not checked. */
 const HEALTH_CHECKED_TYPES = ["database", "storage"];
@@ -86,29 +91,33 @@ function withLiveActivity(activity: ActivityDataPoint[], liveRuns: RunSummary[],
     return days;
 }
 
-/** Adds the error line and last clean run to the job the banner features. Cached per failed run. */
-async function withFailureDetails(health: DashboardHealth): Promise<DashboardHealth> {
-    if (health.state !== "failing" && health.state !== "degraded") return health;
-
-    const [featured, ...rest] = health.jobs;
-    const details = await cached(`failure:${featured.executionId}`, AGGREGATES_TTL_MS, async () => {
+/** Adds the error line and last clean run to a job the banner lists. Cached per failed run. */
+function withJobDetails(job: UnhealthyJob): Promise<UnhealthyJob> {
+    return cached(`failure:${job.executionId}`, AGGREGATES_TTL_MS, async () => {
         const [execution, lastSuccess] = await Promise.all([
-            prisma.execution.findUnique({ where: { id: featured.executionId }, select: { logs: true } }),
-            featured.lastSuccessAt
+            prisma.execution.findUnique({ where: { id: job.executionId }, select: { logs: true } }),
+            job.lastSuccessAt
                 ? null
                 : prisma.execution.findFirst({
-                    where: { jobId: featured.jobId, type: "Backup", status: "Success" },
+                    where: { jobId: job.jobId, type: "Backup", status: "Success" },
                     orderBy: { startedAt: "desc" },
                     select: { startedAt: true },
                 }),
         ]);
         return {
+            ...job,
             error: extractLastError(execution?.logs),
-            lastSuccessAt: featured.lastSuccessAt ?? lastSuccess?.startedAt.toISOString() ?? null,
+            lastSuccessAt: job.lastSuccessAt ?? lastSuccess?.startedAt.toISOString() ?? null,
         };
     });
+}
 
-    return { ...health, jobs: [{ ...featured, ...details }, ...rest] };
+/** The banner gives each of the first few unhealthy jobs its own row, the rest are counted. */
+async function withFailureDetails(health: DashboardHealth): Promise<DashboardHealth> {
+    if (health.state !== "failing" && health.state !== "degraded") return health;
+
+    const listed = await Promise.all(health.jobs.slice(0, BANNER_JOBS).map(withJobDetails));
+    return { ...health, jobs: [...listed, ...health.jobs.slice(BANNER_JOBS)] };
 }
 
 /**
@@ -162,13 +171,24 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
     rows.sort(compareRows);
 
     const health = await withFailureDetails(deriveHealth(rows, runsByJob));
+    const failingJobIds = new Set(health.state === "failing" ? health.jobs.map((job) => job.jobId) : []);
+    const upcoming = buildUpcomingSchedule(
+        jobs
+            .filter((job) => job.enabled && effectiveSchedule(job))
+            .map((job) => ({ id: job.id, name: job.name, schedule: effectiveSchedule(job) })),
+        runsByJob,
+        failingJobIds,
+        aggregates.maxConcurrentJobs,
+        aggregates.timezone,
+        new Date(),
+    );
     const activity = withLiveActivity(aggregates.activity, liveRuns, aggregates.timezone);
     const { storage } = aggregates;
 
     return {
         health,
         kpis: {
-            successRate: { ...aggregates.successRate, trend: successRateTrend(activity) },
+            successRate: { ...aggregates.successRate, trend: successRateTrend(activity.slice(-TREND_DAYS)) },
             backupsStored: {
                 value: storage.entries.reduce((sum, entry) => sum + entry.count, 0),
                 weekAgo: valueDaysAgo(storage.count, 7),
@@ -184,7 +204,7 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
                 value: aggregates.failed24h,
                 total: aggregates.total24h,
                 lastFailureAt: aggregates.lastFailureAt,
-                trend: failedTrend(activity),
+                trend: failedTrend(activity.slice(-TREND_DAYS)),
             },
         },
         strip: {
@@ -204,5 +224,6 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
         jobs: { rows: rows.slice(0, JOB_ROWS), total: jobs.length },
         destinations: { entries: storage.entries, updatedAt: storage.updatedAt },
         calendar: aggregates.calendar,
+        upcoming,
     };
 }

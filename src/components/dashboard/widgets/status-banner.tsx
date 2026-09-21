@@ -10,6 +10,8 @@ import { RelativeTime } from "./relative-time";
 import { useRunJob } from "./use-run-job";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** Matches the number of jobs the service fills with error details. */
+const LISTED_JOBS = 3;
 
 const TONES = {
     healthy: { bar: "bg-success", icon: "bg-success/12 text-success", frame: "bg-card", Icon: CheckCircle2 },
@@ -18,6 +20,8 @@ const TONES = {
     empty: { bar: "bg-muted-foreground/40", icon: "bg-muted text-muted-foreground", frame: "bg-card", Icon: Plus },
 } as const;
 
+type Unhealthy = "failing" | "degraded";
+
 interface StatusBannerProps {
     health: DashboardHealth;
     canExecute: boolean;
@@ -25,39 +29,66 @@ interface StatusBannerProps {
     canManageJobs: boolean;
 }
 
-function unhealthyTitle(state: "failing" | "degraded", jobs: UnhealthyJob[]): string {
-    const [featured] = jobs;
-    if (jobs.length > 1) {
-        return state === "failing" ? `${jobs.length} jobs are failing` : `${jobs.length} jobs finished partially`;
-    }
+/** "has failed 2 of its last 12 runs", or the partial equivalent. */
+function outcomeText(state: Unhealthy, job: UnhealthyJob): string {
     if (state === "degraded") {
-        return featured.badRuns > 1
-            ? `${featured.jobName} finished partially in ${featured.badRuns} of its last ${featured.recentRuns} runs`
-            : `${featured.jobName} finished partially`;
+        return job.badRuns > 1 ? `finished partially in ${job.badRuns} of its last ${job.recentRuns} runs` : "finished partially";
     }
-    return featured.badRuns > 1
-        ? `${featured.jobName} has failed ${featured.badRuns} of its last ${featured.recentRuns} runs`
-        : `${featured.jobName} failed its last run`;
+    return job.badRuns > 1 ? `has failed ${job.badRuns} of its last ${job.recentRuns} runs` : "failed its last run";
 }
 
-function othersList(jobs: UnhealthyJob[]): string {
-    const names = jobs.map((job) => job.jobName);
-    if (names.length <= 2) return names.join(" and ");
-    return `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`;
+function LastClean({ job }: { job: UnhealthyJob }) {
+    return job.lastSuccessAt ? <>Last clean run <RelativeTime date={job.lastSuccessAt} />.</> : <>No clean run on record.</>;
 }
 
-/** The banner at the top of the dashboard: all good, or which job needs attention and why. */
+interface JobActionsProps {
+    job: UnhealthyJob;
+    canViewHistory: boolean;
+    canExecute: boolean;
+    runJob: (jobId: string, jobName: string) => void;
+    startingJobId: string | null;
+    /** The single-job banner has one prominent run button. In a list of jobs every button stays quiet. */
+    primary: boolean;
+}
+
+function JobActions({ job, canViewHistory, canExecute, runJob, startingJobId, primary }: JobActionsProps) {
+    if (!canViewHistory && !canExecute) return null;
+    return (
+        <div className="flex shrink-0 gap-2">
+            {canViewHistory && (
+                <Button asChild variant="outline" size="sm" className="flex-1 sm:flex-none">
+                    <Link href={`/dashboard/history?executionId=${job.executionId}`}>View logs</Link>
+                </Button>
+            )}
+            {canExecute && (
+                <Button
+                    variant={primary ? "default" : "outline"}
+                    size="sm"
+                    className="flex-1 sm:flex-none"
+                    disabled={startingJobId !== null}
+                    onClick={() => runJob(job.jobId, job.jobName)}
+                >
+                    {startingJobId === job.jobId ? <Loader2 className="animate-spin" /> : <Play />}
+                    Run now
+                </Button>
+            )}
+        </div>
+    );
+}
+
+/** The banner at the top of the dashboard: all good, or which jobs need attention and why. */
 export function StatusBanner({ health, canExecute, canViewHistory, canManageJobs }: StatusBannerProps) {
     const { runJob, startingJobId } = useRunJob();
+    const tone = TONES[health.state];
+    const actionProps = { canViewHistory, canExecute, runJob, startingJobId };
 
     let title: string;
-    let detail: React.ReactNode;
-    let error: string | null = null;
+    let body: React.ReactNode = null;
     let actions: React.ReactNode = null;
 
     if (health.state === "empty") {
         title = "No backup jobs yet";
-        detail = "Create a job to start backing up your databases.";
+        body = <p className="text-sm text-muted-foreground">Create a job to start backing up your databases.</p>;
         if (canManageJobs) {
             actions = (
                 <Button asChild size="sm">
@@ -69,8 +100,8 @@ export function StatusBanner({ health, canExecute, canViewHistory, canManageJobs
         title = "All backups healthy";
         const { lastRunAt, nextRun } = health;
         const nextIsToday = nextRun && new Date(nextRun.at).getTime() - Date.now() < DAY_MS;
-        detail = (
-            <>
+        body = (
+            <p className="text-sm text-muted-foreground">
                 {lastRunAt ? <>Last run <RelativeTime date={lastRunAt} />. </> : "No finished runs yet. "}
                 {nextRun ? (
                     <>
@@ -80,42 +111,55 @@ export function StatusBanner({ health, canExecute, canViewHistory, canManageJobs
                 ) : (
                     "Nothing is scheduled."
                 )}
+            </p>
+        );
+    } else if (health.jobs.length === 1) {
+        const [job] = health.jobs;
+        title = `${job.jobName} ${outcomeText(health.state, job)}`;
+        body = (
+            <>
+                {job.error && <p className="line-clamp-2 text-sm wrap-anywhere text-muted-foreground">{job.error}</p>}
+                <p className="text-sm text-muted-foreground"><LastClean job={job} /></p>
             </>
         );
+        actions = <JobActions job={job} {...actionProps} primary />;
     } else {
-        const [featured, ...others] = health.jobs;
-        title = unhealthyTitle(health.state, health.jobs);
-        error = featured.error;
-        detail = (
+        const state = health.state;
+        const listed = health.jobs.slice(0, LISTED_JOBS);
+        const more = health.jobs.length - listed.length;
+        title = state === "failing" ? `${health.jobs.length} jobs are failing` : `${health.jobs.length} jobs finished partially`;
+        body = (
             <>
-                {health.jobs.length > 1 && <>Latest is <span className="font-medium text-foreground">{featured.jobName}</span>. </>}
-                {featured.lastSuccessAt ? <>Last clean run <RelativeTime date={featured.lastSuccessAt} />.</> : "No clean run on record."}
-                {others.length > 0 && <> Also affected: {othersList(others)}.</>}
-            </>
-        );
-        actions = (
-            <>
-                {canViewHistory && (
-                    <Button asChild variant="outline" size="sm" className="flex-1 sm:flex-none">
-                        <Link href={`/dashboard/history?executionId=${featured.executionId}`}>View logs</Link>
-                    </Button>
-                )}
-                {canExecute && (
-                    <Button
-                        size="sm"
-                        className="flex-1 sm:flex-none"
-                        disabled={startingJobId !== null}
-                        onClick={() => runJob(featured.jobId, featured.jobName)}
-                    >
-                        {startingJobId === featured.jobId ? <Loader2 className="animate-spin" /> : <Play />}
-                        Run now
-                    </Button>
+                <ul className="mt-1 divide-y divide-border/60">
+                    {listed.map((job) => (
+                        <li key={job.jobId} className="flex flex-col gap-2 py-2.5 sm:flex-row sm:items-center sm:gap-4">
+                            <div className="min-w-0 flex-1 space-y-0.5">
+                                <p className="text-sm">
+                                    <span className="font-medium">{job.jobName}</span>{" "}
+                                    <span className="text-muted-foreground">{outcomeText(state, job)}</span>
+                                </p>
+                                {job.error && <p className="line-clamp-1 text-xs wrap-anywhere text-muted-foreground">{job.error}</p>}
+                                <p className="text-xs text-muted-foreground"><LastClean job={job} /></p>
+                            </div>
+                            <JobActions job={job} {...actionProps} primary={false} />
+                        </li>
+                    ))}
+                </ul>
+                {more > 0 && (
+                    <p className="text-sm text-muted-foreground">
+                        And {more} more
+                        {canViewHistory && (
+                            <>
+                                {" in "}
+                                <Link href="/dashboard/history" className="underline underline-offset-4 hover:text-foreground">History</Link>
+                            </>
+                        )}
+                        .
+                    </p>
                 )}
             </>
         );
     }
-
-    const tone = TONES[health.state];
 
     return (
         <div
@@ -129,13 +173,12 @@ export function StatusBanner({ health, canExecute, canViewHistory, canManageJobs
                 <div className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg", tone.icon)}>
                     <tone.Icon className="size-5" aria-hidden="true" />
                 </div>
-                <div className="min-w-0 space-y-0.5">
+                <div className="min-w-0 flex-1 space-y-0.5">
                     <p className="font-semibold leading-snug">{title}</p>
-                    {error && <p className="line-clamp-2 text-sm wrap-anywhere text-muted-foreground">{error}</p>}
-                    <p className="text-sm text-muted-foreground">{detail}</p>
+                    {body}
                 </div>
             </div>
-            {actions && <div className="flex shrink-0 gap-2 sm:ml-auto">{actions}</div>}
+            {actions && <div className="flex shrink-0 sm:ml-auto">{actions}</div>}
         </div>
     );
 }

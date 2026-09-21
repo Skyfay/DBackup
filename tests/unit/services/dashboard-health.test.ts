@@ -58,6 +58,36 @@ describe("deriveHealth", () => {
         }]);
     });
 
+    it("keeps a job failing when a cancelled run followed its failure", () => {
+        const runs = new Map([
+            ["docker", [
+                run("d2", "Cancelled", "2026-09-21T22:01:31.000Z"),
+                run("d1", "Failed", "2026-09-21T22:00:20.000Z"),
+                run("d0", "Success", "2026-09-20T22:00:00.000Z"),
+            ]],
+        ]);
+
+        const health = deriveHealth([job("docker")], runs);
+
+        expect(health.state).toBe("failing");
+        if (health.state !== "failing") return;
+        expect(health.jobs[0]).toMatchObject({ executionId: "d1", badRuns: 1, recentRuns: 2 });
+    });
+
+    it("lists every failing job, not only the most recent one", () => {
+        const runs = new Map([
+            ["test", [run("t1", "Failed", "2026-09-21T22:00:00.000Z")]],
+            ["docker", [run("d2", "Cancelled", "2026-09-21T22:01:31.000Z"), run("d1", "Failed", "2026-09-21T22:00:20.000Z")]],
+            ["fine", [run("f1", "Success", "2026-09-21T22:00:00.000Z")]],
+        ]);
+
+        const health = deriveHealth([job("test"), job("docker"), job("fine")], runs);
+
+        expect(health.state).toBe("failing");
+        if (health.state !== "failing") return;
+        expect(health.jobs.map((entry) => entry.jobId)).toEqual(["docker", "test"]);
+    });
+
     it("leaves a paused job out, so an old failure cannot keep the banner red", () => {
         const runs = new Map([["a", [run("a1", "Failed", "2026-09-21T02:00:00.000Z")]]]);
 

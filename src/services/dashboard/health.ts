@@ -1,6 +1,8 @@
 import type { DashboardHealth, RunSummary, UnhealthyJob } from "./types";
 
 const FINISHED_STATUSES = new Set(["Success", "Failed", "Partial", "Cancelled"]);
+/** Runs that say whether a job works. A cancelled run was stopped, it neither passed nor failed. */
+const OUTCOME_STATUSES = new Set(["Success", "Failed", "Partial"]);
 const LIVE_STATUSES = new Set(["Running", "Pending"]);
 const MAX_ERROR_LENGTH = 300;
 
@@ -15,9 +17,14 @@ export function isLiveStatus(status: string): boolean {
     return LIVE_STATUSES.has(status);
 }
 
-/** The newest finished run. Expects runs newest first. */
+/** The newest finished run, cancelled ones included. Expects runs newest first. */
 export function latestFinishedRun(runs: RunSummary[]): RunSummary | null {
     return runs.find((run) => FINISHED_STATUSES.has(run.status)) ?? null;
+}
+
+/** The newest run that passed, failed or finished partially. Expects runs newest first. */
+export function latestOutcome(runs: RunSummary[]): RunSummary | null {
+    return runs.find((run) => OUTCOME_STATUSES.has(run.status)) ?? null;
 }
 
 /**
@@ -32,15 +39,15 @@ export function mergeRuns(history: RunSummary[], live: RunSummary[], limit: numb
 }
 
 function toUnhealthyJob(job: HealthJob, runs: RunSummary[], trigger: RunSummary): UnhealthyJob {
-    const finished = runs.filter((run) => FINISHED_STATUSES.has(run.status));
+    const outcomes = runs.filter((run) => OUTCOME_STATUSES.has(run.status));
     return {
         jobId: job.id,
         jobName: job.name,
         executionId: trigger.id,
         failedAt: trigger.startedAt,
-        badRuns: finished.filter((run) => run.status === trigger.status).length,
-        recentRuns: finished.length,
-        lastSuccessAt: finished.find((run) => run.status === "Success")?.startedAt ?? null,
+        badRuns: outcomes.filter((run) => run.status === trigger.status).length,
+        recentRuns: outcomes.length,
+        lastSuccessAt: outcomes.find((run) => run.status === "Success")?.startedAt ?? null,
         error: null,
     };
 }
@@ -48,9 +55,10 @@ function toUnhealthyJob(job: HealthJob, runs: RunSummary[], trigger: RunSummary)
 /**
  * Decides what the banner at the top of the dashboard says.
  *
- * A job counts against health while it is enabled and its newest finished run failed or finished
- * partially. Failures outrank partial runs, and within each group the most recent problem comes
- * first. Disabled jobs are left out so a paused job cannot keep the banner red.
+ * A job counts against health while it is enabled and its newest outcome failed or finished
+ * partially. Cancelled runs are skipped: a failure followed by a cancelled run is still a failure.
+ * Failures outrank partial runs, and within each group the most recent problem comes first.
+ * Disabled jobs are left out so a paused job cannot keep the banner red.
  *
  * @param runsByJob Recent runs per job id, newest first.
  */
@@ -63,15 +71,16 @@ export function deriveHealth(jobs: HealthJob[], runsByJob: Map<string, RunSummar
 
     for (const job of jobs) {
         const runs = runsByJob.get(job.id) ?? [];
-        const latest = latestFinishedRun(runs);
-        if (!latest) continue;
+        const finished = latestFinishedRun(runs);
+        if (!finished) continue;
 
-        const finishedAt = latest.endedAt ?? latest.startedAt;
+        const finishedAt = finished.endedAt ?? finished.startedAt;
         if (!lastRunAt || finishedAt > lastRunAt) lastRunAt = finishedAt;
 
-        if (!job.enabled) continue;
-        if (latest.status === "Failed") failing.push(toUnhealthyJob(job, runs, latest));
-        else if (latest.status === "Partial") degraded.push(toUnhealthyJob(job, runs, latest));
+        const outcome = latestOutcome(runs);
+        if (!job.enabled || !outcome) continue;
+        if (outcome.status === "Failed") failing.push(toUnhealthyJob(job, runs, outcome));
+        else if (outcome.status === "Partial") degraded.push(toUnhealthyJob(job, runs, outcome));
     }
 
     const newestFirst = (a: UnhealthyJob, b: UnhealthyJob) => b.failedAt.localeCompare(a.failedAt);

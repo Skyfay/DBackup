@@ -93,7 +93,7 @@ export function NavUser({ groupName }: NavUserProps) {
                             {avatar}
                             <div className="grid flex-1 text-left leading-tight">
                                 <span className="truncate text-sidebar-foreground">{user.name}</span>
-                                <span className="truncate font-mono text-[11px] text-sidebar-foreground/55">{groupName || user.email}</span>
+                                <span className="truncate font-mono text-[11px] text-sidebar-foreground/60 dark:text-sidebar-foreground/55">{groupName || user.email}</span>
                             </div>
                             <MoreHorizontal className="ml-auto" />
                         </SidebarMenuButton>

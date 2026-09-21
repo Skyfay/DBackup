@@ -5,6 +5,7 @@
 
 @theme inline {
   --color-background: var(--background);
+  --color-page: var(--page);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
@@ -50,8 +51,9 @@
 
 :root {
   --radius: 0.625rem;
-  /* Light Theme - zinc neutrals, white surfaces on an off-white page */
-  --background: oklch(0.985 0 0); /* zinc-50 page */
+  /* Light Theme - same structure as dark: a gray page with white surfaces on top */
+  --background: oklch(1 0 0); /* White, the base for dialogs and controls */
+  --page: oklch(0.967 0.001 286.4); /* #f4f4f5 dashboard canvas */
   --foreground: oklch(0.141 0.004 285.8); /* zinc-950 */
   --card: oklch(1 0 0); /* White surface */
   --card-foreground: oklch(0.141 0.004 285.8);
@@ -59,17 +61,17 @@
   --popover-foreground: oklch(0.141 0.004 285.8);
   --primary: oklch(0.21 0.006 285.9); /* zinc-900 buttons */
   --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.967 0.001 286.4); /* zinc-100 */
+  --secondary: oklch(0.967 0.001 286.4); /* #f4f4f5 */
   --secondary-foreground: oklch(0.21 0.006 285.9);
   --muted: oklch(0.967 0.001 286.4);
-  --muted-foreground: oklch(0.552 0.014 285.9); /* zinc-500 */
+  --muted-foreground: oklch(0.51 0.014 286); /* #65656e, readable on white and on the page */
   --accent: oklch(0.967 0.001 286.4);
   --accent-foreground: oklch(0.21 0.006 285.9);
   --destructive: oklch(0.577 0.245 27.325); /* Red */
   --success: oklch(0.65 0.17 160); /* Emerald for success states */
   --info: oklch(0.55 0.15 250); /* Darker Blue for info/running */
-  --border: oklch(0.92 0.004 286.3); /* zinc-200 */
-  --input: oklch(0.92 0.004 286.3);
+  --border: oklch(0.92 0.004 286.3); /* #e4e4e7 zinc-200 */
+  --input: oklch(0.871 0.006 286.3); /* #d4d4d8 zinc-300 */
   --ring: oklch(0.15 0 0); /* Dark ring, strong enough for focus outlines */
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
@@ -80,7 +82,7 @@
   --sidebar-foreground: oklch(0.141 0.004 285.8);
   --sidebar-primary: oklch(0.21 0.006 285.9);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.967 0.001 286.4);
+  --sidebar-accent: oklch(0.967 0.001 286.4); /* Same gray as the page */
   --sidebar-accent-foreground: oklch(0.21 0.006 285.9);
   --sidebar-border: oklch(0.92 0.004 286.3);
   --sidebar-ring: oklch(0.15 0 0);
@@ -89,6 +91,7 @@
 .dark {
   /* Dark Theme - zinc neutrals, raised surfaces on a darker page */
   --background: oklch(0.169 0.004 286); /* #0f0f11 page */
+  --page: var(--background); /* Dark mode has no separate canvas color */
   --foreground: oklch(0.985 0 0); /* #fafafa */
   --card: oklch(0.219 0.004 286.1); /* #1a1a1c */
   --card-foreground: oklch(0.985 0 0);

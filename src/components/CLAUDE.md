@@ -135,6 +135,8 @@ Use semantic tokens. They are already theme-aware:
 
 `text-muted-foreground` is used 600+ times here - it is the default for secondary text, helper copy, and icons that are not the focus.
 
+`bg-page` is the dashboard canvas behind the cards: gray in light mode, identical to `bg-background` in dark mode. `bg-background` stays white in light mode because dialogs, active tabs, and outline buttons build on it, so never use it to paint a page-level area.
+
 **Raw palette colors (`text-green-600`, `bg-red-100`, ...) must always ship a `dark:` variant.** A `bg-green-100 text-green-600` with no dark variant is unreadable in dark mode, and that bug already exists in a couple of older files. Correct form:
 
 ```tsx

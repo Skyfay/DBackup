@@ -58,7 +58,7 @@ export default async function DashboardLayout({
                 showQuickSetup={showQuickSetup}
                 groupName={userWithGroup?.group?.name}
             />
-            <SidebarInset className="min-w-0 overflow-hidden">
+            <SidebarInset className="min-w-0 overflow-hidden bg-page">
                 <Header />
                 <ScrollArea className="min-h-0 flex-1">
                     <div className="p-6">

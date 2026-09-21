@@ -1,212 +1,102 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
-import { format, parseISO, startOfWeek, addDays } from "date-fns";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import type { CalendarDayData } from "@/services/dashboard-service";
+import { useMemo } from "react";
+import { addDays, format, parseISO, startOfWeek, subWeeks } from "date-fns";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
+import type { CalendarDay } from "@/services/dashboard/types";
+
+const WEEKS = 12;
 
 interface BackupCalendarProps {
-  data: CalendarDayData[];
-  availableYears: number[];
+    days: CalendarDay[];
+    /** yyyy-MM-dd in the scheduler timezone, the last filled cell. */
+    today: string;
+    className?: string;
 }
 
-function getCellColor(day: CalendarDayData | undefined): string {
-  if (!day || day.total === 0) return "bg-muted";
-  if (day.failed > 0) return "bg-red-400 dark:bg-red-600";
-  if (day.partial > 0) return "bg-yellow-400 dark:bg-yellow-500";
-  if (day.completed >= 4) return "bg-green-600 dark:bg-green-500";
-  if (day.completed >= 2) return "bg-green-400 dark:bg-green-600";
-  return "bg-green-200 dark:bg-green-800";
+interface Cell {
+    key: string;
+    date: Date;
+    day: CalendarDay | undefined;
+    future: boolean;
 }
 
-function buildTooltipLabel(day: CalendarDayData | undefined, date: Date): string {
-  const dateStr = format(date, "EEEE, MMM d, yyyy");
-  if (!day || day.total === 0) return `${dateStr} - No backups`;
-  const parts: string[] = [];
-  if (day.completed > 0) parts.push(`${day.completed} successful`);
-  if (day.failed > 0) parts.push(`${day.failed} failed`);
-  if (day.partial > 0) parts.push(`${day.partial} partial`);
-  return `${dateStr} - ${parts.join(", ")}`;
+function cellClassName(cell: Cell, maxCompleted: number): string {
+    const { day } = cell;
+    if (cell.future) return "border border-dashed border-border";
+    if (!day || day.total === 0) return "bg-muted";
+    if (day.failed > 0) return "bg-destructive/80";
+    if (day.partial > 0) return "bg-warning/80";
+    if (day.completed === 0) return "bg-muted";
+    const level = Math.ceil((day.completed / Math.max(maxCompleted, 1)) * 3);
+    if (level >= 3) return "bg-success";
+    return level === 2 ? "bg-success/60" : "bg-success/30";
 }
 
-const DAY_LABELS = ["Mon", "", "Wed", "", "Fri", "", "Sun"];
-
-function buildGrid(data: CalendarDayData[]): {
-  weeks: Date[][];
-  monthLabels: { weekIndex: number; label: string }[];
-} {
-  if (data.length === 0) return { weeks: [], monthLabels: [] };
-
-  const firstDate = parseISO(data[0].date);
-  const lastDate = parseISO(data[data.length - 1].date);
-
-  const gridStart = startOfWeek(firstDate, { weekStartsOn: 1 });
-
-  const allDays: Date[] = [];
-  let cursor = gridStart;
-  while (cursor <= lastDate) {
-    allDays.push(cursor);
-    cursor = addDays(cursor, 1);
-  }
-
-  const weeks: Date[][] = [];
-  for (let i = 0; i < allDays.length; i += 7) {
-    weeks.push(allDays.slice(i, i + 7));
-  }
-
-  const seenMonths = new Set<string>();
-  const monthLabels: { weekIndex: number; label: string }[] = [];
-  for (let wi = 0; wi < weeks.length; wi++) {
-    for (const day of weeks[wi]) {
-      if (day.getDate() === 1) {
-        const monthKey = format(day, "yyyy-MM");
-        if (!seenMonths.has(monthKey)) {
-          seenMonths.add(monthKey);
-          monthLabels.push({ weekIndex: wi, label: format(day, "MMM") });
-        }
-      }
-    }
-  }
-
-  return { weeks, monthLabels };
+function describe(cell: Cell): string {
+    // Calendar days are plain dates in the scheduler timezone, so they are formatted as they are.
+    const date = format(cell.date, "EEE, MMM d");
+    if (cell.future) return date;
+    const { day } = cell;
+    if (!day || day.total === 0) return `${date}: no backups`;
+    const parts = [
+        day.completed > 0 && `${day.completed} successful`,
+        day.failed > 0 && `${day.failed} failed`,
+        day.partial > 0 && `${day.partial} partial`,
+    ].filter(Boolean);
+    return `${date}: ${parts.join(", ") || `${day.total} started`}`;
 }
 
-export function BackupCalendar({ data: initialData, availableYears }: BackupCalendarProps) {
-  // "last" = rolling 12 months; a year string = specific calendar year
-  const [selectedValue, setSelectedValue] = useState<string>("last");
-  const [calendarData, setCalendarData] = useState<CalendarDayData[]>(initialData);
-  const [isPending, startTransition] = useTransition();
+/** Backups per day over the last twelve weeks, one column per week from Monday to Sunday. */
+export function BackupCalendar({ days, today, className }: BackupCalendarProps) {
+    const { cells, maxCompleted } = useMemo(() => {
+        const byDate = new Map(days.map((day) => [day.date, day]));
+        const firstMonday = subWeeks(startOfWeek(parseISO(today), { weekStartsOn: 1 }), WEEKS - 1);
+        const result: Cell[] = Array.from({ length: WEEKS * 7 }, (_, i) => {
+            const date = addDays(firstMonday, i);
+            const key = format(date, "yyyy-MM-dd");
+            return { key, date, day: byDate.get(key), future: key > today };
+        });
+        return { cells: result, maxCompleted: Math.max(0, ...days.map((day) => day.completed)) };
+    }, [days, today]);
 
-  function handleYearChange(value: string) {
-    setSelectedValue(value);
-    startTransition(async () => {
-      const url = value === "last"
-        ? "/api/dashboard/calendar"
-        : `/api/dashboard/calendar?year=${value}`;
-      const res = await fetch(url);
-      if (res.ok) {
-        const json = await res.json();
-        setCalendarData(json.data);
-      }
-    });
-  }
+    return (
+        <div className={cn("min-w-0 rounded-xl border bg-card p-4 text-card-foreground shadow-sm md:p-5", className)}>
+            <h2 className="font-semibold">Backup calendar</h2>
+            <p className="text-sm text-muted-foreground">Last {WEEKS} weeks</p>
 
-  const dayMap = useMemo(() => {
-    const m = new Map<string, CalendarDayData>();
-    for (const d of calendarData) m.set(d.date, d);
-    return m;
-  }, [calendarData]);
-
-  const { weeks, monthLabels } = useMemo(() => buildGrid(calendarData), [calendarData]);
-
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium">Backup Calendar</CardTitle>
-        <Select value={selectedValue} onValueChange={handleYearChange} disabled={isPending}>
-          <SelectTrigger className="w-36 h-7 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="last" className="text-xs">Last 12 months</SelectItem>
-            {[...availableYears].reverse().map((y) => (
-              <SelectItem key={y} value={String(y)} className="text-xs">
-                {y}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </CardHeader>
-      <CardContent>
-        {weeks.length === 0 ? (
-          <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
-            No backup data{selectedValue !== "last" ? ` for ${selectedValue}` : ""}.
-          </div>
-        ) : (
-          <TooltipProvider delayDuration={100}>
-            <div className={`overflow-x-auto pb-2 transition-opacity duration-150 ${isPending ? "opacity-50" : "opacity-100"}`}>
-              <div className="flex gap-1" style={{ minWidth: `${weeks.length * 14 + 28}px` }}>
-                {/* Day-of-week labels */}
-                <div className="flex shrink-0 flex-col gap-0.5 pt-5">
-                  {DAY_LABELS.map((label, i) => (
-                    <div key={i} className="flex h-3 w-6 items-center justify-end pr-1">
-                      <span className="text-[9px] leading-none text-muted-foreground">{label}</span>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Grid columns */}
-                <div className="flex flex-col">
-                  {/* Month labels */}
-                  <div className="relative mb-1 h-4" style={{ width: `${weeks.length * 14}px` }}>
-                    {monthLabels.map(({ weekIndex, label }) => (
-                      <span
-                        key={label + weekIndex}
-                        className="absolute text-[10px] leading-none text-muted-foreground"
-                        style={{ left: `${weekIndex * 14}px` }}
-                      >
-                        {label}
-                      </span>
-                    ))}
-                  </div>
-
-                  {/* Week columns */}
-                  <div className="flex gap-0.5">
-                    {weeks.map((week, wi) => (
-                      <div key={wi} className="flex flex-col gap-0.5">
-                        {week.map((day, di) => {
-                          const key = format(day, "yyyy-MM-dd");
-                          const entry = dayMap.get(key);
-                          return (
-                            <Tooltip key={di}>
-                              <TooltipTrigger asChild>
-                                <div className={`h-3 w-3 rounded-[2px] cursor-default ${getCellColor(entry)}`} />
-                              </TooltipTrigger>
-                              <TooltipContent side="top" className="text-xs">
-                                {buildTooltipLabel(entry, day)}
-                              </TooltipContent>
-                            </Tooltip>
-                          );
-                        })}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
+            <div className="mt-4 grid max-w-sm auto-cols-fr grid-flow-col grid-rows-7 gap-1">
+                {cells.map((cell) => (
+                    <Tooltip key={cell.key}>
+                        <TooltipTrigger asChild>
+                            <div className={cn("aspect-square rounded-[3px]", cellClassName(cell, maxCompleted))} />
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="text-xs">
+                            {describe(cell)}
+                        </TooltipContent>
+                    </Tooltip>
+                ))}
             </div>
 
-            {/* Legend */}
-            <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-              <div className="flex items-center gap-1">
-                <div className="h-3 w-3 rounded-[2px] bg-muted" />
-                <span>None</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <div className="h-3 w-3 rounded-[2px] bg-green-200 dark:bg-green-800" />
-                <span>1</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <div className="h-3 w-3 rounded-[2px] bg-green-400 dark:bg-green-600" />
-                <span>2-3</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <div className="h-3 w-3 rounded-[2px] bg-green-600 dark:bg-green-500" />
-                <span>4+</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <div className="h-3 w-3 rounded-[2px] bg-yellow-400 dark:bg-yellow-500" />
-                <span>Partial</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <div className="h-3 w-3 rounded-[2px] bg-red-400 dark:bg-red-600" />
-                <span>Failed</span>
-              </div>
+            <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1.5">
+                    Less
+                    <span className="size-3 rounded-[2px] bg-muted" />
+                    <span className="size-3 rounded-[2px] bg-success/30" />
+                    <span className="size-3 rounded-[2px] bg-success/60" />
+                    <span className="size-3 rounded-[2px] bg-success" />
+                    More
+                </span>
+                <span className="flex items-center gap-1.5">
+                    <span className="size-3 rounded-[2px] bg-warning/80" />
+                    Partial
+                </span>
+                <span className="flex items-center gap-1.5">
+                    <span className="size-3 rounded-[2px] bg-destructive/80" />
+                    Failed
+                </span>
             </div>
-          </TooltipProvider>
-        )}
-      </CardContent>
-    </Card>
-  );
+        </div>
+    );
 }

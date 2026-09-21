@@ -58,7 +58,7 @@ features:
     details: Trigger backups via REST API with fine-grained API keys. Includes ready-made cURL, Bash, and Ansible examples.
   - icon: 📊
     title: Dashboard & Analytics
-    details: Interactive charts, real-time progress tracking, 12-month Backup Calendar heatmap, storage usage history, and auto-refreshing activity feeds.
+    details: A health banner that names the failing job, trend cards, live lists of runs and jobs, storage per destination, and a 12-week Backup Calendar. Works on a phone too.
   - icon: 🗂️
     title: Database Explorer
     details: Browse databases, tables, and live data directly from DBackup. Server-side pagination, full-text search, schema inspection, deep-link URLs, and database version history tracking - for all 8 database engines.

@@ -8,6 +8,15 @@ All notable changes to DBackup are documented here.
 ### 🎨 Improvements
 
 - **ui**: The sidebar collapses to icons with the new button in the header or Ctrl+B (⌘B on macOS), and small screens get it as a slide-in menu. Both themes use a new zinc color palette, and the interface uses the Geist font on every operating system.
+- **dashboard**: The overview was rebuilt with a status banner that names a failing job and can rerun it, trend cards, a switch between the latest executions and the jobs, and a 12-week backup calendar. It works on phones, and its statistics are cached for a minute or until the next backup finishes.
+
+### 🗑️ Removed
+
+- **dashboard**: The job status donut and the year picker of the backup calendar are gone. Past years stay available through `GET /api/dashboard/calendar?year=`.
+
+### 📝 Documentation
+
+- **docs**: The start page and the data retention guide describe the new dashboard.
 
 ### 🐳 Docker
 

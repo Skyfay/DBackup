@@ -1,60 +1,55 @@
-import { StatsCards } from "@/components/dashboard/widgets/stats-cards";
-import { ActivityChart } from "@/components/dashboard/widgets/activity-chart";
+import { ActivityPanel } from "@/components/dashboard/widgets/activity-panel";
 import { BackupCalendar } from "@/components/dashboard/widgets/backup-calendar";
-import { JobStatusChart } from "@/components/dashboard/widgets/job-status-chart";
-import { StorageVolumeChart } from "@/components/dashboard/widgets/storage-volume-chart";
-import { LatestJobs } from "@/components/dashboard/widgets/latest-jobs";
 import { DashboardRefresh } from "@/components/dashboard/widgets/dashboard-refresh";
-import { DashboardBottomGrid } from "@/components/dashboard/bottom-grid";
-import {
-  getActivityData,
-  getCalendarData,
-  getAvailableCalendarYears,
-  getJobStatusDistribution,
-  getStorageVolume,
-  getStorageVolumeCacheAge,
-  getLatestJobs,
-  hasRunningJobs,
-} from "@/services/dashboard-service";
+import { KpiCards } from "@/components/dashboard/widgets/kpi-cards";
+import { StatsStrip } from "@/components/dashboard/widgets/stats-strip";
+import { StatusBanner } from "@/components/dashboard/widgets/status-banner";
+import { StorageDestinations } from "@/components/dashboard/widgets/storage-destinations";
+import { getUserPermissions } from "@/lib/auth/access-control";
+import { PERMISSIONS } from "@/lib/auth/permissions";
+import { getDashboardOverview } from "@/services/dashboard/overview-service";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  const [activityData, calendarData, availableYears, statusData, storageData, cacheUpdatedAt, latestJobs, isRunning] = await Promise.all([
-    getActivityData(14),
-    getCalendarData(12),
-    getAvailableCalendarYears(),
-    getJobStatusDistribution(),
-    getStorageVolume(),
-    getStorageVolumeCacheAge(),
-    getLatestJobs(20),
-    hasRunningJobs(),
-  ]);
+    const [overview, permissions] = await Promise.all([getDashboardOverview(), getUserPermissions()]);
 
-  return (
-    <DashboardRefresh hasRunningJobs={isRunning}>
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">Overview</h2>
-          <p className="text-muted-foreground">Welcome back. Here&apos;s what&apos;s happening with your backups today.</p>
-        </div>
+    const canViewHistory = permissions.includes(PERMISSIONS.HISTORY.READ);
+    const canViewStorage = permissions.includes(PERMISSIONS.STORAGE.READ);
+    const canViewJobs = permissions.includes(PERMISSIONS.JOBS.READ);
+    const hasLiveRuns = overview.strip.runningNow + overview.strip.queuedNow > 0;
 
-        <StatsCards />
-
-        <ActivityChart data={activityData} />
-
-        <DashboardBottomGrid
-          left={<LatestJobs data={latestJobs} />}
-          rightTop={<JobStatusChart data={statusData} />}
-          rightBottom={<StorageVolumeChart data={storageData} cacheUpdatedAt={cacheUpdatedAt} />}
-          bottomLeft={
-            <BackupCalendar
-              data={calendarData}
-              availableYears={availableYears}
-            />
-          }
-        />
-      </div>
-    </DashboardRefresh>
-  )
+    return (
+        <DashboardRefresh hasRunningJobs={hasLiveRuns}>
+            <h1 className="sr-only">Overview</h1>
+            <div className="space-y-4 md:space-y-6">
+                <StatusBanner
+                    health={overview.health}
+                    canExecute={permissions.includes(PERMISSIONS.JOBS.EXECUTE)}
+                    canViewHistory={canViewHistory}
+                    canManageJobs={permissions.includes(PERMISSIONS.JOBS.WRITE)}
+                />
+                <KpiCards
+                    kpis={overview.kpis}
+                    historyHref={canViewHistory ? "/dashboard/history" : undefined}
+                    storageHref={canViewStorage ? "/dashboard/storage" : undefined}
+                />
+                <StatsStrip strip={overview.strip} />
+                <div className="grid gap-4 md:gap-6 xl:grid-cols-3">
+                    <ActivityPanel
+                        className="xl:col-span-2"
+                        activity={overview.activity}
+                        executions={overview.latestExecutions}
+                        jobs={overview.jobs}
+                        canViewHistory={canViewHistory}
+                        canViewJobs={canViewJobs}
+                    />
+                    <div className="grid content-start gap-4 md:grid-cols-2 md:gap-6 xl:grid-cols-1">
+                        <StorageDestinations {...overview.destinations} />
+                        <BackupCalendar {...overview.calendar} />
+                    </div>
+                </div>
+            </div>
+        </DashboardRefresh>
+    );
 }

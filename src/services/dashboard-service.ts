@@ -10,6 +10,7 @@ import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { checkStorageAlerts } from "@/services/storage/storage-alert-service";
 import { isBackupFile } from "@/lib/core/backup-files";
+import { invalidateDashboardCache } from "@/services/dashboard/cache";
 
 export interface DashboardStats {
   totalJobs: number;
@@ -29,12 +30,6 @@ export interface ActivityDataPoint {
   running: number;
   pending: number;
   cancelled: number;
-}
-
-export interface JobStatusDistribution {
-  status: string;
-  count: number;
-  fill: string;
 }
 
 export interface StorageVolumeEntry {
@@ -63,6 +58,8 @@ export interface LatestJobEntry {
   databaseName: string | null;
   startedAt: Date;
   duration: number;
+  /** Bytes stored by the run, null while it runs or when it stored nothing. */
+  size: number | null;
 }
 
 export interface CalendarDayData {
@@ -281,67 +278,6 @@ export async function getCalendarDataForYear(year: number): Promise<CalendarDayD
   return Array.from(dayMap.values());
 }
 
-/**
- * Returns all years that have at least one Backup execution, from the earliest to the current year.
- * Used to populate the year selector in the Backup Calendar Heatmap.
- */
-export async function getAvailableCalendarYears(): Promise<number[]> {
-  const earliest = await prisma.execution.findFirst({
-    where: { type: "Backup" },
-    orderBy: { startedAt: "asc" },
-    select: { startedAt: true },
-  });
-  const currentYear = new Date().getFullYear();
-  if (!earliest) return [currentYear];
-  const firstYear = earliest.startedAt.getFullYear();
-  return Array.from({ length: currentYear - firstYear + 1 }, (_, i) => firstYear + i);
-}
-
-/**
- * Fetches job status distribution for the last 30 days.
- * Used for the Job Status donut chart.
- */
-export async function getJobStatusDistribution(): Promise<JobStatusDistribution[]> {
-  const thirtyDaysAgo = subDays(new Date(), 30);
-
-  const executions = await prisma.execution.findMany({
-    where: { startedAt: { gte: thirtyDaysAgo } },
-    select: { status: true },
-  });
-
-  const counts: Record<string, number> = {
-    Success: 0,
-    Failed: 0,
-    Partial: 0,
-    Running: 0,
-    Pending: 0,
-    Cancelled: 0,
-  };
-
-  for (const exec of executions) {
-    if (exec.status in counts) {
-      counts[exec.status]++;
-    }
-  }
-
-  const colorMap: Record<string, string> = {
-    Success: "var(--color-completed)",
-    Failed: "var(--color-failed)",
-    Partial: "var(--color-partial)",
-    Running: "var(--color-running)",
-    Pending: "var(--color-pending)",
-    Cancelled: "var(--color-cancelled)",
-  };
-
-  return Object.entries(counts)
-    .filter(([, count]) => count > 0)
-    .map(([status, count]) => ({
-      status,
-      count,
-      fill: colorMap[status] ?? "var(--color-chart-1)",
-    }));
-}
-
 const STORAGE_CACHE_KEY = "cache.storageVolume";
 const STORAGE_CACHE_UPDATED_KEY = "cache.storageVolume.updatedAt";
 
@@ -470,6 +406,9 @@ export async function refreshStorageStatsCache(): Promise<StorageVolumeEntry[]> 
   // Save historical snapshots for storage usage over time charts
   await saveStorageSnapshots(results);
 
+  // The dashboard overview caches its storage cards and trends, which this refresh just changed.
+  invalidateDashboardCache();
+
   log.info("Storage statistics cache refreshed", {
     destinations: results.length,
     totalSize: results.reduce((sum, r) => sum + r.size, 0),
@@ -595,6 +534,7 @@ export async function getLatestJobs(limit: number = 7): Promise<LatestJobEntry[]
       databaseName,
       startedAt: exec.startedAt,
       duration,
+      size: exec.size != null ? Number(exec.size) : null,
     };
   });
 }

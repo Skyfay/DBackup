@@ -9,6 +9,7 @@ import { wrapError, getErrorMessage } from "@/lib/logging/errors";
 import { renderTemplate, NOTIFICATION_EVENTS } from "@/lib/notifications";
 import { recordNotificationLog } from "@/services/notifications/notification-log-service";
 import { PIPELINE_STAGES } from "@/lib/core/logs";
+import { invalidateDashboardCache } from "@/services/dashboard/cache";
 
 const log = logger.child({ step: "04-completion" });
 
@@ -124,6 +125,9 @@ export async function stepFinalize(ctx: RunnerContext) {
                 : {}),
         }
     });
+
+    // The dashboard caches its charts and counts. This run changes them, whatever its outcome.
+    invalidateDashboardCache();
 
     // 2. Refresh storage statistics cache (non-blocking)
     if (ctx.status === "Success" || ctx.status === "Partial") {

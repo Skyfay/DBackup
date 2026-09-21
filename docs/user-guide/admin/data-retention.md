@@ -29,7 +29,7 @@ The step log is by far the largest part of a run. Keeping the History entries wh
 
 ### Effects on the rest of DBackup
 
-- The dashboard statistics and the backup calendar only count runs that are still in History. With **Execution History** below one year, older years disappear from the calendar.
+- The dashboard statistics and the backup calendar only count runs that are still in History. The calendar covers the last 12 weeks, so with **Execution History** below that, its oldest weeks stay empty.
 - A run whose log was removed shows a notice in its History dialog, and **Copy** and **Download .log** are disabled.
 - The `error` field of `GET /api/executions/{id}` is read from the log, so it is empty for a failed run whose log was removed.
 - Notification History entries that belonged to a deleted run stay until their own retention period removes them.

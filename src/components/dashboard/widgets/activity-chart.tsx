@@ -1,124 +1,88 @@
 "use client";
 
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
-import {
-  ChartConfig,
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  ChartLegend,
-  ChartLegendContent,
-} from "@/components/ui/chart";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Bar, BarChart, XAxis } from "recharts";
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import type { ActivityDataPoint } from "@/services/dashboard-service";
 
-const chartConfig = {
-  completed: {
-    label: "Completed",
-    color: "hsl(145, 78%, 45%)",
-  },
-  failed: {
-    label: "Failed",
-    color: "hsl(357, 78%, 54%)",
-  },
-  partial: {
-    label: "Partial",
-    color: "hsl(25, 90%, 55%)",
-  },
-  running: {
-    label: "Running",
-    color: "hsl(225, 79%, 54%)",
-  },
-  pending: {
-    label: "Pending",
-    color: "hsl(45, 93%, 58%)",
-  },
-  cancelled: {
-    label: "Cancelled",
-    color: "hsl(0, 0%, 55%)",
-  },
-} satisfies ChartConfig;
+type SeriesKey = "completed" | "cancelled" | "partial" | "failed" | "pending" | "running";
 
-interface ActivityChartProps {
-  data: ActivityDataPoint[];
+/** Bottom to top, so failures and live runs sit on top of each day's bar. */
+const SERIES: { key: SeriesKey; label: string; color: string }[] = [
+    { key: "completed", label: "Completed", color: "var(--success)" },
+    { key: "cancelled", label: "Cancelled", color: "var(--muted-foreground)" },
+    { key: "partial", label: "Partial", color: "var(--warning)" },
+    { key: "failed", label: "Failed", color: "var(--destructive)" },
+    { key: "pending", label: "Queued", color: "color-mix(in oklab, var(--info) 45%, transparent)" },
+    { key: "running", label: "Running", color: "var(--info)" },
+];
+
+const chartConfig = Object.fromEntries(
+    SERIES.map((series) => [series.key, { label: series.label, color: series.color }])
+) satisfies ChartConfig;
+
+/** The series that occur in the data, for the legend. */
+export function activeSeries(data: ActivityDataPoint[]) {
+    return SERIES.filter((series) => data.some((day) => day[series.key] > 0));
 }
 
-export function ActivityChart({ data }: ActivityChartProps) {
-  const hasData = data.some(
-    (d) => d.completed > 0 || d.failed > 0 || d.partial > 0 || d.running > 0 || d.pending > 0 || d.cancelled > 0
-  );
+export function ActivityLegend({ data }: { data: ActivityDataPoint[] }) {
+    return (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {activeSeries(data).map((series) => (
+                <span key={series.key} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <span className="size-2 rounded-[2px]" style={{ background: series.color }} aria-hidden="true" />
+                    {series.label}
+                </span>
+            ))}
+        </div>
+    );
+}
 
-  return (
-    <Card className="col-span-full">
-      <CardHeader>
-        <CardTitle>Jobs Activity</CardTitle>
-        <CardDescription>Last 14 days</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {hasData ? (
-          <ChartContainer config={chartConfig} className="h-62.5 w-full">
-            <BarChart data={data} accessibilityLayer>
-              <CartesianGrid vertical={false} />
-              <XAxis
-                dataKey="date"
-                tickLine={false}
-                tickMargin={10}
-                axisLine={false}
-                fontSize={12}
-              />
-              <YAxis
-                tickLine={false}
-                axisLine={false}
-                allowDecimals={false}
-                fontSize={12}
-                width={30}
-              />
-              <ChartTooltip content={<ChartTooltipContent />} />
-              <ChartLegend content={<ChartLegendContent />} />
-              <Bar
-                dataKey="completed"
-                stackId="a"
-                fill="var(--color-completed)"
-                radius={[0, 0, 0, 0]}
-              />
-              <Bar
-                dataKey="failed"
-                stackId="a"
-                fill="var(--color-failed)"
-                radius={[0, 0, 0, 0]}
-              />
-              <Bar
-                dataKey="partial"
-                stackId="a"
-                fill="var(--color-partial)"
-                radius={[0, 0, 0, 0]}
-              />
-              <Bar
-                dataKey="running"
-                stackId="a"
-                fill="var(--color-running)"
-                radius={[0, 0, 0, 0]}
-              />
-              <Bar
-                dataKey="pending"
-                stackId="a"
-                fill="var(--color-pending)"
-                radius={[0, 0, 0, 0]}
-              />
-              <Bar
-                dataKey="cancelled"
-                stackId="a"
-                fill="var(--color-cancelled)"
-                radius={[4, 4, 0, 0]}
-              />
+/** Runs per day as stacked bars, with gaps between the segments. */
+export function ActivityChart({ data }: { data: ActivityDataPoint[] }) {
+    if (activeSeries(data).length === 0) {
+        return (
+            <div className="flex h-44 items-center justify-center text-sm text-muted-foreground md:h-52">
+                No runs in the last {data.length} days.
+            </div>
+        );
+    }
+
+    return (
+        <ChartContainer config={chartConfig} className="aspect-auto h-44 w-full md:h-52">
+            <BarChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }} barCategoryGap="16%" accessibilityLayer>
+                <XAxis
+                    dataKey="date"
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    minTickGap={28}
+                    interval="preserveStartEnd"
+                    fontSize={11}
+                    className="font-mono"
+                />
+                <ChartTooltip
+                    cursor={{ fill: "var(--muted)", opacity: 0.6 }}
+                    content={({ active, label, payload }) => (
+                        <ChartTooltipContent
+                            active={active}
+                            label={label}
+                            payload={payload?.filter((item) => Number(item.value) > 0)}
+                        />
+                    )}
+                />
+                {SERIES.map((series) => (
+                    <Bar
+                        key={series.key}
+                        dataKey={series.key}
+                        stackId="runs"
+                        fill={`var(--color-${series.key})`}
+                        radius={3}
+                        stroke="var(--card)"
+                        strokeWidth={2}
+                    />
+                ))}
             </BarChart>
-          </ChartContainer>
-        ) : (
-          <div className="flex h-62.5 items-center justify-center text-sm text-muted-foreground">
-            No execution data yet. Run your first backup to see activity here.
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
+        </ChartContainer>
+    );
 }

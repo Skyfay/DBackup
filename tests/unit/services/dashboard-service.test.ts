@@ -39,7 +39,6 @@ vi.mock("@/services/storage/storage-alert-service", () => ({
 import {
   getDashboardStats,
   getActivityData,
-  getJobStatusDistribution,
   getStorageVolume,
   getStorageVolumeCacheAge,
   refreshStorageStatsCache,
@@ -153,50 +152,6 @@ describe("getActivityData", () => {
 
     const total = result.reduce((sum, r) => sum + r.completed, 0);
     expect(total).toBe(0);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// getJobStatusDistribution
-// ---------------------------------------------------------------------------
-
-describe("getJobStatusDistribution", () => {
-  it("returns non-zero status entries with correct counts", async () => {
-    prismaMock.execution.findMany.mockResolvedValue([
-      { status: "Success" },
-      { status: "Success" },
-      { status: "Failed" },
-    ] as any);
-
-    const result = await getJobStatusDistribution();
-
-    expect(result).toHaveLength(2);
-    expect(result.find((r) => r.status === "Success")?.count).toBe(2);
-    expect(result.find((r) => r.status === "Failed")?.count).toBe(1);
-  });
-
-  it("returns empty array when no executions exist", async () => {
-    prismaMock.execution.findMany.mockResolvedValue([]);
-
-    expect(await getJobStatusDistribution()).toHaveLength(0);
-  });
-
-  it("assigns the correct CSS variable fill color per status", async () => {
-    prismaMock.execution.findMany.mockResolvedValue([
-      { status: "Success" },
-    ] as any);
-
-    const result = await getJobStatusDistribution();
-
-    expect(result[0].fill).toBe("var(--color-completed)");
-  });
-
-  it("ignores unknown statuses not present in the counts map", async () => {
-    prismaMock.execution.findMany.mockResolvedValue([
-      { status: "Unknown" },
-    ] as any);
-
-    expect(await getJobStatusDistribution()).toHaveLength(0);
   });
 });
 

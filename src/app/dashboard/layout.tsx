@@ -61,7 +61,7 @@ export default async function DashboardLayout({
             <SidebarInset className="min-w-0 overflow-hidden bg-page">
                 <Header />
                 <ScrollArea className="min-h-0 flex-1">
-                    <div className="p-6">
+                    <div className="p-4 md:p-6">
                         <div className="mx-auto space-y-6">
                             {children}
                         </div>

@@ -35,6 +35,7 @@ export interface Aggregates {
     succeeded24h: number;
     failed24h: number;
     total24h: number;
+    backedUp24h: number;
     lastFailureAt: string | null;
     avgDurationMs: number | null;
     storage: {
@@ -123,7 +124,7 @@ async function loadRunStats(now: Date) {
     const since30d = subDays(now, 30);
     const since60d = subDays(now, 60);
 
-    const [success30d, failed30d, successPrev, failedPrev, succeeded24h, failed24h, total24h, lastFailure, recentSuccesses] =
+    const [success30d, failed30d, successPrev, failedPrev, succeeded24h, failed24h, total24h, backedUp, lastFailure, recentSuccesses] =
         await Promise.all([
             prisma.execution.count({ where: { status: "Success", startedAt: { gte: since30d } } }),
             prisma.execution.count({ where: { status: "Failed", startedAt: { gte: since30d } } }),
@@ -132,6 +133,11 @@ async function loadRunStats(now: Date) {
             prisma.execution.count({ where: { status: "Success", startedAt: { gte: since24h } } }),
             prisma.execution.count({ where: { status: "Failed", startedAt: { gte: since24h } } }),
             prisma.execution.count({ where: { startedAt: { gte: since24h } } }),
+            // A partial run still stored its archive on at least one destination.
+            prisma.execution.aggregate({
+                where: { type: "Backup", status: { in: ["Success", "Partial"] }, startedAt: { gte: since24h } },
+                _sum: { size: true },
+            }),
             prisma.execution.findFirst({
                 where: { status: "Failed" },
                 orderBy: { startedAt: "desc" },
@@ -158,6 +164,7 @@ async function loadRunStats(now: Date) {
         succeeded24h,
         failed24h,
         total24h,
+        backedUp24h: Number(backedUp._sum.size ?? 0),
         lastFailureAt: lastFailure?.startedAt.toISOString() ?? null,
         avgDurationMs,
     };

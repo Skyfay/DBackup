@@ -29,6 +29,7 @@ function aggregates(overrides: Partial<Aggregates> = {}): Aggregates {
         succeeded24h: 6,
         failed24h: 1,
         total24h: 8,
+        backedUp24h: 5_000_000,
         lastFailureAt: "2026-09-21T01:00:00.000Z",
         avgDurationMs: 192_000,
         storage: {
@@ -55,6 +56,7 @@ const jobs = [
         name: "postgres-nightly",
         enabled: true,
         schedule: "0 2 * * *",
+        encryptionProfileId: "enc-1",
         schedulePreset: null,
         source: { adapterId: "postgres" },
         sources: [],
@@ -65,6 +67,7 @@ const jobs = [
         name: "files-uploads",
         enabled: true,
         schedule: "",
+        encryptionProfileId: null,
         schedulePreset: { schedule: "0 1 * * *" },
         source: null,
         sources: [{ id: "src-1" }],
@@ -75,6 +78,7 @@ const jobs = [
         name: "adhoc-export",
         enabled: false,
         schedule: "",
+        encryptionProfileId: null,
         schedulePreset: null,
         source: { adapterId: "mysql" },
         sources: [],
@@ -92,6 +96,9 @@ describe("getDashboardOverview", () => {
         prismaMock.execution.findMany.mockResolvedValue([
             { id: "live-1", jobId: "manual", status: "Running", startedAt: new Date("2026-09-21T09:58:00.000Z"), endedAt: null },
         ] as never);
+        // 13 watched connections, 2 of them offline.
+        prismaMock.adapterConfig.count.mockImplementation(((args: { where?: { lastStatus?: string } }) =>
+            Promise.resolve(args?.where?.lastStatus === "OFFLINE" ? 2 : 13)) as never);
         prismaMock.execution.findUnique.mockResolvedValue({
             logs: JSON.stringify([{ level: "error", message: "connect ECONNREFUSED 10.0.4.41:5432" }]),
         } as never);
@@ -137,10 +144,22 @@ describe("getDashboardOverview", () => {
         expect(overview.strip).toEqual({
             totalJobs: 3,
             activeSchedules: 2,
-            succeeded24h: 6,
+            encryptedJobs: 1,
+            connections: 13,
+            offlineConnections: 2,
             runningNow: 1,
             queuedNow: 0,
+            succeeded24h: 6,
+            backedUp24h: 5_000_000,
             avgDurationMs: 192_000,
+        });
+    });
+
+    it("only counts database and storage connections, the ones the health check watches", async () => {
+        await getDashboardOverview();
+
+        expect(prismaMock.adapterConfig.count).toHaveBeenCalledWith({
+            where: { type: { in: ["database", "storage"] }, lastStatus: "OFFLINE" },
         });
     });
 

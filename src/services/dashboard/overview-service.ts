@@ -12,6 +12,8 @@ import type { DashboardHealth, DashboardJobRow, DashboardOverview, RunSummary } 
 
 const JOB_ROWS = 8;
 const LATEST_EXECUTIONS = 12;
+/** The adapter types the health check pings. Notification channels are not checked. */
+const HEALTH_CHECKED_TYPES = ["database", "storage"];
 
 const ADAPTER_NAMES = new Map(ADAPTER_DEFINITIONS.map((definition) => [definition.id, definition.name]));
 
@@ -20,6 +22,7 @@ const jobSelect = {
     name: true,
     enabled: true,
     schedule: true,
+    encryptionProfileId: true,
     schedulePreset: { select: { schedule: true } },
     source: { select: { adapterId: true } },
     sources: { select: { id: true } },
@@ -116,7 +119,7 @@ async function withFailureDetails(health: DashboardHealth): Promise<DashboardHea
  * can poll while a job runs without recomputing the history each time.
  */
 export async function getDashboardOverview(): Promise<DashboardOverview> {
-    const [aggregates, jobs, liveExecutions, latestExecutions] = await Promise.all([
+    const [aggregates, jobs, liveExecutions, latestExecutions, connections, offlineConnections] = await Promise.all([
         getAggregates(),
         prisma.job.findMany({ select: jobSelect, orderBy: { name: "asc" } }),
         prisma.execution.findMany({
@@ -125,6 +128,8 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
             select: { id: true, jobId: true, status: true, startedAt: true, endedAt: true },
         }),
         getLatestJobs(LATEST_EXECUTIONS),
+        prisma.adapterConfig.count({ where: { type: { in: HEALTH_CHECKED_TYPES } } }),
+        prisma.adapterConfig.count({ where: { type: { in: HEALTH_CHECKED_TYPES }, lastStatus: "OFFLINE" } }),
     ]);
 
     const liveRuns = liveExecutions.map(toRunSummary);
@@ -185,9 +190,13 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
         strip: {
             totalJobs: jobs.length,
             activeSchedules: jobs.filter((job) => job.enabled && effectiveSchedule(job)).length,
-            succeeded24h: aggregates.succeeded24h,
+            encryptedJobs: jobs.filter((job) => job.encryptionProfileId).length,
+            connections,
+            offlineConnections,
             runningNow: liveRuns.filter((run) => run.status === "Running").length,
             queuedNow: liveRuns.filter((run) => run.status === "Pending").length,
+            succeeded24h: aggregates.succeeded24h,
+            backedUp24h: aggregates.backedUp24h,
             avgDurationMs: aggregates.avgDurationMs,
         },
         activity,

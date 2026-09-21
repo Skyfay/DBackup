@@ -66,9 +66,16 @@ export interface DashboardKpis {
 export interface DashboardStrip {
     totalJobs: number;
     activeSchedules: number;
-    succeeded24h: number;
+    encryptedJobs: number;
+    /** Database and storage connections, the ones the health check watches. */
+    connections: number;
+    /** Connections the health check marks offline, after three failed checks in a row. */
+    offlineConnections: number;
     runningNow: number;
     queuedNow: number;
+    succeeded24h: number;
+    /** Bytes stored by successful and partial backups in the last 24 hours. */
+    backedUp24h: number;
     avgDurationMs: number | null;
 }
 

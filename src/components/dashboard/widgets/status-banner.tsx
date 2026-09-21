@@ -1,19 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
 import { CheckCircle2, CircleAlert, Loader2, Play, Plus, TriangleAlert } from "lucide-react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { DateDisplay } from "@/components/utils/date-display";
-import { useUserPreferences } from "@/hooks/use-user-preferences";
-import { logger } from "@/lib/logging/logger";
 import { cn } from "@/lib/utils";
 import type { DashboardHealth, UnhealthyJob } from "@/services/dashboard/types";
 import { RelativeTime } from "./relative-time";
-
-const log = logger.child({ component: "dashboard-status-banner" });
+import { useRunJob } from "./use-run-job";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -54,32 +48,7 @@ function othersList(jobs: UnhealthyJob[]): string {
 
 /** The banner at the top of the dashboard: all good, or which job needs attention and why. */
 export function StatusBanner({ health, canExecute, canViewHistory, canManageJobs }: StatusBannerProps) {
-    const router = useRouter();
-    const { autoRedirectOnJobStart } = useUserPreferences();
-    const [isStarting, setIsStarting] = useState(false);
-
-    const runNow = async (job: UnhealthyJob) => {
-        setIsStarting(true);
-        try {
-            const res = await fetch(`/api/jobs/${job.jobId}/run`, { method: "POST" });
-            const data = await res.json();
-            if (!data.success) {
-                toast.error(`Could not start ${job.jobName}: ${data.error ?? "unknown error"}`);
-                return;
-            }
-            toast.success(`${job.jobName} started`);
-            if (data.executionId && autoRedirectOnJobStart) {
-                router.push(`/dashboard/history?executionId=${data.executionId}`);
-            } else {
-                router.refresh();
-            }
-        } catch (error) {
-            log.error("Starting a job from the dashboard failed", { jobId: job.jobId }, error instanceof Error ? error : undefined);
-            toast.error("The run request failed");
-        } finally {
-            setIsStarting(false);
-        }
-    };
+    const { runJob, startingJobId } = useRunJob();
 
     let title: string;
     let detail: React.ReactNode;
@@ -132,8 +101,13 @@ export function StatusBanner({ health, canExecute, canViewHistory, canManageJobs
                     </Button>
                 )}
                 {canExecute && (
-                    <Button size="sm" className="flex-1 sm:flex-none" disabled={isStarting} onClick={() => runNow(featured)}>
-                        {isStarting ? <Loader2 className="animate-spin" /> : <Play />}
+                    <Button
+                        size="sm"
+                        className="flex-1 sm:flex-none"
+                        disabled={startingJobId !== null}
+                        onClick={() => runJob(featured.jobId, featured.jobName)}
+                    >
+                        {startingJobId === featured.jobId ? <Loader2 className="animate-spin" /> : <Play />}
                         Run now
                     </Button>
                 )}

@@ -19,11 +19,12 @@ interface ActivityPanelProps {
     jobs: { rows: DashboardJobRow[]; total: number };
     canViewHistory: boolean;
     canViewJobs: boolean;
+    canExecute: boolean;
     className?: string;
 }
 
 /** Runs per day on top, and below it a switch between the latest executions and the jobs. */
-export function ActivityPanel({ activity, executions, jobs, canViewHistory, canViewJobs, className }: ActivityPanelProps) {
+export function ActivityPanel({ activity, executions, jobs, canViewHistory, canViewJobs, canExecute, className }: ActivityPanelProps) {
     const [view, setView] = useState<View>("executions");
 
     const heading = view === "executions"
@@ -72,7 +73,7 @@ export function ActivityPanel({ activity, executions, jobs, canViewHistory, canV
                     <ExecutionsList executions={executions} canViewHistory={canViewHistory} />
                 </TabsContent>
                 <TabsContent value="jobs">
-                    <JobsList rows={jobs.rows} canViewJobs={canViewJobs} />
+                    <JobsList rows={jobs.rows} canViewHistory={canViewHistory} canViewJobs={canViewJobs} canExecute={canExecute} />
                 </TabsContent>
             </Tabs>
         </div>

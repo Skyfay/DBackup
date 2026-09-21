@@ -17,6 +17,7 @@ export default async function DashboardPage() {
     const canViewHistory = permissions.includes(PERMISSIONS.HISTORY.READ);
     const canViewStorage = permissions.includes(PERMISSIONS.STORAGE.READ);
     const canViewJobs = permissions.includes(PERMISSIONS.JOBS.READ);
+    const canExecute = permissions.includes(PERMISSIONS.JOBS.EXECUTE);
     const hasLiveRuns = overview.strip.runningNow + overview.strip.queuedNow > 0;
 
     return (
@@ -25,7 +26,7 @@ export default async function DashboardPage() {
             <div className="space-y-4 md:space-y-6">
                 <StatusBanner
                     health={overview.health}
-                    canExecute={permissions.includes(PERMISSIONS.JOBS.EXECUTE)}
+                    canExecute={canExecute}
                     canViewHistory={canViewHistory}
                     canManageJobs={permissions.includes(PERMISSIONS.JOBS.WRITE)}
                 />
@@ -43,6 +44,7 @@ export default async function DashboardPage() {
                         jobs={overview.jobs}
                         canViewHistory={canViewHistory}
                         canViewJobs={canViewJobs}
+                        canExecute={canExecute}
                     />
                     <div className="grid content-start gap-4 md:grid-cols-2 md:gap-6 xl:grid-cols-1">
                         <StorageDestinations {...overview.destinations} />

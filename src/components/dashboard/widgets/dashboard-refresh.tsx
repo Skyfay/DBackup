@@ -4,48 +4,61 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 
 interface DashboardRefreshProps {
-  /** Whether any job is currently running */
+  /** Whether any job is currently running or queued */
   hasRunningJobs: boolean;
-  /** Polling interval in ms (default: 3000) */
+  /** Polling interval in ms while a job runs (default: 3000) */
   interval?: number;
+  /** Polling interval in ms while nothing runs, so a scheduled run shows up without a reload (default: 30000) */
+  idleInterval?: number;
   children: React.ReactNode;
 }
 
 /**
- * Wraps dashboard content and automatically triggers a server-side re-render
- * via router.refresh() while jobs are running. Stops polling when idle.
+ * Wraps dashboard content and re-renders it on the server via router.refresh(): every few seconds
+ * while a job runs, every half minute otherwise. A hidden tab does not poll, and catches up as soon
+ * as it is visible again.
  */
 export function DashboardRefresh({
   hasRunningJobs,
   interval = 3000,
+  idleInterval = 30000,
   children,
 }: DashboardRefreshProps) {
   const router = useRouter();
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const wasRunning = useRef(hasRunningJobs);
 
   useEffect(() => {
-    // If jobs are running, start polling
-    if (hasRunningJobs) {
-      wasRunning.current = true;
-      intervalRef.current = setInterval(() => {
-        router.refresh();
-      }, interval);
-    }
+    // A run that just ended shows its outcome right away instead of at the next idle tick.
+    if (!hasRunningJobs && wasRunning.current) router.refresh();
+    wasRunning.current = hasRunningJobs;
 
-    // If jobs just finished (were running, now stopped), do one final refresh
-    if (!hasRunningJobs && wasRunning.current) {
-      wasRunning.current = false;
+    const delay = hasRunningJobs ? interval : idleInterval;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const start = () => {
+      timer ??= setInterval(() => router.refresh(), delay);
+    };
+    const stop = () => {
+      if (timer) clearInterval(timer);
+      timer = null;
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        stop();
+        return;
+      }
       router.refresh();
-    }
+      start();
+    };
+
+    if (document.visibilityState !== "hidden") start();
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
+      stop();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [hasRunningJobs, interval, router]);
+  }, [hasRunningJobs, interval, idleInterval, router]);
 
   return <>{children}</>;
 }

@@ -60,8 +60,8 @@ export function NavUser({ groupName }: NavUserProps) {
 
     if (isPending) {
         return (
-            <div className="flex h-12 items-center gap-2 p-2 group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:p-0">
-                <Skeleton className="size-8 shrink-0 rounded-full" />
+            <div className="flex h-10 items-center gap-2.5 px-1.5 group-data-[collapsible=icon]:size-8.5 group-data-[collapsible=icon]:p-0.5">
+                <Skeleton className="size-7.5 shrink-0 rounded-full" />
                 <div className="grid flex-1 gap-1.5 group-data-[collapsible=icon]:hidden">
                     <Skeleton className="h-3.5 w-24" />
                     <Skeleton className="h-3 w-16" />
@@ -75,9 +75,9 @@ export function NavUser({ groupName }: NavUserProps) {
     const { user } = session
 
     const avatar = (
-        <Avatar className="size-8">
+        <Avatar className="size-7.5">
             <AvatarImage src={user.image || ""} alt={user.name} />
-            <AvatarFallback className="bg-sidebar-accent text-xs text-sidebar-foreground/80">{getInitials(user.name)}</AvatarFallback>
+            <AvatarFallback className="bg-sidebar-accent text-[11px] text-sidebar-foreground/80">{getInitials(user.name)}</AvatarFallback>
         </Avatar>
     )
 
@@ -92,8 +92,8 @@ export function NavUser({ groupName }: NavUserProps) {
                         >
                             {avatar}
                             <div className="grid flex-1 text-left leading-tight">
-                                <span className="truncate font-medium text-sidebar-foreground">{user.name}</span>
-                                <span className="truncate font-mono text-xs text-sidebar-foreground/55">{groupName || user.email}</span>
+                                <span className="truncate text-sidebar-foreground">{user.name}</span>
+                                <span className="truncate font-mono text-[11px] text-sidebar-foreground/55">{groupName || user.email}</span>
                             </div>
                             <MoreHorizontal className="ml-auto" />
                         </SidebarMenuButton>

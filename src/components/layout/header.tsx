@@ -20,7 +20,7 @@ export function Header() {
         <header className="flex h-15 shrink-0 items-center gap-3 border-b bg-sidebar px-4">
             <SidebarTrigger className="-ml-1 text-muted-foreground hover:text-foreground" />
             <Separator orientation="vertical" className="data-[orientation=vertical]:h-4" />
-            <nav aria-label="Breadcrumb" className="flex min-w-0 items-center text-sm text-muted-foreground">
+            <nav aria-label="Breadcrumb" className="flex min-w-0 items-center text-[13px] text-muted-foreground">
                 {segments.map((segment, index) => {
                     const isLast = index === segments.length - 1
                     const href = `/${segments.slice(0, index + 1).join('/')}`

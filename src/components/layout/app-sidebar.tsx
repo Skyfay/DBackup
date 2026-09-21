@@ -130,16 +130,16 @@ export function AppSidebar({ permissions = [], isSuperAdmin = false, updateAvail
 
     return (
         <Sidebar collapsible="icon">
-            <SidebarHeader className="h-15 justify-center border-b border-sidebar-border py-0">
+            <SidebarHeader className="h-15 justify-center border-b border-sidebar-border px-2.5 py-0">
                 <SidebarMenu>
                     <SidebarMenuItem>
                         <SidebarMenuButton size="lg" asChild className="hover:bg-transparent active:bg-transparent">
                             <Link href="/dashboard" onClick={closeMobileSheet}>
-                                <Image src="/logo.svg" alt="DBackup Logo" width={32} height={32} priority className="size-8 shrink-0" />
+                                <Image src="/logo.svg" alt="DBackup Logo" width={30} height={30} priority className="size-7.5 shrink-0" />
                                 <div className="grid flex-1 text-left leading-tight">
-                                    <span className="truncate font-semibold text-sidebar-foreground">DBackup</span>
+                                    <span className="truncate text-sm font-semibold text-sidebar-foreground">DBackup</span>
                                     {currentVersion && (
-                                        <span className="truncate font-mono text-xs text-sidebar-foreground/55">v{currentVersion}</span>
+                                        <span className="truncate font-mono text-[11px] text-sidebar-foreground/55">v{currentVersion}</span>
                                     )}
                                 </div>
                             </Link>
@@ -171,7 +171,7 @@ export function AppSidebar({ permissions = [], isSuperAdmin = false, updateAvail
                 ))}
             </SidebarContent>
 
-            <SidebarFooter className="border-t border-sidebar-border">
+            <SidebarFooter className="gap-1 border-t border-sidebar-border px-2.5 py-2">
                 {updateAvailable && (
                     <SidebarMenu>
                         <SidebarMenuItem>

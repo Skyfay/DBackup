@@ -7,7 +7,7 @@ All notable changes to DBackup are documented here.
 
 ### 🎨 Improvements
 
-- **ui**: The sidebar collapses to icons with the new button in the header or Ctrl+B (⌘B on macOS), and small screens get it as a slide-in menu. Both themes use a new zinc color palette.
+- **ui**: The sidebar collapses to icons with the new button in the header or Ctrl+B (⌘B on macOS), and small screens get it as a slide-in menu. Both themes use a new zinc color palette, and the interface uses the Geist font on every operating system.
 
 ### 🐳 Docker
 

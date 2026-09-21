@@ -7,7 +7,7 @@ All notable changes to DBackup are documented here.
 
 ### 🐛 Bug Fixes
 
-- **storage**: A destination that cannot be listed during the storage refresh keeps the size and backup count of its last successful scan instead of an estimate from the run history. The dashboard marks it as unreachable and says how old those values are.
+- **storage**: A destination that cannot be listed during the storage refresh keeps the size and backup count of its last successful scan instead of an estimate from the run history. The dashboard shows how old those values are.
 - **storage**: The storage scan of a local destination no longer fails when retention deletes a backup while it runs.
 
 ### 🎨 Improvements

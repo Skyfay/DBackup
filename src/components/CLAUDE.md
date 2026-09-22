@@ -87,7 +87,7 @@ Every `DialogContent` needs a description. If the visible design has no subtitle
 
 ### Destructive confirmations
 
-Use `AlertDialog`, never `Dialog`, and never `window.confirm()` or `alert()`. The destructive button is `<Button variant="destructive">`.
+Use `AlertDialog`, never `Dialog`, and never `window.confirm()` or `alert()`. The destructive button is `<Button variant="destructive">`. New confirmations use `ConfirmDialog` from `@/components/ui/confirm-dialog`, which is that AlertDialog in the redesigned look.
 
 ---
 

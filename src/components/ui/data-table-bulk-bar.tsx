@@ -158,7 +158,12 @@ export function DataTableBulkBar<TData>({
                     onOpenChange={(open) => !open && setPendingAction(null)}
                     title={pendingAction.confirm!.title(confirmState.eligible)}
                     description={pendingAction.confirm!.description(confirmState.eligible)}
-                    items={confirmState.eligible.map((row, index) => nameOf(pendingAction, row, index))}
+                    icon={pendingAction.icon}
+                    items={confirmState.eligible.map((row, index) => ({
+                        name: nameOf(pendingAction, row, index),
+                        detail: pendingAction.itemDetail?.(row),
+                        icon: pendingAction.itemIcon?.(row),
+                    }))}
                     skipped={confirmState.skipped}
                     confirmLabel={pendingAction.confirm!.confirmLabel}
                     destructive={pendingAction.variant === "destructive"}

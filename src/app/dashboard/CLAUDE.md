@@ -12,6 +12,7 @@ The UI is redesigned page by page. Shadcn stays, the new look comes from tokens 
 | Overview | `src/app/dashboard/(overview)/`, widgets in `src/components/dashboard/widgets/` |
 | Storage history dialog | `src/components/dashboard/widgets/storage-history-modal.tsx` |
 | Connections, lists and details | `src/app/dashboard/connections/`, `src/components/adapter/connection-*.tsx`. The add and edit dialogs still have the old look. |
+| Confirmations and bulk results | `src/components/ui/confirm-dialog.tsx`, `bulk-confirm-dialog.tsx`, `bulk-result-dialog.tsx`, used by every table |
 
 Every other page still has the old look. Do not copy patterns from it, copy them from the Overview widgets. Add a row here when a page is done.
 
@@ -93,6 +94,7 @@ Every other page still has the old look. Do not copy patterns from it, copy them
 ## Dialogs
 
 - The same language applies inside a dialog. The title names the object ("Local"), the description says what the dialog shows, and a headline number follows the card style. See `storage-history-modal.tsx`.
+- A confirmation is a `ConfirmDialog` from `ui/confirm-dialog.tsx`. It has a tinted icon tile beside the title, the records it touches in a `DialogItemList` with icon, name and a muted fact, and its buttons on a `border-t bg-muted/30` strip. The confirm button keeps the dialog open with a spinner until the request returns. See `connection-delete-dialog.tsx`.
 
 ## Live data
 

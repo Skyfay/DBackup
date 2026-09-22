@@ -26,6 +26,7 @@ All notable changes to DBackup are documented here.
 - **storage**: The storage history dialog matches the new dashboard and switches between 7 days, 30 days, 90 days and a year without loading again.
 - **ui**: On phones every table leaves out the rows per page picker so its page controls fit, and the Connections tabs scroll sideways instead of widening the page.
 - **ui**: The filter menus of the tables are wider, keep their order while values are picked, and match the new look. The type filter on the Connections page shows each adapter's icon.
+- **ui**: The confirmation before a bulk action and the list of entries it could not process match the new look. Deleting connections, one or several, lists each of them with its icon and type.
 
 ### 🗑️ Removed
 

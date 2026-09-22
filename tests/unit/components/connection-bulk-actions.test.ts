@@ -37,4 +37,13 @@ describe("connectionBulkActions", () => {
         expect(connectionBulkActions("notification", true).map((action) => action.id)).toEqual(["delete"]);
         expect(connectionBulkActions("database", false)).toEqual([]);
     });
+
+    it("lists a connection in the confirmation with its name and type", () => {
+        const [remove] = connectionBulkActions("destination", true);
+        const row = { ...config("backups"), name: "Backups", adapterId: "local-filesystem" };
+
+        expect(remove.itemName?.(row)).toBe("Backups");
+        expect(remove.itemDetail?.(row)).toBe("Local Filesystem");
+        expect(remove.itemDetail?.({ ...row, adapterId: "retired-adapter" })).toBe("retired-adapter");
+    });
 });

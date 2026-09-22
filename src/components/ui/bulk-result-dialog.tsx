@@ -1,14 +1,18 @@
 "use client";
 
 import * as React from "react";
+import { AlertTriangle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { DialogIcon, DialogItemList } from "@/components/ui/confirm-dialog";
 import {
     Dialog,
+    DialogClose,
     DialogContent,
     DialogDescription,
+    DialogFooter,
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import type { BulkFailure } from "@/lib/core/bulk";
 
 export interface BulkResultDialogProps {
@@ -28,30 +32,29 @@ export interface BulkResultDialogProps {
 export function BulkResultDialog({ open, onOpenChange, title, failures }: BulkResultDialogProps) {
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-lg">
-                <DialogHeader>
-                    <DialogTitle>{title}</DialogTitle>
-                    <DialogDescription>
-                        {failures.length === 1
-                            ? "One entry could not be processed."
-                            : `${failures.length} entries could not be processed.`}
-                    </DialogDescription>
-                </DialogHeader>
+            <DialogContent showCloseButton={false} className="gap-0 rounded-xl p-0 sm:max-w-md">
+                <div className="flex min-w-0 flex-col gap-4 p-5">
+                    <DialogHeader className="flex-row items-start gap-3 text-left">
+                        <DialogIcon icon={AlertTriangle} tone="warning" />
+                        <div className="min-w-0 space-y-1">
+                            <DialogTitle className="text-base">{title}</DialogTitle>
+                            <DialogDescription>
+                                {failures.length === 1
+                                    ? "One entry could not be processed."
+                                    : `${failures.length} entries could not be processed.`}
+                            </DialogDescription>
+                        </div>
+                    </DialogHeader>
 
-                {/* DialogContent is a flex column, whose items default to
-                    min-width:auto - min-w-0 is what lets a long name wrap here. */}
-                <ScrollArea className="*:data-[slot=scroll-area-viewport]:max-h-[calc(80vh-10rem)] min-w-0">
-                    <ul className="min-w-0 space-y-3 pr-3">
-                        {failures.map((failure) => (
-                            <li key={failure.id} className="space-y-1 border-l-2 border-destructive/60 pl-3">
-                                <p className="text-sm font-medium break-all">
-                                    {failure.name ?? failure.id}
-                                </p>
-                                <p className="text-sm text-muted-foreground">{failure.error}</p>
-                            </li>
-                        ))}
-                    </ul>
-                </ScrollArea>
+                    <DialogItemList
+                        items={failures.map((failure) => ({ name: failure.name ?? failure.id, description: failure.error }))}
+                    />
+                </div>
+                <DialogFooter className="border-t bg-muted/30 px-5 py-3">
+                    <DialogClose asChild>
+                        <Button variant="outline">Close</Button>
+                    </DialogClose>
+                </DialogFooter>
             </DialogContent>
         </Dialog>
     );

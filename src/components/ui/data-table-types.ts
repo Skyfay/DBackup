@@ -70,6 +70,10 @@ export interface BulkAction<TData> {
     group?: string;
     /** Names a row for the confirmation preview and the failure list. */
     itemName?: (row: TData) => string;
+    /** A small icon before the name in the confirmation, such as the brand of a connection. */
+    itemIcon?: (row: TData) => React.ComponentType<{ className?: string }>;
+    /** A short muted fact after the name in the confirmation, such as the type of a connection. */
+    itemDetail?: (row: TData) => string;
     /** Performs the action. Reports per-row outcomes rather than throwing on the first failure. */
     run: (rows: TData[]) => Promise<BulkResult>;
 }

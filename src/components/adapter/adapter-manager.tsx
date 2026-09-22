@@ -5,7 +5,6 @@ import { useState, useEffect, useCallback, useMemo, useImperativeHandle, type Re
 import { STORAGE_ROLES, storageRoleLabel, supportsStorageRole, canOfferCounterpart, counterpartStorageRole, type StorageRole } from "@/lib/core/storage-roles";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertTriangle } from "lucide-react";
 import Link from "next/link";
@@ -31,6 +30,7 @@ import { ConnectionCard } from "./connection-card";
 import { ConnectionSplitView } from "./connection-split-view";
 import { adapterTypeIcon } from "./connection-type-icon";
 import { connectionBulkActions } from "./connection-bulk-actions";
+import { ConnectionDeleteDialog } from "./connection-delete-dialog";
 
 /** What the page around a manager can trigger, such as the Add button beside the tabs. */
 export interface AdapterManagerHandle {
@@ -158,28 +158,6 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
         return () => clearInterval(interval);
     }, [silentRefresh]);
 
-    const confirmDelete = async () => {
-        if (!deletingId) return;
-        const id = deletingId;
-
-        try {
-            const res = await fetch(`/api/adapters/${id}`, { method: 'DELETE' });
-            const data = await res.json();
-
-            if (res.ok && data.success) {
-                toast.success("Configuration deleted");
-                setConfigs(configs.filter(c => c.id !== id));
-                router.refresh();
-            } else {
-                toast.error(data.error || "Failed to delete");
-            }
-        } catch (_error) {
-             toast.error("Error deleting configuration");
-        } finally {
-            setDeletingId(null);
-        }
-    };
-
     const cloneAdapter = async (id: string, name: string, role?: StorageRole) => {
         setCloningId(id);
         try {
@@ -255,6 +233,7 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
 
     // A deleted connection has no row left to show, so its panel closes with it.
     const detailsConfig = details ? configs.find((config) => config.id === details.id) ?? null : null;
+    const deleting = deletingId ? configs.find((config) => config.id === deletingId) : undefined;
     const canViewHistory = permissions.includes(PERMISSIONS.HISTORY.READ);
 
     /** What the details of one connection offer, the same in the side panel and in the split view. */
@@ -399,22 +378,16 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                 </DialogContent>
             </Dialog>
 
-            <AlertDialog open={!!deletingId} onOpenChange={(open) => !open && setDeletingId(null)}>
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            This action cannot be undone. This will permanently delete this configuration.
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                            Delete
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
+            {deleting && (
+                <ConnectionDeleteDialog
+                    config={deleting}
+                    onClose={() => setDeletingId(null)}
+                    onDeleted={(id) => {
+                        setConfigs((current) => current.filter((config) => config.id !== id));
+                        router.refresh();
+                    }}
+                />
+            )}
 
             {historyAdapter && (
                 <StorageHistoryModal

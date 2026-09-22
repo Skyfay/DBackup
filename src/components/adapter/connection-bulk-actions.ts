@@ -2,7 +2,8 @@ import { Bell, BellOff, Eye, EyeOff, Trash } from "lucide-react";
 import type { BulkAction } from "@/components/ui/data-table";
 import { requestBulk } from "@/lib/bulk-request";
 import type { AdapterConfig } from "./types";
-import type { ConnectionKind } from "./connection-columns";
+import { kindNames, type ConnectionKind } from "./connection-columns";
+import { adapterTypeIcon } from "./connection-type-icon";
 
 const UPDATED = { verb: "update", verbPast: "updated", noun: "connection" };
 
@@ -13,6 +14,13 @@ function flags(config: AdapterConfig): { healthNotificationsDisabled?: boolean; 
         return {};
     }
 }
+
+/** How a connection shows in the confirmation and in the list of failures. */
+const ITEM = {
+    itemName: (config: AdapterConfig) => config.name,
+    itemIcon: (config: AdapterConfig) => adapterTypeIcon(config.adapterId),
+    itemDetail: (config: AdapterConfig) => kindNames.get(config.adapterId) ?? config.adapterId,
+};
 
 const run = (action: string) => (rows: AdapterConfig[]) =>
     requestBulk("/api/adapters/bulk", { action, ids: rows.map((config) => config.id) });
@@ -37,7 +45,7 @@ function setting(
         group,
         placement: "menu",
         icon,
-        itemName: (config) => config.name,
+        ...ITEM,
         isAvailable: (rows) => rows.some(changes),
         run: run(id),
     };
@@ -57,7 +65,7 @@ export function connectionBulkActions(kind: ConnectionKind, canManage: boolean):
         labels: { verb: "delete", verbPast: "deleted", noun: "connection" },
         icon: Trash,
         variant: "destructive",
-        itemName: (config) => config.name,
+        ...ITEM,
         confirm: {
             title: (rows) => `Delete ${rows.length} connection${rows.length === 1 ? "" : "s"}?`,
             // A connection still referenced by a job is refused per entry rather

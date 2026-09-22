@@ -9,7 +9,7 @@ All notable changes to DBackup are documented here.
 
 - **connections**: The connection tables show each connection's status with its response time, how many jobs use it, its last backup and its health checks of the last 24 hours. Every user can switch columns on and off, drag them into order and pick a row height, and the layout is saved to their account.
 - **connections**: A click on a connection opens a panel with what is wrong with it, its health checks of the last day, the jobs and templates using it with their last backup, and its settings. The connection test and editing are one click away from there.
-- **connections**: The Connections page switches between a table and cards and remembers the choice for each user. Phones always get the cards.
+- **connections**: The Connections page shows its connections as a table, as cards or as a list with the details beside it, and remembers the choice for each user. Phones always get the cards.
 
 ### 🐛 Bug Fixes
 

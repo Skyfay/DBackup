@@ -89,10 +89,15 @@ interface DataTableProps<TData, TValue> {
      * they open, are left to those controls. Give the row a button as well for keyboard users.
      */
     onRowClick?: (row: TData) => void;
-    /** "cards" draws the rows through `renderCard` in a grid, with the same toolbar, filters and pages. */
-    view?: "table" | "cards";
+    /**
+     * "cards" draws the rows through `renderCard` in a grid, "split" hands every filtered row
+     * to `renderSplit` at once. Both keep the toolbar, the search and the filters.
+     */
+    view?: "table" | "cards" | "split";
     /** One card. Its cells come from `row.getVisibleCells()`, so the Columns menu decides what a card shows. */
     renderCard?: (row: Row<TData>) => React.ReactNode;
+    /** The split view, given all rows that pass search and filters. It has no pages. */
+    renderSplit?: (rows: Row<TData>[]) => React.ReactNode;
 
     // Manual Pagination & Sorting Capabilities
     pageCount?: number;
@@ -130,6 +135,7 @@ export function DataTable<TData, TValue>({
     onRowClick,
     view = "table",
     renderCard,
+    renderSplit,
     pageCount,
     rowCount,
     pagination: controlledPagination,
@@ -318,6 +324,15 @@ export function DataTable<TData, TValue>({
             </TableBody>
         </Table>
     );
+
+    if (card && view === "split" && renderSplit) {
+        return (
+            <div className="min-w-0 space-y-4">
+                <div className="rounded-xl border bg-card text-card-foreground shadow-sm">{toolbar}</div>
+                {renderSplit(table.getPrePaginationRowModel().rows)}
+            </div>
+        );
+    }
 
     if (card && view === "cards" && renderCard) {
         const rows = table.getRowModel().rows;

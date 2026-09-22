@@ -17,8 +17,7 @@ export default async function ConnectionsPage() {
     const [layouts, savedView] = user
         ? await Promise.all([getTablePreferences(user.id, Object.values(CONNECTION_TABLE_IDS)), getViewMode(user.id, CONNECTIONS_PAGE_ID)])
         : [{}, null];
-    // Split joins the switch in a later release. Until then a saved split falls back to the table.
-    const initialView = savedView === "cards" ? "cards" : "table";
+    const initialView = savedView ?? "table";
 
     // Counts only for the tabs the user can open, so the page never hints at the others.
     const canViewStorage = permissions.includes(PERMISSIONS.DESTINATIONS.READ);

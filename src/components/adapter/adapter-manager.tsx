@@ -27,7 +27,9 @@ import { connectionColumns, type ConnectionKind } from "./connection-columns";
 import { ConnectionRowActions } from "./connection-row-actions";
 import { ConnectionStatusFilter, matchesStatus, type StatusFilter } from "./connection-status-filter";
 import { ConnectionDetailsSheet } from "./connection-details-sheet";
+import { ConnectionDetailsContent } from "./connection-details-content";
 import { ConnectionCard } from "./connection-card";
+import { ConnectionSplitView } from "./connection-split-view";
 
 /** What the page around a manager can trigger, such as the Add button beside the tabs. */
 export interface AdapterManagerHandle {
@@ -58,8 +60,11 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
     const [hasLoaded, setHasLoaded] = useState(false);
     const [historyAdapter, setHistoryAdapter] = useState<{ id: string; name: string } | null>(null);
     const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-    // The id stays after closing, so the panel keeps its content while it slides out.
-    const [details, setDetails] = useState<{ id: string; open: boolean } | null>(null);
+    // The id stays after closing, so the panel keeps its content while it slides out. The view
+    // it was opened in is kept too, so leaving that view closes it for good.
+    const [details, setDetails] = useState<{ id: string; open: boolean; view: typeof view } | null>(null);
+    // The split view shows one connection at a time. Null picks the first one listed.
+    const [splitId, setSplitId] = useState<string | null>(null);
     const router = useRouter();
     const layout = useTableLayout(tableId, initialLayout);
 
@@ -240,7 +245,7 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
         );
     }, [type, canViewStorage, canManage, cloningId, router]);
 
-    const openDetails = useCallback((config: AdapterConfig) => setDetails({ id: config.id, open: true }), []);
+    const openDetails = useCallback((config: AdapterConfig) => setDetails({ id: config.id, open: true, view }), [view]);
 
     const columns = useMemo(
         () => connectionColumns({ kind, canViewHealth, renderActions: (config) => renderActions(config), onOpen: openDetails }),
@@ -249,6 +254,17 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
 
     // A deleted connection has no row left to show, so its panel closes with it.
     const detailsConfig = details ? configs.find((config) => config.id === details.id) ?? null : null;
+    const canViewHistory = permissions.includes(PERMISSIONS.HISTORY.READ);
+
+    /** What the details of one connection offer, the same in the side panel and in the split view. */
+    const detailProps = (config: AdapterConfig) => ({
+        kind,
+        canTest: canManage && type !== "notification",
+        canViewHistory,
+        exploreHref: type === "database" ? `/dashboard/explorer?sourceId=${config.id}` : undefined,
+        onEdit: canManage ? () => { setEditingId(config.id); setIsDialogOpen(true); } : undefined,
+        menu: renderActions(config, true),
+    });
 
     const visibleConfigs = useMemo(() => configs.filter((config) => matchesStatus(config, statusFilter)), [configs, statusFilter]);
 
@@ -344,19 +360,26 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                     onRowClick={openDetails}
                     view={view}
                     renderCard={(row) => <ConnectionCard row={row} onOpen={openDetails} />}
+                    renderSplit={(rows) => (
+                        <ConnectionSplitView
+                            configs={rows.map((row) => row.original)}
+                            withHealth={type !== "notification"}
+                            selectedId={splitId}
+                            onSelect={setSplitId}
+                            renderPanel={(config) => (
+                                <ConnectionDetailsContent key={config.id} variant="inline" config={config} {...detailProps(config)} />
+                            )}
+                        />
+                    )}
                 />
             )}
 
             <ConnectionDetailsSheet
-                open={details?.open ?? false}
+                // The split view shows the details itself, so the panel only opens in the view it was opened from.
+                open={details !== null && details.open && details.view === view}
                 config={detailsConfig}
-                kind={kind}
                 onClose={() => setDetails((current) => current && { ...current, open: false })}
-                canTest={canManage && type !== "notification"}
-                canViewHistory={permissions.includes(PERMISSIONS.HISTORY.READ)}
-                exploreHref={detailsConfig && type === "database" ? `/dashboard/explorer?sourceId=${detailsConfig.id}` : undefined}
-                onEdit={canManage && detailsConfig ? () => { setEditingId(detailsConfig.id); setIsDialogOpen(true); } : undefined}
-                menu={detailsConfig ? renderActions(detailsConfig, true) : null}
+                {...(detailsConfig ? detailProps(detailsConfig) : { kind, canTest: false, canViewHistory, menu: null })}
             />
 
             {/* Step 1: Adapter Picker */}

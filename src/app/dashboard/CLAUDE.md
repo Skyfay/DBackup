@@ -71,6 +71,7 @@ Every other page still has the old look. Do not copy patterns from it, copy them
 - A table whose columns the user picks gets `columnLayout={useTableLayout(tableId, saved)}` on its DataTable. Columns take `meta.pin`, `meta.defaultHidden` and `meta.filterOnly`, see `connection-columns.tsx`.
 - A row that opens details takes `onRowClick`, and its name cell gets a button as the keyboard way in. `isPlainClick` keeps clicks on controls and popovers inside the row from opening it.
 - A list that also offers cards passes `view="cards"` and `renderCard` to DataTable. A card renders the row's own cells, so the Columns menu decides what it shows, see `connection-card.tsx`. Bulk actions stay in the table view.
+- A list beside the details of the picked record passes `view="split"` and `renderSplit`, which gets every filtered row at once. See `connection-split-view.tsx`, whose details are the same component the side panel shows.
 
 ## Banners
 

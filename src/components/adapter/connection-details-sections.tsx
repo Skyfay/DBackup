@@ -76,12 +76,15 @@ export interface DetailStat {
     className?: string;
 }
 
-/** The headline numbers of a connection, in the strip style of the dashboard. */
-export function DetailStats({ stats }: { stats: DetailStat[] }) {
+/**
+ * The headline numbers of a connection, in the strip style of the dashboard. The cells take
+ * the colour of the surface they sit on, so the gaps between them draw the dividers.
+ */
+export function DetailStats({ stats, surface }: { stats: DetailStat[]; surface: "bg-background" | "bg-card" }) {
     return (
         <div className={cn("grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border", stats.length === 4 ? "sm:grid-cols-4" : "sm:grid-cols-3")}>
             {stats.map((stat) => (
-                <div key={stat.label} className="min-w-0 bg-background px-3 py-2.5">
+                <div key={stat.label} className={cn("min-w-0 px-3 py-2.5", surface)}>
                     <div className="truncate text-xs text-muted-foreground">{stat.label}</div>
                     <div className={cn("mt-1 truncate text-base font-semibold tabular-nums", stat.className)}>{stat.value}</div>
                     {stat.extra && <div className="truncate text-xs text-muted-foreground">{stat.extra}</div>}

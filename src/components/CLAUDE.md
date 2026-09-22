@@ -4,6 +4,8 @@
 
 Stack: Next.js 16 App Router, Tailwind CSS (mobile-first), Shadcn UI primitives in `src/components/ui/`, forms via `react-hook-form` + `zod`.
 
+The look of the running UI redesign (cards, numbers, colors, switchers, charts) lives in [app/dashboard/CLAUDE.md](../app/dashboard/CLAUDE.md). Read it before building or restyling anything a user sees.
+
 Before building anything, check `src/components/ui/` for an existing primitive. There are 35+ of them. Reaching for a raw `<div>` where a primitive exists is the single most common source of visual drift in this codebase.
 
 ---

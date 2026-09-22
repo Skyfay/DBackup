@@ -9,11 +9,13 @@ All notable changes to DBackup are documented here.
 
 - **storage**: A destination that cannot be listed during the storage refresh keeps the size and backup count of its last successful scan instead of an estimate from the run history. The dashboard shows how old those values are.
 - **storage**: The storage scan of a local destination no longer fails when retention deletes a backup while it runs.
+- **storage**: The storage history chart shows a shrinking destination with a minus sign and compares against its oldest measurement in the chosen range. Its axes space the days by time and step in round sizes.
 
 ### 🎨 Improvements
 
 - **ui**: The sidebar collapses to icons with the new button in the header or Ctrl+B (⌘B on macOS), and small screens get it as a slide-in menu. Both themes use a new zinc color palette, and the interface uses the Geist font on every operating system.
 - **dashboard**: The overview was rebuilt with a status banner that names a failing job and can rerun it, trend cards, a switch between the latest executions and the jobs, and a backup calendar that shows as many weeks as the screen fits. It works on phones, and its statistics are cached for a minute or until the next backup finishes.
+- **storage**: The storage history dialog matches the new dashboard and switches between 7 days, 30 days, 90 days and a year without loading again.
 
 ### 🗑️ Removed
 

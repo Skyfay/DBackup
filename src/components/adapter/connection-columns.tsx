@@ -95,7 +95,8 @@ export function connectionColumns({ kind, canViewHealth, renderActions, onOpen }
         cell: ({ row }) => {
             const value = connectionAddress(row.original.adapterId, row.original.config);
             if (value === undefined) return <span className="text-sm text-destructive">Invalid config</span>;
-            return value ? <span className="block max-w-72 truncate text-sm">{value}</span> : <Muted>-</Muted>;
+            // Long enough for a typical cloud host name. Anything longer is cut, and hovering shows all of it.
+            return value ? <span className="block max-w-96 truncate text-sm" title={value}>{value}</span> : <Muted>-</Muted>;
         },
     };
     const version: ColumnDef<AdapterConfig> = {

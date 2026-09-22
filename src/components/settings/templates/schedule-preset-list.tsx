@@ -85,7 +85,7 @@ export function SchedulePresetList() {
       confirm: {
         title: (rows) => `Delete ${rows.length} schedule preset${rows.length === 1 ? "" : "s"}?`,
         description: () =>
-          "This cannot be undone. An entry that is still in use is kept and listed afterwards.",
+          "An entry that is still in use is kept and listed afterwards.",
         confirmLabel: "Delete",
       },
       run: (rows) => unwrapBulkAction(bulkDeleteSchedulePresets(rows.map((row) => row.id))),

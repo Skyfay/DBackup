@@ -117,7 +117,7 @@ export function ExcludePatternPresetList() {
       confirm: {
         title: (rows) => `Delete ${rows.length} exclude preset${rows.length === 1 ? "" : "s"}?`,
         description: () =>
-          "This cannot be undone. An entry that is still in use is kept and listed afterwards.",
+          "An entry that is still in use is kept and listed afterwards.",
         confirmLabel: "Delete",
       },
       run: (rows) => unwrapBulkAction(bulkDeleteExcludePatternPresets(rows.map((row) => row.id))),

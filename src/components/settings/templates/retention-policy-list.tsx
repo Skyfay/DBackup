@@ -136,14 +136,14 @@ export function RetentionPolicyList() {
   const bulkActions = useMemo<BulkAction<RetentionPolicy>[]>(() => [
     {
       id: "delete",
-      labels: { verb: "delete", verbPast: "deleted", noun: "retention policy" },
+      labels: { verb: "delete", verbPast: "deleted", noun: "retention policy", nounPlural: "retention policies" },
       icon: Trash2,
       variant: "destructive",
       itemName: (row) => row.name,
       confirm: {
-        title: (rows) => `Delete ${rows.length} retention policy${rows.length === 1 ? "" : "s"}?`,
+        title: (rows) => `Delete ${rows.length} retention polic${rows.length === 1 ? "y" : "ies"}?`,
         description: () =>
-          "This cannot be undone. An entry that is still in use is kept and listed afterwards.",
+          "An entry that is still in use is kept and listed afterwards.",
         confirmLabel: "Delete",
       },
       run: (rows) => unwrapBulkAction(bulkDeleteRetentionPolicies(rows.map((row) => row.id))),

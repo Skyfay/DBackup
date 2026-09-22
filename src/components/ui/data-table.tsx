@@ -267,6 +267,7 @@ export function DataTable<TData, TValue>({
             actions={bulkActions}
             onClearSelection={() => setRowSelection({})}
             onComplete={onBulkActionComplete}
+            getRowId={getRowId}
             variant={card ? "card" : "default"}
         />
     );

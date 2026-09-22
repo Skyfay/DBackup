@@ -110,7 +110,7 @@ export function NamingTemplateList() {
       confirm: {
         title: (rows) => `Delete ${rows.length} naming template${rows.length === 1 ? "" : "s"}?`,
         description: () =>
-          "This cannot be undone. An entry that is still in use is kept and listed afterwards.",
+          "An entry that is still in use is kept and listed afterwards.",
         confirmLabel: "Delete",
       },
       run: (rows) => unwrapBulkAction(bulkDeleteNamingTemplates(rows.map((row) => row.id))),

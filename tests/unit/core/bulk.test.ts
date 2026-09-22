@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { runBulk, summarizeBulkResult, emptyBulkResult, type BulkLabels } from '@/lib/core/bulk';
+import { runBulk, summarizeBulkResult, emptyBulkResult, countNoun, describeBulkFailures, type BulkLabels } from '@/lib/core/bulk';
 
 const jobLabels: BulkLabels = { verb: 'delete', verbPast: 'deleted', noun: 'job' };
 
@@ -105,5 +105,31 @@ describe('summarizeBulkResult', () => {
 
     it('handles an empty result', () => {
         expect(summarizeBulkResult(emptyBulkResult(), jobLabels)).toBe('No jobs deleted');
+    });
+});
+
+describe('countNoun', () => {
+    it('names one entry in the singular and several in the plural', () => {
+        expect(countNoun(1, jobLabels)).toBe('1 job');
+        expect(countNoun(7, jobLabels)).toBe('7 jobs');
+        expect(countNoun(2, { ...jobLabels, noun: 'retention policy', nounPlural: 'retention policies' })).toBe('2 retention policies');
+    });
+});
+
+describe('describeBulkFailures', () => {
+    const failure = (id: string) => ({ id, error: 'in use' });
+
+    it('names what failed and how the rest went', () => {
+        expect(describeBulkFailures({ succeeded: ['a', 'b', 'c', 'd', 'e', 'f', 'g'], failed: [failure('h')] }, jobLabels)).toEqual({
+            title: '1 job was not deleted',
+            note: '7 of 8 deleted',
+        });
+    });
+
+    it('says so when nothing went through', () => {
+        expect(describeBulkFailures({ succeeded: [], failed: [failure('a'), failure('b')] }, jobLabels)).toEqual({
+            title: '2 jobs were not deleted',
+            note: 'Nothing was deleted',
+        });
     });
 });

@@ -29,7 +29,7 @@ import { ConnectionDetailsContent } from "./connection-details-content";
 import { ConnectionCard } from "./connection-card";
 import { ConnectionSplitView } from "./connection-split-view";
 import { adapterTypeIcon } from "./connection-type-icon";
-import { connectionBulkActions } from "./connection-bulk-actions";
+import { connectionBulkActions, deleteBlocker } from "./connection-bulk-actions";
 import { ConnectionDeleteDialog } from "./connection-delete-dialog";
 
 /** What the page around a manager can trigger, such as the Add button beside the tabs. */
@@ -218,7 +218,12 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                 onEdit={!inPanel && canManage ? () => { setEditingId(config.id); setIsDialogOpen(true); } : undefined}
                 onClone={canManage ? () => setCloneTarget({ id: config.id, name: config.name }) : undefined}
                 counterpart={canManage && type === "storage" ? counterpartOf() : undefined}
-                onDelete={canManage ? () => setDeletingId(config.id) : undefined}
+                onDelete={canManage ? () => {
+                    // The row already knows whether a job or a template still holds the connection.
+                    const blocker = deleteBlocker(config);
+                    if (blocker) toast.error(`${config.name} cannot be deleted. ${blocker}.`);
+                    else setDeletingId(config.id);
+                } : undefined}
                 busy={cloningId === config.id}
             />
         );

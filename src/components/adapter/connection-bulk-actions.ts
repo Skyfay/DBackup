@@ -22,6 +22,23 @@ const ITEM = {
     itemDetail: (config: AdapterConfig) => kindNames.get(config.adapterId) ?? config.adapterId,
 };
 
+/**
+ * Why a connection cannot be deleted yet, or null. Mirrors the refusal in `describeAdapterUsage`:
+ * jobs using it as source, destination or directory source, and notification templates sending
+ * through it. A job that only sends its own notifications through a channel does not hold it.
+ * The server checks again, so a use added meanwhile still shows up in the failure list.
+ */
+export function deleteBlocker(config: AdapterConfig): string | null {
+    const usedBy = config.overview?.usedBy;
+    if (!usedBy) return null;
+    const jobs = config.type === "notification" ? 0 : usedBy.jobs;
+    const parts = [
+        ...(jobs > 0 ? [`${jobs} job${jobs === 1 ? "" : "s"}`] : []),
+        ...(usedBy.templates > 0 ? [`${usedBy.templates} notification template${usedBy.templates === 1 ? "" : "s"}`] : []),
+    ];
+    return parts.length > 0 ? `Used by ${parts.join(" and ")}` : null;
+}
+
 const run = (action: string) => (rows: AdapterConfig[]) =>
     requestBulk("/api/adapters/bulk", { action, ids: rows.map((config) => config.id) });
 
@@ -66,12 +83,10 @@ export function connectionBulkActions(kind: ConnectionKind, canManage: boolean):
         icon: Trash,
         variant: "destructive",
         ...ITEM,
+        // Connections still in use are listed apart in the confirmation and never sent.
+        ineligible: deleteBlocker,
         confirm: {
             title: (rows) => `Delete ${rows.length} connection${rows.length === 1 ? "" : "s"}?`,
-            // A connection still referenced by a job is refused per entry rather
-            // than up front, because the reason names the jobs holding it.
-            description: () =>
-                "This cannot be undone. Connections still used by a job or a notification template are kept and listed afterwards.",
             confirmLabel: "Delete",
         },
         run: run("delete"),

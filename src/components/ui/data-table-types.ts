@@ -48,7 +48,9 @@ export interface BulkAction<TData> {
      */
     confirm?: {
         title: (rows: TData[]) => string;
-        description: (rows: TData[]) => React.ReactNode;
+        /** More context in the body. A destructive action already says it cannot be undone. */
+        description?: (rows: TData[]) => React.ReactNode;
+        /** The verb on the button, which adds the count and the noun. Defaults to the labels' verb. */
         confirmLabel?: string;
     };
     /**

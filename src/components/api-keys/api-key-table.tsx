@@ -105,7 +105,7 @@ export function ApiKeyTable({ data, canManage }: ApiKeyTableProps) {
                 confirm: {
                     title: (rows) => `Delete ${rows.length} API key${rows.length === 1 ? "" : "s"}?`,
                     description: () =>
-                        "This cannot be undone. Any integration using one of these keys loses access immediately.",
+                        "Any integration using one of these keys loses access immediately.",
                     confirmLabel: "Delete",
                 },
                 run: (rows) => unwrapBulkAction(bulkDeleteApiKeys(rows.map((key) => key.id))),

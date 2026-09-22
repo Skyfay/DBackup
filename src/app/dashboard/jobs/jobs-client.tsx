@@ -194,7 +194,7 @@ export function JobsClient({ canManage, canExecute, sources, destinations, notif
                 confirm: {
                     title: (rows) => `Delete ${rows.length} job${rows.length === 1 ? "" : "s"}?`,
                     description: () =>
-                        "This cannot be undone. Backups already written to storage are not affected.",
+                        "Backups already written to storage are not affected.",
                     confirmLabel: "Delete",
                 },
                 run: (rows) => runAction("delete", rows),

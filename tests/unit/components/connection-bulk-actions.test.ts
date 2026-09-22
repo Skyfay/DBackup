@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { connectionBulkActions } from "@/components/adapter/connection-bulk-actions";
+import { connectionBulkActions, deleteBlocker } from "@/components/adapter/connection-bulk-actions";
 import type { AdapterConfig } from "@/components/adapter/types";
 
 const config = (id: string, metadata: Record<string, unknown> = {}): AdapterConfig => ({
@@ -45,5 +45,33 @@ describe("connectionBulkActions", () => {
         expect(remove.itemName?.(row)).toBe("Backups");
         expect(remove.itemDetail?.(row)).toBe("Local Filesystem");
         expect(remove.itemDetail?.({ ...row, adapterId: "retired-adapter" })).toBe("retired-adapter");
+    });
+});
+
+describe("deleteBlocker", () => {
+    const used = (type: string, jobs: number, templates: number): AdapterConfig => ({
+        ...config("a"),
+        type,
+        overview: { usedBy: { jobs, templates } } as AdapterConfig["overview"],
+    });
+
+    it("keeps a connection that a job still uses out of a delete", () => {
+        expect(deleteBlocker(used("database", 2, 0))).toBe("Used by 2 jobs");
+        expect(deleteBlocker(used("storage", 1, 0))).toBe("Used by 1 job");
+    });
+
+    it("lets a notification channel go when jobs only send their own notifications through it", () => {
+        expect(deleteBlocker(used("notification", 3, 0))).toBeNull();
+        expect(deleteBlocker(used("notification", 3, 1))).toBe("Used by 1 notification template");
+    });
+
+    it("leaves the decision to the server when the usage is not loaded", () => {
+        expect(deleteBlocker(config("a"))).toBeNull();
+    });
+
+    it("is what the delete action checks for every selected connection", () => {
+        const [remove] = connectionBulkActions("database", true);
+        expect(remove.ineligible?.(used("database", 1, 0))).toBe("Used by 1 job");
+        expect(remove.ineligible?.(used("database", 0, 0))).toBeNull();
     });
 });

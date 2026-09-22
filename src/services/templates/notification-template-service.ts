@@ -2,6 +2,7 @@ import prisma from "@/lib/prisma";
 import { runBulk, type BulkResult } from "@/lib/core/bulk";
 import { logger } from "@/lib/logging/logger";
 import { NotFoundError, ServiceError } from "@/lib/logging/errors";
+import { invalidateDashboardCache } from "@/services/dashboard/cache";
 
 const log = logger.child({ service: "NotificationTemplateService" });
 
@@ -68,6 +69,8 @@ export async function createNotificationTemplate(input: {
     include: { channels: { include: { config: true } } },
   });
 
+  // The Connections page counts the templates sending through each channel.
+  invalidateDashboardCache();
   log.info("Notification template created", { id: template.id, name: template.name });
   return template;
 }
@@ -136,6 +139,7 @@ export async function updateNotificationTemplate(
     });
   });
 
+  invalidateDashboardCache();
   log.info("Notification template updated", { id });
   return updated;
 }
@@ -189,6 +193,7 @@ export async function deleteNotificationTemplate(id: string) {
   }
 
   await prisma.notificationTemplate.delete({ where: { id } });
+  invalidateDashboardCache();
   log.info("Notification template deleted", { id });
 }
 

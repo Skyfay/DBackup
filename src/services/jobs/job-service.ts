@@ -7,6 +7,7 @@ import { registry } from "@/lib/core/registry";
 import { isCombinableWithDirectories } from "@/lib/adapters/combinable";
 import { registerAdapters } from "@/lib/adapters";
 import { runBulk, type BulkResult } from "@/lib/core/bulk";
+import { invalidateDashboardCache } from "@/services/dashboard/cache";
 import type { DatabaseAdapter } from "@/lib/core/interfaces";
 
 registerAdapters();
@@ -300,7 +301,7 @@ export class JobService {
             include: jobInclude
         });
 
-        scheduler.refresh().catch((e) => log.error("Scheduler refresh failed after createJob", {}, wrapError(e)));
+        this.jobsChanged("createJob");
 
         return newJob;
     }
@@ -429,7 +430,7 @@ export class JobService {
             });
         });
 
-        scheduler.refresh().catch((e) => log.error("Scheduler refresh failed after updateJob", {}, wrapError(e)));
+        this.jobsChanged("updateJob");
 
         return updatedJob;
     }
@@ -439,7 +440,7 @@ export class JobService {
             where: { id },
         });
 
-        scheduler.refresh().catch((e) => log.error("Scheduler refresh failed after deleteJob", {}, wrapError(e)));
+        this.jobsChanged("deleteJob");
 
         return deletedJob;
     }
@@ -461,7 +462,7 @@ export class JobService {
         );
 
         if (result.succeeded.length > 0) {
-            scheduler.refresh().catch((e) => log.error("Scheduler refresh failed after deleteJobs", {}, wrapError(e)));
+            this.jobsChanged("deleteJobs");
         }
 
         return result;
@@ -575,9 +576,19 @@ export class JobService {
             include: jobInclude
         });
 
-        scheduler.refresh().catch((e) => log.error("Scheduler refresh failed after cloneJob", {}, wrapError(e)));
+        this.jobsChanged("cloneJob");
 
         return clonedJob;
+    }
+
+    /**
+     * Reloads the schedule after jobs were added, changed or removed. It also drops the cached
+     * connection overview, whose count of jobs per connection decides which connections the
+     * Connections page lets you delete.
+     */
+    private jobsChanged(action: string) {
+        scheduler.refresh().catch((e) => log.error(`Scheduler refresh failed after ${action}`, {}, wrapError(e)));
+        invalidateDashboardCache();
     }
 }
 

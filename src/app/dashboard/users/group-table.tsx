@@ -42,7 +42,7 @@ export function GroupTable({ data, canManage }: GroupTableProps) {
                 confirm: {
                     title: (rows) => `Delete ${rows.length} group${rows.length === 1 ? "" : "s"}?`,
                     description: () =>
-                        "This cannot be undone. A group that still has users assigned is kept and listed afterwards.",
+                        "A group that still has users assigned is kept and listed afterwards.",
                     confirmLabel: "Delete",
                 },
                 run: (rows) => unwrapBulkAction(bulkDeleteGroups(rows.map((group) => group.id))),

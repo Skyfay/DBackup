@@ -77,7 +77,10 @@ export async function cached<T>(
     return promise;
 }
 
-/** Drops every cached dashboard value a new run can change. Called when a backup finishes. */
+/**
+ * Drops every cached dashboard value a new run can change. Called when a backup finishes, and
+ * when jobs or notification templates change which connections they use.
+ */
 export function invalidateDashboardCache(): void {
     state.generation++;
     for (const [key, entry] of state.entries) {

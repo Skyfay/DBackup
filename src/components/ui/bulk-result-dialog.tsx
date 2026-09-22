@@ -3,23 +3,18 @@
 import * as React from "react";
 import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { DialogIcon, DialogItemList } from "@/components/ui/confirm-dialog";
-import {
-    Dialog,
-    DialogClose,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-} from "@/components/ui/dialog";
-import type { BulkFailure } from "@/lib/core/bulk";
+import { DIALOG_FOOTER, DIALOG_SURFACE, DialogHead, DialogItemList, dialogNoteClass, type DialogListItem } from "@/components/ui/confirm-dialog";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 
 export interface BulkResultDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
+    /** Names what was not done, like "1 connection was not deleted". */
     title: string;
-    failures: BulkFailure[];
+    /** How the rest went, like "7 of 8 deleted". */
+    note: string;
+    /** The rows that failed, each with its reason as the description. */
+    failures: DialogListItem[];
 }
 
 /**
@@ -29,28 +24,18 @@ export interface BulkResultDialogProps {
  * for no decision. The reasons here are long and actionable, such as which jobs still use
  * a connection, which is exactly what a toast would truncate and then dismiss.
  */
-export function BulkResultDialog({ open, onOpenChange, title, failures }: BulkResultDialogProps) {
+export function BulkResultDialog({ open, onOpenChange, title, note, failures }: BulkResultDialogProps) {
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent showCloseButton={false} className="gap-0 rounded-xl p-0 sm:max-w-md">
-                <div className="flex min-w-0 flex-col gap-4 p-5">
-                    <DialogHeader className="flex-row items-start gap-3 text-left">
-                        <DialogIcon icon={AlertTriangle} tone="warning" />
-                        <div className="min-w-0 space-y-1">
-                            <DialogTitle className="text-base">{title}</DialogTitle>
-                            <DialogDescription>
-                                {failures.length === 1
-                                    ? "One entry could not be processed."
-                                    : `${failures.length} entries could not be processed.`}
-                            </DialogDescription>
-                        </div>
-                    </DialogHeader>
-
-                    <DialogItemList
-                        items={failures.map((failure) => ({ name: failure.name ?? failure.id, description: failure.error }))}
-                    />
+            <DialogContent showCloseButton={false} className={DIALOG_SURFACE}>
+                <DialogHead tone="warning" icon={AlertTriangle}>
+                    <DialogTitle className="text-base leading-6">{title}</DialogTitle>
+                    <DialogDescription className={dialogNoteClass("warning")}>{note}</DialogDescription>
+                </DialogHead>
+                <div className="min-w-0 px-5 py-4">
+                    <DialogItemList items={failures} />
                 </div>
-                <DialogFooter className="border-t bg-muted/30 px-5 py-3">
+                <DialogFooter className={DIALOG_FOOTER}>
                     <DialogClose asChild>
                         <Button variant="outline">Close</Button>
                     </DialogClose>

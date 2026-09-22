@@ -13,10 +13,9 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { BulkConfirmDialog } from "@/components/ui/bulk-confirm-dialog";
-import { BulkResultDialog } from "@/components/ui/bulk-result-dialog";
+import { BulkConfirmation, BulkFailures, capitalize, type BulkOutcome, type BulkPartition } from "@/components/ui/data-table-bulk-dialogs";
 import type { BulkAction } from "@/components/ui/data-table-types";
-import { summarizeBulkResult, BULK_REQUEST_LIMIT, type BulkFailure, type BulkResult } from "@/lib/core/bulk";
+import { summarizeBulkResult, BULK_REQUEST_LIMIT, type BulkResult } from "@/lib/core/bulk";
 import { logger } from "@/lib/logging/logger";
 
 const log = logger.child({ component: "DataTableBulkBar" });
@@ -26,6 +25,8 @@ interface DataTableBulkBarProps<TData> {
     actions: BulkAction<TData>[];
     onClearSelection: () => void;
     onComplete?: () => void | Promise<void>;
+    /** The table's row ids, which put the icons of the rows back beside the failures. */
+    getRowId?: (row: TData, index: number) => string;
     /**
      * "card" lays the bar over the toolbar of a card table, so the rows do not move down under
      * the pointer when the first one is ticked. It also groups menu actions under More.
@@ -46,11 +47,12 @@ export function DataTableBulkBar<TData>({
     actions,
     onClearSelection,
     onComplete,
+    getRowId,
     variant = "default",
 }: DataTableBulkBarProps<TData>) {
     const [pendingAction, setPendingAction] = React.useState<BulkAction<TData> | null>(null);
     const [runningId, setRunningId] = React.useState<string | null>(null);
-    const [failures, setFailures] = React.useState<BulkFailure[] | null>(null);
+    const [outcome, setOutcome] = React.useState<BulkOutcome<TData> | null>(null);
 
     const nameOf = React.useCallback(
         (action: BulkAction<TData>, row: TData, index: number) =>
@@ -60,12 +62,12 @@ export function DataTableBulkBar<TData>({
 
     /** Splits the selection into what this action will touch and what it skips. */
     const partition = React.useCallback(
-        (action: BulkAction<TData>) => {
+        (action: BulkAction<TData>): BulkPartition<TData> => {
             const eligible: TData[] = [];
-            const skipped: { name: string; reason: string }[] = [];
+            const skipped: BulkPartition<TData>["skipped"] = [];
             selectedRows.forEach((row, index) => {
                 const reason = action.ineligible?.(row) ?? null;
-                if (reason) skipped.push({ name: nameOf(action, row, index), reason });
+                if (reason) skipped.push({ row, name: nameOf(action, row, index), reason });
                 else eligible.push(row);
             });
             return { eligible, skipped };
@@ -73,7 +75,7 @@ export function DataTableBulkBar<TData>({
         [selectedRows, nameOf]
     );
 
-    const report = React.useCallback((action: BulkAction<TData>, result: BulkResult) => {
+    const report = React.useCallback((action: BulkAction<TData>, result: BulkResult, rows: TData[]) => {
         const succeeded = result.succeeded.length;
         const failed = result.failed.length;
         const summary = summarizeBulkResult(result, action.labels);
@@ -83,7 +85,7 @@ export function DataTableBulkBar<TData>({
             return;
         }
 
-        const showDetails = () => setFailures(result.failed);
+        const showDetails = () => setOutcome({ action, result, rows });
 
         if (succeeded === 0 && failed === 1) {
             // A single failure has room for its actual reason, which beats a count.
@@ -109,7 +111,7 @@ export function DataTableBulkBar<TData>({
             setRunningId(action.id);
             try {
                 const result = await action.run(rows);
-                report(action, result);
+                report(action, result, rows);
                 if (result.succeeded.length > 0) onClearSelection();
             } catch (error: unknown) {
                 // The action itself failed rather than any single row. Nothing is known
@@ -130,8 +132,11 @@ export function DataTableBulkBar<TData>({
             const { eligible, skipped } = partition(action);
 
             if (eligible.length === 0) {
+                // One entry is named, so the reason is not left without its subject.
                 toast.error(
-                    skipped[0]?.reason ?? "None of the selected entries can be used for this action."
+                    skipped.length === 1
+                        ? `${skipped[0].name}: ${skipped[0].reason}`
+                        : skipped[0]?.reason ?? "None of the selected entries can be used for this action."
                 );
                 return;
             }
@@ -153,31 +158,16 @@ export function DataTableBulkBar<TData>({
     const dialogs = (
         <>
             {pendingAction && confirmState && (
-                <BulkConfirmDialog
-                    open
-                    onOpenChange={(open) => !open && setPendingAction(null)}
-                    title={pendingAction.confirm!.title(confirmState.eligible)}
-                    description={pendingAction.confirm!.description(confirmState.eligible)}
-                    icon={pendingAction.icon}
-                    items={confirmState.eligible.map((row, index) => ({
-                        name: nameOf(pendingAction, row, index),
-                        detail: pendingAction.itemDetail?.(row),
-                        icon: pendingAction.itemIcon?.(row),
-                    }))}
-                    skipped={confirmState.skipped}
-                    confirmLabel={pendingAction.confirm!.confirmLabel}
-                    destructive={pendingAction.variant === "destructive"}
+                <BulkConfirmation
+                    action={pendingAction}
+                    partition={confirmState}
+                    nameOf={nameOf}
                     isPending={runningId === pendingAction.id}
+                    onCancel={() => setPendingAction(null)}
                     onConfirm={() => void execute(pendingAction, confirmState.eligible)}
                 />
             )}
-
-            <BulkResultDialog
-                open={failures !== null}
-                onOpenChange={(open) => !open && setFailures(null)}
-                title="Some entries were not processed"
-                failures={failures ?? []}
-            />
+            {outcome && <BulkFailures outcome={outcome} getRowId={getRowId} onClose={() => setOutcome(null)} />}
         </>
     );
 
@@ -310,6 +300,5 @@ function groupMenuActions<TData>(actions: BulkAction<TData>[]): { label?: string
 
 /** "Delete 3". Derived from the action's labels so call sites do not repeat the verb. */
 function defaultLabel<TData>(action: BulkAction<TData>, count: number): string {
-    const verb = action.labels.verb;
-    return `${verb.charAt(0).toUpperCase()}${verb.slice(1)} ${count}`;
+    return `${capitalize(action.labels.verb)} ${count}`;
 }

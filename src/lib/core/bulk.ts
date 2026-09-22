@@ -98,13 +98,31 @@ export function summarizeBulkResult(result: BulkResult, labels: BulkLabels): str
     if (total === 0) return `No ${plural} ${labels.verbPast}`;
 
     if (failed === 0) {
-        return `${succeeded} ${succeeded === 1 ? labels.noun : plural} ${labels.verbPast}`;
+        return `${countNoun(succeeded, labels)} ${labels.verbPast}`;
     }
 
     if (succeeded === 0) {
         // Nothing happened, so the infinitive reads better than a past participle.
-        return `Could not ${labels.verb} ${failed} ${failed === 1 ? labels.noun : plural}`;
+        return `Could not ${labels.verb} ${countNoun(failed, labels)}`;
     }
 
     return `${succeeded} of ${total} ${plural} ${labels.verbPast}`;
+}
+
+/** A count with its noun, like "1 connection" or "7 connections". */
+export function countNoun(count: number, labels: BulkLabels): string {
+    return `${count} ${count === 1 ? labels.noun : labels.nounPlural ?? `${labels.noun}s`}`;
+}
+
+/**
+ * Title and note of the list of rows a bulk action could not process. Reads
+ * "1 connection was not deleted" over "7 of 8 deleted", or over "Nothing was deleted".
+ */
+export function describeBulkFailures(result: BulkResult, labels: BulkLabels): { title: string; note: string } {
+    const succeeded = result.succeeded.length;
+    const failed = result.failed.length;
+    return {
+        title: `${countNoun(failed, labels)} ${failed === 1 ? "was" : "were"} not ${labels.verbPast}`,
+        note: succeeded === 0 ? `Nothing was ${labels.verbPast}` : `${succeeded} of ${succeeded + failed} ${labels.verbPast}`,
+    };
 }

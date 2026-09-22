@@ -472,7 +472,7 @@ export function NotificationTemplateList({
       confirm: {
         title: (rows) => `Delete ${rows.length} notification template${rows.length === 1 ? "" : "s"}?`,
         description: () =>
-          "This cannot be undone. A template still used by a job is kept and listed afterwards.",
+          "A template still used by a job is kept and listed afterwards.",
         confirmLabel: "Delete",
       },
       run: (rows) => unwrapBulkAction(bulkDeleteNotificationTemplates(rows.map((row) => row.id))),

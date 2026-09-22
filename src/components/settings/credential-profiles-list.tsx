@@ -190,7 +190,7 @@ export function CredentialProfilesList({ canReveal }: { canReveal: boolean }) {
             confirm: {
                 title: (rows) => `Delete ${rows.length} credential profile${rows.length === 1 ? "" : "s"}?`,
                 description: () =>
-                    "This cannot be undone. A profile still attached to a connection is kept and listed afterwards.",
+                    "A profile still attached to a connection is kept and listed afterwards.",
                 confirmLabel: "Delete",
             },
             run: (rows) => requestBulk("/api/credentials/bulk", {

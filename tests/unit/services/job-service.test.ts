@@ -2,12 +2,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { prismaMock } from '@/lib/testing/prisma-mock';
 import { JobService, CreateJobInput } from '@/services/jobs/job-service';
 import { scheduler } from '@/lib/server/scheduler';
+import { invalidateDashboardCache } from '@/services/dashboard/cache';
 
 // Mock the global scheduler singleton to avoid side effects (like starting cron timers)
 vi.mock('@/lib/server/scheduler', () => ({
     scheduler: {
         refresh: vi.fn().mockResolvedValue(undefined)
     }
+}));
+
+vi.mock('@/services/dashboard/cache', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('@/services/dashboard/cache')>()),
+    invalidateDashboardCache: vi.fn(),
 }));
 
 describe('JobService', () => {
@@ -555,6 +561,16 @@ describe('JobService', () => {
             expect(prismaMock.job.delete).toHaveBeenCalledWith({ where: { id: 'job-1' } });
             expect(scheduler.refresh).toHaveBeenCalledTimes(1);
             expect(result).toEqual(deletedJob);
+        });
+
+        // The overview counts the jobs per connection, and the Connections page decides from
+        // that count which connections can be deleted.
+        it('drops the cached connection overview so a freed connection can be deleted at once', async () => {
+            prismaMock.job.delete.mockResolvedValue({ id: 'job-1', name: 'Old Job' } as any);
+
+            await service.deleteJob('job-1');
+
+            expect(invalidateDashboardCache).toHaveBeenCalledTimes(1);
         });
     });
 

@@ -369,7 +369,7 @@ export function StorageClient({ canDownload, canRestore, canDelete, canManageVau
                 confirm: {
                     title: (rows) => `Delete ${rows.length} backup${rows.length === 1 ? "" : "s"}?`,
                     description: () =>
-                        "This permanently removes the archives and their metadata from this destination. It cannot be undone.",
+                        "This permanently removes the archives and their metadata from this destination.",
                     confirmLabel: "Delete",
                 },
                 run: (rows) => runAction("delete", rows),

@@ -54,7 +54,7 @@ export function UserTable({ data, groups, canManage, currentUserId }: UserTableP
                 confirm: {
                     title: (rows) => `Delete ${rows.length} user${rows.length === 1 ? "" : "s"}?`,
                     description: () =>
-                        "This cannot be undone. Their sessions end immediately. The last SuperAdmin and the last remaining account are kept.",
+                        "Their sessions end immediately. The last SuperAdmin and the last remaining account are kept.",
                     confirmLabel: "Delete",
                 },
                 run: (rows) => unwrapBulkAction(bulkDeleteUsers(rows.map((user) => user.id))),

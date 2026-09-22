@@ -17,7 +17,10 @@ interface ConnectionDeleteDialogProps {
     onDeleted: (id: string) => void;
 }
 
-/** Asks before deleting one connection, then deletes it. It looks like the bulk confirmation. */
+/**
+ * Asks before deleting one connection, then deletes it. It looks like the bulk confirmation.
+ * A connection still in use never gets here, see `deleteBlocker`.
+ */
 export function ConnectionDeleteDialog({ config, onClose, onDeleted }: ConnectionDeleteDialogProps) {
     const [pending, setPending] = useState(false);
 
@@ -49,8 +52,8 @@ export function ConnectionDeleteDialog({ config, onClose, onDeleted }: Connectio
             icon={Trash}
             destructive
             title="Delete connection?"
-            description="This cannot be undone. A connection that a job or a notification template still uses is not deleted."
-            confirmLabel="Delete"
+            note="Cannot be undone"
+            confirmLabel="Delete connection"
             isPending={pending}
             onConfirm={remove}
         >

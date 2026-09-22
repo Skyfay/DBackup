@@ -274,9 +274,25 @@ model User {
   sessions         Session[]
   auditLogs        AuditLog[]
   apiKeys          ApiKey[]
+  preferences      UserPreference[]
 
   groupId String?
   group   Group?  @relation(fields: [groupId], references: [id])
+}
+
+/// Settings a user makes for themselves in the UI, such as the columns picked for a table.
+/// Kept in the account rather than the browser, so they follow the user to every device.
+model UserPreference {
+  userId    String
+  /// Namespaced, e.g. "table:connections.databases".
+  key       String
+  /// JSON. The service that owns the key validates it on the way in and out.
+  value     String
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, key])
 }
 
 model SystemSetting {

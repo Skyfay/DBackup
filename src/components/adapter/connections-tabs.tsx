@@ -1,11 +1,15 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AdapterManager } from "@/components/adapter/adapter-manager";
+import { Plus } from "lucide-react";
+import { AdapterManager, type AdapterManagerHandle } from "@/components/adapter/adapter-manager";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
+import type { TablePreferences } from "@/lib/core/table-preferences";
+import { CONNECTION_TABLE_IDS, type ConnectionCounts } from "./connection-tables";
 
 /**
  * Tab keys, also the `?tab=` values.
@@ -25,17 +29,34 @@ export type ConnectionTab = typeof CONNECTION_TABS[keyof typeof CONNECTION_TABS]
 
 interface ConnectionsTabsProps {
     permissions: string[];
+    counts: ConnectionCounts;
+    /** Saved column layouts, keyed by table id. */
+    layouts: Record<string, TablePreferences>;
 }
 
-export function ConnectionsTabs({ permissions }: ConnectionsTabsProps) {
+function Count({ value }: { value: number | undefined }) {
+    if (value === undefined) return null;
+    return <span className="text-xs font-normal text-muted-foreground tabular-nums">{value}</span>;
+}
+
+export function ConnectionsTabs({ permissions, counts, layouts }: ConnectionsTabsProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
+    // The Add button sits beside the tabs, the dialog it opens belongs to the active list.
+    const managers = useRef<Partial<Record<ConnectionTab, AdapterManagerHandle | null>>>({});
 
     // Directory sources and destinations are both storage adapters, so they share the
     // destinations permission - the same reasoning the Destinations page always used.
     const canViewDatabases = permissions.includes(PERMISSIONS.SOURCES.VIEW);
     const canViewStorage = permissions.includes(PERMISSIONS.DESTINATIONS.READ);
     const canViewNotifications = permissions.includes(PERMISSIONS.NOTIFICATIONS.READ);
+
+    const canManage: Record<ConnectionTab, boolean> = {
+        [CONNECTION_TABS.DATABASES]: permissions.includes(PERMISSIONS.SOURCES.WRITE),
+        [CONNECTION_TABS.DIRECTORY_SOURCES]: permissions.includes(PERMISSIONS.DESTINATIONS.WRITE),
+        [CONNECTION_TABS.DESTINATIONS]: permissions.includes(PERMISSIONS.DESTINATIONS.WRITE),
+        [CONNECTION_TABS.NOTIFICATIONS]: permissions.includes(PERMISSIONS.NOTIFICATIONS.WRITE),
+    };
 
     const visible: ConnectionTab[] = [
         ...(canViewDatabases ? [CONNECTION_TABS.DATABASES] : []),
@@ -57,76 +78,72 @@ export function ConnectionsTabs({ permissions }: ConnectionsTabsProps) {
 
     if (visible.length === 0) return null;
 
+    const managerProps = (tab: ConnectionTab) => ({
+        ref: (handle: AdapterManagerHandle | null) => {
+            managers.current[tab] = handle;
+        },
+        canManage: canManage[tab],
+        permissions,
+        tableId: CONNECTION_TABLE_IDS[tab],
+        initialLayout: layouts[CONNECTION_TABLE_IDS[tab]] ?? null,
+    });
+
     return (
-        <Tabs value={active} onValueChange={onTabChange} className="w-full">
-            <TabsList>
-                {canViewDatabases && (
-                    <TabsTrigger value={CONNECTION_TABS.DATABASES}>Databases</TabsTrigger>
+        <Tabs value={active} onValueChange={onTabChange} className="w-full gap-4">
+            <div className="flex flex-wrap items-center gap-3">
+                <TabsList>
+                    {canViewDatabases && (
+                        <TabsTrigger value={CONNECTION_TABS.DATABASES}>Databases <Count value={counts.databases} /></TabsTrigger>
+                    )}
+                    {canViewStorage && (
+                        <>
+                            <TabsTrigger value={CONNECTION_TABS.DIRECTORY_SOURCES}>Directory Sources <Count value={counts.sources} /></TabsTrigger>
+                            <TabsTrigger value={CONNECTION_TABS.DESTINATIONS}>Backup Destinations <Count value={counts.destinations} /></TabsTrigger>
+                        </>
+                    )}
+                    {canViewNotifications && (
+                        <TabsTrigger value={CONNECTION_TABS.NOTIFICATIONS}>Notifications <Count value={counts.notifications} /></TabsTrigger>
+                    )}
+                </TabsList>
+                {canManage[active] && (
+                    <Button className="ml-auto" onClick={() => managers.current[active]?.openCreate()}>
+                        <Plus />
+                        Add New
+                    </Button>
                 )}
-                {canViewStorage && (
-                    <>
-                        <TabsTrigger value={CONNECTION_TABS.DIRECTORY_SOURCES}>Directory Sources</TabsTrigger>
-                        <TabsTrigger value={CONNECTION_TABS.DESTINATIONS}>Backup Destinations</TabsTrigger>
-                    </>
-                )}
-                {canViewNotifications && (
-                    <TabsTrigger value={CONNECTION_TABS.NOTIFICATIONS}>Notifications</TabsTrigger>
-                )}
-            </TabsList>
+            </div>
 
             {canViewDatabases && (
-                <TabsContent value={CONNECTION_TABS.DATABASES} className="mt-4">
-                    <AdapterManager
-                        type="database"
-                        title="Databases"
-                        description="The databases you want to back up."
-                        canManage={permissions.includes(PERMISSIONS.SOURCES.WRITE)}
-                        permissions={permissions}
-                        hidePageHeading
-                    />
+                <TabsContent value={CONNECTION_TABS.DATABASES}>
+                    <AdapterManager type="database" {...managerProps(CONNECTION_TABS.DATABASES)} />
                 </TabsContent>
             )}
 
             {canViewStorage && (
                 <>
-                    <TabsContent value={CONNECTION_TABS.DIRECTORY_SOURCES} className="mt-4">
+                    <TabsContent value={CONNECTION_TABS.DIRECTORY_SOURCES}>
                         <AdapterManager
                             type="storage"
-                            title="Directory Sources"
-                            description="Storage adapters whose folders can be backed up as files."
-                            canManage={permissions.includes(PERMISSIONS.DESTINATIONS.WRITE)}
-                            permissions={permissions}
                             roleFilter={STORAGE_ROLES.SOURCE}
                             defaultRole={STORAGE_ROLES.SOURCE}
-                            hidePageHeading
+                            {...managerProps(CONNECTION_TABS.DIRECTORY_SOURCES)}
                         />
                     </TabsContent>
 
-                    <TabsContent value={CONNECTION_TABS.DESTINATIONS} className="mt-4">
+                    <TabsContent value={CONNECTION_TABS.DESTINATIONS}>
                         <AdapterManager
                             type="storage"
-                            title="Backup Destinations"
-                            description="Where your backups are stored."
-                            canManage={permissions.includes(PERMISSIONS.DESTINATIONS.WRITE)}
-                            permissions={permissions}
                             roleFilter={STORAGE_ROLES.DESTINATION}
                             defaultRole={STORAGE_ROLES.DESTINATION}
-                            hidePageHeading
+                            {...managerProps(CONNECTION_TABS.DESTINATIONS)}
                         />
                     </TabsContent>
                 </>
             )}
 
             {canViewNotifications && (
-                <TabsContent value={CONNECTION_TABS.NOTIFICATIONS} className="mt-4">
-                    <AdapterManager
-                        type="notification"
-                        title="Notifications"
-                        description="Channels that receive alerts about your backups."
-                        canManage={permissions.includes(PERMISSIONS.NOTIFICATIONS.WRITE)}
-                        permissions={permissions}
-                        hidePageHeading
-                    />
+                <TabsContent value={CONNECTION_TABS.NOTIFICATIONS}>
+                    <AdapterManager type="notification" {...managerProps(CONNECTION_TABS.NOTIFICATIONS)} />
                 </TabsContent>
             )}
         </Tabs>

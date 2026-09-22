@@ -552,7 +552,7 @@ Every new notification adapter touches these files:
 | 3 | `src/lib/adapters/index.ts` | Import and register the adapter |
 | 4 | `src/components/adapter/utils.ts` | Import icon and add to `ADAPTER_ICON_MAP` |
 | 5 | `src/components/adapter/form-constants.ts` | Add keys to `NOTIFICATION_CONNECTION_KEYS`, `NOTIFICATION_CONFIG_KEYS`, and `PLACEHOLDERS` |
-| 6 | `src/components/adapter/adapter-manager.tsx` | Add `case` to `getSummary()` for the Details column |
+| 6 | `src/components/adapter/connection-summary.ts` | Add `case` to `connectionAddress()` for the Sends to column |
 | 7 | `src/components/adapter/schema-field.tsx` | Update `isTextArea` check (only if adapter has multi-line fields) |
 | 8 | `src/app/dashboard/history/notification-preview.tsx` | Add adapter-specific preview component and register in `PREVIEW_COMPONENTS` map (optional) |
 | 9 | `docs/user-guide/notifications/<id>.md` | Create docs page with setup guide |
@@ -759,25 +759,23 @@ If your adapter has **multi-line text fields** (like `payloadTemplate` or `custo
 const isTextArea = /* existing checks */ || fieldKey === "myMultiLineField";
 ```
 
-### Step 6 - Add Details Summary
+### Step 6 - Add the Sends to Summary
 
-In `src/components/adapter/adapter-manager.tsx`, add a `case` to the `getSummary()` switch so the **Details** column in the adapter table shows meaningful info instead of `-`:
+In `src/components/adapter/connection-summary.ts`, add a `case` to the `connectionAddress()` switch so the **Sends to** column of the Notifications table shows meaningful info instead of `-`:
 
 ```typescript
-const getSummary = (adapterId: string, configJson: string) => {
-  const config = JSON.parse(configJson);
-  switch (adapterId) {
+switch (adapterId) {
     // ... existing cases
-    case 'my-service':
-      return <span className="text-muted-foreground">{config.serverUrl}</span>;
-    // ...
-  }
-};
+    case "my-service":
+        return text(config.serverUrl) || null;
+}
 ```
+
+Return a plain string. The table styles it, and `null` shows a dash.
 
 **What to show:** Pick the most identifying field(s) from the config - URL, topic, phone number, channel name, etc. Keep it short and scannable. Examples from existing adapters:
 
-| Adapter | Details output |
+| Adapter | Sends to output |
 | :--- | :--- |
 | Discord / Slack / Teams | `Webhook` |
 | Generic Webhook | `POST → https://...` |
@@ -928,7 +926,7 @@ src/lib/adapters/
     └── <id>.ts             ← NEW: Adapter implementation
 
 src/components/adapter/
-├── adapter-manager.tsx     ← getSummary() case for Details column
+├── connection-summary.ts   ← connectionAddress() case for the Sends to column
 ├── utils.ts                ← Icon import + ADAPTER_ICON_MAP (+ ADAPTER_COLOR_MAP)
 ├── form-constants.ts       ← CONNECTION_KEYS + CONFIG_KEYS + PLACEHOLDERS
 └── schema-field.tsx        ← isTextArea check (only if multi-line fields)

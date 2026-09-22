@@ -14,6 +14,7 @@ import { logger } from "@/lib/logging/logger";
 import { wrapError, getErrorMessage, ValidationError, NotFoundError } from "@/lib/logging/errors";
 import { registerAdapters } from "@/lib/adapters";
 import { validateCredentialAssignments } from "@/lib/adapters/credential-validation";
+import { getConnectionOverview } from "@/services/adapters/connection-overview";
 
 registerAdapters();
 
@@ -62,6 +63,13 @@ export async function GET(req: NextRequest) {
         // so a decrypted secret can never reach the client regardless of caller
         // permission level. See src/lib/adapters/dto.ts.
         const items = adapters.map(toAdapterListItem);
+
+        // The connection tables ask for usage, last backup and health on top. Other callers
+        // skip it, because it costs several aggregate queries.
+        if (searchParams.get("overview") === "true") {
+            const overview = await getConnectionOverview(items.map((item) => item.id));
+            return NextResponse.json(items.map((item) => ({ ...item, overview: overview.get(item.id) ?? null })));
+        }
 
         return NextResponse.json(items);
     } catch (error: unknown) {

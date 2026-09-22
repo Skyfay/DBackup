@@ -618,16 +618,16 @@ import myBrandIcon from "@iconify-icons/logos/my-brand-icon";
 
 3. If using Simple Icons (monochrome), also add a brand color to `ADAPTER_COLOR_MAP`.
 
-#### 7. UI: Details column (`src/components/adapter/adapter-manager.tsx`)
+#### 7. UI: Location column (`src/components/adapter/connection-summary.ts`)
 
-Add a case to the `getSummary()` function to show a useful detail in the adapter table:
+Add a case to `connectionAddress()` so the Location column of the connection table shows where the adapter points:
 
 ```typescript
-case 'webdav':
-    return <span className="text-muted-foreground">{config.pathPrefix || config.url}</span>;
+case "webdav":
+    return text(config.pathPrefix) || text(config.url) || null;
 ```
 
-Always use the `text-muted-foreground` class for consistency.
+Return a plain string. The table styles it, and `null` shows a dash.
 
 #### 8. RBAC: Permission regex (`src/app/api/adapters/`)
 
@@ -675,7 +675,7 @@ brew install your-package
 | 4 | `src/lib/adapters/index.ts` | Import + `registry.register()` |
 | 5 | `src/components/adapter/form-constants.ts` | `STORAGE_CONNECTION_KEYS`, `STORAGE_CONFIG_KEYS`, `PLACEHOLDERS` |
 | 6 | `src/components/adapter/utils.ts` | `ADAPTER_ICON_MAP` + optional `ADAPTER_COLOR_MAP` ([Icon System](/developer-guide/core/icons)) |
-| 7 | `src/components/adapter/adapter-manager.tsx` | `getSummary()` case for details column |
+| 7 | `src/components/adapter/connection-summary.ts` | `connectionAddress()` case for the Location column |
 | 8 | `src/app/api/adapters/test-connection/route.ts` | Add ID to storage permission regex |
 | 9 | `src/app/api/adapters/access-check/route.ts` | Add ID to storage permission regex |
 | 10 | `Dockerfile` | System CLI tools (if needed) |

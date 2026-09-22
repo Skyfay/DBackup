@@ -31,6 +31,9 @@ import { DataTableToolbar } from "./data-table-toolbar";
 import { DataTablePagination } from "./data-table-pagination";
 import { DataTableBulkBar } from "./data-table-bulk-bar";
 import { selectColumn } from "./data-table-selection";
+import { DataTableColumnSettings } from "./data-table-column-settings";
+import { useColumnLayout, type ColumnLayoutOption } from "./use-column-layout";
+import { cn } from "@/lib/utils";
 import type { BulkAction, DataTableFilterableColumn, DataTableFilterOption } from "./data-table-types";
 
 export type { BulkAction, DataTableFilterableColumn, DataTableFilterOption };
@@ -67,6 +70,19 @@ interface DataTableProps<TData, TValue> {
     /** Runs after a bulk action settles, whether fully or partly successful. Refetch here. */
     onBulkActionComplete?: () => void | Promise<void>;
 
+    /** "card" draws the table as one panel with its toolbar inside, the look of the redesigned pages. */
+    variant?: "default" | "card";
+    /**
+     * Turns on the Columns menu: switch columns on and off, move them, pick a row height.
+     * Feed it from `useTableLayout`, which saves the layout to the user's account.
+     */
+    columnLayout?: ColumnLayoutOption;
+    /** Extra controls after the filters, such as quick status filters. */
+    toolbarExtra?: React.ReactNode;
+    searchPlaceholder?: string;
+    /** Rows per page to start with. */
+    initialPageSize?: number;
+
     // Manual Pagination & Sorting Capabilities
     pageCount?: number;
     rowCount?: number;
@@ -95,6 +111,11 @@ export function DataTable<TData, TValue>({
     isRowSelectable,
     bulkActions = [],
     onBulkActionComplete,
+    variant = "default",
+    columnLayout,
+    toolbarExtra,
+    searchPlaceholder,
+    initialPageSize = 10,
     pageCount,
     rowCount,
     pagination: controlledPagination,
@@ -112,7 +133,7 @@ export function DataTable<TData, TValue>({
     const [internalColumnFilters, setInternalColumnFilters] = React.useState<ColumnFiltersState>([]);
     const [internalPagination, setInternalPagination] = React.useState<PaginationState>({
         pageIndex: 0,
-        pageSize: 10,
+        pageSize: initialPageSize,
     });
     const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>(initialColumnVisibility);
     const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({});
@@ -133,11 +154,13 @@ export function DataTable<TData, TValue>({
         () => (enableRowSelection ? [selectColumn<TData>() as ColumnDef<TData, TValue>, ...columns] : columns),
         [enableRowSelection, columns]
     );
+    const layout = useColumnLayout(columns, columnLayout, enableRowSelection);
 
     const table = useReactTable({
         data,
         columns: tableColumns,
         getRowId,
+        meta: { density: layout?.density },
         enableRowSelection: enableRowSelection
             ? (row) => (isRowSelectable ? isRowSelectable(row.original) : true)
             : false,
@@ -145,7 +168,8 @@ export function DataTable<TData, TValue>({
         state: {
             sorting,
             columnFilters,
-            columnVisibility,
+            columnVisibility: layout?.columnVisibility ?? columnVisibility,
+            columnOrder: layout?.columnOrder ?? [],
             rowSelection,
             pagination,
         },
@@ -155,7 +179,12 @@ export function DataTable<TData, TValue>({
         onSortingChange: setSorting,
         onColumnFiltersChange: setColumnFilters,
         onPaginationChange: setPagination,
-        onColumnVisibilityChange: setColumnVisibility,
+        onColumnVisibilityChange: layout
+            ? (updater) => {
+                  const next = typeof updater === "function" ? updater(layout.columnVisibility) : updater;
+                  layout.setHidden(Object.keys(next).filter((id) => next[id] === false));
+              }
+            : setColumnVisibility,
         onRowSelectionChange: setRowSelection,
 
         // When pagination is controlled externally, auto-reset would overwrite the parent's pageIndex on every data update.
@@ -193,74 +222,106 @@ export function DataTable<TData, TValue>({
         ? table.getFilteredSelectedRowModel().rows.map((row) => row.original)
         : [];
 
+    const card = variant === "card";
+    const compact = layout?.density === "compact";
+
+    const toolbar = (
+        <DataTableToolbar
+            table={table}
+            searchKey={searchKey}
+            filterableColumns={filterableColumns}
+            onRefresh={onRefresh}
+            isLoading={isLoading}
+            variant={variant}
+            searchPlaceholder={searchPlaceholder}
+            toolbarExtra={toolbarExtra}
+            columnSettings={layout ? <DataTableColumnSettings {...layout.settings} /> : undefined}
+        />
+    );
+    const bulkBar = enableRowSelection && bulkActions.length > 0 && (
+        <DataTableBulkBar
+            selectedRows={selectedRows}
+            actions={bulkActions}
+            onClearSelection={() => setRowSelection({})}
+            onComplete={onBulkActionComplete}
+        />
+    );
+    const grid = (
+        <Table>
+            <TableHeader>
+                {table.getHeaderGroups().map((headerGroup) => (
+                    <TableRow key={headerGroup.id} className={cn(card && "hover:bg-transparent")}>
+                        {headerGroup.headers.map((header) => (
+                            <TableHead
+                                key={header.id}
+                                {...(layout?.headerDrag(header.column.id) ?? {})}
+                                className={cn(
+                                    card && "px-3 text-xs text-muted-foreground first:pl-4 last:pr-4",
+                                    // Movable headers can be dragged, and show where a dragged one lands.
+                                    "[&[draggable=true]]:cursor-grab data-[drop-target]:shadow-[inset_2px_0_0_var(--foreground)]"
+                                )}
+                            >
+                                {header.isPlaceholder
+                                    ? null
+                                    : flexRender(header.column.columnDef.header, header.getContext())}
+                            </TableHead>
+                        ))}
+                    </TableRow>
+                ))}
+            </TableHeader>
+            <TableBody>
+                {table.getRowModel().rows?.length ? (
+                    table.getRowModel().rows.map((row) => (
+                        <TableRow
+                            key={row.id}
+                            data-state={row.getIsSelected() && "selected"}
+                            className={cn(
+                                card && "[&>td]:px-3 [&>td:first-child]:pl-4 [&>td:last-child]:pr-4",
+                                card && (compact ? "[&>td]:py-1" : "[&>td]:py-2.5")
+                            )}
+                        >
+                            {row.getVisibleCells().map((cell) => (
+                                <TableCell key={cell.id}>
+                                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                </TableCell>
+                            ))}
+                        </TableRow>
+                    ))
+                ) : (
+                    <TableRow>
+                        <TableCell
+                            // Counted from the table, not from `columns`, so the
+                            // prepended select column does not break the span.
+                            colSpan={table.getVisibleLeafColumns().length}
+                            className={cn("h-24 text-center", card && "text-muted-foreground")}
+                        >
+                            No results.
+                        </TableCell>
+                    </TableRow>
+                )}
+            </TableBody>
+        </Table>
+    );
+
+    if (card) {
+        return (
+            <div className="min-w-0 overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm">
+                {toolbar}
+                {bulkBar && <div className="px-4">{bulkBar}</div>}
+                <div className="border-t">{grid}</div>
+                <div className="border-t px-2">
+                    <DataTablePagination table={table} totalRows={totalRows} />
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="w-full">
-            <DataTableToolbar
-                table={table}
-                searchKey={searchKey}
-                filterableColumns={filterableColumns}
-                onRefresh={onRefresh}
-                isLoading={isLoading}
-            />
-            {enableRowSelection && bulkActions.length > 0 && (
-                <DataTableBulkBar
-                    selectedRows={selectedRows}
-                    actions={bulkActions}
-                    onClearSelection={() => setRowSelection({})}
-                    onComplete={onBulkActionComplete}
-                />
-            )}
+            {toolbar}
+            {bulkBar}
             <div className="rounded-md border overflow-x-auto max-w-[calc(100vw-6rem)] md:max-w-[calc(100vw-22rem)]">
-                <Table>
-                    <TableHeader>
-                        {table.getHeaderGroups().map((headerGroup) => (
-                            <TableRow key={headerGroup.id}>
-                                {headerGroup.headers.map((header) => {
-                                    return (
-                                        <TableHead key={header.id}>
-                                            {header.isPlaceholder
-                                                ? null
-                                                : flexRender(
-                                                      header.column.columnDef.header,
-                                                      header.getContext()
-                                                  )}
-                                        </TableHead>
-                                    );
-                                })}
-                            </TableRow>
-                        ))}
-                    </TableHeader>
-                    <TableBody>
-                        {table.getRowModel().rows?.length ? (
-                            table.getRowModel().rows.map((row) => (
-                                <TableRow
-                                    key={row.id}
-                                    data-state={row.getIsSelected() && "selected"}
-                                >
-                                    {row.getVisibleCells().map((cell) => (
-                                        <TableCell key={cell.id}>
-                                            {flexRender(
-                                                cell.column.columnDef.cell,
-                                                cell.getContext()
-                                            )}
-                                        </TableCell>
-                                    ))}
-                                </TableRow>
-                            ))
-                        ) : (
-                            <TableRow>
-                                <TableCell
-                                    // Counted from the table, not from `columns`, so the
-                                    // prepended select column does not break the span.
-                                    colSpan={table.getVisibleLeafColumns().length}
-                                    className="h-24 text-center"
-                                >
-                                    No results.
-                                </TableCell>
-                            </TableRow>
-                        )}
-                    </TableBody>
-                </Table>
+                {grid}
             </div>
             <DataTablePagination table={table} totalRows={totalRows} />
         </div>

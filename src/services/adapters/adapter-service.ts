@@ -11,6 +11,7 @@ import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logging/logger";
 import { ConflictError } from "@/lib/logging/errors";
 import { runBulk, emptyBulkResult, type BulkResult } from "@/lib/core/bulk";
+import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 
 const log = logger.child({ service: "AdapterService" });
 
@@ -172,4 +173,23 @@ export async function getAdapterTypes(ids: string[]): Promise<string[]> {
         distinct: ["type"],
     });
     return adapters.map((adapter) => adapter.type);
+}
+
+/** How many connections of each kind exist, for the counts beside the Connections tabs. */
+export async function getConnectionCounts(): Promise<{ databases: number; sources: number; destinations: number; notifications: number }> {
+    const groups = await prisma.adapterConfig.groupBy({
+        by: ["type", "storageRole"],
+        _count: { _all: true },
+    });
+    const count = (type: string, role?: string) =>
+        groups
+            .filter((group) => group.type === type && (!role || group.storageRole === role))
+            .reduce((sum, group) => sum + group._count._all, 0);
+
+    return {
+        databases: count("database"),
+        sources: count("storage", STORAGE_ROLES.SOURCE),
+        destinations: count("storage", STORAGE_ROLES.DESTINATION),
+        notifications: count("notification"),
+    };
 }

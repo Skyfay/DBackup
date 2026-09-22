@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
 
 type IconComponent = React.ComponentType<{ className?: string }>;
 
-export type DialogTone = "destructive" | "warning" | "neutral";
+export type DialogTone = "destructive" | "warning" | "success" | "neutral";
 
 // The head is tinted like the banners on the Overview. The note under the title uses a darker
 // red in light mode, since the red token misses 4.5:1 on the tint.
@@ -31,6 +31,11 @@ const TONES: Record<DialogTone, { head: string; tile: string; note: string }> = 
         tile: "bg-warning/12 text-warning",
         note: "text-warning",
     },
+    success: {
+        head: "border-success/20 bg-success/5 dark:bg-success/8",
+        tile: "bg-success/12 text-success",
+        note: "text-muted-foreground",
+    },
     neutral: {
         head: "bg-muted/40",
         tile: "bg-muted text-foreground",
@@ -42,10 +47,18 @@ const TONES: Record<DialogTone, { head: string; tile: string; note: string }> = 
 export const DIALOG_SURFACE = "gap-0 overflow-hidden rounded-xl bg-card p-0 sm:max-w-md";
 export const DIALOG_FOOTER = "border-t bg-page/60 px-5 py-3";
 
-/** The tinted head of a confirmation or a report: an icon tile, the title and a short note. */
-export function DialogHead({ tone, icon: Icon, children }: { tone: DialogTone; icon: IconComponent; children: React.ReactNode }) {
+interface DialogHeadProps {
+    tone: DialogTone;
+    icon: IconComponent;
+    /** Tighter padding for a popover. */
+    className?: string;
+    children: React.ReactNode;
+}
+
+/** The tinted head of a dialog or a popover: an icon tile, the title and a short note. */
+export function DialogHead({ tone, icon: Icon, className, children }: DialogHeadProps) {
     return (
-        <div className={cn("flex min-w-0 items-center gap-3 border-b px-5 py-4", TONES[tone].head)}>
+        <div className={cn("flex min-w-0 items-center gap-3 border-b px-5 py-4", TONES[tone].head, className)}>
             <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg", TONES[tone].tile)} aria-hidden="true">
                 <Icon className="size-4" />
             </span>

@@ -85,6 +85,7 @@ export function connectionColumns({ kind, canViewHealth, renderActions, onOpen }
                     detail={statusDetail(row.original, health)}
                     error={row.original.lastError}
                     interactive={canViewHealth}
+                    onOpen={onOpen ? () => onOpen(row.original) : undefined}
                 />
             );
         },

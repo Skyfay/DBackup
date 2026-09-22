@@ -6,6 +6,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-page: var(--page);
+  --color-raised: var(--raised);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
@@ -60,6 +61,7 @@
   --card-foreground: oklch(0.141 0.004 285.8);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.141 0.004 285.8);
+  --raised: oklch(1 0 0); /* White, a panel that floats over a card */
   --primary: oklch(0.21 0.006 285.9); /* zinc-900 buttons */
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.934 0.004 286); /* #e9e9ec, one step below the page so tab tracks and hovers show on it */
@@ -99,6 +101,7 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.219 0.004 286.1);
   --popover-foreground: oklch(0.985 0 0);
+  --raised: oklch(0.237 0.005 286); /* #1f1f22, one step above the cards so a panel over a table stands out */
   --primary: oklch(0.985 0 0); /* White for buttons */
   --primary-foreground: oklch(0.21 0.006 285.9); /* Dark text on white button */
   --secondary: oklch(0.266 0.006 286); /* #252528 */

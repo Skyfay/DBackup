@@ -3,10 +3,9 @@
 import { useState } from "react";
 import { KeyRound } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
-import { HealthHistoryGrid } from "@/components/adapter/health-history-grid";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { DateDisplay } from "@/components/utils/date-display";
+import { ConnectionHealthPopover } from "./connection-health-popover";
 import { cn } from "@/lib/utils";
 import type { HealthBucket } from "@/services/adapters/connection-overview";
 
@@ -81,10 +80,12 @@ interface StatusCellProps {
     error?: string | null;
     /** Opens the check history, which needs the read permission of the connection's kind. */
     interactive: boolean;
+    /** Opens the details of the connection, offered at the bottom of the check history. */
+    onOpen?: () => void;
 }
 
 /** The live health status. A click shows the latest checks. */
-export function StatusCell({ status, configId, lastCheckedAt, detail, error, interactive }: StatusCellProps) {
+export function StatusCell({ status, configId, lastCheckedAt, detail, error, interactive, onOpen }: StatusCellProps) {
     const [open, setOpen] = useState(false);
     const style = HEALTH[status];
     const label = (
@@ -107,20 +108,17 @@ export function StatusCell({ status, configId, lastCheckedAt, detail, error, int
                     {label}
                 </button>
             </PopoverTrigger>
-            <PopoverContent className="w-85 p-0" align="start">
-                <div className="space-y-1.5 border-b p-4">
-                    <div className="flex items-center gap-2">
-                        <span className={cn("size-2.5 rounded-full", style.dot)} aria-hidden="true" />
-                        <h4 className="font-semibold leading-none">{style.label}</h4>
-                    </div>
-                    {lastCheckedAt && (
-                        <p className="text-xs text-muted-foreground">
-                            Last checked <DateDisplay date={lastCheckedAt} format="Pp" />
-                        </p>
-                    )}
-                    {error && status !== "ONLINE" && <p className="text-xs wrap-anywhere text-muted-foreground">{error}</p>}
-                </div>
-                <div className="p-4">{open && <HealthHistoryGrid adapterId={configId} />}</div>
+            <PopoverContent className="w-85 overflow-hidden rounded-xl bg-raised p-0" align="start">
+                {open && (
+                    <ConnectionHealthPopover
+                        status={status}
+                        configId={configId}
+                        lastCheckedAt={lastCheckedAt}
+                        detail={detail}
+                        error={error}
+                        onOpenDetails={onOpen ? () => { setOpen(false); onOpen(); } : undefined}
+                    />
+                )}
             </PopoverContent>
         </Popover>
     );

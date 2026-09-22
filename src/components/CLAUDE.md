@@ -145,7 +145,7 @@ Use semantic tokens. They are already theme-aware:
 <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
 ```
 
-Prefer a `Badge` variant or `HealthStatusBadge` (`@/components/ui/health-status-badge`) over ad-hoc status colors.
+Prefer a `Badge` variant or the status tokens (`success`, `warning`, `destructive`, `info`) over ad-hoc status colors. The connection status is drawn by `StatusCell` in `@/components/adapter/connection-cells`.
 
 ---
 
@@ -238,7 +238,7 @@ Never log whole session, user, or config objects. Log the specific field (`{ use
 | Raw `overflow-y-auto` instead of ScrollArea | Fails the build |
 | Locale date formatting | Fails the build |
 | `max-h` on the ScrollArea root | Baseline of 4, fails if it grows |
-| Palette color with no `dark:` variant | Baseline of 124, fails if it grows |
+| Palette color with no `dark:` variant | Baseline of 114, fails if it grows |
 
 Baselines may only be lowered. Fix violations, drop the number, and the guard locks the win in. Everything else in this guide is on you.
 

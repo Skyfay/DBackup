@@ -20,6 +20,10 @@ All notable changes to DBackup are documented here.
 - **ui**: A page with content wider than the window no longer runs past its right edge, where that content was cut off and could not be scrolled to.
 - **templates**: Deleting several retention policies no longer calls them "policys" in the confirmation and in the message afterwards.
 
+### 🔒 Security
+
+- **connections**: The health check history of a connection needs the read permission of its kind, like its details. Reading sources or destinations was enough for every kind before.
+
 ### 🎨 Improvements
 
 - **ui**: The sidebar collapses to icons with the new button in the header or Ctrl+B (⌘B on macOS), and small screens get it as a slide-in menu. Both themes use a new zinc color palette, and the interface uses the Geist font on every operating system.
@@ -29,6 +33,11 @@ All notable changes to DBackup are documented here.
 - **ui**: The filter menus of the tables are wider, keep their order while values are picked, and match the new look. The type filter on the Connections page shows each adapter's icon.
 - **ui**: The confirmation before a bulk action and the list of entries it could not process have a new look, with a header tinted for the kind of action. Their lists show each entry with its icon and type where the table has them.
 - **connections**: Deleting connections leaves out the ones a job or a notification template still uses and names them before anything is deleted, instead of reporting them as failed afterwards.
+- **connections**: A click on the status of a connection says in one sentence since when it is online or offline and shows the latest error. Below come the checks of the last hour as bars and their latest changes with the time.
+
+### 🔄 Changed
+
+- **api**: `GET /api/adapters/{id}/health-history` averages only the checks that passed and also returns the slowest one, since when the current status holds and when a check last passed.
 
 ### 🗑️ Removed
 
@@ -39,6 +48,7 @@ All notable changes to DBackup are documented here.
 - **docs**: The start page and the data retention guide describe the new dashboard, and the API reference explains the storage totals of an unreachable destination.
 - **docs**: The storage and notification adapter guides name `connectionAddress()` as the place for the summary shown in the connection tables.
 - **docs**: The notification and job guides explain how to switch health check notifications and restore exclusion for several databases at once.
+- **docs**: The health check guide describes the new status popover and the added fields of the health history API.
 
 ### 🐳 Docker
 

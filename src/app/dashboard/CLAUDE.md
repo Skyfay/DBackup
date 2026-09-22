@@ -96,6 +96,7 @@ Every other page still has the old look. Do not copy patterns from it, copy them
 - The same language applies inside a dialog. The title names the object ("Local"), the description says what the dialog shows, and a headline number follows the card style. See `storage-history-modal.tsx`.
 - A confirmation is a `ConfirmDialog` from `ui/confirm-dialog.tsx`. Its head is tinted in the tone of the action like the banners, red for destructive and amber for a report of failures, and holds an icon tile, the title and a short note such as "Cannot be undone". The dialog sits on `bg-card`, so it stands out from the dimmed page in dark mode, and its buttons sit on a `bg-page/60` strip. See `connection-delete-dialog.tsx`.
 - A destructive confirm button is tinted rather than filled and names what it does, like "Delete 7 connections". It keeps the dialog open with a spinner until the request returns.
+- A popover that tells how something is doing uses the same tinted `DialogHead`, with the `success` tone when all is well. It sits on `bg-raised`, which in dark mode is one step lighter than the cards, so it stands out from the table under it. See `connection-health-popover.tsx`.
 - The records a dialog is about go into a `DialogItemList` with icon, name and a short fact. Rows a bulk action leaves out come from its `ineligible` check and get a list of their own under "Will not be deleted" with the reason, so the confirmation says beforehand what happens. See `deleteBlocker` in `connection-bulk-actions.ts`.
 
 ## Live data

@@ -11,3 +11,15 @@ export function isPlainClick(event: React.MouseEvent<HTMLElement>): boolean {
     if (target.closest("button, a, input, select, textarea, label, [role=checkbox], [role=menuitem]")) return false;
     return !window.getSelection()?.toString();
 }
+
+/**
+ * The click handler of a cell around a selection checkbox, so a click anywhere in the cell
+ * ticks the box. It never reaches the row, which would open instead on a near miss.
+ */
+export function toggleOnClick(toggle: () => void) {
+    return (event: React.MouseEvent<HTMLElement>) => {
+        event.stopPropagation();
+        // A click on the checkbox itself is handled by the checkbox.
+        if (!(event.target as HTMLElement).closest("[role=checkbox]")) toggle();
+    };
+}

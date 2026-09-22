@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import type * as React from "react";
-import { isPlainClick } from "@/components/ui/row-click";
+import { isPlainClick, toggleOnClick } from "@/components/ui/row-click";
 
 function row() {
     const element = document.createElement("div");
@@ -10,7 +10,7 @@ function row() {
 }
 
 const click = (currentTarget: HTMLElement, target: Element) =>
-    ({ currentTarget, target }) as unknown as React.MouseEvent<HTMLElement>;
+    ({ currentTarget, target, stopPropagation: vi.fn() }) as unknown as React.MouseEvent<HTMLElement>;
 
 describe("isPlainClick", () => {
     afterEach(() => {
@@ -42,5 +42,40 @@ describe("isPlainClick", () => {
         vi.spyOn(window, "getSelection").mockReturnValue({ toString: () => "postgres" } as Selection);
 
         expect(isPlainClick(click(element, element.querySelector(".text")!))).toBe(false);
+    });
+});
+
+describe("toggleOnClick", () => {
+    afterEach(() => {
+        document.body.innerHTML = "";
+    });
+
+    function cell() {
+        const element = document.createElement("td");
+        element.innerHTML = `<button role="checkbox"><svg></svg></button>`;
+        document.body.appendChild(element);
+        return element;
+    }
+
+    it("ticks the box for a click beside it and keeps the click from the row", () => {
+        const element = cell();
+        const toggle = vi.fn();
+        const event = click(element, element);
+
+        toggleOnClick(toggle)(event);
+
+        expect(toggle).toHaveBeenCalledOnce();
+        expect(event.stopPropagation).toHaveBeenCalled();
+    });
+
+    it("leaves a click on the checkbox to the checkbox", () => {
+        const element = cell();
+        const toggle = vi.fn();
+        const event = click(element, element.querySelector("svg")!);
+
+        toggleOnClick(toggle)(event);
+
+        expect(toggle).not.toHaveBeenCalled();
+        expect(event.stopPropagation).toHaveBeenCalled();
     });
 });

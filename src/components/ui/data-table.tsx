@@ -34,7 +34,7 @@ import { DataTableBulkBar } from "./data-table-bulk-bar";
 import { selectColumn } from "./data-table-selection";
 import { DataTableColumnSettings } from "./data-table-column-settings";
 import { useColumnLayout, type ColumnLayoutOption } from "./use-column-layout";
-import { isPlainClick } from "./row-click";
+import { isPlainClick, toggleOnClick } from "./row-click";
 import { cn } from "@/lib/utils";
 import type { BulkAction, DataTableFilterableColumn, DataTableFilterOption } from "./data-table-types";
 
@@ -244,6 +244,9 @@ export function DataTable<TData, TValue>({
 
     const card = variant === "card";
     const compact = layout?.density === "compact";
+    // In a card table the whole checkbox cell ticks the box, so a near miss beside it does not
+    // open the row instead. The gap before the next column moves into that cell to widen it.
+    const wideCheckbox = card && enableRowSelection;
 
     const toolbar = (
         <DataTableToolbar
@@ -271,11 +274,22 @@ export function DataTable<TData, TValue>({
         <Table>
             <TableHeader>
                 {table.getHeaderGroups().map((headerGroup) => (
-                    <TableRow key={headerGroup.id} className={cn(card && "hover:bg-transparent")}>
+                    <TableRow
+                        key={headerGroup.id}
+                        className={cn(
+                            card && "hover:bg-transparent",
+                            wideCheckbox && "[&>th:first-child]:cursor-pointer [&>th:first-child]:pr-3 [&>th:nth-child(2)]:pl-0"
+                        )}
+                    >
                         {headerGroup.headers.map((header) => (
                             <TableHead
                                 key={header.id}
                                 {...(layout?.headerDrag(header.column.id) ?? {})}
+                                onClick={
+                                    wideCheckbox && header.column.id === "select"
+                                        ? toggleOnClick(() => table.toggleAllPageRowsSelected(!table.getIsAllPageRowsSelected()))
+                                        : undefined
+                                }
                                 className={cn(
                                     card && "px-3 text-xs text-muted-foreground first:pl-4 last:pr-4",
                                     // The checkbox and the actions keep to their content. A full-width table
@@ -304,11 +318,15 @@ export function DataTable<TData, TValue>({
                             className={cn(
                                 card && "[&>td]:px-3 [&>td:first-child]:pl-4 [&>td:last-child]:pr-4",
                                 card && (compact ? "[&>td]:py-1" : "[&>td]:py-2.5"),
+                                wideCheckbox && "[&>td:first-child]:cursor-pointer [&>td:first-child]:pr-3 [&>td:nth-child(2)]:pl-0",
                                 onRowClick && "cursor-pointer"
                             )}
                         >
                             {row.getVisibleCells().map((cell) => (
-                                <TableCell key={cell.id}>
+                                <TableCell
+                                    key={cell.id}
+                                    onClick={wideCheckbox && cell.column.id === "select" ? toggleOnClick(() => row.toggleSelected()) : undefined}
+                                >
                                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                                 </TableCell>
                             ))}

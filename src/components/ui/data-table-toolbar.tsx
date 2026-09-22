@@ -70,13 +70,14 @@ export function DataTableToolbar<TData>({
                     />
                 </div>
                 {facetedFilters}
-                {toolbarExtra}
+                {/* Beside the filters it clears, the search included. Extra controls keep their own reset. */}
                 {isFiltered && (
                     <Button variant="ghost" size="sm" onClick={() => table.resetColumnFilters()} className="h-8 px-2">
                         Reset
                         <X />
                     </Button>
                 )}
+                {toolbarExtra}
                 <div className="ml-auto flex items-center gap-1">
                     {columnSettings}
                     {onRefresh && (

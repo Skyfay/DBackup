@@ -30,6 +30,7 @@ import { ConnectionDetailsSheet } from "./connection-details-sheet";
 import { ConnectionDetailsContent } from "./connection-details-content";
 import { ConnectionCard } from "./connection-card";
 import { ConnectionSplitView } from "./connection-split-view";
+import { adapterTypeIcon } from "./connection-type-icon";
 
 /** What the page around a manager can trigger, such as the Add button beside the tabs. */
 export interface AdapterManagerHandle {
@@ -273,7 +274,7 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
         const usedAdapterIds = new Set(configs.map(c => c.adapterId));
         const options = availableAdapters
             .filter(a => usedAdapterIds.has(a.id))
-            .map(a => ({ label: a.name, value: a.id }));
+            .map(a => ({ label: a.name, value: a.id, icon: adapterTypeIcon(a.id) }));
 
         if (options.length <= 1) return [];
         return [{ id: "adapterId", title: "Type", options }];

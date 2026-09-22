@@ -21,17 +21,20 @@ import {
 } from "@/components/ui/popover"
 import { Separator } from "@/components/ui/separator"
 
+interface FilterOption {
+  label: string
+  value: string
+  icon?: React.ComponentType<{ className?: string }>
+  count?: number
+}
+
 interface DataTableFacetedFilterProps<TData, TValue> {
   column?: Column<TData, TValue>
   title?: string
-  options: {
-    label: string
-    value: string
-    icon?: React.ComponentType<{ className?: string }>
-    count?: number
-  }[]
+  options: FilterOption[]
 }
 
+/** A multi-select filter on one column, with the number of rows per value. */
 export function DataTableFacetedFilter<TData, TValue>({
   column,
   title,
@@ -39,48 +42,56 @@ export function DataTableFacetedFilter<TData, TValue>({
 }: DataTableFacetedFilterProps<TData, TValue>) {
   const facets = column?.getFacetedUniqueValues()
   const selectedValues = new Set(column?.getFilterValue() as string[])
+  // Fixed when the list opens: selected first, then by count, then by name. Re-sorting on
+  // every click would pull the entry away from under the pointer.
+  const [order, setOrder] = React.useState<string[]>([])
 
-  const optionCountOrFacet = (option: { value: string, count?: number }) => {
-      if (typeof option.count === 'number') return option.count;
-      return facets?.get(option.value) || 0;
+  const countOf = (option: FilterOption) =>
+    typeof option.count === "number" ? option.count : facets?.get(option.value) || 0
+
+  const sortedValues = () =>
+    [...options]
+      .sort((a, b) => {
+        const selected = Number(selectedValues.has(b.value)) - Number(selectedValues.has(a.value))
+        if (selected !== 0) return selected
+        const counts = countOf(b) - countOf(a)
+        return counts !== 0 ? counts : a.label.localeCompare(b.label)
+      })
+      .map((option) => option.value)
+
+  const byValue = new Map(options.map((option) => [option.value, option]))
+  // Options that appeared while the list was open go at the end.
+  const listed = [...order.filter((value) => byValue.has(value)), ...options.map((option) => option.value).filter((value) => !order.includes(value))]
+
+  const toggle = (value: string) => {
+    const next = new Set(selectedValues)
+    if (next.has(value)) next.delete(value)
+    else next.add(value)
+    column?.setFilterValue(next.size ? Array.from(next) : undefined)
   }
 
   return (
-    <Popover>
+    <Popover onOpenChange={(open) => open && setOrder(sortedValues())}>
       <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 border-dashed"
-        >
-          <PlusCircle className="mr-2 h-4 w-4" />
+        <Button variant="outline" size="sm" className="h-8 border-dashed">
+          <PlusCircle />
           {title}
-          {selectedValues?.size > 0 && (
+          {selectedValues.size > 0 && (
             <>
-              <Separator orientation="vertical" className="mx-2 h-4" />
-              <Badge
-                variant="secondary"
-                className="rounded-sm px-1 font-normal lg:hidden"
-              >
+              <Separator orientation="vertical" className="mx-0.5 h-4" />
+              <Badge variant="secondary" className="rounded-sm px-1.5 font-normal tabular-nums lg:hidden">
                 {selectedValues.size}
               </Badge>
-              <div className="hidden space-x-1 lg:flex">
+              <div className="hidden gap-1 lg:flex">
                 {selectedValues.size > 2 ? (
-                  <Badge
-                    variant="secondary"
-                    className="rounded-sm px-1 font-normal"
-                  >
+                  <Badge variant="secondary" className="rounded-sm px-1.5 font-normal">
                     {selectedValues.size} selected
                   </Badge>
                 ) : (
                   options
                     .filter((option) => selectedValues.has(option.value))
                     .map((option) => (
-                      <Badge
-                        variant="secondary"
-                        key={option.value}
-                        className="rounded-sm px-1 font-normal"
-                      >
+                      <Badge variant="secondary" key={option.value} className="rounded-sm px-1.5 font-normal">
                         {option.label}
                       </Badge>
                     ))
@@ -90,68 +101,39 @@ export function DataTableFacetedFilter<TData, TValue>({
           )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-50 p-0" align="start">
+      <PopoverContent className="w-60 p-0" align="start">
         <Command>
-          <CommandInput placeholder={title} />
+          <CommandInput placeholder={title ? `Search ${title.toLowerCase()}` : "Search"} />
           <CommandList>
             <CommandEmpty>No results found.</CommandEmpty>
             <CommandGroup>
-              {options
-                .sort((a, b) => {
-                  // Sort Logic: Selected first, then by count (desc), then alphabetically
-                  const aSelected = selectedValues.has(a.value);
-                  const bSelected = selectedValues.has(b.value);
-                  if (aSelected && !bSelected) return -1;
-                  if (!aSelected && bSelected) return 1;
-
-                  const countA = optionCountOrFacet(a);
-                  const countB = optionCountOrFacet(b);
-
-                  if (countA !== countB) return countB - countA;
-                  return a.label.localeCompare(b.label);
-                })
-                .map((option) => {
-                const isSelected = selectedValues.has(option.value)
-                const count = optionCountOrFacet(option)
-
-                // Optional: Hide options with 0 results if they are not selected
-                // if (!isSelected && !count) return null;
-
+              {listed.map((value) => {
+                const option = byValue.get(value)!
+                const isSelected = selectedValues.has(value)
+                const count = countOf(option)
                 return (
                   <CommandItem
-                    key={option.value}
-                    onSelect={() => {
-                      if (isSelected) {
-                        selectedValues.delete(option.value)
-                      } else {
-                        selectedValues.add(option.value)
-                      }
-                      const filterValues = Array.from(selectedValues)
-                      column?.setFilterValue(
-                        filterValues.length ? filterValues : undefined
-                      )
-                    }}
-                    className={!count && !isSelected ? "opacity-50 grayscale" : ""}
+                    key={value}
+                    // The search matches the name and the id, never the count beside them.
+                    value={`${option.label} ${value}`}
+                    onSelect={() => toggle(value)}
+                    className={cn(!count && !isSelected && "opacity-50")}
                   >
-                    <div
+                    <span
                       className={cn(
-                        "mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
-                        isSelected
-                          ? "bg-primary text-primary-foreground"
-                          : "opacity-50 [&_svg]:invisible"
+                        "flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors",
+                        isSelected ? "border-primary bg-primary text-primary-foreground" : "border-input"
                       )}
+                      aria-hidden="true"
                     >
-                      <Check className={cn("h-4 w-4")} />
-                    </div>
-                    {option.icon && (
-                      <option.icon className="mr-2 h-4 w-4 text-muted-foreground" />
-                    )}
-                    <span>{option.label}</span>
-                    {count !== undefined && (
-                      <span className="ml-auto flex h-4 w-4 items-center justify-center font-mono text-xs">
-                        {count}
-                      </span>
-                    )}
+                      {isSelected && <Check className="size-3.5 text-current" />}
+                    </span>
+                    {option.icon && <option.icon className="size-4 shrink-0 text-muted-foreground" />}
+                    <span className="min-w-0 flex-1 truncate">
+                      {option.label}
+                      {isSelected && <span className="sr-only">, selected</span>}
+                    </span>
+                    <span className="text-xs text-muted-foreground tabular-nums">{count}</span>
                   </CommandItem>
                 )
               })}
@@ -162,9 +144,9 @@ export function DataTableFacetedFilter<TData, TValue>({
                 <CommandGroup>
                   <CommandItem
                     onSelect={() => column?.setFilterValue(undefined)}
-                    className="justify-center text-center"
+                    className="justify-center text-muted-foreground"
                   >
-                    Clear filters
+                    Clear filter
                   </CommandItem>
                 </CommandGroup>
               </>

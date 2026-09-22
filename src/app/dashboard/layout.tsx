@@ -60,7 +60,10 @@ export default async function DashboardLayout({
             />
             <SidebarInset className="min-w-0 overflow-hidden bg-page">
                 <Header />
-                <ScrollArea className="min-h-0 flex-1">
+                {/* Radix wraps the page in a `display: table` div that grows with its widest child, so a
+                    wide table pushed the whole page past the right edge, clipped and not scrollable.
+                    Block keeps the page at the window's width, and a wide table scrolls inside its card. */}
+                <ScrollArea className="min-h-0 flex-1 [&>[data-slot=scroll-area-viewport]>div]:block!">
                     <div className="p-4 md:p-6">
                         <div className="mx-auto space-y-6">
                             {children}

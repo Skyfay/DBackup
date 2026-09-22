@@ -16,6 +16,7 @@ All notable changes to DBackup are documented here.
 - **storage**: A destination that cannot be listed during the storage refresh keeps the size and backup count of its last successful scan instead of an estimate from the run history. The dashboard shows how old those values are.
 - **storage**: The storage scan of a local destination no longer fails when retention deletes a backup while it runs.
 - **storage**: The storage history chart shows a shrinking destination with a minus sign and compares against its oldest measurement in the chosen range. Its axes space the days by time and step in round sizes.
+- **ui**: A page with content wider than the window no longer runs past its right edge, where that content was cut off and could not be scrolled to.
 
 ### 🎨 Improvements
 

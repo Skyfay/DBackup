@@ -52,17 +52,19 @@ export function NameCell({ adapterId, name, kind, compact, onOpen }: NameCellPro
             <span className={cn("flex shrink-0 items-center justify-center rounded-lg border bg-muted/50", compact ? "size-7" : "size-8")}>
                 <AdapterIcon adapterId={adapterId} className="size-4" />
             </span>
-            <div className={cn("min-w-0", compact && "flex items-baseline gap-2")}>
+            {/* A cell grows with text that never wraps, so a long name is capped here and cut off. */}
+            <div className={cn("min-w-0 max-w-72", compact && "flex items-baseline gap-2")}>
                 {onOpen ? (
                     <button
                         type="button"
                         onClick={onOpen}
+                        title={name}
                         className="block max-w-full truncate rounded-sm text-left font-medium outline-none hover:underline hover:underline-offset-4 focus-visible:ring-[3px] focus-visible:ring-ring/50"
                     >
                         {name}
                     </button>
                 ) : (
-                    <div className="truncate font-medium">{name}</div>
+                    <div className="truncate font-medium" title={name}>{name}</div>
                 )}
                 <div className="truncate text-xs text-muted-foreground">{kind}</div>
             </div>
@@ -166,7 +168,7 @@ export function UsedByCell({ usedBy }: { usedBy: { jobs: number; templates: numb
 export function CredentialCell({ name }: { name: string | null | undefined }) {
     if (!name) return <Muted>-</Muted>;
     return (
-        <span className="inline-flex min-w-0 items-center gap-1.5 text-sm">
+        <span className="inline-flex min-w-0 max-w-48 items-center gap-1.5 text-sm" title={name}>
             <KeyRound className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
             <span className="truncate">{name}</span>
         </span>

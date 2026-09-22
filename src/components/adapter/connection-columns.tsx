@@ -138,7 +138,7 @@ export function connectionColumns({ kind, canViewHealth, renderActions, onOpen }
         meta: { defaultHidden: true },
         cell: ({ row }) => {
             const host = connectionSshHost(row.original.config);
-            return host ? <span className="text-sm">{host}</span> : <Muted>-</Muted>;
+            return host ? <span className="block max-w-48 truncate text-sm" title={host}>{host}</span> : <Muted>-</Muted>;
         },
     };
     const stored: ColumnDef<AdapterConfig> = {
@@ -163,7 +163,7 @@ export function connectionColumns({ kind, canViewHealth, renderActions, onOpen }
         meta: { defaultHidden: true },
         cell: ({ row }) => {
             const value = row.original.overview?.retentionName;
-            return value ? <span className="text-sm">{value}</span> : <Muted>-</Muted>;
+            return value ? <span className="block max-w-48 truncate text-sm" title={value}>{value}</span> : <Muted>-</Muted>;
         },
     };
     const lastSent: ColumnDef<AdapterConfig> = {

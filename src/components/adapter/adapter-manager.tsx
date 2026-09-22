@@ -7,12 +7,11 @@ import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { AlertTriangle, Trash } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import { ADAPTER_DEFINITIONS, AdapterDefinition } from "@/lib/adapters/definitions";
 import { Skeleton } from "@/components/ui/skeleton";
-import { DataTable, type BulkAction } from "@/components/ui/data-table";
-import { requestBulk } from "@/lib/bulk-request";
+import { DataTable } from "@/components/ui/data-table";
 import { useRouter } from "next/navigation";
 
 import { AdapterManagerProps, AdapterConfig } from "./types";
@@ -31,6 +30,7 @@ import { ConnectionDetailsContent } from "./connection-details-content";
 import { ConnectionCard } from "./connection-card";
 import { ConnectionSplitView } from "./connection-split-view";
 import { adapterTypeIcon } from "./connection-type-icon";
+import { connectionBulkActions } from "./connection-bulk-actions";
 
 /** What the page around a manager can trigger, such as the Add button beside the tabs. */
 export interface AdapterManagerHandle {
@@ -280,31 +280,7 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
         return [{ id: "adapterId", title: "Type", options }];
     }, [configs, availableAdapters]);
 
-    const bulkActions = useMemo<BulkAction<AdapterConfig>[]>(() => {
-        if (!canManage) return [];
-
-        return [
-            {
-                id: "delete",
-                labels: { verb: "delete", verbPast: "deleted", noun: "connection" },
-                icon: Trash,
-                variant: "destructive",
-                itemName: (config) => config.name,
-                confirm: {
-                    title: (rows) => `Delete ${rows.length} connection${rows.length === 1 ? "" : "s"}?`,
-                    // A connection still referenced by a job is refused per entry rather
-                    // than up front, because the reason names the jobs holding it.
-                    description: () =>
-                        "This cannot be undone. Connections still used by a job or a notification template are kept and listed afterwards.",
-                    confirmLabel: "Delete",
-                },
-                run: (rows) => requestBulk("/api/adapters/bulk", {
-                    action: "delete",
-                    ids: rows.map((config) => config.id),
-                }),
-            },
-        ];
-    }, [canManage]);
+    const bulkActions = useMemo(() => connectionBulkActions(kind, canManage), [kind, canManage]);
 
     // Stable reference for the adapter list passed to AdapterForm - prevents the
     // useEffect inside AdapterForm from re-running (and wiping typed values) when

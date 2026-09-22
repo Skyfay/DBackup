@@ -264,6 +264,7 @@ export function DataTable<TData, TValue>({
             actions={bulkActions}
             onClearSelection={() => setRowSelection({})}
             onComplete={onBulkActionComplete}
+            variant={card ? "card" : "default"}
         />
     );
     const grid = (
@@ -360,8 +361,11 @@ export function DataTable<TData, TValue>({
     if (card) {
         return (
             <div className="min-w-0 overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm">
-                {toolbar}
-                {bulkBar && <div className="px-4">{bulkBar}</div>}
+                {/* The bulk bar lies over the toolbar while rows are selected, so nothing below moves. */}
+                <div className="relative">
+                    {toolbar}
+                    {bulkBar}
+                </div>
                 <div className="border-t">{grid}</div>
                 <div className="border-t px-2">
                     <DataTablePagination table={table} totalRows={totalRows} />

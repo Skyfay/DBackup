@@ -9,7 +9,7 @@
 
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logging/logger";
-import { ConflictError } from "@/lib/logging/errors";
+import { ConflictError, NotFoundError, ValidationError } from "@/lib/logging/errors";
 import { runBulk, emptyBulkResult, type BulkResult } from "@/lib/core/bulk";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 
@@ -162,6 +162,69 @@ export async function deleteAdapters(ids: string[]): Promise<BulkResult> {
             await prisma.adapterConfig.delete({ where: { id } });
         },
         (id) => names.get(id)
+    );
+}
+
+/**
+ * Settings kept in an adapter's metadata that can be switched for several adapters at once.
+ * The edit form writes the same keys.
+ */
+export interface AdapterFlagChange {
+    /** Silences offline and recovery alerts. The health checks themselves keep running. */
+    healthNotificationsDisabled?: boolean;
+    /** Keeps a database connection out of the restore targets. */
+    isRestoreExcluded?: boolean;
+}
+
+/** Only these adapter types read each flag. Setting it on another type would do nothing. */
+const FLAG_TYPES: Record<keyof AdapterFlagChange, { types: string[]; refusal: string }> = {
+    healthNotificationsDisabled: {
+        types: ["database", "storage"],
+        refusal: "Notification channels have no health checks.",
+    },
+    isRestoreExcluded: {
+        types: ["database"],
+        refusal: "Only database connections are restore targets.",
+    },
+};
+
+function parseMetadata(metadata: string | null): Record<string, unknown> {
+    if (!metadata) return {};
+    try {
+        const value = JSON.parse(metadata);
+        return value && typeof value === "object" ? value : {};
+    } catch {
+        return {};
+    }
+}
+
+/**
+ * Switches metadata settings on several adapters, reporting per-adapter outcomes. An adapter
+ * whose type never reads a setting is refused with the reason instead of storing it silently.
+ */
+export async function updateAdapterFlags(ids: string[], change: AdapterFlagChange): Promise<BulkResult> {
+    if (ids.length === 0) return emptyBulkResult();
+
+    const adapters = await prisma.adapterConfig.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, name: true, type: true, metadata: true },
+    });
+    const byId = new Map(adapters.map((adapter) => [adapter.id, adapter]));
+    const keys = Object.keys(change) as (keyof AdapterFlagChange)[];
+
+    return runBulk(
+        ids,
+        async (id) => {
+            const adapter = byId.get(id);
+            if (!adapter) throw new NotFoundError("Connection", id);
+            for (const key of keys) {
+                if (!FLAG_TYPES[key].types.includes(adapter.type)) throw new ValidationError(FLAG_TYPES[key].refusal);
+            }
+            // The rest of the metadata, like the detected version, stays as it is.
+            const metadata = { ...parseMetadata(adapter.metadata), ...change };
+            await prisma.adapterConfig.update({ where: { id }, data: { metadata: JSON.stringify(metadata) } });
+        },
+        (id) => byId.get(id)?.name
     );
 }
 

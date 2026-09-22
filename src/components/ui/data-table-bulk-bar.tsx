@@ -2,8 +2,17 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { X } from "lucide-react";
+import { ChevronDown, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
 import { BulkConfirmDialog } from "@/components/ui/bulk-confirm-dialog";
 import { BulkResultDialog } from "@/components/ui/bulk-result-dialog";
 import type { BulkAction } from "@/components/ui/data-table-types";
@@ -17,6 +26,11 @@ interface DataTableBulkBarProps<TData> {
     actions: BulkAction<TData>[];
     onClearSelection: () => void;
     onComplete?: () => void | Promise<void>;
+    /**
+     * "card" lays the bar over the toolbar of a card table, so the rows do not move down under
+     * the pointer when the first one is ticked. It also groups menu actions under More.
+     */
+    variant?: "default" | "card";
 }
 
 /**
@@ -32,6 +46,7 @@ export function DataTableBulkBar<TData>({
     actions,
     onClearSelection,
     onComplete,
+    variant = "default",
 }: DataTableBulkBarProps<TData>) {
     const [pendingAction, setPendingAction] = React.useState<BulkAction<TData> | null>(null);
     const [runningId, setRunningId] = React.useState<string | null>(null);
@@ -133,6 +148,106 @@ export function DataTableBulkBar<TData>({
 
     const visibleActions = actions.filter((action) => action.isAvailable?.(selectedRows) ?? true);
     const confirmState = pendingAction ? partition(pendingAction) : null;
+    const labelOf = (action: BulkAction<TData>) => action.label?.(selectedRows) ?? defaultLabel(action, selectedRows.length);
+
+    const dialogs = (
+        <>
+            {pendingAction && confirmState && (
+                <BulkConfirmDialog
+                    open
+                    onOpenChange={(open) => !open && setPendingAction(null)}
+                    title={pendingAction.confirm!.title(confirmState.eligible)}
+                    description={pendingAction.confirm!.description(confirmState.eligible)}
+                    items={confirmState.eligible.map((row, index) => nameOf(pendingAction, row, index))}
+                    skipped={confirmState.skipped}
+                    confirmLabel={pendingAction.confirm!.confirmLabel}
+                    destructive={pendingAction.variant === "destructive"}
+                    isPending={runningId === pendingAction.id}
+                    onConfirm={() => void execute(pendingAction, confirmState.eligible)}
+                />
+            )}
+
+            <BulkResultDialog
+                open={failures !== null}
+                onOpenChange={(open) => !open && setFailures(null)}
+                title="Some entries were not processed"
+                failures={failures ?? []}
+            />
+        </>
+    );
+
+    if (variant === "card") {
+        const barActions = visibleActions.filter((action) => action.placement !== "menu");
+        const menuGroups = groupMenuActions(visibleActions.filter((action) => action.placement === "menu"));
+        return (
+            <>
+                {selectedRows.length > 0 && visibleActions.length > 0 && (
+                    <div
+                        role="toolbar"
+                        aria-label="Actions for the selected rows"
+                        className="absolute inset-0 z-10 flex flex-wrap items-center gap-1.5 bg-card px-4 py-3"
+                    >
+                        <span className="mr-1 inline-flex h-8 items-center rounded-lg bg-muted px-2.5 text-sm font-medium tabular-nums">
+                            {selectedRows.length} selected
+                        </span>
+                        {barActions.map((action) => {
+                            const Icon = action.icon;
+                            return (
+                                <Button
+                                    key={action.id}
+                                    size="sm"
+                                    variant="ghost"
+                                    className={cn(action.variant === "destructive" && "text-destructive hover:bg-destructive/10 hover:text-destructive")}
+                                    disabled={runningId !== null}
+                                    onClick={() => start(action)}
+                                >
+                                    {runningId === action.id ? <Loader2 className="animate-spin" /> : Icon && <Icon />}
+                                    {labelOf(action)}
+                                </Button>
+                            );
+                        })}
+                        {menuGroups.length > 0 && (
+                            <DropdownMenu modal={false}>
+                                <DropdownMenuTrigger asChild>
+                                    <Button size="sm" variant="ghost" disabled={runningId !== null}>
+                                        {runningId !== null && menuGroups.some((group) => group.actions.some((action) => action.id === runningId)) && (
+                                            <Loader2 className="animate-spin" />
+                                        )}
+                                        More
+                                        <ChevronDown />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="start" className="w-64">
+                                    {menuGroups.map((group, index) => (
+                                        <React.Fragment key={group.label ?? `group-${index}`}>
+                                            {index > 0 && <DropdownMenuSeparator />}
+                                            {group.label && (
+                                                <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{group.label}</DropdownMenuLabel>
+                                            )}
+                                            {group.actions.map((action) => {
+                                                const Icon = action.icon;
+                                                return (
+                                                    <DropdownMenuItem key={action.id} onSelect={() => start(action)}>
+                                                        {Icon && <Icon />}
+                                                        {labelOf(action)}
+                                                    </DropdownMenuItem>
+                                                );
+                                            })}
+                                        </React.Fragment>
+                                    ))}
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        )}
+                        <Button size="sm" variant="ghost" className="ml-auto" disabled={runningId !== null} onClick={onClearSelection}>
+                            <X />
+                            Clear
+                        </Button>
+                    </div>
+                )}
+                {dialogs}
+            </>
+        );
+    }
 
     return (
         <>
@@ -172,29 +287,20 @@ export function DataTableBulkBar<TData>({
                 </div>
             )}
 
-            {pendingAction && confirmState && (
-                <BulkConfirmDialog
-                    open
-                    onOpenChange={(open) => !open && setPendingAction(null)}
-                    title={pendingAction.confirm!.title(confirmState.eligible)}
-                    description={pendingAction.confirm!.description(confirmState.eligible)}
-                    items={confirmState.eligible.map((row, index) => nameOf(pendingAction, row, index))}
-                    skipped={confirmState.skipped}
-                    confirmLabel={pendingAction.confirm!.confirmLabel}
-                    destructive={pendingAction.variant === "destructive"}
-                    isPending={runningId === pendingAction.id}
-                    onConfirm={() => void execute(pendingAction, confirmState.eligible)}
-                />
-            )}
-
-            <BulkResultDialog
-                open={failures !== null}
-                onOpenChange={(open) => !open && setFailures(null)}
-                title="Some entries were not processed"
-                failures={failures ?? []}
-            />
+            {dialogs}
         </>
     );
+}
+
+/** The More menu, one section per group in the order the groups first appear. */
+function groupMenuActions<TData>(actions: BulkAction<TData>[]): { label?: string; actions: BulkAction<TData>[] }[] {
+    const groups: { label?: string; actions: BulkAction<TData>[] }[] = [];
+    for (const action of actions) {
+        const group = groups.find((entry) => entry.label === action.group);
+        if (group) group.actions.push(action);
+        else groups.push({ label: action.group, actions: [action] });
+    }
+    return groups;
 }
 
 /** "Delete 3". Derived from the action's labels so call sites do not repeat the verb. */

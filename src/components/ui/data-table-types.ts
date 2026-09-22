@@ -61,6 +61,13 @@ export interface BulkAction<TData> {
     ineligible?: (row: TData) => string | null;
     /** Hides the button entirely, for example when no selected row would change. */
     isAvailable?: (rows: TData[]) => boolean;
+    /**
+     * "menu" puts the action into the More menu of the bar, for settings that would crowd it.
+     * Only the card look of DataTable has that menu. The default look shows every action as a button.
+     */
+    placement?: "bar" | "menu";
+    /** Heading of the section in the More menu. Actions with the same group sit together. */
+    group?: string;
     /** Names a row for the confirmation preview and the failure list. */
     itemName?: (row: TData) => string;
     /** Performs the action. Reports per-row outcomes rather than throwing on the first failure. */

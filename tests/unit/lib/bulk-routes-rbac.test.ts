@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     setJobsEnabled: vi.fn(),
     auditLog: vi.fn(),
     deleteAdapters: vi.fn(),
+    updateAdapterFlags: vi.fn(),
     getAdapterTypes: vi.fn(),
     deleteBackupsBulk: vi.fn(),
     setBackupsLocked: vi.fn(),
@@ -37,6 +38,7 @@ vi.mock("@/services/audit-service", () => ({
 
 vi.mock("@/services/adapters/adapter-service", () => ({
     deleteAdapters: (...args: unknown[]) => mocks.deleteAdapters(...args),
+    updateAdapterFlags: (...args: unknown[]) => mocks.updateAdapterFlags(...args),
     getAdapterTypes: (...args: unknown[]) => mocks.getAdapterTypes(...args),
 }));
 
@@ -239,6 +241,24 @@ describe("POST /api/adapters/bulk", () => {
 
         expect(res.status).toBe(400);
         expect(mocks.deleteAdapters).not.toHaveBeenCalled();
+    });
+
+    it("switches a setting instead of deleting, and logs it as an update", async () => {
+        mocks.getAuthContext.mockResolvedValue(authed());
+        mocks.updateAdapterFlags.mockReset().mockResolvedValue({ succeeded: ["a", "b"], failed: [] });
+
+        const res = await bulkAdapters(request({ action: "exclude-from-restore", ids: ["a", "b"] }));
+
+        expect(res.status).toBe(200);
+        expect(mocks.updateAdapterFlags).toHaveBeenCalledWith(["a", "b"], { isRestoreExcluded: true });
+        expect(mocks.deleteAdapters).not.toHaveBeenCalled();
+        expect(mocks.auditLog).toHaveBeenCalledWith(
+            "u1",
+            "UPDATE",
+            expect.any(String),
+            expect.objectContaining({ bulk: true, change: "exclude-from-restore", succeeded: 2 })
+        );
+        expect(mocks.checkPermissionWithContext).toHaveBeenCalledWith(expect.anything(), PERMISSIONS.SOURCES.WRITE);
     });
 });
 

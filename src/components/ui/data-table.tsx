@@ -277,6 +277,10 @@ export function DataTable<TData, TValue>({
                                 {...(layout?.headerDrag(header.column.id) ?? {})}
                                 className={cn(
                                     card && "px-3 text-xs text-muted-foreground first:pl-4 last:pr-4",
+                                    // The checkbox and the actions keep to their content. A full-width table
+                                    // would hand them spare width too, which pushes the name further right
+                                    // the fewer columns a table has.
+                                    card && (header.column.id === "select" || header.column.columnDef.meta?.pin === "end") && "w-px",
                                     // Movable headers can be dragged, and show where a dragged one lands.
                                     "[&[draggable=true]]:cursor-grab data-[drop-target]:shadow-[inset_2px_0_0_var(--foreground)]"
                                 )}

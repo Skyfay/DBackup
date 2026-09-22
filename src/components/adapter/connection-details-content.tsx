@@ -141,7 +141,7 @@ export function ConnectionDetailsContent({ variant, config, kind, canTest, canVi
 
     return (
         <>
-            <SheetHeaderOr inSheet className={cn("gap-4 border-b p-5", inSheet && "pr-12")}>
+            <SheetHeaderOr inSheet={inSheet} className={cn("gap-4 border-b p-5", inSheet && "pr-12")}>
                 <div className="flex min-w-0 items-start gap-3">
                     <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border bg-muted/50">
                         <AdapterIcon adapterId={config.adapterId} className="size-5" />
@@ -180,7 +180,8 @@ export function ConnectionDetailsContent({ variant, config, kind, canTest, canVi
                 </div>
             </SheetHeaderOr>
 
-            <ScrollArea className="min-h-0 flex-1">
+            {/* Block instead of Radix's `display: table` wrapper, so long hosts and errors are cut off or wrap. */}
+            <ScrollArea className="min-h-0 flex-1 [&>[data-slot=scroll-area-viewport]>div]:block!">
                 <div className="space-y-6 p-5">
                     {(health === "OFFLINE" || health === "DEGRADED") && (
                         <IssueBanner status={health} error={config.lastError} failures={config.consecutiveFailures} lastPassedAt={details?.lastPassedAt} />

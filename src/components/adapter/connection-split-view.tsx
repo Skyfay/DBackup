@@ -52,7 +52,9 @@ export function ConnectionSplitView({ configs, withHealth, selectedId, onSelect,
         // A fixed height on larger screens, so the list and the details scroll on their own.
         <div className="grid gap-4 md:h-[calc(100dvh-15rem)] md:min-h-128 md:grid-cols-[17rem_minmax(0,1fr)] xl:grid-cols-[20rem_minmax(0,1fr)]">
             <div className="flex max-h-96 min-h-0 flex-col overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm md:max-h-none">
-                <ScrollArea className="min-h-0 flex-1">
+                {/* Radix wraps the list in a `display: table` div that grows with its longest line, which
+                    would stop the names and addresses from being cut off. Block keeps it at the list's width. */}
+                <ScrollArea className="min-h-0 flex-1 [&>[data-slot=scroll-area-viewport]>div]:block!">
                     {ordered.length === 0 ? (
                         <p className="p-6 text-center text-sm text-muted-foreground">No results.</p>
                     ) : (

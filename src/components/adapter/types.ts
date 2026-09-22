@@ -37,6 +37,9 @@ export interface AdapterManagerProps {
     tableId: string;
     /** The layout this user saved for the table, null for the defaults. */
     initialLayout?: TablePreferences | null;
-    /** Rows as a table, as cards, or as a list beside the details. Bulk actions only exist in the table. */
+    /**
+     * Rows as a table, as cards, or as a list beside the details. Bulk actions only exist in
+     * the table. Undefined while the page still measures the screen, which shows the skeleton.
+     */
     view?: "table" | "cards" | "split";
 }

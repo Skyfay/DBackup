@@ -11,6 +11,7 @@ The UI is redesigned page by page. Shadcn stays, the new look comes from tokens 
 | Sidebar and header | `src/components/layout/`, `src/components/ui/sidebar.tsx` |
 | Overview | `src/app/dashboard/(overview)/`, widgets in `src/components/dashboard/widgets/` |
 | Storage history dialog | `src/components/dashboard/widgets/storage-history-modal.tsx` |
+| Connections, lists and details | `src/app/dashboard/connections/`, `src/components/adapter/connection-*.tsx`. The add and edit dialogs still have the old look. |
 
 Every other page still has the old look. Do not copy patterns from it, copy them from the Overview widgets. Add a row here when a page is done.
 
@@ -21,6 +22,8 @@ Every other page still has the old look. Do not copy patterns from it, copy them
 - Sections stack with `space-y-4 md:space-y-6`, grids use `gap-4 md:gap-6`.
 - Every grid or flex child that holds text gets `min-w-0`. Without it a long name pushes the page wider than a phone.
 - A route-level `loading.tsx` shows a Skeleton shaped like the page. When it must not apply to sibling routes, the page moves into a route group, like `(overview)`.
+- A row of tabs that can be wider than a phone sits in `<ScrollArea horizontal>`, so it scrolls sideways instead of widening the page.
+- A layout that differs between phone and desktop waits for `useIsMobileState()`, which is undefined until the screen is measured, and shows its skeleton meanwhile. Rendering the desktop version first makes a phone flash it.
 
 ## Cards
 

@@ -29,7 +29,7 @@ export function DataTablePagination<TData>({ table, totalRows }: DataTablePagina
     const selectedCount = table.getFilteredSelectedRowModel().rows.length;
 
     return (
-        <div className="flex items-center justify-between px-2 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-2 py-4">
             <div className="flex-1 text-sm text-muted-foreground">
                 {selectedCount > 0
                     ? `${selectedCount} of ${totalRows} row(s) selected.`
@@ -37,7 +37,8 @@ export function DataTablePagination<TData>({ table, totalRows }: DataTablePagina
                 }
             </div>
             <div className="flex items-center space-x-6 lg:space-x-8">
-                <div className="flex items-center space-x-2">
+                {/* A phone has no room for it, and the default page size suits its short lists. */}
+                <div className="hidden items-center space-x-2 sm:flex">
                     <p className="text-sm font-medium">Rows per page</p>
                     <Select
                         value={`${table.getState().pagination.pageSize}`}

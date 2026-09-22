@@ -9,9 +9,12 @@ function ScrollArea({
   className,
   children,
   viewportRef,
+  horizontal = false,
   ...props
 }: React.ComponentProps<typeof ScrollAreaPrimitive.Root> & {
   viewportRef?: React.Ref<HTMLDivElement>;
+  /** Adds the horizontal scrollbar, for a row that can be wider than the screen. */
+  horizontal?: boolean;
 }) {
   return (
     <ScrollAreaPrimitive.Root
@@ -27,6 +30,7 @@ function ScrollArea({
         {children}
       </ScrollAreaPrimitive.Viewport>
       <ScrollBar />
+      {horizontal && <ScrollBar orientation="horizontal" />}
       <ScrollAreaPrimitive.Corner />
     </ScrollAreaPrimitive.Root>
   )

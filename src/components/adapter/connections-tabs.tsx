@@ -7,11 +7,12 @@ import { toast } from "sonner";
 import { saveViewLayout } from "@/app/actions/auth/table-preferences";
 import { AdapterManager, type AdapterManagerHandle } from "@/components/adapter/adapter-manager";
 import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import type { TablePreferences } from "@/lib/core/table-preferences";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { useIsMobileState } from "@/hooks/use-mobile";
 import { CONNECTION_TABLE_IDS, CONNECTIONS_PAGE_ID, type ConnectionCounts } from "./connection-tables";
 import { ConnectionViewSwitch, type ConnectionView } from "./connection-view-switch";
 
@@ -49,9 +50,10 @@ export function ConnectionsTabs({ permissions, counts, layouts, initialView }: C
     const router = useRouter();
     const searchParams = useSearchParams();
     const [view, setView] = useState<ConnectionView>(initialView);
-    // A phone has no room for the table, so it always gets the cards and no switch.
-    const isMobile = useIsMobile();
-    const shownView: ConnectionView = isMobile ? "cards" : view;
+    // A phone has no room for the table, so it always gets the cards and no switch. The lists
+    // wait until the screen is measured, so a phone never flashes the table first.
+    const isMobile = useIsMobileState();
+    const shownView: ConnectionView | undefined = isMobile === undefined ? undefined : isMobile ? "cards" : view;
 
     const changeView = useCallback((next: ConnectionView) => {
         setView(next);
@@ -111,27 +113,35 @@ export function ConnectionsTabs({ permissions, counts, layouts, initialView }: C
 
     return (
         <Tabs value={active} onValueChange={onTabChange} className="w-full gap-4">
-            <div className="flex flex-wrap items-center gap-3">
-                <TabsList>
-                    {canViewDatabases && (
-                        <TabsTrigger value={CONNECTION_TABS.DATABASES}>Databases <Count value={counts.databases} /></TabsTrigger>
-                    )}
-                    {canViewStorage && (
-                        <>
-                            <TabsTrigger value={CONNECTION_TABS.DIRECTORY_SOURCES}>Directory Sources <Count value={counts.sources} /></TabsTrigger>
-                            <TabsTrigger value={CONNECTION_TABS.DESTINATIONS}>Backup Destinations <Count value={counts.destinations} /></TabsTrigger>
-                        </>
-                    )}
-                    {canViewNotifications && (
-                        <TabsTrigger value={CONNECTION_TABS.NOTIFICATIONS}>Notifications <Count value={counts.notifications} /></TabsTrigger>
-                    )}
-                </TabsList>
-                <div className="ml-auto flex items-center gap-2">
-                    {!isMobile && <ConnectionViewSwitch value={view} onChange={changeView} />}
+            <div className="flex items-center gap-2 md:gap-3">
+                {/* On a phone the tabs scroll sideways instead of making the page wider. */}
+                <ScrollArea horizontal className="-ml-4 min-w-0 md:ml-0">
+                    <div className="pb-2.5 pl-4 md:pb-0 md:pl-0">
+                        <TabsList>
+                            {canViewDatabases && (
+                                <TabsTrigger value={CONNECTION_TABS.DATABASES}>Databases <Count value={counts.databases} /></TabsTrigger>
+                            )}
+                            {canViewStorage && (
+                                <>
+                                    <TabsTrigger value={CONNECTION_TABS.DIRECTORY_SOURCES}>Directory Sources <Count value={counts.sources} /></TabsTrigger>
+                                    <TabsTrigger value={CONNECTION_TABS.DESTINATIONS}>Backup Destinations <Count value={counts.destinations} /></TabsTrigger>
+                                </>
+                            )}
+                            {canViewNotifications && (
+                                <TabsTrigger value={CONNECTION_TABS.NOTIFICATIONS}>Notifications <Count value={counts.notifications} /></TabsTrigger>
+                            )}
+                        </TabsList>
+                    </div>
+                </ScrollArea>
+                <div className="ml-auto flex shrink-0 items-center gap-2 self-start md:self-auto">
+                    {/* Hidden by CSS rather than by the measured screen, so it never pops in after loading. */}
+                    <div className="hidden md:block">
+                        <ConnectionViewSwitch value={view} onChange={changeView} />
+                    </div>
                     {canManage[active] && (
-                        <Button onClick={() => managers.current[active]?.openCreate()}>
+                        <Button onClick={() => managers.current[active]?.openCreate()} aria-label="Add New">
                             <Plus />
-                            Add New
+                            <span className="hidden sm:inline">Add New</span>
                         </Button>
                     )}
                 </div>

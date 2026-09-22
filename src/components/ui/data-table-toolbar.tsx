@@ -59,14 +59,14 @@ export function DataTableToolbar<TData>({
     if (variant === "card") {
         return (
             <div className="flex flex-wrap items-center gap-2 px-4 py-3">
-                <div className="relative">
+                <div className="relative w-full sm:w-auto">
                     <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
                     <Input
                         placeholder={searchPlaceholder ?? "Search..."}
                         aria-label={searchPlaceholder ?? "Search"}
                         value={(table.getColumn(searchKey)?.getFilterValue() as string) ?? ""}
                         onChange={(event) => table.getColumn(searchKey)?.setFilterValue(event.target.value)}
-                        className="h-8 w-48 pl-8 sm:w-60"
+                        className="h-9 w-full pl-8 sm:h-8 sm:w-60"
                     />
                 </div>
                 {facetedFilters}

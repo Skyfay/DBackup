@@ -43,7 +43,7 @@ const SEARCH_NOUNS: Record<ConnectionKind, string> = {
     notification: "channels",
 };
 
-export function AdapterManager({ ref, type, canManage = true, permissions = [], roleFilter, defaultRole, tableId, initialLayout = null, view = "table" }: AdapterManagerProps & { ref?: Ref<AdapterManagerHandle> }) {
+export function AdapterManager({ ref, type, canManage = true, permissions = [], roleFilter, defaultRole, tableId, initialLayout = null, view }: AdapterManagerProps & { ref?: Ref<AdapterManagerHandle> }) {
     const [configs, setConfigs] = useState<AdapterConfig[]>([]);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [isPickerOpen, setIsPickerOpen] = useState(false);
@@ -319,7 +319,7 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
         <div className="space-y-4">
             <CredentialUpgradeBanner configs={configs} />
 
-            {!hasLoaded ? (
+            {!hasLoaded || !view ? (
                 <div className="space-y-3 rounded-xl border bg-card p-4 shadow-sm" aria-busy="true">
                     <span className="sr-only">Loading connections</span>
                     <div className="flex gap-2">

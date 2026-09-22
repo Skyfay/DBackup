@@ -778,7 +778,7 @@ Return a plain string. The table styles it, and `null` shows a dash.
 | Adapter | Sends to output |
 | :--- | :--- |
 | Discord / Slack / Teams | `Webhook` |
-| Generic Webhook | `POST → https://...` |
+| Generic Webhook | `POST webhook`, the URL is a secret and never reaches the browser |
 | Gotify | `https://gotify.example.com` |
 | ntfy | `https://ntfy.sh/my-topic` |
 | Telegram | `Chat 123456789` |

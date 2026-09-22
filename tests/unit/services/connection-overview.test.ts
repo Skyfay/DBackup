@@ -97,8 +97,8 @@ describe("getConnectionOverview", () => {
             { jobId: "hourly", _max: { startedAt: at(1) } },
         ]);
         prismaMock.execution.findMany.mockResolvedValue([
-            { jobId: "nightly", status: "Success", startedAt: at(10) },
-            { jobId: "hourly", status: "Failed", startedAt: at(1) },
+            { id: "run-1", jobId: "nightly", status: "Success", startedAt: at(10) },
+            { id: "run-2", jobId: "hourly", status: "Failed", startedAt: at(1) },
         ] as never);
         prismaMock.healthCheckLog.findMany.mockResolvedValue([
             { adapterConfigId: "pg", status: "ONLINE", latencyMs: 9, createdAt: at(0.5) },
@@ -108,7 +108,7 @@ describe("getConnectionOverview", () => {
         const overview = (await getConnectionOverview(["pg"])).get("pg");
 
         expect(overview?.usedBy.jobs).toBe(2);
-        expect(overview?.lastBackup).toEqual({ at: at(1).toISOString(), status: "Failed" });
+        expect(overview?.lastBackup).toEqual({ id: "run-2", at: at(1).toISOString(), status: "Failed" });
         // The failed check has no meaningful response time, the newest passed one does.
         expect(overview?.latencyMs).toBe(9);
         expect(overview?.credentialName).toBe("prod-db");

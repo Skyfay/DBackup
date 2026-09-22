@@ -82,6 +82,11 @@ interface DataTableProps<TData, TValue> {
     searchPlaceholder?: string;
     /** Rows per page to start with. */
     initialPageSize?: number;
+    /**
+     * Makes the whole row clickable. Clicks on controls inside the row, and inside popovers
+     * they open, are left to those controls. Give the row a button as well for keyboard users.
+     */
+    onRowClick?: (row: TData) => void;
 
     // Manual Pagination & Sorting Capabilities
     pageCount?: number;
@@ -95,6 +100,17 @@ interface DataTableProps<TData, TValue> {
     manualPagination?: boolean;
     manualSorting?: boolean;
     manualFiltering?: boolean;
+}
+
+/**
+ * A click on the row itself. Not on a control inside it, not on a popover it opened (React
+ * bubbles those through the row although they render elsewhere), and not the end of a text selection.
+ */
+function isRowClick(event: React.MouseEvent<HTMLTableRowElement>): boolean {
+    const target = event.target as HTMLElement;
+    if (!event.currentTarget.contains(target)) return false;
+    if (target.closest("button, a, input, select, textarea, label, [role=checkbox], [role=menuitem]")) return false;
+    return !window.getSelection()?.toString();
 }
 
 export function DataTable<TData, TValue>({
@@ -116,6 +132,7 @@ export function DataTable<TData, TValue>({
     toolbarExtra,
     searchPlaceholder,
     initialPageSize = 10,
+    onRowClick,
     pageCount,
     rowCount,
     pagination: controlledPagination,
@@ -275,9 +292,11 @@ export function DataTable<TData, TValue>({
                         <TableRow
                             key={row.id}
                             data-state={row.getIsSelected() && "selected"}
+                            onClick={onRowClick ? (event) => isRowClick(event) && onRowClick(row.original) : undefined}
                             className={cn(
                                 card && "[&>td]:px-3 [&>td:first-child]:pl-4 [&>td:last-child]:pr-4",
-                                card && (compact ? "[&>td]:py-1" : "[&>td]:py-2.5")
+                                card && (compact ? "[&>td]:py-1" : "[&>td]:py-2.5"),
+                                onRowClick && "cursor-pointer"
                             )}
                         >
                             {row.getVisibleCells().map((cell) => (

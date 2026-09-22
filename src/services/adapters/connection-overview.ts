@@ -12,6 +12,13 @@ import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { cached } from "@/services/dashboard/cache";
 import { getStorageVolume } from "@/services/dashboard-service";
 
+/** A finished backup, with the execution id to link it. */
+export interface FinishedRun {
+    id: string;
+    at: string;
+    status: string;
+}
+
 /** One hour of health checks: all passed, one failed, the connection went offline, or none ran. */
 export type HealthBucket = "ok" | "failed" | "offline" | "none";
 
@@ -19,7 +26,7 @@ export interface ConnectionOverview {
     /** Jobs that use the connection in any role, and notification templates that send through it. */
     usedBy: { jobs: number; templates: number };
     /** The newest finished backup of those jobs. */
-    lastBackup: { at: string; status: string } | null;
+    lastBackup: FinishedRun | null;
     /** One bucket per hour of the last day, oldest first. */
     health: HealthBucket[];
     /** Share of passed health checks over the last day in percent, null when none ran. */
@@ -172,8 +179,8 @@ async function loadOverview(ids: string[], now: Date): Promise<[string, Connecti
 }
 
 /** The newest finished backup of each job. Two queries, however many jobs there are. */
-async function latestRunPerJob(jobIds: string[]): Promise<Map<string, { at: string; status: string }>> {
-    const result = new Map<string, { at: string; status: string }>();
+export async function latestRunPerJob(jobIds: string[]): Promise<Map<string, FinishedRun>> {
+    const result = new Map<string, FinishedRun>();
     if (jobIds.length === 0) return result;
 
     const newest = await prisma.execution.groupBy({
@@ -186,10 +193,10 @@ async function latestRunPerJob(jobIds: string[]): Promise<Map<string, { at: stri
 
     const runs = await prisma.execution.findMany({
         where: { OR: keys, type: "Backup", status: { in: FINISHED_STATUSES } },
-        select: { jobId: true, status: true, startedAt: true },
+        select: { id: true, jobId: true, status: true, startedAt: true },
     });
     for (const run of runs) {
-        if (run.jobId) result.set(run.jobId, { at: run.startedAt.toISOString(), status: run.status });
+        if (run.jobId) result.set(run.jobId, { id: run.id, at: run.startedAt.toISOString(), status: run.status });
     }
     return result;
 }

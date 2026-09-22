@@ -26,6 +26,7 @@ import { useTableLayout } from "@/hooks/use-table-layout";
 import { connectionColumns, type ConnectionKind } from "./connection-columns";
 import { ConnectionRowActions } from "./connection-row-actions";
 import { ConnectionStatusFilter, matchesStatus, type StatusFilter } from "./connection-status-filter";
+import { ConnectionDetailsSheet } from "./connection-details-sheet";
 
 /** What the page around a manager can trigger, such as the Add button beside the tabs. */
 export interface AdapterManagerHandle {
@@ -56,6 +57,8 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
     const [hasLoaded, setHasLoaded] = useState(false);
     const [historyAdapter, setHistoryAdapter] = useState<{ id: string; name: string } | null>(null);
     const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+    // The id stays after closing, so the panel keeps its content while it slides out.
+    const [details, setDetails] = useState<{ id: string; open: boolean } | null>(null);
     const router = useRouter();
     const layout = useTableLayout(tableId, initialLayout);
 
@@ -200,10 +203,14 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
     const canViewHealth = permissions.includes(type === "database" ? PERMISSIONS.SOURCES.VIEW : PERMISSIONS.DESTINATIONS.READ);
     const canViewStorage = permissions.includes(PERMISSIONS.STORAGE.READ);
 
-    const columns = useMemo(() => {
+    /**
+     * The actions of one connection. The panel shows Explore and Edit as buttons of their
+     * own, so its menu leaves them out.
+     */
+    const renderActions = useCallback((config: AdapterConfig, inPanel = false) => {
         // Same server and credentials in the other role. An adapter that only works one way
         // round has no counterpart, and the API would refuse the clone.
-        const counterpartOf = (config: AdapterConfig) => {
+        const counterpartOf = () => {
             const current = config.storageRole ?? STORAGE_ROLES.DESTINATION;
             const counterpart = counterpartStorageRole(current);
             const definition = ADAPTER_DEFINITIONS.find((d) => d.id === config.adapterId);
@@ -218,23 +225,29 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
             };
         };
 
-        return connectionColumns({
-            kind,
-            canViewHealth,
-            renderActions: (config) => (
-                <ConnectionRowActions
-                    name={config.name}
-                    onExplore={type === "database" ? () => router.push(`/dashboard/explorer?sourceId=${config.id}`) : undefined}
-                    onHistory={type === "storage" && canViewStorage ? () => setHistoryAdapter({ id: config.id, name: config.name }) : undefined}
-                    onEdit={canManage ? () => { setEditingId(config.id); setIsDialogOpen(true); } : undefined}
-                    onClone={canManage ? () => setCloneTarget({ id: config.id, name: config.name }) : undefined}
-                    counterpart={canManage && type === "storage" ? counterpartOf(config) : undefined}
-                    onDelete={canManage ? () => setDeletingId(config.id) : undefined}
-                    busy={cloningId === config.id}
-                />
-            ),
-        });
-    }, [kind, canViewHealth, canViewStorage, type, canManage, cloningId, router]);
+        return (
+            <ConnectionRowActions
+                name={config.name}
+                onExplore={!inPanel && type === "database" ? () => router.push(`/dashboard/explorer?sourceId=${config.id}`) : undefined}
+                onHistory={type === "storage" && canViewStorage ? () => setHistoryAdapter({ id: config.id, name: config.name }) : undefined}
+                onEdit={!inPanel && canManage ? () => { setEditingId(config.id); setIsDialogOpen(true); } : undefined}
+                onClone={canManage ? () => setCloneTarget({ id: config.id, name: config.name }) : undefined}
+                counterpart={canManage && type === "storage" ? counterpartOf() : undefined}
+                onDelete={canManage ? () => setDeletingId(config.id) : undefined}
+                busy={cloningId === config.id}
+            />
+        );
+    }, [type, canViewStorage, canManage, cloningId, router]);
+
+    const openDetails = useCallback((config: AdapterConfig) => setDetails({ id: config.id, open: true }), []);
+
+    const columns = useMemo(
+        () => connectionColumns({ kind, canViewHealth, renderActions: (config) => renderActions(config), onOpen: openDetails }),
+        [kind, canViewHealth, renderActions, openDetails]
+    );
+
+    // A deleted connection has no row left to show, so its panel closes with it.
+    const detailsConfig = details ? configs.find((config) => config.id === details.id) ?? null : null;
 
     const visibleConfigs = useMemo(() => configs.filter((config) => matchesStatus(config, statusFilter)), [configs, statusFilter]);
 
@@ -326,8 +339,21 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                     onBulkActionComplete={afterChange}
                     columnLayout={layout}
                     initialPageSize={20}
+                    onRowClick={openDetails}
                 />
             )}
+
+            <ConnectionDetailsSheet
+                open={details?.open ?? false}
+                config={detailsConfig}
+                kind={kind}
+                onClose={() => setDetails((current) => current && { ...current, open: false })}
+                canTest={canManage && type !== "notification"}
+                canViewHistory={permissions.includes(PERMISSIONS.HISTORY.READ)}
+                exploreHref={detailsConfig && type === "database" ? `/dashboard/explorer?sourceId=${detailsConfig.id}` : undefined}
+                onEdit={canManage && detailsConfig ? () => { setEditingId(detailsConfig.id); setIsDialogOpen(true); } : undefined}
+                menu={detailsConfig ? renderActions(detailsConfig, true) : null}
+            />
 
             {/* Step 1: Adapter Picker */}
             <Dialog open={isPickerOpen} onOpenChange={setIsPickerOpen}>

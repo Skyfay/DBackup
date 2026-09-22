@@ -70,7 +70,8 @@ export function connectionAddress(adapterId: string, configJson: string): string
         case "teams":
             return "Webhook";
         case "generic-webhook":
-            return `${text(config.method) || "POST"} ${text(config.webhookUrl)}`;
+            // The URL itself counts as a secret and never reaches the browser.
+            return `${text(config.method) || "POST"} webhook`;
         case "gotify":
             return text(config.serverUrl) || null;
         case "ntfy":
@@ -99,4 +100,75 @@ export function connectionSshHost(configJson: string): string | null {
 export function connectionVersion(metadataJson: string | undefined): string | null {
     const metadata = parse(metadataJson);
     return metadata?.engineVersion ? text(metadata.engineVersion) : null;
+}
+
+/**
+ * The settings worth showing in a connection's details, in a fixed order. Only plain,
+ * non-secret fields are listed. The API has removed the secrets already, and anything
+ * nested or long is left for the edit form.
+ */
+const FACTS: [key: string, label: string][] = [
+    ["host", "Host"],
+    ["port", "Port"],
+    ["user", "User"],
+    ["username", "User"],
+    ["database", "Database"],
+    ["databases", "Databases"],
+    ["authenticationDatabase", "Auth database"],
+    ["mode", "Mode"],
+    ["connectionMode", "Connection"],
+    ["sshHost", "SSH host"],
+    ["sshPort", "SSH port"],
+    ["sshUsername", "SSH user"],
+    ["tls", "TLS"],
+    ["disableSsl", "TLS disabled"],
+    ["encrypt", "Encryption"],
+    ["trustServerCertificate", "Trust server certificate"],
+    ["sentinelMasterName", "Sentinel master"],
+    ["path", "Path"],
+    ["basePath", "Path"],
+    ["pathPrefix", "Path prefix"],
+    ["address", "Address"],
+    ["domain", "Domain"],
+    ["bucket", "Bucket"],
+    ["region", "Region"],
+    ["endpoint", "Endpoint"],
+    ["storageClass", "Storage class"],
+    ["url", "URL"],
+    ["folderPath", "Folder"],
+    ["folderId", "Folder ID"],
+    ["socketPath", "Socket"],
+    ["serverUrl", "Server"],
+    ["topic", "Topic"],
+    ["channel", "Channel"],
+    ["chatId", "Chat"],
+    ["from", "From"],
+    ["to", "To"],
+    ["method", "Method"],
+];
+
+function factValue(value: unknown): string | null {
+    if (typeof value === "boolean") return value ? "Yes" : "No";
+    if (typeof value === "string" || typeof value === "number") return String(value).trim() || null;
+    if (Array.isArray(value) && value.length > 0) {
+        const plain = value.filter((entry) => typeof entry === "string" || typeof entry === "number");
+        return plain.length === value.length ? recipients(plain) : `${value.length} entries`;
+    }
+    return null;
+}
+
+/** Label and value of each known setting a connection has. */
+export function connectionFacts(configJson: string): { label: string; value: string }[] {
+    const config = parse(configJson);
+    if (!config) return [];
+    const facts: { label: string; value: string }[] = [];
+    const seen = new Set<string>();
+    for (const [key, label] of FACTS) {
+        const value = factValue(config[key]);
+        // Adapters name the same thing differently, so each label shows once.
+        if (value === null || seen.has(label)) continue;
+        seen.add(label);
+        facts.push({ label, value });
+    }
+    return facts;
 }

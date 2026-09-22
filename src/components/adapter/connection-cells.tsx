@@ -36,15 +36,34 @@ export function Muted({ children }: { children: React.ReactNode }) {
     return <span className="text-sm text-muted-foreground">{children}</span>;
 }
 
+interface NameCellProps {
+    adapterId: string;
+    name: string;
+    kind: string;
+    compact: boolean;
+    /** Opens the details. The whole row does it too, the button is the way in for keyboards. */
+    onOpen?: () => void;
+}
+
 /** Icon, name and the kind of adapter. Compact rows put the kind beside the name instead of under it. */
-export function NameCell({ adapterId, name, kind, compact }: { adapterId: string; name: string; kind: string; compact: boolean }) {
+export function NameCell({ adapterId, name, kind, compact, onOpen }: NameCellProps) {
     return (
         <div className="flex min-w-0 items-center gap-3">
             <span className={cn("flex shrink-0 items-center justify-center rounded-lg border bg-muted/50", compact ? "size-7" : "size-8")}>
                 <AdapterIcon adapterId={adapterId} className="size-4" />
             </span>
             <div className={cn("min-w-0", compact && "flex items-baseline gap-2")}>
-                <div className="truncate font-medium">{name}</div>
+                {onOpen ? (
+                    <button
+                        type="button"
+                        onClick={onOpen}
+                        className="block max-w-full truncate rounded-sm text-left font-medium outline-none hover:underline hover:underline-offset-4 focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    >
+                        {name}
+                    </button>
+                ) : (
+                    <div className="truncate font-medium">{name}</div>
+                )}
                 <div className="truncate text-xs text-muted-foreground">{kind}</div>
             </div>
         </div>

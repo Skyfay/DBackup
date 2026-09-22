@@ -25,17 +25,19 @@ interface ColumnOptions {
     /** Opens the health check history from the status. */
     canViewHealth: boolean;
     renderActions: (config: AdapterConfig) => React.ReactNode;
+    /** Opens the details panel of a connection. */
+    onOpen?: (config: AdapterConfig) => void;
 }
 
-const kindNames = new Map(ADAPTER_DEFINITIONS.map((definition) => [definition.id, definition.name]));
+export const kindNames = new Map(ADAPTER_DEFINITIONS.map((definition) => [definition.id, definition.name]));
 
-function healthOf(config: AdapterConfig): ConnectionHealth {
+export function healthOf(config: AdapterConfig): ConnectionHealth {
     if (!config.lastHealthCheck) return "PENDING";
     const status = config.lastStatus ?? "ONLINE";
     return status === "DEGRADED" || status === "OFFLINE" ? status : "ONLINE";
 }
 
-function statusDetail(config: AdapterConfig, health: ConnectionHealth): string | null {
+export function statusDetail(config: AdapterConfig, health: ConnectionHealth): string | null {
     if (health === "DEGRADED") {
         const failed = config.consecutiveFailures ?? 1;
         return `${failed} failed`;
@@ -48,7 +50,7 @@ function statusDetail(config: AdapterConfig, health: ConnectionHealth): string |
  * The columns of one connection list. Name and actions stay put, everything in between
  * can be moved and switched off in the Columns menu, and some start switched off.
  */
-export function connectionColumns({ kind, canViewHealth, renderActions }: ColumnOptions): ColumnDef<AdapterConfig>[] {
+export function connectionColumns({ kind, canViewHealth, renderActions, onOpen }: ColumnOptions): ColumnDef<AdapterConfig>[] {
     const name: ColumnDef<AdapterConfig> = {
         accessorKey: "name",
         header: "Name",
@@ -59,6 +61,7 @@ export function connectionColumns({ kind, canViewHealth, renderActions }: Column
                 name={row.original.name}
                 kind={kindNames.get(row.original.adapterId) ?? row.original.adapterId}
                 compact={table.options.meta?.density === "compact"}
+                onOpen={onOpen ? () => onOpen(row.original) : undefined}
             />
         ),
     };

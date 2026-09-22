@@ -185,6 +185,16 @@ export const AVAILABLE_PERMISSIONS = [
  * Connections are one table but three permissions, so any endpoint touching them has to
  * resolve the type before it can check anything. Falls back to the strictest.
  */
+/** The permission needed to look at an adapter config of this type. */
+export function getReadPermissionForAdapterType(type: string): Permission {
+  switch (type) {
+    case "database": return PERMISSIONS.SOURCES.VIEW;
+    case "storage": return PERMISSIONS.DESTINATIONS.READ;
+    case "notification": return PERMISSIONS.NOTIFICATIONS.READ;
+    default: return PERMISSIONS.SOURCES.VIEW;
+  }
+}
+
 export function getWritePermissionForAdapterType(type: string): Permission {
   switch (type) {
     case "database": return PERMISSIONS.SOURCES.WRITE;

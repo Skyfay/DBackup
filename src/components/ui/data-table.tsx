@@ -17,6 +17,7 @@ import {
     getFacetedRowModel,
     getFacetedUniqueValues,
     useReactTable,
+    type Row,
 } from "@tanstack/react-table";
 
 import {
@@ -33,6 +34,7 @@ import { DataTableBulkBar } from "./data-table-bulk-bar";
 import { selectColumn } from "./data-table-selection";
 import { DataTableColumnSettings } from "./data-table-column-settings";
 import { useColumnLayout, type ColumnLayoutOption } from "./use-column-layout";
+import { isPlainClick } from "./row-click";
 import { cn } from "@/lib/utils";
 import type { BulkAction, DataTableFilterableColumn, DataTableFilterOption } from "./data-table-types";
 
@@ -87,6 +89,10 @@ interface DataTableProps<TData, TValue> {
      * they open, are left to those controls. Give the row a button as well for keyboard users.
      */
     onRowClick?: (row: TData) => void;
+    /** "cards" draws the rows through `renderCard` in a grid, with the same toolbar, filters and pages. */
+    view?: "table" | "cards";
+    /** One card. Its cells come from `row.getVisibleCells()`, so the Columns menu decides what a card shows. */
+    renderCard?: (row: Row<TData>) => React.ReactNode;
 
     // Manual Pagination & Sorting Capabilities
     pageCount?: number;
@@ -100,17 +106,6 @@ interface DataTableProps<TData, TValue> {
     manualPagination?: boolean;
     manualSorting?: boolean;
     manualFiltering?: boolean;
-}
-
-/**
- * A click on the row itself. Not on a control inside it, not on a popover it opened (React
- * bubbles those through the row although they render elsewhere), and not the end of a text selection.
- */
-function isRowClick(event: React.MouseEvent<HTMLTableRowElement>): boolean {
-    const target = event.target as HTMLElement;
-    if (!event.currentTarget.contains(target)) return false;
-    if (target.closest("button, a, input, select, textarea, label, [role=checkbox], [role=menuitem]")) return false;
-    return !window.getSelection()?.toString();
 }
 
 export function DataTable<TData, TValue>({
@@ -133,6 +128,8 @@ export function DataTable<TData, TValue>({
     searchPlaceholder,
     initialPageSize = 10,
     onRowClick,
+    view = "table",
+    renderCard,
     pageCount,
     rowCount,
     pagination: controlledPagination,
@@ -252,7 +249,7 @@ export function DataTable<TData, TValue>({
             variant={variant}
             searchPlaceholder={searchPlaceholder}
             toolbarExtra={toolbarExtra}
-            columnSettings={layout ? <DataTableColumnSettings {...layout.settings} /> : undefined}
+            columnSettings={layout ? <DataTableColumnSettings {...layout.settings} showDensity={view === "table"} /> : undefined}
         />
     );
     const bulkBar = enableRowSelection && bulkActions.length > 0 && (
@@ -292,7 +289,7 @@ export function DataTable<TData, TValue>({
                         <TableRow
                             key={row.id}
                             data-state={row.getIsSelected() && "selected"}
-                            onClick={onRowClick ? (event) => isRowClick(event) && onRowClick(row.original) : undefined}
+                            onClick={onRowClick ? (event) => isPlainClick(event) && onRowClick(row.original) : undefined}
                             className={cn(
                                 card && "[&>td]:px-3 [&>td:first-child]:pl-4 [&>td:last-child]:pr-4",
                                 card && (compact ? "[&>td]:py-1" : "[&>td]:py-2.5"),
@@ -321,6 +318,25 @@ export function DataTable<TData, TValue>({
             </TableBody>
         </Table>
     );
+
+    if (card && view === "cards" && renderCard) {
+        const rows = table.getRowModel().rows;
+        return (
+            <div className="min-w-0 space-y-4">
+                <div className="rounded-xl border bg-card text-card-foreground shadow-sm">{toolbar}</div>
+                {rows.length > 0 ? (
+                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                        {rows.map((row) => (
+                            <React.Fragment key={row.id}>{renderCard(row)}</React.Fragment>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="rounded-xl border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">No results.</div>
+                )}
+                <DataTablePagination table={table} totalRows={totalRows} />
+            </div>
+        );
+    }
 
     if (card) {
         return (

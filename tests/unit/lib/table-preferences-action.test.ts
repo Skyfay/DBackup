@@ -4,11 +4,12 @@ vi.mock("@/lib/auth/access-control", () => ({ getCurrentUserWithGroup: vi.fn() }
 vi.mock("@/services/user/preference-service", () => ({
     saveTablePreferences: vi.fn(),
     resetTablePreferences: vi.fn(),
+    saveViewMode: vi.fn(),
 }));
 
 import { getCurrentUserWithGroup } from "@/lib/auth/access-control";
-import { resetTablePreferences, saveTablePreferences } from "@/services/user/preference-service";
-import { saveTableLayout } from "@/app/actions/auth/table-preferences";
+import { resetTablePreferences, saveTablePreferences, saveViewMode } from "@/services/user/preference-service";
+import { saveTableLayout, saveViewLayout } from "@/app/actions/auth/table-preferences";
 
 const layout = { order: ["status"], hidden: [], density: "comfortable" as const };
 
@@ -38,5 +39,24 @@ describe("saveTableLayout", () => {
     it("rejects a table id that could reach other preference keys", async () => {
         await expect(saveTableLayout("../view:admin", layout)).resolves.toMatchObject({ success: false });
         expect(saveTablePreferences).not.toHaveBeenCalled();
+    });
+});
+
+describe("saveViewLayout", () => {
+    beforeEach(() => {
+        vi.mocked(getCurrentUserWithGroup).mockResolvedValue({ id: "user-1" } as never);
+    });
+
+    it("saves the picked view for the signed-in user", async () => {
+        await expect(saveViewLayout("connections", "cards")).resolves.toEqual({ success: true });
+        expect(saveViewMode).toHaveBeenCalledWith("user-1", "connections", "cards");
+    });
+
+    it("refuses a view that does not exist and a visitor without a session", async () => {
+        await expect(saveViewLayout("connections", "gallery" as never)).resolves.toMatchObject({ success: false });
+
+        vi.mocked(getCurrentUserWithGroup).mockResolvedValue(null);
+        await expect(saveViewLayout("connections", "cards")).resolves.toMatchObject({ success: false, error: "Unauthorized" });
+        expect(saveViewMode).not.toHaveBeenCalled();
     });
 });

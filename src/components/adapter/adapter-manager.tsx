@@ -27,6 +27,7 @@ import { connectionColumns, type ConnectionKind } from "./connection-columns";
 import { ConnectionRowActions } from "./connection-row-actions";
 import { ConnectionStatusFilter, matchesStatus, type StatusFilter } from "./connection-status-filter";
 import { ConnectionDetailsSheet } from "./connection-details-sheet";
+import { ConnectionCard } from "./connection-card";
 
 /** What the page around a manager can trigger, such as the Add button beside the tabs. */
 export interface AdapterManagerHandle {
@@ -40,7 +41,7 @@ const SEARCH_NOUNS: Record<ConnectionKind, string> = {
     notification: "channels",
 };
 
-export function AdapterManager({ ref, type, canManage = true, permissions = [], roleFilter, defaultRole, tableId, initialLayout = null }: AdapterManagerProps & { ref?: Ref<AdapterManagerHandle> }) {
+export function AdapterManager({ ref, type, canManage = true, permissions = [], roleFilter, defaultRole, tableId, initialLayout = null, view = "table" }: AdapterManagerProps & { ref?: Ref<AdapterManagerHandle> }) {
     const [configs, setConfigs] = useState<AdapterConfig[]>([]);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [isPickerOpen, setIsPickerOpen] = useState(false);
@@ -331,7 +332,8 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                             withHealth={type !== "notification"}
                         />
                     }
-                    enableRowSelection={canManage}
+                    // Selecting for bulk actions is a table thing. Cards keep to one connection at a time.
+                    enableRowSelection={canManage && view === "table"}
                     // Load-bearing here: this list is re-fetched by a poll every
                     // 10 seconds, and index-keyed selection would jump each time.
                     getRowId={(config) => config.id}
@@ -340,6 +342,8 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                     columnLayout={layout}
                     initialPageSize={20}
                     onRowClick={openDetails}
+                    view={view}
+                    renderCard={(row) => <ConnectionCard row={row} onOpen={openDetails} />}
                 />
             )}
 

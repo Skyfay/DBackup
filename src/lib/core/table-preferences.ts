@@ -22,3 +22,11 @@ export type TablePreferences = z.infer<typeof TablePreferencesSchema>;
 
 /** Names a table across the app, like "connections.databases". */
 export const TableIdSchema = z.string().regex(/^[a-z0-9-]+(\.[a-z0-9-]+)*$/).max(64);
+
+/** Names a page whose view is saved, like "connections". Same shape as a table id. */
+export const PageIdSchema = TableIdSchema;
+
+/** How a list page shows its records. "split" is a list with the details beside it. */
+export const VIEW_MODES = ["table", "cards", "split"] as const;
+export const ViewModeSchema = z.enum(VIEW_MODES);
+export type ViewMode = z.infer<typeof ViewModeSchema>;

@@ -9,6 +9,9 @@ export const CONNECTION_TABLE_IDS = {
     notifications: "connections.notifications",
 } as const;
 
+/** The page id under which each user's choice of table or cards is saved. */
+export const CONNECTIONS_PAGE_ID = "connections";
+
 /** How many connections each tab holds, left out for tabs the user can not open. */
 export interface ConnectionCounts {
     databases?: number;

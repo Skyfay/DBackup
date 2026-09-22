@@ -26,6 +26,8 @@ interface DataTableColumnSettingsProps {
     onMove: (id: string, toIndex: number) => void;
     onDensityChange: (density: TableDensity) => void;
     onReset: () => void;
+    /** Cards have no row height, so their Columns menu leaves the switch out. */
+    showDensity?: boolean;
 }
 
 /**
@@ -41,6 +43,7 @@ export function DataTableColumnSettings({
     onMove,
     onDensityChange,
     onReset,
+    showDensity = true,
 }: DataTableColumnSettingsProps) {
     const [dragId, setDragId] = React.useState<string | null>(null);
     const [overId, setOverId] = React.useState<string | null>(null);
@@ -142,16 +145,20 @@ export function DataTableColumnSettings({
                     })}
                 </ul>
                 <span id={hintId} className="sr-only">Use the arrow keys to move the column up or down.</span>
-                <div className="-mx-2 border-t" />
-                <div className="flex items-center justify-between gap-2 px-2 pt-2.5 pb-1">
-                    <span className="text-xs text-muted-foreground">Row height</span>
-                    <Tabs value={density} onValueChange={(value) => onDensityChange(value as TableDensity)}>
-                        <TabsList className="h-7">
-                            <TabsTrigger value="comfortable" className="px-2 text-xs">Comfortable</TabsTrigger>
-                            <TabsTrigger value="compact" className="px-2 text-xs">Compact</TabsTrigger>
-                        </TabsList>
-                    </Tabs>
-                </div>
+                {showDensity && (
+                    <>
+                        <div className="-mx-2 border-t" />
+                        <div className="flex items-center justify-between gap-2 px-2 pt-2.5 pb-1">
+                            <span className="text-xs text-muted-foreground">Row height</span>
+                            <Tabs value={density} onValueChange={(value) => onDensityChange(value as TableDensity)}>
+                                <TabsList className="h-7">
+                                    <TabsTrigger value="comfortable" className="px-2 text-xs">Comfortable</TabsTrigger>
+                                    <TabsTrigger value="compact" className="px-2 text-xs">Compact</TabsTrigger>
+                                </TabsList>
+                            </Tabs>
+                        </div>
+                    </>
+                )}
             </PopoverContent>
         </Popover>
     );

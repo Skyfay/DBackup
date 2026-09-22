@@ -1,11 +1,12 @@
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
-import { TablePreferencesSchema, type TablePreferences } from "@/lib/core/table-preferences";
+import { TablePreferencesSchema, ViewModeSchema, type TablePreferences, type ViewMode } from "@/lib/core/table-preferences";
 
 const log = logger.child({ service: "PreferenceService" });
 
 const TABLE_PREFIX = "table:";
+const VIEW_PREFIX = "view:";
 
 /**
  * The saved layouts of several tables, keyed by table id.
@@ -51,6 +52,31 @@ export async function saveTablePreferences(userId: string, tableId: string, pref
 /** Forgets the layout of one table, so it shows its defaults again. */
 export async function resetTablePreferences(userId: string, tableId: string): Promise<void> {
     await prisma.userPreference.deleteMany({ where: { userId, key: TABLE_PREFIX + tableId } });
+}
+
+/** The view a user picked for a list page, null when they never picked one or it can not be read. */
+export async function getViewMode(userId: string, pageId: string): Promise<ViewMode | null> {
+    try {
+        const row = await prisma.userPreference.findUnique({
+            where: { userId_key: { userId, key: VIEW_PREFIX + pageId } },
+            select: { value: true },
+        });
+        const parsed = ViewModeSchema.safeParse(row ? parseJson(row.value) : null);
+        return parsed.success ? parsed.data : null;
+    } catch (error) {
+        log.warn("Could not read a saved view", { userId, pageId }, wrapError(error));
+        return null;
+    }
+}
+
+export async function saveViewMode(userId: string, pageId: string, view: ViewMode): Promise<void> {
+    const key = VIEW_PREFIX + pageId;
+    const value = JSON.stringify(ViewModeSchema.parse(view));
+    await prisma.userPreference.upsert({
+        where: { userId_key: { userId, key } },
+        create: { userId, key, value },
+        update: { value },
+    });
 }
 
 function parseJson(value: string): unknown {

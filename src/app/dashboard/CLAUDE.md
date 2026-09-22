@@ -68,6 +68,9 @@ Every other page still has the old look. Do not copy patterns from it, copy them
 - A clickable row is a stretched link. The `Link` gets `after:absolute after:inset-0` inside a `relative` row, and a button in the row sits above it with `relative z-10`. A button inside a link is invalid HTML. See `jobs-list.tsx`.
 - Rows highlight with `hover:bg-muted/50`, and with `has-[a:focus-visible]:bg-muted/50` for keyboard focus.
 - A row button that only matters on hover is hidden from `md` up until the row is hovered or the button focused (`md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100`). Below `md` it always shows, since a phone has no hover.
+- A table whose columns the user picks gets `columnLayout={useTableLayout(tableId, saved)}` on its DataTable. Columns take `meta.pin`, `meta.defaultHidden` and `meta.filterOnly`, see `connection-columns.tsx`.
+- A row that opens details takes `onRowClick`, and its name cell gets a button as the keyboard way in. `isPlainClick` keeps clicks on controls and popovers inside the row from opening it.
+- A list that also offers cards passes `view="cards"` and `renderCard` to DataTable. A card renders the row's own cells, so the Columns menu decides what it shows, see `connection-card.tsx`. Bulk actions stay in the table view.
 
 ## Banners
 

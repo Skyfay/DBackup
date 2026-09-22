@@ -1,15 +1,19 @@
 "use client";
 
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Plus } from "lucide-react";
+import { toast } from "sonner";
+import { saveViewLayout } from "@/app/actions/auth/table-preferences";
 import { AdapterManager, type AdapterManagerHandle } from "@/components/adapter/adapter-manager";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import type { TablePreferences } from "@/lib/core/table-preferences";
-import { CONNECTION_TABLE_IDS, type ConnectionCounts } from "./connection-tables";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { CONNECTION_TABLE_IDS, CONNECTIONS_PAGE_ID, type ConnectionCounts } from "./connection-tables";
+import { ConnectionViewSwitch, type ConnectionView } from "./connection-view-switch";
 
 /**
  * Tab keys, also the `?tab=` values.
@@ -32,6 +36,8 @@ interface ConnectionsTabsProps {
     counts: ConnectionCounts;
     /** Saved column layouts, keyed by table id. */
     layouts: Record<string, TablePreferences>;
+    /** The view this user picked last, table when they never picked one. */
+    initialView: ConnectionView;
 }
 
 function Count({ value }: { value: number | undefined }) {
@@ -39,9 +45,23 @@ function Count({ value }: { value: number | undefined }) {
     return <span className="text-xs font-normal text-muted-foreground tabular-nums">{value}</span>;
 }
 
-export function ConnectionsTabs({ permissions, counts, layouts }: ConnectionsTabsProps) {
+export function ConnectionsTabs({ permissions, counts, layouts, initialView }: ConnectionsTabsProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
+    const [view, setView] = useState<ConnectionView>(initialView);
+    // A phone has no room for the table, so it always gets the cards and no switch.
+    const isMobile = useIsMobile();
+    const shownView: ConnectionView = isMobile ? "cards" : view;
+
+    const changeView = useCallback((next: ConnectionView) => {
+        setView(next);
+        saveViewLayout(CONNECTIONS_PAGE_ID, next)
+            .then((result) => result.success)
+            .catch(() => false)
+            .then((saved) => {
+                if (!saved) toast.error("Your view could not be saved.");
+            });
+    }, []);
     // The Add button sits beside the tabs, the dialog it opens belongs to the active list.
     const managers = useRef<Partial<Record<ConnectionTab, AdapterManagerHandle | null>>>({});
 
@@ -84,6 +104,7 @@ export function ConnectionsTabs({ permissions, counts, layouts }: ConnectionsTab
         },
         canManage: canManage[tab],
         permissions,
+        view: shownView,
         tableId: CONNECTION_TABLE_IDS[tab],
         initialLayout: layouts[CONNECTION_TABLE_IDS[tab]] ?? null,
     });
@@ -105,12 +126,15 @@ export function ConnectionsTabs({ permissions, counts, layouts }: ConnectionsTab
                         <TabsTrigger value={CONNECTION_TABS.NOTIFICATIONS}>Notifications <Count value={counts.notifications} /></TabsTrigger>
                     )}
                 </TabsList>
-                {canManage[active] && (
-                    <Button className="ml-auto" onClick={() => managers.current[active]?.openCreate()}>
-                        <Plus />
-                        Add New
-                    </Button>
-                )}
+                <div className="ml-auto flex items-center gap-2">
+                    {!isMobile && <ConnectionViewSwitch value={view} onChange={changeView} />}
+                    {canManage[active] && (
+                        <Button onClick={() => managers.current[active]?.openCreate()}>
+                            <Plus />
+                            Add New
+                        </Button>
+                    )}
+                </div>
             </div>
 
             {canViewDatabases && (

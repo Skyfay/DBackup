@@ -12,6 +12,7 @@ All notable changes to DBackup are documented here.
 - **connections**: The Connections page shows its connections as a table, as cards or as a list with the details beside it, and remembers the choice for each user. Phones always get the cards.
 - **connections**: Several database connections can have their health check notifications turned off or on, and be excluded from or included in restores, in one step.
 - **connections**: A right click on a connection opens its actions, and on one of several selected rows the actions for the whole selection. A long press does the same on a phone.
+- **connections**: Picking the type of a new connection now happens in one searchable list, grouped by what the type is. Databases are grouped by relational, document, key value and file based, notification channels by chat, push, email and SMS, and webhook.
 
 ### 🐛 Bug Fixes
 

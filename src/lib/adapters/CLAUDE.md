@@ -21,7 +21,7 @@ A complete adapter touches 8 to 11 files. Missing one produces a "half-registere
 
 1. **`{database|storage|notification}/<name>.ts`** - implement the interface. Use `<name>/index.ts` if the adapter needs sub-modules. Database adapters take `host: ExecutionHost` and run everything through it - see [Transport](#transport-execution-host).
 2. **`definitions/{database|storage|notification}.ts`** - the Zod config schema (`NewAdapterSchema`).
-3. **`definitions/index.ts`** - an entry in `ADAPTER_DEFINITIONS` with `id`, `type`, `name`, `configSchema`, and `group` for storage.
+3. **`definitions/index.ts`** - an entry in `ADAPTER_DEFINITIONS` with `id`, `type`, `name`, `configSchema`, and a `group`. The picker lists every type under its group heading, and `adapter-groups.test.ts` fails without one.
 4. **`index.ts`** - import the class and call `registry.register(...)` inside `registerAdapters()`.
 5. **`src/lib/core/credential-requirements.ts`** - an entry in `ADAPTER_CREDENTIAL_REQUIREMENTS[id]` if the adapter supports credential profiles.
 6. **`src/components/adapter/utils.ts`** - add to `ADAPTER_ICON_MAP` (and `ADAPTER_COLOR_MAP` where applicable). Skipping this leaves a generic fallback icon in the UI.

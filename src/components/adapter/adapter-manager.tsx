@@ -4,6 +4,8 @@
 import { useState, useEffect, useCallback, useMemo, useImperativeHandle, type Ref } from "react";
 import { STORAGE_ROLES, storageRoleLabel, supportsStorageRole, canOfferCounterpart, counterpartStorageRole, type StorageRole } from "@/lib/core/storage-roles";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import { DIALOG_SURFACE } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertTriangle } from "lucide-react";
@@ -15,11 +17,10 @@ import { useRouter } from "next/navigation";
 
 import { AdapterManagerProps, AdapterConfig } from "./types";
 import { AdapterForm } from "./adapter-form";
-import { AdapterPicker } from "./adapter-picker";
+import { AdapterPickerDialog } from "./adapter-picker";
 import { StorageHistoryModal } from "@/components/dashboard/widgets/storage-history-modal";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { CloneDialog } from "@/components/ui/clone-dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { useTableLayout } from "@/hooks/use-table-layout";
 import { connectionColumns, type ConnectionKind } from "./connection-columns";
 import { ConnectionRowActions } from "./connection-row-actions";
@@ -356,22 +357,16 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
 
             {/* Step 1: Adapter Picker */}
             <Dialog open={isPickerOpen} onOpenChange={setIsPickerOpen}>
-                <DialogContent className="sm:max-w-2xl max-h-[90vh] p-0" aria-describedby={undefined}>
-                    <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
-                        <DialogTitle>{type === 'notification' ? "Select Notification Type" : (type === 'database' ? "Select Database Type" : (type === 'storage' ? `Select ${storageNoun} Type` : "Select Type"))}</DialogTitle>
-                    </DialogHeader>
-                    <ScrollArea className="*:data-[slot=scroll-area-viewport]:max-h-[calc(90vh-9rem)]">
-                        <div className="px-6 pb-6">
-                            <AdapterPicker
-                                adapters={availableAdapters}
-                                onSelect={(adapter) => {
-                                    setSelectedAdapterForNew(adapter.id);
-                                    setIsPickerOpen(false);
-                                    setIsDialogOpen(true);
-                                }}
-                            />
-                        </div>
-                    </ScrollArea>
+                <DialogContent showCloseButton={false} className={cn(DIALOG_SURFACE, "sm:max-w-lg")}>
+                    <AdapterPickerDialog
+                        adapters={availableAdapters}
+                        title={type === 'notification' ? "Add notification channel" : (type === 'database' ? "Add database" : `Add ${storageNoun.toLowerCase()}`)}
+                        onSelect={(adapter) => {
+                            setSelectedAdapterForNew(adapter.id);
+                            setIsPickerOpen(false);
+                            setIsDialogOpen(true);
+                        }}
+                    />
                 </DialogContent>
             </Dialog>
 

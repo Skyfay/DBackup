@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
 
 type IconComponent = React.ComponentType<{ className?: string }>;
 
-export type DialogTone = "destructive" | "warning" | "success" | "neutral";
+export type DialogTone = "destructive" | "warning" | "success" | "info" | "neutral";
 
 // The head is tinted like the banners on the Overview. The note under the title uses a darker
 // red in light mode, since the red token misses 4.5:1 on the tint.
@@ -35,6 +35,11 @@ const TONES: Record<DialogTone, { head: string; tile: string; note: string }> = 
         head: "border-success/20 bg-success/5 dark:bg-success/8",
         tile: "bg-success/12 text-success",
         note: "text-muted-foreground",
+    },
+    info: {
+        head: "border-info/20 bg-info/5 dark:bg-info/10",
+        tile: "bg-info/12 text-info",
+        note: "text-info",
     },
     neutral: {
         head: "bg-muted/40",

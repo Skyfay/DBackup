@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, KeyRound, Pencil, Plus } from "lucide-react";
+import { Check, KeyRound, Pencil, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
@@ -31,6 +31,8 @@ interface LoginListProps {
     value: string | null | undefined;
     requiredType: CredentialType;
     adapter?: PickerAdapter;
+    /** The label of the field, like "Login" or "SSH login", which names the button that creates one. */
+    noun: string;
     /** The connection cannot work without one, so the list offers no way to clear it. */
     required: boolean;
     onPick: (id: string | null) => void;
@@ -39,6 +41,14 @@ interface LoginListProps {
 }
 
 const byName = (a: CredentialProfileSummary, b: CredentialProfileSummary) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+
+/** "Login" becomes "login", while "SSH login" and "OAuth app" keep their capitals. */
+function lowerNoun(label: string): string {
+    return label
+        .split(" ")
+        .map((word) => (/^[A-Z][a-z]*$/.test(word) ? word.toLowerCase() : word))
+        .join(" ");
+}
 
 function connections(count: number): string {
     return count === 1 ? "Used by 1 connection" : `Used by ${count} connections`;
@@ -108,7 +118,7 @@ function LoginRow({ profile, picked, byKind, onPick, onEdit }: {
  * one of them. Every row says what the login is and where it is in use, so two with similar
  * names are told apart without opening the Vault.
  */
-export function LoginList({ profiles, value, requiredType, adapter, required, onPick, onEdit, onCreate }: LoginListProps) {
+export function LoginList({ profiles, value, requiredType, adapter, noun, required, onPick, onEdit, onCreate }: LoginListProps) {
     const suggested = adapter ? profiles.filter((profile) => profile.usedBy?.includes(adapter.id)).sort(byName) : [];
     const others = profiles.filter((profile) => !suggested.includes(profile)).sort(byName);
     const row = (profile: CredentialProfileSummary, byKind: boolean) => (
@@ -124,12 +134,8 @@ export function LoginList({ profiles, value, requiredType, adapter, required, on
             <Command>
                 <CommandInput placeholder="Search by name or description" />
                 <CommandList>
-                    <CommandEmpty className="grid justify-items-center gap-2 px-4 py-6 text-center text-sm text-muted-foreground">
+                    <CommandEmpty className="px-4 py-6 text-center text-sm text-muted-foreground">
                         {profiles.length === 0 ? "Nothing of this kind is saved yet." : "Nothing matches."}
-                        <Button type="button" variant="outline" size="sm" onClick={onCreate}>
-                            <Plus />
-                            New
-                        </Button>
                     </CommandEmpty>
                     {suggested.length > 0 && adapter && (
                         <CommandGroup heading={`Used by your ${adapter.name} connections`}>{suggested.map((profile) => row(profile, false))}</CommandGroup>
@@ -139,17 +145,23 @@ export function LoginList({ profiles, value, requiredType, adapter, required, on
                     )}
                 </CommandList>
             </Command>
-            {(required || value) && (
-                <div className="flex min-h-11 items-center justify-end border-t bg-page/60 px-3 py-1.5">
-                    {required ? (
-                        <span className="text-xs text-muted-foreground">Required for {adapter?.name ?? "this connection"}</span>
-                    ) : (
-                        <Button type="button" variant="ghost" size="sm" onClick={() => onPick(null)}>
+            {/* Outline buttons like every other secondary action, so they read as buttons on the strip. */}
+            <div className="flex min-h-12 items-center justify-between gap-3 border-t bg-page/60 px-3 py-2">
+                <Button type="button" variant="outline" size="sm" onClick={onCreate}>
+                    <Plus />
+                    New {lowerNoun(noun)}
+                </Button>
+                {required ? (
+                    <span className="truncate text-xs text-muted-foreground">Required for {adapter?.name ?? "this connection"}</span>
+                ) : (
+                    value && (
+                        <Button type="button" variant="outline" size="sm" onClick={() => onPick(null)}>
+                            <X />
                             Use none
                         </Button>
-                    )}
-                </div>
-            )}
+                    )
+                )}
+            </div>
         </>
     );
 }

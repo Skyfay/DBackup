@@ -62,7 +62,11 @@ export function DataTableBulkBar<TData>({
                                     key={action.id}
                                     size="sm"
                                     variant="ghost"
-                                    className={cn(action.variant === "destructive" && "text-destructive hover:bg-destructive/10 hover:text-destructive")}
+                                    // Hovered like Delete in the row menu: a red frame and a light red tint.
+                                    className={cn(
+                                        action.variant === "destructive" &&
+                                            "border border-transparent text-destructive hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20"
+                                    )}
                                     disabled={runningId !== null}
                                     onClick={() => onStart(action)}
                                 >
@@ -92,7 +96,13 @@ export function DataTableBulkBar<TData>({
                                             {group.actions.map((action) => {
                                                 const Icon = action.icon;
                                                 return (
-                                                    <DropdownMenuItem key={action.id} onSelect={() => onStart(action)}>
+                                                    // The same entries as the right click menu of a selection, so they look the same.
+                                                    <DropdownMenuItem
+                                                        key={action.id}
+                                                        onSelect={() => onStart(action)}
+                                                        variant={action.variant === "destructive" ? "destructive" : "default"}
+                                                        tone={action.variant === "destructive" ? "destructive" : "neutral"}
+                                                    >
                                                         {Icon && <Icon />}
                                                         {labelOf(action)}
                                                     </DropdownMenuItem>

@@ -24,7 +24,7 @@ const MYSQL = { id: "mysql", name: "MySQL" };
 
 function renderList(props: Partial<React.ComponentProps<typeof LoginList>> = {}) {
     const handlers = { onPick: vi.fn(), onEdit: vi.fn(), onCreate: vi.fn() };
-    render(<LoginList profiles={PROFILES} value={null} requiredType="USERNAME_PASSWORD" adapter={MYSQL} required={false} {...handlers} {...props} />);
+    render(<LoginList profiles={PROFILES} value={null} requiredType="USERNAME_PASSWORD" adapter={MYSQL} noun="Login" required={false} {...handlers} {...props} />);
     return handlers;
 }
 
@@ -55,6 +55,14 @@ describe("login list", () => {
 
         await user.click(screen.getByRole("option", { name: /MongoDB Atlas/ }));
         expect(onPick).toHaveBeenCalledWith("atlas");
+    });
+
+    it("creates a new login from the foot of the list, named like the field", async () => {
+        const user = userEvent.setup();
+        const { onCreate } = renderList({ noun: "SSH login" });
+
+        await user.click(screen.getByRole("button", { name: "New SSH login" }));
+        expect(onCreate).toHaveBeenCalled();
     });
 
     it("offers to clear a login the connection can do without", async () => {

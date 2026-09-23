@@ -140,6 +140,7 @@ export function CredentialPicker({
                             value={value}
                             requiredType={requiredType}
                             adapter={adapter}
+                            noun={finalLabel}
                             required={required}
                             onPick={(id) => {
                                 onChange(id);

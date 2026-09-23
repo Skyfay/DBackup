@@ -111,7 +111,7 @@ function SelectionMenu({ bulk }: { bulk: RowMenuBulk<AdapterConfig> }) {
         <ContextMenuContent className="w-60">
             <MenuHead
                 tile={
-                    <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                    <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-tone-control text-tone-control-foreground">
                         <Check className="size-4" />
                     </span>
                 }

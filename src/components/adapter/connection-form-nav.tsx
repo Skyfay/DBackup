@@ -9,6 +9,13 @@ export interface NavSection extends SectionLayout {
     icon: LucideIcon;
 }
 
+/** What the list and the menu need of a part. The job form lists its parts through them too. */
+export interface NavEntry {
+    id: string;
+    label: string;
+    icon: LucideIcon;
+}
+
 /** Done, still to fill in, or how many fields need attention. Screen readers hear it as words. */
 function StatusMark({ status }: { status: SectionStatus | undefined }) {
     if (!status || status.kind === "none") return null;
@@ -42,7 +49,7 @@ function StatusMark({ status }: { status: SectionStatus | undefined }) {
  * The parts of the form as a list on the left. It lives inside the form's Tabs, so the arrow
  * keys move through it and each entry controls its part.
  */
-export function SectionRail({ sections, statuses }: { sections: NavSection[]; statuses: Record<string, SectionStatus> }) {
+export function SectionRail({ sections, statuses }: { sections: NavEntry[]; statuses: Record<string, SectionStatus> }) {
     return (
         <TabsList
             aria-label="Parts of the form"
@@ -69,7 +76,7 @@ export function SectionSelect({
     value,
     onValueChange,
 }: {
-    sections: NavSection[];
+    sections: NavEntry[];
     statuses: Record<string, SectionStatus>;
     value: string;
     onValueChange: (value: string) => void;

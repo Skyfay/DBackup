@@ -74,12 +74,15 @@ export function DatabaseChecklist({ sourceId, value, onChange }: DatabaseCheckli
     }
 
     const { names } = listing;
-    if (names.length === 0) {
+    if (names.length === 0 && value.length === 0) {
         return <p className="rounded-lg border px-3 py-2.5 text-sm text-muted-foreground">DBackup sees no databases on this server.</p>;
     }
 
+    // A database picked earlier that the server no longer has stays in the list, so it can be unticked.
+    const missing = value.filter((name) => !names.includes(name));
+    const all = [...names, ...missing];
     const term = filter.trim().toLowerCase();
-    const visible = term ? names.filter((name) => name.toLowerCase().includes(term)) : names;
+    const visible = term ? all.filter((name) => name.toLowerCase().includes(term)) : all;
     const toggle = (name: string, on: boolean) => onChange(on ? [...value, name] : value.filter((picked) => picked !== name));
 
     return (
@@ -97,6 +100,7 @@ export function DatabaseChecklist({ sourceId, value, onChange }: DatabaseCheckli
                             <Label htmlFor={`${id}-${name}`} className="cursor-pointer gap-2.5 rounded-md px-2 py-1.5 font-normal hover:bg-muted/50">
                                 <Checkbox id={`${id}-${name}`} checked={value.includes(name)} onCheckedChange={(checked) => toggle(name, checked === true)} />
                                 <span className="truncate">{name}</span>
+                                {missing.includes(name) && <span className="ml-auto shrink-0 text-xs text-warning">Not on the server</span>}
                             </Label>
                         </li>
                     ))}
@@ -104,7 +108,7 @@ export function DatabaseChecklist({ sourceId, value, onChange }: DatabaseCheckli
                 </ul>
             </ScrollArea>
             <p className="border-t px-3 py-2 text-xs text-muted-foreground tabular-nums">
-                {value.length} of {names.length} picked
+                {value.length} of {all.length} picked
             </p>
         </div>
     );

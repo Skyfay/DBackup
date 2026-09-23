@@ -72,7 +72,10 @@ paths:
     get:
       tags: [Jobs]
       summary: List Jobs
-      description: Returns all backup jobs with their source, destination, and encryption profile details.
+      description: |
+        Returns all backup jobs, newest first, with what each one backs up, where it stores it and how it is doing. The connections a job uses come with their name, type and health only, never with their config.
+
+        **Required permission:** `jobs:read`
       operationId: listJobs
       security:
         - BearerAuth: []
@@ -84,7 +87,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/Job"
+                  $ref: "#/components/schemas/JobListItem"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -246,6 +249,37 @@ paths:
                 $ref: "#/components/schemas/Job"
         "404":
           $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /jobs/{id}/runs:
+    get:
+      tags: [Jobs]
+      summary: Get Job Runs
+      description: |
+        Returns the latest 30 runs of a job with their length and size, its success rate over the last 30 days and its last successful run.
+
+        **Required permission:** `jobs:read`
+      operationId: getJobRuns
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      responses:
+        "200":
+          description: Run history of the job
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/JobRunHistory"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -2733,6 +2767,275 @@ components:
               type: string
             adapterId:
               type: string
+
+    JobConnection:
+      type: object
+      description: A connection as the job list shows it, never with its config, which holds hosts and secrets.
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          example: "Production MySQL"
+        adapterId:
+          type: string
+          example: "mysql"
+        lastStatus:
+          type: string
+          enum: [ONLINE, DEGRADED, OFFLINE]
+          description: Result of the latest health check.
+
+    JobListItem:
+      type: object
+      description: A job as the job list returns it.
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          example: "Daily MySQL Backup"
+        schedule:
+          type: string
+          example: "0 2 * * *"
+        enabled:
+          type: boolean
+        sourceId:
+          type: [string, "null"]
+        databases:
+          type: string
+          description: JSON array of database names, empty for all of them
+          example: '["mydb", "analytics"]'
+        compression:
+          type: string
+          enum: [NONE, GZIP, BROTLI]
+        pgCompression:
+          type: string
+          description: Native PostgreSQL dump compression like `ZSTD:3`, empty for the default
+        encryptionProfileId:
+          type: [string, "null"]
+        encryptionProfile:
+          type: [object, "null"]
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+        schedulePresetId:
+          type: [string, "null"]
+        schedulePreset:
+          type: [object, "null"]
+          description: The preset whose schedule the job follows instead of its own
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+            schedule:
+              type: string
+        namingTemplateId:
+          type: [string, "null"]
+        namingTemplate:
+          type: [object, "null"]
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+        notificationEvents:
+          type: string
+          example: "PARTIAL|FAILED"
+        skipVerification:
+          type: boolean
+        backupMode:
+          type: string
+          enum: [FULL, INCREMENTAL]
+        fullEveryDays:
+          type: integer
+        verifyByHash:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        source:
+          description: The database the job dumps. Null for a job that only backs up folders.
+          oneOf:
+            - $ref: "#/components/schemas/JobConnection"
+            - type: "null"
+        destinations:
+          type: array
+          items:
+            type: object
+            properties:
+              configId:
+                type: string
+              priority:
+                type: integer
+              retention:
+                type: string
+                description: JSON retention policy of this destination
+              retentionPolicyId:
+                type: [string, "null"]
+              retentionPolicy:
+                type: [object, "null"]
+                properties:
+                  name:
+                    type: string
+              config:
+                $ref: "#/components/schemas/JobConnection"
+        sources:
+          type: array
+          description: The folders the job backs up
+          items:
+            type: object
+            properties:
+              configId:
+                type: string
+              priority:
+                type: integer
+              path:
+                type: string
+              excludePatterns:
+                type: array
+                items:
+                  type: string
+              excludePatternPresetIds:
+                type: array
+                items:
+                  type: string
+              stopContainers:
+                type: boolean
+              config:
+                $ref: "#/components/schemas/JobConnection"
+        notifications:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              adapterId:
+                type: string
+        notificationTemplates:
+          type: array
+          items:
+            type: object
+            properties:
+              templateId:
+                type: string
+              priority:
+                type: integer
+              template:
+                type: object
+                properties:
+                  name:
+                    type: string
+        overview:
+          $ref: "#/components/schemas/JobOverview"
+
+    JobRunSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Execution ID
+        status:
+          type: string
+          enum: [Pending, Running, Success, Partial, Failed, Cancelled]
+        startedAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: [string, "null"]
+          format: date-time
+
+    JobOverview:
+      type: object
+      description: How a job is doing.
+      properties:
+        status:
+          type: [string, "null"]
+          description: Running or Pending while a run is live, otherwise the status of the last finished run. Null before the first run.
+        runs:
+          type: array
+          maxItems: 12
+          description: The latest runs, oldest first, the live one included
+          items:
+            $ref: "#/components/schemas/JobRunSummary"
+        lastRun:
+          description: The newest run, live or finished
+          oneOf:
+            - $ref: "#/components/schemas/JobRunSummary"
+            - type: "null"
+        error:
+          type: [string, "null"]
+          description: The last error of the last finished run, when it failed or finished partially
+        live:
+          type: [object, "null"]
+          description: The run that is still going, with how far it got
+          properties:
+            executionId:
+              type: string
+            status:
+              type: string
+              enum: [Running, Pending]
+            startedAt:
+              type: string
+              format: date-time
+            stage:
+              type: [string, "null"]
+              example: "Uploading"
+            progress:
+              type: [integer, "null"]
+              minimum: 0
+              maximum: 100
+        nextRunAt:
+          type: [string, "null"]
+          format: date-time
+          description: When the scheduler runs the job next. Null for a paused job.
+
+    JobRunHistory:
+      type: object
+      properties:
+        runs:
+          type: array
+          maxItems: 30
+          description: The latest runs, oldest first
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                description: Execution ID
+              status:
+                type: string
+                enum: [Pending, Running, Success, Partial, Failed, Cancelled]
+              startedAt:
+                type: string
+                format: date-time
+              endedAt:
+                type: [string, "null"]
+                format: date-time
+              size:
+                type: [integer, "null"]
+                description: Bytes stored by the run
+        successRate:
+          type: object
+          description: Finished runs of the last 30 days and how many of them succeeded
+          properties:
+            succeeded:
+              type: integer
+            total:
+              type: integer
+        lastSuccess:
+          type: [object, "null"]
+          properties:
+            at:
+              type: string
+              format: date-time
+            size:
+              type: [integer, "null"]
 
     CreateJobRequest:
       type: object

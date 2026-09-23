@@ -26,11 +26,11 @@ Retention is configured **individually for each destination** within a job. This
 
 ### Configuration
 
-In the job form, expand each destination row to configure its retention:
-1. Click the expand arrow on a destination
-2. Select the retention mode (None / Simple / Smart)
-3. Configure mode-specific settings
-4. Each destination saves its retention independently
+In the **Destinations** part of the job form, every destination row has its own retention policy picker:
+1. Open the **Destinations** part of the job
+2. Pick a policy on each destination, or **Default policy** for the one marked as the system default
+3. Policies are created under **Administration → Templates → Retention Policies**, where their mode (Simple or Smart) is set
+4. Each destination keeps its backups by its own policy
 
 ## Simple Retention
 

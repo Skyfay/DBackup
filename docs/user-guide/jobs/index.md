@@ -1,37 +1,54 @@
 # Backup Jobs
 
-Backup jobs are the core of DBackup. They connect a database source to a storage destination and define when and how backups should run.
+Backup jobs are the core of DBackup. They connect a database, folders or both to one or more storage destinations and define when and how backups should run.
 
 ## Overview
 
 A job defines:
-- **What** to backup (source database)
+- **What** to back up (a database, folders from storage connections, or both)
 - **Where** to store it (one or more destinations)
 - **When** to run (schedule)
 - **How** to process (compression, encryption)
 - **How long** to keep (retention per destination)
 
+## The Jobs Page
+
+**Jobs** in the sidebar lists every job with how it is doing:
+
+| Column | What it shows |
+| :--- | :--- |
+| **Job** | The name and the schedule in words, like "Every day at 03:00", with the preset it follows |
+| **Last run** | Done, Partial, Failed or Running, and when it ran and how long it took. A failed run shows its error, a running one how far it got |
+| **Last 12 runs** | One bar per run, the newest on the right |
+| **What goes where** | The source and the destinations, with the encryption key and the compression |
+| **Next run** | The time within the next day, otherwise how long until then, or Paused |
+
+The **Columns** menu adds what a job keeps, who it notifies and when it was added, and moves or hides the rest. The tabs above the list show **All**, the jobs that **Need attention** because their last run failed or was partial, the **Running** ones and the **Paused** ones.
+
+The switch beside **New job** shows the jobs as a table or as cards. A card shows the way of a backup from left to right: the source, what happens on the way and the destinations. A phone always shows the cards. The page remembers the view per user.
+
+A click on a job opens its details: the last run and how often the last 30 days succeeded, the next run, the size of the last backup, the last 30 runs as bars, what goes in, the destinations with what each keeps, and the settings.
+
 ## Creating a Job
 
-1. Navigate to **Jobs** in the sidebar
-2. Click **Create Job**
-3. Configure the job settings
-4. Save
+1. Open **Jobs** and click **New job**
+2. Fill in the parts listed on the left of the dialog
+3. Click **Create job**
 
-### Basic Settings
+A part shows a check once it has what the job needs. When something is missing, **Create job** opens the part with the problem and names it.
 
-| Setting | Description |
+| Part | What it holds |
 | :--- | :--- |
-| **Name** | Descriptive name (e.g., "Daily MySQL Backup") |
-| **Source** | Database connection to backup |
-| **Destinations** | One or more storage locations for backups (see [Multi-Destination](#multi-destination) below) |
-| **Enabled** | Toggle job on/off |
-| **Filename Template** | Override the global filename pattern with a per-job naming template (configured in Settings → Templates) |
-| **Skip Verification** | Disable post-upload checksum verification for this job (see [Backup Verification](/user-guide/features/backup-verification)) |
+| **Basics** | The name, whether the job runs on its schedule, and when it runs: its own schedule or a schedule preset |
+| **What goes in** | A database, folders from storage connections set up as directory sources, or both. For a database, all of its databases (also ones added later) or the picked ones |
+| **Destinations** | Where the backups go, in upload order, each with its retention policy (see [Multi-Destination](#multi-destination)) |
+| **Encryption** | The key from the Vault that encrypts every backup, or none |
+| **Notifications** | The notification templates that report the runs |
+| **Advanced** | Compression, the file names, incremental backups for folders and the scheduled integrity check |
 
 ### Compression
 
-Reduce backup size significantly:
+Reduce backup size significantly. Set it in the **Advanced** part:
 
 | Algorithm | Speed | Compression | Best For |
 | :--- | :--- | :--- | :--- |
@@ -48,7 +65,7 @@ PostgreSQL jobs have an additional **PostgreSQL Compression** setting that contr
 Protect sensitive data:
 
 1. Create an [Encryption Profile](/user-guide/security/encryption) first
-2. Select the profile in job settings
+2. Pick it in the **Encryption** part of the job
 3. Backups are encrypted with AES-256-GCM
 
 ### Schedule
@@ -61,7 +78,7 @@ Automatically clean up old backups. Retention is configured **per destination** 
 
 ### Filename Pattern
 
-Customize the filename of backup files globally in **Settings → General → Backup Filename Pattern**, or override it per job via a **Naming Template** (see [Templates](#templates) below). The pattern supports the following tokens:
+Customize the filename of backup files globally in **Settings → General → Backup Filename Pattern**, or override it per job under **File names** in the **Advanced** part with a **Naming Template** (see [Templates](#templates) below). The pattern supports the following tokens:
 
 | Token | Description | Example |
 | :--- | :--- | :--- |
@@ -81,11 +98,9 @@ A live preview and clickable token chips (grouped by category) are shown in the 
 
 ### Notifications
 
-Get alerts when backups complete:
+A job reports its runs through [notification templates](/user-guide/features/templates). Each template decides its channels and after which runs it sends. Pick one or more in the **Notifications** part, the first one of a new job is the default template.
 
-1. Create a [Notification](/user-guide/features/notifications) first
-2. Select notification in job settings
-3. Choose trigger: Success, Failure, or Both
+A job made by the [Quick Setup](/user-guide/first-steps#quick-setup) names its channel directly instead. The **Notifications** part lists such channels with when they are told, and ignores them as soon as a template is picked.
 
 ## Multi-Destination
 
@@ -93,17 +108,16 @@ A job can upload to **multiple storage destinations** simultaneously - ideal for
 
 ### Adding Destinations
 
-1. In the job form, click **Add Destination**
-2. Select a storage adapter from the dropdown
-3. Repeat to add more destinations
-4. Drag to reorder upload priority
+1. Open the **Destinations** part of the job
+2. Click **Add destination** and pick a storage connection
+3. Repeat to add more. They are uploaded in the order they are numbered
 
 ### Per-Destination Retention
 
-Each destination uses a **Retention Policy** from the Templates system. In the job form, expand a destination row and use the **Retention Policy picker** to assign a named policy. To create or manage policies, go to **Administration → Templates → Retention Policies**.
+Each destination row has its own **Retention Policy** picker. To create or manage policies, go to **Administration → Templates → Retention Policies**.
 
 - Example: assign a "30-day daily" policy to local storage and a "12-month monthly" policy to S3
-- A system-wide default policy can be set in Templates - it applies automatically to any destination without an explicit assignment
+- **Default policy** follows the policy marked as the system default in Templates
 
 ### Upload Behavior
 
@@ -118,32 +132,20 @@ If some destinations succeed and others fail, the execution is marked as **Parti
 
 ## Job Actions
 
-### Run Now
+The button at the end of a row, a right click on the row and the details of a job offer the same actions:
 
-Execute the job immediately:
-1. Click the **▶ Run** button on the job
-2. Monitor progress in real-time
-3. View results in History
+| Action | What it does |
+| :--- | :--- |
+| **Run now** | Starts the job right away. It also sits on the row, shown when the pointer is over it |
+| **Open the last run** | Opens the log of the newest run in History |
+| **Backups on ...** | Opens the Storage Explorer at the backups of the job, one entry per destination |
+| **Trigger by API** | Shows how to start the job from a script or a webhook |
+| **Edit** | Opens the job form |
+| **Clone** | Copies the job under a new name. The copy starts paused, so it cannot run before you checked it |
+| **Pause** or **Resume** | A paused job does not run on its schedule, it can still be started by hand |
+| **Delete** | Removes the job. Backups it stored stay where they are |
 
-### Enable/Disable
-
-Toggle the job without deleting:
-- Disabled jobs don't run on schedule
-- Can still be triggered manually
-
-### Clone
-
-Create a copy with the same settings:
-
-1. Click the **Clone** icon on a job row
-2. A dialog opens - customize the name before creating (default: "Original Name (Copy)")
-3. Click **Clone** to confirm
-
-Cloned jobs start **disabled** to prevent accidental execution. Enable the clone once you have reviewed or adjusted its settings.
-
-### Browse Backups
-
-Click the **Browse** (folder icon) button on a job row to open the Storage Explorer pre-filtered to that job's backups. If the job has multiple destinations, a dropdown lets you choose which one to open.
+Tick several jobs in the table to pause, resume or delete them together. A right click on one of the ticked rows offers the same.
 
 ### Exclude from Restore
 
@@ -151,21 +153,19 @@ Database **sources** can be individually excluded from the Restore target dropdo
 
 To change several sources at once, tick them on the **Databases** tab of **Connections** and pick **Exclude from restore** or **Include in restore** under **More**.
 
-### Delete
-
-Remove the job permanently:
-- Does **not** delete existing backups
-- Schedule is removed
-
 ## Job Status
+
+The **Last run** of a job shows how its newest run went:
 
 | Status | Description |
 | :--- | :--- |
-| 🟢 **Active** | Enabled and scheduled |
-| ⚪ **Disabled** | Not running on schedule |
-| 🔵 **Running** | Currently executing |
-| � **Partial** | Some destinations succeeded, others failed |
-| �🔴 **Failed** | Last run failed |
+| **Done** | The run succeeded |
+| **Running** | A run is going on right now, with its stage and progress |
+| **Queued** | The run waits for a free slot, see [Concurrent Execution](#concurrent-execution) |
+| **Partial** | Some destinations got the backup, others failed |
+| **Failed** | The run failed, the error of its log is shown with it |
+
+A paused job keeps the status of its last run. The **Next run** column says Paused instead of a time.
 
 ## Execution Monitoring
 
@@ -202,8 +202,8 @@ For clarity, create separate jobs for:
 
 ### Test Before Scheduling
 
-1. Create job with no schedule
-2. Run manually
+1. Create the job with **Runs on its schedule** turned off
+2. Run it by hand with **Run now**
 3. Verify backup in Storage Explorer
 4. Test restore
 5. Then enable schedule
@@ -316,29 +316,14 @@ Named retention rules assignable per destination. Each policy defines Simple (ke
 Custom backup filename patterns saved as named templates. Supports all tokens listed in [Filename Pattern](#filename-pattern) above.
 
 - One template can be set as the **system default**
-- Override per job using the **Filename Template** picker in the job's Basic Settings
+- Override per job under **File names** in the **Advanced** part of the job
 
 ### Schedule Presets
 
 Named cron expressions that can be used as quick-fill presets or **live-linked** to jobs. When a live-linked preset is updated, all jobs using it pick up the new schedule automatically.
 
-- Enable via the **Preset** toggle in the Schedule field of the job form
-- Selecting a preset auto-fills the cron expression
-
-## Jobs Table Columns
-
-The jobs table includes the following columns:
-
-| Column | Description |
-| :--- | :--- |
-| **Name** | Job name with enabled/disabled indicator |
-| **Source** | Database source adapter |
-| **Destinations** | Number of storage destinations |
-| **Schedule** | Cron expression or preset name |
-| **Last Run** | Start time of the most recent execution |
-| **Next Run** | Calculated next run time (based on cron + Scheduler Timezone) |
-| **Status** | Last execution result |
-| **Actions** | Run, Browse Backups, Clone, Edit, Delete |
+- Pick **A schedule preset** under **When it runs** in the **Basics** part of the job
+- **New preset** adds one from there, and **Edit** on a preset changes it for every job that follows it
 
 ## Next Steps
 

@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useDateFormatter } from "@/hooks/use-date-formatter";
-import { DatabaseChecklist } from "./database-checklist";
+import { DatabaseChecklist } from "@/components/adapter/database-checklist";
 import { jobDefaults, jobSchema, type JobDraft, type JobValues } from "./job-values";
 import {
     KEEP_COUNT, NOTIFY_ON, SCHEDULES, canPickDatabases, compressesItself, jobRequest, nextRun,

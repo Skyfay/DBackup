@@ -83,16 +83,10 @@ A Schedule Preset is a named cron expression that can be shared across jobs.
 ### Using a Preset
 
 1. Open a job (create or edit)
-2. In the **Schedule** field, enable the **Preset** toggle
-3. A searchable dropdown of saved presets appears
-4. Select a preset - the cron expression is filled in automatically
+2. In the **Basics** part, pick **A schedule preset** under **When it runs**
+3. Pick a preset from the list, or add one with **New preset**
 
-### Live-Linked vs. Quick-Fill
-
-- **Live-linked** - the job stores a reference to the preset. If you update the preset, all linked jobs pick up the new schedule automatically without editing each job.
-- **Quick-fill** - the preset is used as a starting point only. The cron expression is copied into the job; changing the preset later has no effect on this job.
-
-The toggle in the job form controls which mode is used.
+The job follows the preset: when the preset changes, every job that follows it runs on the new schedule without being edited. **Edit** on a preset in the list changes it from the job form. To stop following, pick **Its own schedule**, which starts from the preset's expression.
 
 ## Next Steps
 

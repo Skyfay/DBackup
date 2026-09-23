@@ -66,7 +66,8 @@ function dayKey(date: Date, timezone: string): string {
     return formatInTimeZone(date, timezone, "yyyy-MM-dd");
 }
 
-async function loadTimezone(): Promise<string> {
+/** The time zone the scheduler reads cron expressions in, UTC unless the settings name another. */
+export async function getSchedulerTimezone(): Promise<string> {
     const setting = await prisma.systemSetting.findUnique({ where: { key: "system.timezone" } });
     return setting?.value || "UTC";
 }
@@ -228,6 +229,14 @@ async function loadStorage(timezone: string, now: Date): Promise<Aggregates["sto
     return { entries, updatedAt, ...totals };
 }
 
+/**
+ * The latest backup runs of every job, newest first. Shared by the dashboard and the Jobs page
+ * and cleared with the rest of the cache when a backup finishes.
+ */
+export function getRecentRunsByJob(): Promise<Record<string, RunSummary[]>> {
+    return cached("runs-by-job", AGGREGATES_TTL_MS, loadRunsByJob);
+}
+
 async function loadRunsByJob(): Promise<Record<string, RunSummary[]>> {
     const jobs = await prisma.job.findMany({ select: { id: true } });
     // One indexed lookup per job keeps the cost flat no matter how long the history is.
@@ -245,13 +254,13 @@ async function loadRunsByJob(): Promise<Record<string, RunSummary[]>> {
 
 async function loadAggregates(): Promise<Aggregates> {
     const now = new Date();
-    const timezone = await loadTimezone();
+    const timezone = await getSchedulerTimezone();
     const [activity, calendar, runStats, storage, runsByJob, maxConcurrentJobs] = await Promise.all([
         loadActivity(timezone, now),
         loadCalendar(timezone, now),
         loadRunStats(now),
         loadStorage(timezone, now),
-        loadRunsByJob(),
+        getRecentRunsByJob(),
         loadMaxConcurrentJobs(),
     ]);
     return { timezone, maxConcurrentJobs, activity, calendar, ...runStats, storage, runsByJob };

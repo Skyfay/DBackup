@@ -98,6 +98,8 @@ interface DataTableProps<TData, TValue> {
     view?: "table" | "cards" | "split";
     /** One card. Its cells come from `row.getVisibleCells()`, so the Columns menu decides what a card shows. */
     renderCard?: (row: Row<TData>) => React.ReactNode;
+    /** The columns of the card grid, for cards that need more room than the three abreast they get by default. */
+    cardGridClassName?: string;
     /**
      * The right click menu of a row, as a `ContextMenuContent`. It gets the bulk context when
      * the row is one of several selected, so the menu can act on all of them.
@@ -142,6 +144,7 @@ export function DataTable<TData, TValue>({
     onRowClick,
     view = "table",
     renderCard,
+    cardGridClassName,
     renderRowMenu,
     renderSplit,
     pageCount,
@@ -354,6 +357,8 @@ export function DataTable<TData, TValue>({
                             data-state={row.getIsSelected() && "selected"}
                             onClick={onRowClick ? (event) => isPlainClick(event) && onRowClick(row.original) : undefined}
                             className={cn(
+                                // Cells can show controls on hover of their row, like a card does.
+                                "group/row",
                                 card && "[&>td]:px-3 [&>td:first-child]:pl-4 [&>td:last-child]:pr-4",
                                 card && (compact ? "[&>td]:py-1" : "[&>td]:py-2.5"),
                                 wideCheckbox && "[&>td:first-child]:cursor-pointer [&>td:first-child]:pr-3 [&>td:nth-child(2)]:pl-0",
@@ -404,7 +409,7 @@ export function DataTable<TData, TValue>({
             <div className="min-w-0 space-y-4">
                 <div className="rounded-xl border bg-card text-card-foreground shadow-sm">{toolbar}</div>
                 {rows.length > 0 ? (
-                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    <div className={cn("grid gap-4", cardGridClassName ?? "sm:grid-cols-2 xl:grid-cols-3")}>
                         {rows.map((row) =>
                             withRowMenu(row, (
                                 // `contents` keeps the card itself the grid item, the wrapper only carries the menu.

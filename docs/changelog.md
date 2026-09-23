@@ -13,6 +13,8 @@ All notable changes to DBackup are documented here.
 - **connections**: Several database connections can have their health check notifications turned off or on, and be excluded from or included in restores, in one step.
 - **connections**: A right click on a connection opens its actions, and on one of several selected rows the actions for the whole selection. A long press does the same on a phone.
 - **connections**: Picking the type of a new connection now happens in one searchable list, grouped by what the type is. Databases are grouped by relational, document, key value and file based, notification channels by chat, push, email and SMS, and webhook.
+- **jobs**: The jobs table shows each job's last run with its error or live progress, its last 12 runs as bars, where it backs up to and when it runs next. The Jobs page can also show its jobs as cards with the way of each backup, and phones always get the cards.
+- **jobs**: A click on a job opens a panel with its live progress or last error, the length of its latest runs, its success rate over 30 days and what it backs up to where. Its actions open from there, from the button at the end of the row and with a right click on the row.
 
 ### 🐛 Bug Fixes
 
@@ -33,6 +35,7 @@ All notable changes to DBackup are documented here.
 - **connections**: The health check history of a connection needs the read permission of its kind, like its details. Reading sources or destinations was enough for every kind before.
 - **connections**: The file browser of a path field no longer follows a link into a system folder it keeps out, like /proc or /System.
 - **vault**: The Vault no longer sends the stored key of an encryption profile to the browser when it lists, creates, imports or renames profiles, not even in its encrypted form.
+- **jobs**: The job list no longer returns the stored configs of the connections a job uses, only their name, type and health. Reading jobs was enough to get them before.
 
 ### 🎨 Improvements
 
@@ -49,10 +52,12 @@ All notable changes to DBackup are documented here.
 - **vault**: A new credential profile starts with a list of what can be saved and the services that use each kind, while the New button of a login field opens the form for its kind right away. Every secret field has its own button to show what was typed, and an SSH login picks how it signs in and where its key comes from on cards.
 - **connections**: The file browser of a path field starts where the field points and shows the path as clickable parts with a filter, the size and date of every entry and a badge on the files the field takes. Hidden files stay out until asked for, and every entry can be reached with the keyboard.
 - **setup**: The Quick Setup lists its steps on the left with what each one made, and adds databases, destinations and channels with the same form as the Connections page. Every step can take an existing connection or key instead, and the job picks its schedule and its databases on cards.
+- **jobs**: The form for adding and editing a job lists its parts on the left, marks the ones that are done or still miss something, and shows one part at a time. Connections are picked from searchable lists, and the channels a job notifies directly can be seen and removed there.
 
 ### 🔄 Changed
 
 - **api**: `GET /api/adapters/{id}/health-history` averages only the checks that passed and also returns the slowest one, since when the current status holds and when a check last passed.
+- **api**: `GET /api/jobs` returns how each job is doing as `overview`, and the connections a job uses with `id`, `name`, `adapterId` and `lastStatus` only. The new `GET /api/jobs/{id}/runs` returns the latest 30 runs of a job with their size, its success rate over 30 days and its last successful backup.
 
 ### 🗑️ Removed
 
@@ -68,6 +73,7 @@ All notable changes to DBackup are documented here.
 - **docs**: The source, destination, notification and first steps guides name the fields and parts of the new connection form, and the cloud drive and notification guides describe logging in with a credential profile. The adapter guides explain how the form places new fields.
 - **docs**: The first steps guide walks through the new Quick Setup.
 - **docs**: The encryption guide explains that the encryption service returns profiles without their key.
+- **docs**: The job guide describes the new Jobs page, the parts of the job form and the actions of a job, and the template and retention guides follow the new form. The API reference documents the job list fields and `GET /api/jobs/{id}/runs`.
 
 ### 🧪 Tests
 

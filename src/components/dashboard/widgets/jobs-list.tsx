@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { formatDistanceToNowStrict } from "date-fns";
 import { Loader2, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DateDisplay } from "@/components/utils/date-display";
 import { cn, formatDuration } from "@/lib/utils";
 import type { DashboardJobRow, RunSummary } from "@/services/dashboard/types";
-import { ExecutionStatusBadge, getStatusStyle } from "./execution-status";
+import { ExecutionStatusBadge } from "./execution-status";
+import { RUN_SLOTS, RunBars } from "./run-bars";
 import { RelativeTime } from "./relative-time";
 import { useRunJob } from "./use-run-job";
 
@@ -18,37 +18,12 @@ interface JobsListProps {
     canExecute: boolean;
 }
 
-const RUN_SLOTS = 12;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const COLUMNS = "grid-cols-[minmax(0,1fr)_auto_2rem] md:grid-cols-[minmax(0,1fr)_6.5rem_5rem_6.5rem_5.5rem_2rem]";
 
 function runDuration(run: RunSummary): string | null {
     if (!run.endedAt) return null;
     return formatDuration(new Date(run.endedAt).getTime() - new Date(run.startedAt).getTime());
-}
-
-/** One bar per recent run, the newest on the right. Empty slots fill up the row for new jobs. */
-function RunBars({ runs, className }: { runs: RunSummary[]; className?: string }) {
-    const empty = Math.max(0, RUN_SLOTS - runs.length);
-    return (
-        // Above the row link, so the per-run tooltips still show.
-        <div className={cn("relative z-10 flex h-4 items-stretch gap-0.5", className)} aria-label={`Last ${runs.length} runs`}>
-            {Array.from({ length: empty }, (_, i) => (
-                <span key={`empty-${i}`} className="w-1 rounded-full bg-muted" aria-hidden="true" />
-            ))}
-            {runs.map((run) => {
-                const style = getStatusStyle(run.status);
-                return (
-                    <span
-                        key={run.id}
-                        title={`${style.label}, ${formatDistanceToNowStrict(new Date(run.startedAt), { addSuffix: true })}`}
-                        className={cn("w-1 rounded-full", style.fill, run.status === "Running" && "animate-pulse")}
-                        suppressHydrationWarning
-                    />
-                );
-            })}
-        </div>
-    );
 }
 
 function NextRun({ row }: { row: DashboardJobRow }) {

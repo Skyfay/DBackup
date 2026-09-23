@@ -4,9 +4,8 @@ import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-co
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { jobService } from "@/services/jobs/job-service";
 import { logger } from "@/lib/logging/logger";
-import { wrapError } from "@/lib/logging/errors";
-import { Cron } from "croner";
-import prisma from "@/lib/prisma";
+import { PermissionError, wrapError } from "@/lib/logging/errors";
+import { getJobList } from "@/services/jobs/job-list-service";
 
 const log = logger.child({ route: "jobs" });
 
@@ -18,33 +17,12 @@ export async function GET(_req: NextRequest) {
 
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.JOBS.READ);
-
-        const [jobs, tzSetting] = await Promise.all([
-            jobService.getJobs(),
-            prisma.systemSetting.findUnique({ where: { key: "system.timezone" } }),
-        ]);
-        const timezone = tzSetting?.value || "UTC";
-
-        const enriched = jobs.map(({ executions, schedulePreset, ...job }) => {
-            const lastRunAt = executions[0]?.startedAt?.toISOString() ?? null;
-
-            let nextRunAt: string | null = null;
-            if (job.enabled) {
-                const effectiveSchedule = schedulePreset?.schedule ?? job.schedule;
-                try {
-                    const cronJob = new Cron(effectiveSchedule, { timezone });
-                    const next = cronJob.nextRun();
-                    nextRunAt = next ? next.toISOString() : null;
-                } catch {
-                    // Invalid cron expression - leave nextRunAt null
-                }
-            }
-
-            return { ...job, schedulePreset, lastRunAt, nextRunAt };
-        });
-
-        return NextResponse.json(enriched);
-    } catch (_error) {
+        return NextResponse.json(await getJobList());
+    } catch (error: unknown) {
+        if (error instanceof PermissionError) {
+            return NextResponse.json({ error: error.message }, { status: 403 });
+        }
+        log.error("List jobs error", {}, wrapError(error));
         return NextResponse.json({ error: "Failed to fetch jobs" }, { status: 500 });
     }
 }

@@ -10,12 +10,12 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ViewSwitch } from "@/components/ui/view-switch";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
-import type { TablePreferences } from "@/lib/core/table-preferences";
+import type { TablePreferences, ViewMode } from "@/lib/core/table-preferences";
 import { useIsMobileState } from "@/hooks/use-mobile";
 import { CONNECTION_TABLE_IDS, CONNECTIONS_PAGE_ID, type ConnectionCounts } from "./connection-tables";
-import { ConnectionViewSwitch, type ConnectionView } from "./connection-view-switch";
 
 /**
  * Tab keys, also the `?tab=` values.
@@ -46,7 +46,7 @@ interface ConnectionsTabsProps {
     /** Saved column layouts, keyed by table id. */
     layouts: Record<string, TablePreferences>;
     /** The view this user picked last, table when they never picked one. */
-    initialView: ConnectionView;
+    initialView: ViewMode;
 }
 
 function Count({ value }: { value: number | undefined }) {
@@ -73,13 +73,13 @@ function tabLabel(tab: ConnectionTab, counts: ConnectionCounts) {
 export function ConnectionsTabs({ permissions, counts, layouts, initialView }: ConnectionsTabsProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const [view, setView] = useState<ConnectionView>(initialView);
+    const [view, setView] = useState<ViewMode>(initialView);
     // A phone has no room for the table, so it always gets the cards and no switch. The lists
     // wait until the screen is measured, so a phone never flashes the table first.
     const isMobile = useIsMobileState();
-    const shownView: ConnectionView | undefined = isMobile === undefined ? undefined : isMobile ? "cards" : view;
+    const shownView: ViewMode | undefined = isMobile === undefined ? undefined : isMobile ? "cards" : view;
 
-    const changeView = useCallback((next: ConnectionView) => {
+    const changeView = useCallback((next: ViewMode) => {
         setView(next);
         saveViewLayout(CONNECTIONS_PAGE_ID, next)
             .then((result) => result.success)
@@ -167,7 +167,7 @@ export function ConnectionsTabs({ permissions, counts, layouts, initialView }: C
                 <div className="ml-auto flex shrink-0 items-center gap-2 self-start md:self-auto">
                     {/* Hidden by CSS rather than by the measured screen, so it never pops in after loading. */}
                     <div className="hidden md:block">
-                        <ConnectionViewSwitch value={view} onChange={changeView} />
+                        <ViewSwitch value={view} onChange={changeView} />
                     </div>
                     {canManage[active] && (
                         <Button tone="create" onClick={() => managers.current[active]?.openCreate()} aria-label="Add New">

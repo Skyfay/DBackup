@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import { getAdapterDefinition, type AdapterDefinition } from "@/lib/adapters/definitions";
 import { LOGIN_KEY, SSH_LOGIN_KEY } from "@/components/adapter/connection-form-layout";
 import { databaseLayout } from "@/components/adapter/database-form-layout";
@@ -70,5 +71,14 @@ describe("database form parts", () => {
             databaseLayout(adapter("redis"), { connectionMode: "direct", mode }).find((section) => section.id === "options")?.keys;
         expect(options("standalone")).not.toContain("sentinelNodes");
         expect(options("sentinel")).toEqual(expect.arrayContaining(["sentinelMasterName", "sentinelNodes"]));
+    });
+
+    it("puts a field that no list names into Options, so a new setting never goes missing", () => {
+        const postgres = adapter("postgres");
+        const extended = { ...postgres, configSchema: postgres.configSchema.extend({ statementTimeout: z.coerce.number().optional() }) };
+        const options = databaseLayout(extended, { connectionMode: "direct" }).find((section) => section.id === "options")?.keys;
+        expect(options).toContain("statementTimeout");
+        // The databases a job backs up are picked in the job, never here.
+        expect(options).not.toContain("database");
     });
 });

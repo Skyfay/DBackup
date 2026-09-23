@@ -25,7 +25,7 @@ A complete adapter touches 8 to 11 files. Missing one produces a "half-registere
 4. **`index.ts`** - import the class and call `registry.register(...)` inside `registerAdapters()`.
 5. **`src/lib/core/credential-requirements.ts`** - an entry in `ADAPTER_CREDENTIAL_REQUIREMENTS[id]` if the adapter supports credential profiles.
 6. **`src/components/adapter/utils.ts`** - add to `ADAPTER_ICON_MAP` (and `ADAPTER_COLOR_MAP` where applicable). Skipping this leaves a generic fallback icon in the UI.
-7. **`src/components/adapter/form-constants.ts`** - field keys in the relevant `*_CONNECTION_KEYS` / `*_CONFIG_KEYS`, plus `PLACEHOLDERS`, if the adapter needs custom form grouping.
+7. **`src/components/adapter/form-constants.ts`** - field keys in the relevant `*_CONNECTION_KEYS` / `*_CONFIG_KEYS` (and `STORAGE_LOCATION_KEYS` for a storage folder), plus `PLACEHOLDERS`. A key no list names still shows, in the form's Options part, so the lists decide where a field goes rather than whether it appears.
 8. **`src/lib/runner/steps/dump-databases.ts`** - database adapters only: an entry in `DB_FORMAT_BY_ADAPTER`, and `hasNativeCompression` if the dump is already compressed. The adapter itself implements `dumpOne()` and `restoreOne()`, plus `listDumpEntries()` when its snapshot cannot be split per database. `archive-capabilities.test.ts` fails without them.
 9. **Tests**, if the adapter is testable in CI: a service in `docker-compose.test.yml` and entries in `tests/integration/test-configs.ts` (`testDatabases`, `CLI_REQUIREMENTS`).
 10. **Docs**: a page under `docs/user-guide/{sources|destinations|notifications}/<name>.md` following the template in [docs/CLAUDE.md](../../../docs/CLAUDE.md), plus a row in the matching `docs/developer-guide/adapters/*.md` table.

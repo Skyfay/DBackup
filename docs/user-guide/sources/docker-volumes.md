@@ -30,20 +30,20 @@ A process that can talk to the Docker socket can start containers, and a contain
 
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
-| **Role** | Fixed to Directory Source. A container runtime is somewhere to read data out of, never somewhere to write backups to. | `Directory Source` | - |
-| **Connection Mode** | `Direct` for the host DBackup runs on, `SSH` for another machine | `Direct` | ✅ |
-| **SSH Host / Port** | The machine running Docker (SSH mode only) | `22` | SSH only |
-| **SSH Credential** | `SSH_KEY` [credential profile](/user-guide/security/credential-profiles) | - | SSH only |
-| **Docker socket path** | Path to the daemon socket, as seen from the host DBackup connects to. Leave empty for the default | `/var/run/docker.sock` | ❌ |
-| **Helper image** | Under **Advanced**. Image the volumes are mounted into. Needs a shell, and is never started during a backup. Leave empty for the default | `alpine:latest` | ❌ |
+| **Used as** | Fixed to directory source, in the **Behavior** part. A container runtime is somewhere to read data out of, never somewhere to write backups to. | Directory source | - |
+| **How DBackup connects** | **Direct** for the host DBackup runs on, **Over SSH** for another machine | - | ✅ |
+| **SSH host / Port** | The machine running Docker, in the **SSH server** part (SSH mode only) | `22` | SSH only |
+| **SSH login** | `SSH_KEY` [credential profile](/user-guide/security/credential-profiles) | - | SSH only |
+| **Docker socket** | Path to the daemon socket, as seen from the host DBackup connects to. Leave empty for the default | `/var/run/docker.sock` | ❌ |
+| **Helper image** | In the **Options** part. Image the volumes are mounted into. Needs a shell, and is never started during a backup. Leave empty for the default | `alpine:latest` | ❌ |
 
 ## Setup Guide
 
 1. Go to **Connections** → **Directory Sources** → **Add New** and pick **Docker Volumes**. It is offered here only - a container runtime cannot be a backup destination.
-2. Choose a **Connection Mode**. The rest of the form appears once you have, because the two modes ask for different things.
-3. For **SSH**, pick an `SSH_KEY` credential profile and enter the host. For **Direct**, leave the socket path empty unless it is somewhere unusual.
-4. Click **Test Connection**. It reports the Docker version and how many volumes it can see.
-5. Save, then open or create a job.
+2. Pick **Direct** or **Over SSH** under **How DBackup connects**. The parts that depend on it appear once you have, because the two modes ask for different things.
+3. **Over SSH**, enter the host and pick an `SSH_KEY` credential profile under **SSH login** in the **SSH server** part. For **Direct**, leave the socket empty unless it is somewhere unusual.
+4. Click **Test connection**. It reports the Docker version and how many volumes it can see.
+5. Click **Create source**, then open or create a job.
 6. Under **Directory Sources**, pick this adapter and click the volume button. It lists the volumes on that host - tick the ones to back up, or use **Every volume on this host** to tick them all. Each ticked volume becomes its own row with its own settings, and a volume created later is not swept in automatically.
 7. Optionally expand a source row to set **Stop containers while reading** and exclude patterns.
 
@@ -80,7 +80,7 @@ Containers using the target are always stopped for a restore, whatever the job's
 | Extended attributes and ACLs are not preserved | On SELinux hosts, labels have to be reapplied with `restorecon` after a restore. |
 | Hard links, device nodes and sockets are not backed up | They are reported as failures in the run, so the backup is honestly incomplete rather than quietly so. |
 | Incremental backups save storage but not transfer | The volume arrives as one stream, so unchanged files still travel; they are simply not stored again. |
-| A restore writes file by file | Reading a volume is one stream, but putting it back is one request per file. Several run at once - see **Parallel Transfers** on the connection - though a volume with many small files still restores considerably more slowly than it was read. Over SSH without socket forwarding it is slower again, because each request starts a Docker CLI process on the target. |
+| A restore writes file by file | Reading a volume is one stream, but putting it back is one request per file. Several run at once - see **Parallel transfers** in the **Speed** part of the connection - though a volume with many small files still restores considerably more slowly than it was read. Over SSH without socket forwarding it is slower again, because each request starts a Docker CLI process on the target. |
 
 ## Troubleshooting
 

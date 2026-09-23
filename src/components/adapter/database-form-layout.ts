@@ -1,5 +1,6 @@
 import type { AdapterDefinition } from "@/lib/adapters/definitions";
-import { loginRequired } from "./connection-form-schema";
+import { PREFIXED_SSH_KEYS } from "@/lib/adapters/ssh-key-convention";
+import { credentialManagedKeys, loginRequired } from "./connection-form-schema";
 import { LOGIN_KEY, NAME_KEY, SSH_LOGIN_KEY, type SectionLayout } from "./connection-form-layout";
 
 /** The program each adapter runs on the server when it works over SSH, named on the mode cards. */
@@ -29,9 +30,23 @@ const OPTION_KEYS = [
 
 const REDIS_IDS = new Set(["redis", "valkey"]);
 
+/**
+ * Keys another part of the form owns, or that the form never shows: the databases a job
+ * backs up are picked in the job, and `uri` is MongoDB's retired connection string.
+ */
+const NOT_OPTIONS = new Set([
+    "host", "port", "connectionMode", "sshHost", "sshPort", ...PREFIXED_SSH_KEYS,
+    "databases", "database", "uri", "backupPath", "fileTransferMode", "localBackupPath",
+]);
+
+/**
+ * The settings with a working default. Besides the list above, any key of the schema that no
+ * part claims lands here, so a field added to an adapter is never left out of the form.
+ */
 function optionKeys(adapter: AdapterDefinition, config: Record<string, unknown>): string[] {
     const shape = adapter.configSchema.shape as Record<string, unknown>;
     const isRedis = REDIS_IDS.has(adapter.id);
+    const managed = credentialManagedKeys(adapter);
     const keys = OPTION_KEYS.filter((key) => {
         if (!(key in shape)) return false;
         if (key === "mode" || key === "database") return isRedis;
@@ -39,9 +54,12 @@ function optionKeys(adapter: AdapterDefinition, config: Record<string, unknown>)
         if (key === "sentinelMasterName" || key === "sentinelNodes") return config.mode === "sentinel";
         return true;
     });
+    const unlisted = Object.keys(shape).filter((key) =>
+        !OPTION_KEYS.includes(key) && !NOT_OPTIONS.has(key) && !managed.has(key)
+    );
     // Over SSH, SQL Server's backup folder has no transfer to go with, so it moves here.
     if (adapter.id === "mssql" && config.connectionMode === "ssh") keys.push("backupPath");
-    return keys;
+    return [...keys, ...unlisted];
 }
 
 function sshDescription(adapterId: string): string {

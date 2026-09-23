@@ -168,22 +168,27 @@ export function SchemaField({
                            )}
                        </div>
                    )}
-                   <FormControl>
+                   {/* FormControl sits on the control itself, never on a wrapper around it. It hands
+                       over the id the label points at, and a label pointing at a div names nothing. */}
                         {isBoolean ? (
-                            <Switch
-                                checked={field.value}
-                                onCheckedChange={field.onChange}
-                            />
+                            <FormControl>
+                                <Switch
+                                    checked={field.value}
+                                    onCheckedChange={field.onChange}
+                                />
+                            </FormControl>
                         ) : isDatabaseField && onLoadDbs && setIsDbListOpen ? (
-                            <DatabasePicker
-                                value={field.value}
-                                onChange={field.onChange}
-                                availableDatabases={availableDatabases}
-                                isLoading={isLoadingDbs}
-                                onLoad={onLoadDbs}
-                                isOpen={isDbListOpen}
-                                setIsOpen={setIsDbListOpen}
-                            />
+                            <FormControl>
+                                <DatabasePicker
+                                    value={field.value}
+                                    onChange={field.onChange}
+                                    availableDatabases={availableDatabases}
+                                    isLoading={isLoadingDbs}
+                                    onLoad={onLoadDbs}
+                                    isOpen={isDbListOpen}
+                                    setIsOpen={setIsDbListOpen}
+                                />
+                            </FormControl>
                         ) : isEnum ? (
                             <Select
                                 onValueChange={field.onChange}
@@ -206,29 +211,33 @@ export function SchemaField({
                                 </SelectContent>
                             </Select>
                         ) : isTextArea ? (
-                            <Textarea
-                                {...field}
-                                placeholder={placeholder}
-                                value={field.value || ""}
-                                className="font-mono text-xs min-h-25"
-                                onChange={(e) => field.onChange(e.target.value)}
-                            />
-                        ) : (
-                             <div className="flex gap-2">
-                                <Input
-                                    type={isPassword ? "password" : "text"}
+                            <FormControl>
+                                <Textarea
                                     {...field}
                                     placeholder={placeholder}
                                     value={field.value || ""}
-                                    onChange={(e) => {
-                                        const val = e.target.value;
-                                        if (unwrappedShape instanceof z.ZodNumber || (unwrappedShape as any)._def?.typeName === "ZodNumber") {
-                                            field.onChange(Number(val));
-                                        } else {
-                                            field.onChange(val);
-                                        }
-                                    }}
+                                    className="font-mono text-xs min-h-25"
+                                    onChange={(e) => field.onChange(e.target.value)}
                                 />
+                            </FormControl>
+                        ) : (
+                             <div className="flex gap-2">
+                                <FormControl>
+                                    <Input
+                                        type={isPassword ? "password" : "text"}
+                                        {...field}
+                                        placeholder={placeholder}
+                                        value={field.value || ""}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (unwrappedShape instanceof z.ZodNumber || (unwrappedShape as any)._def?.typeName === "ZodNumber") {
+                                                field.onChange(Number(val));
+                                            } else {
+                                                field.onChange(val);
+                                            }
+                                        }}
+                                    />
+                                </FormControl>
                                 {isPathField && (
                                     <>
                                         <Button
@@ -255,7 +264,6 @@ export function SchemaField({
                                 )}
                              </div>
                         )}
-                   </FormControl>
                    {!isBoolean && description && descriptionBelow && (
                        <FormDescription className="text-xs">{description}</FormDescription>
                    )}

@@ -57,10 +57,9 @@ Local Filesystem adapters do not use a credential profile.
 You can create a profile without leaving the source/destination dialog:
 
 1. Open the adapter's create or edit dialog
-2. Open the **Credential** picker
-3. Click **+ Create new credential** at the bottom of the dropdown
-4. The credential dialog opens stacked on top of the adapter form
-5. Fill, save - the picker auto-selects the new profile and your adapter
+2. Click **New** beside the **Login** field, or **Create new profile** at the bottom of its dropdown. For cloud drives the field is called **OAuth app**, for the SSH server **SSH login**.
+3. The credential dialog opens stacked on top of the adapter form
+4. Fill, save - the field picks the new profile and your adapter
    form keeps everything you already entered
 
 This is the fastest path during initial setup or when you need a fresh secret

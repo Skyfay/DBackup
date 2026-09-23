@@ -59,9 +59,9 @@ for one server is intentional: they point at different paths and are monitored s
 
 1. Navigate to **Connections** → **Backup Destinations** → **Add New**
 2. Select the storage type
-3. Fill in configuration details
-4. Leave **Role** on *Backup Destination*
-5. Click **Test Connection** → **Save**
+3. Fill in the parts listed on the left. A check marks each part that has everything it needs.
+4. Leave **Used as** on **Backup destination** in the **Behavior** part
+5. Click **Test connection**, then **Create destination**
 
 ## Storage Structure
 
@@ -80,12 +80,12 @@ The `.meta.json` file stores compression, encryption metadata (IV, auth tag, pro
 
 A backup is one large file, so the only way to use more of a fast link is to send several pieces of it at the same time. Every S3 destination (Amazon S3, Cloudflare R2, Hetzner Object Storage, S3-Compatible) splits an upload into parts and sends **8 parts of 8 MB** at once by default.
 
-Both values are adjustable per destination under **Configuration → Parallel Upload Parts**:
+Both values are adjustable per destination in the **Speed** part of its form:
 
 | Field | Description | Default | Range |
 | :--- | :--- | :--- | :--- |
 | **Parts at once** | Parts uploaded simultaneously | `8` | 1 to 32 |
-| **Max part size (MB)** | Upper bound on the size of each part | `8` | 5 to 64 |
+| **Largest part (MB)** | Upper bound on the size of each part | `8` | 5 to 64 |
 
 ### Parts at once is the speed setting
 

@@ -24,19 +24,18 @@ Apps with "App folder" access can only read/write within their own folder (`/App
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
 | **Name** | Friendly name for this destination | - | ✅ |
-| **App Key** | Dropbox App Key (Client ID) | - | ✅ |
-| **App Secret** | Dropbox App Secret (Client Secret) | - | ✅ |
-| **Folder Path** | Target folder within app folder | Root | ❌ |
+| **OAuth app** | `OAUTH` [credential profile](/user-guide/security/credential-profiles) holding the App Key and App Secret | - | ✅ |
+| **Folder** | Target folder within app folder | Root | ❌ |
 
 ## Setup Guide
 
 1. Go to **Connections** → **Backup Destinations** → **Add New** → **Dropbox**
-2. Enter App Key and App Secret → **Save**
-3. Click **Authorize with Dropbox** - you'll be redirected to Dropbox
+2. Under **OAuth app**, pick the credential profile holding the App Key and App Secret, or create one with **New**
+3. Click **Authorize** - Dropbox opens in a new window
 4. Sign in and grant DBackup access
-5. After redirect, the status changes to **green** ("Authorized")
-6. (Optional) Use the **Folder Browser** (📂) to select a subfolder
-7. Click **Test** to verify the connection
+5. Once the window closes, the box says **Authorized**
+6. (Optional) Pick a **Folder** in the **Location** part with the folder button (📂)
+7. Click **Test connection**, then **Create destination**
 
 ## How It Works
 
@@ -53,7 +52,7 @@ The redirect URI in your Dropbox App Console doesn't match your DBackup URL. Ens
 
 ### Token Expired / Invalid
 
-Click **Re-authorize** in the adapter settings. Tokens may be invalidated if you revoked access in [Dropbox Connected Apps](https://www.dropbox.com/account/connected_apps) or changed app permissions.
+Click **Authorize again** in the adapter settings. Tokens may be invalidated if you revoked access in [Dropbox Connected Apps](https://www.dropbox.com/account/connected_apps) or changed app permissions.
 
 ### Empty Folder Browser
 

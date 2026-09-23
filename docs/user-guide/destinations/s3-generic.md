@@ -14,13 +14,13 @@ S3-Compatible Storage requires a [Credential Profile](/user-guide/security/crede
 | **Endpoint** | S3-compatible API endpoint URL | - | ✅ |
 | **Region** | Storage region | `us-east-1` | ❌ |
 | **Bucket** | Bucket name | - | ✅ |
-| **Primary Credential** | `ACCESS_KEY` credential profile (Access Key ID + Secret Access Key) | - | ✅ |
-| **Force Path Style** | Use path-style URLs (`endpoint/bucket`) instead of virtual-hosted | `false` | ❌ |
-| **Path Prefix** | Folder path within the bucket | - | ❌ |
+| **Login** | `ACCESS_KEY` credential profile (Access Key ID + Secret Access Key) | - | ✅ |
+| **Path-style URLs** | Use path-style URLs (`endpoint/bucket`) instead of virtual-hosted | `false` | ❌ |
+| **Folder** | Folder path within the bucket | - | ❌ |
 | **Parts at once** | Upload parts sent simultaneously ([details](/user-guide/destinations/#upload-performance-s3)) | `8` | ❌ |
 | **Max part size (MB)** | Upper bound on the size of each upload part | `8` | ❌ |
 
-::: tip Force Path Style
+::: tip Path-style URLs
 Enable this for providers that don't support virtual-hosted-style URLs (e.g. MinIO, Ceph). When enabled, requests go to `endpoint/bucket/key` instead of `bucket.endpoint/key`.
 :::
 
@@ -30,10 +30,10 @@ Enable this for providers that don't support virtual-hosted-style URLs (e.g. Min
 2. Generate access credentials (access key + secret key)
 3. **Create an `ACCESS_KEY` credential profile** in **Settings → Vault → Credentials** with those keys ([guide](/user-guide/security/credential-profiles))
 4. Go to **Connections** → **Backup Destinations** → **Add New** → **S3-Compatible**
-5. Enter the **Endpoint** URL and Bucket, then select the credential profile in the **Primary Credential** picker
-6. Enable **Force Path Style** if required by your provider
-7. (Optional) Set a **Path Prefix** for organizing backups
-8. Click **Test** to verify the connection
+5. Enter the **Endpoint** URL and Bucket, then pick the credential profile under **Login**
+6. Turn on **Path-style URLs** in the **Options** part if your provider needs it
+7. (Optional) Set a **Folder** in the **Location** part for organizing backups
+8. Click **Test connection** to verify the connection
 
 <details>
 <summary>MinIO Setup</summary>
@@ -41,7 +41,7 @@ Enable this for providers that don't support virtual-hosted-style URLs (e.g. Min
 1. Access the MinIO Console (default: `http://your-server:9001`)
 2. Create a bucket under **Buckets** → **Create Bucket**
 3. Create an access key under **Access Keys** → **Create Access Key**
-4. Use endpoint `http://your-minio-host:9000` with **Force Path Style** enabled
+4. Use endpoint `http://your-minio-host:9000` with **Path-style URLs** turned on
 
 Common Docker setup:
 
@@ -65,7 +65,7 @@ services:
 1. Create a bucket at [console.wasabisys.com](https://console.wasabisys.com/)
 2. Create an API access key under **Access Keys**
 3. Use the regional endpoint, e.g. `https://s3.eu-central-1.wasabisys.com`
-4. **Force Path Style**: off (Wasabi supports virtual-hosted style)
+4. **Path-style URLs**: off (Wasabi supports virtual-hosted style)
 
 </details>
 
@@ -75,7 +75,7 @@ services:
 1. Create a Space in [DigitalOcean Console](https://cloud.digitalocean.com/spaces)
 2. Generate a Spaces access key under **API** → **Spaces Keys**
 3. Use endpoint `https://<region>.digitaloceanspaces.com` (e.g. `https://fra1.digitaloceanspaces.com`)
-4. **Force Path Style**: off
+4. **Path-style URLs**: off
 
 </details>
 
@@ -85,7 +85,7 @@ services:
 1. Create a bucket at [Backblaze Console](https://secure.backblaze.com/b2_buckets.htm)
 2. Create an **Application Key** with read/write access to your bucket
 3. Use endpoint `https://s3.<region>.backblazeb2.com` (e.g. `https://s3.us-west-002.backblazeb2.com`)
-4. **Force Path Style**: off
+4. **Path-style URLs**: off
 
 </details>
 

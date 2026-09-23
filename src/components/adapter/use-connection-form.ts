@@ -5,9 +5,11 @@ import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import type { AdapterDefinition } from "@/lib/adapters/definitions";
+import type { StorageRole } from "@/lib/core/storage-roles";
+import type { CredentialProfileSummary } from "@/components/settings/credential-profile-dialog";
 import type { AdapterConfig } from "./types";
 import { buildConnectionFormSchema, type ConnectionFormValues } from "./connection-form-schema";
-import { seedSchemaDefaults } from "./schema-defaults";
+import { defaultConfig, fillRequiredText, initialRole, parseObject } from "./connection-form-defaults";
 
 export type ConnectionTestState =
     | { status: "idle" }
@@ -18,7 +20,29 @@ export type ConnectionTestState =
 /** Switches a connection keeps in its metadata instead of its config, stored the way the API expects them. */
 export interface ConnectionMetadata {
     healthNotificationsDisabled: boolean;
+    /** Databases only. */
     isRestoreExcluded: boolean;
+    /** Backup destinations only. */
+    skipVerification: boolean;
+}
+
+/** What every part of the form gets to work with, whatever it shows. */
+export interface ConnectionSectionProps {
+    adapter: AdapterDefinition;
+    primaryCredentialId: string | null;
+    onPrimaryChange: (id: string | null) => void;
+    sshCredentialId: string | null;
+    onSshChange: (id: string | null) => void;
+    metadata: ConnectionMetadata;
+    onMetadataChange: (metadata: ConnectionMetadata) => void;
+    storageRole: StorageRole;
+    onStorageRoleChange: (role: StorageRole) => void;
+    /** Whether the picked OAuth app holds a token for its cloud drive. */
+    authorized: boolean;
+    onPrimaryProfile: (profile: CredentialProfileSummary | null) => void;
+    /** Goes up after an authorization, so the login field loads its profile again. */
+    credentialRefreshKey: number;
+    onAuthorized: () => void;
 }
 
 interface TestResponse {
@@ -27,55 +51,11 @@ interface TestResponse {
     version?: string;
 }
 
-function parseObject(json: string | null | undefined): Record<string, unknown> {
-    if (!json) return {};
-    try {
-        const value: unknown = JSON.parse(json);
-        return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
-    } catch {
-        return {};
-    }
-}
-
-function isList(node: unknown): boolean {
-    let current = node as { _def?: { type?: string; innerType?: unknown } } | undefined;
-    while (current?._def) {
-        if (current._def.type === "array") return true;
-        current = current._def.innerType as typeof current;
-    }
-    return false;
-}
-
-/**
- * A new connection starts with the defaults its schema declares, like the port, and with
- * an empty list where the schema wants one. Without it a required list such as the Firebird
- * aliases reports a missing value in Zod's words instead of its own message.
- */
-function defaultConfig(adapter: AdapterDefinition): Record<string, unknown> {
-    const config: Record<string, unknown> = {};
-    const key = (name: string) => name.slice("config.".length);
-    seedSchemaDefaults(adapter.configSchema, {
-        getValues: (name) => config[key(name)],
-        setValue: (name, value) => {
-            config[key(name)] = value;
-        },
-    });
-    const shape = adapter.configSchema.shape as Record<string, { safeParse: (value: unknown) => { success: boolean; data?: unknown } }>;
-    for (const [name, node] of Object.entries(shape)) {
-        if (config[name] === undefined && isList(node)) config[name] = [];
-    }
-    // `mode` only picks the layout for SQLite. For Redis it is an ordinary setting, standalone
-    // or Sentinel, and the seeding above skips it by name.
-    if (adapter.id !== "sqlite" && "mode" in shape && config.mode === undefined) {
-        const parsed = shape.mode.safeParse(undefined);
-        if (parsed.success && parsed.data !== undefined) config.mode = parsed.data;
-    }
-    return config;
-}
-
 interface Options {
     adapter: AdapterDefinition;
     initialData?: AdapterConfig;
+    /** The role a new storage connection starts in, from the page it is added on. */
+    defaultRole?: StorageRole;
     onSaved: () => void;
 }
 
@@ -84,14 +64,14 @@ interface Options {
  *
  * A database is tested before it is created, and a failed test asks whether to save anyway.
  */
-export function useConnectionForm({ adapter, initialData, onSaved }: Options) {
+export function useConnectionForm({ adapter, initialData, defaultRole, onSaved }: Options) {
     const schema = useMemo(() => buildConnectionFormSchema(adapter), [adapter]);
     const form = useForm<ConnectionFormValues>({
         resolver: zodResolver(schema) as unknown as Resolver<ConnectionFormValues>,
         defaultValues: {
             name: initialData?.name ?? "",
             adapterId: adapter.id,
-            config: initialData ? parseObject(initialData.config) : defaultConfig(adapter),
+            config: fillRequiredText(adapter, initialData ? parseObject(initialData.config) : defaultConfig(adapter)),
         },
         // The form moves to the part with the error itself. Focusing a field in a hidden part fails.
         shouldFocusError: false,
@@ -101,9 +81,16 @@ export function useConnectionForm({ adapter, initialData, onSaved }: Options) {
     const [metadata, setMetadata] = useState<ConnectionMetadata>({
         healthNotificationsDisabled: storedMetadata.healthNotificationsDisabled === true,
         isRestoreExcluded: storedMetadata.isRestoreExcluded === true,
+        skipVerification: storedMetadata.skipVerification === true,
     });
+    const [storageRole, setStorageRole] = useState<StorageRole>(() => initialRole(adapter, initialData, defaultRole));
     const [primaryCredentialId, setPrimaryCredentialId] = useState<string | null>(initialData?.primaryCredentialId ?? null);
     const [sshCredentialId, setSshCredentialId] = useState<string | null>(initialData?.sshCredentialId ?? null);
+    // OAuth authorization lives on the credential profile, so the picked profile says whether
+    // it is authorized, even before the connection itself is saved.
+    const [primaryProfile, setPrimaryProfile] = useState<CredentialProfileSummary | null>(null);
+    const [credentialRefreshKey, setCredentialRefreshKey] = useState(0);
+    const authorized = primaryProfile?.id === primaryCredentialId && primaryProfile?.secretStatus?.refreshToken === true;
     const [failure, setFailure] = useState<{ message: string; values: ConnectionFormValues } | null>(null);
     const [saving, setSaving] = useState(false);
 
@@ -153,6 +140,17 @@ export function useConnectionForm({ adapter, initialData, onSaved }: Options) {
         }
     };
 
+    /** The flags this type of connection has, on top of whatever else the metadata holds. */
+    const metadataToSave = (): Record<string, unknown> => {
+        if (adapter.type === "database") {
+            return { ...storedMetadata, healthNotificationsDisabled: metadata.healthNotificationsDisabled, isRestoreExcluded: metadata.isRestoreExcluded };
+        }
+        if (adapter.type === "storage") {
+            return { ...storedMetadata, healthNotificationsDisabled: metadata.healthNotificationsDisabled, skipVerification: metadata.skipVerification };
+        }
+        return storedMetadata;
+    };
+
     const save = async (values: ConnectionFormValues) => {
         setSaving(true);
         try {
@@ -164,10 +162,10 @@ export function useConnectionForm({ adapter, initialData, onSaved }: Options) {
                     adapterId: adapter.id,
                     type: adapter.type,
                     config: values.config,
-                    // Keeps whatever else the metadata holds, like flags set elsewhere.
-                    metadata: { ...storedMetadata, ...metadata },
+                    metadata: metadataToSave(),
                     primaryCredentialId,
                     sshCredentialId,
+                    ...(adapter.type === "storage" ? { storageRole } : {}),
                 }),
             });
             if (res.ok) {
@@ -211,14 +209,29 @@ export function useConnectionForm({ adapter, initialData, onSaved }: Options) {
         setFailure(null);
     };
 
+    const sectionProps: ConnectionSectionProps = {
+        adapter,
+        primaryCredentialId,
+        onPrimaryChange: setPrimaryCredentialId,
+        sshCredentialId,
+        onSshChange: setSshCredentialId,
+        metadata,
+        onMetadataChange: setMetadata,
+        storageRole,
+        onStorageRoleChange: setStorageRole,
+        authorized,
+        onPrimaryProfile: setPrimaryProfile,
+        credentialRefreshKey,
+        onAuthorized: () => setCredentialRefreshKey((key) => key + 1),
+    };
+
     return {
         form,
-        metadata,
-        setMetadata,
+        sectionProps,
+        storageRole,
+        authorized,
         primaryCredentialId,
-        setPrimaryCredentialId,
         sshCredentialId,
-        setSshCredentialId,
         test,
         runTest,
         onValid,

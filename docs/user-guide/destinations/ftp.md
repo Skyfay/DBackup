@@ -13,9 +13,9 @@ FTP requires a [Credential Profile](/user-guide/security/credential-profiles) of
 | **Name** | Friendly name for this destination | - | ✅ |
 | **Host** | Hostname or IP of the FTP server | - | ✅ |
 | **Port** | FTP port | `21` | ❌ |
-| **Primary Credential** | `USERNAME_PASSWORD` credential profile (username + password) | - | ❌ |
+| **Login** | `USERNAME_PASSWORD` credential profile (username + password) | - | ❌ |
 | **TLS** | Enable explicit FTPS (FTP over TLS) | `false` | ❌ |
-| **Path Prefix** | Remote directory for backups | - | ❌ |
+| **Folder** | Remote directory for backups | - | ❌ |
 
 ## Setup Guide
 
@@ -23,10 +23,10 @@ FTP requires a [Credential Profile](/user-guide/security/credential-profiles) of
 2. Ensure an FTP server is running on the target host
 3. Create a dedicated user with write access to the backup directory
 4. Go to **Connections** → **Backup Destinations** → **Add New** → **FTP**
-5. Enter Host and select the credential profile in the **Primary Credential** picker
+5. Enter Host and pick the credential profile under **Login**
 6. Enable **TLS** if your server supports FTPS (recommended)
-7. (Optional) Set a **Path Prefix** to specify the remote directory
-8. Click **Test** to verify the connection
+7. (Optional) Set a **Folder** in the **Location** part to specify the remote directory
+8. Click **Test connection** to verify the connection
 
 ::: warning Security
 Plain FTP transfers credentials and data unencrypted. **Always enable TLS** when possible, or consider [SFTP](/user-guide/destinations/sftp) as a more secure alternative.
@@ -35,7 +35,7 @@ Plain FTP transfers credentials and data unencrypted. **Always enable TLS** when
 ## How It Works
 
 - When TLS is enabled, DBackup uses explicit FTPS (AUTH TLS) - the connection upgrades from plain to encrypted
-- DBackup creates subdirectories per job within the Path Prefix automatically
+- DBackup creates subdirectories per job within the folder automatically
 - All credentials are stored AES-256-GCM encrypted in the database
 
 ## Troubleshooting

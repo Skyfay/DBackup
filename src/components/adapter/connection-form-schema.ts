@@ -54,6 +54,16 @@ export function loginRequired(adapter: AdapterDefinition): boolean {
 }
 
 /**
+ * The keys among these that the user has to fill in: required by the adapter's schema, with
+ * no default, and not left to a credential profile.
+ */
+export function requiredKeys(adapter: AdapterDefinition, keys: string[]): string[] {
+    const shape = shapeOf(adapter);
+    const managed = credentialManagedKeys(adapter);
+    return keys.filter((key) => key in shape && !managed.has(key) && !shape[key].safeParse(undefined).success);
+}
+
+/**
  * The schema the form validates against: the adapter's config, minus what a profile fills in.
  *
  * The connection mode loses its default here. The form shows nothing below it until one is

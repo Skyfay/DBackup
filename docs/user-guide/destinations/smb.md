@@ -12,10 +12,10 @@ SMB requires a [Credential Profile](/user-guide/security/credential-profiles) of
 | :--- | :--- | :--- | :--- |
 | **Name** | Friendly name for this destination | - | ✅ |
 | **Address** | UNC share path (e.g. `//server/share`) | - | ✅ |
-| **Primary Credential** | `USERNAME_PASSWORD` credential profile (username + password) | - | ❌ |
+| **Login** | `USERNAME_PASSWORD` credential profile (username + password) | - | ❌ |
 | **Domain** | Windows domain / workgroup | - | ❌ |
-| **Max Protocol** | Highest SMB protocol version to use | `SMB3` | ❌ |
-| **Path Prefix** | Subfolder within the share | - | ❌ |
+| **Highest SMB version** | Highest SMB protocol version to use | `SMB3` | ❌ |
+| **Folder** | Subfolder within the share | - | ❌ |
 
 ### Protocol Versions
 
@@ -32,10 +32,10 @@ SMB requires a [Credential Profile](/user-guide/security/credential-profiles) of
 3. Create a dedicated user with write access to the share (recommended)
 4. Go to **Connections** → **Backup Destinations** → **Add New** → **SMB / CIFS**
 5. Enter the **Address** in UNC format: `//hostname-or-ip/sharename`
-6. Select the credential profile in the **Primary Credential** picker (or leave empty for anonymous access)
+6. Pick the credential profile under **Login** (or leave empty for anonymous access)
 7. (Optional) Set **Domain** if authenticating against a Windows domain
-8. (Optional) Set **Path Prefix** for a subfolder within the share
-9. Click **Test** to verify the connection
+8. (Optional) Set a **Folder** in the **Location** part for a subfolder within the share
+9. Click **Test connection** to verify the connection
 
 ::: tip NAS Devices
 Synology, QNAP, TrueNAS, and OpenMediaVault all support SMB shares. Create a dedicated share and user for backups in your NAS admin panel.
@@ -114,7 +114,7 @@ NT_STATUS_ACCESS_DENIED
 NT_STATUS_INVALID_NETWORK_RESPONSE
 ```
 
-**Solution:** Try lowering **Max Protocol** to `SMB2` or `NT1`. Some older NAS firmware doesn't support SMB3.
+**Solution:** Try lowering **Highest SMB version** to `SMB2` or `NT1`. Some older NAS firmware doesn't support SMB3.
 
 ### Share Not Found
 

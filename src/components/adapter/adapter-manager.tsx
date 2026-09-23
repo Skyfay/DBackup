@@ -378,15 +378,15 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                 </DialogContent>
             </Dialog>
 
-            {/* Step 2: the form. Databases have the new one, storage and notifications still the old one. */}
+            {/* Step 2: the form. Databases and storage have the new one, notifications still the old one. */}
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                {type === "database" && formAdapter ? (
+                {type !== "notification" && formAdapter ? (
                     <DialogContent showCloseButton={false} className={cn(DIALOG_SURFACE, "sm:max-w-3xl")}>
                         {isDialogOpen && (
                             <ConnectionForm
                                 adapter={formAdapter}
                                 initialData={editingConfig}
-                                title={editingId ? "Edit database" : "Add database"}
+                                defaultRole={pickerRole}
                                 onBack={editingId ? undefined : backToPicker}
                                 onSaved={afterSave}
                             />
@@ -395,7 +395,7 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                 ) : (
                     <DialogContent className="sm:max-w-2xl max-h-[90vh] p-0" aria-describedby={undefined}>
                         <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
-                            <DialogTitle>{editingId ? "Edit Configuration" : (type === 'notification' ? "Add New Notification" : (type === 'storage' ? `Add New ${storageNoun}` : "Add New Configuration"))}</DialogTitle>
+                            <DialogTitle>{editingId ? "Edit Configuration" : "Add New Notification"}</DialogTitle>
                         </DialogHeader>
                         {isDialogOpen && (
                             <AdapterForm

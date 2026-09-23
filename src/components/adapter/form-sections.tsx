@@ -9,16 +9,14 @@ import {
 } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { transferConcurrencyRange } from "@/lib/adapters/transfer-concurrency";
-import { s3UploadTuningRange, s3UploadMemoryBudget, S3_MIN_PART_SIZE_MB } from "@/lib/adapters/s3-upload-tuning";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { STORAGE_ROLES, type StorageRole } from "@/lib/core/storage-roles";
 import { sshManagedKeys } from "@/lib/adapters/ssh-key-convention";
-import { cn, formatBytes } from "@/lib/utils";
-import { AlertTriangle, Check, ChevronDown, FolderOpen, Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { AlertTriangle, Check, ChevronDown, Loader2 } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AdapterDefinition } from "@/lib/adapters/definitions";
@@ -27,12 +25,10 @@ import { EmailTagField } from "./email-tag-field";
 import { FirebirdAliasFields } from "./firebird-alias-fields";
 import { RedisDatabaseSelect } from "./redis-database-select";
 import { STORAGE_ADVANCED_KEYS, STORAGE_CONFIG_KEYS, STORAGE_CONNECTION_KEYS, NOTIFICATION_CONNECTION_KEYS, NOTIFICATION_CONFIG_KEYS } from "./form-constants";
-import { GoogleDriveOAuthButton } from "./google-drive-oauth-button";
-import { GoogleDriveFolderBrowser } from "./google-drive-folder-browser";
-import { DropboxOAuthButton } from "./dropbox-oauth-button";
-import { DropboxFolderBrowser } from "./dropbox-folder-browser";
-import { OneDriveOAuthButton } from "./onedrive-oauth-button";
-import { OneDriveFolderBrowser } from "./onedrive-folder-browser";
+import { OAuthAuthorization } from "./oauth-authorization";
+import { CloudFolderField } from "./cloud-folder-field";
+import { ParallelTransfersField, ParallelUploadFields } from "./storage-speed-fields";
+import { SnapshotSwitch } from "./snapshot-switch";
 import { CredentialPicker } from "./credential-picker";
 import type { CredentialProfileSummary } from "@/components/settings/credential-profile-dialog";
 import { AdapterConfig } from "./types";
@@ -175,157 +171,6 @@ function HealthCheckNotificationSwitch({
     );
 }
 
-/**
- * How many files this connection transfers at once, bounded by what the adapter allows.
- *
- * Belongs to the connection rather than to a global setting because the right number depends on
- * the server at the other end - the same installation can hold a NAS that welcomes sixteen
- * parallel transfers and a cloud drive that rate-limits above four.
- */
-function TransferConcurrencyField({
-    adapterId,
-    value,
-    onChange,
-}: {
-    adapterId: string;
-    value: number | undefined;
-    onChange: (value: number) => void;
-}) {
-    const range = transferConcurrencyRange(adapterId);
-    // Clamped for display, not just on input: a ceiling lowered in a later version leaves stored
-    // values above it, and the runtime clamps them anyway. Showing the stored number would claim
-    // a parallelism the connection will never actually use.
-    const current = Math.min(range.max, value ?? range.default);
-    const fixed = range.max <= 1;
-
-    return (
-        <div className="rounded-lg border p-4 space-y-3">
-            <div className="flex items-center justify-between gap-4">
-                <div className="space-y-0.5">
-                    <Label htmlFor="max-concurrent-files">Parallel Transfers</Label>
-                    <p className="text-sm text-muted-foreground">
-                        Files read from or written to this connection at the same time.
-                    </p>
-                </div>
-                <Input
-                    id="max-concurrent-files"
-                    type="number"
-                    min={1}
-                    max={range.max}
-                    value={current}
-                    disabled={fixed}
-                    className="w-20 shrink-0"
-                    onChange={(e) => {
-                        const parsed = parseInt(e.target.value, 10);
-                        if (!Number.isFinite(parsed)) return;
-                        onChange(Math.min(range.max, Math.max(1, parsed)));
-                    }}
-                />
-            </div>
-            <p className="text-xs text-muted-foreground">
-                {range.max === range.default
-                    ? `This provider rate-limits concurrent transfers, so ${range.max} is both the default and the maximum.`
-                    : `Between 1 and ${range.max}, default ${range.default}. Higher is faster over a high-latency link, too high can exhaust a server's connection limit.`}
-            </p>
-        </div>
-    );
-}
-
-/**
- * How one archive is split across parallel connections on the way to an object store.
- *
- * Separate from `TransferConcurrencyField` above, which counts whole files and only means
- * something for a directory source. A backup destination receives one archive per run, so the
- * parallelism has to happen inside that single upload instead.
- *
- * The two inputs sit together and show their product because they are meaningless apart: the
- * peak memory of an upload is the parts in flight times their size, so the same step in
- * parallelism costs eight times as much on 64 MB parts as on 8 MB ones.
- *
- * The part size is asked for as a maximum rather than a value, because the size that performs
- * depends on how large the archive turns out to be and the archive differs every run. What the
- * user can actually decide is how much memory to spend, which is what a ceiling expresses.
- * `resolveS3UploadTuning` picks the largest size at or below it that still keeps every
- * connection busy.
- */
-function S3UploadTuningFields({
-    adapterId,
-    concurrency,
-    partSizeMb,
-    onConcurrencyChange,
-    onPartSizeChange,
-}: {
-    adapterId: string;
-    concurrency: number | undefined;
-    partSizeMb: number | undefined;
-    onConcurrencyChange: (value: number) => void;
-    onPartSizeChange: (value: number) => void;
-}) {
-    const range = s3UploadTuningRange(adapterId);
-    if (!range) return null;
-
-    // Clamped for display, not just on input: a ceiling lowered in a later version leaves
-    // stored values above it, and the runtime clamps them anyway. Showing the stored number
-    // would claim a parallelism the connection will never actually use.
-    const currentConcurrency = Math.min(range.concurrency.max, concurrency ?? range.concurrency.default);
-    const currentPartSize = Math.min(range.partSizeMb.max, Math.max(S3_MIN_PART_SIZE_MB, partSizeMb ?? range.partSizeMb.default));
-
-    return (
-        <div className="rounded-lg border p-4 space-y-3">
-            <div className="space-y-0.5">
-                <Label htmlFor="s3-upload-concurrency">Parallel Upload Parts</Label>
-                <p className="text-sm text-muted-foreground">
-                    A backup is uploaded as several parts at once. More parts use more of a fast
-                    link, at the cost of memory while the upload runs.
-                </p>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                    <Label htmlFor="s3-upload-concurrency" className="text-xs text-muted-foreground">
-                        Parts at once
-                    </Label>
-                    <Input
-                        id="s3-upload-concurrency"
-                        type="number"
-                        min={1}
-                        max={range.concurrency.max}
-                        value={currentConcurrency}
-                        onChange={(e) => {
-                            const parsed = parseInt(e.target.value, 10);
-                            if (!Number.isFinite(parsed)) return;
-                            onConcurrencyChange(Math.min(range.concurrency.max, Math.max(1, parsed)));
-                        }}
-                    />
-                </div>
-                <div className="space-y-1.5">
-                    <Label htmlFor="s3-upload-part-size" className="text-xs text-muted-foreground">
-                        Max part size (MB)
-                    </Label>
-                    <Input
-                        id="s3-upload-part-size"
-                        type="number"
-                        min={S3_MIN_PART_SIZE_MB}
-                        max={range.partSizeMb.max}
-                        value={currentPartSize}
-                        onChange={(e) => {
-                            const parsed = parseInt(e.target.value, 10);
-                            if (!Number.isFinite(parsed)) return;
-                            onPartSizeChange(Math.min(range.partSizeMb.max, Math.max(S3_MIN_PART_SIZE_MB, parsed)));
-                        }}
-                    />
-                </div>
-            </div>
-            <p className="text-xs text-muted-foreground">
-                Uses up to <strong>{formatBytes(s3UploadMemoryBudget(currentConcurrency, currentPartSize))}</strong> of
-                memory per upload. Smaller backups automatically use smaller parts, so that every
-                connection still gets one. Defaults are {range.concurrency.default} parts
-                of {range.partSizeMb.default} MB, up to {range.concurrency.max} parts
-                of {range.partSizeMb.max} MB.
-            </p>
-        </div>
-    );
-}
-
 function DisableVerificationSwitch({
     disabled,
     onChange,
@@ -358,90 +203,6 @@ function DisableVerificationSwitch({
  * reads folders out of that same root. One config doing both would let a job collect its
  * own archives, so there is no "both" and no "neither".
  */
-/**
- * Shadow copy toggle for a directory source.
- *
- * The switch cannot be turned on until the server has confirmed it can deliver one -
- * enabling it blind would configure a job that fails on its next run, because a backup
- * relying on snapshots is aborted rather than quietly taken without one.
- */
-function SnapshotSwitch({
-    enabled,
-    onChange,
-    adapterId,
-    getConfig,
-}: {
-    enabled: boolean;
-    onChange: (enabled: boolean) => void;
-    adapterId: string;
-    getConfig: () => { config: Record<string, unknown>; primaryCredentialId: string | null; sshCredentialId: string | null };
-}) {
-    const [checking, setChecking] = useState(false);
-    // Null until checked in this session. An already-enabled adapter was verified when it
-    // was saved, so it stays on without re-checking every time the form opens.
-    const [available, setAvailable] = useState<boolean | null>(null);
-    const [message, setMessage] = useState<string | null>(null);
-
-    const runCheck = async () => {
-        setChecking(true);
-        setMessage(null);
-        try {
-            const { config, primaryCredentialId, sshCredentialId } = getConfig();
-            const res = await fetch("/api/adapters/check-snapshot", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ adapterId, config, primaryCredentialId, sshCredentialId }),
-            });
-            const data = await res.json();
-            setAvailable(!!data.supported);
-            setMessage(data.message ?? null);
-            if (!data.supported) onChange(false);
-        } catch (error: unknown) {
-            setAvailable(false);
-            setMessage(error instanceof Error ? error.message : "The check could not be run.");
-            onChange(false);
-        } finally {
-            setChecking(false);
-        }
-    };
-
-    const canEnable = enabled || available === true;
-
-    return (
-        <div className="rounded-lg border p-4 space-y-3">
-            <div className="flex items-center justify-between gap-4">
-                <div className="space-y-0.5">
-                    <Label htmlFor="use-vss">Read from a shadow copy (VSS)</Label>
-                    <p className="text-sm text-muted-foreground">
-                        Asks the file server for a point-in-time snapshot and backs that up instead of
-                        the live share, so open files can be read and the backup reflects a single
-                        moment. Needs Windows Server 2012 or newer with the File Server VSS Agent
-                        Service, or Samba 4.2+, and an account with backup privileges.
-                    </p>
-                </div>
-                <Switch
-                    id="use-vss"
-                    className="shrink-0"
-                    checked={enabled}
-                    disabled={!canEnable}
-                    onCheckedChange={onChange}
-                />
-            </div>
-            <div className="flex items-center gap-3">
-                <Button type="button" variant="outline" size="sm" onClick={runCheck} disabled={checking}>
-                    {checking ? "Checking..." : "Check availability"}
-                </Button>
-                {available === null && !enabled && (
-                    <span className="text-xs text-muted-foreground">Run the check to enable this.</span>
-                )}
-            </div>
-            {message && (
-                <p className={cn("text-xs", available ? "text-muted-foreground" : "text-destructive")}>{message}</p>
-            )}
-        </div>
-    );
-}
-
 const ROLE_CHOICES = [
     {
         value: STORAGE_ROLES.DESTINATION,
@@ -1018,9 +779,7 @@ export function StorageFormContent({
     const hasAdvancedKeys = hasFields(adapter, STORAGE_ADVANCED_KEYS);
     // Always show Configuration tab for storage adapters (health check, verification and the role picker live there)
     const hasConfigKeys = hasRealConfigKeys || hasAdvancedKeys || !!onHealthNotificationsDisabledChange || !!onSkipVerificationChange || !!onStorageRoleChange || supportsSnapshots;
-    const isGoogleDrive = adapter.id === 'google-drive';
-    const isDropbox = adapter.id === 'dropbox';
-    const isOneDrive = adapter.id === 'onedrive';
+    const isCloudDrive = adapter.id === 'google-drive' || adapter.id === 'dropbox' || adapter.id === 'onedrive';
 
     // Storage reached over SSH is new - every other storage adapter either talks to its
     // service directly or brings its own SSH client. Read from the schema, never from an
@@ -1116,20 +875,9 @@ export function StorageFormContent({
                              <FieldList keys={['privateKey', 'passphrase']} adapter={adapter} />
                         )}
                     </div>
-                ) : isGoogleDrive ? (
-                    <GoogleDriveOAuthButton
-                        credentialId={primaryCredentialId ?? undefined}
-                        authorized={authorized}
-                        onAuthorized={handleOAuthAuthorized}
-                    />
-                ) : isDropbox ? (
-                    <DropboxOAuthButton
-                        credentialId={primaryCredentialId ?? undefined}
-                        authorized={authorized}
-                        onAuthorized={handleOAuthAuthorized}
-                    />
-                ) : isOneDrive ? (
-                    <OneDriveOAuthButton
+                ) : isCloudDrive ? (
+                    <OAuthAuthorization
+                        adapterId={adapter.id}
                         credentialId={primaryCredentialId ?? undefined}
                         authorized={authorized}
                         onAuthorized={handleOAuthAuthorized}
@@ -1141,21 +889,9 @@ export function StorageFormContent({
 
             {hasConfigKeys && (
                 <TabsContent value="configuration" className="space-y-4 pt-4">
-                    {isGoogleDrive ? (
-                        <GoogleDriveFolderField
-                            adapter={adapter}
-                            authorized={authorized}
-                            credentialId={primaryCredentialId ?? undefined}
-                        />
-                    ) : isDropbox ? (
-                        <DropboxFolderField
-                            adapter={adapter}
-                            authorized={authorized}
-                            credentialId={primaryCredentialId ?? undefined}
-                        />
-                    ) : isOneDrive ? (
-                        <OneDriveFolderField
-                            adapter={adapter}
+                    {isCloudDrive ? (
+                        <CloudFolderField
+                            adapterId={adapter.id}
                             authorized={authorized}
                             credentialId={primaryCredentialId ?? undefined}
                         />
@@ -1204,7 +940,7 @@ export function StorageFormContent({
                         a single stream would otherwise show a disabled 1 next to an
                         explanation about rate limits that does not apply to it. */}
                     {storageRole === STORAGE_ROLES.SOURCE && transferConcurrencyRange(adapter.id).max > 1 && (
-                        <TransferConcurrencyField
+                        <ParallelTransfersField
                             adapterId={adapter.id}
                             value={watch("config.maxConcurrentFiles")}
                             onChange={(v) => setValue("config.maxConcurrentFiles", v, { shouldDirty: true })}
@@ -1215,7 +951,7 @@ export function StorageFormContent({
                         what matters there is how many files run at once. Writing a backup means
                         one archive, so the only parallelism left is inside that upload. */}
                     {storageRole !== STORAGE_ROLES.SOURCE && (
-                        <S3UploadTuningFields
+                        <ParallelUploadFields
                             adapterId={adapter.id}
                             concurrency={watch("config.uploadConcurrency")}
                             partSizeMb={watch("config.uploadPartSizeMb")}
@@ -1302,204 +1038,6 @@ export function GenericFormContent({ adapter, detectedVersion }: { adapter: Adap
 }
 
 // --- Helpers ---
-
-/**
- * Google Drive folder picker field with browse button.
- * Shows a text input for folderId + a browse button that opens the folder browser.
- */
-function GoogleDriveFolderField({
-    adapter: _adapter,
-    authorized,
-    credentialId,
-}: {
-    adapter: AdapterDefinition;
-    authorized: boolean;
-    credentialId?: string;
-}) {
-    const { setValue, watch } = useFormContext();
-    const [isBrowserOpen, setIsBrowserOpen] = useState(false);
-    const folderId = watch("config.folderId") || "";
-    const [folderName, setFolderName] = useState<string | null>(null);
-
-    // Secrets (clientSecret/refreshToken) live in the vault and are resolved
-    // server-side by adapterId; the browser only needs the saved adapter id.
-    const canBrowse = authorized && !!credentialId;
-
-    return (
-        <div className="space-y-4">
-            <div className="space-y-2">
-                <Label>Folder ID</Label>
-                <div className="flex gap-2">
-                    <Input
-                        value={folderId}
-                        onChange={(e) => setValue("config.folderId", e.target.value)}
-                        placeholder="Leave empty for root (My Drive)"
-                        className="font-mono text-sm"
-                    />
-                    <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        onClick={() => setIsBrowserOpen(true)}
-                        disabled={!canBrowse}
-                        title={canBrowse ? "Browse Google Drive folders" : "Authorize Google Drive first to browse folders"}
-                    >
-                        <FolderOpen className="h-4 w-4" />
-                    </Button>
-                </div>
-                {folderName && folderId && (
-                    <p className="text-xs text-muted-foreground">
-                        Selected folder: <span className="font-medium">{folderName}</span>
-                    </p>
-                )}
-                {!canBrowse && (
-                    <p className="text-xs text-muted-foreground">
-                        Authorize Google Drive first to use the folder browser.
-                    </p>
-                )}
-            </div>
-
-            {canBrowse && (
-                <GoogleDriveFolderBrowser
-                    open={isBrowserOpen}
-                    onOpenChange={setIsBrowserOpen}
-                    onSelect={(selectedId, selectedName) => {
-                        setValue("config.folderId", selectedId);
-                        setFolderName(selectedName);
-                    }}
-                    credentialId={credentialId!}
-                    initialFolderId={folderId || undefined}
-                />
-            )}
-        </div>
-    );
-}
-
-/**
- * Dropbox folder picker field with browse button.
- * Shows a text input for folderPath + a browse button that opens the folder browser.
- */
-function DropboxFolderField({
-    adapter: _adapter,
-    authorized,
-    credentialId,
-}: {
-    adapter: AdapterDefinition;
-    authorized: boolean;
-    credentialId?: string;
-}) {
-    const { setValue, watch } = useFormContext();
-    const [isBrowserOpen, setIsBrowserOpen] = useState(false);
-    const folderPath = watch("config.folderPath") || "";
-
-    const canBrowse = authorized && !!credentialId;
-
-    return (
-        <div className="space-y-4">
-            <div className="space-y-2">
-                <Label>Folder Path</Label>
-                <div className="flex gap-2">
-                    <Input
-                        value={folderPath}
-                        onChange={(e) => setValue("config.folderPath", e.target.value)}
-                        placeholder="Leave empty for root (e.g. /backups)"
-                        className="font-mono text-sm"
-                    />
-                    <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        onClick={() => setIsBrowserOpen(true)}
-                        disabled={!canBrowse}
-                        title={canBrowse ? "Browse Dropbox folders" : "Authorize Dropbox first to browse folders"}
-                    >
-                        <FolderOpen className="h-4 w-4" />
-                    </Button>
-                </div>
-                {!canBrowse && (
-                    <p className="text-xs text-muted-foreground">
-                        Authorize Dropbox first to use the folder browser.
-                    </p>
-                )}
-            </div>
-
-            {canBrowse && (
-                <DropboxFolderBrowser
-                    open={isBrowserOpen}
-                    onOpenChange={setIsBrowserOpen}
-                    onSelect={(selectedPath) => {
-                        setValue("config.folderPath", selectedPath);
-                    }}
-                    credentialId={credentialId!}
-                    initialPath={folderPath || undefined}
-                />
-            )}
-        </div>
-    );
-}
-
-/**
- * OneDrive folder picker field with browse button.
- * Shows a text input for folderPath + a browse button that opens the folder browser.
- */
-function OneDriveFolderField({
-    adapter: _adapter,
-    authorized,
-    credentialId,
-}: {
-    adapter: AdapterDefinition;
-    authorized: boolean;
-    credentialId?: string;
-}) {
-    const { setValue, watch } = useFormContext();
-    const [isBrowserOpen, setIsBrowserOpen] = useState(false);
-    const folderPath = watch("config.folderPath") || "";
-
-    const canBrowse = authorized && !!credentialId;
-
-    return (
-        <div className="space-y-4">
-            <div className="space-y-2">
-                <Label>Folder Path</Label>
-                <div className="flex gap-2">
-                    <Input
-                        value={folderPath}
-                        onChange={(e) => setValue("config.folderPath", e.target.value)}
-                        placeholder="Leave empty for root (e.g. /backups)"
-                        className="font-mono text-sm"
-                    />
-                    <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        onClick={() => setIsBrowserOpen(true)}
-                        disabled={!canBrowse}
-                        title={canBrowse ? "Browse OneDrive folders" : "Authorize OneDrive first to browse folders"}
-                    >
-                        <FolderOpen className="h-4 w-4" />
-                    </Button>
-                </div>
-                {!canBrowse && (
-                    <p className="text-xs text-muted-foreground">
-                        Authorize OneDrive first to use the folder browser.
-                    </p>
-                )}
-            </div>
-
-            {canBrowse && (
-                <OneDriveFolderBrowser
-                    open={isBrowserOpen}
-                    onOpenChange={setIsBrowserOpen}
-                    onSelect={(selectedPath) => {
-                        setValue("config.folderPath", selectedPath);
-                    }}
-                    credentialId={credentialId!}
-                    initialPath={folderPath || undefined}
-                />
-            )}
-        </div>
-    );
-}
 
 function FieldList({
     keys,

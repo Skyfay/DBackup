@@ -13,22 +13,52 @@ export interface ModeOption {
     beta?: boolean;
 }
 
-interface ModeChoiceProps {
-    /** A config key, such as `connectionMode`. */
-    fieldKey: string;
-    label: string;
+interface ChoiceCardsProps extends Omit<React.ComponentProps<typeof RadioGroup>, "value" | "onValueChange" | "children"> {
+    value: string;
+    onValueChange: (value: string) => void;
     options: ModeOption[];
 }
 
 /**
- * A choice that decides what the rest of the form asks for, as cards with one sentence each.
+ * Two options as cards with one sentence each, where a click anywhere on a card picks it.
  *
- * Cards rather than a select, because the sentence is what makes the choice: "Over SSH" alone
- * does not say that the dump then runs on that server.
+ * For a choice that decides what the rest of the form asks for, and cards rather than a
+ * select, because the sentence is what makes the choice: "Over SSH" alone does not say that
+ * the dump then runs on that server.
  */
-export function ModeChoice({ fieldKey, label, options }: ModeChoiceProps) {
-    const { control } = useFormContext();
+export function ChoiceCards({ value, onValueChange, options, ...props }: ChoiceCardsProps) {
     const id = useId();
+    return (
+        <RadioGroup value={value} onValueChange={onValueChange} className="grid gap-2.5 sm:grid-cols-2" {...props}>
+            {options.map((option) => (
+                <Label
+                    key={option.value}
+                    htmlFor={`${id}-${option.value}`}
+                    className="cursor-pointer items-start gap-3 rounded-lg border p-3 leading-normal font-normal transition-colors hover:bg-muted/40 has-data-[state=checked]:border-info/60 has-data-[state=checked]:bg-info/5 dark:has-data-[state=checked]:bg-info/10"
+                >
+                    <RadioGroupItem
+                        id={`${id}-${option.value}`}
+                        value={option.value}
+                        className="mt-0.5 shrink-0 border-input data-[state=checked]:border-info data-[state=checked]:text-info"
+                    />
+                    <span className="grid min-w-0 gap-0.5">
+                        <span className="flex items-center gap-1.5 text-sm font-medium">
+                            {option.title}
+                            {option.beta && (
+                                <span className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">Beta</span>
+                            )}
+                        </span>
+                        <span className="text-xs text-muted-foreground">{option.description}</span>
+                    </span>
+                </Label>
+            ))}
+        </RadioGroup>
+    );
+}
+
+/** The cards bound to a config key of the form, such as `connectionMode`. */
+export function ModeChoice({ fieldKey, label, options }: { fieldKey: string; label: string; options: ModeOption[] }) {
+    const { control } = useFormContext();
     return (
         <FormField
             control={control}
@@ -37,35 +67,7 @@ export function ModeChoice({ fieldKey, label, options }: ModeChoiceProps) {
                 <FormItem>
                     <FormLabel>{label}</FormLabel>
                     <FormControl>
-                        <RadioGroup
-                            value={typeof field.value === "string" ? field.value : ""}
-                            onValueChange={field.onChange}
-                            className="grid gap-2.5 sm:grid-cols-2"
-                        >
-                            {options.map((option) => (
-                                // The whole card is the label, so a click anywhere on it picks the option.
-                                <Label
-                                    key={option.value}
-                                    htmlFor={`${id}-${option.value}`}
-                                    className="cursor-pointer items-start gap-3 rounded-lg border p-3 leading-normal font-normal transition-colors hover:bg-muted/40 has-data-[state=checked]:border-info/60 has-data-[state=checked]:bg-info/5 dark:has-data-[state=checked]:bg-info/10"
-                                >
-                                    <RadioGroupItem
-                                        id={`${id}-${option.value}`}
-                                        value={option.value}
-                                        className="mt-0.5 shrink-0 border-input data-[state=checked]:border-info data-[state=checked]:text-info"
-                                    />
-                                    <span className="grid min-w-0 gap-0.5">
-                                        <span className="flex items-center gap-1.5 text-sm font-medium">
-                                            {option.title}
-                                            {option.beta && (
-                                                <span className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">Beta</span>
-                                            )}
-                                        </span>
-                                        <span className="text-xs text-muted-foreground">{option.description}</span>
-                                    </span>
-                                </Label>
-                            ))}
-                        </RadioGroup>
+                        <ChoiceCards value={typeof field.value === "string" ? field.value : ""} onValueChange={field.onChange} options={options} />
                     </FormControl>
                     <FormMessage />
                 </FormItem>

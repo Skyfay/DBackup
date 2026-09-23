@@ -33,9 +33,9 @@ First, create a place to store your backups.
 3. Select **Local Filesystem**
 4. Configure:
    - **Name**: `Local Backups`
-   - **Base Path**: `/backups`
-5. Click **Test Connection**
-6. Click **Save**
+   - **Folder**: `/backups`
+5. Click **Test connection**
+6. Click **Create destination**
 
 ::: tip Docker Volume
 When using Docker, `/backups` maps to your host's `./backups` folder via volume mount.
@@ -53,11 +53,12 @@ Now add the database you want to backup.
 4. Select **MySQL**
 5. Configure:
    - **Name**: `Production MySQL`
+   - **How DBackup connects**: **Direct**
    - **Host**: `mysql.example.com` (or `host.docker.internal` for host machine)
    - **Port**: `3306`
-   - **Primary Credential**: select the profile you created
-6. Click **Test Connection**
-7. Click **Save**
+   - **Login**: select the profile you created
+6. Click **Test connection**
+7. Click **Create database**
 
 ::: warning Permissions
 Ensure your database user has `SELECT` and `LOCK TABLES` permissions for backup, and `CREATE` permission for restore operations.

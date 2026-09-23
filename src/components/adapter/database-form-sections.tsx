@@ -2,29 +2,15 @@
 
 import { useFormContext } from "react-hook-form";
 import type { AdapterDefinition } from "@/lib/adapters/definitions";
-import { FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { CredentialPicker } from "./credential-picker";
-import { ModeChoice, type ModeOption } from "./connection-mode-choice";
-import { credentialManagedKeys } from "./connection-form-schema";
+import { ConfigField, ConfigSwitches, HostPortFields, LoginField, NameField, isBooleanSchema } from "./connection-form-fields";
 import type { SectionId } from "./connection-form-layout";
+import { ModeChoice, type ModeOption } from "./connection-mode-choice";
 import { sshToolOf } from "./database-form-layout";
 import { FirebirdAliasFields } from "./firebird-alias-fields";
 import { RedisDatabaseSelect } from "./redis-database-select";
-import { SchemaField } from "./schema-field";
-import { ConfigSwitchRow, SwitchList, SwitchRow } from "./setting-switches";
+import { SwitchList, SwitchRow } from "./setting-switches";
 import { SshTestButton } from "./ssh-test-button";
-import type { ConnectionMetadata } from "./use-connection-form";
-
-export interface DatabaseSectionProps {
-    adapter: AdapterDefinition;
-    primaryCredentialId: string | null;
-    onPrimaryChange: (id: string | null) => void;
-    sshCredentialId: string | null;
-    onSshChange: (id: string | null) => void;
-    metadata: ConnectionMetadata;
-    onMetadataChange: (metadata: ConnectionMetadata) => void;
-}
+import type { ConnectionSectionProps } from "./use-connection-form";
 
 /** Names that read better than the ones made from the keys. */
 const LABELS: Record<string, string> = {
@@ -52,72 +38,8 @@ const SWITCHES: Record<string, { title: string; description: string }> = {
     trustServerCertificate: { title: "Trust the server certificate", description: "Accepts a self-signed certificate, for development servers." },
 };
 
-function isBoolean(node: unknown): boolean {
-    let current = node as { _def?: { type?: string; innerType?: unknown } } | undefined;
-    while (current?._def) {
-        if (current._def.type === "boolean") return true;
-        current = current._def.innerType as typeof current;
-    }
-    return false;
-}
-
-/** A config field as the adapter's schema describes it, left out when the schema has no such key. */
-function Field({ adapter, fieldKey, label, description, sshCredentialId }: {
-    adapter: AdapterDefinition;
-    fieldKey: string;
-    label?: string;
-    description?: string;
-    sshCredentialId?: string | null;
-}) {
-    const shape = adapter.configSchema.shape as Record<string, never>;
-    if (!(fieldKey in shape) || credentialManagedKeys(adapter).has(fieldKey)) return null;
-    return (
-        <SchemaField
-            name={`config.${fieldKey}`}
-            fieldKey={fieldKey}
-            schemaShape={shape[fieldKey]}
-            adapterId={adapter.id}
-            label={label ?? LABELS[fieldKey]}
-            description={description ?? DESCRIPTIONS[fieldKey]}
-            descriptionBelow
-            sshCredentialId={sshCredentialId}
-        />
-    );
-}
-
-function HostPort({ adapter, hostKey, portKey, hostLabel = "Host", hostDescription }: {
-    adapter: AdapterDefinition;
-    hostKey: string;
-    portKey: string;
-    hostLabel?: string;
-    hostDescription?: string;
-}) {
-    return (
-        <div className="grid grid-cols-[minmax(0,1fr)_6.5rem] items-start gap-3">
-            <Field adapter={adapter} fieldKey={hostKey} label={hostLabel} description={hostDescription} />
-            {/* The schema calls it "SSH port" or nothing, which the label already says. */}
-            <Field adapter={adapter} fieldKey={portKey} label="Port" description="" />
-        </div>
-    );
-}
-
-function NameField() {
-    const { control } = useFormContext();
-    return (
-        <FormField
-            control={control}
-            name="name"
-            render={({ field }) => (
-                <FormItem>
-                    <FormLabel>Name</FormLabel>
-                    <FormControl>
-                        <Input placeholder="My Production DB" autoComplete="off" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                </FormItem>
-            )}
-        />
-    );
+function Field(props: { adapter: AdapterDefinition; fieldKey: string; label?: string; description?: string; sshCredentialId?: string | null }) {
+    return <ConfigField {...props} label={props.label ?? LABELS[props.fieldKey]} description={props.description ?? DESCRIPTIONS[props.fieldKey]} />;
 }
 
 function modeOptions(adapter: AdapterDefinition): ModeOption[] {
@@ -141,19 +63,15 @@ const TRANSFER_OPTIONS: ModeOption[] = [
     { value: "ssh", title: "Over SSH", description: "DBackup fetches the file from the SQL Server machine." },
 ];
 
-function PrimaryLogin({ adapter, primaryCredentialId, onPrimaryChange }: DatabaseSectionProps) {
-    const type = adapter.credentials?.primary;
-    if (!type) return null;
-    return <CredentialPicker slot="primary" requiredType={type} value={primaryCredentialId} onChange={onPrimaryChange} label="Login" />;
+function PrimaryLogin(props: ConnectionSectionProps) {
+    return <LoginField adapter={props.adapter} slot="primary" value={props.primaryCredentialId} onChange={props.onPrimaryChange} />;
 }
 
-function SshLogin({ adapter, sshCredentialId, onSshChange }: DatabaseSectionProps) {
-    const type = adapter.credentials?.ssh;
-    if (!type) return null;
-    return <CredentialPicker slot="ssh" requiredType={type} value={sshCredentialId} onChange={onSshChange} label="SSH login" />;
+function SshLogin(props: ConnectionSectionProps) {
+    return <LoginField adapter={props.adapter} slot="ssh" value={props.sshCredentialId} onChange={props.onSshChange} />;
 }
 
-function ConnectionPart(props: DatabaseSectionProps) {
+function ConnectionPart(props: ConnectionSectionProps) {
     const { adapter } = props;
     const { watch } = useFormContext();
     const isSqlite = adapter.id === "sqlite";
@@ -163,14 +81,14 @@ function ConnectionPart(props: DatabaseSectionProps) {
 
     return (
         <>
-            <NameField />
+            <NameField placeholder="My Production DB" />
             {hasMode && (
                 <ModeChoice fieldKey={modeKey} label={isSqlite ? "Where the file is" : "How DBackup connects"} options={modeOptions(adapter)} />
             )}
             {isSqlite && mode === "local" && <Field adapter={adapter} fieldKey="path" label="Database file" />}
             {!isSqlite && mode === "direct" && (
                 <>
-                    <HostPort adapter={adapter} hostKey="host" portKey="port" />
+                    <HostPortFields adapter={adapter} hostKey="host" portKey="port" />
                     <PrimaryLogin {...props} />
                 </>
             )}
@@ -178,7 +96,7 @@ function ConnectionPart(props: DatabaseSectionProps) {
     );
 }
 
-function TransferPart(props: DatabaseSectionProps) {
+function TransferPart(props: ConnectionSectionProps) {
     const { adapter } = props;
     const transfer = useFormContext().watch("config.fileTransferMode");
     return (
@@ -188,7 +106,7 @@ function TransferPart(props: DatabaseSectionProps) {
             {transfer === "local" && <Field adapter={adapter} fieldKey="localBackupPath" />}
             {transfer === "ssh" && (
                 <>
-                    <HostPort adapter={adapter} hostKey="sshHost" portKey="sshPort" hostLabel="SSH host" hostDescription="Leave it empty to use the database host." />
+                    <HostPortFields adapter={adapter} hostKey="sshHost" portKey="sshPort" hostLabel="SSH host" hostDescription="Leave it empty to use the database host." />
                     <SshLogin {...props} />
                 </>
             )}
@@ -199,40 +117,25 @@ function TransferPart(props: DatabaseSectionProps) {
 function OptionsPart({ adapter, keys }: { adapter: AdapterDefinition; keys: string[] }) {
     const shape = adapter.configSchema.shape as Record<string, unknown>;
     const tool = sshToolOf(adapter.id);
-    const fields = keys.filter((key) => !isBoolean(shape[key]));
-    const switches = keys.filter((key) => isBoolean(shape[key]));
 
     return (
         <>
-            {fields.map((key) => {
+            {keys.filter((key) => !isBooleanSchema(shape[key])).map((key) => {
                 if (key === "database") return <RedisDatabaseSelect key={key} />;
                 if (key === "options") {
                     return <Field key={key} adapter={adapter} fieldKey={key} label="Extra options" description={tool ? `Passed on to ${tool}.` : undefined} />;
                 }
                 if (key === "backupPath") {
-                    return (
-                        <Field
-                            key={key}
-                            adapter={adapter}
-                            fieldKey={key}
-                            description="SQL Server writes the backup file here, and it comes back over the SSH connection."
-                        />
-                    );
+                    return <Field key={key} adapter={adapter} fieldKey={key} description="SQL Server writes the backup file here, and it comes back over the SSH connection." />;
                 }
                 return <Field key={key} adapter={adapter} fieldKey={key} />;
             })}
-            {switches.length > 0 && (
-                <SwitchList>
-                    {switches.map((key) => (
-                        <ConfigSwitchRow key={key} fieldKey={key} title={SWITCHES[key]?.title ?? key} description={SWITCHES[key]?.description} />
-                    ))}
-                </SwitchList>
-            )}
+            <ConfigSwitches adapter={adapter} keys={keys} copy={SWITCHES} />
         </>
     );
 }
 
-function BehaviorPart({ metadata, onMetadataChange }: DatabaseSectionProps) {
+function BehaviorPart({ metadata, onMetadataChange }: ConnectionSectionProps) {
     return (
         <SwitchList>
             <SwitchRow
@@ -252,7 +155,7 @@ function BehaviorPart({ metadata, onMetadataChange }: DatabaseSectionProps) {
 }
 
 /** What one part of a database form shows. */
-export function DatabaseSection({ id, keys, ...props }: DatabaseSectionProps & { id: SectionId; keys: string[] }) {
+export function DatabaseSection({ id, keys, ...props }: ConnectionSectionProps & { id: SectionId; keys: string[] }) {
     const { adapter } = props;
     const isSqlite = adapter.id === "sqlite";
     switch (id) {
@@ -261,14 +164,14 @@ export function DatabaseSection({ id, keys, ...props }: DatabaseSectionProps & {
         case "ssh":
             return (
                 <>
-                    <HostPort adapter={adapter} hostKey={isSqlite ? "host" : "sshHost"} portKey={isSqlite ? "port" : "sshPort"} hostLabel="SSH host" />
+                    <HostPortFields adapter={adapter} hostKey={isSqlite ? "host" : "sshHost"} portKey={isSqlite ? "port" : "sshPort"} hostLabel="SSH host" />
                     <SshLogin {...props} />
                 </>
             );
         case "database":
             return (
                 <>
-                    <HostPort adapter={adapter} hostKey="host" portKey="port" />
+                    <HostPortFields adapter={adapter} hostKey="host" portKey="port" />
                     <PrimaryLogin {...props} />
                 </>
             );
@@ -287,6 +190,8 @@ export function DatabaseSection({ id, keys, ...props }: DatabaseSectionProps & {
             return <OptionsPart adapter={adapter} keys={keys} />;
         case "behavior":
             return <BehaviorPart {...props} />;
+        default:
+            return null;
     }
 }
 

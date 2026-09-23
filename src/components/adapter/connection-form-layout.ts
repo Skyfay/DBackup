@@ -9,8 +9,12 @@
 export const NAME_KEY = "$name";
 export const LOGIN_KEY = "$login";
 export const SSH_LOGIN_KEY = "$sshLogin";
+/** Whether an OAuth app has been let into its cloud drive. */
+export const AUTHORIZED_KEY = "$authorized";
 
-export type SectionId = "connection" | "ssh" | "database" | "file" | "aliases" | "transfer" | "options" | "behavior";
+export type SectionId =
+    | "connection" | "ssh" | "database" | "file" | "aliases" | "transfer"
+    | "service" | "location" | "options" | "speed" | "behavior";
 
 export interface SectionLayout {
     id: SectionId;

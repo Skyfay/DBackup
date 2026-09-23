@@ -149,7 +149,7 @@ opposite and writes file by file, which is where its parallelism setting matters
 
 ### Parallel Transfers
 
-Each directory source sets its own value under **Connections → Directory Sources → Configuration**.
+Each directory source sets its own value as **Parallel transfers** in the **Speed** part of its form.
 The adapter decides the range, because the sensible limit is a property of the protocol:
 
 | Adapter | Default | Maximum | Why the ceiling is where it is |

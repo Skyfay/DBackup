@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { getAdapterDefinition, type AdapterDefinition } from "@/lib/adapters/definitions";
+import { STORAGE_ROLES, type StorageRole } from "@/lib/core/storage-roles";
 import { ConnectionForm } from "@/components/adapter/connection-form";
 
 vi.mock("sonner", () => ({
@@ -24,11 +25,11 @@ const mockFetch = vi.fn((url: string, _init?: RequestInit) => {
     return json({ success: false, error: `Unexpected ${url}` }, false);
 });
 
-function renderForm(id: string, onSaved = vi.fn()) {
+function renderForm(id: string, onSaved = vi.fn(), defaultRole?: StorageRole) {
     render(
         <Dialog open>
             <DialogContent>
-                <ConnectionForm adapter={adapter(id)} title="Add database" onSaved={onSaved} />
+                <ConnectionForm adapter={adapter(id)} defaultRole={defaultRole} onSaved={onSaved} />
             </DialogContent>
         </Dialog>
     );
@@ -97,5 +98,48 @@ describe("connection form", () => {
         expect(body).toMatchObject({ name: "Shop", adapterId: "postgres", type: "database", config: { connectionMode: "direct", port: 5432 } });
         // Health alerts and the restore target are on by default, stored the way the API reads them.
         expect(body.metadata).toEqual({ healthNotificationsDisabled: false, isRestoreExcluded: false });
+    });
+
+    it("opens the location of a Hetzner destination when its required folder is missing", async () => {
+        const user = userEvent.setup();
+        renderForm("s3-hetzner", vi.fn(), STORAGE_ROLES.DESTINATION);
+
+        await user.type(screen.getByLabelText("Name"), "Offsite");
+        await user.type(screen.getByLabelText("Bucket"), "backups");
+        await user.click(screen.getByRole("button", { name: "Create destination" }));
+
+        const location = await screen.findByRole("tab", { name: /Location/ });
+        await waitFor(() => expect(location).toHaveAttribute("aria-selected", "true"));
+        expect(screen.getByRole("tabpanel", { name: /Location/ })).toHaveTextContent("Path prefix is required for Hetzner");
+        expect(requested("/api/adapters")).toBe(false);
+    });
+
+    it("swaps the upload settings for parallel transfers when a destination becomes a directory source", async () => {
+        const user = userEvent.setup();
+        renderForm("s3-aws", vi.fn(), STORAGE_ROLES.DESTINATION);
+
+        expect(screen.getByRole("tabpanel", { name: /Speed/ })).toHaveTextContent("Parts at once");
+        await user.click(screen.getByRole("radio", { name: /Directory source/ }));
+
+        expect(screen.getByRole("tabpanel", { name: /Speed/ })).toHaveTextContent("Parallel transfers");
+        expect(screen.getByRole("button", { name: "Create source" })).toBeInTheDocument();
+    });
+
+    it("saves a storage connection with its role without testing it first", async () => {
+        const user = userEvent.setup();
+        const onSaved = renderForm("s3-aws", vi.fn(), STORAGE_ROLES.DESTINATION);
+
+        await user.type(screen.getByLabelText("Name"), "Archive");
+        await user.type(screen.getByLabelText("Region"), "eu-central-1");
+        await user.type(screen.getByLabelText("Bucket"), "backups");
+        await user.click(screen.getByRole("button", { name: "Create destination" }));
+        await waitFor(() => expect(onSaved).toHaveBeenCalled());
+
+        expect(requested("/api/adapters/test-connection")).toBe(false);
+        const [, init] = mockFetch.mock.calls.find(([url]) => url === "/api/adapters")!;
+        const body = JSON.parse(String(init?.body));
+        expect(body).toMatchObject({ type: "storage", storageRole: "DESTINATION", config: { region: "eu-central-1", bucket: "backups" } });
+        // Integrity checks are on unless switched off, which the API reads as skipVerification.
+        expect(body.metadata).toEqual({ healthNotificationsDisabled: false, skipVerification: false });
     });
 });

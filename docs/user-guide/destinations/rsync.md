@@ -22,8 +22,8 @@ Rsync requires a [Credential Profile](/user-guide/security/credential-profiles) 
 | **Name** | Friendly name for this destination | - | ✅ |
 | **Host** | Hostname or IP of the remote server | - | ✅ |
 | **Port** | SSH port | `22` | ❌ |
-| **Primary Credential** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
-| **Path Prefix** | Remote directory for backups | - | ✅ |
+| **Login** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
+| **Folder** | Remote directory for backups | - | ✅ |
 | **Options** | Additional rsync flags (e.g. `--bwlimit=1000`) | - | ❌ |
 
 ### Authentication Methods (via `SSH_KEY` profile)
@@ -45,10 +45,10 @@ Rsync requires a [Credential Profile](/user-guide/security/credential-profiles) 
    sudo chown dbackup: /backups/dbackup
    ```
 4. Go to **Connections** → **Backup Destinations** → **Add New** → **Rsync**
-5. Enter Host and select the credential profile in the **Primary Credential** picker
-6. Set **Path Prefix** to the remote directory (e.g. `/backups/dbackup`)
+5. Enter Host and pick the credential profile under **Login**
+6. Set the **Folder** in the **Location** part to the remote directory (e.g. `/backups/dbackup`)
 7. (Optional) Add custom **Options** for bandwidth limiting or other flags
-8. Click **Test** to verify the connection
+8. Click **Test connection** to verify the connection
 
 ## How It Works
 
@@ -81,7 +81,7 @@ ssh: connect to host ... port 22: Connection refused
 rsync: mkstemp failed: Permission denied (13)
 ```
 
-**Solution:** Ensure the SSH user has write access to the Path Prefix directory on the remote server.
+**Solution:** Ensure the SSH user has write access to the folder on the remote server.
 
 ### Bandwidth Limiting
 

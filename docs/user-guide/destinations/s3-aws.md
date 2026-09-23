@@ -13,11 +13,11 @@ Amazon S3 requires a [Credential Profile](/user-guide/security/credential-profil
 | **Name** | Friendly name for this destination | - | ✅ |
 | **Region** | AWS region (e.g. `us-east-1`, `eu-central-1`) | `us-east-1` | ✅ |
 | **Bucket** | S3 bucket name | - | ✅ |
-| **Primary Credential** | `ACCESS_KEY` credential profile (Access Key ID + Secret Access Key) | - | ✅ |
-| **Path Prefix** | Folder path within the bucket | - | ❌ |
+| **Login** | `ACCESS_KEY` credential profile (Access Key ID + Secret Access Key) | - | ✅ |
+| **Folder** | Folder path within the bucket | - | ❌ |
 | **Parts at once** | Upload parts sent simultaneously ([details](/user-guide/destinations/#upload-performance-s3)) | `8` | ❌ |
 | **Max part size (MB)** | Upper bound on the size of each upload part | `8` | ❌ |
-| **Storage Class** | S3 storage class for uploaded objects | `STANDARD` | ❌ |
+| **Storage class** | S3 storage class for uploaded objects | `STANDARD` | ❌ |
 
 ### Storage Classes
 
@@ -41,10 +41,10 @@ Objects stored in `GLACIER` or `DEEP_ARCHIVE` are archived and cannot be downloa
    - Create an **Access Key** (use case: "Application outside AWS") and copy both keys
 3. **Create an `ACCESS_KEY` credential profile** in **Settings → Vault → Credentials** with the Access Key ID and Secret Access Key ([guide](/user-guide/security/credential-profiles))
 4. Go to **Connections** → **Backup Destinations** → **Add New** → **Amazon S3**
-5. Enter your Region and Bucket, then select the credential profile in the **Primary Credential** picker
-6. (Optional) Set a **Path Prefix** to organize backups in a subfolder
-7. (Optional) Select a **Storage Class** for cost optimization
-8. Click **Test** to verify the connection
+5. Enter your Region and Bucket, then pick the credential profile under **Login**
+6. (Optional) Set a **Folder** in the **Location** part to organize backups in a subfolder
+7. (Optional) Select a **Storage class** for cost optimization
+8. Click **Test connection** to verify the connection
 
 <details>
 <summary>Minimal IAM Policy (recommended)</summary>
@@ -74,7 +74,7 @@ Instead of `AmazonS3FullAccess`, scope permissions to a single bucket:
 - Backups upload via the AWS SDK as 8 parallel parts by default ([details](/user-guide/destinations/#upload-performance-s3))
 - All credentials are stored AES-256-GCM encrypted in the database
 - Storage class is set per-object at upload time
-- The Path Prefix creates a virtual folder structure within your bucket
+- The folder creates a virtual folder structure within your bucket
 
 ## Troubleshooting
 

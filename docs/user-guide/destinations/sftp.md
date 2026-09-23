@@ -13,8 +13,8 @@ SFTP requires a [Credential Profile](/user-guide/security/credential-profiles) o
 | **Name** | Friendly name for this destination | - | ✅ |
 | **Host** | Hostname or IP of the SFTP server | - | ✅ |
 | **Port** | SSH port | `22` | ❌ |
-| **Primary Credential** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
-| **Path Prefix** | Remote directory for backups | - | ❌ |
+| **Login** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
+| **Folder** | Remote directory for backups | - | ❌ |
 
 ### Authentication Methods (via `SSH_KEY` profile)
 
@@ -37,9 +37,9 @@ Select the auth type when creating the `SSH_KEY` credential profile in the Vault
    sudo chown dbackup: /home/dbackup/backups
    ```
 4. Go to **Connections** → **Backup Destinations** → **Add New** → **SFTP**
-5. Enter Host and select the credential profile in the **Primary Credential** picker
-6. (Optional) Set **Path Prefix** to the remote backup directory (e.g. `/home/dbackup/backups`)
-7. Click **Test** to verify the connection
+5. Enter Host and pick the credential profile under **Login**
+6. (Optional) Set a **Folder** in the **Location** part to the remote backup directory (e.g. `/home/dbackup/backups`)
+7. Click **Test connection** to verify the connection
 
 ::: tip Private Key Format
 Paste the entire PEM key content including the `-----BEGIN` and `-----END` lines when creating the credential profile. Supports RSA, ED25519, and ECDSA keys.
@@ -48,7 +48,7 @@ Paste the entire PEM key content including the `-----BEGIN` and `-----END` lines
 ## How It Works
 
 - Files are uploaded via SFTP (SSH subsystem) - all transfers are encrypted in transit
-- DBackup creates subdirectories per job within the Path Prefix automatically
+- DBackup creates subdirectories per job within the folder automatically
 - All credentials (passwords, private keys) are stored AES-256-GCM encrypted in the database
 
 ## Troubleshooting

@@ -92,6 +92,7 @@ Every other page still has the old look. Do not copy patterns from it, copy them
 - Byte axes step in round units, see `byteTicks` in `storage-history-data.ts`.
 - Lines are `type="linear"`. A smoothed curve turns a sudden jump into a ramp that never happened.
 - Stacked bars follow `activity-chart.tsx`, where `stroke="var(--card)"` draws the gaps between segments.
+- A measured value over time is one bar per day, neutral with the newest one in `info`. A day nobody measured keeps its place without a bar, so a pause reads as a pause. Above 60 bars the gaps and the rounded corners go, or they eat the bar. See `storage-history-chart.tsx`.
 
 ## Dialogs
 

@@ -30,7 +30,7 @@ All notable changes to DBackup are documented here.
 
 - **ui**: The sidebar collapses to icons with the new button in the header or Ctrl+B (⌘B on macOS), and small screens get it as a slide-in menu. Both themes use a new zinc color palette, and the interface uses the Geist font on every operating system.
 - **dashboard**: The overview was rebuilt with a status banner that names a failing job and can rerun it, trend cards, a switch between the latest executions and the jobs, and a backup calendar that shows as many weeks as the screen fits. It works on phones, and its statistics are cached for a minute or until the next backup finishes or a job changes.
-- **storage**: The storage history dialog matches the new dashboard and switches between 7 days, 30 days, 90 days and a year without loading again.
+- **storage**: The storage history dialog shows one bar a day, with the stored size, the change in the range and the number of backups above the chart. It switches between 7 days, 30 days, 90 days and a year without loading again, and leads on to the Storage Explorer.
 - **ui**: On phones every table leaves out the rows per page picker so its page controls fit, and the Connections page picks its list from a menu instead of a row of tabs.
 - **ui**: The filter menus of the tables are wider, keep their order while values are picked, and match the new look. The type filter on the Connections page shows each adapter's icon.
 - **ui**: The confirmation before a bulk action and the list of entries it could not process have a new look, with a header tinted for the kind of action. Their lists show each entry with its icon and type where the table has them.

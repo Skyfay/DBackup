@@ -1,22 +1,25 @@
 import { formatBytes } from "@/lib/utils";
 import type { StorageSnapshotEntry } from "@/services/dashboard-service";
 
-/** A measurement of a destination, placed on the chart by its time. */
+/** A measurement of a destination, placed on the chart by its time. A day without one has no size. */
 export interface HistoryPoint {
     at: number;
-    size: number;
+    size: number | null;
     count: number;
 }
 
-/** Every measurement while the chart can still tell them apart. Above that, one point per day. */
-const MAX_MEASUREMENTS = 400;
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** A gap longer than this is left as it is, rather than filling a year with empty days. */
+const MAX_FILLED_DAYS = 400;
+
 const UNITS = ["Bytes", "KB", "MB", "GB", "TB", "PB"];
 const STEP_FACTORS = [1, 2, 2.5, 5, 10];
 const MAX_INTERVALS = 5;
 
 /**
- * The points of one range. Measurements run hourly, so a long range keeps the last one of each
- * day, while a short range or a young destination shows every measurement.
+ * The points of one range. The chart draws a bar a day, so the last measurement of a day stands
+ * for it, and a day without one keeps its place without a bar. A destination measured on fewer
+ * than two days keeps its raw measurements, which would otherwise collapse into a single bar.
  *
  * @param dayKey The calendar day of a moment in the viewer's timezone.
  */
@@ -28,12 +31,27 @@ export function plotPoints(
     const inRange = entries
         .map((entry) => ({ at: Date.parse(entry.date), size: entry.size, count: entry.count }))
         .filter((point) => point.at >= since);
-    if (inRange.length <= MAX_MEASUREMENTS) return { points: inRange, daily: false };
 
     // The entries arrive oldest first, so the last point written for a day is its latest measurement.
     const byDay = new Map<string, HistoryPoint>();
     for (const point of inRange) byDay.set(dayKey(point.at), point);
-    return { points: Array.from(byDay.values()), daily: true };
+    if (byDay.size < 2) return { points: inRange, daily: false };
+
+    // Days nobody measured stay in the row, so a pause in the history reads as a pause.
+    const measured = Array.from(byDay.values());
+    const points: HistoryPoint[] = [];
+    let filled = 0;
+    for (const [index, point] of measured.entries()) {
+        points.push(point);
+        const next = measured[index + 1];
+        if (!next) break;
+        const gap = Math.max(0, Math.round((next.at - point.at) / DAY_MS) - 1);
+        for (let day = 1; day <= gap && filled < MAX_FILLED_DAYS; day++, filled++) {
+            points.push({ at: point.at + day * DAY_MS, size: null, count: 0 });
+        }
+    }
+
+    return { points, daily: true };
 }
 
 /** A change in size with its sign, like "-17.16 GB" for a destination that shrank. */

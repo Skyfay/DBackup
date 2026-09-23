@@ -43,26 +43,39 @@ describe("signedBytes", () => {
 });
 
 describe("plotPoints", () => {
-    it("keeps every measurement of a short range and drops the ones before it", () => {
-        const { points, daily } = plotPoints(hourly(72), START + 48 * HOUR, utcDay);
-
-        expect(daily).toBe(false);
-        expect(points).toHaveLength(24);
-        expect(points[0].at).toBe(START + 48 * HOUR);
-    });
-
-    it("reduces a long range to the last measurement of each day", () => {
-        const { points, daily } = plotPoints(hourly(24 * 20), START, utcDay);
+    it("draws one point a day from the last measurement of that day, and drops what is before the range", () => {
+        const { points, daily } = plotPoints(hourly(24 * 20), START + 24 * 10 * HOUR, utcDay);
 
         expect(daily).toBe(true);
-        expect(points).toHaveLength(20);
-        expect(points[0]).toEqual({ at: START + 23 * HOUR, size: 0, count: 23 });
+        expect(points).toHaveLength(10);
+        expect(points[0]).toEqual({ at: START + (24 * 10 + 23) * HOUR, size: 10 * GB, count: 24 * 10 + 23 });
+    });
+
+    it("keeps a day without a measurement in the row, so a pause stays a pause", () => {
+        const entries = [
+            { date: new Date(START).toISOString(), size: GB, count: 1 },
+            { date: new Date(START + 3 * 24 * HOUR).toISOString(), size: 2 * GB, count: 2 },
+        ];
+
+        const { points } = plotPoints(entries, START, utcDay);
+
+        expect(points.map((point) => point.size)).toEqual([GB, null, null, 2 * GB]);
+    });
+
+    // A day is a single bar, which would say nothing about a destination added this morning.
+    it("keeps every measurement of a destination that was measured on one day only", () => {
+        const { points, daily } = plotPoints(hourly(6), START, utcDay);
+
+        expect(daily).toBe(false);
+        expect(points).toHaveLength(6);
+        expect(points[0].at).toBe(START);
     });
 });
 
 describe("dayTicks", () => {
     it("labels each date once when a day holds many measurements", () => {
-        const { points } = plotPoints(hourly(48), START, utcDay);
+        // Raw measurements, as a destination that was only measured today gets them.
+        const points = hourly(48).map((entry) => ({ at: Date.parse(entry.date), size: entry.size, count: entry.count }));
 
         expect(dayTicks(points, utcDay)).toEqual([START, START + 24 * HOUR]);
     });

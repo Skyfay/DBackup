@@ -61,7 +61,7 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
     const [isLoading, setIsLoading] = useState(true);
     // Only the first load shows a skeleton. A refresh keeps the rows and spins the button.
     const [hasLoaded, setHasLoaded] = useState(false);
-    const [historyAdapter, setHistoryAdapter] = useState<{ id: string; name: string } | null>(null);
+    const [historyAdapter, setHistoryAdapter] = useState<{ id: string; name: string; adapterId: string } | null>(null);
     const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
     // The id stays after closing, so the panel keeps its content while it slides out. The view
     // it was opened in is kept too, so leaving that view closes it for good.
@@ -217,7 +217,7 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
 
         return {
             onExplore: !inPanel && type === "database" ? () => router.push(`/dashboard/explorer?sourceId=${config.id}`) : undefined,
-            onHistory: isDestination && canViewStorage ? () => setHistoryAdapter({ id: config.id, name: config.name }) : undefined,
+            onHistory: isDestination && canViewStorage ? () => setHistoryAdapter({ id: config.id, name: config.name, adapterId: config.adapterId }) : undefined,
             onEdit: !inPanel && canManage ? () => { setEditingId(config.id); setIsDialogOpen(true); } : undefined,
             onClone: canManage ? () => setCloneTarget({ id: config.id, name: config.name }) : undefined,
             counterpart: canManage && type === "storage" ? counterpartOf() : undefined,
@@ -411,6 +411,7 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                     onOpenChange={(open) => { if (!open) setHistoryAdapter(null); }}
                     configId={historyAdapter.id}
                     adapterName={historyAdapter.name}
+                    adapterId={historyAdapter.adapterId}
                 />
             )}
 

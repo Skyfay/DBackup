@@ -15,7 +15,7 @@ interface StorageDestinationsProps {
 
 /** Size per destination with its share of the total. A click opens the usage history. */
 export function StorageDestinations({ entries, updatedAt, className }: StorageDestinationsProps) {
-    const [selected, setSelected] = useState<{ configId: string; name: string } | null>(null);
+    const [selected, setSelected] = useState<{ configId: string; name: string; adapterId: string } | null>(null);
     const total = entries.reduce((sum, entry) => sum + entry.size, 0);
     const sorted = [...entries].sort((a, b) => b.size - a.size);
 
@@ -51,7 +51,7 @@ export function StorageDestinations({ entries, updatedAt, className }: StorageDe
                                 <button
                                     type="button"
                                     disabled={!entry.configId}
-                                    onClick={() => entry.configId && setSelected({ configId: entry.configId, name: entry.name })}
+                                    onClick={() => entry.configId && setSelected({ configId: entry.configId, name: entry.name, adapterId: entry.adapterId })}
                                     className="-mx-2 w-[calc(100%+1rem)] rounded-md px-2 py-2 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 disabled:cursor-default disabled:hover:bg-transparent"
                                 >
                                     <div className="flex items-center justify-between gap-3">
@@ -93,6 +93,7 @@ export function StorageDestinations({ entries, updatedAt, className }: StorageDe
                     onOpenChange={(open) => !open && setSelected(null)}
                     configId={selected.configId}
                     adapterName={selected.name}
+                    adapterId={selected.adapterId}
                 />
             )}
         </div>

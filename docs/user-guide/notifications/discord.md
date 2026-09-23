@@ -6,17 +6,17 @@ Send rich embed notifications to Discord channels via webhooks.
 
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
-| **Webhook URL** | Discord webhook URL | - | ✅ |
-| **Username** | Bot display name in Discord | `Backup Manager` | ❌ |
+| **Webhook** | `WEBHOOK` [credential profile](/user-guide/security/credential-profiles) holding the Discord webhook URL | - | ✅ |
+| **Display name** | Bot display name in Discord | `Backup Manager` | ❌ |
 | **Avatar URL** | Bot avatar image URL | Discord default | ❌ |
 
 ## Setup Guide
 
 1. In Discord: **Server Settings** → **Integrations** → **Webhooks** → **New Webhook**
 2. Choose the target channel → **Copy Webhook URL**
-3. In DBackup: **Notifications** → **Add Notification** → **Discord Webhook**
-4. Paste the webhook URL
-5. Click **Test** → verify the message appears in Discord → **Save**
+3. In DBackup: **Connections** → **Notifications** → **Add New** → **Discord Webhook**
+4. Under **Webhook**, pick or create a credential profile holding the webhook URL
+5. Click **Send test** → verify the message appears in Discord → **Create channel**
 
 ::: tip
 Create a dedicated `#backups` channel to keep notifications separate from general chat.

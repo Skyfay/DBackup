@@ -429,22 +429,16 @@ describe("SQLiteAdapter Integration", () => {
 
 ## UI Integration
 
-The UI automatically generates forms based on the Zod schema:
+The UI generates the connection form from the adapter's Zod schema, so an adapter ships no form code of its own. `src/components/adapter/connection-form.tsx` splits the fields into parts, listed on the left of the dialog:
 
-```tsx
-// src/components/adapter-form.tsx
-function AdapterForm({ adapterId }: { adapterId: string }) {
-  const adapter = registry.get(adapterId);
-  const schema = adapter?.configSchema;
+| File | What it decides |
+| :--- | :--- |
+| `database-form-layout.ts`, `storage-form-layout.ts`, `notification-form-layout.ts` | Which parts a type has and which fields go into each, as plain data |
+| `form-constants.ts` | The key lists the storage and notification layouts read, plus `PLACEHOLDERS` |
+| `connection-form-schema.ts` | The schema the form validates against, with the fields a credential profile fills in made optional |
+| `*-form-sections.tsx` | How each part renders its fields |
 
-  // Auto-generate form fields from schema
-  return (
-    <Form schema={schema}>
-      {/* Fields are generated automatically */}
-    </Form>
-  );
-}
-```
+A key of the schema that no list names still appears, in the Options or Message part, so a new field is never invisible. Labels come from the key names unless a section file names them better, and descriptions from `.describe()`.
 
 ## Related Documentation
 

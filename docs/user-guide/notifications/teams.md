@@ -6,7 +6,7 @@ Send Adaptive Card notifications to Microsoft Teams channels via Power Automate 
 
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
-| **Webhook URL** | Teams Workflow webhook URL | - | ✅ |
+| **Webhook** | `WEBHOOK` [credential profile](/user-guide/security/credential-profiles) holding the Teams Workflow webhook URL | - | ✅ |
 
 ## Setup Guide
 
@@ -14,8 +14,8 @@ Send Adaptive Card notifications to Microsoft Teams channels via Power Automate 
 2. Search for **"Post to a channel when a webhook request is received"**
 3. Follow the setup wizard - select team and channel → **Add workflow**
 4. Copy the generated **Webhook URL**
-5. In DBackup: **Notifications** → **Add Notification** → **Microsoft Teams**
-6. Paste the Webhook URL → **Test** → **Save**
+5. In DBackup: **Connections** → **Notifications** → **Add New** → **Microsoft Teams**
+6. Under **Webhook**, pick or create a credential profile holding the webhook URL → **Send test** → **Create channel**
 
 ::: warning URL Format
 The URL should start with `https://prod-XX.westeurope.logic.azure.com:443/workflows/...` or `https://TENANT.webhook.office.com/webhookb2/...`. The legacy Office 365 Connector method is deprecated.

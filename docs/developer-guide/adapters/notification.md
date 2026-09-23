@@ -727,16 +727,16 @@ const ADAPTER_COLOR_MAP: Record<string, string> = {
 
 ### Step 5 - Configure Form Constants
 
-In `src/components/adapter/form-constants.ts`, categorize your schema fields into connection vs. configuration tabs and add placeholders:
+In `src/components/adapter/form-constants.ts`, sort your schema fields into the two parts of the connection form, **Connection** and **Message**, and add placeholders:
 
 ```typescript
-// Connection tab - fields needed to establish the connection
+// Connection part - fields needed to reach the service
 export const NOTIFICATION_CONNECTION_KEYS = [
   // ... existing keys
   'serverUrl', 'apiToken',  // Add your new keys here
 ];
 
-// Configuration tab - optional settings
+// Message part - how the message looks and who gets it
 export const NOTIFICATION_CONFIG_KEYS = [
   // ... existing keys
   'priority',  // Add your new keys here
@@ -751,7 +751,9 @@ export const PLACEHOLDERS: Record<string, string> = {
 };
 ```
 
-**Which tab?** Connection keys go to "Connection" tab, config keys to "Configuration" tab. Rule of thumb: if the field is needed to reach the service, it's a connection key. If it's an optional behavior setting, it's a config key.
+**Which part?** Connection keys go to the **Connection** part, config keys to the **Message** part. Rule of thumb: if the field is needed to reach the service, it's a connection key. If it shapes the message or picks its recipients, it's a config key. A key neither list names still appears, in the Message part, and a channel without config keys has no Message part and no list of parts at all.
+
+Fields a credential profile fills in, like the webhook URL or the token, are hidden by `credentialManagedKeys()` in `connection-form-schema.ts`, so they need no entry here.
 
 If your adapter has **multi-line text fields** (like `payloadTemplate` or `customHeaders`), also update the `isTextArea` check in `src/components/adapter/schema-field.tsx`:
 

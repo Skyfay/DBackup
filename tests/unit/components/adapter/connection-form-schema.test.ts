@@ -42,4 +42,13 @@ describe("connection form schema", () => {
         expect(loginRequired(adapter("redis"))).toBe(false);
         expect(loginRequired(adapter("sqlite"))).toBe(false);
     });
+
+    it("reads the recipients of an email channel as a list, also where one address was stored", () => {
+        const schema = buildConnectionFormSchema(adapter("email"));
+        const base = { name: "Ops", adapterId: "email", config: { host: "smtp.example.com", from: "backup@example.com" } };
+        const stored = schema.safeParse({ ...base, config: { ...base.config, to: "ops@example.com" } });
+        expect(stored.success && stored.data.config.to).toEqual(["ops@example.com"]);
+        const empty = schema.safeParse({ ...base, config: { ...base.config, to: [] } });
+        expect(empty.error?.issues.find((entry) => entry.path.join(".") === "config.to")?.message).toBe("Add at least one recipient.");
+    });
 });

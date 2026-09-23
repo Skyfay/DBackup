@@ -8,15 +8,15 @@ Send push notifications via [ntfy](https://ntfy.sh/) - a simple, topic-based not
 | :--- | :--- | :--- | :--- |
 | **Server URL** | ntfy server URL | `https://ntfy.sh` | ❌ |
 | **Topic** | Notification topic name | - | ✅ |
-| **Access Token** | Bearer token (for protected topics) | - | ❌ |
+| **Access token** | `TOKEN` [credential profile](/user-guide/security/credential-profiles) holding the bearer token (for protected topics) | - | ❌ |
 | **Priority** | Default message priority (1–5) | `3` | ❌ |
 
 ## Setup Guide
 
 1. Choose a **unique topic name** (e.g., `dbackup-a8f3k2m9x`)
 2. Subscribe to the topic on your device ([Android](https://f-droid.org/packages/io.heckel.ntfy/), [iOS](https://apps.apple.com/app/ntfy/id1625396347), or [Web](https://ntfy.sh/))
-3. In DBackup: **Notifications** → **Add Notification** → **ntfy**
-4. Enter Server URL and Topic → **Test** → **Save**
+3. In DBackup: **Connections** → **Notifications** → **Add New** → **ntfy**
+4. Enter Server URL and Topic → **Send test** → **Create channel**
 
 ::: warning Public Topics
 Anyone who knows your topic name can subscribe to it. Use a long, random name or self-host ntfy with access tokens.

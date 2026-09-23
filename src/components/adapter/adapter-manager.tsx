@@ -6,7 +6,7 @@ import { STORAGE_ROLES, storageRoleLabel, supportsStorageRole, canOfferCounterpa
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { DIALOG_SURFACE } from "@/components/ui/confirm-dialog";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertTriangle } from "lucide-react";
 import Link from "next/link";
@@ -16,7 +16,6 @@ import { DataTable } from "@/components/ui/data-table";
 import { useRouter } from "next/navigation";
 
 import { AdapterManagerProps, AdapterConfig } from "./types";
-import { AdapterForm } from "./adapter-form";
 import { ConnectionForm } from "./connection-form";
 import { AdapterPickerDialog } from "./adapter-picker";
 import { StorageHistoryModal } from "@/components/dashboard/widgets/storage-history-modal";
@@ -275,16 +274,6 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
 
     const bulkActions = useMemo(() => connectionBulkActions(kind, canManage), [kind, canManage]);
 
-    // Stable reference for the adapter list passed to AdapterForm - prevents the
-    // useEffect inside AdapterForm from re-running (and wiping typed values) when
-    // unrelated state changes cause the parent to re-render.
-    const adapterFormList = useMemo(
-        () => selectedAdapterForNew
-            ? availableAdapters.filter(a => a.id === selectedAdapterForNew)
-            : availableAdapters,
-        [selectedAdapterForNew, availableAdapters]
-    );
-
     // The connection the form edits, or the type picked for a new one.
     const editingConfig = editingId ? configs.find((config) => config.id === editingId) : undefined;
     const formAdapterId = editingConfig?.adapterId ?? selectedAdapterForNew;
@@ -378,37 +367,20 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                 </DialogContent>
             </Dialog>
 
-            {/* Step 2: the form. Databases and storage have the new one, notifications still the old one. */}
+            {/* Step 2: the form. A connection with a single part, like a Teams webhook, has no list
+                beside it and gets the narrower dialog. */}
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                {type !== "notification" && formAdapter ? (
-                    <DialogContent showCloseButton={false} className={cn(DIALOG_SURFACE, "sm:max-w-3xl")}>
-                        {isDialogOpen && (
-                            <ConnectionForm
-                                adapter={formAdapter}
-                                initialData={editingConfig}
-                                defaultRole={pickerRole}
-                                onBack={editingId ? undefined : backToPicker}
-                                onSaved={afterSave}
-                            />
-                        )}
-                    </DialogContent>
-                ) : (
-                    <DialogContent className="sm:max-w-2xl max-h-[90vh] p-0" aria-describedby={undefined}>
-                        <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
-                            <DialogTitle>{editingId ? "Edit Configuration" : "Add New Notification"}</DialogTitle>
-                        </DialogHeader>
-                        {isDialogOpen && (
-                            <AdapterForm
-                                type={type}
-                                adapters={adapterFormList}
-                                onSuccess={afterSave}
-                                initialData={editingConfig}
-                                onBack={editingId ? undefined : backToPicker}
-                                defaultRole={defaultRole}
-                            />
-                        )}
-                    </DialogContent>
-                )}
+                <DialogContent showCloseButton={false} className={cn(DIALOG_SURFACE, "sm:max-w-3xl sm:has-data-[single-part]:max-w-xl")}>
+                    {isDialogOpen && formAdapter && (
+                        <ConnectionForm
+                            adapter={formAdapter}
+                            initialData={editingConfig}
+                            defaultRole={pickerRole}
+                            onBack={editingId ? undefined : backToPicker}
+                            onSaved={afterSave}
+                        />
+                    )}
+                </DialogContent>
             </Dialog>
 
             {deleting && (

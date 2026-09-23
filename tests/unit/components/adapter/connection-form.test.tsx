@@ -142,4 +142,35 @@ describe("connection form", () => {
         // Integrity checks are on unless switched off, which the API reads as skipVerification.
         expect(body.metadata).toEqual({ healthNotificationsDisabled: false, skipVerification: false });
     });
+
+    it("opens the message of an email channel when it has no recipient yet", async () => {
+        const user = userEvent.setup();
+        renderForm("email");
+
+        await user.type(screen.getByLabelText("Name"), "Ops mail");
+        await user.type(screen.getByLabelText("SMTP host"), "smtp.example.com");
+        await user.type(screen.getByLabelText("From"), "backup@example.com");
+        await user.click(screen.getByRole("button", { name: "Create channel" }));
+
+        const message = await screen.findByRole("tab", { name: /Message/ });
+        await waitFor(() => expect(message).toHaveAttribute("aria-selected", "true"));
+        expect(screen.getByRole("tabpanel", { name: /Message/ })).toHaveTextContent("Add at least one recipient.");
+        expect(requested("/api/adapters")).toBe(false);
+    });
+
+    it("gives a Teams channel no list of parts and saves it without sending a test first", async () => {
+        const user = userEvent.setup();
+        const onSaved = renderForm("teams");
+
+        expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Send test" })).toBeInTheDocument();
+        await user.type(screen.getByLabelText("Name"), "Ops channel");
+        await user.click(screen.getByRole("button", { name: "Create channel" }));
+        await waitFor(() => expect(onSaved).toHaveBeenCalled());
+
+        expect(requested("/api/adapters/test-connection")).toBe(false);
+        const [, init] = mockFetch.mock.calls.find(([url]) => url === "/api/adapters")!;
+        expect(JSON.parse(String(init?.body))).toMatchObject({ name: "Ops channel", type: "notification", metadata: {} });
+    });
 });
+

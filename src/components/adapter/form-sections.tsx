@@ -1020,23 +1020,6 @@ export function NotificationFormContent({
     );
 }
 
-export function GenericFormContent({ adapter, detectedVersion }: { adapter: AdapterDefinition, detectedVersion?: string | null }) {
-    return (
-        <div className="space-y-4 border p-4 rounded-md bg-muted/30">
-            <div className="flex items-center justify-between">
-                <h4 className="text-sm font-medium">Configuration</h4>
-                {detectedVersion && (
-                    <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/20">
-                        <Check className="w-3 h-3 mr-1" />
-                        Detected: {detectedVersion}
-                    </Badge>
-                )}
-            </div>
-            <FieldList keys={Object.keys((adapter.configSchema as any).shape)} adapter={adapter} />
-        </div>
-    );
-}
-
 // --- Helpers ---
 
 function FieldList({

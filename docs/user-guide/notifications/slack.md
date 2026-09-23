@@ -6,10 +6,10 @@ Send formatted notifications to Slack channels using Incoming Webhooks with Bloc
 
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
-| **Webhook URL** | Slack Incoming Webhook URL | - | ✅ |
+| **Webhook** | `WEBHOOK` [credential profile](/user-guide/security/credential-profiles) holding the Slack Incoming Webhook URL | - | ✅ |
 | **Channel** | Override channel (e.g., `#backups`) | Webhook default | ❌ |
-| **Username** | Bot display name | `DBackup` | ❌ |
-| **Icon Emoji** | Bot icon emoji (e.g., `:shield:`) | Default | ❌ |
+| **Display name** | Bot display name | `DBackup` | ❌ |
+| **Icon emoji** | Bot icon emoji (e.g., `:shield:`) | Default | ❌ |
 
 ## Setup Guide
 
@@ -17,8 +17,8 @@ Send formatted notifications to Slack channels using Incoming Webhooks with Bloc
 2. In the left sidebar → **Incoming Webhooks** → toggle **On**
 3. Click **Add New Webhook to Workspace** → select the target channel → **Allow**
 4. Copy the **Webhook URL** (starts with `https://hooks.slack.com/services/...`)
-5. In DBackup: **Notifications** → **Add Notification** → **Slack Webhook**
-6. Paste the Webhook URL → **Test** → **Save**
+5. In DBackup: **Connections** → **Notifications** → **Add New** → **Slack Webhook**
+6. Under **Webhook**, pick or create a credential profile holding the webhook URL → **Send test** → **Create channel**
 
 ## Message Format
 

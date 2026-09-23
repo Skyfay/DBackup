@@ -12,6 +12,10 @@ interface TagInputProps {
     validate?: (input: string) => boolean;
     className?: string;
     disabled?: boolean;
+    /** Passed to the text input, so a label and a form message reach it through FormControl. */
+    id?: string;
+    "aria-describedby"?: string;
+    "aria-invalid"?: boolean;
 }
 
 /**
@@ -26,6 +30,9 @@ export function TagInput({
     validate,
     className,
     disabled = false,
+    id,
+    "aria-describedby": describedBy,
+    "aria-invalid": invalid,
 }: TagInputProps) {
     const [inputValue, setInputValue] = React.useState("");
     const inputRef = React.useRef<HTMLInputElement>(null);
@@ -84,6 +91,7 @@ export function TagInput({
             className={cn(
                 "flex min-h-9 w-full flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-3 py-1.5 text-sm shadow-xs transition-colors",
                 "focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-2",
+                invalid && "border-destructive",
                 disabled && "cursor-not-allowed opacity-50",
                 className,
             )}
@@ -113,6 +121,9 @@ export function TagInput({
             ))}
             <input
                 ref={inputRef}
+                id={id}
+                aria-describedby={describedBy}
+                aria-invalid={invalid}
                 type="text"
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}

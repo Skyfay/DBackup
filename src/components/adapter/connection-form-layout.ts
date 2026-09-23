@@ -14,7 +14,7 @@ export const AUTHORIZED_KEY = "$authorized";
 
 export type SectionId =
     | "connection" | "ssh" | "database" | "file" | "aliases" | "transfer"
-    | "service" | "location" | "options" | "speed" | "behavior";
+    | "service" | "location" | "options" | "speed" | "message" | "behavior";
 
 export interface SectionLayout {
     id: SectionId;

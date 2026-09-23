@@ -7,14 +7,14 @@ Send push notifications to your self-hosted [Gotify](https://gotify.net/) server
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
 | **Server URL** | Gotify server URL (e.g., `https://gotify.example.com`) | - | ✅ |
-| **App Token** | Application token (from Gotify → Apps) | - | ✅ |
+| **App token** | `TOKEN` [credential profile](/user-guide/security/credential-profiles) holding the application token (from Gotify → Apps) | - | ✅ |
 | **Priority** | Default message priority (0–10) | `5` | ❌ |
 
 ## Setup Guide
 
 1. In your Gotify web UI: **Apps** → **Create Application** → copy the **App Token**
-2. In DBackup: **Notifications** → **Add Notification** → **Gotify**
-3. Enter Server URL and App Token → **Test** → **Save**
+2. In DBackup: **Connections** → **Notifications** → **Add New** → **Gotify**
+3. Enter the Server URL and pick or create the credential profile under **App token** → **Send test** → **Create channel**
 
 <details>
 <summary>Don't have Gotify yet? Quick Docker setup</summary>

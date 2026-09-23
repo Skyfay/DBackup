@@ -46,7 +46,7 @@ Four files still set `max-h` on the root. `tests/unit/lint-guards/design-system.
 
 ### Scrollable dialog (canonical)
 
-Reference implementation: `src/components/adapter/adapter-form.tsx` - it is the one that gets both the layout and the viewport selector right. `credential-profile-dialog.tsx` has the layout below but still sets `max-h` on the ScrollArea root, so copy its structure, not its ScrollArea line.
+Reference implementation: `AdapterPickerDialog` in `src/components/adapter/adapter-picker.tsx` - it gets both the layout and the viewport selector right. A form split into parts with a list beside them follows `connection-form.tsx` instead. `credential-profile-dialog.tsx` has the layout below but still sets `max-h` on the ScrollArea root, so copy its structure, not its ScrollArea line.
 
 ```tsx
 <DialogContent className="sm:max-w-xl max-h-[90vh] p-0">
@@ -93,7 +93,7 @@ Use `AlertDialog`, never `Dialog`, and never `window.confirm()` or `alert()`. Th
 
 ## 3. Forms
 
-`react-hook-form` + `zod` via `@hookform/resolvers`. Reference: `src/components/adapter/adapter-form.tsx`.
+`react-hook-form` + `zod` via `@hookform/resolvers`. Reference: `src/components/adapter/connection-form.tsx` with its state in `use-connection-form.ts`.
 
 ```tsx
 <FormField
@@ -240,7 +240,7 @@ Never log whole session, user, or config objects. Log the specific field (`{ use
 | Raw `overflow-y-auto` instead of ScrollArea | Fails the build |
 | Locale date formatting | Fails the build |
 | `max-h` on the ScrollArea root | Baseline of 4, fails if it grows |
-| Palette color with no `dark:` variant | Baseline of 87, fails if it grows |
+| Palette color with no `dark:` variant | Baseline of 86, fails if it grows |
 
 Baselines may only be lowered. Fix violations, drop the number, and the guard locks the win in. Everything else in this guide is on you.
 

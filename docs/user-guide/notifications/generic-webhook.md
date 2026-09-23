@@ -6,19 +6,18 @@ Send JSON payloads to any HTTP endpoint. Use for custom integrations with PagerD
 
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
-| **Webhook URL** | Target HTTP endpoint URL | - | ✅ |
-| **HTTP Method** | `POST`, `PUT`, or `PATCH` | `POST` | ❌ |
-| **Content-Type** | Content-Type header value | `application/json` | ❌ |
-| **Authorization** | Authorization header value (e.g., `Bearer token`) | - | ❌ |
-| **Custom Headers** | Additional headers (one per line, `Key: Value`) | - | ❌ |
-| **Payload Template** | Custom JSON with `{{variable}}` placeholders | - | ❌ |
+| **Webhook** | `WEBHOOK` [credential profile](/user-guide/security/credential-profiles) holding the target URL and, optionally, the authorization header (e.g., `Bearer token`) | - | ✅ |
+| **Method** | `POST`, `PUT`, or `PATCH` | `POST` | ❌ |
+| **Content type** | Content-Type header value | `application/json` | ❌ |
+| **Extra headers** | Additional headers (one per line, `Key: Value`) | - | ❌ |
+| **Payload template** | Custom JSON with `{{variable}}` placeholders | - | ❌ |
 
 ## Setup Guide
 
-1. In DBackup: **Notifications** → **Add Notification** → **Generic Webhook**
-2. Enter the target URL
-3. (Optional) Configure method, auth header, custom headers, and payload template
-4. Click **Test** → **Save**
+1. In DBackup: **Connections** → **Notifications** → **Add New** → **Generic Webhook**
+2. Under **Webhook**, pick or create a credential profile holding the target URL and, if needed, the authorization header
+3. (Optional) Set the method in the **Connection** part, and extra headers and a payload template in the **Message** part
+4. Click **Send test** → **Create channel**
 
 ## Default Payload
 

@@ -82,6 +82,14 @@ export function buildConnectionFormSchema(adapter: AdapterDefinition) {
     if (adapter.id === "sqlite") {
         shape.mode = z.enum(["local", "ssh"], { error: "Choose where the database file is." });
     }
+    if (adapter.id === "email" && "to" in shape) {
+        // The form edits recipients as a list, also where an older config stored one address.
+        // Zod would name a failed union only "Invalid input", so the list says what is wrong.
+        shape.to = z.preprocess(
+            (value) => (typeof value === "string" ? (value ? [value] : []) : (value ?? [])),
+            z.array(z.string().email("Enter a valid email address.")).min(1, "Add at least one recipient."),
+        );
+    }
 
     return z.object({
         name: z.string().min(1, "Name is required"),

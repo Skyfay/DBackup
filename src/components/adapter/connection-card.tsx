@@ -40,7 +40,7 @@ export function ConnectionCard({ row, onOpen }: ConnectionCardProps) {
     return (
         <div
             onClick={(event) => isPlainClick(event) && onOpen(config)}
-            className="flex min-w-0 cursor-pointer flex-col gap-4 rounded-xl border bg-card p-4 text-card-foreground shadow-sm transition-colors hover:border-foreground/20"
+            className="flex min-w-0 cursor-pointer flex-col gap-4 rounded-xl border bg-card p-4 text-card-foreground shadow-sm transition-colors hover:border-foreground/20 group-data-[state=open]/row:border-foreground/20"
         >
             <div className="flex items-start gap-3">
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border bg-muted/50">

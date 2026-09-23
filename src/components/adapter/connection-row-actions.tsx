@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowLeftRight, BarChart3, Copy, MoreHorizontal, Pencil, SearchCode, Trash } from "lucide-react";
+import * as React from "react";
+import { MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
     DropdownMenu,
@@ -9,25 +10,19 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { connectionActions, type ConnectionActionHandlers } from "./connection-actions";
 
-interface ConnectionRowActionsProps {
+interface ConnectionRowActionsProps extends ConnectionActionHandlers {
     name: string;
-    onExplore?: () => void;
-    onHistory?: () => void;
-    onEdit?: () => void;
-    onClone?: () => void;
-    /** Creates the same connection in the other storage role, where the adapter supports it. */
-    counterpart?: { label: string; onSelect: () => void };
-    onDelete?: () => void;
-    /** A clone of this row is being created. */
-    busy?: boolean;
 }
 
-/** Everything a row can do, behind one button instead of a row of icons. Actions the user may not take are left out. */
-export function ConnectionRowActions({ name, onExplore, onHistory, onEdit, onClone, counterpart, onDelete, busy = false }: ConnectionRowActionsProps) {
-    const inspect = Boolean(onExplore || onHistory);
-    const manage = Boolean(onEdit || onClone || counterpart);
-    if (!inspect && !manage && !onDelete) return null;
+/**
+ * Everything a row can do, behind one button instead of a row of icons. The entries come from
+ * `connectionActions`, the same list the right click menu renders.
+ */
+export function ConnectionRowActions({ name, ...handlers }: ConnectionRowActionsProps) {
+    const groups = connectionActions(handlers);
+    if (groups.length === 0) return null;
 
     return (
         // Not modal, so a dialog opened from an item gets focus and pointer events back cleanly.
@@ -39,40 +34,21 @@ export function ConnectionRowActions({ name, onExplore, onHistory, onEdit, onClo
                 </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52">
-                {onExplore && (
-                    <DropdownMenuItem onSelect={onExplore}>
-                        <SearchCode /> Explore databases
-                    </DropdownMenuItem>
-                )}
-                {onHistory && (
-                    <DropdownMenuItem onSelect={onHistory}>
-                        <BarChart3 /> Storage history
-                    </DropdownMenuItem>
-                )}
-                {inspect && manage && <DropdownMenuSeparator />}
-                {onEdit && (
-                    <DropdownMenuItem onSelect={onEdit}>
-                        <Pencil /> Edit
-                    </DropdownMenuItem>
-                )}
-                {onClone && (
-                    <DropdownMenuItem onSelect={onClone} disabled={busy}>
-                        <Copy /> Clone
-                    </DropdownMenuItem>
-                )}
-                {counterpart && (
-                    <DropdownMenuItem onSelect={counterpart.onSelect} disabled={busy}>
-                        <ArrowLeftRight /> {counterpart.label}
-                    </DropdownMenuItem>
-                )}
-                {onDelete && (
-                    <>
-                        {(inspect || manage) && <DropdownMenuSeparator />}
-                        <DropdownMenuItem variant="destructive" onSelect={onDelete}>
-                            <Trash /> Delete
-                        </DropdownMenuItem>
-                    </>
-                )}
+                {groups.map((group, index) => (
+                    <React.Fragment key={group.label ?? "actions"}>
+                        {index > 0 && <DropdownMenuSeparator />}
+                        {group.actions.map((action) => (
+                            <DropdownMenuItem
+                                key={action.id}
+                                onSelect={action.onSelect}
+                                disabled={action.disabled}
+                                variant={action.destructive ? "destructive" : "default"}
+                            >
+                                <action.icon /> {action.label}
+                            </DropdownMenuItem>
+                        ))}
+                    </React.Fragment>
+                ))}
             </DropdownMenuContent>
         </DropdownMenu>
     );

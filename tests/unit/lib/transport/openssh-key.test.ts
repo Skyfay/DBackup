@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { utils as sshUtils, type ParsedKey } from "ssh2";
 import {
     generateSshKeyPair,
@@ -7,6 +7,10 @@ import {
     sshFingerprint,
 } from "@/lib/transport/openssh-key";
 import { SSH_KEY_TYPES, type SshKeyType } from "@/lib/core/credentials";
+
+// Generating a key waits on the crypto thread pool, which the rest of the suite keeps busy.
+// The default five seconds are enough on an idle machine and not always under a full run.
+vi.setConfig({ testTimeout: 30_000 });
 
 /** ssh2 is what actually connects, so a key it cannot parse is a key DBackup cannot use. */
 function parse(privateKey: string) {

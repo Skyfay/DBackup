@@ -23,6 +23,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useTableLayout } from "@/hooks/use-table-layout";
 import { connectionColumns, type ConnectionKind } from "./connection-columns";
 import { ConnectionRowActions } from "./connection-row-actions";
+import { ConnectionContextMenu } from "./connection-context-menu";
+import type { ConnectionActionHandlers } from "./connection-actions";
 import { ConnectionStatusFilter, matchesStatus, type StatusFilter } from "./connection-status-filter";
 import { ConnectionDetailsSheet } from "./connection-details-sheet";
 import { ConnectionDetailsContent } from "./connection-details-content";
@@ -189,10 +191,10 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
     const canViewStorage = permissions.includes(PERMISSIONS.STORAGE.READ);
 
     /**
-     * The actions of one connection. The panel shows Explore and Edit as buttons of their
-     * own, so its menu leaves them out.
+     * What one connection can do. The panel shows Explore and Edit as buttons of their own,
+     * so its menu leaves them out.
      */
-    const renderActions = useCallback((config: AdapterConfig, inPanel = false) => {
+    const rowHandlers = useCallback((config: AdapterConfig, inPanel = false): ConnectionActionHandlers => {
         // Same server and credentials in the other role. An adapter that only works one way
         // round has no counterpart, and the API would refuse the clone.
         const counterpartOf = () => {
@@ -210,24 +212,29 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
             };
         };
 
-        return (
-            <ConnectionRowActions
-                name={config.name}
-                onExplore={!inPanel && type === "database" ? () => router.push(`/dashboard/explorer?sourceId=${config.id}`) : undefined}
-                onHistory={type === "storage" && canViewStorage ? () => setHistoryAdapter({ id: config.id, name: config.name }) : undefined}
-                onEdit={!inPanel && canManage ? () => { setEditingId(config.id); setIsDialogOpen(true); } : undefined}
-                onClone={canManage ? () => setCloneTarget({ id: config.id, name: config.name }) : undefined}
-                counterpart={canManage && type === "storage" ? counterpartOf() : undefined}
-                onDelete={canManage ? () => {
-                    // The row already knows whether a job or a template still holds the connection.
-                    const blocker = deleteBlocker(config);
-                    if (blocker) toast.error(`${config.name} cannot be deleted. ${blocker}.`);
-                    else setDeletingId(config.id);
-                } : undefined}
-                busy={cloningId === config.id}
-            />
-        );
+        // Only a destination holds backups, so only it has a storage history.
+        const isDestination = type === "storage" && (config.storageRole ?? STORAGE_ROLES.DESTINATION) === STORAGE_ROLES.DESTINATION;
+
+        return {
+            onExplore: !inPanel && type === "database" ? () => router.push(`/dashboard/explorer?sourceId=${config.id}`) : undefined,
+            onHistory: isDestination && canViewStorage ? () => setHistoryAdapter({ id: config.id, name: config.name }) : undefined,
+            onEdit: !inPanel && canManage ? () => { setEditingId(config.id); setIsDialogOpen(true); } : undefined,
+            onClone: canManage ? () => setCloneTarget({ id: config.id, name: config.name }) : undefined,
+            counterpart: canManage && type === "storage" ? counterpartOf() : undefined,
+            onDelete: canManage ? () => {
+                // The row already knows whether a job or a template still holds the connection.
+                const blocker = deleteBlocker(config);
+                if (blocker) toast.error(`${config.name} cannot be deleted. ${blocker}.`);
+                else setDeletingId(config.id);
+            } : undefined,
+            busy: cloningId === config.id,
+        };
     }, [type, canViewStorage, canManage, cloningId, router]);
+
+    const renderActions = useCallback(
+        (config: AdapterConfig, inPanel = false) => <ConnectionRowActions name={config.name} {...rowHandlers(config, inPanel)} />,
+        [rowHandlers]
+    );
 
     const openDetails = useCallback((config: AdapterConfig) => setDetails({ id: config.id, open: true, view }), [view]);
 
@@ -321,6 +328,9 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                     onRowClick={openDetails}
                     view={view}
                     renderCard={(row) => <ConnectionCard row={row} onOpen={openDetails} />}
+                    renderRowMenu={(config, bulk) => (
+                        <ConnectionContextMenu config={config} bulk={bulk} {...rowHandlers(config)} />
+                    )}
                     renderSplit={(rows) => (
                         <ConnectionSplitView
                             configs={rows.map((row) => row.original)}
@@ -330,6 +340,7 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                             renderPanel={(config) => (
                                 <ConnectionDetailsContent key={config.id} variant="inline" config={config} {...detailProps(config)} />
                             )}
+                            renderMenu={(config) => <ConnectionContextMenu config={config} bulk={null} {...rowHandlers(config)} />}
                         />
                     )}
                 />

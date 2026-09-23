@@ -56,7 +56,8 @@ Every other page still has the old look. Do not copy patterns from it, copy them
 
 ## Color
 
-- Status tokens: `success` for completed, `destructive` for failed, `warning` for partial runs and conflicts, `info` for running. Use them as text, as tints like `border-destructive/30 bg-destructive/5`, and as icon tiles like `bg-success/12 text-success`.
+- Status tokens: `success` for completed, `destructive` for failed, `warning` for partial runs and conflicts, `info` for running.
+- A dialog or a row menu carries the colour of what it does: `destructive` for deleting, `warning` for a report of what failed, `info` for changing and adding, neutral for everything else. Green stays with the status of a thing, never with an action. Use them as text, as tints like `border-destructive/30 bg-destructive/5`, and as icon tiles like `bg-success/12 text-success`.
 - Everything that is not a status stays neutral. Sizes, counts, share bars and chart lines use `foreground` or `muted-foreground` shades, like `bg-foreground/80` for a share bar.
 - Charts take their colors from the same tokens (`var(--success)`) through the `ChartConfig`, never from hex values or the `--chart-*` palette.
 
@@ -74,6 +75,7 @@ Every other page still has the old look. Do not copy patterns from it, copy them
 - A row button that only matters on hover is hidden from `md` up until the row is hovered or the button focused (`md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100`). Below `md` it always shows, since a phone has no hover.
 - A table whose columns the user picks gets `columnLayout={useTableLayout(tableId, saved)}` on its DataTable. Columns take `meta.pin`, `meta.defaultHidden` and `meta.filterOnly`, see `connection-columns.tsx`.
 - A row that opens details takes `onRowClick`, and its name cell gets a button as the keyboard way in. `isPlainClick` keeps clicks on controls and popovers inside the row from opening it.
+- A right click on a row opens `renderRowMenu`, which returns a `ContextMenuContent`. Its head is tinted `info` and names the row, the row stays marked while it is open, and a long press opens it on a phone. When the row is one of several selected, the menu gets the bulk context and offers the actions of the whole selection instead. The button at the end of the row stays, as the way in for keyboard and touch. See `connection-context-menu.tsx`.
 - A list that also offers cards passes `view="cards"` and `renderCard` to DataTable. A card renders the row's own cells, so the Columns menu decides what it shows, see `connection-card.tsx`. Bulk actions stay in the table view.
 - A list beside the details of the picked record passes `view="split"` and `renderSplit`, which gets every filtered row at once. See `connection-split-view.tsx`, whose details are the same component the side panel shows.
 

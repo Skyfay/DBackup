@@ -1,0 +1,132 @@
+"use client";
+
+import * as React from "react";
+import { Check, X } from "lucide-react";
+import { AdapterIcon } from "@/components/adapter/adapter-icon";
+import {
+    ContextMenuContent,
+    ContextMenuItem,
+    ContextMenuLabel,
+    ContextMenuSeparator,
+} from "@/components/ui/context-menu";
+import { capitalize } from "@/components/ui/data-table-bulk-dialogs";
+import type { BulkAction, RowMenuBulk } from "@/components/ui/data-table";
+import { countNoun } from "@/lib/core/bulk";
+import type { AdapterConfig } from "./types";
+import { kindNames } from "./connection-columns";
+import { connectionActions, type ConnectionActionHandlers } from "./connection-actions";
+
+/**
+ * The head of a row menu, tinted in the colour the design uses for changing something. Red
+ * stays reserved for deleting, which is the only coloured entry in the list below.
+ */
+function MenuHead({ tile, title, note }: { tile: React.ReactNode; title: string; note: string }) {
+    return (
+        <div className="-mx-1 -mt-1 mb-1 flex min-w-0 items-center gap-2.5 border-b border-info/20 bg-info/5 px-3 py-2.5 dark:bg-info/10">
+            {tile}
+            <div className="grid min-w-0 gap-0.5">
+                <p className="truncate text-sm font-semibold" title={title}>
+                    {title}
+                </p>
+                <p className="truncate text-xs text-muted-foreground">{note}</p>
+            </div>
+        </div>
+    );
+}
+
+interface ConnectionContextMenuProps extends ConnectionActionHandlers {
+    config: AdapterConfig;
+    /** Set when the right clicked row is one of several selected rows. */
+    bulk: RowMenuBulk<AdapterConfig> | null;
+}
+
+/** What a right click on a connection offers: its own actions, or the ones for the whole selection. */
+export function ConnectionContextMenu({ config, bulk, ...handlers }: ConnectionContextMenuProps) {
+    const groups = connectionActions(handlers);
+    if (bulk) return <SelectionMenu bulk={bulk} />;
+    if (groups.length === 0) return null;
+
+    return (
+        <ContextMenuContent className="w-56">
+            <MenuHead
+                tile={
+                    <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-card">
+                        <AdapterIcon adapterId={config.adapterId} className="size-4" />
+                    </span>
+                }
+                title={config.name}
+                // The type alone, since a long one like "Microsoft SQL Server" leaves no room for more.
+                note={kindNames.get(config.adapterId) ?? config.adapterId}
+            />
+            {groups.map((group, index) => (
+                <React.Fragment key={group.label ?? "actions"}>
+                    {group.label ? <ContextMenuLabel>{group.label}</ContextMenuLabel> : index > 0 && <ContextMenuSeparator />}
+                    {group.actions.map((action) => (
+                        <ContextMenuItem
+                            key={action.id}
+                            onSelect={action.onSelect}
+                            disabled={action.disabled}
+                            variant={action.destructive ? "destructive" : "default"}
+                        >
+                            <action.icon /> {action.label}
+                        </ContextMenuItem>
+                    ))}
+                </React.Fragment>
+            ))}
+        </ContextMenuContent>
+    );
+}
+
+/** The same menu for a selection of several rows, with the bulk actions of the table. */
+function SelectionMenu({ bulk }: { bulk: RowMenuBulk<AdapterConfig> }) {
+    const labels = bulk.actions[0]?.labels;
+    const settings = bulk.actions.filter((action) => action.placement === "menu");
+    const rest = bulk.actions.filter((action) => action.placement !== "menu");
+
+    const entry = (action: BulkAction<AdapterConfig>) => {
+        const Icon = action.icon;
+        const label = action.label?.(bulk.selected) ?? `${capitalize(action.labels.verb)} ${countNoun(bulk.selected.length, action.labels)}`;
+        return (
+            <ContextMenuItem
+                key={action.id}
+                onSelect={() => bulk.start(action)}
+                variant={action.variant === "destructive" ? "destructive" : "default"}
+            >
+                {Icon && <Icon />} {label}
+            </ContextMenuItem>
+        );
+    };
+
+    // One section per group, in the order the groups first appear.
+    const sections: { label?: string; actions: BulkAction<AdapterConfig>[] }[] = [];
+    for (const action of settings) {
+        const section = sections.find((entry) => entry.label === action.group);
+        if (section) section.actions.push(action);
+        else sections.push({ label: action.group, actions: [action] });
+    }
+
+    return (
+        <ContextMenuContent className="w-60">
+            <MenuHead
+                tile={
+                    <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                        <Check className="size-4" />
+                    </span>
+                }
+                title={labels ? `${countNoun(bulk.selected.length, labels)} selected` : `${bulk.selected.length} selected`}
+                note="Every action runs on all of them"
+            />
+            {sections.map((section, index) => (
+                <React.Fragment key={section.label ?? `group-${index}`}>
+                    {section.label && <ContextMenuLabel>{section.label}</ContextMenuLabel>}
+                    {section.actions.map(entry)}
+                </React.Fragment>
+            ))}
+            {sections.length > 0 && <ContextMenuSeparator />}
+            <ContextMenuItem onSelect={bulk.clearSelection}>
+                <X /> Clear selection
+            </ContextMenuItem>
+            {rest.map(entry)}
+        </ContextMenuContent>
+    );
+}

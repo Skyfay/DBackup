@@ -16,6 +16,14 @@ export interface DataTableFilterOption {
     count?: number
 }
 
+/** What the right click menu of a row may do when the row is one of several selected. */
+export interface RowMenuBulk<TData> {
+    selected: TData[];
+    actions: BulkAction<TData>[];
+    start: (action: BulkAction<TData>) => void;
+    clearSelection: () => void;
+}
+
 export interface DataTableFilterableColumn<TData> {
     id: keyof TData | string;
     title: string;

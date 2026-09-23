@@ -11,6 +11,7 @@ All notable changes to DBackup are documented here.
 - **connections**: A click on a connection opens a panel with what is wrong with it, its health checks of the last day, the jobs and templates using it with their last backup, and its settings. The connection test and editing are one click away from there.
 - **connections**: The Connections page shows its connections as a table, as cards or as a list with the details beside it, and remembers the choice for each user. Phones always get the cards.
 - **connections**: Several database connections can have their health check notifications turned off or on, and be excluded from or included in restores, in one step.
+- **connections**: A right click on a connection opens its actions, and on one of several selected rows the actions for the whole selection. A long press does the same on a phone.
 
 ### 🐛 Bug Fixes
 
@@ -18,6 +19,7 @@ All notable changes to DBackup are documented here.
 - **storage**: The storage scan of a local destination no longer fails when retention deletes a backup while it runs.
 - **storage**: The storage history chart shows a shrinking destination with a minus sign and compares against its oldest measurement in the chosen range. Its axes space the days by time and step in round sizes.
 - **ui**: A page with content wider than the window no longer runs past its right edge, where that content was cut off and could not be scrolled to.
+- **connections**: Directory sources no longer offer the storage history, which exists only for backup destinations.
 - **templates**: Deleting several retention policies no longer calls them "policys" in the confirmation and in the message afterwards.
 
 ### 🔒 Security
@@ -49,6 +51,10 @@ All notable changes to DBackup are documented here.
 - **docs**: The storage and notification adapter guides name `connectionAddress()` as the place for the summary shown in the connection tables.
 - **docs**: The notification and job guides explain how to switch health check notifications and restore exclusion for several databases at once.
 - **docs**: The health check guide describes the new status popover and the added fields of the health history API.
+
+### 🧪 Tests
+
+- **tests**: The test that generates an SSH key no longer fails at random during a full run, where the busy crypto thread pool made it slower than the default timeout.
 
 ### 🐳 Docker
 

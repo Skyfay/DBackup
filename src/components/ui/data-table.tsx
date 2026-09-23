@@ -30,15 +30,17 @@ import {
 } from "@/components/ui/table";
 import { DataTableToolbar } from "./data-table-toolbar";
 import { DataTablePagination } from "./data-table-pagination";
+import { ContextMenu, ContextMenuTrigger } from "./context-menu";
 import { DataTableBulkBar } from "./data-table-bulk-bar";
+import { useBulkActions } from "./use-bulk-actions";
 import { selectColumn } from "./data-table-selection";
 import { DataTableColumnSettings } from "./data-table-column-settings";
 import { useColumnLayout, type ColumnLayoutOption } from "./use-column-layout";
 import { isPlainClick, toggleOnClick } from "./row-click";
 import { cn } from "@/lib/utils";
-import type { BulkAction, DataTableFilterableColumn, DataTableFilterOption } from "./data-table-types";
+import type { BulkAction, DataTableFilterableColumn, DataTableFilterOption, RowMenuBulk } from "./data-table-types";
 
-export type { BulkAction, DataTableFilterableColumn, DataTableFilterOption };
+export type { BulkAction, DataTableFilterableColumn, DataTableFilterOption, RowMenuBulk };
 
 interface DataTableProps<TData, TValue> {
     columns: ColumnDef<TData, TValue>[];
@@ -96,6 +98,11 @@ interface DataTableProps<TData, TValue> {
     view?: "table" | "cards" | "split";
     /** One card. Its cells come from `row.getVisibleCells()`, so the Columns menu decides what a card shows. */
     renderCard?: (row: Row<TData>) => React.ReactNode;
+    /**
+     * The right click menu of a row, as a `ContextMenuContent`. It gets the bulk context when
+     * the row is one of several selected, so the menu can act on all of them.
+     */
+    renderRowMenu?: (row: TData, bulk: RowMenuBulk<TData> | null) => React.ReactNode;
     /** The split view, given all rows that pass search and filters. It has no pages. */
     renderSplit?: (rows: Row<TData>[]) => React.ReactNode;
 
@@ -135,6 +142,7 @@ export function DataTable<TData, TValue>({
     onRowClick,
     view = "table",
     renderCard,
+    renderRowMenu,
     renderSplit,
     pageCount,
     rowCount,
@@ -248,6 +256,35 @@ export function DataTable<TData, TValue>({
     // open the row instead. The gap before the next column moves into that cell to widen it.
     const wideCheckbox = card && enableRowSelection;
 
+    const clearSelection = React.useCallback(() => setRowSelection({}), []);
+    const bulk = useBulkActions({
+        selectedRows,
+        actions: bulkActions,
+        onClearSelection: clearSelection,
+        onComplete: onBulkActionComplete,
+        getRowId,
+    });
+    const hasBulk = enableRowSelection && bulkActions.length > 0;
+    // The dialogs of a bulk action belong to the table rather than to the bar: the right click
+    // menu of a selected row starts the same actions, and the cards have no bar at all.
+    const bulkDialogs = hasBulk && bulk.dialogs;
+
+    /** Wraps a row or a card in its right click menu, with the bulk context when it is one of several. */
+    const withRowMenu = (row: Row<TData>, element: React.ReactNode) => {
+        const many = hasBulk && selectedRows.length > 1 && row.getIsSelected();
+        const menu = renderRowMenu?.(
+            row.original,
+            many ? { selected: selectedRows, actions: bulk.visibleActions, start: bulk.start, clearSelection } : null
+        );
+        if (!menu) return element;
+        return (
+            <ContextMenu key={row.id}>
+                <ContextMenuTrigger asChild>{element}</ContextMenuTrigger>
+                {menu}
+            </ContextMenu>
+        );
+    };
+
     const toolbar = (
         <DataTableToolbar
             table={table}
@@ -261,13 +298,13 @@ export function DataTable<TData, TValue>({
             columnSettings={layout ? <DataTableColumnSettings {...layout.settings} showDensity={view === "table"} /> : undefined}
         />
     );
-    const bulkBar = enableRowSelection && bulkActions.length > 0 && (
+    const bulkBar = hasBulk && (
         <DataTableBulkBar
             selectedRows={selectedRows}
-            actions={bulkActions}
-            onClearSelection={() => setRowSelection({})}
-            onComplete={onBulkActionComplete}
-            getRowId={getRowId}
+            actions={bulk.visibleActions}
+            runningId={bulk.runningId}
+            onStart={bulk.start}
+            onClearSelection={clearSelection}
             variant={card ? "card" : "default"}
         />
     );
@@ -311,7 +348,7 @@ export function DataTable<TData, TValue>({
             </TableHeader>
             <TableBody>
                 {table.getRowModel().rows?.length ? (
-                    table.getRowModel().rows.map((row) => (
+                    table.getRowModel().rows.map((row) => withRowMenu(row, (
                         <TableRow
                             key={row.id}
                             data-state={row.getIsSelected() && "selected"}
@@ -320,7 +357,9 @@ export function DataTable<TData, TValue>({
                                 card && "[&>td]:px-3 [&>td:first-child]:pl-4 [&>td:last-child]:pr-4",
                                 card && (compact ? "[&>td]:py-1" : "[&>td]:py-2.5"),
                                 wideCheckbox && "[&>td:first-child]:cursor-pointer [&>td:first-child]:pr-3 [&>td:nth-child(2)]:pl-0",
-                                onRowClick && "cursor-pointer"
+                                onRowClick && "cursor-pointer",
+                                // The row stays marked while its right click menu is open.
+                                "data-[state=open]:bg-muted/50"
                             )}
                         >
                             {row.getVisibleCells().map((cell) => (
@@ -332,7 +371,7 @@ export function DataTable<TData, TValue>({
                                 </TableCell>
                             ))}
                         </TableRow>
-                    ))
+                    )))
                 ) : (
                     <TableRow>
                         <TableCell
@@ -354,6 +393,7 @@ export function DataTable<TData, TValue>({
             <div className="min-w-0 space-y-4">
                 <div className="rounded-xl border bg-card text-card-foreground shadow-sm">{toolbar}</div>
                 {renderSplit(table.getPrePaginationRowModel().rows)}
+                {bulkDialogs}
             </div>
         );
     }
@@ -365,14 +405,20 @@ export function DataTable<TData, TValue>({
                 <div className="rounded-xl border bg-card text-card-foreground shadow-sm">{toolbar}</div>
                 {rows.length > 0 ? (
                     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                        {rows.map((row) => (
-                            <React.Fragment key={row.id}>{renderCard(row)}</React.Fragment>
-                        ))}
+                        {rows.map((row) =>
+                            withRowMenu(row, (
+                                // `contents` keeps the card itself the grid item, the wrapper only carries the menu.
+                                <div key={row.id} className="group/row contents">
+                                    {renderCard(row)}
+                                </div>
+                            ))
+                        )}
                     </div>
                 ) : (
                     <div className="rounded-xl border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">No results.</div>
                 )}
                 <DataTablePagination table={table} totalRows={totalRows} />
+                {bulkDialogs}
             </div>
         );
     }
@@ -389,6 +435,7 @@ export function DataTable<TData, TValue>({
                 <div className="border-t px-2">
                     <DataTablePagination table={table} totalRows={totalRows} />
                 </div>
+                {bulkDialogs}
             </div>
         );
     }
@@ -401,6 +448,7 @@ export function DataTable<TData, TValue>({
                 {grid}
             </div>
             <DataTablePagination table={table} totalRows={totalRows} />
+            {bulkDialogs}
         </div>
     );
 }

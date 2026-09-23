@@ -2,6 +2,7 @@
 
 import { useRef } from "react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
+import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { AdapterConfig } from "./types";
@@ -20,6 +21,8 @@ interface ConnectionSplitViewProps {
     selectedId: string | null;
     onSelect: (id: string) => void;
     renderPanel: (config: AdapterConfig) => React.ReactNode;
+    /** The right click menu of one entry, as a `ContextMenuContent`. */
+    renderMenu?: (config: AdapterConfig) => React.ReactNode;
 }
 
 function subline(config: AdapterConfig): string {
@@ -33,7 +36,7 @@ function subline(config: AdapterConfig): string {
  * A slim list beside the details of the picked connection. The arrow keys move through the
  * list, so going over every connection needs no clicks.
  */
-export function ConnectionSplitView({ configs, withHealth, selectedId, onSelect, renderPanel }: ConnectionSplitViewProps) {
+export function ConnectionSplitView({ configs, withHealth, selectedId, onSelect, renderPanel, renderMenu }: ConnectionSplitViewProps) {
     const buttons = useRef(new Map<string, HTMLButtonElement>());
     const groups = splitGroups(configs, withHealth);
     const selected = resolveSelection(groups, selectedId);
@@ -71,9 +74,8 @@ export function ConnectionSplitView({ configs, withHealth, selectedId, onSelect,
                                         {group.items.map((config) => {
                                             const active = config.id === selected?.id;
                                             const health = healthOf(config);
-                                            return (
-                                                <li key={config.id}>
-                                                    <button
+                                            const entry = (
+                                                <button
                                                         type="button"
                                                         ref={(node) => {
                                                             if (node) buttons.current.set(config.id, node);
@@ -84,7 +86,7 @@ export function ConnectionSplitView({ configs, withHealth, selectedId, onSelect,
                                                         onKeyDown={(event) => moveWithKeys(event, ordered.indexOf(config))}
                                                         className={cn(
                                                             "flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                                                            active ? "bg-muted" : "hover:bg-muted/50"
+                                                            active ? "bg-muted" : "hover:bg-muted/50 data-[state=open]:bg-muted/50"
                                                         )}
                                                     >
                                                         <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-muted/50">
@@ -99,7 +101,19 @@ export function ConnectionSplitView({ configs, withHealth, selectedId, onSelect,
                                                                 <span className="sr-only">{LABELS[health]}</span>
                                                             </span>
                                                         )}
-                                                    </button>
+                                                </button>
+                                            );
+                                            const menu = renderMenu?.(config);
+                                            return (
+                                                <li key={config.id}>
+                                                    {menu ? (
+                                                        <ContextMenu>
+                                                            <ContextMenuTrigger asChild>{entry}</ContextMenuTrigger>
+                                                            {menu}
+                                                        </ContextMenu>
+                                                    ) : (
+                                                        entry
+                                                    )}
                                                 </li>
                                             );
                                         })}

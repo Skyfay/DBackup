@@ -37,7 +37,7 @@ export function FileBrowserPath({ path, editing, onEditingChange, onGo }: FileBr
                     aria-label="Path"
                     value={draft}
                     onChange={(event) => setDraft(event.target.value)}
-                    className="h-8 font-mono text-xs"
+                    className="h-8"
                     spellCheck={false}
                     autoComplete="off"
                 />

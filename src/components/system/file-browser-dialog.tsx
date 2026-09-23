@@ -231,9 +231,14 @@ function FileBrowserBody({
             <div className={cn(DIALOG_FOOTER, "flex items-center gap-3")}>
                 <div className="min-w-0 flex-1">
                     <p className="text-xs text-muted-foreground">Picked</p>
-                    <p className="truncate font-mono text-xs" title={chosen ?? undefined}>
-                        {chosen ?? "Nothing yet"}
-                    </p>
+                    {chosen ? (
+                        // Cut from the left, so the end of a long path, the file itself, stays in view.
+                        <p className="truncate text-left text-sm font-medium [direction:rtl]" title={chosen}>
+                            <bdi>{chosen}</bdi>
+                        </p>
+                    ) : (
+                        <p className="text-sm text-muted-foreground">Nothing picked yet</p>
+                    )}
                 </div>
                 <DialogClose asChild>
                     <Button type="button" variant="ghost">

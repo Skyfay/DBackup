@@ -78,7 +78,8 @@ export function DataTableToolbar<TData>({
                     </Button>
                 )}
                 {toolbarExtra}
-                <div className="ml-auto flex items-center gap-1">
+                {/* On a phone it follows the filters at the left edge, pushed to the right only once the row has room. */}
+                <div className="flex items-center gap-1 sm:ml-auto">
                     {columnSettings}
                     {onRefresh && (
                         <Button

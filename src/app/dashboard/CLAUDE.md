@@ -23,7 +23,7 @@ Every other page still has the old look. Do not copy patterns from it, copy them
 - Sections stack with `space-y-4 md:space-y-6`, grids use `gap-4 md:gap-6`.
 - Every grid or flex child that holds text gets `min-w-0`. Without it a long name pushes the page wider than a phone.
 - A route-level `loading.tsx` shows a Skeleton shaped like the page. When it must not apply to sibling routes, the page moves into a route group, like `(overview)`.
-- A row of tabs that can be wider than a phone sits in `<ScrollArea horizontal>`, so it scrolls sideways instead of widening the page.
+- A row of tabs that can be wider than a phone becomes a `Select` below `md` and stays tabs above it, both hidden by CSS so neither pops in after loading. See `connections-tabs.tsx`. Tabs that do fit on a phone but not on a tablet sit in `<ScrollArea horizontal>` instead, so they scroll sideways rather than widening the page.
 - A layout that differs between phone and desktop waits for `useIsMobileState()`, which is undefined until the screen is measured, and shows its skeleton meanwhile. Rendering the desktop version first makes a phone flash it.
 
 ## Cards

@@ -8,6 +8,7 @@ import { saveViewLayout } from "@/app/actions/auth/table-preferences";
 import { AdapterManager, type AdapterManagerHandle } from "@/components/adapter/adapter-manager";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
@@ -32,6 +33,13 @@ export const CONNECTION_TABS = {
 
 export type ConnectionTab = typeof CONNECTION_TABS[keyof typeof CONNECTION_TABS];
 
+const TAB_NAMES: Record<ConnectionTab, string> = {
+    [CONNECTION_TABS.DATABASES]: "Databases",
+    [CONNECTION_TABS.DIRECTORY_SOURCES]: "Directory Sources",
+    [CONNECTION_TABS.DESTINATIONS]: "Backup Destinations",
+    [CONNECTION_TABS.NOTIFICATIONS]: "Notifications",
+};
+
 interface ConnectionsTabsProps {
     permissions: string[];
     counts: ConnectionCounts;
@@ -44,6 +52,22 @@ interface ConnectionsTabsProps {
 function Count({ value }: { value: number | undefined }) {
     if (value === undefined) return null;
     return <span className="text-xs font-normal text-muted-foreground tabular-nums">{value}</span>;
+}
+
+/** One list with its name and how many connections it holds. */
+function tabLabel(tab: ConnectionTab, counts: ConnectionCounts) {
+    const count = {
+        [CONNECTION_TABS.DATABASES]: counts.databases,
+        [CONNECTION_TABS.DIRECTORY_SOURCES]: counts.sources,
+        [CONNECTION_TABS.DESTINATIONS]: counts.destinations,
+        [CONNECTION_TABS.NOTIFICATIONS]: counts.notifications,
+    }[tab];
+    return (
+        <span className="flex items-center gap-2">
+            {TAB_NAMES[tab]}
+            <Count value={count} />
+        </span>
+    );
 }
 
 export function ConnectionsTabs({ permissions, counts, layouts, initialView }: ConnectionsTabsProps) {
@@ -114,24 +138,31 @@ export function ConnectionsTabs({ permissions, counts, layouts, initialView }: C
     return (
         <Tabs value={active} onValueChange={onTabChange} className="w-full gap-4">
             <div className="flex items-center gap-2 md:gap-3">
-                {/* On a phone the tabs scroll sideways instead of making the page wider. */}
-                <ScrollArea horizontal className="-ml-4 min-w-0 md:ml-0">
-                    <div className="pb-2.5 pl-4 md:pb-0 md:pl-0">
-                        <TabsList>
-                            {canViewDatabases && (
-                                <TabsTrigger value={CONNECTION_TABS.DATABASES}>Databases <Count value={counts.databases} /></TabsTrigger>
-                            )}
-                            {canViewStorage && (
-                                <>
-                                    <TabsTrigger value={CONNECTION_TABS.DIRECTORY_SOURCES}>Directory Sources <Count value={counts.sources} /></TabsTrigger>
-                                    <TabsTrigger value={CONNECTION_TABS.DESTINATIONS}>Backup Destinations <Count value={counts.destinations} /></TabsTrigger>
-                                </>
-                            )}
-                            {canViewNotifications && (
-                                <TabsTrigger value={CONNECTION_TABS.NOTIFICATIONS}>Notifications <Count value={counts.notifications} /></TabsTrigger>
-                            )}
-                        </TabsList>
-                    </div>
+                {/* A phone picks the list from a menu, four tabs never fit next to the Add button.
+                    Both are hidden by CSS rather than by the measured screen, so neither pops in. */}
+                <div className="min-w-0 flex-1 md:hidden">
+                    <Select value={active} onValueChange={onTabChange}>
+                        <SelectTrigger className="w-full" aria-label="Connection list">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {visible.map((tab) => (
+                                <SelectItem key={tab} value={tab}>
+                                    {tabLabel(tab, counts)}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+                {/* From a tablet up they stay tabs, and scroll sideways when they outgrow the row. */}
+                <ScrollArea horizontal className="hidden min-w-0 md:block">
+                    <TabsList>
+                        {visible.map((tab) => (
+                            <TabsTrigger key={tab} value={tab}>
+                                {tabLabel(tab, counts)}
+                            </TabsTrigger>
+                        ))}
+                    </TabsList>
                 </ScrollArea>
                 <div className="ml-auto flex shrink-0 items-center gap-2 self-start md:self-auto">
                     {/* Hidden by CSS rather than by the measured screen, so it never pops in after loading. */}

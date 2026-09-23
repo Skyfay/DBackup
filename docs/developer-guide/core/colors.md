@@ -27,6 +27,8 @@ A tone is a CSS custom property that a `data-tone` attribute sets for an element
   --tone: var(--edit);
   --tone-foreground: var(--edit-foreground);
   --tone-ring: var(--edit);
+  --tone-control: var(--edit);
+  --tone-control-foreground: var(--edit-foreground);
 }
 ```
 
@@ -40,10 +42,12 @@ The primitives take a typed `tone` prop from `src/components/ui/tone.ts` and wri
 | `Button` | The filled variant uses `bg-tone`. A `tone` on the button itself overrides its surroundings. |
 | `DialogHead` | Tints the head and its icon tile |
 | `ContextMenuItem`, `DropdownMenuItem` | Icon in the tone, a frame and a light tint while highlighted |
-| `Switch`, `Checkbox`, `RadioGroupItem` | On, checked and picked in the tone of their surroundings |
+| `Switch`, `Checkbox`, `RadioGroupItem` | On, checked and picked in `--tone-control` |
 | `Input`, `Textarea`, `SelectTrigger`, `TagInput` | Focus ring from `--tone-ring` |
 
 `--tone-ring` follows `create`, `edit` and `pick` and stays the quiet gray `--ring` for every other tone. A red or amber border on a field reads as an error, so a destructive or warning dialog keeps the gray ring on its fields.
+
+`--tone-control` is the tone of the task for switches, checkboxes and radio buttons. Where there is no task, on a page, in Settings or in a neutral dialog, it is `--control-neutral`, a quiet gray instead of the white or black of a neutral button, so a setting that is on never outshines the page.
 
 ## Usage
 
@@ -89,4 +93,4 @@ The task colors are CSS variables in `src/app/globals.css`, one per theme, each 
 }
 ```
 
-Changing a task color means changing these values and nothing else, since no component names a task color. A foreground has to keep a contrast of 4.5:1 against its color. That is why light mode uses the darker shades with white text and dark mode the lighter shades with dark text.
+Changing a task color means changing these values and nothing else, since no component names a task color. The quiet gray of switches and checkboxes outside a task is `--control-neutral` in the same file. A foreground has to keep a contrast of 4.5:1 against its color. That is why light mode uses the darker shades with white text and dark mode the lighter shades with dark text.

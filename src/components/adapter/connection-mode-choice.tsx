@@ -35,7 +35,7 @@ export function ChoiceCards({ value, onValueChange, options, ...props }: ChoiceC
                 <Label
                     key={option.value}
                     htmlFor={`${id}-${option.value}`}
-                    className="cursor-pointer items-start gap-3 rounded-lg border p-3 leading-normal font-normal transition-colors hover:bg-muted/40 has-data-[state=checked]:border-tone/60 has-data-[state=checked]:bg-tone/5 dark:has-data-[state=checked]:bg-tone/10"
+                    className="cursor-pointer items-start gap-3 rounded-lg border p-3 leading-normal font-normal transition-colors hover:bg-muted/40 has-data-[state=checked]:border-tone-control/60 has-data-[state=checked]:bg-tone-control/5 dark:has-data-[state=checked]:bg-tone-control/10"
                 >
                     <RadioGroupItem
                         id={`${id}-${option.value}`}

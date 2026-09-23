@@ -5,20 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
 import type { CredentialProfileSummary } from "@/components/settings/credential-profile-dialog";
+import { CREDENTIAL_TYPE_INFO, nounOf } from "@/components/settings/credential-types";
 import { getAdapterDefinition } from "@/lib/adapters/definitions";
 import type { CredentialType } from "@/lib/core/credentials";
 import { cn } from "@/lib/utils";
-
-/** What a profile of each type holds, shown beside the label and in the head of the list. */
-export const TYPE_HINT: Record<CredentialType, string> = {
-    USERNAME_PASSWORD: "User and password",
-    SSH_KEY: "Key or password",
-    ACCESS_KEY: "Key ID and secret",
-    TOKEN: "API token",
-    SMTP: "SMTP user and password",
-    WEBHOOK: "URL and auth header",
-    OAUTH: "Client ID and secret",
-};
 
 /** The kind of connection a login is picked for. */
 export interface PickerAdapter {
@@ -41,14 +31,6 @@ interface LoginListProps {
 }
 
 const byName = (a: CredentialProfileSummary, b: CredentialProfileSummary) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
-
-/** "Login" becomes "login", while "SSH login" and "OAuth app" keep their capitals. */
-function lowerNoun(label: string): string {
-    return label
-        .split(" ")
-        .map((word) => (/^[A-Z][a-z]*$/.test(word) ? word.toLowerCase() : word))
-        .join(" ");
-}
 
 function connections(count: number): string {
     return count === 1 ? "Used by 1 connection" : `Used by ${count} connections`;
@@ -129,7 +111,7 @@ export function LoginList({ profiles, value, requiredType, adapter, noun, requir
         <>
             <DialogHead tone="pick" icon={KeyRound} className="px-3.5 py-3">
                 <p className="text-sm font-semibold">Pick from the Vault</p>
-                <p className={dialogNoteClass("pick")}>{TYPE_HINT[requiredType]}</p>
+                <p className={dialogNoteClass("pick")}>{CREDENTIAL_TYPE_INFO[requiredType].hint}</p>
             </DialogHead>
             <Command>
                 <CommandInput placeholder="Search by name or description" />
@@ -149,7 +131,7 @@ export function LoginList({ profiles, value, requiredType, adapter, noun, requir
             <div className="flex min-h-12 items-center justify-between gap-3 border-t bg-page/60 px-3 py-2">
                 <Button type="button" variant="outline" size="sm" onClick={onCreate}>
                     <Plus />
-                    New {lowerNoun(noun)}
+                    New {nounOf(noun)}
                 </Button>
                 {required ? (
                     <span className="truncate text-xs text-muted-foreground">Required for {adapter?.name ?? "this connection"}</span>

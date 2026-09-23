@@ -1,53 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
+import { ChevronLeft, KeyRound, Loader2, Lock, Pencil } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { DIALOG_FOOTER, DIALOG_SURFACE, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-} from "@/components/ui/dialog";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Loader2, Eye, EyeOff, KeyRound } from "lucide-react";
-import { toast } from "sonner";
-import { CREDENTIAL_TYPES, type CredentialType } from "@/lib/core/credentials";
-import { CredentialField } from "./credential-field";
+import type { CredentialType } from "@/lib/core/credentials";
+import { cn } from "@/lib/utils";
+import { CredentialTypeList } from "./credential-type-list";
+import { DEFAULTS, TypeFields, cleanData, hasAnyValue, type FormState } from "./credential-type-fields";
+import { CREDENTIAL_TYPE_INFO } from "./credential-types";
 import { SshPublicKeyPanel } from "./ssh-public-key-panel";
-import { SshKeyFields } from "./ssh-key-fields";
-import { buildSshPayload, hasSshPayload } from "./ssh-key-payload";
-
-const TYPE_LABELS: Record<CredentialType, string> = {
-    USERNAME_PASSWORD: "Username & Password",
-    SSH_KEY: "SSH Key",
-    ACCESS_KEY: "Access Key (S3 / API)",
-    TOKEN: "Token",
-    SMTP: "SMTP",
-    WEBHOOK: "Webhook URL",
-    OAUTH: "OAuth (Client Secret)",
-};
-
-const TYPE_DESCRIPTIONS: Record<CredentialType, string> = {
-    USERNAME_PASSWORD: "Database / FTP / SMB user + password.",
-    SSH_KEY: "SSH credentials (password, private key, or agent).",
-    ACCESS_KEY: "S3-style access key + secret key pair.",
-    TOKEN: "Bearer token (Gotify, ntfy, Telegram bot, Twilio).",
-    SMTP: "SMTP user + password for email notifications.",
-    WEBHOOK: "Webhook URL (Discord, Slack, Teams, generic webhook) + optional auth header.",
-    OAUTH: "OAuth app (Google Drive, Dropbox, OneDrive): client ID + secret. The refresh token is added automatically after authorization.",
-};
 
 export interface CredentialProfileSummary {
     id: string;
@@ -72,49 +39,39 @@ interface Props {
     onOpenChange: (open: boolean) => void;
     /** When set, dialog opens in edit mode for the given profile. */
     editProfile?: CredentialProfileSummary | null;
-    /** Pre-selects a type (used by adapter form's inline create flow). */
+    /** The kind a field asks for. The dialog then opens on the form for it, with no way to change it. */
     forcedType?: CredentialType;
+    /** What the field calls it, like "login" or "SSH login", for the title and the button. */
+    noun?: string;
+    /** The kind of connection the field belongs to, like "MySQL", named in the head. */
+    forName?: string;
     onSaved: (profile: CredentialProfileSummary) => void;
 }
 
-type FormState = Record<string, string | undefined>;
+/** The body scrolls between the head and the buttons, whose height the viewport cap leaves out. */
+const BODY_SCROLL = "*:data-[slot=scroll-area-viewport]:max-h-[calc(95dvh-9.5rem)] [&>[data-slot=scroll-area-viewport]>div]:block!";
 
-const DEFAULTS: Record<CredentialType, FormState> = {
-    USERNAME_PASSWORD: { username: "", password: "" },
-    SSH_KEY: {
-        username: "",
-        authType: "password",
-        password: "",
-        privateKey: "",
-        passphrase: "",
-        keySource: "paste",
-        keyType: "ed25519",
-        keyComment: "",
-    },
-    ACCESS_KEY: { accessKeyId: "", secretAccessKey: "" },
-    TOKEN: { token: "" },
-    SMTP: { user: "", password: "" },
-    WEBHOOK: { url: "", authHeader: "" },
-    OAUTH: { clientId: "", clientSecret: "" },
-};
-
-export function CredentialProfileDialog({
-    open,
-    onOpenChange,
-    editProfile,
-    forcedType,
-    onSaved,
-}: Props) {
+/**
+ * Creates or edits a credential profile.
+ *
+ * From the Vault it starts with the list of kinds, like adding a connection starts with its
+ * type. From a field that needs one, the kind is known, so it opens on the form right away and
+ * names the profile like the field does. Editing keeps the kind and never shows the stored
+ * secret: it is replaced only when a new one is typed in.
+ */
+export function CredentialProfileDialog({ open, onOpenChange, editProfile, forcedType, noun: fieldNoun, forName, onSaved }: Props) {
     const isEdit = !!editProfile;
+    const [step, setStep] = useState<"type" | "form">("form");
     const [name, setName] = useState("");
     const [description, setDescription] = useState("");
     const [type, setType] = useState<CredentialType>(forcedType ?? "USERNAME_PASSWORD");
     const [data, setData] = useState<FormState>(DEFAULTS.USERNAME_PASSWORD);
-    const [showSecrets, setShowSecrets] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     // Set once a save generated a keypair. The dialog then shows the public key instead of
     // the form, because this is the only moment the user is told which key to install.
     const [generated, setGenerated] = useState<CredentialProfileSummary | null>(null);
+    const nameId = useId();
+    const descriptionId = useId();
 
     // Reset / hydrate when dialog opens
     useEffect(() => {
@@ -125,6 +82,7 @@ export function CredentialProfileDialog({
             setDescription(editProfile.description ?? "");
             setType(editProfile.type);
             setData(DEFAULTS[editProfile.type]);
+            setStep("form");
             // Note: existing data is intentionally NOT prefilled. Editing data
             // requires the user to re-enter it (mirrors security-conscious UX).
         } else {
@@ -133,13 +91,18 @@ export function CredentialProfileDialog({
             const initialType = forcedType ?? "USERNAME_PASSWORD";
             setType(initialType);
             setData(DEFAULTS[initialType]);
+            // The Vault does not know the kind yet, a field does.
+            setStep(forcedType ? "form" : "type");
         }
-        setShowSecrets(false);
     }, [open, editProfile, forcedType]);
 
-    const onTypeChange = (next: CredentialType) => {
+    const info = CREDENTIAL_TYPE_INFO[type];
+    const noun = fieldNoun ?? info.noun;
+
+    const pickType = (next: CredentialType) => {
         setType(next);
         setData(DEFAULTS[next]);
+        setStep("form");
     };
 
     /** Suggested key comment, so a key is still identifiable in `authorized_keys` later. */
@@ -150,7 +113,8 @@ export function CredentialProfileDialog({
     const isGenerating =
         type === "SSH_KEY" && data.authType === "privateKey" && data.keySource === "generate";
 
-    const submit = async () => {
+    const submit = async (event: React.FormEvent) => {
+        event.preventDefault();
         if (!name.trim()) {
             toast.error("Name is required.");
             return;
@@ -222,274 +186,108 @@ export function CredentialProfileDialog({
     if (generated) {
         return (
             <Dialog open={open} onOpenChange={handleOpenChange}>
-                <DialogContent className="sm:max-w-xl max-h-[90vh] p-0">
-                    <div className="px-6 pt-6 pb-4 shrink-0">
-                        <DialogHeader>
-                            <DialogTitle className="flex items-center gap-2">
-                                <KeyRound className="h-5 w-5" />
-                                Keypair generated
-                            </DialogTitle>
-                            <DialogDescription>
-                                The private key is stored encrypted in the vault and is not shown
-                                again. Install the public key on the host before using this
-                                profile.
-                            </DialogDescription>
-                        </DialogHeader>
-                    </div>
-
-                    {/* An RSA public key runs to a dozen wrapped lines, so this scrolls. Same
-                        measured budgets as the form above, where the reasoning lives. */}
-                    <ScrollArea className="*:data-[slot=scroll-area-viewport]:max-h-[calc(90vh-20rem)] sm:*:data-[slot=scroll-area-viewport]:max-h-[calc(90vh-16rem)]">
-                        <div className="px-6 pb-4">
-                            <SshPublicKeyPanel
-                                publicKey={generated.publicKey!}
-                                fingerprint={generated.fingerprint}
-                                fileName={generated.name}
-                            />
+                {/* No tone on the dialog: the green of the head reports, it never colors the button. */}
+                <DialogContent showCloseButton={false} className={cn(DIALOG_SURFACE, "sm:max-w-xl")}>
+                    <DialogHead tone="success" icon={KeyRound} className="px-5 py-4">
+                        <DialogTitle className="text-base">Keypair generated</DialogTitle>
+                        <DialogDescription className={dialogNoteClass("success")}>
+                            Install the public key on the host before this profile is used.
+                        </DialogDescription>
+                    </DialogHead>
+                    {/* An RSA public key runs to a dozen wrapped lines, so this scrolls. */}
+                    <ScrollArea className={BODY_SCROLL}>
+                        <div className="space-y-3 p-5">
+                            <p className="text-sm text-muted-foreground">
+                                The private key is stored encrypted in the Vault and is not shown again.
+                            </p>
+                            <SshPublicKeyPanel publicKey={generated.publicKey!} fingerprint={generated.fingerprint} fileName={generated.name} />
                         </div>
                     </ScrollArea>
-
-                    <div className="px-6 pt-2 pb-6 shrink-0">
-                        <DialogFooter>
-                            <Button onClick={() => handleOpenChange(false)}>Done</Button>
-                        </DialogFooter>
+                    <div className={cn(DIALOG_FOOTER, "flex justify-end")}>
+                        <Button onClick={() => handleOpenChange(false)}>Done</Button>
                     </div>
                 </DialogContent>
             </Dialog>
         );
     }
 
+    const fromVault = !isEdit && !forcedType;
+    const note = isEdit
+        ? `${editProfile!.name} · ${info.hint}`
+        : fromVault
+          ? `${info.hint} · Step 2 of 2`
+          : [info.hint, forName && `for ${forName}`].filter(Boolean).join(" · ");
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent tone={isEdit ? "edit" : "create"} className="sm:max-w-xl max-h-[90vh] p-0">
-                <div className="px-6 pt-6 pb-4 shrink-0">
-                    <DialogHeader>
-                        <DialogTitle>
-                            {isEdit ? "Edit Credential Profile" : "New Credential Profile"}
-                        </DialogTitle>
-                        <DialogDescription>
-                            {isEdit
-                                ? "Update name, description, or rotate the secret payload."
-                                : "Create a reusable credential that adapters can reference instead of inline secrets."}
-                        </DialogDescription>
-                    </DialogHeader>
-                </div>
-
-                {/* Two measured budgets, the same way the encryption vault does it. Above sm:
-                    the chrome is header 6.6rem (pt-6, an 18px title, a two line description,
-                    pb-4) + footer 4.25rem (pt-2, a h-9 button, pb-6) + the two gap-4 that
-                    DialogContent puts between its children, so 13rem with 3rem of slack for a
-                    third description line. Below sm: DialogFooter stacks its buttons and the
-                    description wraps further, which is worth another 4rem.
-
-                    flex-1 min-h-0 is not an option here: DialogContent is capped with max-h
-                    rather than sized with h, so its height stays indefinite, the viewport's
-                    height:100% never resolves, and the content spills over the footer. Every
-                    dialog in this repo that scrolls with flex-1 sets a definite h-[..vh]. */}
-                <ScrollArea className="*:data-[slot=scroll-area-viewport]:max-h-[calc(90vh-20rem)] sm:*:data-[slot=scroll-area-viewport]:max-h-[calc(90vh-16rem)]">
-                <div className="space-y-4 px-6 pb-4">
-                    <div className="space-y-2">
-                        <Label htmlFor="cred-name">Name</Label>
-                        <Input
-                            id="cred-name"
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
-                            placeholder="e.g. Production MySQL Read-Only"
-                        />
-                    </div>
-
-                    <div className="space-y-2">
-                        <Label htmlFor="cred-desc">Description (optional)</Label>
-                        <Textarea
-                            id="cred-desc"
-                            value={description}
-                            onChange={(e) => setDescription(e.target.value)}
-                            rows={2}
-                            className="resize-none"
-                        />
-                    </div>
-
-                    <div className="space-y-2">
-                        <Label>Type</Label>
-                        <Select
-                            value={type}
-                            onValueChange={(v) => onTypeChange(v as CredentialType)}
-                            disabled={isEdit || !!forcedType}
+            <DialogContent tone={isEdit ? "edit" : "create"} showCloseButton={false} className={cn(DIALOG_SURFACE, "sm:max-w-xl")}>
+                {step === "type" ? (
+                    <CredentialTypeList onPick={pickType} />
+                ) : (
+                    <form onSubmit={submit} noValidate className="flex min-h-0 flex-1 flex-col">
+                        <DialogHead
+                            tone={isEdit ? "edit" : "create"}
+                            icon={isEdit ? Pencil : info.icon}
+                            className="px-5 py-4"
+                            action={
+                                fromVault && (
+                                    <Button type="button" variant="outline" size="sm" onClick={() => setStep("type")}>
+                                        <ChevronLeft />
+                                        Change type
+                                    </Button>
+                                )
+                            }
                         >
-                            <SelectTrigger>
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {CREDENTIAL_TYPES.map((t) => (
-                                    <SelectItem key={t} value={t}>
-                                        {TYPE_LABELS[t]}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                        <p className="text-xs text-muted-foreground">
-                            {TYPE_DESCRIPTIONS[type]}
-                            {isEdit && " (Type cannot be changed after creation.)"}
-                        </p>
-                    </div>
+                            <DialogTitle className="text-base">{isEdit ? `Edit ${noun}` : `New ${noun}`}</DialogTitle>
+                            <DialogDescription className={cn(dialogNoteClass(isEdit ? "edit" : "create"), "truncate")}>{note}</DialogDescription>
+                        </DialogHead>
 
-                    <div className="space-y-3 rounded-md border p-4 bg-muted/30">
-                        <div className="flex items-center justify-between">
-                            <span className="text-sm font-medium">
-                                {isEdit ? "Rotate secret payload (optional)" : "Secret payload"}
-                            </span>
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setShowSecrets((s) => !s)}
-                            >
-                                {showSecrets ? (
-                                    <EyeOff className="h-4 w-4" />
-                                ) : (
-                                    <Eye className="h-4 w-4" />
-                                )}
+                        <ScrollArea className={cn("min-h-0 flex-1", BODY_SCROLL)}>
+                            <div className="space-y-5 p-5">
+                                <div className="space-y-2">
+                                    <Label htmlFor={nameId}>Name</Label>
+                                    <Input id={nameId} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. MySQL backup user" autoComplete="off" />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor={descriptionId}>Description</Label>
+                                    <Input
+                                        id={descriptionId}
+                                        value={description}
+                                        onChange={(e) => setDescription(e.target.value)}
+                                        placeholder="Optional, like what it may do"
+                                        autoComplete="off"
+                                    />
+                                </div>
+
+                                <div className="flex items-start gap-3 pt-1">
+                                    <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted" aria-hidden="true">
+                                        <Lock className="size-3.5 text-muted-foreground" />
+                                    </span>
+                                    <div className="grid gap-0.5">
+                                        <p className="text-sm font-semibold">{isEdit ? "New secret" : "Secret"}</p>
+                                        <p className="text-xs text-muted-foreground">
+                                            {isEdit
+                                                ? "Leave it empty to keep the stored one."
+                                                : "Stored encrypted in the Vault. Only people allowed to reveal it can see it again."}
+                                        </p>
+                                    </div>
+                                </div>
+                                <TypeFields type={type} data={data} setData={setData} defaultComment={defaultComment} />
+                            </div>
+                        </ScrollArea>
+
+                        <div className={cn(DIALOG_FOOTER, "flex items-center justify-end gap-2")}>
+                            <DialogClose asChild>
+                                <Button type="button" variant="ghost">Cancel</Button>
+                            </DialogClose>
+                            <Button type="submit" disabled={isSaving}>
+                                {isSaving && <Loader2 className="animate-spin" />}
+                                {isGenerating ? "Generate and save" : isEdit ? "Save changes" : `Create ${noun}`}
                             </Button>
                         </div>
-                        <TypeFields
-                            type={type}
-                            data={data}
-                            setData={setData}
-                            showSecrets={showSecrets}
-                            defaultComment={defaultComment}
-                        />
-                        {isEdit && (
-                            <p className="text-xs text-muted-foreground">
-                                Leave fields blank to keep the existing secret unchanged.
-                            </p>
-                        )}
-                    </div>
-                </div>
-                </ScrollArea>
-
-                <div className="px-6 pt-2 pb-6 shrink-0">
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => onOpenChange(false)}>
-                            Cancel
-                        </Button>
-                        <Button onClick={submit} disabled={isSaving}>
-                            {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            {isGenerating
-                                ? "Generate and save"
-                                : isEdit
-                                  ? "Save changes"
-                                  : "Create profile"}
-                        </Button>
-                    </DialogFooter>
-                </div>
+                    </form>
+                )}
             </DialogContent>
         </Dialog>
     );
-}
-
-// --------------------------------------------------------------------------
-// Type-specific field renderer
-// --------------------------------------------------------------------------
-
-function TypeFields({
-    type,
-    data,
-    setData,
-    showSecrets,
-    defaultComment,
-}: {
-    type: CredentialType;
-    data: FormState;
-    setData: (next: FormState) => void;
-    showSecrets: boolean;
-    defaultComment: string;
-}) {
-    const update = (key: string, value: string) => setData({ ...data, [key]: value });
-    const secret = showSecrets ? "text" : "password";
-
-    if (type === "USERNAME_PASSWORD") {
-        return (
-            <div className="space-y-3">
-                <CredentialField label="Username" value={data.username ?? ""} onChange={(v) => update("username", v)} />
-                <CredentialField label="Password" type={secret} value={data.password ?? ""} onChange={(v) => update("password", v)} />
-            </div>
-        );
-    }
-
-    if (type === "SSH_KEY") {
-        return (
-            <SshKeyFields
-                data={data}
-                update={update}
-                showSecrets={showSecrets}
-                defaultComment={defaultComment}
-            />
-        );
-    }
-
-    if (type === "ACCESS_KEY") {
-        return (
-            <div className="space-y-3">
-                <CredentialField label="Access key ID" value={data.accessKeyId ?? ""} onChange={(v) => update("accessKeyId", v)} />
-                <CredentialField label="Secret access key" type={secret} value={data.secretAccessKey ?? ""} onChange={(v) => update("secretAccessKey", v)} />
-            </div>
-        );
-    }
-
-    if (type === "TOKEN") {
-        return (
-            <CredentialField label="Token" type={secret} value={data.token ?? ""} onChange={(v) => update("token", v)} />
-        );
-    }
-
-    if (type === "SMTP") {
-        return (
-            <div className="space-y-3">
-                <CredentialField label="User" value={data.user ?? ""} onChange={(v) => update("user", v)} />
-                <CredentialField label="Password" type={secret} value={data.password ?? ""} onChange={(v) => update("password", v)} />
-            </div>
-        );
-    }
-
-    if (type === "WEBHOOK") {
-        return (
-            <div className="space-y-3">
-                <CredentialField label="Webhook URL" type={secret} value={data.url ?? ""} onChange={(v) => update("url", v)} />
-                <CredentialField label="Auth header (optional)" type={secret} value={data.authHeader ?? ""} onChange={(v) => update("authHeader", v)} />
-            </div>
-        );
-    }
-
-    if (type === "OAUTH") {
-        return (
-            <div className="space-y-3">
-                <CredentialField label="Client ID" value={data.clientId ?? ""} onChange={(v) => update("clientId", v)} />
-                <CredentialField label="Client Secret" type={secret} value={data.clientSecret ?? ""} onChange={(v) => update("clientSecret", v)} />
-            </div>
-        );
-    }
-
-    return null;
-}
-
-// Strip empty optional fields and coerce to the right shape per type
-function cleanData(
-    type: CredentialType,
-    raw: FormState,
-    defaultComment: string
-): Record<string, unknown> {
-    // SSH_KEY carries form-only fields (which key source, which type to generate) that the
-    // API must never see, so it builds its own payload.
-    if (type === "SSH_KEY") return buildSshPayload(raw, defaultComment);
-
-    const out: Record<string, string> = {};
-    for (const [k, v] of Object.entries(raw)) {
-        if (v !== undefined && v !== "") out[k] = v;
-    }
-    return out;
-}
-
-function hasAnyValue(type: CredentialType, raw: FormState): boolean {
-    if (type === "SSH_KEY") return hasSshPayload(raw);
-    return Object.values(raw).some((v) => v !== undefined && v !== "");
 }

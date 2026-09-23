@@ -45,12 +45,12 @@ Local Filesystem adapters do not use a credential profile.
 
 ### Standalone
 
-1. Open **Settings → Vault** and switch to the **Credentials** tab
-2. Click **Create Profile**
-3. Pick a credential **type**
-4. Fill the type-specific fields (the form adapts to the chosen type)
-5. Optional: add a description that helps you find it later
-6. Click **Create**
+1. Open **Vault** in the sidebar and switch to the **Credentials** tab
+2. Click **New Profile**
+3. Pick what you want to save. Every kind names the services that log in with it, and the search finds a kind by service as well. **Change type** at the top of the next step goes back to this list.
+4. Give it a **Name** and, if it helps you find it later, a **Description**
+5. Fill in the **Secret**. The fields follow the kind you picked, and the eye in a field shows what you typed.
+6. Click the create button, which names the kind, like **Create SSH login**
 
 ### Inline from an adapter form
 
@@ -58,9 +58,8 @@ You can create a profile without leaving the source/destination dialog:
 
 1. Open the adapter's create or edit dialog
 2. Click **New** beside the **Login** field, or **New login** at the bottom of its list. For cloud drives the field is called **OAuth app**, for the SSH server **SSH login**.
-3. The credential dialog opens stacked on top of the adapter form
-4. Fill, save - the field picks the new profile and your adapter
-   form keeps everything you already entered
+3. The credential dialog opens stacked on top of the adapter form, named like the field and already set to the kind the field needs
+4. Fill in name and secret and click **Create login**. The field picks the new profile, and your adapter form keeps everything you already entered
 
 This is the fastest path during initial setup or when you need a fresh secret
 for a single adapter.

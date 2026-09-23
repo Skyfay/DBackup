@@ -46,7 +46,7 @@ Four files still set `max-h` on the root. `tests/unit/lint-guards/design-system.
 
 ### Scrollable dialog (canonical)
 
-Reference implementation: `AdapterPickerDialog` in `src/components/adapter/adapter-picker.tsx` - it gets both the layout and the viewport selector right. A form split into parts with a list beside them follows `connection-form.tsx` instead. `credential-profile-dialog.tsx` has the layout below but still sets `max-h` on the ScrollArea root, so copy its structure, not its ScrollArea line.
+Reference implementation: `AdapterPickerDialog` in `src/components/adapter/adapter-picker.tsx` - it gets both the layout and the viewport selector right. A form split into parts with a list beside them follows `connection-form.tsx` instead, and a short form with a tinted head follows `credential-profile-dialog.tsx`.
 
 ```tsx
 <DialogContent className="sm:max-w-xl max-h-[90vh] p-0">

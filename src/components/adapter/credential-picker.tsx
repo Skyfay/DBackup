@@ -15,7 +15,8 @@ import {
     type CredentialProfileSummary,
 } from "@/components/settings/credential-profile-dialog";
 import type { CredentialType } from "@/lib/core/credentials";
-import { LoginList, TYPE_HINT, type PickerAdapter } from "./credential-picker-list";
+import { CREDENTIAL_TYPE_INFO, nounOf } from "@/components/settings/credential-types";
+import { LoginList, type PickerAdapter } from "./credential-picker-list";
 
 interface Props {
     slot: "primary" | "ssh";
@@ -100,7 +101,7 @@ export function CredentialPicker({
         <div className="grid gap-2">
             <div className="flex items-baseline justify-between gap-3">
                 <Label htmlFor={triggerId}>{finalLabel}</Label>
-                <span className="text-xs text-muted-foreground">{TYPE_HINT[requiredType]}</span>
+                <span className="text-xs text-muted-foreground">{CREDENTIAL_TYPE_INFO[requiredType].hint}</span>
             </div>
 
             <div className="flex min-w-0 gap-2">
@@ -166,10 +167,13 @@ export function CredentialPicker({
 
             {description && <p className="text-xs text-muted-foreground">{description}</p>}
 
+            {/* The field knows the kind it needs, so the dialog opens on the form for it, named like the field. */}
             <CredentialProfileDialog
                 open={createOpen}
                 onOpenChange={setCreateOpen}
                 forcedType={requiredType}
+                noun={nounOf(finalLabel)}
+                forName={adapter?.name}
                 onSaved={onCreated}
             />
             <CredentialProfileDialog
@@ -177,6 +181,7 @@ export function CredentialPicker({
                 onOpenChange={(v) => { setEditOpen(v); if (!v) setEditTarget(null); }}
                 editProfile={editTarget}
                 forcedType={requiredType}
+                noun={nounOf(finalLabel)}
                 onSaved={(profile) => {
                     // The saved profile comes without its usage, which has not changed.
                     setProfiles((prev) => prev.map((x) => x.id === profile.id ? { ...x, ...profile } : x));

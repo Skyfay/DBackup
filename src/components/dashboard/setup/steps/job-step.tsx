@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { toneAttribute } from "@/components/ui/tone";
 import { Input } from "@/components/ui/input";
 import {
     Form,
@@ -175,7 +176,7 @@ export function JobStep({ wizardData, onUpdate, onNext, onPrev }: JobStepProps) 
     }
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6" {...toneAttribute("create")}>
             <div className="space-y-2">
                 <div className="flex items-center gap-2">
                     <CalendarClock className="h-5 w-5 text-primary" />
@@ -397,7 +398,7 @@ export function JobStep({ wizardData, onUpdate, onNext, onPrev }: JobStepProps) 
                             <ArrowLeft className="mr-2 h-4 w-4" />
                             Back
                         </Button>
-                        <Button tone="create" type="submit">
+                        <Button type="submit">
                             Create Job & Finish
                             <CheckCircle2 className="ml-2 h-4 w-4" />
                         </Button>

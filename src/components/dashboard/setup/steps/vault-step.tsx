@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { toneAttribute } from "@/components/ui/tone";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -85,7 +86,7 @@ export function VaultStep({ wizardData, onUpdate, onNext, onPrev, onSkip }: Vaul
     }
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6" {...toneAttribute("create")}>
             <div className="space-y-2">
                 <div className="flex items-center gap-2">
                     <Lock className="h-5 w-5 text-primary" />
@@ -145,7 +146,7 @@ export function VaultStep({ wizardData, onUpdate, onNext, onPrev, onSkip }: Vaul
                         <SkipForward className="mr-2 h-4 w-4" />
                         Skip
                     </Button>
-                    <Button tone="create" onClick={handleCreate} disabled={!name.trim() || isCreating}>
+                    <Button onClick={handleCreate} disabled={!name.trim() || isCreating}>
                         {isCreating ? "Creating..." : "Create & Continue"}
                         <ArrowRight className="ml-2 h-4 w-4" />
                     </Button>

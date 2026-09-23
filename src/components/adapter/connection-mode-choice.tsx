@@ -40,7 +40,7 @@ export function ChoiceCards({ value, onValueChange, options, ...props }: ChoiceC
                     <RadioGroupItem
                         id={`${id}-${option.value}`}
                         value={option.value}
-                        className="mt-0.5 shrink-0 border-input data-[state=checked]:border-tone data-[state=checked]:text-tone"
+                        className="mt-0.5 shrink-0"
                     />
                     <span className="grid min-w-0 gap-0.5">
                         <span className="flex items-center gap-1.5 text-sm font-medium">

@@ -112,7 +112,7 @@ export function CredentialPicker({
                             role="combobox"
                             aria-expanded={open}
                             disabled={loading}
-                            className="min-w-0 flex-1 justify-between font-normal"
+                            className="min-w-0 flex-1 justify-between font-normal focus-visible:border-tone-ring focus-visible:ring-tone-ring/50"
                         >
                             <span className="flex min-w-0 items-center gap-2">
                                 {loading ? (

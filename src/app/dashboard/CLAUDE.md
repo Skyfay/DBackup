@@ -69,7 +69,8 @@ Every other page still has the old look. Do not copy patterns from it, copy them
 | `success` | Green | Reports that all is well | Never on an action |
 | `neutral` | Primary | Everything else | Settings, pages, menus, Sign in, Test, Download |
 
-- The tone is set once, where the task starts: `<DialogContent tone="edit">`, `<PopoverContent tone="pick">`, a menu entry's `tone`, or `<Button tone="create">` for New database on a page. Everything inside that carries a color reads it through the `tone` utilities (`bg-tone`, `text-tone`, `border-tone/60`): the `DialogHead`, the filled button and a picked card. A form that adds and edits sets `tone={initialData ? "edit" : "create"}` once and all of it follows, see `connection-form.tsx`. Nothing picks a task color by hand.
+- The tone is set once, where the task starts: `<DialogContent tone="edit">`, `<PopoverContent tone="pick">`, a menu entry's `tone`, or `<Button tone="create">` for New database on a page. Everything inside that carries a color reads it through the `tone` utilities (`bg-tone`, `text-tone`, `border-tone/60`): the `DialogHead`, the filled button, picked cards, switches, checkboxes, radio buttons and the focus ring of fields. A form that adds and edits sets `tone={initialData ? "edit" : "create"}` once and all of it follows, see `connection-form.tsx`. Nothing picks a task color by hand.
+- A switch, checkbox, radio button or picked card shows the tone of the dialog it sits in, so the same setting is blue while adding and violet while editing. On a page it is neutral. They get it from their primitives, so no call site sets a checked color of its own.
 - Pages are neutral. On a page only the button that opens a toned dialog carries its tone, and a Delete button is `variant="destructive"`. The filled button of a view is its one main action, everything beside it is `outline` or `ghost`.
 - A menu entry shows the tone of the dialog it opens: the icon in that color and, while it is highlighted, a frame and a light tint like a picked card. The head of the menu stays neutral. See `connectionActions`.
 - The task colors are `--create`, `--edit` and `--pick` in `globals.css`, each with a `-foreground`, so a theme or a user setting changes one in a single place.
@@ -84,7 +85,7 @@ Every other page still has the old look. Do not copy patterns from it, copy them
 - Switching a range does not load again. Load the longest range once and cut the shorter ones in the browser, like `upcoming-runs.tsx` and `storage-history-modal.tsx`.
 - Buttons in a card header or a banner are `size="sm"` and `outline`, unless one is the single primary action. On phones they go full width with `w-full sm:w-auto` or `flex-1 sm:flex-none`.
 - An icon button inside a row is `variant="ghost"` with `size-8` and an `aria-label`.
-- The focus ring is 2px of `ring` at half strength plus a `ring` coloured border, quiet enough to sit beside the content. The border carries the contrast, the halo only makes it easier to spot. It shows on keyboard focus on every control and on a click into a text field.
+- The focus ring is 2px of `ring` at half strength plus a `ring` coloured border, quiet enough to sit beside the content. The border carries the contrast, the halo only makes it easier to spot. It shows on keyboard focus on every control and on a click into a text field. A field takes its ring from `--tone-ring`: blue, violet or turquoise in a dialog that adds, edits or picks, the quiet gray everywhere else. A destructive or warning dialog keeps the gray too, since a red or amber border on a field reads as an error.
 
 ## Lists and rows
 

@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { toneAttribute } from "@/components/ui/tone";
 import { Input } from "@/components/ui/input";
 import {
     Form,
@@ -220,7 +221,7 @@ export function SourceStep({ adapters, wizardData, onUpdate, onNext, onPrev }: S
     // Step 2: Configure the selected adapter
     return (
         <>
-            <div className="space-y-6">
+            <div className="space-y-6" {...toneAttribute("create")}>
                 <div className="space-y-2">
                     <div className="flex items-center gap-2">
                         <Database className="h-5 w-5 text-primary" />
@@ -315,7 +316,7 @@ export function SourceStep({ adapters, wizardData, onUpdate, onNext, onPrev }: S
                                     <Button type="button" variant="secondary" onClick={testConnection}>
                                         Test Connection
                                     </Button>
-                                    <Button tone="create" type="submit">
+                                    <Button type="submit">
                                         Save & Continue
                                         <ArrowRight className="ml-2 h-4 w-4" />
                                     </Button>

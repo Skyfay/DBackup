@@ -90,7 +90,7 @@ export function TagInput({
         <div
             className={cn(
                 "flex min-h-9 w-full flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-3 py-1.5 text-sm shadow-xs transition-colors",
-                "focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-2",
+                "focus-within:border-tone-ring focus-within:ring-tone-ring/50 focus-within:ring-2",
                 invalid && "border-destructive",
                 disabled && "cursor-not-allowed opacity-50",
                 className,

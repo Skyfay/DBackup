@@ -26,6 +26,7 @@ A tone is a CSS custom property that a `data-tone` attribute sets for an element
 [data-tone="edit"] {
   --tone: var(--edit);
   --tone-foreground: var(--edit-foreground);
+  --tone-ring: var(--edit);
 }
 ```
 
@@ -39,6 +40,10 @@ The primitives take a typed `tone` prop from `src/components/ui/tone.ts` and wri
 | `Button` | The filled variant uses `bg-tone`. A `tone` on the button itself overrides its surroundings. |
 | `DialogHead` | Tints the head and its icon tile |
 | `ContextMenuItem`, `DropdownMenuItem` | Icon in the tone, a frame and a light tint while highlighted |
+| `Switch`, `Checkbox`, `RadioGroupItem` | On, checked and picked in the tone of their surroundings |
+| `Input`, `Textarea`, `SelectTrigger`, `TagInput` | Focus ring from `--tone-ring` |
+
+`--tone-ring` follows `create`, `edit` and `pick` and stays the quiet gray `--ring` for every other tone. A red or amber border on a field reads as an error, so a destructive or warning dialog keeps the gray ring on its fields.
 
 ## Usage
 
@@ -58,7 +63,7 @@ The primitives take a typed `tone` prop from `src/components/ui/tone.ts` and wri
 <PopoverContent tone="pick">...</PopoverContent>
 ```
 
-A component that needs the color itself reads it through the `tone` utilities, like the picked card in `connection-mode-choice.tsx` with `has-data-[state=checked]:border-tone/60`. It never names a task color directly.
+A component that needs the color itself reads it through the `tone` utilities, like the picked card in `connection-mode-choice.tsx` with `has-data-[state=checked]:border-tone/60`. It never names a task color directly. A plain element that starts a task, like a step of the setup wizard, sets the tone with `{...toneAttribute("create")}` from `src/components/ui/tone.ts`.
 
 ## Rules
 

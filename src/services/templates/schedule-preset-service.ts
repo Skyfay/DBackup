@@ -5,8 +5,12 @@ import { NotFoundError, ServiceError } from "@/lib/logging/errors";
 
 const log = logger.child({ service: "SchedulePresetService" });
 
+/** Every preset with how many jobs follow it. */
 export async function getSchedulePresets() {
-  return prisma.schedulePreset.findMany({ orderBy: { name: "asc" } });
+  return prisma.schedulePreset.findMany({
+    include: { _count: { select: { jobs: true } } },
+    orderBy: { name: "asc" },
+  });
 }
 
 export async function getSchedulePreset(id: string) {

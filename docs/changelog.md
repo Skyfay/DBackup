@@ -52,7 +52,8 @@ All notable changes to DBackup are documented here.
 - **vault**: A new credential profile starts with a list of what can be saved and the services that use each kind, while the New button of a login field opens the form for its kind right away. Every secret field has its own button to show what was typed, and an SSH login picks how it signs in and where its key comes from on cards.
 - **connections**: The file browser of a path field starts where the field points and shows the path as clickable parts with a filter, the size and date of every entry and a badge on the files the field takes. Hidden files stay out until asked for, and every entry can be reached with the keyboard.
 - **setup**: The Quick Setup lists its steps on the left with what each one made, and adds databases, destinations and channels with the same form as the Connections page. Every step can take an existing connection or key instead, and the job picks its schedule and its databases on cards.
-- **jobs**: The form for adding and editing a job lists its parts on the left, marks the ones that are done or still miss something, and shows one part at a time. Connections are picked from searchable lists, and the channels a job notifies directly can be seen and removed there.
+- **jobs**: The form for adding and editing a job lists its parts on the left, marks the ones that are done or still miss something, and shows one part at a time. Connections and schedule presets are picked from searchable lists, and the channels a job notifies directly can be seen and removed there.
+- **templates**: The dialog for adding and editing a schedule preset has the new look. It and the Templates page now say that a job follows every change to its preset, instead of claiming it keeps its own copy of the schedule.
 
 ### 🔄 Changed
 

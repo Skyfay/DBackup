@@ -14,6 +14,18 @@ import { Switch } from "@/components/ui/switch";
 import { NO_ENCRYPTION, type AdapterOption, type EncryptionOption, type JobFormValues } from "./job-form-schema";
 import { SchedulePicker } from "./schedule-picker";
 import { SchedulePresetField } from "./schedule-preset-field";
+import { useSchedulerTimezone } from "./use-scheduler-timezone";
+
+/** The label of the preset field, with the time zone the times of the presets are in. */
+function PresetLabel() {
+    const timezone = useSchedulerTimezone();
+    return (
+        <div className="flex items-baseline justify-between gap-3">
+            <FormLabel>Preset</FormLabel>
+            {timezone && <span className="text-xs text-muted-foreground">Times in {timezone}</span>}
+        </div>
+    );
+}
 
 /** Its name, whether it runs on its own and when. */
 export function BasicsPart() {
@@ -89,7 +101,7 @@ export function BasicsPart() {
                     name="schedulePresetId"
                     render={({ field }) => (
                         <FormItem>
-                            <FormLabel>Preset</FormLabel>
+                            <PresetLabel />
                             <FormControl>
                                 <SchedulePresetField
                                     value={field.value}

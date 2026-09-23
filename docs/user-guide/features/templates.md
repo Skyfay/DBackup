@@ -84,9 +84,9 @@ A Schedule Preset is a named cron expression that can be shared across jobs.
 
 1. Open a job (create or edit)
 2. In the **Basics** part, pick **A schedule preset** under **When it runs**
-3. Pick a preset from the list, or add one with **New preset**
+3. Pick a preset from the list, or add one with **New** beside the field
 
-The job follows the preset: when the preset changes, every job that follows it runs on the new schedule without being edited. **Edit** on a preset in the list changes it from the job form. To stop following, pick **Its own schedule**, which starts from the preset's expression.
+The list shows when each preset runs and how many jobs follow it, and the field names the time zone of the scheduler the times are in. The job follows the preset: when the preset changes, every job that follows it runs on the new schedule without being edited. **Edit** on a preset in the list changes it from the job form. To stop following, pick **Its own schedule**, which starts from the preset's expression.
 
 ## Next Steps
 

@@ -1,14 +1,13 @@
 "use client";
 
-import { Check, KeyRound, Pencil, Plus, X } from "lucide-react";
+import { KeyRound, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
+import { PickList, type PickEntry } from "@/components/ui/pick-list";
 import type { CredentialProfileSummary } from "@/components/settings/credential-profile-dialog";
 import { CREDENTIAL_TYPE_INFO } from "@/components/settings/credential-types";
 import { getAdapterDefinition } from "@/lib/adapters/definitions";
 import type { CredentialType } from "@/lib/core/credentials";
-import { cn, nounOf } from "@/lib/utils";
+import { nounOf } from "@/lib/utils";
 
 /** The kind of connection a login is picked for. */
 export interface PickerAdapter {
@@ -47,93 +46,44 @@ function usage(profile: CredentialProfileSummary, byKind: boolean): string {
     return `Used by ${profile.usedBy.map((id) => getAdapterDefinition(id)?.name ?? id).join(", ")}`;
 }
 
-function LoginRow({ profile, picked, byKind, onPick, onEdit }: {
-    profile: CredentialProfileSummary;
-    picked: boolean;
-    byKind: boolean;
-    onPick: (id: string) => void;
-    onEdit: (profile: CredentialProfileSummary) => void;
-}) {
-    const meta = [profile.description, usage(profile, byKind)].filter(Boolean).join(" · ");
-    return (
-        <CommandItem value={profile.name} keywords={profile.description ? [profile.description] : undefined} onSelect={() => onPick(profile.id)} className="group gap-3 px-2 py-2">
-            <span
-                className={cn("flex size-8 shrink-0 items-center justify-center rounded-md border", picked ? "border-tone/30 bg-tone/12" : "bg-muted")}
-                aria-hidden="true"
-            >
-                <KeyRound className={cn("size-3.5", picked ? "text-tone" : "text-muted-foreground")} />
-            </span>
-            <span className="grid min-w-0 flex-1 gap-0.5">
-                <span className="truncate font-medium">{profile.name}</span>
-                <span className="truncate text-xs text-muted-foreground">{meta}</span>
-            </span>
-            {picked && (
-                <>
-                    <Check className="size-4 text-tone" aria-hidden="true" />
-                    <span className="sr-only">Picked</span>
-                </>
-            )}
-            {/* Shown on hover from md up, always on a phone, which has none. The row picks on a
-                click and on Enter, so the button keeps both to itself. */}
-            <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-7 shrink-0 gap-1 px-2 text-xs md:opacity-0 md:group-hover:opacity-100 md:group-data-[selected=true]:opacity-100 md:focus-visible:opacity-100"
-                onClick={(event) => {
-                    event.stopPropagation();
-                    onEdit(profile);
-                }}
-                onKeyDown={(event) => event.stopPropagation()}
-                aria-label={`Edit ${profile.name}`}
-            >
-                <Pencil className="size-3" />
-                Edit
-            </Button>
-        </CommandItem>
-    );
+function entryOf(profile: CredentialProfileSummary, byKind: boolean): PickEntry {
+    return {
+        id: profile.id,
+        name: profile.name,
+        meta: [profile.description, usage(profile, byKind)].filter(Boolean).join(" · "),
+        keywords: profile.description ? [profile.description] : undefined,
+    };
 }
 
 /**
- * The list of saved logins behind the login field, headed in the turquoise of picking. The logins
- * that other connections of the same kind use come first, since the next one most likely wants
- * one of them. Every row says what the login is and where it is in use, so two with similar
- * names are told apart without opening the Vault.
+ * The list of saved logins behind the login field. The logins that other connections of the same
+ * kind use come first, since the next one most likely wants one of them. Every row says what the
+ * login is and where it is in use, so two with similar names are told apart without opening the Vault.
  */
 export function LoginList({ profiles, value, requiredType, adapter, noun, required, onPick, onEdit, onCreate }: LoginListProps) {
     const suggested = adapter ? profiles.filter((profile) => profile.usedBy?.includes(adapter.id)).sort(byName) : [];
     const others = profiles.filter((profile) => !suggested.includes(profile)).sort(byName);
-    const row = (profile: CredentialProfileSummary, byKind: boolean) => (
-        <LoginRow key={profile.id} profile={profile} picked={profile.id === value} byKind={byKind} onPick={onPick} onEdit={onEdit} />
-    );
 
     return (
-        <>
-            <DialogHead tone="pick" icon={KeyRound} className="px-3.5 py-3">
-                <p className="text-sm font-semibold">Pick from the Vault</p>
-                <p className={dialogNoteClass("pick")}>{CREDENTIAL_TYPE_INFO[requiredType].hint}</p>
-            </DialogHead>
-            <Command>
-                <CommandInput placeholder="Search by name or description" />
-                <CommandList>
-                    <CommandEmpty className="px-4 py-6 text-center text-sm text-muted-foreground">
-                        {profiles.length === 0 ? "Nothing of this kind is saved yet." : "Nothing matches."}
-                    </CommandEmpty>
-                    {suggested.length > 0 && adapter && (
-                        <CommandGroup heading={`Used by your ${adapter.name} connections`}>{suggested.map((profile) => row(profile, false))}</CommandGroup>
-                    )}
-                    {others.length > 0 && (
-                        <CommandGroup heading={suggested.length > 0 ? "Others" : undefined}>{others.map((profile) => row(profile, true))}</CommandGroup>
-                    )}
-                </CommandList>
-            </Command>
-            {/* Outline buttons like every other secondary action, so they read as buttons on the strip. */}
-            <div className="flex min-h-12 items-center justify-between gap-3 border-t bg-page/60 px-3 py-2">
-                <Button type="button" variant="outline" size="sm" onClick={onCreate}>
-                    <Plus />
-                    New {nounOf(noun)}
-                </Button>
-                {required ? (
+        <PickList
+            icon={KeyRound}
+            title="Pick from the Vault"
+            note={CREDENTIAL_TYPE_INFO[requiredType].hint}
+            groups={[
+                { heading: adapter && `Used by your ${adapter.name} connections`, entries: suggested.map((profile) => entryOf(profile, false)) },
+                { heading: suggested.length > 0 ? "Others" : undefined, entries: others.map((profile) => entryOf(profile, true)) },
+            ]}
+            value={value}
+            emptyText={profiles.length === 0 ? "Nothing of this kind is saved yet." : "Nothing matches."}
+            onPick={onPick}
+            onEdit={(id) => {
+                const profile = profiles.find((entry) => entry.id === id);
+                if (profile) onEdit(profile);
+            }}
+            createLabel={`New ${nounOf(noun)}`}
+            onCreate={onCreate}
+            aside={
+                required ? (
                     <span className="truncate text-xs text-muted-foreground">Required for {adapter?.name ?? "this connection"}</span>
                 ) : (
                     value && (
@@ -142,8 +92,8 @@ export function LoginList({ profiles, value, requiredType, adapter, noun, requir
                             Use none
                         </Button>
                     )
-                )}
-            </div>
-        </>
+                )
+            }
+        />
     );
 }

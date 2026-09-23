@@ -52,6 +52,7 @@ function DialogContent({
   children,
   showCloseButton = true,
   tone,
+  onSubmit,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
@@ -69,6 +70,13 @@ function DialogContent({
           className
         )}
         {...props}
+        onSubmit={(event) => {
+          onSubmit?.(event)
+          // React passes a submit on through the portal to the form the dialog was opened from,
+          // like the job form behind New preset, which would then save as well. A form in a
+          // dialog only ever submits itself.
+          event.stopPropagation()
+        }}
       >
         {children}
         {showCloseButton && (

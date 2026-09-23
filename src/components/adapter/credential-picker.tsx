@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useId, useState, useCallback } from "react";
-import { Loader2, Plus, KeyRound, ChevronsUpDown } from "lucide-react";
+import { Plus, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { PickTrigger } from "@/components/ui/pick-list";
 import {
     Popover,
     PopoverContent,
@@ -108,32 +109,17 @@ export function CredentialPicker({
             <div className="flex min-w-0 gap-2">
                 <Popover open={open} onOpenChange={setOpen}>
                     <PopoverTrigger asChild>
-                        <Button
-                            id={triggerId}
-                            variant="outline"
-                            role="combobox"
-                            aria-expanded={open}
-                            disabled={loading}
-                            className="min-w-0 flex-1 justify-between font-normal focus-visible:border-tone-ring focus-visible:ring-tone-ring/50"
-                        >
-                            <span className="flex min-w-0 items-center gap-2">
-                                {loading ? (
-                                    <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
-                                ) : (
-                                    <KeyRound className="size-4 shrink-0 text-muted-foreground" />
-                                )}
-                                {loading ? (
-                                    <span className="text-muted-foreground">Loading...</span>
-                                ) : selected ? (
-                                    <span className="truncate">{selected.name}</span>
-                                ) : (
-                                    <span className="truncate text-muted-foreground">
-                                        {profiles.length === 0 ? "No saved login yet" : required ? "Pick from the Vault" : "None"}
-                                    </span>
-                                )}
-                            </span>
-                            <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
-                        </Button>
+                        <PickTrigger id={triggerId} icon={KeyRound} loading={loading} aria-expanded={open} disabled={loading}>
+                            {loading ? (
+                                <span className="text-muted-foreground">Loading...</span>
+                            ) : selected ? (
+                                <span className="truncate">{selected.name}</span>
+                            ) : (
+                                <span className="truncate text-muted-foreground">
+                                    {profiles.length === 0 ? "No saved login yet" : required ? "Pick from the Vault" : "None"}
+                                </span>
+                            )}
+                        </PickTrigger>
                     </PopoverTrigger>
                     {/* On the raised surface, so it stands out from the dialog it opens over. */}
                     <PopoverContent tone="pick" align="start" className="w-(--radix-popover-trigger-width) min-w-80 overflow-hidden bg-raised p-0">

@@ -2,9 +2,6 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -23,13 +20,11 @@ import {
 import { toast } from "sonner";
 import { Loader2, Plus, Trash2, Pencil, CalendarClock } from "lucide-react";
 import { SchedulePreset } from "@prisma/client";
-import { SchedulePicker } from "@/components/dashboard/jobs/schedule-picker";
 import {
   getSchedulePresets,
-  createSchedulePreset,
-  updateSchedulePreset,
   deleteSchedulePreset,
 } from "@/app/actions/templates";
+import { SchedulePresetDialog } from "./schedule-preset-dialog";
 import { DataTable, type BulkAction } from "@/components/ui/data-table";
 import { unwrapBulkAction } from "@/lib/bulk-request";
 import { bulkDeleteSchedulePresets } from "@/app/actions/templates-bulk";
@@ -156,8 +151,8 @@ export function SchedulePresetList() {
               Schedule Presets
             </CardTitle>
             <CardDescription>
-              Reusable schedule presets for backup jobs. Selecting a preset
-              fills in the cron schedule - the job remains independent.
+              Reusable schedules for backup jobs. A job that follows a preset
+              runs on its schedule, also after the preset changes.
             </CardDescription>
           </div>
           <Button tone="create" onClick={() => setIsCreateOpen(true)} size="sm">
@@ -226,103 +221,5 @@ export function SchedulePresetList() {
         </DialogContent>
       </Dialog>
     </>
-  );
-}
-
-interface SchedulePresetDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  preset?: SchedulePreset;
-  onSuccess: (preset: SchedulePreset) => void;
-}
-
-export function SchedulePresetDialog({
-  open,
-  onOpenChange,
-  preset,
-  onSuccess,
-}: SchedulePresetDialogProps) {
-  const [name, setName] = useState(preset?.name ?? "");
-  const [description, setDescription] = useState(preset?.description ?? "");
-  const [schedule, setSchedule] = useState(preset?.schedule ?? "0 3 * * *");
-  const [isSaving, setIsSaving] = useState(false);
-
-  useEffect(() => {
-    if (open) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setName(preset?.name ?? "");
-      setDescription(preset?.description ?? "");
-      setSchedule(preset?.schedule ?? "0 3 * * *");
-    }
-  }, [open, preset]);
-
-  const handleSave = async () => {
-    if (!name.trim() || !schedule.trim()) return;
-    setIsSaving(true);
-    const res = preset
-      ? await updateSchedulePreset(preset.id, { name, description, schedule })
-      : await createSchedulePreset({ name, description, schedule });
-    setIsSaving(false);
-    if (res.success && res.data) {
-      toast.success(
-        preset ? "Schedule preset updated" : "Schedule preset created"
-      );
-      onSuccess(res.data);
-    } else {
-      toast.error(res.error || "Failed to save schedule preset");
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent tone={preset ? "edit" : "create"} className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>
-            {preset ? "Edit Schedule Preset" : "New Schedule Preset"}
-          </DialogTitle>
-          <DialogDescription>
-            Save a cron expression as a reusable preset. Jobs that use this
-            preset copy the schedule and remain independent.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="sp-name">Name</Label>
-            <Input
-              id="sp-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Daily at 3 AM"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="sp-desc">Description (optional)</Label>
-            <Textarea
-              id="sp-desc"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Short description"
-              rows={2}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Schedule</Label>
-            <SchedulePicker value={schedule} onChange={setSchedule} />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSave}
-            disabled={isSaving || !name.trim() || !schedule.trim()}
-          >
-            {isSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-            {preset ? "Save Changes" : "Create"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

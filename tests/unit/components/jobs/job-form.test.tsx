@@ -10,7 +10,15 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.f
 vi.mock("@/lib/auth/client", () => ({ useSession: () => ({ data: { user: { timeFormat: "HH:mm" } } }) }));
 vi.mock("@/app/actions/templates", () => {
     const empty = () => Promise.resolve({ success: true, data: [] });
-    return { getSchedulePresets: empty, getNotificationTemplates: empty, getExcludePatternPresets: empty, getRetentionPolicies: empty, getNamingTemplates: empty };
+    const created = { id: "preset-new", name: "Nightly", description: null, schedule: "30 1 * * *", createdAt: new Date(), updatedAt: new Date() };
+    return {
+        getSchedulePresets: empty,
+        getNotificationTemplates: empty,
+        getExcludePatternPresets: empty,
+        getRetentionPolicies: empty,
+        getNamingTemplates: empty,
+        createSchedulePreset: () => Promise.resolve({ success: true, data: created }),
+    };
 });
 
 const json = (body: unknown, ok = true) => Promise.resolve({ ok, json: () => Promise.resolve(body) } as Response);
@@ -103,6 +111,33 @@ describe("job form", () => {
             destinations: [{ configId: "nas", priority: 0, retention: {}, retentionPolicyId: null }],
             encryptionProfileId: "",
         });
+    });
+
+    it("adds a schedule preset from the job without saving the job on the way", async () => {
+        const user = userEvent.setup();
+        const onSaved = renderForm();
+
+        // Everything the job needs is there, so a stray submit would save it.
+        await user.type(screen.getByLabelText("Name"), "Shop nightly");
+        await user.click(screen.getByRole("tab", { name: /What goes in/ }));
+        await pick(user, screen.getByRole("combobox", { name: "Database" }), /^Shop/);
+        await user.click(screen.getByRole("tab", { name: /Destinations/ }));
+        await pick(user, within(screen.getByRole("tabpanel", { name: /Destinations/ })).getByRole("combobox", { name: "Destination 1" }), /^NAS/);
+        await user.click(screen.getByRole("tab", { name: /Basics/ }));
+        await user.click(screen.getByRole("radio", { name: /A schedule preset/ }));
+
+        await user.click(await screen.findByRole("button", { name: "New" }));
+        const dialog = await screen.findByRole("dialog", { name: "New schedule preset" });
+        await user.type(within(dialog).getByLabelText("Name"), "Nightly");
+        await user.click(within(dialog).getByRole("button", { name: "Create preset" }));
+
+        await waitFor(() => expect(screen.getByRole("combobox", { name: "Preset" })).toHaveTextContent("Nightly"));
+        expect(onSaved).not.toHaveBeenCalled();
+        expect(posted("/api/jobs", "POST")).toBeUndefined();
+
+        await user.click(screen.getByRole("button", { name: "Create job" }));
+        await waitFor(() => expect(onSaved).toHaveBeenCalled());
+        expect(posted("/api/jobs", "POST")).toMatchObject({ schedulePresetId: "preset-new", schedule: "30 1 * * *" });
     });
 
     it("saves an edited job with what it had, in the violet of editing", async () => {

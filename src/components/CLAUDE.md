@@ -80,6 +80,7 @@ Rules:
 - `shrink-0` on header and footer so only the body scrolls.
 - Viewport max-height subtracts the chrome: roughly `calc(90vh-10rem)` with header and footer, `calc(90vh-9rem)` with header only. Match the dialog's own `max-h`.
 - Width via `sm:max-w-*`. Common sizes here: `sm:max-w-md` (confirm), `sm:max-w-xl`, `sm:max-w-2xl`, `sm:max-w-4xl` (permission matrices, adapter forms).
+- A dialog opened from inside a form, like New preset in the job form, may hold a `<form>` of its own. React passes its submit through the portal to the form behind it, so `DialogContent` stops the event. Keep such a form inside `DialogContent`, never around it.
 
 ### Accessibility
 

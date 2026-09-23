@@ -39,13 +39,14 @@ describe("SchedulePresetService", () => {
   // ── Read operations ──────────────────────────────────────────
 
   describe("getSchedulePresets", () => {
-    it("returns all presets ordered by name", async () => {
+    it("returns all presets ordered by name, with how many jobs follow each", async () => {
       const presets = [makePreset({ id: "a" }), makePreset({ id: "b" })];
       prismaMock.schedulePreset.findMany.mockResolvedValue(presets as any);
 
       const result = await getSchedulePresets();
 
       expect(prismaMock.schedulePreset.findMany).toHaveBeenCalledWith({
+        include: { _count: { select: { jobs: true } } },
         orderBy: { name: "asc" },
       });
       expect(result).toHaveLength(2);

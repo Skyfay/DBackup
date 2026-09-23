@@ -117,9 +117,9 @@ export function AddSsoProviderDialog() {
     return (
         <Dialog open={open} onOpenChange={(v) => { setOpen(v); if(!v) resetForm(); }}>
             <DialogTrigger asChild>
-                <Button><PlusCircle className="mr-2 h-4 w-4" /> Add Provider</Button>
+                <Button tone="create"><PlusCircle className="mr-2 h-4 w-4" /> Add Provider</Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl">
+            <DialogContent tone="create" className="max-w-2xl">
                 <DialogHeader>
                     <DialogTitle>{step === 1 ? "Select Provider Type" : `Configure ${selectedAdapter?.name}`}</DialogTitle>
                     <DialogDescription>

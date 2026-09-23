@@ -308,7 +308,7 @@ export function CredentialProfilesList({ canReveal }: { canReveal: boolean }) {
                             Reusable credentials referenced by adapters. Secrets are encrypted at rest and never leave the server unless you explicitly reveal them.
                         </CardDescription>
                     </div>
-                    <Button size="sm" onClick={openCreate}>
+                    <Button tone="create" size="sm" onClick={openCreate}>
                         <Plus className="mr-2 h-4 w-4" />
                         New Profile
                     </Button>
@@ -351,7 +351,7 @@ export function CredentialProfilesList({ canReveal }: { canReveal: boolean }) {
                     }
                 }}
             >
-                <DialogContent>
+                <DialogContent tone="destructive">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2 text-destructive">
                             <AlertTriangle className="h-5 w-5" />

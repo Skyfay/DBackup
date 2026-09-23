@@ -221,7 +221,7 @@ export function ExcludePatternPresetList() {
               Reusable sets of glob patterns (e.g. node_modules/**, *.tmp) to exclude from directory-source backups.
             </CardDescription>
           </div>
-          <Button onClick={() => setIsCreateOpen(true)} size="sm">
+          <Button tone="create" onClick={() => setIsCreateOpen(true)} size="sm">
             <Plus className="h-4 w-4 mr-2" />
             New Preset
           </Button>
@@ -264,7 +264,7 @@ export function ExcludePatternPresetList() {
         open={!!deleteTarget}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
       >
-        <DialogContent>
+        <DialogContent tone="destructive">
           <DialogHeader>
             <DialogTitle>Delete Exclude Pattern Preset</DialogTitle>
             <DialogDescription>
@@ -347,7 +347,7 @@ export function ExcludePatternPresetDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl h-[85vh]">
+      <DialogContent tone={preset ? "edit" : "create"} className="max-w-2xl h-[85vh]">
         <DialogHeader>
           <DialogTitle>
             {preset ? "Edit Exclude Pattern Preset" : "New Exclude Pattern Preset"}

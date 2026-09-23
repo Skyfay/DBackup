@@ -229,7 +229,7 @@ export function NotificationTemplateDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent tone={template ? "edit" : "create"} className="max-w-lg">
         <DialogHeader>
           <DialogTitle>
             {template ? "Edit Notification Template" : "Create Notification Template"}
@@ -585,7 +585,7 @@ export function NotificationTemplateList({
                 Reusable notification configurations with per-channel event filters.
               </CardDescription>
             </div>
-            <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+            <Button tone="create" size="sm" onClick={() => setIsCreateOpen(true)}>
               <Plus className="h-4 w-4 mr-1" />
               Create Template
             </Button>
@@ -637,7 +637,7 @@ export function NotificationTemplateList({
       />
 
       <Dialog open={!!deleteTarget} onOpenChange={(v) => !v && setDeleteTarget(null)}>
-        <DialogContent>
+        <DialogContent tone="destructive">
           <DialogHeader>
             <DialogTitle>Delete Template</DialogTitle>
             <DialogDescription>

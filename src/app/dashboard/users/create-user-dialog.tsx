@@ -70,12 +70,12 @@ export function CreateUserDialog() {
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-                <Button>
+                <Button tone="create">
                     <Plus className="mr-2 h-4 w-4" />
                     Add User
                 </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-106.25">
+            <DialogContent tone="create" className="sm:max-w-106.25">
                 <DialogHeader>
                     <DialogTitle>Add User</DialogTitle>
                     <DialogDescription>

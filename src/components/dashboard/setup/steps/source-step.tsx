@@ -315,7 +315,7 @@ export function SourceStep({ adapters, wizardData, onUpdate, onNext, onPrev }: S
                                     <Button type="button" variant="secondary" onClick={testConnection}>
                                         Test Connection
                                     </Button>
-                                    <Button type="submit">
+                                    <Button tone="create" type="submit">
                                         Save & Continue
                                         <ArrowRight className="ml-2 h-4 w-4" />
                                     </Button>
@@ -328,7 +328,7 @@ export function SourceStep({ adapters, wizardData, onUpdate, onNext, onPrev }: S
 
             {/* Connection Error Dialog */}
             <AlertDialog open={!!connectionError} onOpenChange={(open) => !open && setConnectionError(null)}>
-                <AlertDialogContent>
+                <AlertDialogContent tone="warning">
                     <AlertDialogHeader>
                         <div className="flex items-center gap-2 text-destructive">
                             <AlertCircle className="h-5 w-5" />

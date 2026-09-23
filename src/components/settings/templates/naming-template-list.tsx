@@ -207,7 +207,7 @@ export function NamingTemplateList() {
               template is pre-selected for all new jobs.
             </CardDescription>
           </div>
-          <Button onClick={() => setIsCreateOpen(true)} size="sm">
+          <Button tone="create" onClick={() => setIsCreateOpen(true)} size="sm">
             <Plus className="h-4 w-4 mr-2" />
             New Template
           </Button>
@@ -250,7 +250,7 @@ export function NamingTemplateList() {
         open={!!deleteTarget}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
       >
-        <DialogContent>
+        <DialogContent tone="destructive">
           <DialogHeader>
             <DialogTitle>Delete Naming Template</DialogTitle>
             <DialogDescription>
@@ -355,7 +355,7 @@ export function NamingTemplateDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent tone={template ? "edit" : "create"} className="max-w-lg">
         <DialogHeader>
           <DialogTitle>
             {template ? "Edit Naming Template" : "New Naming Template"}

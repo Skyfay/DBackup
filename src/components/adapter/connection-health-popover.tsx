@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { ArrowRight, Check, Clock, TriangleAlert, Unplug } from "lucide-react";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
 import { Button } from "@/components/ui/button";
-import { DialogHead, dialogNoteClass, type DialogTone } from "@/components/ui/confirm-dialog";
+import { DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
+import type { Tone } from "@/components/ui/tone";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDateFormatter } from "@/hooks/use-date-formatter";
 import { logger } from "@/lib/logging/logger";
@@ -18,7 +19,7 @@ const log = logger.child({ component: "connection-health-popover" });
 /** How many checks the popover shows, an hour at one check a minute. */
 const CHECKS = 60;
 
-const HEADS: Record<ConnectionHealth, { tone: DialogTone; icon: typeof Check }> = {
+const HEADS: Record<ConnectionHealth, { tone: Tone; icon: typeof Check }> = {
     ONLINE: { tone: "success", icon: Check },
     DEGRADED: { tone: "warning", icon: TriangleAlert },
     OFFLINE: { tone: "destructive", icon: Unplug },

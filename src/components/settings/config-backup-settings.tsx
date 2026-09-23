@@ -384,7 +384,7 @@ export function ConfigBackupSettings({ initialSettings, storageAdapters, encrypt
                                         Upload & Restore...
                                     </Button>
                                 </DialogTrigger>
-                                <DialogContent>
+                                <DialogContent tone="warning">
                                     <DialogHeader>
                                         <DialogTitle>Offline Configuration Restore</DialogTitle>
                                         <DialogDescription>

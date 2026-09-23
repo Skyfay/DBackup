@@ -248,7 +248,7 @@ export function SsoForm({ canManageSso }: SsoFormProps) {
             </CardContent>
 
             <AlertDialog open={!!unlinkTarget} onOpenChange={(open) => !open && setUnlinkTarget(null)}>
-                <AlertDialogContent>
+                <AlertDialogContent tone="destructive">
                     <AlertDialogHeader>
                         <AlertDialogTitle>Remove this connection?</AlertDialogTitle>
                         <AlertDialogDescription>

@@ -24,7 +24,8 @@ interface ChoiceCardsProps extends Omit<React.ComponentProps<typeof RadioGroup>,
  *
  * For a choice that decides what the rest of the form asks for, and cards rather than a
  * select, because the sentence is what makes the choice: "Over SSH" alone does not say that
- * the dump then runs on that server.
+ * the dump then runs on that server. The picked card shows the tone of the form around it,
+ * blue while adding and violet while editing.
  */
 export function ChoiceCards({ value, onValueChange, options, ...props }: ChoiceCardsProps) {
     const id = useId();
@@ -34,12 +35,12 @@ export function ChoiceCards({ value, onValueChange, options, ...props }: ChoiceC
                 <Label
                     key={option.value}
                     htmlFor={`${id}-${option.value}`}
-                    className="cursor-pointer items-start gap-3 rounded-lg border p-3 leading-normal font-normal transition-colors hover:bg-muted/40 has-data-[state=checked]:border-info/60 has-data-[state=checked]:bg-info/5 dark:has-data-[state=checked]:bg-info/10"
+                    className="cursor-pointer items-start gap-3 rounded-lg border p-3 leading-normal font-normal transition-colors hover:bg-muted/40 has-data-[state=checked]:border-tone/60 has-data-[state=checked]:bg-tone/5 dark:has-data-[state=checked]:bg-tone/10"
                 >
                     <RadioGroupItem
                         id={`${id}-${option.value}`}
                         value={option.value}
-                        className="mt-0.5 shrink-0 border-input data-[state=checked]:border-info data-[state=checked]:text-info"
+                        className="mt-0.5 shrink-0 border-input data-[state=checked]:border-tone data-[state=checked]:text-tone"
                     />
                     <span className="grid min-w-0 gap-0.5">
                         <span className="flex items-center gap-1.5 text-sm font-medium">

@@ -70,12 +70,12 @@ export function CreateGroupDialog() {
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-                <Button>
+                <Button tone="create">
                     <Plus className="mr-2 h-4 w-4" />
                     Create Group
                 </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-4xl max-h-[90vh] p-0">
+            <DialogContent tone="create" className="sm:max-w-4xl max-h-[90vh] p-0">
                 <DialogHeader className="p-6 pb-0 shrink-0">
                     <DialogTitle>Create Group</DialogTitle>
                     <DialogDescription className="sr-only">

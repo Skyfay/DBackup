@@ -1,11 +1,11 @@
 /**
  * Lint Guards: design system conventions that are invisible in review.
  *
- * These four rules exist because breaking them produces code that reads correctly and
+ * These rules exist because breaking them produces code that reads correctly and
  * still looks or behaves wrong - the class of mistake a reviewer skims past. They are
  * documented in src/components/CLAUDE.md; this file is what makes them stick.
  *
- * Two are enforced, two report only. The advisory ones are not weaker rules, they are
+ * Three are enforced, two report only. The advisory ones are not weaker rules, they are
  * rules whose existing violation count is too large to fix in one pass - promote them
  * once the backlog is clear.
  *
@@ -128,6 +128,55 @@ describe("Date formatting", () => {
         }
 
         expect(collectTsAndTsx(SRC_DIR).length).toBeGreaterThan(0);
+    });
+});
+
+describe("Task colors", () => {
+    /**
+     * A dialog, a popover, a menu entry or a button takes the color of its task through a tone:
+     * blue to add, violet to edit, turquoise to pick. The `info` blue only shows that something is
+     * running, or marks the newest bar of a chart, so reaching for it on a button or a head brings
+     * back the old mix of meanings. Only the components that show one of the two may use it.
+     *
+     * The rules are under Color in src/app/dashboard/CLAUDE.md, the tones in src/components/ui/tone.ts.
+     */
+    const INFO_STATUS_FILES = [
+        "execution-status.tsx",
+        "executions-list.tsx",
+        "jobs-list.tsx",
+        "stats-strip.tsx",
+        "activity-chart.tsx",
+        "storage-history-chart.tsx",
+    ];
+
+    it("should keep the info blue to the running status", () => {
+        const files = collectTsAndTsx(SRC_DIR).filter((file) => !INFO_STATUS_FILES.includes(path.basename(file)));
+        const violations = scan(
+            files,
+            (line) => /\b(?:bg|text|border|ring|fill|stroke|outline|from|to|via)-info\b|var\(--info\)/.test(line),
+            false
+        );
+
+        if (violations.length > 0) {
+            expect.fail(
+                `Found ${violations.length} use(s) of the info blue outside the running status. ` +
+                `Give the dialog, popover, menu entry or button a tone instead, like tone="create" - ` +
+                `see Color in src/app/dashboard/CLAUDE.md. A component that shows a running status ` +
+                `or the newest bar of a chart belongs in INFO_STATUS_FILES:\n${report(violations)}`
+            );
+        }
+    });
+
+    it("should set a tone through the typed prop, not a raw data-tone attribute", () => {
+        const violations = scan(collectTsx(SRC_DIR), (line) => /\bdata-tone=/.test(line));
+
+        if (violations.length > 0) {
+            expect.fail(
+                `Found ${violations.length} raw data-tone attribute(s). Use the tone prop of the ` +
+                `primitive or toneAttribute() from '@/components/ui/tone', so a misspelled tone ` +
+                `fails the type check:\n${report(violations)}`
+            );
+        }
     });
 });
 

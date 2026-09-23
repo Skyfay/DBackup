@@ -257,7 +257,7 @@ export function CredentialProfileDialog({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-xl max-h-[90vh] p-0">
+            <DialogContent tone={isEdit ? "edit" : "create"} className="sm:max-w-xl max-h-[90vh] p-0">
                 <div className="px-6 pt-6 pb-4 shrink-0">
                     <DialogHeader>
                         <DialogTitle>

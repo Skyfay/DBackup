@@ -429,7 +429,7 @@ export function JobsClient({ canManage, canExecute, sources, destinations, notif
                             <CardDescription>Configure and monitor your backup schedules.</CardDescription>
                         </div>
                         {canManage && (
-                            <Button onClick={() => { setEditingJob(null); setIsDialogOpen(true); }}>
+                            <Button tone="create" onClick={() => { setEditingJob(null); setIsDialogOpen(true); }}>
                                 <Plus className="mr-2 h-4 w-4" /> Create Job
                             </Button>
                         )}
@@ -451,7 +451,7 @@ export function JobsClient({ canManage, canExecute, sources, destinations, notif
 
 
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                <DialogContent className="max-w-4xl sm:max-w-4xl">
+                <DialogContent tone={editingJob ? "edit" : "create"} className="max-w-4xl sm:max-w-4xl">
                     <DialogHeader>
                         <DialogTitle>{editingJob ? "Edit Backup Job" : "Create New Backup Job"}</DialogTitle>
                         <DialogDescription>
@@ -477,7 +477,7 @@ export function JobsClient({ canManage, canExecute, sources, destinations, notif
             </Dialog>
 
             <AlertDialog open={!!deletingId} onOpenChange={(open) => !open && setDeletingId(null)}>
-                <AlertDialogContent>
+                <AlertDialogContent tone="destructive">
                     <AlertDialogHeader>
                         <AlertDialogTitle>Are you sure?</AlertDialogTitle>
                         <AlertDialogDescription>

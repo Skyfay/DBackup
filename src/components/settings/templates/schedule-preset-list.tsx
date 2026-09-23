@@ -160,7 +160,7 @@ export function SchedulePresetList() {
               fills in the cron schedule - the job remains independent.
             </CardDescription>
           </div>
-          <Button onClick={() => setIsCreateOpen(true)} size="sm">
+          <Button tone="create" onClick={() => setIsCreateOpen(true)} size="sm">
             <Plus className="h-4 w-4 mr-2" />
             New Preset
           </Button>
@@ -203,7 +203,7 @@ export function SchedulePresetList() {
         open={!!deleteTarget}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
       >
-        <DialogContent>
+        <DialogContent tone="destructive">
           <DialogHeader>
             <DialogTitle>Delete Schedule Preset</DialogTitle>
             <DialogDescription>
@@ -275,7 +275,7 @@ export function SchedulePresetDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent tone={preset ? "edit" : "create"} className="max-w-lg">
         <DialogHeader>
           <DialogTitle>
             {preset ? "Edit Schedule Preset" : "New Schedule Preset"}

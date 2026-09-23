@@ -1508,7 +1508,7 @@ export function RestoreClient({ canManageVault = false, canDownload = false }: R
                                                 <Input type="password" value={privPass} onChange={e => setPrivPass(e.target.value)} className="h-8" />
                                             </div>
                                         </div>
-                                        <Button onClick={() => handleRestore(true)} disabled={restoring} size="sm" className="w-full">
+                                        <Button tone="warning" onClick={() => handleRestore(true)} disabled={restoring} size="sm" className="w-full">
                                             {restoring && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                                             Retry with Admin Auth
                                         </Button>
@@ -1636,7 +1636,7 @@ export function RestoreClient({ canManageVault = false, canDownload = false }: R
                                             {restoring ? 'Restoring...' : 'Start System Restore'}
                                         </Button>
                                     ) : (
-                                        <Button
+                                        <Button tone="warning"
                                             onClick={() => handleRestore(false)}
                                             disabled={restoring || isLoadingTargetDbs || isAnalyzing || !validity.canSubmit || compatibilityIssues.length > 0}
                                             className="w-full"

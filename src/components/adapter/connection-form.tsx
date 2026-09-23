@@ -11,6 +11,7 @@ import { DialogClose, DialogDescription, DialogTitle } from "@/components/ui/dia
 import { Form } from "@/components/ui/form";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { toneAttribute, type Tone } from "@/components/ui/tone";
 import type { AdapterDefinition } from "@/lib/adapters/definitions";
 import { STORAGE_ROLES, type StorageRole } from "@/lib/core/storage-roles";
 import { cn } from "@/lib/utils";
@@ -144,6 +145,9 @@ export function ConnectionForm({ adapter, initialData, defaultRole, onBack, onSa
     });
 
     const busy = isSubmitting || connection.saving;
+    // Blue while a connection is added, violet while one is edited. The form hands the tone to its
+    // head, its Create or Save button and the cards picked in it.
+    const tone: Tone = initialData ? "edit" : "create";
     const Section = isStorage ? StorageSection : isNotification ? NotificationSection : DatabaseSection;
     const SectionAction = isStorage ? StorageSectionAction : isNotification ? NotificationSectionAction : DatabaseSectionAction;
 
@@ -151,9 +155,9 @@ export function ConnectionForm({ adapter, initialData, defaultRole, onBack, onSa
         <>
             <Form {...form}>
                 <SecretStatusProvider value={initialData?.secretStatus ?? {}}>
-                    <form onSubmit={submit} noValidate data-single-part={single || undefined} className="flex min-h-0 flex-1 flex-col">
+                    <form onSubmit={submit} noValidate data-single-part={single || undefined} {...toneAttribute(tone)} className="flex min-h-0 flex-1 flex-col">
                         <DialogHead
-                            tone="info"
+                            tone={tone}
                             icon={initialData ? Pencil : Plus}
                             action={
                                 onBack && (
@@ -165,7 +169,7 @@ export function ConnectionForm({ adapter, initialData, defaultRole, onBack, onSa
                             }
                         >
                             <DialogTitle className="text-base">{initialData ? `Edit ${noun}` : `Add ${noun}`}</DialogTitle>
-                            <DialogDescription className={cn(dialogNoteClass("info"), "truncate")}>
+                            <DialogDescription className={cn(dialogNoteClass(tone), "truncate")}>
                                 {initialData ? `${initialData.name} · ${adapter.name}` : `${adapter.name} · Step 2 of 2`}
                             </DialogDescription>
                         </DialogHead>

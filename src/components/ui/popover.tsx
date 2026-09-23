@@ -4,6 +4,7 @@ import * as React from "react"
 import * as PopoverPrimitive from "@radix-ui/react-popover"
 
 import { cn } from "@/lib/utils"
+import { toneAttribute, type Tone } from "@/components/ui/tone"
 
 function Popover({
   ...props
@@ -21,12 +22,17 @@ function PopoverContent({
   className,
   align = "center",
   sideOffset = 4,
+  tone,
   ...props
-}: React.ComponentProps<typeof PopoverPrimitive.Content>) {
+}: React.ComponentProps<typeof PopoverPrimitive.Content> & {
+  /** The task of the popover, like `pick` for one that chooses a saved login. */
+  tone?: Tone
+}) {
   return (
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Content
         data-slot="popover-content"
+        {...toneAttribute(tone)}
         align={align}
         sideOffset={sideOffset}
         className={cn(

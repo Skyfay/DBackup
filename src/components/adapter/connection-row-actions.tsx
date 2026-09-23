@@ -42,7 +42,8 @@ export function ConnectionRowActions({ name, ...handlers }: ConnectionRowActions
                                 key={action.id}
                                 onSelect={action.onSelect}
                                 disabled={action.disabled}
-                                variant={action.destructive ? "destructive" : "default"}
+                                variant={action.tone === "destructive" ? "destructive" : "default"}
+                                tone={action.tone}
                             >
                                 <action.icon /> {action.label}
                             </DropdownMenuItem>

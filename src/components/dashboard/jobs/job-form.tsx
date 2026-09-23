@@ -1902,7 +1902,7 @@ function DirectoryBrowseDialog({ open, onOpenChange, configId, adapterName, init
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-w-3xl sm:max-w-3xl h-[80vh] flex flex-col p-0 gap-0">
+            <DialogContent tone="pick" className="max-w-3xl sm:max-w-3xl h-[80vh] flex flex-col p-0 gap-0">
                 <DialogHeader className="p-4 pb-3 border-b shrink-0">
                     <DialogTitle>Browse {adapterName ?? "Adapter"}</DialogTitle>
                     <DialogDescription>

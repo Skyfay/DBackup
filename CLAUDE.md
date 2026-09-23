@@ -129,6 +129,7 @@ Entry format and full rules live in [docs/CLAUDE.md](docs/CLAUDE.md).
 | Logger | [src/lib/logging/logger.ts](src/lib/logging/logger.ts) |
 | Error classes | [src/lib/logging/errors.ts](src/lib/logging/errors.ts) |
 | Shadcn primitives | [src/components/ui/](src/components/ui/) |
+| Task colors (tones) | [src/components/ui/tone.ts](src/components/ui/tone.ts), rules under Color in [src/app/dashboard/CLAUDE.md](src/app/dashboard/CLAUDE.md) |
 | Test containers | [docker-compose.test.yml](docker-compose.test.yml) |
 
 ## Environment variables

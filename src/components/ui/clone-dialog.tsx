@@ -51,7 +51,7 @@ export function CloneDialog({ open, onOpenChange, defaultName, existingNames, on
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-w-md">
+            <DialogContent tone="create" className="max-w-md">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <Copy className="h-4 w-4" />

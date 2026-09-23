@@ -238,7 +238,7 @@ export function RetentionPolicyList() {
               backup jobs.
             </CardDescription>
           </div>
-          <Button onClick={() => setIsCreateOpen(true)} size="sm">
+          <Button tone="create" onClick={() => setIsCreateOpen(true)} size="sm">
             <Plus className="h-4 w-4 mr-2" />
             New Policy
           </Button>
@@ -284,7 +284,7 @@ export function RetentionPolicyList() {
         open={!!deleteTarget}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
       >
-        <DialogContent>
+        <DialogContent tone="destructive">
           <DialogHeader>
             <DialogTitle>Delete Retention Policy</DialogTitle>
             <DialogDescription>
@@ -377,7 +377,7 @@ export function RetentionPolicyDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent tone={policy ? "edit" : "create"} className="max-w-lg">
         <DialogHeader>
           <DialogTitle>
             {policy ? "Edit Retention Policy" : "New Retention Policy"}

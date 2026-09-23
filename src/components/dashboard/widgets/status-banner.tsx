@@ -105,7 +105,7 @@ export function StatusBanner({ health, canExecute, canViewHistory, canManageJobs
         body = <p className="text-sm text-muted-foreground">Create a job to start backing up your databases.</p>;
         if (canManageJobs) {
             actions = (
-                <Button asChild size="sm">
+                <Button tone="create" asChild size="sm">
                     <Link href="/dashboard/jobs">Create job</Link>
                 </Button>
             );

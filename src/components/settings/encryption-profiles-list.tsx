@@ -289,12 +289,12 @@ export function EncryptionProfilesList() {
                         </Button>
                         <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
                             <DialogTrigger asChild>
-                                <Button size="sm" onClick={() => { setNewName(""); setNewDesc(""); }}>
+                                <Button tone="create" size="sm" onClick={() => { setNewName(""); setNewDesc(""); }}>
                                     <Plus className="mr-2 h-4 w-4" />
                                     Create Key
                                 </Button>
                             </DialogTrigger>
-                            <DialogContent>
+                            <DialogContent tone="create">
                                 <DialogHeader>
                                     <DialogTitle>Create Encryption Profile</DialogTitle>
                                     <DialogDescription>
@@ -451,7 +451,7 @@ export function EncryptionProfilesList() {
 
             {/* Delete Confirmation Dialog */}
             <Dialog open={!!profileToDelete} onOpenChange={(open) => !open && setProfileToDelete(null)}>
-                <DialogContent>
+                <DialogContent tone="destructive">
                     <DialogHeader>
                         <DialogTitle className="text-destructive flex items-center gap-2">
                             <AlertTriangle className="h-5 w-5" />
@@ -563,7 +563,7 @@ export function EncryptionProfilesList() {
 
             {/* Import Dialog */}
             <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
-                <DialogContent>
+                <DialogContent tone="create">
                     <DialogHeader>
                         <DialogTitle>Import Master Key</DialogTitle>
                         <DialogDescription>

@@ -170,7 +170,7 @@ export function ConnectionsTabs({ permissions, counts, layouts, initialView }: C
                         <ConnectionViewSwitch value={view} onChange={changeView} />
                     </div>
                     {canManage[active] && (
-                        <Button onClick={() => managers.current[active]?.openCreate()} aria-label="Add New">
+                        <Button tone="create" onClick={() => managers.current[active]?.openCreate()} aria-label="Add New">
                             <Plus />
                             <span className="hidden sm:inline">Add New</span>
                         </Button>

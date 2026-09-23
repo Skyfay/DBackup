@@ -96,7 +96,7 @@ export function FolderPickerDialog({ open, onOpenChange, configId, configName, o
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="flex h-[70vh] max-w-lg flex-col">
+            <DialogContent tone="pick" className="flex h-[70vh] max-w-lg flex-col">
                 <DialogHeader>
                     <DialogTitle>Choose a {itemNoun}</DialogTitle>
                     <DialogDescription>

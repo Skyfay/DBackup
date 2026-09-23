@@ -314,7 +314,7 @@ export function SessionsForm() {
             </CardContent>
 
             <AlertDialog open={revokeAllOpen} onOpenChange={setRevokeAllOpen}>
-                <AlertDialogContent>
+                <AlertDialogContent tone="destructive">
                     <AlertDialogHeader>
                         <AlertDialogTitle>Revoke All Other Sessions?</AlertDialogTitle>
                         <AlertDialogDescription>

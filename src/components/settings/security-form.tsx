@@ -583,7 +583,7 @@ export function SecurityForm({ canUpdatePassword, canManage2FA, canManagePasskey
                                         Add Passkey
                                     </Button>
                                 </DialogTrigger>
-                                <DialogContent>
+                                <DialogContent tone="create">
                                     <DialogHeader>
                                         <DialogTitle>Add Passkey</DialogTitle>
                                         <DialogDescription>

@@ -397,7 +397,7 @@ export function JobStep({ wizardData, onUpdate, onNext, onPrev }: JobStepProps) 
                             <ArrowLeft className="mr-2 h-4 w-4" />
                             Back
                         </Button>
-                        <Button type="submit">
+                        <Button tone="create" type="submit">
                             Create Job & Finish
                             <CheckCircle2 className="ml-2 h-4 w-4" />
                         </Button>

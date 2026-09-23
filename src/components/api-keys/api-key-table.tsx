@@ -245,7 +245,7 @@ export function ApiKeyTable({ data, canManage }: ApiKeyTableProps) {
 
             {/* Confirm delete dialog */}
             <AlertDialog open={!!confirmDelete} onOpenChange={(open) => !open && setConfirmDelete(null)}>
-                <AlertDialogContent>
+                <AlertDialogContent tone="destructive">
                     <AlertDialogHeader>
                         <AlertDialogTitle>Delete API Key</AlertDialogTitle>
                         <AlertDialogDescription>

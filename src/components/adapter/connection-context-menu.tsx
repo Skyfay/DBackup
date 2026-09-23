@@ -17,12 +17,12 @@ import { kindNames } from "./connection-columns";
 import { connectionActions, type ConnectionActionHandlers } from "./connection-actions";
 
 /**
- * The head of a row menu, tinted in the colour the design uses for changing something. Red
- * stays reserved for deleting, which is the only coloured entry in the list below.
+ * The head of a row menu. It stays neutral, since the menu has no task of its own: each entry
+ * below shows the color of the dialog it opens.
  */
 function MenuHead({ tile, title, note }: { tile: React.ReactNode; title: string; note: string }) {
     return (
-        <div className="-mx-1 -mt-1 mb-1 flex min-w-0 items-center gap-2.5 border-b border-info/20 bg-info/5 px-3 py-2.5 dark:bg-info/10">
+        <div className="-mx-1 -mt-1 mb-1 flex min-w-0 items-center gap-2.5 border-b bg-muted/40 px-3 py-2.5">
             {tile}
             <div className="grid min-w-0 gap-0.5">
                 <p className="truncate text-sm font-semibold" title={title}>
@@ -66,7 +66,8 @@ export function ConnectionContextMenu({ config, bulk, ...handlers }: ConnectionC
                             key={action.id}
                             onSelect={action.onSelect}
                             disabled={action.disabled}
-                            variant={action.destructive ? "destructive" : "default"}
+                            variant={action.tone === "destructive" ? "destructive" : "default"}
+                            tone={action.tone}
                         >
                             <action.icon /> {action.label}
                         </ContextMenuItem>
@@ -91,6 +92,7 @@ function SelectionMenu({ bulk }: { bulk: RowMenuBulk<AdapterConfig> }) {
                 key={action.id}
                 onSelect={() => bulk.start(action)}
                 variant={action.variant === "destructive" ? "destructive" : "default"}
+                tone={action.variant === "destructive" ? "destructive" : "neutral"}
             >
                 {Icon && <Icon />} {label}
             </ContextMenuItem>

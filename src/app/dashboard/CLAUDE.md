@@ -56,9 +56,25 @@ Every other page still has the old look. Do not copy patterns from it, copy them
 
 ## Color
 
-- Status tokens: `success` for completed, `destructive` for failed, `warning` for partial runs and conflicts, `info` for running.
-- A dialog or a row menu carries the colour of what it does: `destructive` for deleting, `warning` for a report of what failed, `info` for changing and adding, neutral for everything else. Green stays with the status of a thing, never with an action.
-- The filled button of the main action is that same `info` blue, in light mode with white text and in dark mode with dark text on the lighter blue. It is the only filled accent on a page, everything beside it is `outline` or `ghost`. Use them as text, as tints like `border-destructive/30 bg-destructive/5`, and as icon tiles like `bg-success/12 text-success`.
+- Status tokens: `success` for completed, `destructive` for failed, `warning` for partial runs and conflicts, `info` for running. As a status, blue is a dot, a badge, a tinted row or the newest bar of a chart, never a button or a head.
+- Everything a user acts on takes the color of its task, its tone. These are all of them. A new one needs a new kind of task, never a new area of the app, since every extra color is one more meaning to learn and no hue is left that does not look like one of these:
+
+| Tone | Color | Task | Examples |
+| :--- | :--- | :--- | :--- |
+| `create` | Blue | Adds a new entry | New database, Create job, Clone, the type picker before a form |
+| `edit` | Violet | Changes an entry that exists | Edit database, Edit user, Edit template |
+| `pick` | Turquoise | Chooses an entry that exists | A saved login, a folder, a file, the databases of a job |
+| `warning` | Amber | Warns before going on, or reports what failed | Save anyway, Restore, the result of a bulk action |
+| `destructive` | Red | Loses something | Delete, Remove, Revoke |
+| `success` | Green | Reports that all is well | Never on an action |
+| `neutral` | Primary | Everything else | Settings, pages, menus, Sign in, Test, Download |
+
+- The tone is set once, where the task starts: `<DialogContent tone="edit">`, `<PopoverContent tone="pick">`, a menu entry's `tone`, or `<Button tone="create">` for New database on a page. Everything inside that carries a color reads it through the `tone` utilities (`bg-tone`, `text-tone`, `border-tone/60`): the `DialogHead`, the filled button and a picked card. A form that adds and edits sets `tone={initialData ? "edit" : "create"}` once and all of it follows, see `connection-form.tsx`. Nothing picks a task color by hand.
+- Pages are neutral. On a page only the button that opens a toned dialog carries its tone, and a Delete button is `variant="destructive"`. The filled button of a view is its one main action, everything beside it is `outline` or `ghost`.
+- A menu entry shows the tone of the dialog it opens: the icon in that color and, while it is highlighted, a frame and a light tint like a picked card. The head of the menu stays neutral. See `connectionActions`.
+- The task colors are `--create`, `--edit` and `--pick` in `globals.css`, each with a `-foreground`, so a theme or a user setting changes one in a single place.
+- The `info` blue anywhere but a running status or the newest bar of a chart fails the build, and so does a raw `data-tone` attribute (`tests/unit/lint-guards/design-system.test.ts`).
+- Use the status colors as text, as tints like `border-destructive/30 bg-destructive/5`, and as icon tiles like `bg-success/12 text-success`.
 - Everything that is not a status stays neutral. Sizes, counts, share bars and chart lines use `foreground` or `muted-foreground` shades, like `bg-foreground/80` for a share bar.
 - Charts take their colors from the same tokens (`var(--success)`) through the `ChartConfig`, never from hex values or the `--chart-*` palette.
 
@@ -77,8 +93,8 @@ Every other page still has the old look. Do not copy patterns from it, copy them
 - A row button that only matters on hover is hidden from `md` up until the row is hovered or the button focused (`md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100`). Below `md` it always shows, since a phone has no hover.
 - A table whose columns the user picks gets `columnLayout={useTableLayout(tableId, saved)}` on its DataTable. Columns take `meta.pin`, `meta.defaultHidden` and `meta.filterOnly`, see `connection-columns.tsx`.
 - A row that opens details takes `onRowClick`, and its name cell gets a button as the keyboard way in. `isPlainClick` keeps clicks on controls and popovers inside the row from opening it.
-- A right click on a row opens `renderRowMenu`, which returns a `ContextMenuContent`. Its head is tinted `info` and names the row, the row stays marked while it is open, and a long press opens it on a phone. When the row is one of several selected, the menu gets the bulk context and offers the actions of the whole selection instead. The button at the end of the row stays, as the way in for keyboard and touch. See `connection-context-menu.tsx`.
-- The picker that opens before a form is one grouped list with a search, not a grid: `AdapterPickerDialog` in `adapter-picker.tsx`. Its head is `info` tinted like the form behind it, the headings stick while the list scrolls, and the footer says which step it is.
+- A right click on a row opens `renderRowMenu`, which returns a `ContextMenuContent`. Its head is neutral and names the row, each entry shows the tone of the dialog it opens, the row stays marked while it is open, and a long press opens it on a phone. When the row is one of several selected, the menu gets the bulk context and offers the actions of the whole selection instead. The button at the end of the row stays, as the way in for keyboard and touch. See `connection-context-menu.tsx`.
+- The picker that opens before a form is one grouped list with a search, not a grid: `AdapterPickerDialog` in `adapter-picker.tsx`. Its tone is `create` like the form behind it, the headings stick while the list scrolls, and the footer says which step it is.
 - A list that also offers cards passes `view="cards"` and `renderCard` to DataTable. A card renders the row's own cells, so the Columns menu decides what it shows, see `connection-card.tsx`. Bulk actions stay in the table view.
 - A list beside the details of the picked record passes `view="split"` and `renderSplit`, which gets every filtered row at once. See `connection-split-view.tsx`, whose details are the same component the side panel shows.
 
@@ -100,7 +116,7 @@ Every other page still has the old look. Do not copy patterns from it, copy them
 ## Dialogs
 
 - The same language applies inside a dialog. The title names the object ("Local"), the description says what the dialog shows, and a headline number follows the card style. See `storage-history-modal.tsx`.
-- A confirmation is a `ConfirmDialog` from `ui/confirm-dialog.tsx`. Its head is tinted in the tone of the action like the banners, red for destructive and amber for a report of failures, and holds an icon tile, the title and a short note such as "Cannot be undone". The dialog sits on `bg-card`, so it stands out from the dimmed page in dark mode, and its buttons sit on a `bg-page/60` strip. See `connection-delete-dialog.tsx`.
+- A confirmation is a `ConfirmDialog` from `ui/confirm-dialog.tsx`. Its head and its confirm button take the tone of the action, red for destructive and amber for a warning or a report of failures, and the head holds an icon tile, the title and a short note such as "Cannot be undone". The dialog sits on `bg-card`, so it stands out from the dimmed page in dark mode, and its buttons sit on a `bg-page/60` strip. See `connection-delete-dialog.tsx`.
 - A destructive confirm button is tinted rather than filled and names what it does, like "Delete 7 connections". It keeps the dialog open with a spinner until the request returns.
 - A popover that tells how something is doing uses the same tinted `DialogHead`, with the `success` tone when all is well. It sits on `bg-raised`, which in dark mode is one step lighter than the cards, so it stands out from the table under it. See `connection-health-popover.tsx`.
 - A form with more than a handful of fields is split into parts: a list on the left, a `Select` below `md`, and one part at a time beside it at a fixed height, so switching does not make the dialog jump. Each entry shows a check once its part has what it needs and a red count for fields with errors, and Create moves to the first part with one. A form with a single part has no list and gets the narrower dialog. See `connection-form.tsx`, whose parts come from plain data in `database-form-layout.ts`, `storage-form-layout.ts` and `notification-form-layout.ts`.
@@ -117,7 +133,7 @@ Every other page still has the old look. Do not copy patterns from it, copy them
 
 1. Panels are `rounded-xl border bg-card shadow-sm` on the `bg-page` canvas.
 2. Numbers use Geist with `tabular-nums`, and no UI text uses `font-mono`.
-3. Status colors come from the tokens, everything else is neutral.
+3. Status colors come from the tokens, every dialog, popover, menu entry and button that serves a task carries its tone, everything else is neutral.
 4. Range switches are segmented Tabs and switch without loading again.
 5. Loading states are Skeletons shaped like the content.
 6. The page works at 375px width and in both themes.

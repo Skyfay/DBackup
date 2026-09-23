@@ -1,5 +1,6 @@
 import type * as React from "react";
 import { ArrowLeftRight, BarChart3, Copy, Pencil, SearchCode, Trash } from "lucide-react";
+import type { Tone } from "@/components/ui/tone";
 
 export interface ConnectionAction {
     id: string;
@@ -7,7 +8,8 @@ export interface ConnectionAction {
     icon: React.ComponentType<{ className?: string }>;
     onSelect: () => void;
     disabled?: boolean;
-    destructive?: boolean;
+    /** The task of the dialog the action opens, which colors its entry in the menus. */
+    tone: Tone;
 }
 
 /** Actions that belong together, under a heading in the menus that show one. */
@@ -44,18 +46,19 @@ export function connectionActions({
     busy = false,
 }: ConnectionActionHandlers): ConnectionActionGroup[] {
     const inspect: ConnectionAction[] = [
-        ...(onExplore ? [{ id: "explore", label: "Explore databases", icon: SearchCode, onSelect: onExplore }] : []),
-        ...(onHistory ? [{ id: "history", label: "Storage history", icon: BarChart3, onSelect: onHistory }] : []),
+        ...(onExplore ? [{ id: "explore", label: "Explore databases", icon: SearchCode, onSelect: onExplore, tone: "neutral" as const }] : []),
+        ...(onHistory ? [{ id: "history", label: "Storage history", icon: BarChart3, onSelect: onHistory, tone: "neutral" as const }] : []),
     ];
     const manage: ConnectionAction[] = [
-        ...(onEdit ? [{ id: "edit", label: "Edit", icon: Pencil, onSelect: onEdit }] : []),
-        ...(onClone ? [{ id: "clone", label: "Clone", icon: Copy, onSelect: onClone, disabled: busy }] : []),
+        ...(onEdit ? [{ id: "edit", label: "Edit", icon: Pencil, onSelect: onEdit, tone: "edit" as const }] : []),
+        // Both add a new connection, a copy or the same one in the other role.
+        ...(onClone ? [{ id: "clone", label: "Clone", icon: Copy, onSelect: onClone, disabled: busy, tone: "create" as const }] : []),
         ...(counterpart
-            ? [{ id: "counterpart", label: counterpart.label, icon: ArrowLeftRight, onSelect: counterpart.onSelect, disabled: busy }]
+            ? [{ id: "counterpart", label: counterpart.label, icon: ArrowLeftRight, onSelect: counterpart.onSelect, disabled: busy, tone: "create" as const }]
             : []),
     ];
     const remove: ConnectionAction[] = onDelete
-        ? [{ id: "delete", label: "Delete", icon: Trash, onSelect: onDelete, destructive: true }]
+        ? [{ id: "delete", label: "Delete", icon: Trash, onSelect: onDelete, tone: "destructive" as const }]
         : [];
 
     return [

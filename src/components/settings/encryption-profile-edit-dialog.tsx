@@ -67,7 +67,7 @@ export function EncryptionProfileEditDialog({ profile, onClose, onSaved }: Encry
 
     return (
         <Dialog open={!!profile} onOpenChange={(open) => !open && close()}>
-            <DialogContent className="sm:max-w-md">
+            <DialogContent tone="edit" className="sm:max-w-md">
                 <form onSubmit={handleSave}>
                     <DialogHeader>
                         <DialogTitle>Edit Encryption Profile</DialogTitle>

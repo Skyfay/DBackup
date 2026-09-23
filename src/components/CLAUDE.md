@@ -112,7 +112,7 @@ Use `AlertDialog`, never `Dialog`, and never `window.confirm()` or `alert()`. Th
 
 - Always include `<FormMessage />`. A field without it fails validation silently.
 - Never hand-roll a `<label>` - use `FormLabel`, or `Label` with a matching `htmlFor` when outside a `Form`.
-- Submit buttons are disabled while pending and show `<Loader2 className="mr-2 h-4 w-4 animate-spin" />`.
+- Submit buttons are disabled while pending and show `<Loader2 className="mr-2 h-4 w-4 animate-spin" />`. They take their color from the tone of the dialog, never from a color of their own.
 - Field spacing is `space-y-4` inside a form, `space-y-2` inside a single field group.
 - Use `z.coerce.number()` for numeric inputs - the DOM gives you strings.
 - Never put a validated field into a Radix `TabsContent` that is not rendered. An inactive tab unmounts, so its `FormMessage` never appears and submitting seems to do nothing. Mount every part with `forceMount`, hide the inactive ones with `data-[state=inactive]:hidden`, and move to the part with the error in `handleSubmit`'s invalid callback. See `connection-form.tsx`.
@@ -148,6 +148,8 @@ Use semantic tokens. They are already theme-aware:
 ```
 
 Prefer a `Badge` variant or the status tokens (`success`, `warning`, `destructive`, `info`) over ad-hoc status colors. The connection status is drawn by `StatusCell` in `@/components/adapter/connection-cells`.
+
+**Task colors.** A dialog, popover, menu entry or button that adds, edits, picks, warns or deletes gets a `tone` from `@/components/ui/tone`, never a hardcoded color: `<DialogContent tone="create">`, `<AlertDialogContent tone="destructive">`, `<PopoverContent tone="pick">`, `<Button tone="create">` for a New button on a page. The filled button, the `DialogHead` and picked cards inside read the tone through `bg-tone` and `text-tone`, so a form that adds and edits only sets `tone={initialData ? "edit" : "create"}`. Which tone a task gets is under Color in [app/dashboard/CLAUDE.md](../app/dashboard/CLAUDE.md), how it works in `docs/developer-guide/core/colors.md`. `info` is the running status and nothing else.
 
 ---
 
@@ -241,6 +243,7 @@ Never log whole session, user, or config objects. Log the specific field (`{ use
 | Locale date formatting | Fails the build |
 | `max-h` on the ScrollArea root | Baseline of 4, fails if it grows |
 | Palette color with no `dark:` variant | Baseline of 86, fails if it grows |
+| `info` blue outside the running status, raw `data-tone` attribute | Fails the build |
 
 Baselines may only be lowered. Fix violations, drop the number, and the guard locks the win in. Everything else in this guide is on you.
 
@@ -251,7 +254,8 @@ Baselines may only be lowered. Fix violations, drop the number, and the guard lo
 3. No `console.*`. No `alert()` or `confirm()`.
 4. No `.toLocaleDateString()` / `.toLocaleTimeString()` / `.toLocaleString()` on dates.
 5. Raw palette colors carry a `dark:` variant. Checked the page in dark mode.
-6. Submit buttons disable and show a spinner while pending.
-7. No inline `style` outside computed values.
-8. Checked `src/components/ui/` before writing a new primitive.
-9. `pnpm run build` passes.
+6. Every dialog, popover or button that adds, edits, picks, warns or deletes has its `tone`.
+7. Submit buttons disable and show a spinner while pending.
+8. No inline `style` outside computed values.
+9. Checked `src/components/ui/` before writing a new primitive.
+10. `pnpm run build` passes.

@@ -21,17 +21,16 @@ const PROVIDERS: Record<string, Provider> = {
     onedrive: { name: "OneDrive", account: "Microsoft", slug: "onedrive" },
 };
 
-type Tone = "neutral" | "info" | "success" | "warning";
+type BoxTone = "neutral" | "success" | "warning";
 
-const TONES: Record<Tone, { box: string; tile: string }> = {
+const TONES: Record<BoxTone, { box: string; tile: string }> = {
     neutral: { box: "bg-muted/30", tile: "bg-muted text-muted-foreground" },
-    info: { box: "border-info/20 bg-info/5 dark:bg-info/10", tile: "bg-info/12 text-info" },
     success: { box: "", tile: "bg-success/12 text-success" },
     warning: { box: "border-warning/30 bg-warning/5", tile: "bg-warning/12 text-warning" },
 };
 
 function StatusBox({ tone, icon: Icon, spin, title, text, action }: {
-    tone: Tone;
+    tone: BoxTone;
     icon: LucideIcon;
     spin?: boolean;
     title: string;
@@ -174,7 +173,7 @@ export function OAuthAuthorization({ adapterId, credentialId, authorized, onAuth
     }
     return (
         <StatusBox
-            tone="info"
+            tone="neutral"
             icon={Link2}
             title="Not authorized yet"
             text={`${provider.account} opens in a new window to grant access.`}

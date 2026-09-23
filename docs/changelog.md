@@ -33,7 +33,7 @@ All notable changes to DBackup are documented here.
 
 ### 🎨 Improvements
 
-- **ui**: The sidebar collapses to icons with the new button in the header or Ctrl+B (⌘B on macOS), and small screens get it as a slide-in menu. Both themes use a new zinc color palette with a blue button for the main action, and the interface uses the Geist font on every operating system.
+- **ui**: The sidebar collapses to icons with the new button in the header or Ctrl+B (⌘B on macOS), and small screens get it as a slide-in menu. Both themes use a new zinc color palette where dialogs, menus and buttons take the color of their task, like blue to add and violet to edit, and the interface uses the Geist font on every operating system.
 - **dashboard**: The overview was rebuilt with a status banner that names a failing job and can rerun it, trend cards, a switch between the latest executions and the jobs, and a backup calendar that shows as many weeks as the screen fits. It works on phones, and its statistics are cached for a minute or until the next backup finishes or a job changes.
 - **storage**: The storage history dialog shows one bar a day, with the stored size, the change in the range and the number of backups above the chart. It switches between 7 days, 30 days, 90 days and a year without loading again, and leads on to the Storage Explorer.
 - **ui**: On phones every table leaves out the rows per page picker so its page controls fit, and the Connections page picks its list from a menu instead of a row of tabs.
@@ -55,6 +55,7 @@ All notable changes to DBackup are documented here.
 
 - **docs**: The start page and the data retention guide describe the new dashboard, and the API reference explains the storage totals of an unreachable destination.
 - **docs**: The storage and notification adapter guides name `connectionAddress()` as the place for the summary shown in the connection tables.
+- **docs**: A new developer page explains the task colors of dialogs, menus and buttons and how to change one.
 - **docs**: The notification and job guides explain how to switch health check notifications and restore exclusion for several databases at once.
 - **docs**: The health check guide describes the new status popover and the added fields of the health history API.
 - **docs**: The source, destination, notification and first steps guides name the fields and parts of the new connection form, and the cloud drive and notification guides describe logging in with a credential profile. The adapter guides explain how the form places new fields.

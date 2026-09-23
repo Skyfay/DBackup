@@ -246,7 +246,7 @@ export function NotificationStep({
                                 <Button type="button" variant="secondary" onClick={testConnection}>
                                     Test Connection
                                 </Button>
-                                <Button type="submit">
+                                <Button tone="create" type="submit">
                                     Save & Continue
                                     <ArrowRight className="ml-2 h-4 w-4" />
                                 </Button>

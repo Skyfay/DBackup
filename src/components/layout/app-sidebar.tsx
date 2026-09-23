@@ -175,7 +175,7 @@ export function AppSidebar({ permissions = [], isSuperAdmin = false, updateAvail
                 {updateAvailable && (
                     <SidebarMenu>
                         <SidebarMenuItem>
-                            <SidebarMenuButton asChild tooltip={updateLabel} className="[&>svg]:text-info hover:[&>svg]:text-info">
+                            <SidebarMenuButton asChild tooltip={updateLabel}>
                                 <a href={RELEASES_URL} target="_blank" rel="noopener noreferrer">
                                     <ArrowUpCircle />
                                     <span>{updateLabel}</span>

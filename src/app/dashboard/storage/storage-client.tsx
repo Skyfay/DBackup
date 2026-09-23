@@ -618,7 +618,7 @@ export function StorageClient({ canDownload, canRestore, canDelete, canManageVau
 
             {/* Delete Confirmation Modal */}
             <Dialog open={!!fileToDelete} onOpenChange={(o) => { if(!o && !deleting) setFileToDelete(null); }}>
-                <DialogContent>
+                <DialogContent tone="destructive">
                     <DialogHeader>
                         <DialogTitle>Delete Backup</DialogTitle>
                         <DialogDescription>

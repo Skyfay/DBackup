@@ -149,7 +149,7 @@ export function GoogleDriveFolderBrowser({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-w-2xl h-[80vh] flex flex-col p-0 gap-0">
+            <DialogContent tone="pick" className="max-w-2xl h-[80vh] flex flex-col p-0 gap-0">
                 <DialogHeader className="p-4 pb-2 border-b">
                     <DialogTitle>Select Google Drive Folder</DialogTitle>
                 </DialogHeader>

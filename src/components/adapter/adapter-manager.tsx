@@ -354,7 +354,7 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
 
             {/* Step 1: Adapter Picker */}
             <Dialog open={isPickerOpen} onOpenChange={setIsPickerOpen}>
-                <DialogContent showCloseButton={false} className={cn(DIALOG_SURFACE, "sm:max-w-lg")}>
+                <DialogContent tone="create" showCloseButton={false} className={cn(DIALOG_SURFACE, "sm:max-w-lg")}>
                     <AdapterPickerDialog
                         adapters={availableAdapters}
                         title={type === 'notification' ? "Add notification channel" : (type === 'database' ? "Add database" : `Add ${storageNoun.toLowerCase()}`)}

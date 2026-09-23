@@ -145,7 +145,7 @@ export function VaultStep({ wizardData, onUpdate, onNext, onPrev, onSkip }: Vaul
                         <SkipForward className="mr-2 h-4 w-4" />
                         Skip
                     </Button>
-                    <Button onClick={handleCreate} disabled={!name.trim() || isCreating}>
+                    <Button tone="create" onClick={handleCreate} disabled={!name.trim() || isCreating}>
                         {isCreating ? "Creating..." : "Create & Continue"}
                         <ArrowRight className="ml-2 h-4 w-4" />
                     </Button>

@@ -227,6 +227,7 @@ export default defineConfig({
             { text: 'Runner Pipeline', link: '/developer-guide/core/runner' },
             { text: 'Logging System', link: '/developer-guide/core/logging' },
             { text: 'Icon System', link: '/developer-guide/core/icons' },
+            { text: 'Task Colors', link: '/developer-guide/core/colors' },
             { text: 'Download Tokens', link: '/developer-guide/core/download-tokens' },
             { text: 'Rate Limiting', link: '/developer-guide/core/rate-limiting' },
             { text: 'Update Service', link: '/developer-guide/core/updates' },

@@ -13,6 +13,8 @@
   --color-success: var(--success);
   --color-info: var(--info);
   --color-warning: var(--warning);
+  --color-tone: var(--tone);
+  --color-tone-foreground: var(--tone-foreground);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -30,6 +32,7 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -74,6 +77,16 @@
   --success: oklch(0.527 0.137 150.1); /* #15803d, readable as text on white and on the page */
   --info: oklch(0.546 0.215 262.9); /* #2563eb, running */
   --warning: oklch(0.555 0.146 49); /* #b45309, partial */
+  --warning-foreground: oklch(0.985 0 0);
+  --destructive-foreground: oklch(0.985 0 0);
+  --success-foreground: oklch(0.985 0 0);
+  /* The colors of a task, which the tones below hand to dialogs, popovers, menus and buttons */
+  --create: oklch(0.546 0.215 262.9); /* #2563eb, adding a new entry */
+  --create-foreground: oklch(0.985 0 0);
+  --edit: oklch(0.541 0.247 293); /* #7c3aed, changing an entry */
+  --edit-foreground: oklch(0.985 0 0);
+  --pick: oklch(0.52 0.094 223.1); /* #0e7490, choosing an entry that exists */
+  --pick-foreground: oklch(0.985 0 0);
   --border: oklch(0.92 0.004 286.3); /* #e4e4e7 zinc-200 */
   --input: oklch(0.871 0.006 286.3); /* #d4d4d8 zinc-300 */
   --ring: oklch(0.51 0.014 286); /* #65656e, a quiet focus ring that still passes 3:1 on white */
@@ -114,6 +127,15 @@
   --success: oklch(0.773 0.153 163.2); /* #34d399 */
   --info: oklch(0.714 0.143 254.6); /* #60a5fa */
   --warning: oklch(0.837 0.164 84.4); /* #fbbf24 */
+  --warning-foreground: oklch(0.169 0.004 286); /* Dark text on the light colors of dark mode */
+  --destructive-foreground: oklch(0.169 0.004 286);
+  --success-foreground: oklch(0.169 0.004 286);
+  --create: oklch(0.714 0.143 254.6); /* #60a5fa */
+  --create-foreground: oklch(0.169 0.004 286);
+  --edit: oklch(0.709 0.159 293.5); /* #a78bfa */
+  --edit-foreground: oklch(0.169 0.004 286);
+  --pick: oklch(0.797 0.134 211.5); /* #22d3ee */
+  --pick-foreground: oklch(0.169 0.004 286);
   --border: oklch(0.287 0.007 285.9); /* #2a2a2e */
   --input: oklch(0.316 0.011 285.8); /* #313137 */
   --ring: oklch(0.712 0.013 286.1); /* #a1a1aa, the same quiet ring on the dark surfaces */
@@ -130,6 +152,50 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(0.287 0.007 285.9);
   --sidebar-ring: oklch(0.95 0 0);
+}
+
+/*
+ * The tone of a dialog, a popover, a menu entry or a button is the color of its task. The
+ * `data-tone` attribute sets it for the element and everything inside, and whatever carries a
+ * color reads it through the `tone` utilities: `bg-tone`, `text-tone`, `border-tone/60`.
+ * Without an attribute everything is neutral. The tones are listed in `src/components/ui/tone.ts`,
+ * the rules for picking one under Color in `src/app/dashboard/CLAUDE.md`.
+ */
+:root,
+.dark,
+[data-tone="neutral"] {
+  --tone: var(--primary);
+  --tone-foreground: var(--primary-foreground);
+}
+
+[data-tone="create"] {
+  --tone: var(--create);
+  --tone-foreground: var(--create-foreground);
+}
+
+[data-tone="edit"] {
+  --tone: var(--edit);
+  --tone-foreground: var(--edit-foreground);
+}
+
+[data-tone="pick"] {
+  --tone: var(--pick);
+  --tone-foreground: var(--pick-foreground);
+}
+
+[data-tone="warning"] {
+  --tone: var(--warning);
+  --tone-foreground: var(--warning-foreground);
+}
+
+[data-tone="destructive"] {
+  --tone: var(--destructive);
+  --tone-foreground: var(--destructive-foreground);
+}
+
+[data-tone="success"] {
+  --tone: var(--success);
+  --tone-foreground: var(--success-foreground);
 }
 
 @layer base {

@@ -81,7 +81,7 @@ export function EditGroupDialog({ group, open, onOpenChange }: EditGroupDialogPr
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-4xl max-h-[90vh] p-0">
+            <DialogContent tone="edit" className="sm:max-w-4xl max-h-[90vh] p-0">
                 <DialogHeader className="p-6 pb-0">
                     <DialogTitle>Edit Group</DialogTitle>
                 </DialogHeader>

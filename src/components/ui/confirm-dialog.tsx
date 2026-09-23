@@ -12,40 +12,25 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { toneAttribute, type Tone } from "@/components/ui/tone";
 import { cn } from "@/lib/utils";
 
 type IconComponent = React.ComponentType<{ className?: string }>;
 
-export type DialogTone = "destructive" | "warning" | "success" | "info" | "neutral";
+// The head is tinted in its tone like the banners on the Overview, a neutral one in the muted
+// gray. The head sets the tone itself, so a popover inside a dialog of another task keeps its own.
+function headClasses(tone: Tone): { head: string; tile: string } {
+    return tone === "neutral"
+        ? { head: "bg-muted/40", tile: "bg-muted text-foreground" }
+        : { head: "border-tone/20 bg-tone/5 dark:bg-tone/10", tile: "bg-tone/12 text-tone" };
+}
 
-// The head is tinted like the banners on the Overview. The note under the title uses a darker
-// red in light mode, since the red token misses 4.5:1 on the tint.
-const TONES: Record<DialogTone, { head: string; tile: string; note: string }> = {
-    destructive: {
-        head: "border-destructive/20 bg-destructive/5 dark:bg-destructive/10",
-        tile: "bg-destructive/12 text-destructive",
-        note: "text-red-700 dark:text-destructive",
-    },
-    warning: {
-        head: "border-warning/25 bg-warning/5 dark:bg-warning/10",
-        tile: "bg-warning/12 text-warning",
-        note: "text-warning",
-    },
-    success: {
-        head: "border-success/20 bg-success/5 dark:bg-success/8",
-        tile: "bg-success/12 text-success",
-        note: "text-muted-foreground",
-    },
-    info: {
-        head: "border-info/20 bg-info/5 dark:bg-info/10",
-        tile: "bg-info/12 text-info",
-        note: "text-info",
-    },
-    neutral: {
-        head: "bg-muted/40",
-        tile: "bg-muted text-foreground",
-        note: "text-muted-foreground",
-    },
+// The note under the title is in the tone. Red misses 4.5:1 on the tint in light mode and gets a
+// darker red there, and the tones that report no action keep the muted gray.
+const NOTES: Partial<Record<Tone, string>> = {
+    destructive: "text-red-700 dark:text-destructive",
+    success: "text-muted-foreground",
+    neutral: "text-muted-foreground",
 };
 
 /** Classes shared by the dialogs built on DialogHead: the raised surface and the button strip. */
@@ -53,7 +38,7 @@ export const DIALOG_SURFACE = "gap-0 overflow-hidden rounded-xl bg-card p-0 sm:m
 export const DIALOG_FOOTER = "border-t bg-page/60 px-5 py-3";
 
 interface DialogHeadProps {
-    tone: DialogTone;
+    tone: Tone;
     icon: IconComponent;
     /** Tighter padding for a popover. */
     className?: string;
@@ -64,9 +49,10 @@ interface DialogHeadProps {
 
 /** The tinted head of a dialog or a popover: an icon tile, the title and a short note. */
 export function DialogHead({ tone, icon: Icon, className, action, children }: DialogHeadProps) {
+    const classes = headClasses(tone);
     return (
-        <div className={cn("flex min-w-0 items-center gap-3 border-b px-5 py-4", TONES[tone].head, className)}>
-            <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg", TONES[tone].tile)} aria-hidden="true">
+        <div {...toneAttribute(tone)} className={cn("flex min-w-0 items-center gap-3 border-b px-5 py-4", classes.head, className)}>
+            <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg", classes.tile)} aria-hidden="true">
                 <Icon className="size-4" />
             </span>
             <div className="grid min-w-0 flex-1 gap-0.5">{children}</div>
@@ -75,9 +61,9 @@ export function DialogHead({ tone, icon: Icon, className, action, children }: Di
     );
 }
 
-/** The classes of the note under a dialog title, in the tone's color. */
-export function dialogNoteClass(tone: DialogTone): string {
-    return cn("text-xs font-medium", TONES[tone].note);
+/** The classes of the note under a dialog title, in the tone's color. Only valid inside a `DialogHead`. */
+export function dialogNoteClass(tone: Tone): string {
+    return cn("text-xs font-medium", NOTES[tone] ?? "text-tone");
 }
 
 export interface DialogListItem {
@@ -150,7 +136,7 @@ export interface ConfirmDialogProps {
     confirmLabel?: string;
     destructive?: boolean;
     /** The tone of the head when it is neither destructive nor neutral, like warning for a report of what failed. */
-    tone?: DialogTone;
+    tone?: Tone;
     /** Keeps the dialog open with a spinner while the action runs. */
     isPending?: boolean;
     /** Blocks the confirm button, for example when nothing is left to act on. */
@@ -180,13 +166,14 @@ export function ConfirmDialog({
     onConfirm,
     children,
 }: ConfirmDialogProps) {
-    const tone: DialogTone = toneOverride ?? (destructive ? "destructive" : "neutral");
+    const tone: Tone = toneOverride ?? (destructive ? "destructive" : "neutral");
     // Screen readers announce the note, or the description when there is no note.
     const bodyText = description && (note ? <p className="text-sm text-muted-foreground">{description}</p> : <AlertDialogDescription>{description}</AlertDialogDescription>);
 
     return (
         <AlertDialog open={open} onOpenChange={(next) => !isPending && onOpenChange(next)}>
-            <AlertDialogContent className={DIALOG_SURFACE} {...(!note && !description ? { "aria-describedby": undefined } : {})}>
+            {/* The tone reaches the confirm button too, so a warning asks with an amber one. */}
+            <AlertDialogContent tone={tone} className={DIALOG_SURFACE} {...(!note && !description ? { "aria-describedby": undefined } : {})}>
                 <DialogHead tone={tone} icon={icon ?? (tone === "destructive" || tone === "warning" ? AlertTriangle : Info)}>
                     <AlertDialogTitle className="text-base">{title}</AlertDialogTitle>
                     {note && <AlertDialogDescription className={dialogNoteClass(tone)}>{note}</AlertDialogDescription>}

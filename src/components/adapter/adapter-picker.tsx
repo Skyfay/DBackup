@@ -149,9 +149,9 @@ export function AdapterPickerDialog({
 
     return (
         <>
-            <DialogHead tone="info" icon={Plus} className="px-5 py-4">
+            <DialogHead tone="create" icon={Plus} className="px-5 py-4">
                 <DialogTitle className="text-base">{title}</DialogTitle>
-                <DialogDescription className={dialogNoteClass("info")}>Pick a type, then fill in the connection.</DialogDescription>
+                <DialogDescription className={dialogNoteClass("create")}>Pick a type, then fill in the connection.</DialogDescription>
             </DialogHead>
 
             <div className="px-5 pt-4">

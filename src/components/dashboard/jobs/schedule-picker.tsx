@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useEffect } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSession } from "@/lib/auth/client";
 import { formatInTimeZone } from "date-fns-tz";
 import { Clock, Terminal, CalendarClock } from "lucide-react";
@@ -180,34 +180,19 @@ export function SchedulePicker({ value, onChange }: SchedulePickerProps) {
           <CalendarClock className="h-4 w-4" />
           <span>{mode === "simple" ? describeSchedule(schedule, formatTime, schedulerTimezone) : `Cron: ${value}`}</span>
         </div>
-        <div className="flex items-center rounded-md border border-border bg-muted/50 p-0.5">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className={cn(
-              "h-7 gap-1.5 rounded-sm px-2.5 text-xs",
-              mode === "simple" && "bg-background shadow-sm"
-            )}
-            onClick={() => handleModeChange("simple")}
-          >
-            <Clock className="h-3 w-3" />
-            Simple
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className={cn(
-              "h-7 gap-1.5 rounded-sm px-2.5 text-xs",
-              mode === "cron" && "bg-background shadow-sm"
-            )}
-            onClick={() => handleModeChange("cron")}
-          >
-            <Terminal className="h-3 w-3" />
-            Cron
-          </Button>
-        </div>
+        {/* The segmented switch of the dashboard, not two buttons of its own. */}
+        <Tabs value={mode} onValueChange={(next) => handleModeChange(next as "simple" | "cron")}>
+          <TabsList className="h-8">
+            <TabsTrigger value="simple" className="px-2.5 text-xs">
+              <Clock className="size-3" />
+              Simple
+            </TabsTrigger>
+            <TabsTrigger value="cron" className="px-2.5 text-xs">
+              <Terminal className="size-3" />
+              Cron
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
 
       {/* Content */}

@@ -26,10 +26,12 @@ All notable changes to DBackup are documented here.
 - **connections**: The text fields and the email recipient field of the connection forms are tied to their labels, so a click on a label puts the cursor in its field and screen readers name the field.
 - **connections**: An empty required field of a new connection shows the adapter's own message, like "Bucket name is required" or "Add at least one recipient", instead of Zod's generic wording.
 - **connections**: Authorizing a cloud drive again checks the new token, instead of still reporting the old one as expired.
+- **connections**: The file browser of a path field answers a missing login or permission with 401 or 403 instead of a server error.
 
 ### 🔒 Security
 
 - **connections**: The health check history of a connection needs the read permission of its kind, like its details. Reading sources or destinations was enough for every kind before.
+- **connections**: The file browser of a path field no longer follows a link into a system folder it keeps out, like /proc or /System.
 
 ### 🎨 Improvements
 
@@ -44,6 +46,7 @@ All notable changes to DBackup are documented here.
 - **connections**: The form for adding and editing a connection lists its parts on the left, marks the ones that are done or still miss something, and shows one part at a time. The connection type and a storage connection's role are picked from cards that say what each one means, logins are picked or created in one field, and every switch says what it turns on.
 - **connections**: The login field lists every saved login with its description and where it is in use, and puts the logins that other connections of the same kind already use first. The credentials API returns those connection types as `usedBy` with `includeCounts=true`.
 - **vault**: A new credential profile starts with a list of what can be saved and the services that use each kind, while the New button of a login field opens the form for its kind right away. Every secret field has its own button to show what was typed, and an SSH login picks how it signs in and where its key comes from on cards.
+- **connections**: The file browser of a path field starts where the field points and shows the path as clickable parts with a filter, the size and date of every entry and a badge on the files the field takes. Hidden files stay out until asked for, and every entry can be reached with the keyboard.
 
 ### 🔄 Changed
 

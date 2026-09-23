@@ -5,10 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
 import type { CredentialProfileSummary } from "@/components/settings/credential-profile-dialog";
-import { CREDENTIAL_TYPE_INFO, nounOf } from "@/components/settings/credential-types";
+import { CREDENTIAL_TYPE_INFO } from "@/components/settings/credential-types";
 import { getAdapterDefinition } from "@/lib/adapters/definitions";
 import type { CredentialType } from "@/lib/core/credentials";
-import { cn } from "@/lib/utils";
+import { cn, nounOf } from "@/lib/utils";
 
 /** The kind of connection a login is picked for. */
 export interface PickerAdapter {

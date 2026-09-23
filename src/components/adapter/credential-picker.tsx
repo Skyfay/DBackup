@@ -15,7 +15,8 @@ import {
     type CredentialProfileSummary,
 } from "@/components/settings/credential-profile-dialog";
 import type { CredentialType } from "@/lib/core/credentials";
-import { CREDENTIAL_TYPE_INFO, nounOf } from "@/components/settings/credential-types";
+import { CREDENTIAL_TYPE_INFO } from "@/components/settings/credential-types";
+import { nounOf } from "@/lib/utils";
 import { LoginList, type PickerAdapter } from "./credential-picker-list";
 
 interface Props {

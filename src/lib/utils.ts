@@ -18,6 +18,14 @@ export function formatBytes(bytes: number, decimals = 2) {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
 }
 
+/** A field label as a noun inside a sentence: "Login" becomes "login", "SSH login" and "sqlite3 binary" stay as they are. */
+export function nounOf(label: string): string {
+  return label
+    .split(" ")
+    .map((word) => (/^[A-Z][a-z]*$/.test(word) ? word.toLowerCase() : word))
+    .join(" ");
+}
+
 export function formatDuration(ms: number) {
   if (ms < 1000) return `${ms}ms`;
   const seconds = Math.floor(ms / 1000);

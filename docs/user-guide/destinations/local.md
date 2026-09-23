@@ -7,7 +7,7 @@ Store backups on the local filesystem of the server running DBackup. Simplest op
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
 | **Name** | Friendly name for this destination | - | ✅ |
-| **Folder** | Absolute directory path for backups | `/backups` | ❌ |
+| **Folder** | Absolute directory path for backups. The folder button beside the field browses for it, the folder you stand in is the one you pick | `/backups` | ❌ |
 
 ## Setup Guide
 

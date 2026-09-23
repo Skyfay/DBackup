@@ -39,11 +39,3 @@ export function servicesOf(type: CredentialType): string {
     if (type === "SSH_KEY") names.push("the SSH server of any connection");
     return names.join(", ");
 }
-
-/** A field label as a noun inside a sentence: "Login" becomes "login", "SSH login" keeps its capitals. */
-export function nounOf(label: string): string {
-    return label
-        .split(" ")
-        .map((word) => (/^[A-Z][a-z]*$/.test(word) ? word.toLowerCase() : word))
-        .join(" ");
-}

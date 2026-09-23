@@ -33,6 +33,8 @@ import { PLACEHOLDERS } from "./form-constants";
 import { useSecretStatus } from "./secret-status-context";
 import { DatabasePicker } from "./database-picker";
 import { FileBrowserDialog } from "@/components/system/file-browser-dialog";
+import { SQLITE_FILES } from "@/components/system/file-browser-model";
+import { nounOf } from "@/lib/utils";
 import { useState } from "react";
 
 interface SchemaFieldProps {
@@ -137,8 +139,9 @@ export function SchemaField({
     }
     // Future: Add SFTP check here if consistent pattern used
 
-    // Determine default selection type for file browser
-    const selectionType = fieldKey === 'basePath' ? 'directory' : 'all';
+    // A backup folder is a directory, the SQLite database and its binary are files.
+    const selectionType = fieldKey === 'basePath' ? 'directory' : 'file';
+    const browseNoun = nounOf(label);
 
     return (
         <FormField
@@ -245,7 +248,8 @@ export function SchemaField({
                                             variant="outline"
                                             size="icon"
                                             onClick={() => setIsFileBrowserOpen(true)}
-                                            title="Browse Server Files"
+                                            title={`Pick the ${browseNoun}`}
+                                            aria-label={`Pick the ${browseNoun}`}
                                         >
                                             <FolderOpen className="h-4 w-4" />
                                         </Button>
@@ -255,7 +259,8 @@ export function SchemaField({
                                             onSelect={(path) => field.onChange(path)}
                                             initialPath={field.value && field.value.startsWith('/') ? field.value : '/'}
                                             selectionType={selectionType}
-                                            title={remoteConfig ? `Select Remote ${label}` : `Select Local ${label}`}
+                                            title={`Pick the ${browseNoun}`}
+                                            accept={adapterId === "sqlite" && fieldKey === "path" ? SQLITE_FILES : undefined}
                                             remoteConfig={remoteConfig}
                                             remoteAdapterId={remoteConfig ? adapterId : undefined}
                                             remoteSshCredentialId={remoteConfig ? sshCredentialId : undefined}

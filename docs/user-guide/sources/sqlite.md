@@ -24,6 +24,8 @@ SQLite in SSH mode requires an `SSH_KEY` [Credential Profile](/user-guide/securi
 | **Where the file is** | Pick **This machine** |
 | **Database file** | Absolute path to the `.sqlite` or `.db` file |
 
+The folder button beside **Database file** opens a browser that starts where the field points. It marks the SQLite files, dims the rest and leaves hidden files out until you ask for them. **Type a path** jumps straight to a folder you know.
+
 ### SSH Mode
 
 | Field | Description |
@@ -32,7 +34,7 @@ SQLite in SSH mode requires an `SSH_KEY` [Credential Profile](/user-guide/securi
 | **SSH host** | SSH server hostname, in the **SSH server** part |
 | **Port** | SSH port (default: `22`) |
 | **SSH login** | `SSH_KEY` credential profile (username + key or password) |
-| **Database file** | Remote path to the SQLite file, in the **Database file** part |
+| **Database file** | Remote path to the SQLite file, in the **Database file** part. The folder button browses the server over SSH |
 | **sqlite3 binary** | Remote path to the `sqlite3` binary (default: `sqlite3`) |
 
 ## Local Mode Setup

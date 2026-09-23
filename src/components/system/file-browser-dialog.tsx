@@ -1,232 +1,249 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Database, Eye, EyeOff, File, FolderOpen, Search } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { DIALOG_FOOTER, DIALOG_SURFACE, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Folder, File, ArrowUp, Loader2, Home } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
-
-interface FileEntry {
-    name: string;
-    type: "directory" | "file";
-    path: string;
-}
+import { FileBrowserList } from "./file-browser-list";
+import { fits, parentOf, visibleEntries, type FileAccept, type FolderListing } from "./file-browser-model";
+import { FileBrowserPath } from "./file-browser-path";
 
 interface FileBrowserDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     onSelect: (path: string) => void;
+    /** The value of the field. A folder opens, a file opens its folder with the file picked. */
     initialPath?: string;
-    selectionType?: "file" | "directory" | "all";
-    title?: string;
-    remoteConfig?: any; // If provided, uses remote API
+    /** A file is picked with a click, a folder by going into it and using the one you are in. */
+    selectionType?: "file" | "directory";
+    /** Like "Pick the database file". */
+    title: string;
+    /** The files the field takes, marked while the others are dimmed. */
+    accept?: FileAccept;
+    /** When set, the browser lists the server of this SSH config instead of this machine. */
+    remoteConfig?: Record<string, unknown> | null;
     remoteAdapterId?: string;
     remoteSshCredentialId?: string | null;
 }
 
-export function FileBrowserDialog({
-    open,
+/**
+ * Picks a file or a folder for a path field, on this machine or on a server over SSH. Headed in
+ * the turquoise of picking, with the path as clickable parts, a filter and the picked path above
+ * the buttons.
+ */
+export function FileBrowserDialog(props: FileBrowserDialogProps) {
+    // Escape leaves a path being typed before it closes the browser. The body says whether it did.
+    const escape = useRef<(() => boolean) | null>(null);
+    return (
+        <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+            <DialogContent
+                tone="pick"
+                showCloseButton={false}
+                className={cn(DIALOG_SURFACE, "sm:max-w-2xl")}
+                onEscapeKeyDown={(event) => escape.current?.() && event.preventDefault()}
+            >
+                {/* Mounted per opening, so every visit starts fresh at the field's value. */}
+                <FileBrowserBody {...props} escapeRef={escape} />
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+function FileBrowserBody({
+    escapeRef,
     onOpenChange,
     onSelect,
     initialPath = "/",
-    selectionType = "all",
-    title = "Select File or Directory",
+    selectionType = "file",
+    title,
+    accept,
     remoteConfig,
     remoteAdapterId,
     remoteSshCredentialId,
-}: FileBrowserDialogProps) {
-    const [currentPath, setCurrentPath] = useState(initialPath);
-    const [parentPath, setParentPath] = useState<string | null>(null);
-    const [entries, setEntries] = useState<FileEntry[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [selectedEntry, setSelectedEntry] = useState<FileEntry | null>(null);
+}: FileBrowserDialogProps & { escapeRef: React.RefObject<(() => boolean) | null> }) {
+    const [listing, setListing] = useState<FolderListing | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [picked, setPicked] = useState<string | null>(null);
+    const [filter, setFilter] = useState("");
+    const [showHidden, setShowHidden] = useState(false);
+    const [editingPath, setEditingPath] = useState(false);
 
-    // Initial load
-    useEffect(() => {
-        if (open) {
-            fetchPath(currentPath);
-        }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [open]);
+    // The form hands a fresh config object on every render, so the request reads it from here
+    // instead of depending on it.
+    const remote = useRef({ remoteConfig, remoteAdapterId, remoteSshCredentialId });
+    remote.current = { remoteConfig, remoteAdapterId, remoteSshCredentialId };
 
-    const fetchPath = async (path: string) => {
-        setLoading(true);
+    const request = async (path: string): Promise<{ data?: FolderListing; error?: string }> => {
+        const { remoteConfig: config, remoteAdapterId: adapterId, remoteSshCredentialId: sshCredentialId } = remote.current;
         try {
-            let res;
-            if (remoteConfig) {
-                 res = await fetch(`/api/system/filesystem/remote`, {
-                     method: 'POST',
-                     headers: { 'Content-Type': 'application/json' },
-                     body: JSON.stringify({
-                         config: remoteConfig,
-                         path,
-                         adapterId: remoteAdapterId,
-                         sshCredentialId: remoteSshCredentialId ?? null,
-                     })
-                 });
-            } else {
-                 const params = new URLSearchParams({ path });
-                 res = await fetch(`/api/system/filesystem?${params.toString()}`);
-            }
-
+            const res = config
+                ? await fetch("/api/system/filesystem/remote", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ config, path, adapterId, sshCredentialId: sshCredentialId ?? null }),
+                  })
+                : await fetch(`/api/system/filesystem?${new URLSearchParams({ path }).toString()}`);
             const json = await res.json();
+            return json.success ? { data: json.data as FolderListing } : { error: json.error || "Failed to load directory" };
+        } catch {
+            return { error: "Network error" };
+        }
+    };
 
-            if (json.success) {
-                setEntries(json.data.entries);
-                setCurrentPath(json.data.currentPath);
-                setParentPath(json.data.parentPath);
-                setSelectedEntry(null);
+    const show = (data: FolderListing, pick: string | null = null) => {
+        setListing(data);
+        setPicked(pick);
+        setFilter("");
+    };
+
+    /** A file path opens its folder with the file picked, when the file is there. */
+    const openAt = async (path: string, fallBackToRoot: boolean) => {
+        setLoading(true);
+        const result = await request(path);
+        if (result.data) {
+            show(result.data);
+        } else {
+            const parent = await request(parentOf(path));
+            if (parent.data) {
+                const file = parent.data.entries.find((entry) => entry.type === "file" && entry.path === path);
+                show(parent.data, selectionType === "file" && file ? file.path : null);
+            } else if (fallBackToRoot) {
+                const root = await request("/");
+                if (root.data) show(root.data);
+                else toast.error(root.error ?? "Failed to load directory");
             } else {
-                toast.error(json.error || "Failed to load directory");
-                // If path invalid (e.g. initial path), fallback to root
-                if (path !== "/") {
-                    fetchPath("/");
-                }
+                toast.error(result.error ?? "Failed to load directory");
             }
-        } catch (_error) {
-            toast.error("Network error");
-        } finally {
-            setLoading(false);
         }
+        setLoading(false);
     };
 
-    const handleEntryClick = (entry: FileEntry) => {
-        setSelectedEntry(entry);
+    const openFolder = async (path: string) => {
+        setLoading(true);
+        const result = await request(path);
+        if (result.data) show(result.data);
+        else toast.error(result.error ?? "Failed to load directory");
+        setLoading(false);
     };
 
-    const handleEntryDoubleClick = (entry: FileEntry) => {
-        if (entry.type === "directory") {
-            fetchPath(entry.path);
-        } else if (selectionType !== "directory") {
-            // Select file on double click
-            onSelect(entry.path);
-            onOpenChange(false);
-        }
-    };
+    useEffect(() => {
+        escapeRef.current = () => {
+            if (!editingPath) return false;
+            setEditingPath(false);
+            return true;
+        };
+    });
 
-    const handleUp = async () => {
-         if (parentPath && parentPath !== currentPath) {
-             fetchPath(parentPath);
-         } else {
-             // Fallback to naive splitting if API didn't return parent (should not happen)
-             const parent = currentPath.split(/[/\\]/).slice(0, -1).join('/') || '/';
-             fetchPath(parent);
-         }
-    };
+    // Starts where the field points, once per opening. A path that is gone falls back to "/".
+    useEffect(() => {
+        void openAt(initialPath && initialPath.startsWith("/") ? initialPath : "/", true);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
-    const handleConfirm = () => {
-        if (!selectedEntry) {
-            // If selecting a directory and nothing specific selected, maybe user wants current path?
-            // Usually user selects an entry.
-            // If selectionType is directory and nothing selected, return currentPath?
-            if (selectionType === 'directory') {
-                onSelect(currentPath);
-                onOpenChange(false);
-                return;
-            }
-            return;
-        }
+    const entries = useMemo(
+        () => visibleEntries(listing?.entries ?? [], { showHidden, filter, selectionType }),
+        [listing, showHidden, filter, selectionType]
+    );
+    const hiddenCount = (listing?.entries ?? []).filter((entry) => entry.name.startsWith(".")).length;
+    const dimmedCount = accept ? entries.filter((entry) => entry.type === "file" && !fits(entry.name, accept)).length : 0;
 
-        if (selectionType === "directory" && selectedEntry.type !== "directory") {
-            toast.error("Please select a directory");
-            return;
-        }
-
-        if (selectionType === "file" && selectedEntry.type !== "file") {
-            // If it's a directory, enter it instead of selecting
-            fetchPath(selectedEntry.path);
-            return;
-        }
-
-        onSelect(selectedEntry.path);
+    const currentPath = listing?.currentPath ?? "/";
+    const chosen = selectionType === "file" ? picked : listing ? currentPath : null;
+    const use = (path: string) => {
+        onSelect(path);
         onOpenChange(false);
     };
+    const goUp = () => {
+        if (listing && listing.parentPath !== currentPath) void openFolder(listing.parentPath);
+    };
+
+    const where = remoteConfig?.host ? `${String(remoteConfig.host)} over SSH` : "This machine";
+    const note = accept ? `${where} · ${accept.label} file` : where;
+    const Icon = selectionType === "directory" ? FolderOpen : accept ? Database : File;
 
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent tone="pick" className="max-w-2xl h-[80vh] flex flex-col p-0 gap-0">
-                <DialogHeader className="p-4 pb-2 border-b">
-                    <DialogTitle>{title}</DialogTitle>
-                </DialogHeader>
+        <>
+            <DialogHead tone="pick" icon={Icon} className="px-5 py-4">
+                <DialogTitle className="text-base">{title}</DialogTitle>
+                <DialogDescription className={dialogNoteClass("pick")}>{note}</DialogDescription>
+            </DialogHead>
 
-                {/* Toolbar */}
-                <div className="flex items-center gap-2 p-2 border-b bg-muted/30">
-                    <Button variant="ghost" size="icon" onClick={() => fetchPath("/")} title="Root">
-                        <Home className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={handleUp} disabled={currentPath === "/"} title="Up">
-                        <ArrowUp className="h-4 w-4" />
-                    </Button>
-                    <form
-                        className="flex-1"
-                        onSubmit={(e) => { e.preventDefault(); fetchPath(currentPath); }}
-                    >
-                        <Input
-                            value={currentPath}
-                            onChange={(e) => setCurrentPath(e.target.value)}
-                            className="h-8 text-sm font-mono"
-                        />
-                    </form>
+            <div className="space-y-2.5 border-b px-4 py-3">
+                <FileBrowserPath path={currentPath} editing={editingPath} onEditingChange={setEditingPath} onGo={(path) => void openAt(path, false)} />
+                <div className="relative">
+                    <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                    <Input
+                        placeholder="Filter this folder"
+                        aria-label="Filter this folder"
+                        value={filter}
+                        onChange={(event) => setFilter(event.target.value)}
+                        className="h-8 pl-8"
+                        autoComplete="off"
+                    />
                 </div>
+            </div>
 
-                {/* File List */}
-                <ScrollArea className="flex-1 min-h-0 p-2">
-                    {loading ? (
-                        <div className="flex h-full items-center justify-center min-h-[300px]">
-                            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                        </div>
-                    ) : (
-                        <div className="grid grid-cols-1 gap-1">
-                            {entries.length === 0 && (
-                                <div className="text-center text-muted-foreground py-8 text-sm">
-                                    Empty directory
-                                </div>
-                            )}
-                            {entries.map((entry) => (
-                                <div
-                                    key={entry.path}
-                                    className={cn(
-                                        "flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer text-sm transition-colors",
-                                        selectedEntry?.path === entry.path
-                                            ? "bg-accent text-accent-foreground font-medium"
-                                            : "hover:bg-muted/50"
-                                    )}
-                                    onClick={() => handleEntryClick(entry)}
-                                    onDoubleClick={() => handleEntryDoubleClick(entry)}
-                                >
-                                    {entry.type === "directory" ? (
-                                        <Folder className={cn("h-4 w-4 text-blue-500", selectedEntry?.path === entry.path && "fill-blue-500/20")} />
-                                    ) : (
-                                        <File className="h-4 w-4 text-muted-foreground" />
-                                    )}
-                                    <span className="truncate flex-1">{entry.name}</span>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </ScrollArea>
+            <div className="hidden items-center gap-2.5 px-5 pt-2 text-xs font-medium text-muted-foreground sm:flex" aria-hidden="true">
+                <span className="size-4" />
+                <span className="flex-1">Name</span>
+                <span className="w-20 text-right">Size</span>
+                <span className="w-28 text-right">Modified</span>
+                <span className="size-4" />
+            </div>
+            {/* A fixed height, so the dialog does not jump from folder to folder. */}
+            <ScrollArea className="*:data-[slot=scroll-area-viewport]:h-[min(24rem,calc(95dvh-22rem))] [&>[data-slot=scroll-area-viewport]>div]:block!">
+                <div className="px-3 py-1.5">
+                    <FileBrowserList
+                        entries={entries}
+                        loading={loading}
+                        picked={picked}
+                        accept={accept}
+                        emptyText={filter ? "Nothing here matches the filter." : "This folder is empty."}
+                        onOpen={(path) => void openFolder(path)}
+                        onPick={setPicked}
+                        onUse={use}
+                        onUp={goUp}
+                    />
+                </div>
+            </ScrollArea>
 
-                <DialogFooter className="p-4 border-t bg-muted/10">
-                    <div className="flex items-center justify-between w-full">
-                         <div className="text-xs text-muted-foreground max-w-[60%] truncate">
-                            {selectedEntry ? (
-                                <>Selected: <span className="font-mono">{selectedEntry.name}</span></>
-                            ) : selectionType === 'directory' ? (
-                                <>Current: <span className="font-mono">{currentPath}</span></>
-                            ) : null}
-                         </div>
-                         <div className="flex gap-2">
-                            <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-                            <Button onClick={handleConfirm} disabled={loading || (!selectedEntry && selectionType !== 'directory')}>
-                                Select
-                            </Button>
-                         </div>
-                    </div>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
+            <div className="flex min-h-9 flex-wrap items-center justify-between gap-2 px-4 pb-2 text-xs text-muted-foreground">
+                {hiddenCount > 0 || showHidden ? (
+                    <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" aria-pressed={showHidden} onClick={() => setShowHidden((current) => !current)}>
+                        {showHidden ? <EyeOff /> : <Eye />}
+                        {showHidden ? "Hide hidden files" : `Show ${hiddenCount} hidden`}
+                    </Button>
+                ) : (
+                    <span />
+                )}
+                {accept && dimmedCount > 0 && (
+                    <span className="px-2">
+                        {dimmedCount} {dimmedCount === 1 ? "file is" : "files are"} no {accept.label} file
+                    </span>
+                )}
+            </div>
+
+            <div className={cn(DIALOG_FOOTER, "flex items-center gap-3")}>
+                <div className="min-w-0 flex-1">
+                    <p className="text-xs text-muted-foreground">Picked</p>
+                    <p className="truncate font-mono text-xs" title={chosen ?? undefined}>
+                        {chosen ?? "Nothing yet"}
+                    </p>
+                </div>
+                <DialogClose asChild>
+                    <Button type="button" variant="ghost">
+                        Cancel
+                    </Button>
+                </DialogClose>
+                <Button type="button" disabled={!chosen || loading} onClick={() => chosen && use(chosen)}>
+                    {selectionType === "file" ? "Use this file" : "Use this folder"}
+                </Button>
+            </div>
+        </>
     );
 }

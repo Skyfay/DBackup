@@ -9,7 +9,9 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        // The blue of the dialogs that add or change something, so the main action carries the
+        // same colour everywhere. Dark mode gets the lighter blue, which needs dark text.
+        default: "bg-info text-white hover:bg-info/90 dark:text-background",
         destructive:
           "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
         outline:

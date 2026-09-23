@@ -57,7 +57,8 @@ Every other page still has the old look. Do not copy patterns from it, copy them
 ## Color
 
 - Status tokens: `success` for completed, `destructive` for failed, `warning` for partial runs and conflicts, `info` for running.
-- A dialog or a row menu carries the colour of what it does: `destructive` for deleting, `warning` for a report of what failed, `info` for changing and adding, neutral for everything else. Green stays with the status of a thing, never with an action. Use them as text, as tints like `border-destructive/30 bg-destructive/5`, and as icon tiles like `bg-success/12 text-success`.
+- A dialog or a row menu carries the colour of what it does: `destructive` for deleting, `warning` for a report of what failed, `info` for changing and adding, neutral for everything else. Green stays with the status of a thing, never with an action.
+- The filled button of the main action is that same `info` blue, in light mode with white text and in dark mode with dark text on the lighter blue. It is the only filled accent on a page, everything beside it is `outline` or `ghost`. Use them as text, as tints like `border-destructive/30 bg-destructive/5`, and as icon tiles like `bg-success/12 text-success`.
 - Everything that is not a status stays neutral. Sizes, counts, share bars and chart lines use `foreground` or `muted-foreground` shades, like `bg-foreground/80` for a share bar.
 - Charts take their colors from the same tokens (`var(--success)`) through the `ChartConfig`, never from hex values or the `--chart-*` palette.
 

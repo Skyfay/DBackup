@@ -35,7 +35,7 @@ A `USERNAME_PASSWORD` credential profile is required. This adapter has no SSH mo
 | :--- | :--- | :--- | :--- |
 | **Host** | Logical server name, e.g. `myserver.database.windows.net` | - | ✅ |
 | **Port** | Server port | `1433` | ✅ |
-| **Primary Credential** | `USERNAME_PASSWORD` credential profile | - | ✅ |
+| **Login** | `USERNAME_PASSWORD` credential profile | - | ✅ |
 | **Request Timeout** | Timeout in ms for catalog queries. The export itself is never timed out. | `300000` | ❌ |
 
 Encryption is always on and the server certificate is always verified. Neither is configurable, because Azure presents a valid certificate on every connection.

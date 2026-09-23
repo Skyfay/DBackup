@@ -10,7 +10,7 @@ Configure MySQL or MariaDB databases for backup using `mysqldump` / `mariadb-dum
 | **MariaDB** | 10.x, 11.x |
 
 ::: tip Older MySQL servers
-MySQL below 5.7 is not supported, but dumps are not blocked either. When the detected server version is below 5.5.3, DBackup leaves out the `utf8mb4` character set flag that those servers do not know. If the dump still fails on the character set, for example because the version could not be detected or the client in the DBackup image defaults to `utf8mb4`, add `--default-character-set=utf8` to **Additional Options** to override it yourself.
+MySQL below 5.7 is not supported, but dumps are not blocked either. When the detected server version is below 5.5.3, DBackup leaves out the `utf8mb4` character set flag that those servers do not know. If the dump still fails on the character set, for example because the version could not be detected or the client in the DBackup image defaults to `utf8mb4`, add `--default-character-set=utf8` to **Extra options** to override it yourself.
 :::
 
 ## Connection Modes
@@ -18,7 +18,7 @@ MySQL below 5.7 is not supported, but dumps are not blocked either. When the det
 | Mode | Description |
 | :--- | :--- |
 | **Direct** | DBackup connects via TCP and runs `mysqldump` locally |
-| **SSH** | DBackup connects via SSH and runs `mysqldump` on the remote host |
+| **Over SSH** | DBackup connects via SSH and runs `mysqldump` on the remote host |
 
 ## Configuration
 
@@ -28,23 +28,23 @@ MySQL / MariaDB requires a [Credential Profile](/user-guide/security/credential-
 
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
-| **Connection Mode** | Direct (TCP) or SSH | `Direct` | ✅ |
+| **How DBackup connects** | **Direct** or **Over SSH** | - | ✅ |
 | **Host** | Database server hostname | `localhost` | ✅ |
 | **Port** | MySQL port | `3306` | ✅ |
-| **Primary Credential** | `USERNAME_PASSWORD` credential profile (username + password) | - | ✅ |
+| **Login** | `USERNAME_PASSWORD` credential profile (username + password) | - | ✅ |
 | **Database** | Database name(s) to backup | All databases | ❌ |
-| **Additional Options** | Extra `mysqldump` flags | - | ❌ |
+| **Extra options** | Extra `mysqldump` flags | - | ❌ |
 | **Disable SSL** | Disable SSL for self-signed certificates | `false` | ❌ |
 
 ### SSH Mode Fields
 
-These fields appear when **Connection Mode** is set to **SSH**:
+These fields appear in the **SSH server** part when **How DBackup connects** is set to **Over SSH**:
 
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
-| **SSH Host** | SSH server hostname or IP | - | ✅ |
-| **SSH Port** | SSH server port | `22` | ❌ |
-| **SSH Credential** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
+| **SSH host** | SSH server hostname or IP | - | ✅ |
+| **Port** | SSH server port | `22` | ❌ |
+| **SSH login** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
 
 ## Prerequisites
 
@@ -132,23 +132,21 @@ For backup-only operations, `SELECT`, `SHOW VIEW`, `TRIGGER`, and `LOCK TABLES` 
 
 1. Go to **Connections** → **Databases** → **Add New**
 2. Select **MySQL** or **MariaDB**
-3. Keep Connection Mode as **Direct**
-4. Enter connection details
-5. Click **Test Connection**
-6. Click **Fetch Databases** and select databases
-7. Save
+3. Pick **Direct** under **How DBackup connects**
+4. Enter host and port, and pick or create the **Login**
+5. Click **Test connection**
+6. Click **Create database**, then pick the databases in the job that uses the source
 
 #### SSH Mode
 
 1. Go to **Connections** → **Databases** → **Add New**
 2. Select **MySQL** or **MariaDB**
-3. Set Connection Mode to **SSH**
-4. In the **SSH Connection** tab: enter SSH host, username, and authentication details
+3. Pick **Over SSH** under **How DBackup connects**
+4. In the **SSH server** part: enter the SSH host and pick or create the **SSH login**
 5. Click **Test SSH** to verify SSH connectivity
-6. In the **Database** tab: enter MySQL host (usually `127.0.0.1` or `localhost` - relative to the SSH server), port, user, and password
-7. Click **Test Connection** to verify database connectivity via SSH
-8. Click **Fetch Databases** and select databases
-9. Save
+6. In the **Database** part: enter the MySQL host (usually `127.0.0.1` or `localhost` - relative to the SSH server) and port, and pick the **Login**
+7. Click **Test connection** to verify database connectivity via SSH
+8. Click **Create database**, then pick the databases in the job that uses the source
 
 ::: tip Host in SSH Mode
 The **Host** field in SSH mode refers to the database hostname **as seen from the SSH server**, not from DBackup. If MySQL runs on the same machine as the SSH server, use `127.0.0.1` or `localhost`.
@@ -235,7 +233,7 @@ From a multi-DB backup you can restore individual databases and rename them duri
 Multi-DB backups before v0.9.1 use a different format and cannot be restored with newer versions.
 :::
 
-### Additional Options Examples
+### Extra Options Examples
 
 <details>
 <summary>Common mysqldump flags</summary>

@@ -15,7 +15,7 @@ DBackup uses `mongodump` from MongoDB Database Tools.
 | Mode | Description |
 | :--- | :--- |
 | **Direct** | DBackup connects via TCP and runs `mongodump` locally |
-| **SSH** | DBackup connects via SSH and runs `mongodump` on the remote host |
+| **Over SSH** | DBackup connects via SSH and runs `mongodump` on the remote host |
 
 ## Configuration
 
@@ -25,23 +25,23 @@ A [Credential Profile](/user-guide/security/credential-profiles) is **optional**
 
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
-| **Connection Mode** | Direct (TCP) or SSH | `Direct` | ✅ |
+| **How DBackup connects** | **Direct** or **Over SSH** | - | ✅ |
 | **Host** | Database server hostname, or a comma-separated seed list | `localhost` | ✅ |
 | **Port** | MongoDB port | `27017` | ✅ |
-| **Primary Credential** | `USERNAME_PASSWORD` credential profile (username + password) | - | ❌ |
-| **Auth Database** | Authentication database | `admin` | ❌ |
+| **Login** | `USERNAME_PASSWORD` credential profile (username + password) | - | ❌ |
+| **Authentication database** | Authentication database | `admin` | ❌ |
 | **Database** | Database name(s) to backup | All databases | ❌ |
-| **Additional Options** | Extra `mongodump` flags | - | ❌ |
+| **Extra options** | Extra `mongodump` flags | - | ❌ |
 
 ### SSH Mode Fields
 
-These fields appear when **Connection Mode** is set to **SSH**:
+These fields appear in the **SSH server** part when **How DBackup connects** is set to **Over SSH**:
 
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
-| **SSH Host** | SSH server hostname or IP | - | ✅ |
-| **SSH Port** | SSH server port | `22` | ❌ |
-| **SSH Credential** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
+| **SSH host** | SSH server hostname or IP | - | ✅ |
+| **Port** | SSH server port | `22` | ❌ |
+| **SSH login** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
 
 ## Prerequisites
 
@@ -110,8 +110,8 @@ DBackup builds the connection string from the **Host** and **Port** fields plus 
 
 - **Host**: `mongodb.example.com`
 - **Port**: `27017`
-- **Primary Credential**: a `USERNAME_PASSWORD` profile
-- **Auth Database**: `admin`
+- **Login**: a `USERNAME_PASSWORD` profile
+- **Authentication database**: `admin`
 
 ### MongoDB Atlas and Other SRV Clusters
 
@@ -228,7 +228,7 @@ backup.tar
 Multi-DB backups created before v0.9.1 cannot be restored with newer versions.
 :::
 
-## Additional Options Examples
+## Extra Options Examples
 
 ```bash
 # Backup specific collection
@@ -255,7 +255,7 @@ Multi-DB backups created before v0.9.1 cannot be restored with newer versions.
 Put the members in the **Host** field as a comma-separated list, as shown under [Connection Methods](#replica-sets). To read from a secondary instead of the primary:
 
 ```bash
-# Additional Options
+# Extra options
 --readPreference=secondaryPreferred
 ```
 
@@ -280,14 +280,14 @@ Works automatically when you provide user/password.
 ### x.509 Certificate
 
 ```bash
-# Additional Options
+# Extra options
 --ssl --sslCAFile=/path/to/ca.pem --sslPEMKeyFile=/path/to/client.pem
 ```
 
 ### LDAP Authentication
 
 ```bash
-# Additional Options
+# Extra options
 --authenticationMechanism=PLAIN --authenticationDatabase='$external'
 ```
 

@@ -21,7 +21,7 @@ Valkey is protocol-compatible with Redis. The Valkey source type exists so versi
 | Mode | Description |
 | :--- | :--- |
 | **Direct** | DBackup connects via TCP and runs `redis-cli` locally |
-| **SSH** | DBackup connects via SSH and runs `redis-cli` on the remote host |
+| **Over SSH** | DBackup connects via SSH and runs `redis-cli` on the remote host |
 
 ## How It Works
 

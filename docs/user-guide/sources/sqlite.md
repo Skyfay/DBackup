@@ -21,20 +21,19 @@ SQLite in SSH mode requires an `SSH_KEY` [Credential Profile](/user-guide/securi
 
 | Field | Description |
 | :--- | :--- |
-| **Mode** | Select "Local" |
-| **Path** | Absolute path to `.sqlite` or `.db` file |
-| **SQLite Binary** | Path to `sqlite3` binary (default: `sqlite3`) |
+| **Where the file is** | Pick **This machine** |
+| **Database file** | Absolute path to the `.sqlite` or `.db` file |
 
 ### SSH Mode
 
 | Field | Description |
 | :--- | :--- |
-| **Mode** | Select "SSH" |
-| **Host** | SSH server hostname |
+| **Where the file is** | Pick **Over SSH** |
+| **SSH host** | SSH server hostname, in the **SSH server** part |
 | **Port** | SSH port (default: `22`) |
-| **SSH Credential** | `SSH_KEY` credential profile (username + key or password) |
-| **Path** | Remote path to SQLite file |
-| **SQLite Binary** | Remote path to `sqlite3` binary |
+| **SSH login** | `SSH_KEY` credential profile (username + key or password) |
+| **Database file** | Remote path to the SQLite file, in the **Database file** part |
+| **sqlite3 binary** | Remote path to the `sqlite3` binary (default: `sqlite3`) |
 
 ## Local Mode Setup
 
@@ -67,10 +66,10 @@ chmod 644 /path/to/database.db
 ## SSH Mode Setup
 
 1. Create an `SSH_KEY` credential profile in **Settings → Vault → Credentials** ([guide](/user-guide/security/credential-profiles))
-2. Select "SSH" mode
-3. Enter host and port
-4. Select the credential profile in the **SSH Credential** picker
-5. Enter the remote path to the SQLite file
+2. Pick **Over SSH** under **Where the file is**
+3. In the **SSH server** part, enter host and port
+4. Pick the credential profile under **SSH login**
+5. In the **Database file** part, enter the remote path to the SQLite file
 
 ::: tip Auth types in the credential profile
 The `SSH_KEY` profile supports Password, Private Key (PEM), and SSH Agent. Configure the auth type when creating the profile.

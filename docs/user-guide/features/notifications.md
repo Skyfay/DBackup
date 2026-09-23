@@ -134,7 +134,7 @@ Supports **reminder** notifications — resend at a configured interval while th
 
 Connection Offline supports **reminder** notifications. Health checks run every minute — notifications fire after repeated failures to avoid alerting on transient blips.
 
-To silence these two alerts for one connection, turn on **Disable Health Check Notifications** in its edit form. The health checks keep running. Several databases can be switched at once: tick them on the **Databases** tab of **Connections** and pick **Turn off notifications** under **More**.
+To silence these two alerts for one database, turn off **Health alerts** in the **Behavior** part of its edit form. For a destination or directory source, turn on **Disable Health Check Notifications** in its edit form. The health checks keep running. Several databases can be switched at once: tick them on the **Databases** tab of **Connections** and pick **Turn off notifications** under **More**.
 
 #### Integrity Events
 

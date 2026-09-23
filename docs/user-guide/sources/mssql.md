@@ -26,24 +26,24 @@ This means the backup file is created **on the SQL Server** first, then transfer
 | Mode | SQL Server connection | `.bak` transfer |
 | :--- | :--- | :--- |
 | **Direct** | Straight to the SQL Server port | Shared volume or SSH, chosen under [File Transfer Modes](#file-transfer-modes) |
-| **SSH** | Tunnelled through the SSH connection | The same SSH connection, nothing to configure |
+| **Over SSH** | Tunnelled through the SSH connection | The same SSH connection, nothing to configure |
 
-**SSH mode** is the simpler setup and the better choice when the SQL Server port is not reachable from DBackup. DBackup opens one SSH connection to the server and sends the SQL Server protocol through it, so **port 1433 does not have to be exposed at all**. The `.bak` file travels back over that same connection, which is why SSH mode has no File Transfer settings.
+**SSH mode** is the simpler setup and the better choice when the SQL Server port is not reachable from DBackup. DBackup opens one SSH connection to the server and sends the SQL Server protocol through it, so **port 1433 does not have to be exposed at all**. The `.bak` file travels back over that same connection, which is why SSH mode has no **Backup file** part.
 
 Certificate validation still applies through the tunnel: DBackup validates against the hostname in the **Host** field, not against the tunnel endpoint. Encryption settings behave exactly as in direct mode.
 
 ::: tip Existing sources are unaffected
-Sources created before SSH mode existed keep working exactly as they did. They stay in direct mode, and their File Transfer settings are untouched. There is nothing to migrate.
+Sources created before SSH mode existed keep working exactly as they did. They stay in direct mode, and their backup file settings are untouched. There is nothing to migrate.
 :::
 
-SSH mode requires an `SSH_KEY` [Credential Profile](/user-guide/security/credential-profiles) and an SSH account on the SQL Server host. That account needs read and write access to the **Backup Path**, but no SQL Server privileges - the database login is still what authenticates against SQL Server.
+SSH mode requires an `SSH_KEY` [Credential Profile](/user-guide/security/credential-profiles) and an SSH account on the SQL Server host. That account needs read and write access to the **Backup folder on the server**, but no SQL Server privileges - the database login is still what authenticates against SQL Server.
 
 ::: warning The SSH account and SQL Server must share the backup directory
 SQL Server writes the `.bak` file, and DBackup fetches it over SSH. Both must mean the **same physical directory**.
 
 This is the usual thing to get wrong when SQL Server runs in a container: `/var/opt/mssql/backup` exists inside the container **and** on the host, but they are two different directories. The backup then succeeds and the download fails with "No such file".
 
-Bind-mount a path that is identical on both sides and set **Backup Path** to it:
+Bind-mount a path that is identical on both sides and set **Backup folder on the server** to it:
 
 ```yaml
 services:
@@ -52,7 +52,7 @@ services:
       - /data/mssql-backups:/data/mssql-backups
 ```
 
-**Test Connection** checks this for you: it creates a file over SSH and asks SQL Server whether it can see it, so a mismatch is reported before the first backup runs.
+**Test connection** checks this for you: it creates a file over SSH and asks SQL Server whether it can see it, so a mismatch is reported before the first backup runs.
 
 Mounting the path is only half of it - SQL Server also has to be allowed to write there, and in a container it does not run as root. See [Backup Permission Denied](#backup-permission-denied).
 :::
@@ -67,10 +67,10 @@ Microsoft SQL Server requires a [Credential Profile](/user-guide/security/creden
 
 | Field | Description | Default |
 | :--- | :--- | :--- |
-| **Connection Mode** | `Direct` or `SSH` (see [Connection Modes](#connection-modes)) | `Direct` |
+| **How DBackup connects** | **Direct** or **Over SSH** (see [Connection Modes](#connection-modes)) | - |
 | **Host** | SQL Server hostname | `localhost` |
 | **Port** | SQL Server port | `1433` |
-| **Primary Credential** | `USERNAME_PASSWORD` credential profile (SQL Server login + password) | Required |
+| **Login** | `USERNAME_PASSWORD` credential profile (SQL Server login + password) | Required |
 | **Database** | Database name(s) to backup | Required |
 
 In SSH mode, **Host** and **Port** describe the SQL Server as reachable **from the SSH host**. `localhost:1433` is the usual value when SQL Server runs on that machine.
@@ -79,23 +79,23 @@ In SSH mode, **Host** and **Port** describe the SQL Server as reachable **from t
 
 | Field | Description | Default |
 | :--- | :--- | :--- |
-| **Encrypt** | Use encrypted connection | `true` |
-| **Trust Server Certificate** | Trust self-signed certs | `false` |
-| **Request Timeout** | Query timeout in ms | `300000` (5 min) |
-| **Additional Options** | Extra BACKUP options | - |
+| **Encrypt the connection** | Use encrypted connection | `true` |
+| **Trust the server certificate** | Trust self-signed certs | `false` |
+| **Request timeout (ms)** | Query timeout in ms | `300000` (5 min) |
+| **Extra options** | Extra BACKUP options | - |
 
-### File Transfer Settings
+### Backup File Settings
 
-These apply to **direct** connection mode only. In SSH mode the `.bak` file travels over the SSH connection and none of these fields are shown.
+These live in the **Backup file** part and apply to **direct** connection mode only. In SSH mode the `.bak` file travels over the SSH connection and the part is not shown. The backup folder moves to **Options** there.
 
 | Field | Description | Default |
 | :--- | :--- | :--- |
-| **Backup Path (Server)** | Server-side backup directory | `/var/opt/mssql/backup` |
-| **File Transfer Mode** | How to access .bak files | `local` |
-| **Local Backup Path** | Host-side mounted path (local mode) | `/tmp` |
-| **SSH Host** | SSH host (SSH mode, defaults to DB host) | - |
-| **SSH Port** | SSH port (SSH mode) | `22` |
-| **SSH Credential** | `SSH_KEY` credential profile for file transfer (SSH mode) | - |
+| **Backup folder on the server** | Server-side backup directory | `/var/opt/mssql/backup` |
+| **How DBackup gets the file** | **Shared folder** or **Over SSH** | **Shared folder** |
+| **The same folder on this machine** | Host-side mounted path (shared folder) | `/tmp` |
+| **SSH host** | SSH host (over SSH, defaults to the database host) | - |
+| **Port** | SSH port (over SSH) | `22` |
+| **SSH login** | `SSH_KEY` credential profile for the file transfer (over SSH) | - |
 
 ## File Transfer Modes
 
@@ -114,10 +114,10 @@ services:
   dbackup:
     volumes:
       - ./mssql-backups:/mssql-backups
-    # Configure in source:
-    # - Backup Path (Server): /var/opt/mssql/backup
-    # - File Transfer Mode: local
-    # - Local Backup Path: /mssql-backups
+    # Configure in the source's Backup file part:
+    # - Backup folder on the server: /var/opt/mssql/backup
+    # - How DBackup gets the file: Shared folder
+    # - The same folder on this machine: /mssql-backups
 
   mssql:
     image: mcr.microsoft.com/mssql/server:2022-latest
@@ -139,17 +139,17 @@ Use this when SQL Server runs on a remote host (bare-metal, VM, or remote Docker
 
 #### Setup
 
-1. Set **File Transfer Mode** to `SSH`
-2. Select an `SSH_KEY` credential profile in the **SSH Credential** picker
-3. Set **Backup Path (Server)** to the directory on the SQL Server host (e.g., `/var/opt/mssql/backup`)
+1. Pick **Over SSH** under **How DBackup gets the file**
+2. Pick an `SSH_KEY` credential profile under **SSH login**
+3. Set **Backup folder on the server** to the directory on the SQL Server host (e.g., `/var/opt/mssql/backup`)
 4. Ensure the SSH user has read/write access to the backup path
 
-::: tip SSH Host Default
-If **SSH Host** is left empty, DBackup uses the same hostname as the database connection. This is the most common setup since SSH and SQL Server usually run on the same machine.
+::: tip SSH host default
+If **SSH host** is left empty, DBackup uses the same hostname as the database connection. This is the most common setup since SSH and SQL Server usually run on the same machine.
 :::
 
-::: warning Backup Path is shared between SQL Server and SSH
-The **Backup Path (Server)** is used for both the `BACKUP DATABASE` T-SQL command **and** the SSH/SFTP file transfer. This means:
+::: warning The backup folder is shared between SQL Server and SSH
+The **Backup folder on the server** is used for both the `BACKUP DATABASE` T-SQL command **and** the SSH/SFTP file transfer. This means:
 - SQL Server must be able to **write** to this path
 - The SSH user must be able to **read and delete** files in this path
 - Both must reference the **same physical directory** on disk
@@ -163,7 +163,7 @@ services:
       - /data/mssql-backups:/data/mssql-backups
 ```
 
-Then set **Backup Path (Server)** to `/data/mssql-backups`.
+Then set **Backup folder on the server** to `/data/mssql-backups`.
 
 If SQL Server is installed **directly on the host** (bare-metal/VM), you can use the default path `/var/opt/mssql/backup` since SSH has direct access to the host filesystem.
 :::
@@ -194,7 +194,7 @@ If SQL Server is installed **directly on the host** (bare-metal/VM), you can use
 
 ## SQL Server on Windows
 
-**Backup Path (Server)** is handed to SQL Server exactly as written, so on a Windows server it has to be a Windows path. Both forms are accepted:
+**Backup folder on the server** is handed to SQL Server exactly as written, so on a Windows server it has to be a Windows path. Both forms are accepted:
 
 | Form | Example |
 | :--- | :--- |
@@ -217,7 +217,7 @@ In **local** file transfer mode nothing catches this before the run. The connect
 
 ### SSH mode
 
-The `.bak` file is written on the Windows side and has to travel back, and SSH mode is what that is for. It behaves exactly as on Linux: DBackup tunnels the SQL Server connection through SSH and the file comes back over the same connection. Nothing is shared, port 1433 does not have to be reachable, and **Backup Path (Server)** stays an ordinary local directory on the server.
+The `.bak` file is written on the Windows side and has to travel back, and SSH mode is what that is for. It behaves exactly as on Linux: DBackup tunnels the SQL Server connection through SSH and the file comes back over the same connection. Nothing is shared, port 1433 does not have to be reachable, and **Backup folder on the server** stays an ordinary local directory on the server.
 
 On the SQL Server host DBackup only ever uses SFTP and port forwarding, never a remote command, so the default `cmd.exe` shell does not matter.
 
@@ -229,7 +229,7 @@ Start-Service sshd
 Set-Service -Name sshd -StartupType Automatic
 ```
 
-Then set up the source as described under [Connection Modes](#connection-modes) and point **Backup Path (Server)** at the directory SQL Server writes into, for example `D:/SQLBackup`. **Test Connection** writes a probe file over SFTP and asks SQL Server whether it sees it, so a wrong path is reported before the first backup.
+Then set up the source as described under [Connection Modes](#connection-modes) and point **Backup folder on the server** at the directory SQL Server writes into, for example `D:/SQLBackup`. **Test connection** writes a probe file over SFTP and asks SQL Server whether it sees it, so a wrong path is reported before the first backup.
 
 ::: warning Administrator accounts keep their public keys elsewhere
 When the SSH account belongs to the local **Administrators** group, OpenSSH on Windows reads `C:\ProgramData\ssh\administrators_authorized_keys` and ignores that user's own `authorized_keys`. See [key management in the OpenSSH documentation](https://learn.microsoft.com/windows-server/administration/openssh/openssh_keymanagement).
@@ -254,8 +254,8 @@ DBackup (Docker on Synology/Linux)          Windows Server
 1. Create the share on the NAS or file server, for example `sql-backup`.
 2. Mount it into the DBackup container, for example at `/mnt/sql-backup`.
 3. Set **File Transfer Mode** to `local`.
-4. Set **Backup Path (Server)** to the UNC path the SQL Server uses, for example `\\synology-nas\sql-backup`.
-5. Set **Local Backup Path** to the mount point inside the DBackup container, for example `/mnt/sql-backup`.
+4. Set **Backup folder on the server** to the UNC path the SQL Server uses, for example `\\synology-nas\sql-backup`.
+5. Set **The same folder on this machine** to the mount point inside the DBackup container, for example `/mnt/sql-backup`.
 
 The two paths point at the same directory from two sides, exactly as in the Docker volume setup above. DBackup never speaks SMB itself, it reads the mount.
 
@@ -320,7 +320,7 @@ WITH FORMAT, INIT, COMPRESSION
 
 ### Backup Options
 
-Add custom options in "Additional Options":
+Add custom options under **Extra options** in the **Options** part:
 
 ```sql
 -- With checksum verification
@@ -340,15 +340,15 @@ DESCRIPTION = 'Daily backup'
 
 ### Encrypted Connection (Recommended)
 
-Enable **Encrypt** option for production:
+Turn on **Encrypt the connection** for production:
 - Requires valid SSL certificate on SQL Server
-- Or enable **Trust Server Certificate** for self-signed
+- Or turn on **Trust the server certificate** for self-signed
 
 ### Azure SQL
 
 For Azure SQL Database:
-1. Enable **Encrypt**
-2. Keep **Trust Server Certificate** disabled
+1. Turn on **Encrypt the connection**
+2. Keep **Trust the server certificate** off
 3. Use Azure AD authentication if needed
 
 ## Troubleshooting
@@ -408,8 +408,8 @@ Backup completed but file not found
 
 **Solutions**:
 1. Verify shared volume is mounted correctly
-2. Check **Backup Path (Server)** matches SQL Server mount
-3. Check **Local Backup Path** matches DBackup mount
+2. Check **Backup folder on the server** matches SQL Server mount
+3. Check **The same folder on this machine** matches the DBackup mount
 4. Verify paths are absolute
 
 ### SSH Connection Failed (SSH Mode)
@@ -517,13 +517,13 @@ To restore a SQL Server backup:
 The restore process depends on the configured **File Transfer Mode**:
 
 **Local mode:**
-1. Copy `.bak` file to shared volume (Local Backup Path)
+1. Copy `.bak` file to shared volume (the same folder on this machine)
 2. Execute `RESTORE DATABASE` command
 3. Verify restore integrity
 4. Cleanup temporary files
 
 **SSH mode:**
-1. Upload `.bak` file to server via SFTP (Backup Path)
+1. Upload `.bak` file to server via SFTP (the backup folder on the server)
 2. Execute `RESTORE DATABASE` command
 3. Verify restore integrity
 4. Cleanup: Delete remote `.bak` file via SSH

@@ -57,17 +57,20 @@ interface DialogHeadProps {
     icon: IconComponent;
     /** Tighter padding for a popover. */
     className?: string;
+    /** One control on the right, such as the way back to a previous step. */
+    action?: React.ReactNode;
     children: React.ReactNode;
 }
 
 /** The tinted head of a dialog or a popover: an icon tile, the title and a short note. */
-export function DialogHead({ tone, icon: Icon, className, children }: DialogHeadProps) {
+export function DialogHead({ tone, icon: Icon, className, action, children }: DialogHeadProps) {
     return (
         <div className={cn("flex min-w-0 items-center gap-3 border-b px-5 py-4", TONES[tone].head, className)}>
             <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg", TONES[tone].tile)} aria-hidden="true">
                 <Icon className="size-4" />
             </span>
-            <div className="grid min-w-0 gap-0.5">{children}</div>
+            <div className="grid min-w-0 flex-1 gap-0.5">{children}</div>
+            {action && <div className="shrink-0">{action}</div>}
         </div>
     );
 }
@@ -146,6 +149,8 @@ export interface ConfirmDialogProps {
     icon?: IconComponent;
     confirmLabel?: string;
     destructive?: boolean;
+    /** The tone of the head when it is neither destructive nor neutral, like warning for a report of what failed. */
+    tone?: DialogTone;
     /** Keeps the dialog open with a spinner while the action runs. */
     isPending?: boolean;
     /** Blocks the confirm button, for example when nothing is left to act on. */
@@ -169,19 +174,20 @@ export function ConfirmDialog({
     icon,
     confirmLabel = "Confirm",
     destructive = false,
+    tone: toneOverride,
     isPending = false,
     disabled = false,
     onConfirm,
     children,
 }: ConfirmDialogProps) {
-    const tone: DialogTone = destructive ? "destructive" : "neutral";
+    const tone: DialogTone = toneOverride ?? (destructive ? "destructive" : "neutral");
     // Screen readers announce the note, or the description when there is no note.
     const bodyText = description && (note ? <p className="text-sm text-muted-foreground">{description}</p> : <AlertDialogDescription>{description}</AlertDialogDescription>);
 
     return (
         <AlertDialog open={open} onOpenChange={(next) => !isPending && onOpenChange(next)}>
             <AlertDialogContent className={DIALOG_SURFACE} {...(!note && !description ? { "aria-describedby": undefined } : {})}>
-                <DialogHead tone={tone} icon={icon ?? (destructive ? AlertTriangle : Info)}>
+                <DialogHead tone={tone} icon={icon ?? (tone === "destructive" || tone === "warning" ? AlertTriangle : Info)}>
                     <AlertDialogTitle className="text-base">{title}</AlertDialogTitle>
                     {note && <AlertDialogDescription className={dialogNoteClass(tone)}>{note}</AlertDialogDescription>}
                 </DialogHead>

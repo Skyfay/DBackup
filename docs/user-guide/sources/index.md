@@ -41,11 +41,11 @@ Beyond configuring sources for backups, DBackup includes a **Database Explorer**
 
 1. Navigate to **Connections** → **Databases** → **Add New**
 2. Select the database type
-3. Choose **Connection Mode**: Direct or SSH (see below)
-4. Fill in connection details (host, port, credentials)
-5. Click **Test Connection** to verify
-6. Click **Fetch Databases** to list available databases
-7. Select which databases to backup → **Save**
+3. Under **How DBackup connects**, pick **Direct** or **Over SSH** (see below). The parts that depend on it appear once you have.
+4. Fill in the parts listed on the left: host, port and **Login**, and over SSH the **SSH server** as well. A check marks each part that has everything it needs.
+5. Click **Test connection** to verify, then **Create database**. A database is tested once more before it is created, and you are asked before saving one that cannot connect.
+
+Which databases to back up is picked in the job that uses the source.
 
 ## Connection Modes
 
@@ -54,7 +54,7 @@ DBackup supports two connection modes for most database types:
 | Mode | Description | Use Case |
 | :--- | :--- | :--- |
 | **Direct** | DBackup connects directly to the database via TCP | Database is on the same network / Docker network or connected via VPN (recommended) |
-| **SSH** | DBackup connects via SSH and runs database tools on the remote host | Database is on a remote server, not directly reachable, or no local CLI tools installed |
+| **Over SSH** | DBackup connects via SSH and runs database tools on the remote host | Database is on a remote server, not directly reachable, or no local CLI tools installed |
 
 ### SSH Mode
 
@@ -72,8 +72,8 @@ When using SSH mode, the required database client tools **must be installed on t
 
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
-| **SSH Host** | SSH server hostname or IP | - | ✅ |
-| **SSH Port** | SSH server port | `22` | ❌ |
+| **SSH host** | SSH server hostname or IP | - | ✅ |
+| **Port** | SSH server port | `22` | ❌ |
 | **SSH Username** | SSH login username | - | ✅ |
 | **SSH Auth Type** | Authentication method: Password, Private Key, or Agent | `Password` | ✅ |
 | **SSH Password** | SSH password (for password auth) | - | ❌ |

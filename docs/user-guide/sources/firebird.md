@@ -17,7 +17,7 @@ Firebird 2.5 and the legacy `.gdb` file format are not supported.
 | Mode | Description |
 | :--- | :--- |
 | **Direct** | DBackup runs `gbak`/`isql` locally and connects to the remote Firebird server over its wire protocol (port 3050) |
-| **SSH** | DBackup connects via SSH and runs `gbak`/`isql` on the remote host, reading the local `.fdb` path directly |
+| **Over SSH** | DBackup connects via SSH and runs `gbak`/`isql` on the remote host, reading the local `.fdb` path directly |
 
 ## Architecture
 
@@ -35,22 +35,22 @@ A `USERNAME_PASSWORD` credential profile is required for the SYSDBA (or equivale
 
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
-| **Connection Mode** | Direct (TCP) or SSH | `Direct` | ✅ |
+| **How DBackup connects** | **Direct** or **Over SSH** | - | ✅ |
 | **Host** | Firebird server hostname or IP | `localhost` | ✅ |
 | **Port** | Firebird server port | `3050` | ✅ |
-| **Primary Credential** | `USERNAME_PASSWORD` credential profile | - | ✅ |
-| **Database Aliases** | List of `{ name, path }` entries - the alias shown in DBackup and the `.fdb` path on the Firebird server | - | ✅ (at least one) |
-| **Additional Options** | Extra `gbak` flags | - | ❌ |
+| **Login** | `USERNAME_PASSWORD` credential profile | - | ✅ |
+| **Aliases** | List of `{ name, path }` entries - the alias shown in DBackup and the `.fdb` path on the Firebird server | - | ✅ (at least one) |
+| **Extra options** | Extra `gbak` flags | - | ❌ |
 
 ### SSH Mode Fields
 
-These fields appear when **Connection Mode** is set to **SSH**:
+These fields appear in the **SSH server** part when **How DBackup connects** is set to **Over SSH**:
 
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
-| **SSH Host** | SSH server hostname or IP | - | ✅ |
-| **SSH Port** | SSH server port | `22` | ❌ |
-| **SSH Credential** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
+| **SSH host** | SSH server hostname or IP | - | ✅ |
+| **Port** | SSH server port | `22` | ❌ |
+| **SSH login** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
 
 ::: tip Paths in SSH Mode
 In SSH mode, database paths are local paths **on the SSH target**, since `gbak` runs there directly - not paths as seen from the Firebird server's own network. In Direct mode, paths are as seen from the Firebird server (aliases the server itself resolves).
@@ -63,7 +63,7 @@ In SSH mode, database paths are local paths **on the SSH target**, since `gbak` 
 ```
 Host: firebird.example.com
 Port: 3050
-Primary Credential: my-firebird-sysdba  (USERNAME_PASSWORD profile)
+Login: my-firebird-sysdba  (USERNAME_PASSWORD profile)
 Database Aliases:
   erp  -> /data/erp.fdb
   crm  -> /data/crm.fdb
@@ -73,7 +73,7 @@ Database Aliases:
 
 ```
 SSH Host: firebird.example.com
-SSH Credential: my-firebird-ssh-key  (SSH_KEY profile)
+SSH login: my-firebird-ssh-key  (SSH_KEY profile)
 Database Aliases:
   erp  -> /var/lib/firebird/data/erp.fdb
 ```

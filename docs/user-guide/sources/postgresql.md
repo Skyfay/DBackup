@@ -15,7 +15,7 @@ DBackup uses `pg_dump` from PostgreSQL 18 client, which is backward compatible w
 | Mode | Description |
 | :--- | :--- |
 | **Direct** | DBackup connects via TCP and runs `pg_dump` locally |
-| **SSH** | DBackup connects via SSH and runs `pg_dump` on the remote host |
+| **Over SSH** | DBackup connects via SSH and runs `pg_dump` on the remote host |
 
 ## Configuration
 
@@ -25,22 +25,22 @@ PostgreSQL requires a [Credential Profile](/user-guide/security/credential-profi
 
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
-| **Connection Mode** | Direct (TCP) or SSH | `Direct` | ✅ |
+| **How DBackup connects** | **Direct** or **Over SSH** | - | ✅ |
 | **Host** | Database server hostname | `localhost` | ✅ |
 | **Port** | PostgreSQL port | `5432` | ✅ |
-| **Primary Credential** | `USERNAME_PASSWORD` credential profile (username + password) | - | ✅ |
+| **Login** | `USERNAME_PASSWORD` credential profile (username + password) | - | ✅ |
 | **Database** | Database name(s) to backup | All databases | ❌ |
-| **Additional Options** | Extra `pg_dump` flags | - | ❌ |
+| **Extra options** | Extra `pg_dump` flags | - | ❌ |
 
 ### SSH Mode Fields
 
-These fields appear when **Connection Mode** is set to **SSH**:
+These fields appear in the **SSH server** part when **How DBackup connects** is set to **Over SSH**:
 
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
-| **SSH Host** | SSH server hostname or IP | - | ✅ |
-| **SSH Port** | SSH server port | `22` | ❌ |
-| **SSH Credential** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
+| **SSH host** | SSH server hostname or IP | - | ✅ |
+| **Port** | SSH server port | `22` | ❌ |
+| **SSH login** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
 
 ## Prerequisites
 
@@ -149,7 +149,7 @@ Each backup produces a `.dump` file in PostgreSQL custom format — a compressed
 
 PostgreSQL's native dump compression is controlled by the **PostgreSQL Compression** setting on the job (separate from DBackup's pipeline compression). See the [PostgreSQL Compression](#postgresql-compression) section below.
 
-## Additional Options Examples
+## Extra Options Examples
 
 ```bash
 # Custom output format (compressed)
@@ -221,7 +221,7 @@ Multi-DB backups created before v0.9.1 used `pg_dumpall` and cannot be restored 
 PostgreSQL connections can use SSL:
 
 ```bash
-# Additional Options for SSL
+# Extra options for SSL
 sslmode=require
 ```
 

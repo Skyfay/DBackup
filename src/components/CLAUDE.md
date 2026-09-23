@@ -115,6 +115,7 @@ Use `AlertDialog`, never `Dialog`, and never `window.confirm()` or `alert()`. Th
 - Submit buttons are disabled while pending and show `<Loader2 className="mr-2 h-4 w-4 animate-spin" />`.
 - Field spacing is `space-y-4` inside a form, `space-y-2` inside a single field group.
 - Use `z.coerce.number()` for numeric inputs - the DOM gives you strings.
+- Never put a validated field into a Radix `TabsContent` that is not rendered. An inactive tab unmounts, so its `FormMessage` never appears and submitting seems to do nothing. Mount every part with `forceMount`, hide the inactive ones with `data-[state=inactive]:hidden`, and move to the part with the error in `handleSubmit`'s invalid callback. See `connection-form.tsx`.
 
 ---
 

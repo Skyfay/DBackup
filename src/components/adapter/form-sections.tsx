@@ -7,20 +7,6 @@ import {
     TabsList,
     TabsTrigger,
 } from "@/components/ui/tabs";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
-import {
-    FormControl,
-    FormField,
-    FormItem,
-    FormLabel,
-    FormDescription,
-} from "@/components/ui/form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,6 +25,7 @@ import { AdapterDefinition } from "@/lib/adapters/definitions";
 import { SchemaField } from "./schema-field";
 import { EmailTagField } from "./email-tag-field";
 import { FirebirdAliasFields } from "./firebird-alias-fields";
+import { RedisDatabaseSelect } from "./redis-database-select";
 import { STORAGE_ADVANCED_KEYS, STORAGE_CONFIG_KEYS, STORAGE_CONNECTION_KEYS, NOTIFICATION_CONNECTION_KEYS, NOTIFICATION_CONFIG_KEYS } from "./form-constants";
 import { GoogleDriveOAuthButton } from "./google-drive-oauth-button";
 import { GoogleDriveFolderBrowser } from "./google-drive-folder-browser";
@@ -1610,51 +1597,4 @@ function getCredentialManagedKeys(adapter: AdapterDefinition): Set<string> {
 function hasFields(adapter: AdapterDefinition, keys: string[]) {
     const shape = (adapter.configSchema as any).shape;
     return keys.some(key => key in shape);
-}
-
-/** Redis-specific database index selector (0–15) with info text */
-function RedisDatabaseSelect() {
-    const { control, setValue, getValues } = useFormContext();
-    const dbOptions = Array.from({ length: 16 }, (_, i) => i);
-
-    // Ensure default value is set in the form (field may be undefined for new adapters)
-    const current = getValues("config.database");
-    if (current === undefined || current === null || current === "") {
-        setValue("config.database", 0);
-    }
-
-    return (
-        <FormField
-            control={control}
-            name="config.database"
-            render={({ field }) => {
-                const numVal = Number(field.value ?? 0);
-                return (
-                    <FormItem>
-                        <FormLabel>Database</FormLabel>
-                        <FormControl>
-                            <Select
-                                value={`db-${numVal}`}
-                                onValueChange={(val) => field.onChange(Number(val.replace("db-", "")))}
-                            >
-                                <SelectTrigger>
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {dbOptions.map((db) => (
-                                        <SelectItem key={db} value={`db-${db}`}>
-                                            {db === 0 ? "Default (0)" : db}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </FormControl>
-                        <FormDescription>
-                            Redis RDB backups always include all databases (0–15). This selects the default database for the connection.
-                        </FormDescription>
-                    </FormItem>
-                );
-            }}
-        />
-    );
 }

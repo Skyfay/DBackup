@@ -17,7 +17,7 @@ Redis is an in-memory data structure store used as a database, cache, message br
 | Mode | Description |
 | :--- | :--- |
 | **Direct** | DBackup connects via TCP and runs `redis-cli` locally |
-| **SSH** | DBackup connects via SSH and runs `redis-cli` on the remote host |
+| **Over SSH** | DBackup connects via SSH and runs `redis-cli` on the remote host |
 
 ## Architecture
 
@@ -36,26 +36,26 @@ A [Credential Profile](/user-guide/security/credential-profiles) is **optional**
 
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
-| **Connection Mode** | Direct (TCP) or SSH | `Direct` | ✅ |
+| **How DBackup connects** | **Direct** or **Over SSH** | - | ✅ |
 | **Host** | Redis server hostname or IP | `localhost` | ✅ |
 | **Port** | Redis server port | `6379` | ✅ |
-| **Primary Credential** | `USERNAME_PASSWORD` credential profile (username optional, used for ACL auth; password for `requirepass`) | - | ❌ |
+| **Login** | `USERNAME_PASSWORD` credential profile (username optional, used for ACL auth; password for `requirepass`) | - | ❌ |
 | **Database** | Database index (0-15) for display purposes | `0` | ❌ |
 | **TLS** | Enable TLS/SSL connection | `false` | ❌ |
-| **Mode** | Connection mode: `standalone` or `sentinel` | `standalone` | ❌ |
+| **Redis setup** | `standalone` or `sentinel`. The two Sentinel fields below appear for `sentinel` only. | `standalone` | ❌ |
 | **Sentinel Master Name** | Master name for Sentinel mode | - | ❌ |
 | **Sentinel Nodes** | Comma-separated Sentinel node addresses | - | ❌ |
-| **Additional Options** | Extra `redis-cli` flags | - | ❌ |
+| **Extra options** | Extra `redis-cli` flags | - | ❌ |
 
 ### SSH Mode Fields
 
-These fields appear when **Connection Mode** is set to **SSH**:
+These fields appear in the **SSH server** part when **How DBackup connects** is set to **Over SSH**:
 
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
-| **SSH Host** | SSH server hostname or IP | - | ✅ |
-| **SSH Port** | SSH server port | `22` | ❌ |
-| **SSH Credential** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
+| **SSH host** | SSH server hostname or IP | - | ✅ |
+| **Port** | SSH server port | `22` | ❌ |
+| **SSH login** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
 
 ## Example Configuration
 
@@ -64,7 +64,7 @@ These fields appear when **Connection Mode** is set to **SSH**:
 ```
 Host: redis.example.com
 Port: 6379
-Primary Credential: my-redis-password  (USERNAME_PASSWORD profile, password field)
+Login: my-redis-password  (USERNAME_PASSWORD profile, password field)
 ```
 
 ### Redis with ACL (6.0+)
@@ -72,7 +72,7 @@ Primary Credential: my-redis-password  (USERNAME_PASSWORD profile, password fiel
 ```
 Host: redis.example.com
 Port: 6379
-Primary Credential: my-redis-user  (USERNAME_PASSWORD profile, username + password)
+Login: my-redis-user  (USERNAME_PASSWORD profile, username + password)
 ```
 
 ### Redis with TLS
@@ -80,7 +80,7 @@ Primary Credential: my-redis-user  (USERNAME_PASSWORD profile, username + passwo
 ```
 Host: redis.example.com
 Port: 6379
-Primary Credential: my-redis-password  (USERNAME_PASSWORD profile)
+Login: my-redis-password  (USERNAME_PASSWORD profile)
 TLS: Enabled
 ```
 
@@ -90,7 +90,7 @@ TLS: Enabled
 Mode: sentinel
 Sentinel Master Name: mymaster
 Sentinel Nodes: sentinel1:26379,sentinel2:26379,sentinel3:26379
-Primary Credential: my-redis-password  (USERNAME_PASSWORD profile)
+Login: my-redis-password  (USERNAME_PASSWORD profile)
 ```
 
 ## Backup File Format
@@ -205,7 +205,7 @@ For Redis 6+ with ACL:
 
 ### TLS Certificate Errors
 
-If using self-signed certificates, you may need to add `--insecure` to the Additional Options field.
+If using self-signed certificates, you may need to add `--insecure` to the **Extra options** field.
 
 ### SSH: Binary Not Found
 

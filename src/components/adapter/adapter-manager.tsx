@@ -17,6 +17,7 @@ import { useRouter } from "next/navigation";
 
 import { AdapterManagerProps, AdapterConfig } from "./types";
 import { AdapterForm } from "./adapter-form";
+import { ConnectionForm } from "./connection-form";
 import { AdapterPickerDialog } from "./adapter-picker";
 import { StorageHistoryModal } from "@/components/dashboard/widgets/storage-history-modal";
 import { PERMISSIONS } from "@/lib/auth/permissions";
@@ -284,6 +285,13 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
         [selectedAdapterForNew, availableAdapters]
     );
 
+    // The connection the form edits, or the type picked for a new one.
+    const editingConfig = editingId ? configs.find((config) => config.id === editingId) : undefined;
+    const formAdapterId = editingConfig?.adapterId ?? selectedAdapterForNew;
+    const formAdapter = formAdapterId ? ADAPTER_DEFINITIONS.find((definition) => definition.id === formAdapterId) : undefined;
+    const backToPicker = () => { setIsDialogOpen(false); setSelectedAdapterForNew(null); setIsPickerOpen(true); };
+    const afterSave = () => { setIsDialogOpen(false); setSelectedAdapterForNew(null); afterChange(); };
+
     return (
         <div className="space-y-4">
             <CredentialUpgradeBanner configs={configs} />
@@ -370,23 +378,37 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                 </DialogContent>
             </Dialog>
 
-            {/* Step 2: Adapter Form */}
+            {/* Step 2: the form. Databases have the new one, storage and notifications still the old one. */}
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                <DialogContent className="sm:max-w-2xl max-h-[90vh] p-0" aria-describedby={undefined}>
-                    <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
-                        <DialogTitle>{editingId ? "Edit Configuration" : (type === 'notification' ? "Add New Notification" : (type === 'database' ? "Add New Source" : (type === 'storage' ? `Add New ${storageNoun}` : "Add New Configuration")))}</DialogTitle>
-                    </DialogHeader>
-                    {isDialogOpen && (
-                        <AdapterForm
-                            type={type}
-                            adapters={adapterFormList}
-                            onSuccess={() => { setIsDialogOpen(false); setSelectedAdapterForNew(null); afterChange(); }}
-                            initialData={editingId ? configs.find(c => c.id === editingId) : undefined}
-                            onBack={!editingId ? () => { setIsDialogOpen(false); setSelectedAdapterForNew(null); setIsPickerOpen(true); } : undefined}
-                            defaultRole={defaultRole}
-                        />
-                    )}
-                </DialogContent>
+                {type === "database" && formAdapter ? (
+                    <DialogContent showCloseButton={false} className={cn(DIALOG_SURFACE, "sm:max-w-3xl")}>
+                        {isDialogOpen && (
+                            <ConnectionForm
+                                adapter={formAdapter}
+                                initialData={editingConfig}
+                                title={editingId ? "Edit database" : "Add database"}
+                                onBack={editingId ? undefined : backToPicker}
+                                onSaved={afterSave}
+                            />
+                        )}
+                    </DialogContent>
+                ) : (
+                    <DialogContent className="sm:max-w-2xl max-h-[90vh] p-0" aria-describedby={undefined}>
+                        <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
+                            <DialogTitle>{editingId ? "Edit Configuration" : (type === 'notification' ? "Add New Notification" : (type === 'storage' ? `Add New ${storageNoun}` : "Add New Configuration"))}</DialogTitle>
+                        </DialogHeader>
+                        {isDialogOpen && (
+                            <AdapterForm
+                                type={type}
+                                adapters={adapterFormList}
+                                onSuccess={afterSave}
+                                initialData={editingConfig}
+                                onBack={editingId ? undefined : backToPicker}
+                                defaultRole={defaultRole}
+                            />
+                        )}
+                    </DialogContent>
+                )}
             </Dialog>
 
             {deleting && (

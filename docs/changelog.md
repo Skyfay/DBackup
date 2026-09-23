@@ -22,6 +22,7 @@ All notable changes to DBackup are documented here.
 - **ui**: A page with content wider than the window no longer runs past its right edge, where that content was cut off and could not be scrolled to.
 - **connections**: Directory sources no longer offer the storage history, which exists only for backup destinations.
 - **templates**: Deleting several retention policies no longer calls them "policys" in the confirmation and in the message afterwards.
+- **connections**: Creating a database no longer does nothing when a required field sits in a part of the form that is not open. The form opens that part and shows what is missing.
 
 ### 🔒 Security
 
@@ -37,6 +38,7 @@ All notable changes to DBackup are documented here.
 - **ui**: The confirmation before a bulk action and the list of entries it could not process have a new look, with a header tinted for the kind of action. Their lists show each entry with its icon and type where the table has them.
 - **connections**: Deleting connections leaves out the ones a job or a notification template still uses and names them before anything is deleted, instead of reporting them as failed afterwards.
 - **connections**: A click on the status of a connection says in one sentence since when it is online or offline and shows the latest error. Below come the checks of the last hour as bars and their latest changes with the time.
+- **connections**: The form for adding and editing a database lists its parts on the left, marks the ones that are done or still miss something, and shows one part at a time. The connection type is picked from two cards that say what each one means, logins are picked or created in one field, and every switch says what it turns on.
 
 ### 🔄 Changed
 
@@ -52,6 +54,7 @@ All notable changes to DBackup are documented here.
 - **docs**: The storage and notification adapter guides name `connectionAddress()` as the place for the summary shown in the connection tables.
 - **docs**: The notification and job guides explain how to switch health check notifications and restore exclusion for several databases at once.
 - **docs**: The health check guide describes the new status popover and the added fields of the health history API.
+- **docs**: The database source guides name the fields and parts of the new connection form.
 
 ### 🧪 Tests
 

@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useId, useState, useCallback } from "react";
 import { Loader2, Plus, KeyRound, ChevronsUpDown, Check, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import {
     Popover,
     PopoverContent,
@@ -41,14 +40,15 @@ interface Props {
     refreshKey?: number;
 }
 
-const TYPE_BADGE: Record<CredentialType, string> = {
-    USERNAME_PASSWORD: "User/Pass",
-    SSH_KEY: "SSH Key",
-    ACCESS_KEY: "Access Key",
-    TOKEN: "Token",
-    SMTP: "SMTP",
-    WEBHOOK: "Webhook",
-    OAUTH: "OAuth",
+/** What a profile of each type holds, shown beside the label. */
+const TYPE_HINT: Record<CredentialType, string> = {
+    USERNAME_PASSWORD: "User and password",
+    SSH_KEY: "Key or password",
+    ACCESS_KEY: "Key ID and secret",
+    TOKEN: "API token",
+    SMTP: "SMTP user and password",
+    WEBHOOK: "URL and auth header",
+    OAUTH: "Client ID and secret",
 };
 
 export function CredentialPicker({
@@ -103,122 +103,115 @@ export function CredentialPicker({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selected?.id, selected?.updatedAt]);
 
-    const defaultLabel = slot === "ssh" ? "SSH Credential Profile" : "Credential Profile";
+    const defaultLabel = slot === "ssh" ? "SSH login" : "Login";
     const finalLabel = label ?? defaultLabel;
+    const triggerId = useId();
 
+    // A saved profile is picked from the list, a new one is one click away beside it. The
+    // profile's secrets never show here, only its name.
     return (
-        <div className="space-y-2 rounded-md border bg-muted/20 p-3">
-            <div className="flex items-center justify-between gap-2">
-                <Label className="flex items-center gap-2 text-sm font-medium">
-                    <KeyRound className="h-4 w-4" />
-                    {finalLabel}
-                    <Badge variant="outline" className="font-normal">
-                        {TYPE_BADGE[requiredType]}
-                    </Badge>
-                </Label>
+        <div className="grid gap-2">
+            <div className="flex items-baseline justify-between gap-3">
+                <Label htmlFor={triggerId}>{finalLabel}</Label>
+                <span className="text-xs text-muted-foreground">{TYPE_HINT[requiredType]}</span>
             </div>
-            {description && (
-                <p className="text-xs text-muted-foreground">{description}</p>
-            )}
 
-            <Popover open={open} onOpenChange={setOpen}>
-                <PopoverTrigger asChild>
-                    <Button
-                        variant="outline"
-                        role="combobox"
-                        aria-expanded={open}
-                        disabled={loading}
-                        className="w-full min-w-0 justify-between font-normal"
-                    >
-                        {loading ? (
-                            <span className="flex items-center gap-2 text-muted-foreground">
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                Loading...
+            <div className="flex min-w-0 gap-2">
+                <Popover open={open} onOpenChange={setOpen}>
+                    <PopoverTrigger asChild>
+                        <Button
+                            id={triggerId}
+                            variant="outline"
+                            role="combobox"
+                            aria-expanded={open}
+                            disabled={loading}
+                            className="min-w-0 flex-1 justify-between font-normal"
+                        >
+                            <span className="flex min-w-0 items-center gap-2">
+                                {loading ? (
+                                    <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+                                ) : (
+                                    <KeyRound className="size-4 shrink-0 text-muted-foreground" />
+                                )}
+                                {loading ? (
+                                    <span className="text-muted-foreground">Loading...</span>
+                                ) : selected ? (
+                                    <span className="truncate">{selected.name}</span>
+                                ) : (
+                                    <span className="truncate text-muted-foreground">{profiles.length > 0 ? "None" : "No saved login yet"}</span>
+                                )}
                             </span>
-                        ) : selected ? (
-                            <span className="truncate">{selected.name}</span>
-                        ) : (
-                            <span className="text-muted-foreground">None</span>
-                        )}
-                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                    </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                    <Command>
-                        <CommandInput placeholder="Search profile..." />
-                        <CommandList>
-                            <CommandEmpty>No profiles found.</CommandEmpty>
-                            <CommandGroup>
-                                <CommandItem
-                                    value="__none__"
-                                    onSelect={() => {
-                                        onChange(null);
-                                        setOpen(false);
-                                    }}
-                                >
-                                    <Check className={cn("mr-2 h-4 w-4", !value ? "opacity-100" : "opacity-0")} />
-                                    <span className="text-muted-foreground">None</span>
-                                </CommandItem>
-                                {profiles.map((p) => (
+                            <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
+                        </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-(--radix-popover-trigger-width) p-0" align="start">
+                        <Command>
+                            <CommandInput placeholder="Search profile..." />
+                            <CommandList>
+                                <CommandEmpty>No profiles found.</CommandEmpty>
+                                <CommandGroup>
                                     <CommandItem
-                                        key={p.id}
-                                        value={p.name}
-                                        className="group pr-1"
+                                        value="__none__"
                                         onSelect={() => {
-                                            onChange(p.id);
+                                            onChange(null);
                                             setOpen(false);
                                         }}
                                     >
-                                        <Check className={cn("mr-2 h-4 w-4", value === p.id ? "opacity-100" : "opacity-0")} />
-                                        <span className="flex-1">{p.name}</span>
-                                        <button
-                                            type="button"
-                                            className="opacity-0 group-hover:opacity-100 transition-opacity ml-1 rounded p-0.5 hover:bg-accent"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
+                                        <Check className={cn("mr-2 h-4 w-4", !value ? "opacity-100" : "opacity-0")} />
+                                        <span className="text-muted-foreground">None</span>
+                                    </CommandItem>
+                                    {profiles.map((p) => (
+                                        <CommandItem
+                                            key={p.id}
+                                            value={p.name}
+                                            className="group pr-1"
+                                            onSelect={() => {
+                                                onChange(p.id);
                                                 setOpen(false);
-                                                setEditTarget(p);
-                                                setEditOpen(true);
                                             }}
                                         >
-                                            <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
-                                        </button>
+                                            <Check className={cn("mr-2 h-4 w-4", value === p.id ? "opacity-100" : "opacity-0")} />
+                                            <span className="flex-1">{p.name}</span>
+                                            <button
+                                                type="button"
+                                                className="opacity-0 group-hover:opacity-100 transition-opacity ml-1 rounded p-0.5 hover:bg-accent"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setOpen(false);
+                                                    setEditTarget(p);
+                                                    setEditOpen(true);
+                                                }}
+                                            >
+                                                <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                                            </button>
+                                        </CommandItem>
+                                    ))}
+                                </CommandGroup>
+                                <CommandSeparator />
+                                <CommandGroup>
+                                    <CommandItem
+                                        value="__create__"
+                                        onSelect={() => {
+                                            setOpen(false);
+                                            setCreateOpen(true);
+                                        }}
+                                        className="font-medium"
+                                    >
+                                        <Plus className="mr-2 h-3.5 w-3.5" />
+                                        Create new profile...
                                     </CommandItem>
-                                ))}
-                            </CommandGroup>
-                            <CommandSeparator />
-                            <CommandGroup>
-                                <CommandItem
-                                    value="__create__"
-                                    onSelect={() => {
-                                        setOpen(false);
-                                        setCreateOpen(true);
-                                    }}
-                                    className="font-medium"
-                                >
-                                    <Plus className="mr-2 h-3.5 w-3.5" />
-                                    Create new profile...
-                                </CommandItem>
-                            </CommandGroup>
-                        </CommandList>
-                    </Command>
-                </PopoverContent>
-            </Popover>
+                                </CommandGroup>
+                            </CommandList>
+                        </Command>
+                    </PopoverContent>
+                </Popover>
+                <Button type="button" variant="outline" onClick={() => setCreateOpen(true)}>
+                    <Plus />
+                    New
+                </Button>
+            </div>
 
-            {!loading && profiles.length === 0 && (
-                <p className="text-xs text-muted-foreground">
-                    No matching profiles yet. Use{" "}
-                    <Button
-                        type="button"
-                        variant="link"
-                        className="h-auto p-0 text-xs"
-                        onClick={() => setCreateOpen(true)}
-                    >
-                        Create new profile
-                    </Button>{" "}
-                    to add one.
-                </p>
-            )}
+            {description && <p className="text-xs text-muted-foreground">{description}</p>}
 
             <CredentialProfileDialog
                 open={createOpen}

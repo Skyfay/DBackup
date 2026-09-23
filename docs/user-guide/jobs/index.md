@@ -147,7 +147,7 @@ Click the **Browse** (folder icon) button on a job row to open the Storage Explo
 
 ### Exclude from Restore
 
-Database **sources** can be individually excluded from the Restore target dropdown. Open the source's edit form and enable the **Exclude from Restore** toggle. Backups can still be created from an excluded source - it is only hidden from the restore wizard target list.
+Database **sources** can be individually excluded from the Restore target dropdown. Open the source's edit form and turn off **Restore target** in its **Behavior** part. Backups can still be created from an excluded source - it is only hidden from the restore wizard target list.
 
 To change several sources at once, tick them on the **Databases** tab of **Connections** and pick **Exclude from restore** or **Include in restore** under **More**.
 

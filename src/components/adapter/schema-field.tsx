@@ -47,6 +47,12 @@ interface SchemaFieldProps {
     isDbListOpen?: boolean;
     setIsDbListOpen?: (open: boolean) => void;
     sshCredentialId?: string | null;
+    /** Replaces the label made from the key, for a form that names the field better. */
+    label?: string;
+    /** Replaces the schema's own description. */
+    description?: string;
+    /** Shows the description under the field instead of behind an info icon. */
+    descriptionBelow?: boolean;
 }
 
 export function SchemaField({
@@ -61,6 +67,9 @@ export function SchemaField({
     isDbListOpen = false,
     setIsDbListOpen,
     sshCredentialId,
+    label: labelOverride,
+    description: descriptionOverride,
+    descriptionBelow = false,
 }: SchemaFieldProps) {
     const { control } = useFormContext();
 
@@ -93,12 +102,16 @@ export function SchemaField({
     if (fieldKey === 'sshPrivateKey') label = "SSH Private Key";
     if (fieldKey === 'sshPassphrase') label = "SSH Key Passphrase";
     if (fieldKey === 'jurisdiction') label = "Bucket Jurisdiction";
+    if (labelOverride) label = labelOverride;
 
     const isBoolean = unwrappedShape instanceof z.ZodBoolean || (unwrappedShape as any)._def?.typeName === "ZodBoolean";
     const isEnum = unwrappedShape instanceof z.ZodEnum || (unwrappedShape as any)._def?.typeName === "ZodEnum";
     const isPassword = fieldKey.toLowerCase().includes("password") || fieldKey.toLowerCase().includes("secret");
     const isTextArea = fieldKey.toLowerCase().includes("privatekey") || fieldKey.toLowerCase().includes("certificate") || fieldKey.toLowerCase().includes("options") || fieldKey === "customHeaders" || fieldKey === "payloadTemplate";
-    const description = (schemaShape as any).description;
+    const schemaDescription: string | undefined = descriptionOverride ?? (schemaShape as any).description;
+    // A description that only repeats the label, like "SSH host", says nothing new.
+    const description = schemaDescription && schemaDescription.toLowerCase() !== label.toLowerCase() ? schemaDescription : undefined;
+    const tooltip = description && !descriptionBelow ? description : undefined;
 
     const rawPlaceholder = PLACEHOLDERS[`${adapterId}.${fieldKey}`] || PLACEHOLDERS[fieldKey];
 
@@ -108,7 +121,7 @@ export function SchemaField({
     // the existing secret (server-side mergeSecrets); typing replaces it.
     const secretStatus = useSecretStatus();
     const hasStoredSecret = secretStatus[fieldKey] === true;
-    const placeholder = hasStoredSecret ? "•••••••• — saved, leave blank to keep" : rawPlaceholder;
+    const placeholder = hasStoredSecret ? "•••••••• saved, leave blank to keep" : rawPlaceholder;
 
     const isPathField = fieldKey === 'path' || fieldKey === 'sqliteBinaryPath' || fieldKey === 'basePath';
     const [isFileBrowserOpen, setIsFileBrowserOpen] = useState(false);
@@ -141,14 +154,14 @@ export function SchemaField({
                    ) : (
                        <div className="flex items-center gap-1.5">
                            <FormLabel>{label}</FormLabel>
-                           {description && (
+                           {tooltip && (
                                <TooltipProvider>
                                    <Tooltip delayDuration={300}>
                                        <TooltipTrigger asChild>
                                            <Info className="h-3.5 w-3.5 text-muted-foreground/70 hover:text-foreground transition-colors cursor-help" />
                                        </TooltipTrigger>
                                        <TooltipContent side="right">
-                                           <p className="max-w-75 text-xs">{description}</p>
+                                           <p className="max-w-75 text-xs">{tooltip}</p>
                                        </TooltipContent>
                                    </Tooltip>
                                </TooltipProvider>
@@ -243,6 +256,9 @@ export function SchemaField({
                              </div>
                         )}
                    </FormControl>
+                   {!isBoolean && description && descriptionBelow && (
+                       <FormDescription className="text-xs">{description}</FormDescription>
+                   )}
                    <FormMessage />
                 </FormItem>
             )}

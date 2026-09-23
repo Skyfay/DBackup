@@ -85,7 +85,7 @@ export function ConnectionSplitView({ configs, withHealth, selectedId, onSelect,
                                                         onClick={() => onSelect(config.id)}
                                                         onKeyDown={(event) => moveWithKeys(event, ordered.indexOf(config))}
                                                         className={cn(
-                                                            "flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                                                            "flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50",
                                                             active ? "bg-muted" : "hover:bg-muted/50 data-[state=open]:bg-muted/50"
                                                         )}
                                                     >

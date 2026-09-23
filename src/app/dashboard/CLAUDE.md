@@ -68,6 +68,7 @@ Every other page still has the old look. Do not copy patterns from it, copy them
 - Switching a range does not load again. Load the longest range once and cut the shorter ones in the browser, like `upcoming-runs.tsx` and `storage-history-modal.tsx`.
 - Buttons in a card header or a banner are `size="sm"` and `outline`, unless one is the single primary action. On phones they go full width with `w-full sm:w-auto` or `flex-1 sm:flex-none`.
 - An icon button inside a row is `variant="ghost"` with `size-8` and an `aria-label`.
+- The focus ring is 2px of `ring` at half strength plus a `ring` coloured border, quiet enough to sit beside the content. The border carries the contrast, the halo only makes it easier to spot. It shows on keyboard focus on every control and on a click into a text field.
 
 ## Lists and rows
 

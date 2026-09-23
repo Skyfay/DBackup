@@ -53,7 +53,7 @@ function KpiCard({ label, href, value, unit, valueClassName, note, trend, trendC
     return (
         <Link
             href={href}
-            className={cn(cardClassName, "outline-none transition-colors hover:border-foreground/20 focus-visible:ring-[3px] focus-visible:ring-ring/50")}
+            className={cn(cardClassName, "outline-none transition-colors hover:border-foreground/20 focus-visible:ring-2 focus-visible:ring-ring/50")}
         >
             {body}
         </Link>

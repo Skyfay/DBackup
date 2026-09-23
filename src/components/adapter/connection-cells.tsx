@@ -58,7 +58,7 @@ export function NameCell({ adapterId, name, kind, compact, onOpen }: NameCellPro
                         type="button"
                         onClick={onOpen}
                         title={name}
-                        className="block max-w-full truncate rounded-sm text-left font-medium outline-none hover:underline hover:underline-offset-4 focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                        className="block max-w-full truncate rounded-sm text-left font-medium outline-none hover:underline hover:underline-offset-4 focus-visible:ring-2 focus-visible:ring-ring/50"
                     >
                         {name}
                     </button>
@@ -103,7 +103,7 @@ export function StatusCell({ status, configId, lastCheckedAt, detail, error, int
             <PopoverTrigger asChild>
                 <button
                     type="button"
-                    className="-mx-1.5 inline-flex items-center gap-2 rounded-md px-1.5 py-1 outline-none transition-colors hover:bg-muted focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    className="-mx-1.5 inline-flex items-center gap-2 rounded-md px-1.5 py-1 outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50"
                 >
                     {label}
                 </button>

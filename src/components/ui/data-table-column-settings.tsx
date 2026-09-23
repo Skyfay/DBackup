@@ -132,7 +132,7 @@ export function DataTableColumnSettings({
                                     aria-label={`Move ${column.label}`}
                                     aria-describedby={hintId}
                                     onKeyDown={(event) => moveWithKeys(event, column.id, index)}
-                                    className="flex size-7 cursor-grab items-center justify-center rounded-md text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 active:cursor-grabbing"
+                                    className="flex size-7 cursor-grab items-center justify-center rounded-md text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 active:cursor-grabbing"
                                 >
                                     <GripVertical className="size-3.5" aria-hidden="true" />
                                 </button>

@@ -50,7 +50,7 @@ export function ConnectionCard({ row, onOpen }: ConnectionCardProps) {
                     <button
                         type="button"
                         onClick={() => onOpen(config)}
-                        className="block max-w-full truncate rounded-sm text-left font-semibold outline-none hover:underline hover:underline-offset-4 focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                        className="block max-w-full truncate rounded-sm text-left font-semibold outline-none hover:underline hover:underline-offset-4 focus-visible:ring-2 focus-visible:ring-ring/50"
                     >
                         {config.name}
                     </button>

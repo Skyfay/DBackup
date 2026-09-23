@@ -52,7 +52,7 @@ export function ConnectionStatusFilter({ value, onChange, configs, withHealth }:
                         onClick={() => onChange(option)}
                         className={cn(
                             // Taller on phones, where a finger has to hit it.
-                            "inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:h-7",
+                            "inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 sm:h-7",
                             active ? "border-border bg-muted text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
                         )}
                     >

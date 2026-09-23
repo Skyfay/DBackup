@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { toast } from "sonner"
 import { Loader2, Lock, Plus, Trash2, AlertTriangle, ShieldCheck, Download, Copy, Eye, Import, Pencil } from "lucide-react"
-import { EncryptionProfile } from "@prisma/client"
+import type { EncryptionProfileSummary } from "@/services/backup/encryption-service"
 import { createEncryptionProfile, importEncryptionProfile, deleteEncryptionProfile, getEncryptionProfiles, revealMasterKey, bulkDeleteEncryptionProfiles } from "@/app/actions/backup/encryption"
 import { DateDisplay } from "@/components/utils/date-display"
 import { DataTable, type BulkAction } from "@/components/ui/data-table"
@@ -20,7 +20,7 @@ import { ColumnDef } from "@tanstack/react-table"
 import { EncryptionProfileEditDialog } from "@/components/settings/encryption-profile-edit-dialog"
 
 export function EncryptionProfilesList() {
-    const [profiles, setProfiles] = useState<EncryptionProfile[]>([])
+    const [profiles, setProfiles] = useState<EncryptionProfileSummary[]>([])
     const [loading, setLoading] = useState(true)
 
     // Create Dialog State
@@ -34,10 +34,10 @@ export function EncryptionProfilesList() {
     const [importKey, setImportKey] = useState("")
 
     // Edit Dialog State
-    const [profileToEdit, setProfileToEdit] = useState<EncryptionProfile | null>(null)
+    const [profileToEdit, setProfileToEdit] = useState<EncryptionProfileSummary | null>(null)
 
     // Delete Dialog State
-    const [profileToDelete, setProfileToDelete] = useState<EncryptionProfile | null>(null)
+    const [profileToDelete, setProfileToDelete] = useState<EncryptionProfileSummary | null>(null)
     const [isDeleting, setIsDeleting] = useState(false)
 
     // Reveal Key State
@@ -180,7 +180,7 @@ export function EncryptionProfilesList() {
         });
     }
 
-    const bulkActions = useMemo<BulkAction<EncryptionProfile>[]>(() => [
+    const bulkActions = useMemo<BulkAction<EncryptionProfileSummary>[]>(() => [
         {
             id: "delete",
             labels: { verb: "delete", verbPast: "deleted", noun: "encryption profile" },
@@ -199,7 +199,7 @@ export function EncryptionProfilesList() {
         },
     ], []);
 
-    const columns: ColumnDef<EncryptionProfile>[] = [
+    const columns: ColumnDef<EncryptionProfileSummary>[] = [
         {
             accessorKey: "name",
             header: "Profile Name",

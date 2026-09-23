@@ -1,10 +1,8 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Check, Loader2, PartyPopper, Play } from "lucide-react";
-import { toast } from "sonner";
+import { useRunJob } from "@/components/dashboard/widgets/use-run-job";
 import { Button } from "@/components/ui/button";
 import { useDateFormatter } from "@/hooks/use-date-formatter";
 import { NOTIFY_ON, entryLabel, nextRun, scheduleName, type SetupJob, type SetupState, type SetupStep, type SetupStepId } from "./setup-model";
@@ -30,27 +28,10 @@ interface DoneStepProps {
 
 /** Everything the setup made, in one list, and the way to the first run. */
 export function DoneStep({ steps, state, job, schedulerTimezone, canRunJob, canOpenVault }: DoneStepProps) {
-    const router = useRouter();
     const { formatDate } = useDateFormatter();
-    const [running, setRunning] = useState(false);
+    // Starts the job like Run now on the Overview, which opens the run when the user wants that.
+    const { runJob, startingJobId } = useRunJob();
     const next = nextRun(job.schedule, schedulerTimezone);
-
-    const run = async () => {
-        setRunning(true);
-        try {
-            const res = await fetch(`/api/jobs/${encodeURIComponent(job.id)}/run`, { method: "POST" });
-            if (res.ok) {
-                toast.success("The first backup is running");
-                router.push("/dashboard/history");
-                return;
-            }
-            const body = await res.json().catch(() => null);
-            toast.error(body?.error || "The job could not be started.");
-        } catch {
-            toast.error("The job could not be started.");
-        }
-        setRunning(false);
-    };
 
     return (
         <StepFrame
@@ -72,9 +53,10 @@ export function DoneStep({ steps, state, job, schedulerTimezone, canRunJob, canO
                         <Link href="/dashboard">Go to the overview</Link>
                     </Button>
                     {canRunJob && (
-                        // The button of a finished task, not of a new one, so it stays in the plain primary color.
-                        <Button type="button" tone="neutral" disabled={running} onClick={run}>
-                            {running ? <Loader2 className="animate-spin" /> : <Play />}
+                        // A report like the result of a bulk action, so its buttons are outline and ghost.
+                        // The green of the head reports and never colors a button.
+                        <Button type="button" variant="outline" disabled={startingJobId !== null} onClick={() => runJob(job.id, job.name)}>
+                            {startingJobId ? <Loader2 className="animate-spin" /> : <Play />}
                             Run it now
                         </Button>
                     )}

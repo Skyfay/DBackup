@@ -1,13 +1,30 @@
+import type { EncryptionProfile, Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { runBulk, type BulkResult } from '@/lib/core/bulk';
 import { encrypt, decrypt } from '@/lib/crypto';
 import { ConflictError, NotFoundError } from '@/lib/logging/errors';
 import crypto from 'crypto';
 
+/** A profile as it may leave this service: everything but its key. */
+export type EncryptionProfileSummary = Omit<EncryptionProfile, 'secretKey'>;
+
+/**
+ * The fields of every profile this service returns. The results reach the browser through the
+ * Server Actions, so the key stays out even in its encrypted form. It only leaves through
+ * getDecryptedMasterKey and getProfileMasterKey, by id.
+ */
+const summaryFields = {
+  id: true,
+  name: true,
+  description: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.EncryptionProfileSelect;
+
 /**
  * Creates a new encryption profile with a secure, auto-generated key.
  */
-export async function createEncryptionProfile(name: string, description?: string) {
+export async function createEncryptionProfile(name: string, description?: string): Promise<EncryptionProfileSummary> {
   // Check name uniqueness
   const existingByName = await prisma.encryptionProfile.findFirst({ where: { name } });
   if (existingByName) {
@@ -21,22 +38,21 @@ export async function createEncryptionProfile(name: string, description?: string
   // Encrypt the master key with our system key before storing
   const encryptedMasterKey = encrypt(masterKeyHex);
 
-  const profile = await prisma.encryptionProfile.create({
+  return await prisma.encryptionProfile.create({
     data: {
       name,
       description,
       secretKey: encryptedMasterKey,
     },
+    select: summaryFields,
   });
-
-  return profile;
 }
 
 /**
  * Imports an existing encryption key.
  * Validates the hex format (32 bytes = 64 chars) before storing.
  */
-export async function importEncryptionProfile(name: string, keyHex: string, description?: string) {
+export async function importEncryptionProfile(name: string, keyHex: string, description?: string): Promise<EncryptionProfileSummary> {
   // Check name uniqueness
   const existingByName = await prisma.encryptionProfile.findFirst({ where: { name } });
   if (existingByName) {
@@ -53,32 +69,33 @@ export async function importEncryptionProfile(name: string, keyHex: string, desc
   const encryptedMasterKey = encrypt(cleanKey);
 
   // 3. Store
-  const profile = await prisma.encryptionProfile.create({
+  return await prisma.encryptionProfile.create({
     data: {
       name,
       description,
       secretKey: encryptedMasterKey,
     },
+    select: summaryFields,
   });
-
-  return profile;
 }
 
 /**
- * Returns all encryption profiles.
+ * Returns all encryption profiles, newest first, without their keys.
  */
-export async function getEncryptionProfiles() {
+export async function getEncryptionProfiles(): Promise<EncryptionProfileSummary[]> {
   return await prisma.encryptionProfile.findMany({
+    select: summaryFields,
     orderBy: { createdAt: 'desc' },
   });
 }
 
 /**
- * Returns a single encryption profile by ID.
+ * Returns a single encryption profile by ID, without its key.
  */
-export async function getEncryptionProfile(id: string) {
+export async function getEncryptionProfile(id: string): Promise<EncryptionProfileSummary | null> {
     return await prisma.encryptionProfile.findUnique({
-        where: { id }
+        where: { id },
+        select: summaryFields,
     });
 }
 
@@ -116,6 +133,7 @@ export async function updateEncryptionProfile(
   const profile = await prisma.encryptionProfile.update({
     where: { id },
     data: patch,
+    select: summaryFields,
   });
 
   return { profile, previousName: existing.name };
@@ -141,9 +159,10 @@ export async function getDecryptedMasterKey(id: string): Promise<string> {
  * Deletes an encryption profile.
  * WARNING: This will render all backups using this profile permanently unreadable.
  */
-export async function deleteEncryptionProfile(id: string) {
+export async function deleteEncryptionProfile(id: string): Promise<EncryptionProfileSummary> {
   return await prisma.encryptionProfile.delete({
     where: { id },
+    select: summaryFields,
   });
 }
 

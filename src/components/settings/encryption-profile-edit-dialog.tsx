@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { EncryptionProfile } from "@prisma/client"
+import type { EncryptionProfileSummary } from "@/services/backup/encryption-service"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -12,7 +12,7 @@ import { updateEncryptionProfile } from "@/app/actions/backup/encryption"
 
 interface EncryptionProfileEditDialogProps {
     /** The profile to edit. The dialog is open while this is set. */
-    profile: EncryptionProfile | null
+    profile: EncryptionProfileSummary | null
     onClose: () => void
     onSaved: () => void
 }
@@ -25,7 +25,7 @@ export function EncryptionProfileEditDialog({ profile, onClose, onSaved }: Encry
     // `original` is kept after closing so the fields and the hint do not blank out while the
     // dialog animates away. `filledFor` is cleared on close, so reopening the same profile
     // starts from its stored values again instead of the last unsaved edit.
-    const [original, setOriginal] = useState<EncryptionProfile | null>(null)
+    const [original, setOriginal] = useState<EncryptionProfileSummary | null>(null)
     const [filledFor, setFilledFor] = useState<string | null>(null)
 
     if (profile && profile.id !== filledFor) {

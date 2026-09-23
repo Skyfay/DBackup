@@ -32,6 +32,9 @@ vi.spyOn(crypto, 'randomBytes').mockImplementation((size: number) => {
     return Buffer.alloc(size);
 });
 
+// Every profile the service hands back leaves out its key, see summaryFields in the service.
+const SUMMARY = { id: true, name: true, description: true, createdAt: true, updatedAt: true };
+
 describe('Encryption Service', () => {
 
     beforeEach(() => {
@@ -59,7 +62,8 @@ describe('Encryption Service', () => {
                     name: 'Test Profile',
                     description: 'Desc',
                     secretKey: mockEncrypted // Validation: Plaintext key never touches DB args
-                }
+                },
+                select: SUMMARY,
             });
 
             // 3. Verify it never tried to save the fixedKeyHex directly
@@ -94,7 +98,8 @@ describe('Encryption Service', () => {
                     name: 'Imported Key',
                     description: 'Desc',
                     secretKey: mockEncrypted
-                }
+                },
+                select: SUMMARY,
             });
         });
     });
@@ -112,7 +117,8 @@ describe('Encryption Service', () => {
             expect(prisma.encryptionProfile.findFirst).toHaveBeenCalledWith({ where: { name: 'New Name', NOT: { id: '1' } } });
             expect(prisma.encryptionProfile.update).toHaveBeenCalledWith({
                 where: { id: '1' },
-                data: { name: 'New Name', description: 'New Desc' }
+                data: { name: 'New Name', description: 'New Desc' },
+                select: SUMMARY,
             });
             expect(result.previousName).toBe('Old Name');
             expect(result.profile.name).toBe('New Name');
@@ -135,7 +141,8 @@ describe('Encryption Service', () => {
             expect(prisma.encryptionProfile.findFirst).not.toHaveBeenCalled();
             expect(prisma.encryptionProfile.update).toHaveBeenCalledWith({
                 where: { id: '1' },
-                data: { description: null }
+                data: { description: null },
+                select: SUMMARY,
             });
         });
 

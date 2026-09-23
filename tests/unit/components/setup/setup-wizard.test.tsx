@@ -6,7 +6,7 @@ import type { SavedConnection } from "@/components/adapter/use-connection-form";
 import { SetupWizard } from "@/components/dashboard/setup/setup-wizard";
 
 const push = vi.fn();
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push, refresh: vi.fn() }) }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/lib/auth/client", () => ({
     useSession: () => ({ data: { user: { timezone: "UTC", dateFormat: "yyyy-MM-dd", timeFormat: "HH:mm" } } }),
@@ -43,7 +43,7 @@ const mockFetch = vi.fn((url: string, _init?: RequestInit) => {
     if (url.startsWith("/api/adapters?type=")) return json([]);
     if (url === "/api/adapters/mysql-1/databases") return json({ success: true, databases: ["shop", "billing"] });
     if (url === "/api/jobs") return json({ id: "job-1", name: "My MySQL backup" });
-    if (url === "/api/jobs/job-1/run") return json({ success: true });
+    if (url === "/api/jobs/job-1/run") return json({ success: true, executionId: "exec-1" });
     return json({ error: `Unexpected ${url}` }, false);
 });
 
@@ -52,14 +52,14 @@ const posted = (url: string) => {
     return call ? JSON.parse(String(call[1]?.body ?? "{}")) : undefined;
 };
 
-function renderWizard(rights: { vault?: boolean; notification?: boolean } = {}) {
+function renderWizard(rights: { vault?: boolean; notification?: boolean } = {}, keys: { id: string; name: string; detail: string }[] = []) {
     render(
         <SetupWizard
             canCreateVault={rights.vault ?? true}
             canCreateNotification={rights.notification ?? true}
             canRunJob
             canOpenVault
-            keys={[]}
+            keys={keys}
         />
     );
 }
@@ -120,8 +120,9 @@ describe("quick setup", () => {
         // Once the job exists, the steps can no longer be opened again.
         expect(rail().getByRole("button", { name: /Database/ })).toBeDisabled();
 
+        // Like Run now on the Overview, it opens the new run unless the user switched that off.
         await user.click(screen.getByRole("button", { name: "Run it now" }));
-        await waitFor(() => expect(push).toHaveBeenCalledWith("/dashboard/history"));
+        await waitFor(() => expect(push).toHaveBeenCalledWith("/dashboard/history?executionId=exec-1"));
         expect(posted("/api/jobs/job-1/run")).toEqual({});
     });
 
@@ -140,6 +141,26 @@ describe("quick setup", () => {
         expect(rail().getByRole("button", { name: /Database.*CRM · PostgreSQL/ })).toBeInTheDocument();
         await user.click(screen.getByRole("button", { name: "Back" }));
         expect(await screen.findByRole("radio", { name: /CRM/ })).toBeChecked();
+    });
+
+    it("names a new key so it does not clash with one the Vault already holds, or takes that one", async () => {
+        databases = [{ id: "db-9", name: "CRM", adapterId: "postgres", type: "database", config: "{}" }];
+        const user = userEvent.setup();
+        renderWizard({ notification: false }, [{ id: "key-9", name: "Backup key", detail: "" }]);
+
+        await user.click(await screen.findByRole("button", { name: "Use existing" }));
+        await user.click(screen.getByRole("radio", { name: /CRM/ }));
+        await user.click(screen.getByRole("button", { name: "Use this database" }));
+        await user.click(screen.getByRole("button", { name: /^Local Filesystem/ }));
+        await user.click(screen.getByRole("button", { name: "Save connection" }));
+
+        expect(screen.getByLabelText("Name")).toHaveValue("Backup key 2");
+        await user.click(screen.getByRole("button", { name: "Use existing" }));
+        await user.click(screen.getByRole("radio", { name: /Backup key/ }));
+        await user.click(screen.getByRole("button", { name: "Use this key" }));
+
+        expect(rail().getByRole("button", { name: /Encryption.*Backup key.*done/ })).toBeInTheDocument();
+        expect(createEncryptionProfile).not.toHaveBeenCalled();
     });
 
     it("keeps the job as typed while an earlier step is open, and refuses a schedule it cannot read", async () => {

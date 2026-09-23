@@ -32,6 +32,7 @@ All notable changes to DBackup are documented here.
 
 - **connections**: The health check history of a connection needs the read permission of its kind, like its details. Reading sources or destinations was enough for every kind before.
 - **connections**: The file browser of a path field no longer follows a link into a system folder it keeps out, like /proc or /System.
+- **vault**: The Vault no longer sends the stored key of an encryption profile to the browser when it lists, creates, imports or renames profiles, not even in its encrypted form.
 
 ### 🎨 Improvements
 
@@ -66,6 +67,7 @@ All notable changes to DBackup are documented here.
 - **docs**: The health check guide describes the new status popover and the added fields of the health history API.
 - **docs**: The source, destination, notification and first steps guides name the fields and parts of the new connection form, and the cloud drive and notification guides describe logging in with a credential profile. The adapter guides explain how the form places new fields.
 - **docs**: The first steps guide walks through the new Quick Setup.
+- **docs**: The encryption guide explains that the encryption service returns profiles without their key.
 
 ### 🧪 Tests
 

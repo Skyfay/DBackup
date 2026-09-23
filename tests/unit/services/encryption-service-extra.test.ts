@@ -20,6 +20,9 @@ import { decrypt } from '@/lib/crypto';
 
 // --- Test fixtures ---
 
+// Every profile the service hands back leaves out its key, see summaryFields in the service.
+const SUMMARY = { id: true, name: true, description: true, createdAt: true, updatedAt: true };
+
 const validHex64 = 'a'.repeat(64); // 64 hex chars = 32 bytes
 
 function makeProfile(overrides: Record<string, any> = {}) {
@@ -46,6 +49,7 @@ describe('getEncryptionProfiles', () => {
         const result = await getEncryptionProfiles();
 
         expect(prismaMock.encryptionProfile.findMany).toHaveBeenCalledWith({
+            select: SUMMARY,
             orderBy: { createdAt: 'desc' },
         });
         expect(result).toHaveLength(2);
@@ -70,7 +74,7 @@ describe('getEncryptionProfile', () => {
 
         const result = await getEncryptionProfile('profile-1');
 
-        expect(prismaMock.encryptionProfile.findUnique).toHaveBeenCalledWith({ where: { id: 'profile-1' } });
+        expect(prismaMock.encryptionProfile.findUnique).toHaveBeenCalledWith({ where: { id: 'profile-1' }, select: SUMMARY });
         expect(result?.id).toBe('profile-1');
     });
 
@@ -93,7 +97,7 @@ describe('deleteEncryptionProfile', () => {
 
         await deleteEncryptionProfile('profile-1');
 
-        expect(prismaMock.encryptionProfile.delete).toHaveBeenCalledWith({ where: { id: 'profile-1' } });
+        expect(prismaMock.encryptionProfile.delete).toHaveBeenCalledWith({ where: { id: 'profile-1' }, select: SUMMARY });
     });
 
     it('propagates prisma errors upward', async () => {
@@ -179,5 +183,37 @@ describe('importEncryptionProfile - duplicate name', () => {
         );
 
         expect(prismaMock.encryptionProfile.create).not.toHaveBeenCalled();
+    });
+});
+
+// --- the key stays on the server ---
+
+describe('profiles handed back by the service', () => {
+    beforeEach(() => vi.clearAllMocks());
+
+    it('never ask the database for the key, so no Server Action can pass it to the browser', async () => {
+        prismaMock.encryptionProfile.findFirst.mockResolvedValue(null);
+        prismaMock.encryptionProfile.create.mockResolvedValue(makeProfile() as any);
+        prismaMock.encryptionProfile.findMany.mockResolvedValue([]);
+        prismaMock.encryptionProfile.findUnique.mockResolvedValue(makeProfile() as any);
+        prismaMock.encryptionProfile.delete.mockResolvedValue(makeProfile() as any);
+
+        await createEncryptionProfile('New key');
+        await importEncryptionProfile('Imported key', validHex64);
+        await getEncryptionProfiles();
+        await getEncryptionProfile('profile-1');
+        await deleteEncryptionProfile('profile-1');
+
+        const calls = [
+            ...prismaMock.encryptionProfile.create.mock.calls,
+            ...prismaMock.encryptionProfile.findMany.mock.calls,
+            ...prismaMock.encryptionProfile.findUnique.mock.calls,
+            ...prismaMock.encryptionProfile.delete.mock.calls,
+        ];
+        expect(calls).toHaveLength(5);
+        for (const [args] of calls) {
+            expect(args).toMatchObject({ select: SUMMARY });
+            expect((args as { select: Record<string, unknown> }).select).not.toHaveProperty('secretKey');
+        }
     });
 });

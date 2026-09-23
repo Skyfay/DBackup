@@ -23,6 +23,14 @@ function Fact({ icon: Icon, children }: { icon: LucideIcon; children: React.Reac
     );
 }
 
+/** "Backup key", or "Backup key 2" and on when the Vault holds one by that name, since names are unique. */
+function freeKeyName(keys: ExistingEntry[]): string {
+    const taken = new Set(keys.map((key) => key.name));
+    let name = "Backup key";
+    for (let number = 2; taken.has(name); number++) name = `Backup key ${number}`;
+    return name;
+}
+
 interface EncryptionStepProps {
     step: SetupStep;
     position: string;
@@ -38,7 +46,7 @@ interface EncryptionStepProps {
 export function EncryptionStep({ step, position, keys, picked, onBack, onSkip, onDone }: EncryptionStepProps) {
     const nameId = useId();
     const [view, setView] = useState<"create" | "existing">(picked ? "existing" : "create");
-    const [name, setName] = useState("Backup key");
+    const [name, setName] = useState(() => freeKeyName(keys));
     const [creating, setCreating] = useState(false);
     const [selected, setSelected] = useState<string | null>(picked?.id ?? null);
     const selectedKey = keys.find((key) => key.id === selected);

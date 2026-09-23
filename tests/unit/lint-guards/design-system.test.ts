@@ -250,7 +250,7 @@ describe("Dark mode color pairing", () => {
      * Semantic tokens (bg-muted, text-muted-foreground) are already theme-aware and are the
      * preferred fix; an explicit dark: variant is the fallback.
      */
-    const BASELINE = 86;
+    const BASELINE = 71;
 
     it("should not add new palette colors without a dark: counterpart", () => {
         const PALETTE =

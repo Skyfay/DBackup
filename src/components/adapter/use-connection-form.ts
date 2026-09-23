@@ -37,6 +37,8 @@ export interface ConnectionSectionProps {
     onMetadataChange: (metadata: ConnectionMetadata) => void;
     storageRole: StorageRole;
     onStorageRoleChange: (role: StorageRole) => void;
+    /** The page decides the role, like the setup, which only adds a destination, so the form does not ask. */
+    storageRoleLocked: boolean;
     /** Whether the picked OAuth app holds a token for its cloud drive. */
     authorized: boolean;
     onPrimaryProfile: (profile: CredentialProfileSummary | null) => void;
@@ -51,12 +53,22 @@ interface TestResponse {
     version?: string;
 }
 
+/** The connection as saved, for a page that goes on with it, like the setup. */
+export interface SavedConnection {
+    id: string;
+    name: string;
+    adapterId: string;
+}
+
 interface Options {
     adapter: AdapterDefinition;
     initialData?: AdapterConfig;
     /** The role a new storage connection starts in, from the page it is added on. */
     defaultRole?: StorageRole;
-    onSaved: () => void;
+    /** Keeps a new storage connection in `defaultRole`. */
+    lockRole?: boolean;
+    /** Gets the saved connection, or nothing when the response did not name it. */
+    onSaved: (saved?: SavedConnection) => void;
 }
 
 /**
@@ -64,7 +76,7 @@ interface Options {
  *
  * A database is tested before it is created, and a failed test asks whether to save anyway.
  */
-export function useConnectionForm({ adapter, initialData, defaultRole, onSaved }: Options) {
+export function useConnectionForm({ adapter, initialData, defaultRole, lockRole = false, onSaved }: Options) {
     const schema = useMemo(() => buildConnectionFormSchema(adapter), [adapter]);
     const form = useForm<ConnectionFormValues>({
         resolver: zodResolver(schema) as unknown as Resolver<ConnectionFormValues>,
@@ -169,8 +181,11 @@ export function useConnectionForm({ adapter, initialData, defaultRole, onSaved }
                 }),
             });
             if (res.ok) {
+                // A new connection gets its id from the response, which is the connection as listed.
+                const body = await res.json().catch(() => null);
+                const id = initialData?.id ?? (typeof body?.id === "string" ? body.id : null);
                 toast.success(initialData ? "Changes saved" : "Connection created");
-                onSaved();
+                onSaved(id ? { id, name: values.name, adapterId: adapter.id } : undefined);
             } else {
                 const result = await res.json().catch(() => null);
                 toast.error(result?.error || "The connection could not be saved.");
@@ -219,6 +234,7 @@ export function useConnectionForm({ adapter, initialData, defaultRole, onSaved }
         onMetadataChange: setMetadata,
         storageRole,
         onStorageRoleChange: setStorageRole,
+        storageRoleLocked: lockRole,
         authorized,
         onPrimaryProfile: setPrimaryProfile,
         credentialRefreshKey,

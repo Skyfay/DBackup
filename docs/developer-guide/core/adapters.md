@@ -440,6 +440,8 @@ The UI generates the connection form from the adapter's Zod schema, so an adapte
 
 A key of the schema that no list names still appears, in the Options or Message part, so a new field is never invisible. Labels come from the key names unless a section file names them better, and descriptions from `.describe()`.
 
+The Quick Setup embeds the same form with `container="page"`, so a new adapter shows up there as well without any work of its own.
+
 ## Related Documentation
 
 - [Database Adapters](/developer-guide/adapters/database)

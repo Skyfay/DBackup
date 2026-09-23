@@ -47,6 +47,7 @@ All notable changes to DBackup are documented here.
 - **connections**: The login field lists every saved login with its description and where it is in use, and puts the logins that other connections of the same kind already use first. The credentials API returns those connection types as `usedBy` with `includeCounts=true`.
 - **vault**: A new credential profile starts with a list of what can be saved and the services that use each kind, while the New button of a login field opens the form for its kind right away. Every secret field has its own button to show what was typed, and an SSH login picks how it signs in and where its key comes from on cards.
 - **connections**: The file browser of a path field starts where the field points and shows the path as clickable parts with a filter, the size and date of every entry and a badge on the files the field takes. Hidden files stay out until asked for, and every entry can be reached with the keyboard.
+- **setup**: The Quick Setup lists its steps on the left with what each one made, and adds databases, destinations and channels with the same form as the Connections page. Every step can take an existing connection or key instead, and the job picks its schedule and its databases on cards.
 
 ### 🔄 Changed
 
@@ -64,6 +65,7 @@ All notable changes to DBackup are documented here.
 - **docs**: The notification and job guides explain how to switch health check notifications and restore exclusion for several databases at once.
 - **docs**: The health check guide describes the new status popover and the added fields of the health history API.
 - **docs**: The source, destination, notification and first steps guides name the fields and parts of the new connection form, and the cloud drive and notification guides describe logging in with a credential profile. The adapter guides explain how the form places new fields.
+- **docs**: The first steps guide walks through the new Quick Setup.
 
 ### 🧪 Tests
 

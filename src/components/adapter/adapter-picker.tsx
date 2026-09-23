@@ -115,17 +115,24 @@ interface AdapterPickerProps {
     onSelect: (adapter: AdapterDefinition) => void;
 }
 
-/** Search and list on their own, for a page that brings its own heading, like the setup wizard. */
+/**
+ * Search and list on their own, for a page that brings its own head and buttons, like the setup.
+ * It fills the height it is given, and only the list scrolls.
+ */
 export function AdapterPicker({ adapters, onSelect }: AdapterPickerProps) {
     const [search, setSearch] = useState("");
     const groups = useAdapterGroups(adapters, search);
 
     return (
-        <div className="space-y-3">
-            <AdapterSearch value={search} onChange={setSearch} />
-            <div>
-                <AdapterGroups groups={groups} onSelect={onSelect} />
+        <div className="flex min-h-0 flex-1 flex-col">
+            <div className="px-5 pt-4">
+                <AdapterSearch value={search} onChange={setSearch} />
             </div>
+            <ScrollArea className="min-h-0 flex-1 [&>[data-slot=scroll-area-viewport]>div]:block!">
+                <div className="px-5 py-3">
+                    <AdapterGroups groups={groups} onSelect={onSelect} />
+                </div>
+            </ScrollArea>
         </div>
     );
 }

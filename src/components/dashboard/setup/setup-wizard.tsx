@@ -1,310 +1,156 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
-import {
-    Rocket,
-    Database,
-    HardDrive,
-    Lock,
-    Bell,
-    CalendarClock,
-    CheckCircle2,
-    Circle,
-    ChevronRight,
-    PartyPopper,
-} from "lucide-react";
-import { ADAPTER_DEFINITIONS } from "@/lib/adapters/definitions";
-import { STORAGE_ROLES, supportsStorageRole } from "@/lib/core/storage-roles";
-import { WelcomeStep } from "./steps/welcome-step";
-import { SourceStep } from "./steps/source-step";
-import { DestinationStep } from "./steps/destination-step";
-import { VaultStep } from "./steps/vault-step";
-import { NotificationStep } from "./steps/notification-step";
-import { JobStep } from "./steps/job-step";
-import { CompleteStep } from "./steps/complete-step";
+import { useEffect, useMemo, useState } from "react";
+import { wrapError } from "@/lib/logging/errors";
+import { logger } from "@/lib/logging/logger";
+import { ConnectionStep, type ConnectionStepId } from "./connection-step";
+import { DoneStep } from "./done-step";
+import { EncryptionStep } from "./encryption-step";
+import type { ExistingEntry } from "./existing-list";
+import { JobStep } from "./job-step";
+import type { JobDraft } from "./job-values";
+import { EMPTY_SETUP, entryLabel, scheduleName, setupSteps, type SetupEntry, type SetupState, type SetupStepId } from "./setup-model";
+import { SetupRail, type RailEntry } from "./setup-rail";
 
-// Wizard state shared across steps
-export interface WizardData {
-    sourceId: string | null;
-    sourceName: string | null;
-    sourceAdapterId: string | null;
-    destinationId: string | null;
-    destinationName: string | null;
-    encryptionProfileId: string | null;
-    encryptionProfileName: string | null;
-    notificationIds: string[];
-    notificationNames: string[];
-    jobId: string | null;
-    jobName: string | null;
+const log = logger.child({ component: "SetupWizard" });
+
+/** The time zone the scheduler reads cron expressions in, UTC until the server says otherwise. */
+function useSchedulerTimezone(): string {
+    const [timezone, setTimezone] = useState("UTC");
+    useEffect(() => {
+        fetch("/api/system/timezone")
+            .then((res) => (res.ok ? res.json() : null))
+            .then((body) => {
+                if (typeof body?.schedulerTimezone === "string") setTimezone(body.schedulerTimezone);
+            })
+            .catch((error: unknown) => log.warn("Scheduler time zone could not be loaded", {}, wrapError(error)));
+    }, []);
+    return timezone;
 }
 
-type WizardStepId =
-    | "welcome"
-    | "source"
-    | "destination"
-    | "vault"
-    | "notification"
-    | "job"
-    | "complete";
-
-interface StepDefinition {
-    id: WizardStepId;
-    title: string;
-    description: string;
-    icon: React.ElementType;
-    optional?: boolean;
+function railEntries(steps: ReturnType<typeof setupSteps>, state: SetupState): RailEntry[] {
+    return steps.map((step) => {
+        if (step.id === "job" && state.job) return { step, status: "done", detail: `${state.job.name} · ${scheduleName(state.job.schedule)}` };
+        const entry = step.id === "job" ? null : state[step.id];
+        if (entry) return { step, status: "done", detail: entryLabel(entry) };
+        if (state.skipped.includes(step.id)) return { step, status: "skipped", detail: "Skipped" };
+        return { step, status: "todo", detail: step.todo };
+    });
 }
 
 interface SetupWizardProps {
     canCreateVault: boolean;
     canCreateNotification: boolean;
+    canRunJob: boolean;
+    canOpenVault: boolean;
+    /** The keys in the Vault, for the encryption step to offer. */
+    keys: ExistingEntry[];
 }
 
-export function SetupWizard({
-    canCreateVault,
-    canCreateNotification,
-}: SetupWizardProps) {
-    // Import adapter definitions client-side (Zod schemas are not serializable across Server→Client boundary)
-    const databaseAdapters = useMemo(() => ADAPTER_DEFINITIONS.filter((a) => a.type === "database"), []);
-    // The wizard's storage step is a backup destination by definition - it posts without a
-    // role and takes the column default - so an adapter that can only be a source has no
-    // place here.
-    const storageAdapters = useMemo(
-        () => ADAPTER_DEFINITIONS.filter((a) =>
-            a.type === "storage" && supportsStorageRole(a.supportedRoles, STORAGE_ROLES.DESTINATION)
-        ),
-        []
-    );
-    const notificationAdapters = useMemo(() => ADAPTER_DEFINITIONS.filter((a) => a.type === "notification"), []);
-    // Build dynamic step list based on permissions
-    const steps: StepDefinition[] = useMemo(() => [
-        { id: "welcome", title: "Welcome", description: "Get started", icon: Rocket },
-        { id: "source", title: "Database Source", description: "Where to backup from", icon: Database },
-        { id: "destination", title: "Storage Destination", description: "Where to store backups", icon: HardDrive },
-        ...(canCreateVault
-            ? [{ id: "vault" as const, title: "Encryption", description: "Secure your backups", icon: Lock, optional: true }]
-            : []),
-        ...(canCreateNotification
-            ? [{ id: "notification" as const, title: "Notifications", description: "Get alerts", icon: Bell, optional: true }]
-            : []),
-        { id: "job", title: "Backup Job", description: "Configure schedule", icon: CalendarClock },
-        { id: "complete", title: "Done!", description: "Ready to go", icon: PartyPopper },
-    ], [canCreateVault, canCreateNotification]);
+/**
+ * The first backup, step by step: a database, where the backups go, a key and a channel if
+ * wanted, and the job that ties them together. The steps are listed on the left with what each
+ * made, the step itself is on the right, and saving one moves on to the next. The connections are
+ * added with the form of the Connections page, so there is only one form to keep up.
+ */
+export function SetupWizard({ canCreateVault, canCreateNotification, canRunJob, canOpenVault, keys: vaultKeys }: SetupWizardProps) {
+    const steps = useMemo(() => setupSteps({ canCreateVault, canCreateNotification }), [canCreateVault, canCreateNotification]);
+    const [current, setCurrent] = useState<SetupStepId | null>(steps[0].id);
+    const [reached, setReached] = useState(0);
+    const [state, setState] = useState<SetupState>(EMPTY_SETUP);
+    const [keys, setKeys] = useState(vaultKeys);
+    const [jobDraft, setJobDraft] = useState<JobDraft | null>(null);
+    const schedulerTimezone = useSchedulerTimezone();
 
-    const [currentStepId, setCurrentStepId] = useState<WizardStepId>("welcome");
-    const [completedSteps, setCompletedSteps] = useState<Set<WizardStepId>>(new Set());
-    const [wizardData, setWizardData] = useState<WizardData>({
-        sourceId: null,
-        sourceName: null,
-        sourceAdapterId: null,
-        destinationId: null,
-        destinationName: null,
-        encryptionProfileId: null,
-        encryptionProfileName: null,
-        notificationIds: [],
-        notificationNames: [],
-        jobId: null,
-        jobName: null,
-    });
+    const index = current ? steps.findIndex((step) => step.id === current) : steps.length;
+    const position = `Step ${index + 1} of ${steps.length}`;
 
-    const currentStepIndex = steps.findIndex((s) => s.id === currentStepId);
+    const open = (target: number) => {
+        setCurrent(target < steps.length ? steps[target].id : null);
+        setReached((furthest) => Math.max(furthest, target));
+    };
+    const back = index > 0 ? () => open(index - 1) : undefined;
 
-    const markComplete = useCallback((stepId: WizardStepId) => {
-        setCompletedSteps((prev) => new Set([...prev, stepId]));
-    }, []);
+    /** Keeps what a step made, or that it was skipped, and moves on. */
+    const finish = (id: Exclude<SetupStepId, "job">, entry: SetupEntry | null) => {
+        setState((previous) => ({
+            ...previous,
+            [id]: entry,
+            skipped: entry ? previous.skipped.filter((skipped) => skipped !== id) : [...previous.skipped.filter((skipped) => skipped !== id), id],
+        }));
+        open(index + 1);
+    };
 
-    const goToNext = useCallback(() => {
-        const idx = steps.findIndex((s) => s.id === currentStepId);
-        if (idx < steps.length - 1) {
-            markComplete(currentStepId);
-            setCurrentStepId(steps[idx + 1].id);
+    const renderStep = () => {
+        const step = steps[index];
+        if (!step) {
+            return state.job && (
+                <DoneStep steps={steps} state={state} job={state.job} schedulerTimezone={schedulerTimezone} canRunJob={canRunJob} canOpenVault={canOpenVault} />
+            );
         }
-    }, [currentStepId, steps, markComplete]);
-
-    const goToPrev = useCallback(() => {
-        const idx = steps.findIndex((s) => s.id === currentStepId);
-        if (idx > 0) {
-            setCurrentStepId(steps[idx - 1].id);
+        if (step.id === "encryption") {
+            return (
+                <EncryptionStep
+                    step={step}
+                    position={position}
+                    keys={keys}
+                    picked={state.encryption}
+                    onBack={() => open(index - 1)}
+                    onSkip={() => finish("encryption", null)}
+                    onDone={(entry) => {
+                        setKeys((current) => (current.some((key) => key.id === entry.id) ? current : [{ ...entry, detail: "" }, ...current]));
+                        finish("encryption", entry);
+                    }}
+                />
+            );
         }
-    }, [currentStepId, steps]);
-
-    const goToStep = useCallback(
-        (stepId: WizardStepId) => {
-            const targetIdx = steps.findIndex((s) => s.id === stepId);
-            // Allow navigating to completed steps or the next uncompleted one
-            if (targetIdx <= currentStepIndex || completedSteps.has(stepId)) {
-                setCurrentStepId(stepId);
-            }
-        },
-        [steps, currentStepIndex, completedSteps]
-    );
-
-    const updateData = useCallback((partial: Partial<WizardData>) => {
-        setWizardData((prev) => ({ ...prev, ...partial }));
-    }, []);
-
-    const skipStep = useCallback(() => {
-        goToNext();
-    }, [goToNext]);
+        if (step.id === "job") {
+            return (
+                <JobStep
+                    step={step}
+                    position={position}
+                    state={state}
+                    draft={jobDraft}
+                    onDraftChange={setJobDraft}
+                    schedulerTimezone={schedulerTimezone}
+                    onBack={() => open(index - 1)}
+                    onDone={(job) => {
+                        setState((previous) => ({ ...previous, job }));
+                        open(steps.length);
+                    }}
+                />
+            );
+        }
+        const id: ConnectionStepId = step.id;
+        return (
+            // Keyed, so the next connection step starts on its own list instead of the one before.
+            <ConnectionStep
+                key={id}
+                step={{ ...step, id }}
+                position={position}
+                picked={state[id]}
+                onBack={back}
+                onSkip={step.optional ? () => finish(id, null) : undefined}
+                onDone={(entry) => finish(id, entry)}
+            />
+        );
+    };
 
     return (
-        <div className="space-y-6">
-            {/* Header */}
+        <div className="space-y-4 md:space-y-6">
             <div>
-                <h2 className="text-3xl font-bold tracking-tight">Quick Setup</h2>
-                <p className="text-muted-foreground">
-                    Configure your first backup in just a few steps.
-                </p>
+                <h1 className="text-2xl font-semibold tracking-tight">Quick Setup</h1>
+                <p className="text-sm text-muted-foreground">Your first backup in a few minutes.</p>
             </div>
-
-            <div className="flex flex-col lg:flex-row gap-6">
-                {/* Sidebar - Step Navigation */}
-                <div className="lg:w-64 shrink-0">
-                    <Card>
-                        <CardContent className="p-4">
-                            <nav className="space-y-1">
-                                {steps.map((step, idx) => {
-                                    const isCompleted = completedSteps.has(step.id);
-                                    const isCurrent = step.id === currentStepId;
-                                    const isAccessible =
-                                        idx <= currentStepIndex || isCompleted;
-
-                                    return (
-                                        <button
-                                            key={step.id}
-                                            onClick={() => goToStep(step.id)}
-                                            disabled={!isAccessible}
-                                            className={cn(
-                                                "w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors",
-                                                isCurrent && "bg-primary/10 text-primary",
-                                                isCompleted && !isCurrent && "text-muted-foreground",
-                                                !isCurrent && !isCompleted && "text-muted-foreground/60",
-                                                isAccessible && !isCurrent && "hover:bg-muted cursor-pointer",
-                                                !isAccessible && "cursor-not-allowed opacity-50"
-                                            )}
-                                        >
-                                            <div className="shrink-0">
-                                                {isCompleted && !isCurrent ? (
-                                                    <CheckCircle2 className="h-5 w-5 text-green-500" />
-                                                ) : isCurrent ? (
-                                                    <ChevronRight className="h-5 w-5 text-primary" />
-                                                ) : (
-                                                    <Circle className="h-5 w-5" />
-                                                )}
-                                            </div>
-                                            <div className="min-w-0 flex-1">
-                                                <div className="flex items-center gap-2">
-                                                    <span
-                                                        className={cn(
-                                                            "text-sm font-medium truncate",
-                                                            isCurrent && "text-primary"
-                                                        )}
-                                                    >
-                                                        {step.title}
-                                                    </span>
-                                                    {step.optional && (
-                                                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0">
-                                                            Optional
-                                                        </Badge>
-                                                    )}
-                                                </div>
-                                                <span className="text-xs text-muted-foreground truncate block">
-                                                    {step.description}
-                                                </span>
-                                            </div>
-                                        </button>
-                                    );
-                                })}
-                            </nav>
-                        </CardContent>
-                    </Card>
-
-                    {/* Progress indicator */}
-                    <div className="mt-4 px-2">
-                        <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                            <span>Progress</span>
-                            <span>
-                                {completedSteps.size} / {steps.length - 1}
-                            </span>
-                        </div>
-                        <div className="h-2 bg-muted rounded-full overflow-hidden">
-                            <div
-                                className="h-full bg-primary rounded-full transition-all duration-500"
-                                style={{
-                                    width: `${(completedSteps.size / (steps.length - 1)) * 100}%`,
-                                }}
-                            />
-                        </div>
-                    </div>
-                </div>
-
-                {/* Main Content Area */}
-                <div className="flex-1 min-w-0">
-                    <Card>
-                        <CardContent className="p-6">
-                            {currentStepId === "welcome" && (
-                                <WelcomeStep onNext={goToNext} steps={steps} />
-                            )}
-
-                            {currentStepId === "source" && (
-                                <SourceStep
-                                    adapters={databaseAdapters}
-                                    wizardData={wizardData}
-                                    onUpdate={updateData}
-                                    onNext={goToNext}
-                                    onPrev={goToPrev}
-                                />
-                            )}
-
-                            {currentStepId === "destination" && (
-                                <DestinationStep
-                                    adapters={storageAdapters}
-                                    wizardData={wizardData}
-                                    onUpdate={updateData}
-                                    onNext={goToNext}
-                                    onPrev={goToPrev}
-                                />
-                            )}
-
-                            {currentStepId === "vault" && (
-                                <VaultStep
-                                    wizardData={wizardData}
-                                    onUpdate={updateData}
-                                    onNext={goToNext}
-                                    onPrev={goToPrev}
-                                    onSkip={skipStep}
-                                />
-                            )}
-
-                            {currentStepId === "notification" && (
-                                <NotificationStep
-                                    adapters={notificationAdapters}
-                                    wizardData={wizardData}
-                                    onUpdate={updateData}
-                                    onNext={goToNext}
-                                    onPrev={goToPrev}
-                                    onSkip={skipStep}
-                                />
-                            )}
-
-                            {currentStepId === "job" && (
-                                <JobStep
-                                    wizardData={wizardData}
-                                    onUpdate={updateData}
-                                    onNext={goToNext}
-                                    onPrev={goToPrev}
-                                />
-                            )}
-
-                            {currentStepId === "complete" && (
-                                <CompleteStep wizardData={wizardData} />
-                            )}
-                        </CardContent>
-                    </Card>
-                </div>
+            <div className="flex min-w-0 overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm">
+                <SetupRail
+                    entries={railEntries(steps, state)}
+                    current={current}
+                    // Once the job exists the steps are its parts, and changing one would no longer reach it.
+                    canOpen={(id) => !state.job && steps.findIndex((step) => step.id === id) <= reached}
+                    onOpen={(id) => open(steps.findIndex((step) => step.id === id))}
+                />
+                <div className="flex min-w-0 flex-1 flex-col">{renderStep()}</div>
             </div>
         </div>
     );

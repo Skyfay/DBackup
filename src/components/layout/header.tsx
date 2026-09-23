@@ -13,7 +13,8 @@ export function Header() {
     const segments = pathname.split('/').filter(Boolean)
 
     const segmentMap: Record<string, string> = {
-        "users": "Users & Groups"
+        "users": "Users & Groups",
+        "setup": "Quick Setup"
     }
 
     return (

@@ -8,7 +8,23 @@ After installation, open [http://localhost:3000](http://localhost:3000) in your 
 
 On first launch, you'll see a login page with a "Sign Up" option. This self-registration is **only available for the first user** and creates the administrator account.
 
-Once logged in, you can use the **Quick Setup Wizard** (available in the sidebar under **Quick Setup**) to configure your first backup in a guided, step-by-step flow - this is the recommended approach for new users. It walks you through creating a database source, storage destination, optional encryption and notifications, and a backup job all in one place.
+Once logged in, open **Quick Setup** in the sidebar to set up your first backup step by step. This is the recommended approach for new users.
+
+## Quick Setup
+
+The steps are listed on the left, and each one shows what it created as soon as it is done:
+
+1. **Database** - pick the type, then fill in the same form as on the Connections page. Saving it moves on to the next step.
+2. **Backup destination** - the same for the place the backups go.
+3. **Encryption** (optional) - create a key in the Vault, or skip the step.
+4. **Notifications** (optional) - add a channel that reports the runs, or skip the step.
+5. **Backup job** - name the job, pick when it runs (every hour, every night, every week or a cron expression) and whether it backs up all databases of the server or only some.
+
+Every step can take a connection or a key you already have instead, with **Use existing**. The times on the schedule cards are shown in your own time zone. The last page lists everything that was set up, says when the first run starts and can start it right away with **Run it now**.
+
+The job keeps the last 10 backups, which you can change later on the job. Encryption and notifications only appear for users who may create them.
+
+The sidebar shows **Quick Setup** while no database is set up. To keep it there afterwards, switch on **Always Show Quick Setup** in the settings.
 
 If you prefer to configure everything manually, follow the steps below.
 

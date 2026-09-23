@@ -204,26 +204,29 @@ function SpeedPart({ adapter, storageRole }: ConnectionSectionProps) {
     );
 }
 
-function BehaviorPart({ adapter, storageRole, onStorageRoleChange, metadata, onMetadataChange }: ConnectionSectionProps) {
+function BehaviorPart({ adapter, storageRole, onStorageRoleChange, storageRoleLocked, metadata, onMetadataChange }: ConnectionSectionProps) {
     const labelId = useId();
     const roles = ROLE_OPTIONS.filter((option) => supportsStorageRole(adapter.supportedRoles, option.value as StorageRole));
     const isSource = storageRole === STORAGE_ROLES.SOURCE;
 
     return (
         <>
-            <div className="grid gap-2">
-                <p id={labelId} className="text-sm font-medium">Used as</p>
-                {roles.length > 1 ? (
-                    <ChoiceCards value={storageRole} onValueChange={(value) => onStorageRoleChange(value as StorageRole)} options={roles} aria-labelledby={labelId} />
-                ) : (
-                    // An adapter that only works one way round is told, not asked. The API refuses the other role anyway.
-                    <p className="text-sm text-muted-foreground">
-                        {roles[0]?.title} only.
-                        {adapter.id === "docker-volume" && " A container runtime is somewhere to read data from, never a place to keep backups."}
-                    </p>
-                )}
-                <p className="text-xs text-muted-foreground">A connection is one or the other, so a job can never back up its own backups.</p>
-            </div>
+            {/* A page that decides the role says so in the head, "Add backup destination", and asks nothing. */}
+            {!storageRoleLocked && (
+                <div className="grid gap-2">
+                    <p id={labelId} className="text-sm font-medium">Used as</p>
+                    {roles.length > 1 ? (
+                        <ChoiceCards value={storageRole} onValueChange={(value) => onStorageRoleChange(value as StorageRole)} options={roles} aria-labelledby={labelId} />
+                    ) : (
+                        // An adapter that only works one way round is told, not asked. The API refuses the other role anyway.
+                        <p className="text-sm text-muted-foreground">
+                            {roles[0]?.title} only.
+                            {adapter.id === "docker-volume" && " A container runtime is somewhere to read data from, never a place to keep backups."}
+                        </p>
+                    )}
+                    <p className="text-xs text-muted-foreground">A connection is one or the other, so a job can never back up its own backups.</p>
+                </div>
+            )}
             <SwitchList>
                 <SwitchRow
                     title="Health alerts"

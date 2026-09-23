@@ -28,7 +28,7 @@ import { SecretStatusProvider } from "./secret-status-context";
 import { storageLayout } from "./storage-form-layout";
 import { StorageSection, StorageSectionAction } from "./storage-form-sections";
 import type { AdapterConfig } from "./types";
-import { useConnectionForm, type ConnectionTestState } from "./use-connection-form";
+import { useConnectionForm, type ConnectionTestState, type SavedConnection } from "./use-connection-form";
 
 const SECTION_ICONS: Record<SectionId, LucideIcon> = {
     connection: Plug,
@@ -98,9 +98,18 @@ interface ConnectionFormProps {
     initialData?: AdapterConfig;
     /** The role a new storage connection starts in, from the page it is added on. */
     defaultRole?: StorageRole;
+    /** Keeps a new storage connection in `defaultRole` instead of asking, like the setup does for its destination. */
+    lockRole?: boolean;
     /** Only while adding: back to the type picker. */
     onBack?: () => void;
-    onSaved: () => void;
+    /** Where adding stands, after the type in the head. */
+    step?: string;
+    /**
+     * A dialog, or a panel on a page like the setup. On a page the head is plain headings and
+     * there is no Cancel, since there is no dialog to close.
+     */
+    container?: "dialog" | "page";
+    onSaved: (saved?: SavedConnection) => void;
 }
 
 /**
@@ -111,8 +120,17 @@ interface ConnectionFormProps {
  * done and which still hold a problem. Create moves to the first part with one. A connection
  * with a single part, like a Teams webhook, has no list, which would only hold that one entry.
  */
-export function ConnectionForm({ adapter, initialData, defaultRole, onBack, onSaved }: ConnectionFormProps) {
-    const connection = useConnectionForm({ adapter, initialData, defaultRole, onSaved });
+export function ConnectionForm({
+    adapter,
+    initialData,
+    defaultRole,
+    lockRole,
+    onBack,
+    step = "Step 2 of 2",
+    container = "dialog",
+    onSaved,
+}: ConnectionFormProps) {
+    const connection = useConnectionForm({ adapter, initialData, defaultRole, lockRole, onSaved });
     const { form, sectionProps } = connection;
     const config = form.watch("config") ?? {};
     const name = form.watch("name");
@@ -150,6 +168,9 @@ export function ConnectionForm({ adapter, initialData, defaultRole, onBack, onSa
     const tone: Tone = initialData ? "edit" : "create";
     const Section = isStorage ? StorageSection : isNotification ? NotificationSection : DatabaseSection;
     const SectionAction = isStorage ? StorageSectionAction : isNotification ? NotificationSectionAction : DatabaseSectionAction;
+    const inDialog = container === "dialog";
+    const title = initialData ? `Edit ${noun}` : `Add ${noun}`;
+    const note = initialData ? `${initialData.name} · ${adapter.name}` : `${adapter.name} · ${step}`;
 
     return (
         <>
@@ -168,10 +189,17 @@ export function ConnectionForm({ adapter, initialData, defaultRole, onBack, onSa
                                 )
                             }
                         >
-                            <DialogTitle className="text-base">{initialData ? `Edit ${noun}` : `Add ${noun}`}</DialogTitle>
-                            <DialogDescription className={cn(dialogNoteClass(tone), "truncate")}>
-                                {initialData ? `${initialData.name} · ${adapter.name}` : `${adapter.name} · Step 2 of 2`}
-                            </DialogDescription>
+                            {inDialog ? (
+                                <>
+                                    <DialogTitle className="text-base">{title}</DialogTitle>
+                                    <DialogDescription className={cn(dialogNoteClass(tone), "truncate")}>{note}</DialogDescription>
+                                </>
+                            ) : (
+                                <>
+                                    <h2 className="text-base leading-none font-semibold">{title}</h2>
+                                    <p className={cn(dialogNoteClass(tone), "truncate")}>{note}</p>
+                                </>
+                            )}
                         </DialogHead>
 
                         <Tabs
@@ -219,9 +247,11 @@ export function ConnectionForm({ adapter, initialData, defaultRole, onBack, onSa
                                 <TestResult state={connection.test} messaging={isNotification} />
                             </div>
                             <div className="ml-auto flex shrink-0 items-center gap-2">
-                                <DialogClose asChild>
-                                    <Button type="button" variant="ghost">Cancel</Button>
-                                </DialogClose>
+                                {inDialog && (
+                                    <DialogClose asChild>
+                                        <Button type="button" variant="ghost">Cancel</Button>
+                                    </DialogClose>
+                                )}
                                 <Button type="submit" disabled={busy}>
                                     {busy && <Loader2 className="animate-spin" />}
                                     {initialData ? "Save changes" : `Create ${short}`}

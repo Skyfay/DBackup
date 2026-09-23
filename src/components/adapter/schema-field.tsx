@@ -31,7 +31,6 @@ import { Button } from "@/components/ui/button";
 import { FolderOpen } from "lucide-react";
 import { PLACEHOLDERS } from "./form-constants";
 import { useSecretStatus } from "./secret-status-context";
-import { DatabasePicker } from "./database-picker";
 import { FileBrowserDialog } from "@/components/system/file-browser-dialog";
 import { SQLITE_FILES } from "@/components/system/file-browser-model";
 import { nounOf } from "@/lib/utils";
@@ -42,12 +41,6 @@ interface SchemaFieldProps {
     fieldKey: string;
     schemaShape: z.ZodTypeAny;
     adapterId: string;
-    isDatabaseField?: boolean;
-    availableDatabases?: string[];
-    isLoadingDbs?: boolean;
-    onLoadDbs?: () => void;
-    isDbListOpen?: boolean;
-    setIsDbListOpen?: (open: boolean) => void;
     sshCredentialId?: string | null;
     /** Replaces the label made from the key, for a form that names the field better. */
     label?: string;
@@ -62,12 +55,6 @@ export function SchemaField({
     fieldKey,
     schemaShape,
     adapterId,
-    isDatabaseField,
-    availableDatabases = [],
-    isLoadingDbs = false,
-    onLoadDbs,
-    isDbListOpen = false,
-    setIsDbListOpen,
     sshCredentialId,
     label: labelOverride,
     description: descriptionOverride,
@@ -178,18 +165,6 @@ export function SchemaField({
                                 <Switch
                                     checked={field.value}
                                     onCheckedChange={field.onChange}
-                                />
-                            </FormControl>
-                        ) : isDatabaseField && onLoadDbs && setIsDbListOpen ? (
-                            <FormControl>
-                                <DatabasePicker
-                                    value={field.value}
-                                    onChange={field.onChange}
-                                    availableDatabases={availableDatabases}
-                                    isLoading={isLoadingDbs}
-                                    onLoad={onLoadDbs}
-                                    isOpen={isDbListOpen}
-                                    setIsOpen={setIsDbListOpen}
                                 />
                             </FormControl>
                         ) : isEnum ? (

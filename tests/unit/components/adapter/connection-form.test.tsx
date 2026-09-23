@@ -172,5 +172,28 @@ describe("connection form", () => {
         const [, init] = mockFetch.mock.calls.find(([url]) => url === "/api/adapters")!;
         expect(JSON.parse(String(init?.body))).toMatchObject({ name: "Ops channel", type: "notification", metadata: {} });
     });
+
+    it("works on a page without a dialog and hands the new connection to the page", async () => {
+        const user = userEvent.setup();
+        const onSaved = vi.fn();
+        render(<ConnectionForm container="page" adapter={adapter("teams")} step="Step 4 of 5" onSaved={onSaved} />);
+
+        expect(screen.getByRole("heading", { name: "Add notification channel" })).toBeInTheDocument();
+        expect(screen.getByText("Microsoft Teams · Step 4 of 5")).toBeInTheDocument();
+        // There is no dialog to close, so there is no Cancel.
+        expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+        await user.type(screen.getByLabelText("Name"), "Ops channel");
+        await user.click(screen.getByRole("button", { name: "Create channel" }));
+
+        await waitFor(() => expect(onSaved).toHaveBeenCalledWith({ id: "new-id", name: "Ops channel", adapterId: "teams" }));
+    });
+
+    it("keeps a destination a destination when the page decides the role", () => {
+        render(<ConnectionForm container="page" adapter={adapter("s3-aws")} defaultRole={STORAGE_ROLES.DESTINATION} lockRole onSaved={vi.fn()} />);
+
+        expect(screen.queryByRole("radio", { name: /Directory source/ })).not.toBeInTheDocument();
+        expect(screen.getByRole("tabpanel", { name: /Behavior/ })).toHaveTextContent("Integrity checks");
+        expect(screen.getByRole("button", { name: "Create destination" })).toBeInTheDocument();
+    });
 });
 

@@ -1862,6 +1862,14 @@ paths:
           schema:
             $ref: "#/components/schemas/CredentialType"
           required: false
+        - in: query
+          name: includeCounts
+          schema:
+            type: boolean
+          required: false
+          description: |
+            Adds `usageCount` and `usedBy` to every profile: how many connections use it, and
+            the adapter IDs of those connections.
       responses:
         "200":
           description: Sanitized credential profile list
@@ -2544,6 +2552,14 @@ components:
         fingerprint:
           type: string
           description: "`SHA256:...` fingerprint of `publicKey`, matching `ssh-keygen -lf`."
+        usageCount:
+          type: integer
+          description: With `includeCounts=true` only. The connections using the profile, in either slot.
+        usedBy:
+          type: array
+          items:
+            type: string
+          description: With `includeCounts=true` only. The adapter IDs of those connections, each once, like `mysql`.
 
     CredentialProfileInput:
       type: object

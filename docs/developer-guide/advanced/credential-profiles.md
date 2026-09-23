@@ -77,7 +77,7 @@ const profiles = await listCredentialProfiles("OAUTH");
 
 ### `listCredentialProfilesWithCounts(type?)`
 
-Same as `listCredentialProfiles` but includes a `usageCount` field — the total number of `AdapterConfig` rows referencing this profile (across both primary and SSH slots).
+Same as `listCredentialProfiles`, plus `usageCount`, the number of `AdapterConfig` rows referencing this profile across both primary and SSH slots, and `usedBy`, the adapter IDs of those rows, each listed once. The login picker in the connection form uses `usedBy` to suggest the profiles that connections of the same adapter already use. Served by `GET /api/credentials?includeCounts=true`.
 
 ### `getCredentialProfile(id)`
 

@@ -181,26 +181,32 @@ export async function listCredentialProfiles(
 }
 
 /**
- * Lists credential profiles with pre-computed usage counts.
- * Avoids the N+1 pattern of fetching counts individually per profile.
+ * Lists credential profiles with their usage: how many `AdapterConfig` rows reference each one
+ * across both the primary and SSH slots, and which adapters those rows belong to. Loads it in
+ * one query instead of one per profile.
  */
 export async function listCredentialProfilesWithCounts(
     type?: CredentialType
-): Promise<Array<CredentialProfileShape & { usageCount: number }>> {
+): Promise<Array<CredentialProfileShape & { usageCount: number; usedBy: string[] }>> {
     const profiles = await prisma.credentialProfile.findMany({
         where: type ? { type } : undefined,
         orderBy: { createdAt: "desc" },
         include: {
-            _count: {
-                select: { primaryAdapters: true, sshAdapters: true },
-            },
+            primaryAdapters: { select: { adapterId: true } },
+            sshAdapters: { select: { adapterId: true } },
         },
     });
-    return profiles.map((p) => ({
-        ...sanitize(p),
-        ...describePayload(p.data),
-        usageCount: p._count.primaryAdapters + p._count.sshAdapters,
-    }));
+    return profiles.map(({ primaryAdapters, sshAdapters, ...profile }) => {
+        const users = [...primaryAdapters, ...sshAdapters];
+        return {
+            ...sanitize(profile),
+            ...describePayload(profile.data),
+            usageCount: users.length,
+            // Each adapter once, so a picker can suggest the logins that connections of the
+            // same kind already use.
+            usedBy: [...new Set(users.map((user) => user.adapterId))].sort(),
+        };
+    });
 }
 
 /**

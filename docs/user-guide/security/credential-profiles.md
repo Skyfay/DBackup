@@ -57,13 +57,22 @@ Local Filesystem adapters do not use a credential profile.
 You can create a profile without leaving the source/destination dialog:
 
 1. Open the adapter's create or edit dialog
-2. Click **New** beside the **Login** field, or **Create new profile** at the bottom of its dropdown. For cloud drives the field is called **OAuth app**, for the SSH server **SSH login**.
+2. Click **New** beside the **Login** field. For cloud drives the field is called **OAuth app**, for the SSH server **SSH login**.
 3. The credential dialog opens stacked on top of the adapter form
 4. Fill, save - the field picks the new profile and your adapter
    form keeps everything you already entered
 
 This is the fastest path during initial setup or when you need a fresh secret
 for a single adapter.
+
+## Picking a Profile
+
+The **Login** field of a connection opens the saved profiles of the type its adapter accepts. Every row shows the profile's description and where it is in use, so two profiles with similar names are easy to tell apart.
+
+- The profiles that your other connections of the same kind already use come first, under **Used by your MySQL connections** for a MySQL connection.
+- The rest follow under **Others**, each with the kind of connection that uses it or **Not used yet**.
+- **Edit** on a row opens the profile without leaving the form.
+- **Use none** clears a login the adapter can do without, like the token of an ntfy topic. A connection that needs a login says so instead, like **Required for MySQL**.
 
 ## Generating an SSH Keypair
 
@@ -160,7 +169,7 @@ under the `Vault` tag. The endpoints are:
 
 | Method | Path | Notes |
 |---|---|---|
-| `GET` | `/api/credentials` | Optional `?type=` filter |
+| `GET` | `/api/credentials` | Optional `?type=` filter. `?includeCounts=true` adds where each profile is used |
 | `POST` | `/api/credentials` | Create |
 | `GET` | `/api/credentials/{id}` | Sanitized |
 | `PUT` | `/api/credentials/{id}` | Update / rotate |

@@ -61,6 +61,10 @@ export interface CredentialProfileSummary {
     /** SSH_KEY on private-key auth: the public half, which is not a secret. */
     publicKey?: string;
     fingerprint?: string;
+    /** How many connections use it, from the list with `includeCounts=true`. */
+    usageCount?: number;
+    /** The adapters of those connections, each once. */
+    usedBy?: string[];
 }
 
 interface Props {

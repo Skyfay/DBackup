@@ -42,6 +42,7 @@ All notable changes to DBackup are documented here.
 - **connections**: Deleting connections leaves out the ones a job or a notification template still uses and names them before anything is deleted, instead of reporting them as failed afterwards.
 - **connections**: A click on the status of a connection says in one sentence since when it is online or offline and shows the latest error. Below come the checks of the last hour as bars and their latest changes with the time.
 - **connections**: The form for adding and editing a connection lists its parts on the left, marks the ones that are done or still miss something, and shows one part at a time. The connection type and a storage connection's role are picked from cards that say what each one means, logins are picked or created in one field, and every switch says what it turns on.
+- **connections**: The login field lists every saved login with its description and where it is in use, and puts the logins that other connections of the same kind already use first. The credentials API returns those connection types as `usedBy` with `includeCounts=true`.
 
 ### 🔄 Changed
 

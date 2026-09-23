@@ -6,7 +6,7 @@ import type { CredentialProfileSummary } from "@/components/settings/credential-
 import { FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { CredentialPicker } from "./credential-picker";
-import { credentialManagedKeys } from "./connection-form-schema";
+import { credentialManagedKeys, loginRequired } from "./connection-form-schema";
 import { SchemaField } from "./schema-field";
 import { ConfigSwitchRow, SwitchList } from "./setting-switches";
 
@@ -104,6 +104,9 @@ export function LoginField({ adapter, slot, value, onChange, label, onSelectedPr
             value={value}
             onChange={onChange}
             label={label ?? (slot === "ssh" ? "SSH login" : "Login")}
+            adapter={adapter}
+            // An SSH server always needs a login, the primary slot when the adapter's schema says so.
+            required={slot === "ssh" || loginRequired(adapter)}
             onSelectedProfile={onSelectedProfile}
             refreshKey={refreshKey}
         />

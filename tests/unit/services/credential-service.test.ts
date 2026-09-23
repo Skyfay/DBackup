@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
     createCredentialProfile,
     listCredentialProfiles,
+    listCredentialProfilesWithCounts,
     getCredentialProfile,
     getDecryptedCredentialData,
     updateCredentialProfile,
@@ -238,6 +239,33 @@ describe("Credential Service", () => {
                 where: { type: "SSH_KEY" },
                 orderBy: { createdAt: "desc" },
             });
+        });
+    });
+
+    describe("listCredentialProfilesWithCounts", () => {
+        it("counts every connection using a profile and names each of their adapters once", async () => {
+            (prisma.credentialProfile.findMany as any).mockResolvedValue([{
+                ...baseRow,
+                primaryAdapters: [{ adapterId: "mysql" }, { adapterId: "mysql" }, { adapterId: "mariadb" }],
+                sshAdapters: [{ adapterId: "postgres" }],
+            }]);
+
+            const [profile] = await listCredentialProfilesWithCounts();
+
+            expect(profile.usageCount).toBe(4);
+            expect(profile.usedBy).toEqual(["mariadb", "mysql", "postgres"]);
+            expect(profile).not.toHaveProperty("data");
+            expect(profile).not.toHaveProperty("primaryAdapters");
+        });
+
+        it("reports a profile nobody uses as unused, within the type asked for", async () => {
+            (prisma.credentialProfile.findMany as any).mockResolvedValue([{ ...baseRow, primaryAdapters: [], sshAdapters: [] }]);
+
+            const [profile] = await listCredentialProfilesWithCounts("USERNAME_PASSWORD");
+
+            expect(profile.usageCount).toBe(0);
+            expect(profile.usedBy).toEqual([]);
+            expect(prisma.credentialProfile.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { type: "USERNAME_PASSWORD" } }));
         });
     });
 

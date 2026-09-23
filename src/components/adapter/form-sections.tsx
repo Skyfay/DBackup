@@ -30,6 +30,7 @@ import { CloudFolderField } from "./cloud-folder-field";
 import { ParallelTransfersField, ParallelUploadFields } from "./storage-speed-fields";
 import { SnapshotSwitch } from "./snapshot-switch";
 import { CredentialPicker } from "./credential-picker";
+import { loginRequired } from "./connection-form-schema";
 import type { CredentialProfileSummary } from "@/components/settings/credential-profile-dialog";
 import { AdapterConfig } from "./types";
 
@@ -69,6 +70,8 @@ function PrimaryCredentialPickerSlot({
             value={primaryCredentialId ?? null}
             onChange={onPrimaryChange}
             label="Credential Profile"
+            adapter={adapter}
+            required={loginRequired(adapter)}
             onSelectedProfile={onSelectedProfile}
             refreshKey={refreshKey}
         />
@@ -93,6 +96,8 @@ function SshCredentialPickerSlot({
             value={sshCredentialId ?? null}
             onChange={onSshChange}
             label="SSH Credential Profile"
+            adapter={adapter}
+            required
             description="Reusable SSH credential used for the tunnel or remote command execution."
         />
     );

@@ -78,7 +78,7 @@ Mark one template as the **system default**. It is used for all jobs that have n
 
 ## Schedule Presets
 
-A Schedule Preset is a named cron expression that can be shared across jobs.
+A Schedule Preset is a named cron expression that can be shared across jobs. Its dialog uses the same schedule picker as the job form, see [Scheduling](/user-guide/jobs/scheduling).
 
 ### Using a Preset
 

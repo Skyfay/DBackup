@@ -5,6 +5,7 @@
  * rendering anything.
  */
 import type { SectionStatus } from "@/components/adapter/connection-form-layout";
+import { isValidCron } from "@/lib/core/cron";
 import type { JobFormValues } from "./job-form-schema";
 
 export type JobPartId = "basics" | "source" | "destinations" | "encryption" | "notifications" | "advanced";
@@ -47,7 +48,7 @@ function partOfKey(key: string): JobPartId {
 function isDone(id: JobPartId, values: JobFormValues): boolean | null {
     switch (id) {
         case "basics":
-            return values.name.trim() !== "" && (values.scheduleMode === "own" ? values.schedule.trim() !== "" : Boolean(values.schedulePresetId));
+            return values.name.trim() !== "" && (values.scheduleMode === "own" ? isValidCron(values.schedule) : Boolean(values.schedulePresetId));
         case "source": {
             const database = values.sourceMode === "dirs" || Boolean(values.sourceId);
             const folders = values.sourceMode === "db"

@@ -85,7 +85,7 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
     const body = (id: JobPartId) => {
         switch (id) {
             case "basics":
-                return <BasicsPart />;
+                return <BasicsPart jobId={initialData?.id} />;
             case "source":
                 return <SourcePart sources={sources} folderOptions={directorySourceOptions} defaultExcludePresetIds={state.defaultExcludePresetIds} />;
             case "destinations":

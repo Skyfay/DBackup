@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { DEFAULT_RETENTION_SENTINEL } from "@/components/templates/retention-policy-picker";
+import { isValidCron } from "@/lib/core/cron";
 import type { JobListItem } from "@/services/jobs/job-list-service";
 
 /** A connection a job can use, as the page hands it to the form. */
@@ -101,6 +102,10 @@ export const jobSchema = z
     .superRefine((values, ctx) => {
         if (values.scheduleMode === "preset" && !values.schedulePresetId) {
             ctx.addIssue({ code: "custom", path: ["schedulePresetId"], message: "Pick the preset the job follows." });
+        }
+        // A schedule the scheduler cannot read would never run. The picker says what is wrong.
+        if (values.scheduleMode === "own" && values.schedule.trim() !== "" && !isValidCron(values.schedule)) {
+            ctx.addIssue({ code: "custom", path: ["schedule"], message: "The scheduler cannot read this schedule." });
         }
         if (values.sourceMode !== "dirs" && !values.sourceId) {
             ctx.addIssue({ code: "custom", path: ["sourceId"], message: "Pick the database to back up." });

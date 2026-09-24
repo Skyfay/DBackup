@@ -6,6 +6,7 @@ import type { SchedulePreset } from "@prisma/client";
 import { toast } from "sonner";
 import { createSchedulePreset, updateSchedulePreset } from "@/app/actions/templates";
 import { SchedulePicker } from "@/components/dashboard/jobs/schedule-picker";
+import { isValidCron } from "@/lib/core/cron";
 import { Button } from "@/components/ui/button";
 import { DIALOG_FOOTER, DIALOG_SURFACE, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -20,11 +21,13 @@ const BODY_SCROLL = "min-h-0 flex-1 *:data-[slot=scroll-area-viewport]:max-h-[ca
 
 interface PresetFormProps {
     preset?: SchedulePreset;
+    /** The job the preset is made for, left out of the jobs its schedule could meet. */
+    jobId?: string;
     onSuccess: (preset: SchedulePreset) => void;
 }
 
 /** The content of the dialog, mounted on every open, so it always starts from the saved preset. */
-function PresetForm({ preset, onSuccess }: PresetFormProps) {
+function PresetForm({ preset, jobId, onSuccess }: PresetFormProps) {
     const [name, setName] = useState(preset?.name ?? "");
     const [description, setDescription] = useState(preset?.description ?? "");
     const [schedule, setSchedule] = useState(preset?.schedule ?? DEFAULT_SCHEDULE);
@@ -40,6 +43,8 @@ function PresetForm({ preset, onSuccess }: PresetFormProps) {
             setNameMissing(true);
             return;
         }
+        // The picker already says what is wrong with the schedule.
+        if (!isValidCron(schedule)) return;
         setIsSaving(true);
         const input = { name: name.trim(), description, schedule };
         const res = preset ? await updateSchedulePreset(preset.id, input) : await createSchedulePreset(input);
@@ -95,7 +100,7 @@ function PresetForm({ preset, onSuccess }: PresetFormProps) {
                     </div>
                     <div className="space-y-2">
                         <Label>Schedule</Label>
-                        <SchedulePicker value={schedule} onChange={setSchedule} />
+                        <SchedulePicker value={schedule} onChange={setSchedule} presetId={preset?.id} jobId={jobId} />
                     </div>
                 </div>
             </ScrollArea>
@@ -117,6 +122,8 @@ interface SchedulePresetDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     preset?: SchedulePreset;
+    /** The job the dialog was opened for, from the job form. */
+    jobId?: string;
     onSuccess: (preset: SchedulePreset) => void;
 }
 
@@ -124,11 +131,11 @@ interface SchedulePresetDialogProps {
  * Adds a schedule preset or changes one. A job that follows a preset runs on its schedule, so a
  * change reaches every one of them at once.
  */
-export function SchedulePresetDialog({ open, onOpenChange, preset, onSuccess }: SchedulePresetDialogProps) {
+export function SchedulePresetDialog({ open, onOpenChange, preset, jobId, onSuccess }: SchedulePresetDialogProps) {
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent tone={preset ? "edit" : "create"} showCloseButton={false} className={cn(DIALOG_SURFACE, "sm:max-w-xl")}>
-                <PresetForm preset={preset} onSuccess={onSuccess} />
+                <PresetForm preset={preset} jobId={jobId} onSuccess={onSuccess} />
             </DialogContent>
         </Dialog>
     );

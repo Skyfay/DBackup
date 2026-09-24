@@ -27,8 +27,8 @@ function PresetLabel() {
     );
 }
 
-/** Its name, whether it runs on its own and when. */
-export function BasicsPart() {
+/** Its name, whether it runs on its own and when. The job being edited is left out of the jobs its schedule could meet. */
+export function BasicsPart({ jobId }: { jobId?: string }) {
     const form = useFormContext<JobFormValues>();
     const mode = form.watch("scheduleMode");
 
@@ -90,8 +90,8 @@ export function BasicsPart() {
                     name="schedule"
                     render={({ field }) => (
                         <FormItem>
-                            <SchedulePicker value={field.value} onChange={field.onChange} />
-                            <FormMessage />
+                            {/* The picker says itself what is wrong with a schedule, so no message of the form repeats it. */}
+                            <SchedulePicker value={field.value} onChange={field.onChange} jobId={jobId} />
                         </FormItem>
                     )}
                 />
@@ -104,6 +104,7 @@ export function BasicsPart() {
                             <PresetLabel />
                             <FormControl>
                                 <SchedulePresetField
+                                    jobId={jobId}
                                     value={field.value}
                                     onChange={(preset) => {
                                         field.onChange(preset?.id ?? null);

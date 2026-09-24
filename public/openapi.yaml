@@ -254,6 +254,35 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /jobs/schedules:
+    get:
+      tags: [Jobs]
+      summary: Get Job Schedules
+      description: |
+        Returns the schedules of the enabled jobs with how long a run of each usually takes, how many runs the queue takes at once and the scheduler's time zone. The schedule picker uses it to warn before runs would have to wait for a free slot.
+
+        **Required permission:** `jobs:read`
+      operationId: getJobSchedules
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Schedules and queue slots
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/ScheduleLoad"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /jobs/{id}/runs:
     get:
       tags: [Jobs]
@@ -3036,6 +3065,38 @@ components:
               format: date-time
             size:
               type: [integer, "null"]
+
+    ScheduleLoad:
+      type: object
+      properties:
+        timezone:
+          type: string
+          description: The scheduler time zone every schedule is read in
+          example: "Europe/Zurich"
+        slots:
+          type: integer
+          description: How many runs the queue takes at once, the Max Concurrent Jobs setting
+          example: 1
+        jobs:
+          type: array
+          description: Every enabled job with a schedule
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              schedule:
+                type: string
+                description: The effective cron expression, the preset's when the job follows one
+                example: "0 3 * * *"
+              presetId:
+                type: [string, "null"]
+              estimatedMs:
+                type: integer
+                description: The average length of the job's recent finished runs, one minute without any
+                example: 360000
 
     CreateJobRequest:
       type: object

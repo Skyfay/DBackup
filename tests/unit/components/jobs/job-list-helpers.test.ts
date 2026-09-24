@@ -35,6 +35,14 @@ describe("job schedules in words", () => {
         expect(describeSchedule("*/15 * * * *").text).toBe("Every 15 minutes");
     });
 
+    it("says several times, some days and the last day of the month the way the picker builds them", () => {
+        expect(describeSchedule("0 3,15 * * *").text).toBe("Every day at 03:00 and 15:00");
+        expect(describeSchedule("30 22 * * 1,3,5").text).toBe("Mon, Wed and Fri at 22:30");
+        expect(describeSchedule("0 10 * * 0,6").text).toBe("Weekends at 10:00");
+        expect(describeSchedule("0 4 L * *").text).toBe("Monthly on the last day at 04:00");
+        expect(describeSchedule("0 */5 * * *").text).toBe("Every 5 hours");
+    });
+
     it("keeps an expression it cannot put into words as it is", () => {
         expect(describeSchedule("0 3 1-7 * 1")).toEqual({ text: "0 3 1-7 * 1", described: false });
         expect(describeSchedule("0 3 * 1 *").described).toBe(false);

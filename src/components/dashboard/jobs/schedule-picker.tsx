@@ -1,303 +1,246 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect } from "react";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
+import { useMemo, useState } from "react";
+import { CircleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useSession } from "@/lib/auth/client";
-import { formatInTimeZone } from "date-fns-tz";
-import { Clock, Terminal, CalendarClock } from "lucide-react";
+import { isValidCron, nextRunTimes } from "@/lib/core/cron";
+import { DEFAULT_RUN_MS, findScheduleClash, type ScheduleOwners } from "@/lib/core/schedule-conflicts";
+import { describeSchedule } from "./job-schedule";
+import { PickerRow, Pill, QuickPick, TimeList } from "./schedule-fields";
+import {
+    DEFAULT_SCHEDULE,
+    HOUR_STEPS,
+    MINUTE_STEPS,
+    WEEK,
+    WEEKDAYS,
+    WEEKEND,
+    buildCron,
+    parseCron,
+    suggestFreeTime,
+    type ScheduleMode,
+    type SimpleSchedule,
+} from "./schedule-model";
+import { ClashNote, ScheduleSummary } from "./schedule-summary";
+import { useScheduleLoad } from "./use-schedule-load";
+import { useSchedulerTimezone } from "./use-scheduler-timezone";
 
-type Frequency = "hourly" | "daily" | "weekly" | "monthly";
-
-interface SimpleSchedule {
-  frequency: Frequency;
-  minute: number;
-  hour: number;
-  dayOfWeek: number;
-  dayOfMonth: number;
-}
-
-const FREQUENCY_OPTIONS: { value: Frequency; label: string; icon: string }[] = [
-  { value: "hourly", label: "Hourly", icon: "60m" },
-  { value: "daily", label: "Daily", icon: "24h" },
-  { value: "weekly", label: "Weekly", icon: "7d" },
-  { value: "monthly", label: "Monthly", icon: "30d" },
+const MODES: { value: ScheduleMode; label: string }[] = [
+    { value: "hourly", label: "Hourly" },
+    { value: "daily", label: "Daily" },
+    { value: "weekly", label: "Weekly" },
+    { value: "monthly", label: "Monthly" },
+    { value: "cron", label: "Cron" },
 ];
-
-const DAYS_OF_WEEK = [
-  { value: "0", label: "Sunday" },
-  { value: "1", label: "Monday" },
-  { value: "2", label: "Tuesday" },
-  { value: "3", label: "Wednesday" },
-  { value: "4", label: "Thursday" },
-  { value: "5", label: "Friday" },
-  { value: "6", label: "Saturday" },
-];
-
-const HOURS = Array.from({ length: 24 }, (_, i) => ({
-  value: String(i),
-  label: String(i).padStart(2, "0"),
-}));
-
-const MINUTES = Array.from({ length: 60 }, (_, i) => ({
-  value: String(i),
-  label: String(i).padStart(2, "0"),
-}));
-
-const DAYS_OF_MONTH = Array.from({ length: 28 }, (_, i) => ({
-  value: String(i + 1),
-  label: String(i + 1),
-}));
-
-function buildCron(schedule: SimpleSchedule): string {
-  const { frequency, minute, hour, dayOfWeek, dayOfMonth } = schedule;
-  switch (frequency) {
-    case "hourly":
-      return `${minute} * * * *`;
-    case "daily":
-      return `${minute} ${hour} * * *`;
-    case "weekly":
-      return `${minute} ${hour} * * ${dayOfWeek}`;
-    case "monthly":
-      return `${minute} ${hour} ${dayOfMonth} * *`;
-  }
-}
-
-function parseCron(cron: string): { mode: "simple"; schedule: SimpleSchedule } | { mode: "cron" } {
-  const parts = cron.trim().split(/\s+/);
-  if (parts.length !== 5) return { mode: "cron" };
-
-  const [minPart, hourPart, domPart, monthPart, dowPart] = parts;
-
-  const isNum = (s: string) => /^\d+$/.test(s);
-  const isStar = (s: string) => s === "*";
-
-  if (isNum(minPart) && isStar(hourPart) && isStar(domPart) && isStar(monthPart) && isStar(dowPart)) {
-    return { mode: "simple", schedule: { frequency: "hourly", minute: Number(minPart), hour: 0, dayOfWeek: 0, dayOfMonth: 1 } };
-  }
-  if (isNum(minPart) && isNum(hourPart) && isStar(domPart) && isStar(monthPart) && isStar(dowPart)) {
-    return { mode: "simple", schedule: { frequency: "daily", minute: Number(minPart), hour: Number(hourPart), dayOfWeek: 0, dayOfMonth: 1 } };
-  }
-  if (isNum(minPart) && isNum(hourPart) && isStar(domPart) && isStar(monthPart) && isNum(dowPart)) {
-    return { mode: "simple", schedule: { frequency: "weekly", minute: Number(minPart), hour: Number(hourPart), dayOfWeek: Number(dowPart), dayOfMonth: 1 } };
-  }
-  if (isNum(minPart) && isNum(hourPart) && isNum(domPart) && isStar(monthPart) && isStar(dowPart)) {
-    return { mode: "simple", schedule: { frequency: "monthly", minute: Number(minPart), hour: Number(hourPart), dayOfWeek: 0, dayOfMonth: Number(domPart) } };
-  }
-
-  return { mode: "cron" };
-}
-
-function describeSchedule(schedule: SimpleSchedule, formatTime: (hour: number, minute: number) => string, schedulerTimezone: string): string {
-  const { frequency, minute, hour, dayOfWeek, dayOfMonth } = schedule;
-  const time = formatTime(hour, minute);
-  const day = DAYS_OF_WEEK.find((d) => d.value === String(dayOfWeek))?.label ?? "";
-  const tz = ` (${schedulerTimezone})`;
-  switch (frequency) {
-    case "hourly":
-      return `Runs every hour at minute :${String(minute).padStart(2, "0")}`;
-    case "daily":
-      return `Runs every day at ${time}${tz}`;
-    case "weekly":
-      return `Runs every ${day} at ${time}${tz}`;
-    case "monthly":
-      return `Runs on day ${dayOfMonth} of every month at ${time}${tz}`;
-  }
-}
+const DAYS_OF_MONTH = Array.from({ length: 31 }, (_, index) => index + 1);
+const sameDays = (days: number[], set: number[]) => days.length === set.length && set.every((day) => days.includes(day));
 
 interface SchedulePickerProps {
-  value: string;
-  onChange: (cron: string) => void;
+    value: string;
+    onChange: (cron: string) => void;
+    /** The job being edited. It is left out of the jobs this schedule could meet. */
+    jobId?: string;
+    /** The preset being edited. The jobs that follow it start together on this schedule. */
+    presetId?: string;
 }
 
-export function SchedulePicker({ value, onChange }: SchedulePickerProps) {
-  const { data: session } = useSession();
-  // @ts-expect-error - types might not be generated yet
-  const userTimeFormat: string = session?.user?.timeFormat || "p";
+/**
+ * When a job or a preset runs: hourly, daily, weekly or monthly without cron, or cron itself.
+ * Below it the schedule in words with its next runs, and a small warning when runs would wait
+ * for a free slot of the queue, with a time that has room.
+ */
+export function SchedulePicker({ value, onChange, jobId, presetId }: SchedulePickerProps) {
+    const [schedule, setSchedule] = useState<SimpleSchedule>(() => parseCron(value) ?? DEFAULT_SCHEDULE);
+    const [mode, setMode] = useState<ScheduleMode>(() => parseCron(value)?.frequency ?? "cron");
+    const [cronText, setCronText] = useState(value);
+    const timezone = useSchedulerTimezone();
+    const load = useScheduleLoad();
 
-  // Scheduler timezone: controls when cron jobs actually fire.
-  // This is the system.timezone setting, NOT the user profile timezone.
-  const [schedulerTimezone, setSchedulerTimezone] = useState("UTC");
+    const expression = mode === "cron" ? cronText.trim() : buildCron(schedule);
+    const valid = isValidCron(expression);
 
-  useEffect(() => {
-    fetch("/api/system/timezone")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.schedulerTimezone) setSchedulerTimezone(data.schedulerTimezone);
-      })
-      .catch(() => { /* keep default UTC on error */ });
-  }, []);
+    const update = (next: SimpleSchedule) => {
+        setSchedule(next);
+        onChange(buildCron(next));
+    };
 
-  // Format a cron hour/minute value in the scheduler timezone so the preview
-  // reflects the time the job will actually run.
-  const formatTime = useCallback((hour: number, minute: number) => {
-    const refDate = new Date(2000, 0, 1, hour, minute, 0);
-    return formatInTimeZone(refDate, schedulerTimezone, userTimeFormat);
-  }, [schedulerTimezone, userTimeFormat]);
+    const changeMode = (next: ScheduleMode) => {
+        if (next === "cron") {
+            setCronText(expression);
+        } else {
+            // Back from cron, the expression is taken over where the picker can show it.
+            const base = mode === "cron" ? (parseCron(cronText) ?? schedule) : schedule;
+            update({ ...base, frequency: next });
+        }
+        setMode(next);
+    };
 
-  const parsed = useMemo(() => parseCron(value), [value]);
-  const initialMode = parsed.mode === "simple" ? "simple" : "cron";
+    const owners = useMemo<ScheduleOwners>(() => {
+        const ids = new Set<string>(jobId ? [jobId] : []);
+        for (const job of load?.jobs ?? []) if (presetId && job.presetId === presetId) ids.add(job.id);
+        const durations = [...ids].map((id) => load?.jobs.find((job) => job.id === id)?.estimatedMs ?? DEFAULT_RUN_MS);
+        return { ids: [...ids], durations: durations.length > 0 ? durations : [DEFAULT_RUN_MS] };
+    }, [load, jobId, presetId]);
 
-  const schedule = useMemo<SimpleSchedule>(() =>
-    parsed.mode === "simple"
-      ? parsed.schedule
-      : { frequency: "daily", minute: 0, hour: 0, dayOfWeek: 0, dayOfMonth: 1 },
-    [parsed]
-  );
+    const clash = useMemo(() => (load && valid ? findScheduleClash(expression, load, owners) : null), [load, valid, expression, owners]);
+    const suggestion = useMemo(() => {
+        // Moving the time only helps against other jobs, never against the jobs of the preset itself.
+        if (!load || !clash || mode === "cron" || clash.others.length === 0) return null;
+        return suggestFreeTime(schedule, (candidate) => findScheduleClash(candidate, load, owners) === null);
+    }, [load, clash, mode, schedule, owners]);
+    const nextRuns = useMemo(() => (timezone && valid ? nextRunTimes(expression, timezone, 3) : []), [timezone, valid, expression]);
 
-  const [mode, setMode] = useState<"simple" | "cron">(initialMode);
-  const [cronInput, setCronInput] = useState(value);
+    const described = valid ? describeSchedule(expression) : null;
+    const words = described ? (described.described ? described.text : "Custom schedule") : null;
+    const cronFields = cronText.trim().split(/\s+/).filter(Boolean).length;
 
-  const cronInputDisplay = mode === "cron" ? cronInput : value;
+    return (
+        <div className="overflow-hidden rounded-lg border bg-card">
+            <div className="px-3 pt-3 sm:px-4">
+                {/* Manual, so arrowing through the kinds does not rewrite the schedule on every step. */}
+                <Tabs value={mode} onValueChange={(next) => changeMode(next as ScheduleMode)} activationMode="manual">
+                    <TabsList className="h-8 w-full sm:w-auto" aria-label="How often">
+                        {MODES.map((option) => (
+                            <TabsTrigger key={option.value} value={option.value} className="px-2 text-xs sm:px-2.5">
+                                {option.label}
+                            </TabsTrigger>
+                        ))}
+                    </TabsList>
+                </Tabs>
+            </div>
 
-  const updateSchedule = useCallback((patch: Partial<SimpleSchedule>) => {
-    const next = { ...schedule, ...patch };
-    onChange(buildCron(next));
-  }, [schedule, onChange]);
+            <div className="grid gap-3 p-3 sm:p-4">
+                {mode === "hourly" && (
+                    <>
+                        <PickerRow label="Every">
+                            {HOUR_STEPS.map((step) => (
+                                <Pill key={step} picked={schedule.everyHours === step} onClick={() => update({ ...schedule, everyHours: step })}>
+                                    {step} h
+                                </Pill>
+                            ))}
+                        </PickerRow>
+                        <PickerRow label="At minute">
+                            {[...new Set([...MINUTE_STEPS, schedule.minute])].sort((a, b) => a - b).map((minute) => (
+                                <Pill key={minute} picked={schedule.minute === minute} onClick={() => update({ ...schedule, minute })}>
+                                    :{String(minute).padStart(2, "0")}
+                                </Pill>
+                            ))}
+                        </PickerRow>
+                    </>
+                )}
 
-  const handleModeChange = (newMode: "simple" | "cron") => {
-    setMode(newMode);
-    if (newMode === "simple") {
-      const result = parseCron(cronInput);
-      if (result.mode === "simple") {
-        onChange(buildCron(result.schedule));
-      } else {
-        const def: SimpleSchedule = { frequency: "daily", minute: 0, hour: 0, dayOfWeek: 0, dayOfMonth: 1 };
-        onChange(buildCron(def));
-      }
-    } else {
-      setCronInput(value);
-    }
-  };
+                {mode === "weekly" && (
+                    <PickerRow
+                        label="On"
+                        aside={
+                            <>
+                                <QuickPick onClick={() => update({ ...schedule, days: WEEKDAYS })}>Weekdays</QuickPick>
+                                <QuickPick onClick={() => update({ ...schedule, days: WEEKEND })}>Weekend</QuickPick>
+                            </>
+                        }
+                    >
+                        {WEEK.map((day) => {
+                            const picked = schedule.days.includes(day.value);
+                            return (
+                                <Pill
+                                    key={day.value}
+                                    picked={picked}
+                                    label={day.name}
+                                    onClick={() => {
+                                        const days = picked ? schedule.days.filter((value) => value !== day.value) : [...schedule.days, day.value];
+                                        update({ ...schedule, days: days.sort((a, b) => a - b) });
+                                    }}
+                                >
+                                    {day.short}
+                                </Pill>
+                            );
+                        })}
+                    </PickerRow>
+                )}
+                {mode === "weekly" && schedule.days.length === 0 && <p className="text-xs text-destructive">Pick at least one day.</p>}
+                {mode === "weekly" && sameDays(schedule.days, [0, 1, 2, 3, 4, 5, 6]) && (
+                    <p className="text-xs text-muted-foreground">Every day of the week, the same as Daily.</p>
+                )}
 
-  return (
-    <div className="rounded-lg border border-border bg-card">
-      {/* Mode toggle header */}
-      <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <CalendarClock className="h-4 w-4" />
-          <span>{mode === "simple" ? describeSchedule(schedule, formatTime, schedulerTimezone) : `Cron: ${value}`}</span>
+                {mode === "monthly" && (
+                    <PickerRow label="On day">
+                        <Select
+                            value={String(schedule.dayOfMonth)}
+                            onValueChange={(day) => update({ ...schedule, dayOfMonth: day === "L" ? "L" : Number(day) })}
+                        >
+                            <SelectTrigger className="h-8 w-32" aria-label="Day of the month">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="L">Last day</SelectItem>
+                                {DAYS_OF_MONTH.map((day) => (
+                                    <SelectItem key={day} value={String(day)}>
+                                        {day}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        {typeof schedule.dayOfMonth === "number" && schedule.dayOfMonth > 28 && (
+                            <span className="text-xs text-muted-foreground">Months without it are left out.</span>
+                        )}
+                    </PickerRow>
+                )}
+
+                {(mode === "daily" || mode === "weekly" || mode === "monthly") && (
+                    <PickerRow label="At">
+                        <TimeList hours={schedule.hours} minute={schedule.minute} onChange={(hours, minute) => update({ ...schedule, hours, minute })} />
+                    </PickerRow>
+                )}
+                {mode !== "hourly" && mode !== "cron" && schedule.hours.length > 1 && (
+                    <p className="text-xs text-muted-foreground">Every time starts at the same minute, since cron has one minute for all of them.</p>
+                )}
+
+                {mode === "cron" && (
+                    <div className="grid gap-1.5">
+                        <Input
+                            value={cronText}
+                            onChange={(event) => {
+                                setCronText(event.target.value);
+                                onChange(event.target.value.trim());
+                            }}
+                            placeholder="0 3 * * *"
+                            aria-label="Cron expression"
+                            aria-invalid={!valid || undefined}
+                            spellCheck={false}
+                            autoComplete="off"
+                            className="font-mono"
+                        />
+                        <p className="text-xs text-muted-foreground">Minute, hour, day of the month, month and weekday, in the time zone of the scheduler.</p>
+                        {!valid && (
+                            <p className="flex items-center gap-1.5 text-xs text-destructive">
+                                <CircleAlert className="size-3.5 shrink-0" aria-hidden="true" />
+                                {cronFields === 5 || cronFields === 6
+                                    ? "The scheduler cannot read this expression."
+                                    : "Needs five parts, like 0 3 * * * for every day at 03:00."}
+                            </p>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            {clash && load && (
+                <ClashNote
+                    clash={clash}
+                    slots={load.slots}
+                    timezone={load.timezone}
+                    together={owners.durations.length}
+                    action={
+                        suggestion && (
+                            <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={() => update(suggestion.schedule)}>
+                                {suggestion.label}
+                            </Button>
+                        )
+                    }
+                />
+            )}
+            <ScheduleSummary words={words} timezone={timezone} nextRuns={nextRuns} oneTime={mode !== "hourly" && mode !== "cron" && schedule.hours.length === 1} />
         </div>
-        {/* The segmented switch of the dashboard, not two buttons of its own. */}
-        <Tabs value={mode} onValueChange={(next) => handleModeChange(next as "simple" | "cron")}>
-          <TabsList className="h-8">
-            <TabsTrigger value="simple" className="px-2.5 text-xs">
-              <Clock className="size-3" />
-              Simple
-            </TabsTrigger>
-            <TabsTrigger value="cron" className="px-2.5 text-xs">
-              <Terminal className="size-3" />
-              Cron
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-      </div>
-
-      {/* Content */}
-      <div className="p-4">
-        {mode === "simple" ? (
-          <div className="space-y-3">
-            {/* Frequency pills */}
-            <div className="flex gap-1.5">
-              {FREQUENCY_OPTIONS.map((opt) => (
-                <Button
-                  key={opt.value}
-                  type="button"
-                  variant={schedule.frequency === opt.value ? "default" : "outline"}
-                  size="sm"
-                  className="h-8 flex-1 text-xs"
-                  onClick={() => updateSchedule({ frequency: opt.value })}
-                >
-                  {opt.label}
-                </Button>
-              ))}
-            </div>
-
-            {/* Time configuration - horizontal flow */}
-            <div className="flex items-center gap-2 flex-wrap">
-              {schedule.frequency === "weekly" && (
-                <>
-                  <span className="text-sm text-muted-foreground">on</span>
-                  <Select value={String(schedule.dayOfWeek)} onValueChange={(v) => updateSchedule({ dayOfWeek: Number(v) })}>
-                    <SelectTrigger className="w-32 h-9">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {DAYS_OF_WEEK.map((d) => (
-                        <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </>
-              )}
-
-              {schedule.frequency === "monthly" && (
-                <>
-                  <span className="text-sm text-muted-foreground">on day</span>
-                  <Select value={String(schedule.dayOfMonth)} onValueChange={(v) => updateSchedule({ dayOfMonth: Number(v) })}>
-                    <SelectTrigger className="w-20 h-9">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {DAYS_OF_MONTH.map((d) => (
-                        <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </>
-              )}
-
-              <span className="text-sm text-muted-foreground">
-                {schedule.frequency === "hourly" ? "at minute" : "at"}
-              </span>
-
-              {schedule.frequency !== "hourly" && (
-                <>
-                  <Select value={String(schedule.hour)} onValueChange={(v) => updateSchedule({ hour: Number(v) })}>
-                    <SelectTrigger className="w-20 h-9">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {HOURS.map((h) => (
-                        <SelectItem key={h.value} value={h.value}>{h.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <span className="text-sm font-medium">:</span>
-                </>
-              )}
-
-              <Select value={String(schedule.minute)} onValueChange={(v) => updateSchedule({ minute: Number(v) })}>
-                <SelectTrigger className="w-20 h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {MINUTES.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <Input
-              placeholder="0 0 * * *"
-              value={cronInputDisplay}
-              onChange={(e) => {
-                setCronInput(e.target.value);
-                onChange(e.target.value);
-              }}
-              className="font-mono"
-            />
-            <p className="text-xs text-muted-foreground">
-              Format: Minute (0-59) Hour (0-23) Day (1-31) Month (1-12) Weekday (0-6, Sun=0)
-            </p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
+    );
 }

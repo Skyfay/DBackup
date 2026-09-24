@@ -38,6 +38,8 @@ function entryOf(preset: ListedPreset): PickEntry {
 interface SchedulePresetFieldProps extends Omit<React.ComponentProps<typeof Button>, "value" | "onChange"> {
     value: string | null;
     onChange: (preset: SchedulePreset | null) => void;
+    /** The job the preset is picked for, so a new preset is not warned about the job's own runs. */
+    jobId?: string;
 }
 
 /**
@@ -45,7 +47,7 @@ interface SchedulePresetFieldProps extends Omit<React.ComponentProps<typeof Butt
  * in a list that says when each one runs and how many jobs follow it, New beside the field.
  * Edit on a row changes a preset for every job that follows it.
  */
-export function SchedulePresetField({ value, onChange, ...props }: SchedulePresetFieldProps) {
+export function SchedulePresetField({ value, onChange, jobId, ...props }: SchedulePresetFieldProps) {
     const [presets, setPresets] = useState<ListedPreset[]>([]);
     const [loading, setLoading] = useState(true);
     const [open, setOpen] = useState(false);
@@ -121,6 +123,7 @@ export function SchedulePresetField({ value, onChange, ...props }: SchedulePrese
                 open={dialog.open}
                 onOpenChange={(next) => setDialog((currentDialog) => ({ ...currentDialog, open: next }))}
                 preset={dialog.preset}
+                jobId={jobId}
                 onSuccess={saved}
             />
         </div>

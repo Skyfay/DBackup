@@ -153,7 +153,8 @@ async function loadActivity(timezone: string, now: Date): Promise<ActivityDataPo
     return [...history.slice(0, -1), countActivity(formatInTimeZone(now, timezone, "MMM d"), todaysRuns)];
 }
 
-async function loadMaxConcurrentJobs(): Promise<number> {
+/** How many runs the queue takes at once, from the maxConcurrentJobs setting. */
+export async function getMaxConcurrentJobs(): Promise<number> {
     const setting = await prisma.systemSetting.findUnique({ where: { key: "maxConcurrentJobs" } });
     const value = setting ? parseInt(setting.value, 10) : 1;
     return Number.isFinite(value) && value > 0 ? value : 1;
@@ -261,7 +262,7 @@ async function loadAggregates(): Promise<Aggregates> {
         loadRunStats(now),
         loadStorage(timezone, now),
         getRecentRunsByJob(),
-        loadMaxConcurrentJobs(),
+        getMaxConcurrentJobs(),
     ]);
     return { timezone, maxConcurrentJobs, activity, calendar, ...runStats, storage, runsByJob };
 }

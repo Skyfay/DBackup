@@ -70,7 +70,7 @@ Protect sensitive data:
 
 ### Schedule
 
-Automate backups with cron expressions. See [Scheduling](/user-guide/jobs/scheduling).
+Pick when a job runs hourly, daily, weekly or monthly, or write a cron expression. The picker shows the next runs and warns when runs would wait for a free slot of the queue. See [Scheduling](/user-guide/jobs/scheduling).
 
 ### Retention
 
@@ -320,7 +320,7 @@ Custom backup filename patterns saved as named templates. Supports all tokens li
 
 ### Schedule Presets
 
-Named cron expressions that can be used as quick-fill presets or **live-linked** to jobs. When a live-linked preset is updated, all jobs using it pick up the new schedule automatically.
+Named schedules that jobs follow. When a preset changes, every job that follows it runs on the new schedule without being edited.
 
 - Pick **A schedule preset** under **When it runs** in the **Basics** part of the job
 - **New preset** adds one from there, and **Edit** on a preset changes it for every job that follows it

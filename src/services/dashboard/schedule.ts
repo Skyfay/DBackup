@@ -1,12 +1,11 @@
 import { Cron } from "croner";
+import { DEFAULT_RUN_MS, findConflicts } from "@/lib/core/schedule-conflicts";
 import type { RunSummary, ScheduleConflict, UpcomingJob, UpcomingRun, UpcomingSchedule } from "./types";
 
 /** The longest range the card offers. The 12 and 24 hour views are cut from it in the browser. */
 export const UPCOMING_WINDOW_MS = 48 * 60 * 60 * 1000;
 /** Every five minutes over the window. A job that runs more often is cut off and flagged as truncated. */
 const MAX_RUNS_PER_JOB = 576;
-/** Assumed length of a run for a job without any finished run to learn from. */
-const DEFAULT_DURATION_MS = 60_000;
 
 export interface ScheduledJob {
     id: string;
@@ -21,42 +20,8 @@ export function estimateDuration(runs: RunSummary[]): number {
         .filter((run) => run.endedAt && run.status !== "Cancelled")
         .map((run) => new Date(run.endedAt!).getTime() - new Date(run.startedAt).getTime())
         .filter((ms) => ms > 0);
-    if (durations.length === 0) return DEFAULT_DURATION_MS;
+    if (durations.length === 0) return DEFAULT_RUN_MS;
     return Math.round(durations.reduce((sum, ms) => sum + ms, 0) / durations.length);
-}
-
-/**
- * Windows in which more runs would be active than the queue has slots. Each run counts from its
- * start for its estimated duration. The extra runs wait in the queue, so a conflict means delay.
- */
-export function findConflicts(
-    runs: { start: number; durationMs: number }[],
-    slots: number,
-): { from: number; to: number; demand: number }[] {
-    const events: [time: number, delta: number][] = [];
-    for (const run of runs) {
-        events.push([run.start, 1]);
-        events.push([run.start + Math.max(run.durationMs, 1), -1]);
-    }
-    // Ends sort before starts at the same instant, so back-to-back runs do not overlap.
-    events.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-
-    const conflicts: { from: number; to: number; demand: number }[] = [];
-    let active = 0;
-    let current: { from: number; to: number; demand: number } | null = null;
-
-    for (const [time, delta] of events) {
-        active += delta;
-        if (active > slots) {
-            if (current) current.demand = Math.max(current.demand, active);
-            else current = { from: time, to: time, demand: active };
-        } else if (current) {
-            current.to = time;
-            conflicts.push(current);
-            current = null;
-        }
-    }
-    return conflicts;
 }
 
 /**

@@ -4,7 +4,27 @@ Automate your backups with cron-based scheduling.
 
 ## Overview
 
-DBackup uses standard cron expressions for scheduling. When a schedule is set, the job runs automatically at the specified times.
+DBackup uses standard cron expressions for scheduling. When a schedule is set, the job runs automatically at the specified times. You rarely have to write one yourself: the schedule picker builds it.
+
+## Picking a Schedule
+
+The job form and the schedule preset dialog use the same picker. Choose how often a job runs:
+
+| Choice | What you set | Written as |
+| :--- | :--- | :--- |
+| **Hourly** | Every 1, 2, 3, 4, 6, 8 or 12 hours, at a minute past the hour | `15 */6 * * *` |
+| **Daily** | One or more times a day, a second one with **Add time** | `0 3,15 * * *` |
+| **Weekly** | The days, with **Weekdays** and **Weekend** as shortcuts, and the times | `30 22 * * 1-5` |
+| **Monthly** | A day from 1 to 31 or **Last day**, and the times | `0 4 L * *` |
+| **Cron** | Any cron expression, for everything else | `*/30 9-17 * * 1-5` |
+
+Times are typed like `03:00` and are those of the scheduler time zone. All times of one schedule share their minute, because a cron expression has a single minute field for all of them. Under the picker the schedule is said in words, with the time zone and the next three runs. A cron expression the scheduler cannot read is marked at once and cannot be saved.
+
+### When Runs Would Wait
+
+The queue runs as many jobs at once as **Max Concurrent Jobs** in **Settings - General** allows. When more runs would be active at the same time than that, the picker shows a small warning with the jobs it meets and about how long one of them waits, together with a nearby time that has room, like **Use 03:15**. As long as the slots are enough nothing is shown, so three jobs at 03:00 are fine with three slots.
+
+The warning uses the same rule as the timeline of the next hours on the Overview, including how long each job usually takes. For a schedule preset it also counts the jobs that follow it, since they all start together.
 
 ## Cron Expression Format
 
@@ -68,8 +88,8 @@ DBackup uses standard cron expressions for scheduling. When a schedule is set, t
 # First day of month at 4:00 AM
 0 4 1 * *
 
-# Last day of month at midnight (approximation)
-0 0 28-31 * *
+# Last day of month at midnight
+0 0 L * *
 
 # 15th of every month
 0 0 15 * *
@@ -134,7 +154,7 @@ To change the scheduler timezone:
 2. Go to the **General** tab.
 3. Select your timezone under **Scheduler Timezone**.
 
-The schedule picker preview in the job form always shows the time in the scheduler timezone with the timezone name in brackets so you know exactly when a job will fire.
+The schedule picker shows its times in the scheduler timezone and names it beside the schedule in words, so you know exactly when a job will fire.
 
 > For a full explanation of all timezone settings (scheduler timezone, per-user display timezone, and the optional `TZ` environment variable), see the [Timezones guide](../features/timezones.md).
 
@@ -236,7 +256,7 @@ Set up notifications to alert on:
 ### Overlapping Executions
 
 If backups overlap:
-1. Increase time between schedules
+1. Increase time between schedules, the schedule picker warns about overlaps and suggests a free time
 2. Reduce backup duration (compression)
 3. Increase max concurrent jobs
 

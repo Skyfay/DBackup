@@ -29,6 +29,7 @@ All notable changes to DBackup are documented here.
 - **connections**: An empty required field of a new connection shows the adapter's own message, like "Bucket name is required" or "Add at least one recipient", instead of Zod's generic wording.
 - **connections**: Authorizing a cloud drive again checks the new token, instead of still reporting the old one as expired.
 - **connections**: The file browser of a path field answers a missing login or permission with 401 or 403 instead of a server error.
+- **jobs**: The schedule picker shows its times the way the scheduler runs them, without seconds, instead of converting them through the time zone of the browser. A cron expression the scheduler cannot read can no longer be saved to a job or a schedule preset.
 
 ### 🔒 Security
 
@@ -53,12 +54,14 @@ All notable changes to DBackup are documented here.
 - **connections**: The file browser of a path field starts where the field points and shows the path as clickable parts with a filter, the size and date of every entry and a badge on the files the field takes. Hidden files stay out until asked for, and every entry can be reached with the keyboard.
 - **setup**: The Quick Setup lists its steps on the left with what each one made, and adds databases, destinations and channels with the same form as the Connections page. Every step can take an existing connection or key instead, and the job picks its schedule and its databases on cards.
 - **jobs**: The form for adding and editing a job lists its parts on the left, marks the ones that are done or still miss something, and shows one part at a time. Connections and schedule presets are picked from searchable lists, and the channels a job notifies directly can be seen and removed there.
+- **jobs**: The schedule of a job and of a schedule preset is picked as hourly, daily, weekly or monthly, with several times a day, several weekdays and the last day of the month, or as cron. It shows the next runs and warns with a free time to use when runs would wait because the queue has no slot left.
 - **templates**: The dialog for adding and editing a schedule preset has the new look. It and the Templates page now say that a job follows every change to its preset, instead of claiming it keeps its own copy of the schedule.
 
 ### 🔄 Changed
 
 - **api**: `GET /api/adapters/{id}/health-history` averages only the checks that passed and also returns the slowest one, since when the current status holds and when a check last passed.
 - **api**: `GET /api/jobs` returns how each job is doing as `overview`, and the connections a job uses with `id`, `name`, `adapterId` and `lastStatus` only. The new `GET /api/jobs/{id}/runs` returns the latest 30 runs of a job with their size, its success rate over 30 days and its last successful backup.
+- **api**: The new `GET /api/jobs/schedules` returns the schedules of the enabled jobs with how long a run usually takes, the slots of the queue and the scheduler's time zone.
 
 ### 🗑️ Removed
 
@@ -75,6 +78,7 @@ All notable changes to DBackup are documented here.
 - **docs**: The first steps guide walks through the new Quick Setup.
 - **docs**: The encryption guide explains that the encryption service returns profiles without their key.
 - **docs**: The job guide describes the new Jobs page, the parts of the job form and the actions of a job, and the template and retention guides follow the new form. The API reference documents the job list fields and `GET /api/jobs/{id}/runs`.
+- **docs**: The scheduling guide describes the schedule picker and its warning when runs would wait for a free slot.
 
 ### 🧪 Tests
 

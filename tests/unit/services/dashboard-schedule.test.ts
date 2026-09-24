@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { buildUpcomingSchedule, estimateDuration, findConflicts } from "@/services/dashboard/schedule";
+import { findConflicts } from "@/lib/core/schedule-conflicts";
+import { buildUpcomingSchedule, estimateDuration } from "@/services/dashboard/schedule";
 import type { RunSummary } from "@/services/dashboard/types";
 
 const NOW = new Date("2026-09-21T10:00:00.000Z");

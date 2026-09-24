@@ -7,10 +7,11 @@ import { ChoiceCards } from "@/components/adapter/connection-mode-choice";
 import { SwitchList } from "@/components/adapter/setting-switches";
 import { NotificationTemplatePicker } from "@/components/templates/notification-template-picker";
 import { Button } from "@/components/ui/button";
-import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { EncryptionKeyPicker } from "./encryption-key-picker";
 import { NO_ENCRYPTION, type AdapterOption, type EncryptionOption, type JobFormValues } from "./job-form-schema";
 import { SchedulePicker } from "./schedule-picker";
 import { SchedulePresetField } from "./schedule-preset-field";
@@ -135,22 +136,9 @@ export function EncryptionPart({ encryptionProfiles }: { encryptionProfiles: Enc
                 render={({ field }) => (
                     <FormItem>
                         <FormLabel>Key</FormLabel>
-                        <Select value={field.value} onValueChange={field.onChange}>
-                            <FormControl>
-                                <SelectTrigger className="w-full">
-                                    <SelectValue />
-                                </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                                <SelectItem value={NO_ENCRYPTION}>No encryption</SelectItem>
-                                {encryptionProfiles.map((profile) => (
-                                    <SelectItem key={profile.id} value={profile.id}>
-                                        {profile.name}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                        <FormDescription>{encryptionProfiles.length === 0 ? "The Vault holds no keys yet. Add one there to encrypt this job." : "Keys live in the Vault."}</FormDescription>
+                        <FormControl>
+                            <EncryptionKeyPicker keys={encryptionProfiles} value={field.value} onChange={field.onChange} />
+                        </FormControl>
                         <FormMessage />
                     </FormItem>
                 )}

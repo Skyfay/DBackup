@@ -42,14 +42,14 @@ function makeProfile(overrides: Record<string, any> = {}) {
 describe('getEncryptionProfiles', () => {
     beforeEach(() => vi.clearAllMocks());
 
-    it('returns all profiles ordered by createdAt desc', async () => {
+    it('returns all profiles ordered by createdAt desc, with how many jobs use each', async () => {
         const profiles = [makeProfile({ id: 'p1' }), makeProfile({ id: 'p2' })];
         prismaMock.encryptionProfile.findMany.mockResolvedValue(profiles as any);
 
         const result = await getEncryptionProfiles();
 
         expect(prismaMock.encryptionProfile.findMany).toHaveBeenCalledWith({
-            select: SUMMARY,
+            select: { ...SUMMARY, _count: { select: { jobs: true } } },
             orderBy: { createdAt: 'desc' },
         });
         expect(result).toHaveLength(2);

@@ -21,6 +21,9 @@ export interface AdapterOption {
 export interface EncryptionOption {
     id: string;
     name: string;
+    description?: string | null;
+    /** How many jobs encrypt their backups with the key. */
+    jobCount?: number;
 }
 
 /** What the form edits: a job from the list, or nothing for a new one. */

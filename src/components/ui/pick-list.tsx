@@ -16,6 +16,8 @@ export interface PickEntry {
     keywords?: string[];
     /** Its own picture for the tile, like the logo of a connection's type. The list's icon otherwise. */
     icon?: React.ReactNode;
+    /** A symbol of its own in place of the list's icon, drawn the same way, like the open lock of No encryption. */
+    glyph?: LucideIcon;
     /** False for an entry nobody edits, like a policy that ships with DBackup. */
     editable?: boolean;
 }
@@ -34,14 +36,15 @@ interface PickRowProps {
     onEdit?: (id: string) => void;
 }
 
-function PickRow({ entry, icon: Icon, picked, onPick, onEdit }: PickRowProps) {
+function PickRow({ entry, icon, picked, onPick, onEdit }: PickRowProps) {
+    const Glyph = entry.glyph ?? icon;
     return (
         <CommandItem value={entry.name} keywords={entry.keywords} onSelect={() => onPick(entry.id)} className="group gap-3 px-2 py-2">
             <span
                 className={cn("flex size-8 shrink-0 items-center justify-center rounded-md border", picked ? "border-tone/30 bg-tone/12" : "bg-muted")}
                 aria-hidden="true"
             >
-                {entry.icon ?? <Icon className={cn("size-3.5", picked ? "text-tone" : "text-muted-foreground")} />}
+                {entry.icon ?? <Glyph className={cn("size-3.5", picked ? "text-tone" : "text-muted-foreground")} />}
             </span>
             <span className="grid min-w-0 flex-1 gap-0.5">
                 <span className="truncate font-medium">{entry.name}</span>

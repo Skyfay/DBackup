@@ -73,10 +73,9 @@ Importing a config backup matches encryption profiles by name. If the imported c
 
 ### Enable on Job
 
-1. Edit a backup job
-2. Enable **Encryption**
-3. Select an Encryption Profile
-4. Save
+1. Edit a backup job and open its **Encryption** part
+2. Pick a key from the list, or make one with **New**
+3. Save
 
 All future backups will be encrypted.
 

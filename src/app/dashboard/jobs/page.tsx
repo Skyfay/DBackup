@@ -31,7 +31,11 @@ export default async function JobsPage() {
                 sources={sources}
                 destinations={destinations}
                 notificationChannels={notificationChannels}
-                encryptionProfiles={keys.success && keys.data ? keys.data.map((profile) => ({ id: profile.id, name: profile.name })) : []}
+                encryptionProfiles={
+                    keys.success && keys.data
+                        ? keys.data.map((profile) => ({ id: profile.id, name: profile.name, description: profile.description, jobCount: profile._count.jobs }))
+                        : []
+                }
                 initialLayout={layouts[JOBS_TABLE_ID] ?? null}
                 initialView={savedView ?? "table"}
             />

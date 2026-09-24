@@ -73,11 +73,9 @@ PostgreSQL jobs have an additional **PostgreSQL Compression** setting that contr
 
 ### Encryption
 
-Protect sensitive data:
+Protect sensitive data by picking a key in the **Encryption** part of the job. The list starts with **No encryption** and holds the keys of the [Vault](/user-guide/security/encryption) with how many jobs use each one. **New** makes a key right there and picks it.
 
-1. Create an [Encryption Profile](/user-guide/security/encryption) first
-2. Pick it in the **Encryption** part of the job
-3. Backups are encrypted with AES-256-GCM
+Backups are encrypted with AES-256-GCM. Download the Recovery Kit of the key in the Vault and keep it somewhere safe, since the backups cannot be opened without it.
 
 ### Schedule
 

@@ -79,12 +79,15 @@ export async function importEncryptionProfile(name: string, keyHex: string, desc
   });
 }
 
+/** A profile in the list, with how many jobs encrypt their backups with it. */
+export type ListedEncryptionProfile = EncryptionProfileSummary & { _count: { jobs: number } };
+
 /**
- * Returns all encryption profiles, newest first, without their keys.
+ * Returns all encryption profiles, newest first, without their keys and with how many jobs use each.
  */
-export async function getEncryptionProfiles(): Promise<EncryptionProfileSummary[]> {
+export async function getEncryptionProfiles(): Promise<ListedEncryptionProfile[]> {
   return await prisma.encryptionProfile.findMany({
-    select: summaryFields,
+    select: { ...summaryFields, _count: { select: { jobs: true } } },
     orderBy: { createdAt: 'desc' },
   });
 }

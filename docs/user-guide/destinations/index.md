@@ -50,9 +50,7 @@ archives, growing without limit.
 Both live on the **Connections** page, on the **Backup Destinations** and **Directory Sources** tabs.
 
 ::: tip Same server for both
-Pick **Create as Directory Source** on a destination's row (or the reverse on a source) to
-copy it into the opposite role, credentials and all - then adjust the path. Two adapters
-for one server is intentional: they point at different paths and are monitored separately.
+Pick **Create as directory source** in the menu of a destination, or **Create as backup destination** on a source, to copy it into the opposite role with its login, then adjust the path. Two adapters for one server is intentional: they point at different paths and are monitored separately.
 :::
 
 ## Adding a Destination

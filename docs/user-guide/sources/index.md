@@ -26,8 +26,7 @@ own adapters, because the two roles use the configured path differently - a dest
 writes backup and chain folders into it, a source only reads folders out of it. An adapter
 is one or the other, never both.
 
-To use the same server for both, use **Create as Directory Source** on the destination's
-row (or the reverse here) and adjust the path on the copy.
+To use the same server for both, pick **Create as directory source** in the menu of the destination, or **Create as backup destination** here, and adjust the path on the copy.
 
 One backend exists only on this side: [Docker Volumes](/user-guide/sources/docker-volumes)
 reads the contents of Docker volumes, which is data a container holds and nothing else can

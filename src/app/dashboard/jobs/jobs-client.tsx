@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarClock, Plus } from "lucide-react";
+import { CalendarClock, CirclePause, ListChecks, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { saveViewLayout } from "@/app/actions/auth/table-preferences";
 import { ApiTriggerDialog } from "@/components/dashboard/jobs/api-trigger-dialog";
@@ -288,16 +288,22 @@ export function JobsClient({
                 <ApiTriggerDialog jobId={apiTrigger.id} jobName={apiTrigger.name} open onOpenChange={(open) => !open && setApiTrigger(null)} />
             )}
 
-            <CloneDialog
-                open={cloneTarget !== null}
-                onOpenChange={(open) => !open && setCloneTarget(null)}
-                defaultName={cloneTarget?.name ?? ""}
-                existingNames={jobs.map((job) => job.name)}
-                isLoading={cloningId !== null}
-                onConfirm={async (name) => {
-                    if (cloneTarget) await clone(cloneTarget.id, name);
-                }}
-            />
+            {cloneTarget && (
+                <CloneDialog
+                    title="Clone job"
+                    from={cloneTarget.name}
+                    noun="job"
+                    existingNames={jobs.map((job) => job.name)}
+                    facts={[
+                        { icon: ListChecks, text: `The copy backs up the same source to the same destinations on the same schedule as ${cloneTarget.name}.` },
+                        { icon: CirclePause, text: "It starts paused and only runs once you turn it on." },
+                    ]}
+                    confirmLabel="Clone job"
+                    isLoading={cloningId !== null}
+                    onConfirm={(name) => clone(cloneTarget.id, name)}
+                    onClose={() => setCloneTarget(null)}
+                />
+            )}
         </div>
     );
 }

@@ -67,6 +67,7 @@ All notable changes to DBackup are documented here.
 - **jobs**: Compression has a part of its own between the destinations and the encryption, with a card and a sentence for every option and the level of pg_dump on a slider. A PostgreSQL job shows whether pg_dump or DBackup compresses the dump and the folders, and what its server version cannot do.
 - **jobs**: A job with folders has an Incremental part after the source, with a card for full or incremental backups and the days between full backups on a stepper. It draws the chain those make on the job's schedule, lists which sources store only their changes, and warns about a long chain with a shorter setting to use.
 - **ui**: The fields that pick a login, a connection, a key or a template offer New and Edit only to users who may create or change that kind of entry.
+- **ui**: Cloning a job or a connection, and creating a connection in the other storage role, opens a dialog in the new look. It starts with a name that is free and says what the copy gets and what is left to do.
 - **templates**: The dialog for adding and editing a retention policy has the new look.
 - **templates**: The dialog for adding and editing a notification template has the new look. Each channel is picked from a searchable list that can also add one, and its runs are picked with buttons.
 - **templates**: The dialog for adding and editing a naming template has the new look and warns about a pattern without the time of day. The file names of a job are picked from a searchable list that shows the pattern of each template.

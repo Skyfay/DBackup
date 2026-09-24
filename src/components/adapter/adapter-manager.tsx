@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { DIALOG_SURFACE } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { AlertTriangle } from "lucide-react";
+import { Activity, AlertTriangle, ArrowLeftRight, FolderOpen, ListChecks } from "lucide-react";
 import Link from "next/link";
 import { ADAPTER_DEFINITIONS, AdapterDefinition } from "@/lib/adapters/definitions";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -174,7 +174,7 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                 // A counterpart lands in the other role, so it will not show up in this
                 // list - say where it went instead of leaving the user looking for it.
                 toast.success(role
-                    ? `Created "${name}" as a ${storageRoleLabel(role)}. Adjust its path there.`
+                    ? `Created "${name}" as a ${storageRoleLabel(role).toLowerCase()}. Adjust its path there.`
                     : "Configuration cloned successfully");
                 afterChange();
             } else {
@@ -204,12 +204,8 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
             const definition = ADAPTER_DEFINITIONS.find((d) => d.id === config.adapterId);
             if (!canOfferCounterpart(definition?.supportedRoles, current)) return undefined;
             return {
-                label: `Create as ${storageRoleLabel(counterpart)}`,
-                onSelect: () => setCloneTarget({
-                    id: config.id,
-                    name: `${config.name} (${counterpart === STORAGE_ROLES.SOURCE ? 'Source' : 'Destination'})`,
-                    role: counterpart,
-                }),
+                label: `Create as ${storageRoleLabel(counterpart).toLowerCase()}`,
+                onSelect: () => setCloneTarget({ id: config.id, name: config.name, role: counterpart }),
             };
         };
 
@@ -404,16 +400,48 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                 />
             )}
 
-            <CloneDialog
-                open={!!cloneTarget}
-                onOpenChange={(open) => !open && setCloneTarget(null)}
-                defaultName={cloneTarget?.name ?? ""}
-                existingNames={configs.map((c) => c.name)}
-                isLoading={!!cloningId}
-                onConfirm={(name) => cloneAdapter(cloneTarget!.id, name, cloneTarget!.role)}
-            />
+            {cloneTarget && (
+                <CloneDialog
+                    {...cloneCopy(cloneTarget)}
+                    noun="connection"
+                    existingNames={configs.map((c) => c.name)}
+                    isLoading={!!cloningId}
+                    onConfirm={(name) => cloneAdapter(cloneTarget.id, name, cloneTarget.role)}
+                    onClose={() => setCloneTarget(null)}
+                />
+            )}
         </div>
     );
+}
+
+/**
+ * What the clone dialog says for a copy of a connection, or for the same connection in the other
+ * storage role, which lands in the other list with the path of this one.
+ */
+function cloneCopy({ name, role }: { name: string; role?: StorageRole }) {
+    if (!role) {
+        return {
+            title: "Clone connection",
+            from: name,
+            confirmLabel: "Clone connection",
+            facts: [
+                { icon: ListChecks, text: `The copy has every setting of ${name}, its saved logins included.` },
+                { icon: Activity, text: "Its health checks start from scratch." },
+            ],
+        };
+    }
+    const noun = storageRoleLabel(role).toLowerCase();
+    return {
+        title: `Create as ${noun}`,
+        from: name,
+        label: role === STORAGE_ROLES.SOURCE ? "Source" : "Destination",
+        icon: ArrowLeftRight,
+        confirmLabel: `Create ${noun}`,
+        facts: [
+            { icon: ListChecks, text: `The same server and login as ${name}, set up as a ${noun}.` },
+            { icon: FolderOpen, text: "Check its path afterwards, since the files to back up and the backups rarely share a folder." },
+        ],
+    };
 }
 
 /**

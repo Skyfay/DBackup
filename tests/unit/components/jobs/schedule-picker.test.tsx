@@ -43,7 +43,7 @@ describe("schedule picker", () => {
         serve({ timezone: "UTC", slots: 1, jobs: [MAIL] });
         render(<SchedulePicker value="0 3 * * *" onChange={onChange} />);
 
-        expect(await screen.findByText(/Mail archive also runs at/)).toHaveTextContent("only one job runs at a time, so one of them waits about 1 min");
+        expect(await screen.findByText(/Mail archive also runs at/)).toHaveTextContent("only one job runs at a time, so this job waits about 6 min for it.");
         await user.click(screen.getByRole("button", { name: "Use 03:15" }));
 
         expect(onChange).toHaveBeenLastCalledWith("15 3 * * *");

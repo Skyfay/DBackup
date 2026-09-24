@@ -22,9 +22,9 @@ Times are typed like `03:00` and are those of the scheduler time zone. All times
 
 ### When Runs Would Wait
 
-The queue runs as many jobs at once as **Max Concurrent Jobs** in **Settings - General** allows. When more runs would be active at the same time than that, the picker shows a small warning with the jobs it meets and about how long one of them waits, together with a nearby time that has room, like **Use 03:15**. As long as the slots are enough nothing is shown, so three jobs at 03:00 are fine with three slots.
+The queue runs as many jobs at once as **Max Concurrent Jobs** in **Settings - General** allows. When the slots are taken at the time a job starts, the picker shows a small warning with the jobs ahead of it in the queue and about how long it waits for them, together with a nearby time that has room, like **Use 03:15**. The queue runs one job after the other, so with one slot a job waits until every job ahead of it is done: two jobs of 5 and 8 minutes make it wait 13 minutes. As long as the slots are enough nothing is shown, so three jobs at 03:00 are fine with three slots.
 
-The warning uses the same rule as the timeline of the next hours on the Overview, including how long each job usually takes. For a schedule preset it also counts the jobs that follow it, since they all start together.
+How long a job usually takes comes from its recent runs, the same estimate the timeline of the next hours on the Overview uses. For a schedule preset the warning also counts the jobs that follow it, since they all start together.
 
 ## Cron Expression Format
 

@@ -12,7 +12,7 @@ export function PickerRow({ label, children, aside }: { label: string; children:
     return (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <span className="w-full shrink-0 text-xs text-muted-foreground sm:w-20">{label}</span>
-            <div className="flex min-w-0 flex-wrap items-center gap-1.5" role="group" aria-label={label}>
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5" role="group" aria-label={label}>
                 {children}
             </div>
             {aside && <div className="flex items-center gap-1 sm:ml-auto">{aside}</div>}
@@ -99,7 +99,7 @@ function TimeField({ hour, minute, label, onCommit, onRemove }: TimeFieldProps) 
                     aria-label={label}
                     aria-invalid={invalid || undefined}
                     aria-describedby={invalid ? messageId : undefined}
-                    className={cn("h-8 w-24 pl-8 tabular-nums", onRemove && "pr-7")}
+                    className={cn("h-8 w-28 pl-8 tabular-nums", onRemove && "pr-7")}
                 />
                 {onRemove && (
                     <button
@@ -127,8 +127,12 @@ interface TimeListProps {
     onChange: (hours: number[], minute: number) => void;
 }
 
-/** The times a schedule starts at. Cron has one minute for all of them, so they share it. */
+/**
+ * The times a schedule starts at. Cron has one minute for all of them, so they share it, and a
+ * minute typed into one time moves all of them, which a short line says right then.
+ */
 export function TimeList({ hours, minute, onChange }: TimeListProps) {
+    const [movedTo, setMovedTo] = useState<number | null>(null);
     const add = () => {
         const last = hours[hours.length - 1] ?? 0;
         const next = [12, 6, 18, 3, 9, 15, 21].map((step) => (last + step) % 24).find((hour) => !hours.includes(hour));
@@ -145,6 +149,7 @@ export function TimeList({ hours, minute, onChange }: TimeListProps) {
                     label={hours.length > 1 ? `Time ${index + 1}` : "Time"}
                     onCommit={(nextHour, nextMinute) => {
                         const rest = hours.filter((_, at) => at !== index);
+                        setMovedTo(rest.length > 0 && nextMinute !== minute ? nextMinute : null);
                         onChange([...new Set([...rest, nextHour])].sort((a, b) => a - b), nextMinute);
                     }}
                     onRemove={hours.length > 1 ? () => onChange(hours.filter((_, at) => at !== index), minute) : undefined}
@@ -155,6 +160,11 @@ export function TimeList({ hours, minute, onChange }: TimeListProps) {
                     <Plus />
                     Add time
                 </Button>
+            )}
+            {movedTo !== null && hours.length > 1 && (
+                <span className="basis-full text-xs text-muted-foreground">
+                    Every time starts at :{String(movedTo).padStart(2, "0")} now, since cron has one minute for all of them.
+                </span>
             )}
         </>
     );

@@ -50,11 +50,22 @@ describe("schedule model", () => {
 
     it("suggests the nearest later time the queue has room for", () => {
         const busy = new Set(["0 3 * * *", "15 3 * * *"]);
-        const isFree = (cron: string) => !busy.has(cron);
+        const isFree = (candidate: SimpleSchedule) => !busy.has(buildCron(candidate));
 
         expect(suggestFreeTime(schedule({ hours: [3] }), isFree)).toMatchObject({ label: "Use 03:30", schedule: { hours: [3], minute: 30 } });
         expect(suggestFreeTime(schedule({ hours: [3, 15] }), () => true)?.label).toBe("Move 15 min later");
-        expect(suggestFreeTime(schedule({ frequency: "hourly", everyHours: 1, minute: 0 }), (cron) => cron !== "15 * * * *")?.label).toBe("Use :30");
+        expect(suggestFreeTime(schedule({ frequency: "hourly", everyHours: 1, minute: 0 }), (candidate) => buildCron(candidate) !== "15 * * * *")?.label).toBe("Use :30");
         expect(suggestFreeTime(schedule({ hours: [3] }), () => false)).toBeNull();
+    });
+
+    it("tells by how many minutes a suggestion moves every start, also across the full hour", () => {
+        const shifts: number[] = [];
+        suggestFreeTime(schedule({ frequency: "hourly", everyHours: 6, minute: 50 }), (_candidate, shift) => {
+            shifts.push(shift);
+            return shifts.length === 2;
+        });
+
+        // :50 plus 15 is :05, which is 45 minutes earlier within the same hours, not 15 later.
+        expect(shifts).toEqual([-45, -30]);
     });
 });

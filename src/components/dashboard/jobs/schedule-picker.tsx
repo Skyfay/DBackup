@@ -1,13 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { CircleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { isValidCron, nextRunTimes } from "@/lib/core/cron";
-import { DEFAULT_RUN_MS, findScheduleClash, type ScheduleOwners } from "@/lib/core/schedule-conflicts";
+import { DEFAULT_RUN_MS, clashAtStarts, clashContext, scheduleStarts, type ScheduleOwners } from "@/lib/core/schedule-conflicts";
 import { describeSchedule } from "./job-schedule";
 import { PickerRow, Pill, QuickPick, TimeList } from "./schedule-fields";
 import {
@@ -44,6 +45,8 @@ interface SchedulePickerProps {
     jobId?: string;
     /** The preset being edited. The jobs that follow it start together on this schedule. */
     presetId?: string;
+    /** What runs on the schedule, which the warning names. */
+    subject?: "job" | "preset";
 }
 
 /**
@@ -51,7 +54,7 @@ interface SchedulePickerProps {
  * Below it the schedule in words with its next runs, and a small warning when runs would wait
  * for a free slot of the queue, with a time that has room.
  */
-export function SchedulePicker({ value, onChange, jobId, presetId }: SchedulePickerProps) {
+export function SchedulePicker({ value, onChange, jobId, presetId, subject = "job" }: SchedulePickerProps) {
     const [schedule, setSchedule] = useState<SimpleSchedule>(() => parseCron(value) ?? DEFAULT_SCHEDULE);
     const [mode, setMode] = useState<ScheduleMode>(() => parseCron(value)?.frequency ?? "cron");
     const [cronText, setCronText] = useState(value);
@@ -84,12 +87,20 @@ export function SchedulePicker({ value, onChange, jobId, presetId }: SchedulePic
         return { ids: [...ids], durations: durations.length > 0 ? durations : [DEFAULT_RUN_MS] };
     }, [load, jobId, presetId]);
 
-    const clash = useMemo(() => (load && valid ? findScheduleClash(expression, load, owners) : null), [load, valid, expression, owners]);
+    // The runs of the other jobs are worked out once. Checking a schedule against them waits for
+    // a quiet moment, so switching and typing never wait for it, and a skeleton holds the place
+    // of a warning while it is checked again.
+    const context = useMemo(() => (load ? clashContext(load, owners) : null), [load, owners]);
+    const current = valid ? expression : null;
+    const checked = useDeferredValue(current);
+    const pending = checked !== current;
+    const starts = useMemo(() => (context && checked ? scheduleStarts(checked, context) : null), [context, checked]);
+    const clash = useMemo(() => (context && starts ? clashAtStarts(starts, context) : null), [context, starts]);
     const suggestion = useMemo(() => {
         // Moving the time only helps against other jobs, never against the jobs of the preset itself.
-        if (!load || !clash || mode === "cron" || clash.others.length === 0) return null;
-        return suggestFreeTime(schedule, (candidate) => findScheduleClash(candidate, load, owners) === null);
-    }, [load, clash, mode, schedule, owners]);
+        if (!context || !starts || !clash || pending || mode === "cron" || clash.others.length === 0) return null;
+        return suggestFreeTime(schedule, (_candidate, shift) => clashAtStarts(starts.map((start) => start + shift * 60_000), context) === null);
+    }, [context, starts, clash, pending, mode, schedule]);
     const nextRuns = useMemo(() => (timezone && valid ? nextRunTimes(expression, timezone, 3) : []), [timezone, valid, expression]);
 
     const described = valid ? describeSchedule(expression) : null;
@@ -101,7 +112,7 @@ export function SchedulePicker({ value, onChange, jobId, presetId }: SchedulePic
             <div className="px-3 pt-3 sm:px-4">
                 {/* Manual, so arrowing through the kinds does not rewrite the schedule on every step. */}
                 <Tabs value={mode} onValueChange={(next) => changeMode(next as ScheduleMode)} activationMode="manual">
-                    <TabsList className="h-8 w-full sm:w-auto" aria-label="How often">
+                    <TabsList className="h-8 w-full sm:w-fit" aria-label="How often">
                         {MODES.map((option) => (
                             <TabsTrigger key={option.value} value={option.value} className="px-2 text-xs sm:px-2.5">
                                 {option.label}
@@ -193,9 +204,6 @@ export function SchedulePicker({ value, onChange, jobId, presetId }: SchedulePic
                         <TimeList hours={schedule.hours} minute={schedule.minute} onChange={(hours, minute) => update({ ...schedule, hours, minute })} />
                     </PickerRow>
                 )}
-                {mode !== "hourly" && mode !== "cron" && schedule.hours.length > 1 && (
-                    <p className="text-xs text-muted-foreground">Every time starts at the same minute, since cron has one minute for all of them.</p>
-                )}
 
                 {mode === "cron" && (
                     <div className="grid gap-1.5">
@@ -225,20 +233,32 @@ export function SchedulePicker({ value, onChange, jobId, presetId }: SchedulePic
                 )}
             </div>
 
-            {clash && load && (
-                <ClashNote
-                    clash={clash}
-                    slots={load.slots}
-                    timezone={load.timezone}
-                    together={owners.durations.length}
-                    action={
-                        suggestion && (
-                            <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={() => update(suggestion.schedule)}>
-                                {suggestion.label}
-                            </Button>
-                        )
-                    }
-                />
+            {pending && clash ? (
+                <Skeleton className="mx-3 mb-3 h-11 rounded-lg sm:mx-4" />
+            ) : (
+                clash &&
+                context && (
+                    <ClashNote
+                        clash={clash}
+                        slots={context.slots}
+                        timezone={context.zone}
+                        together={owners.durations.length}
+                        subject={subject}
+                        action={
+                            suggestion && (
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 border-warning/50 bg-card text-xs hover:bg-warning/15 dark:border-warning/50 dark:bg-card dark:hover:bg-warning/20"
+                                    onClick={() => update(suggestion.schedule)}
+                                >
+                                    {suggestion.label}
+                                </Button>
+                            )
+                        }
+                    />
+                )
             )}
             <ScheduleSummary words={words} timezone={timezone} nextRuns={nextRuns} oneTime={mode !== "hourly" && mode !== "cron" && schedule.hours.length === 1} />
         </div>

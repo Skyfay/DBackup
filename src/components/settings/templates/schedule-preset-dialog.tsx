@@ -100,7 +100,7 @@ function PresetForm({ preset, jobId, onSuccess }: PresetFormProps) {
                     </div>
                     <div className="space-y-2">
                         <Label>Schedule</Label>
-                        <SchedulePicker value={schedule} onChange={setSchedule} presetId={preset?.id} jobId={jobId} />
+                        <SchedulePicker value={schedule} onChange={setSchedule} presetId={preset?.id} jobId={jobId} subject="preset" />
                     </div>
                 </div>
             </ScrollArea>

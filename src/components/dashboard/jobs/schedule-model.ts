@@ -147,18 +147,24 @@ const SHIFTS = [15, 30, 45, 60, 90, 120, 180, -15, -30, -45, -60, -90, -120, -18
 /** The round quarters first. */
 const MINUTE_OFFSETS = [15, 30, 45, 5, 10, 20, 25, 35, 40, 50, 55];
 
-/** The nearest variation of a schedule the queue has room for, with the words for its button. */
-export function suggestFreeTime(schedule: SimpleSchedule, isFree: (expression: string) => boolean): { schedule: SimpleSchedule; label: string } | null {
+/**
+ * The nearest variation of a schedule the queue has room for, with the words for its button.
+ * isFree gets the variation and by how many minutes it moves every start.
+ */
+export function suggestFreeTime(
+    schedule: SimpleSchedule,
+    isFree: (candidate: SimpleSchedule, shiftMinutes: number) => boolean,
+): { schedule: SimpleSchedule; label: string } | null {
     if (schedule.frequency === "hourly") {
         for (const offset of MINUTE_OFFSETS) {
             const next = { ...schedule, minute: (schedule.minute + offset) % 60 };
-            if (isFree(buildCron(next))) return { schedule: next, label: `Use :${pad(next.minute)}` };
+            if (isFree(next, next.minute - schedule.minute)) return { schedule: next, label: `Use :${pad(next.minute)}` };
         }
         return null;
     }
     for (const shift of SHIFTS) {
         const next = shiftTimes(schedule, shift);
-        if (!next || !isFree(buildCron(next))) continue;
+        if (!next || !isFree(next, shift)) continue;
         const label = next.hours.length === 1 ? `Use ${timeText(next.hours[0], next.minute)}` : `Move ${Math.abs(shift)} min ${shift > 0 ? "later" : "earlier"}`;
         return { schedule: next, label };
     }

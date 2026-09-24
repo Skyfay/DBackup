@@ -8,7 +8,7 @@ import type { SectionStatus } from "@/components/adapter/connection-form-layout"
 import { isValidCron } from "@/lib/core/cron";
 import type { JobFormValues } from "./job-form-schema";
 
-export type JobPartId = "basics" | "source" | "destinations" | "compression" | "encryption" | "notifications" | "advanced";
+export type JobPartId = "basics" | "source" | "incremental" | "destinations" | "compression" | "encryption" | "notifications" | "advanced";
 
 export interface JobPart {
     id: JobPartId;
@@ -22,17 +22,19 @@ export interface JobPart {
 export const JOB_PARTS: JobPart[] = [
     { id: "basics", label: "Basics", description: "Its name, when it runs and whether it runs on its own.", keys: ["name", "enabled", "scheduleMode", "schedule", "schedulePresetId"] },
     { id: "source", label: "Source", description: "A database, folders from storage connections, or both in one backup.", keys: ["sourceMode", "sourceId", "databaseScope", "databases", "directorySources"] },
+    // Right after the source, since what can take part comes from there.
+    {
+        id: "incremental",
+        label: "Incremental",
+        description: "Store only what changed since the last run, in chains that start with a full backup.",
+        keys: ["backupMode", "fullEveryDays", "verifyByHash"],
+    },
     { id: "destinations", label: "Destinations", description: "The backup goes to each one in turn, from the top. Each keeps its own backups.", keys: ["destinations"] },
     // Between the two in the order a run works: the dump is compressed first, then encrypted.
     { id: "compression", label: "Compression", description: "Makes the backups smaller for a little more work on every run.", keys: ["compression", "pgCompressionAlgo", "pgCompressionLevel"] },
     { id: "encryption", label: "Encryption", description: "Encrypts every backup before it leaves DBackup.", keys: ["encryptionProfileId"] },
     { id: "notifications", label: "Notifications", description: "Who hears about a run, and after which runs.", keys: ["notificationTemplateIds", "notificationIds", "notificationEvents"] },
-    {
-        id: "advanced",
-        label: "Advanced",
-        description: "File names, incremental backups and integrity checks.",
-        keys: ["namingTemplateId", "backupMode", "fullEveryDays", "verifyByHash", "skipVerification"],
-    },
+    { id: "advanced", label: "Advanced", description: "File names and integrity checks.", keys: ["namingTemplateId", "skipVerification"] },
 ];
 
 /** The fields that failed validation, from react-hook-form's error tree. */

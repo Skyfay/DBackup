@@ -92,7 +92,9 @@ describe("job form parts", () => {
     it("count errors on their part and open the first part that has one", () => {
         expect(jobPartStatuses(jobDefaults(null), ["destinations", "sourceId", "databases"]).source).toEqual({ kind: "error", count: 2 });
         expect(firstPartWithError(["destinations", "sourceId"])).toBe("source");
-        expect(firstPartWithError(["fullEveryDays"])).toBe("advanced");
+        // Incremental backups have a part of their own, right after the source.
+        expect(firstPartWithError(["fullEveryDays", "destinations"])).toBe("incremental");
+        expect(firstPartWithError(["namingTemplateId"])).toBe("advanced");
         // Compression has a part of its own, between the destinations and the encryption.
         expect(firstPartWithError(["pgCompressionLevel", "encryptionProfileId"])).toBe("compression");
     });

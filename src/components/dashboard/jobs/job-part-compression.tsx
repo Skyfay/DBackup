@@ -6,6 +6,7 @@ import { ChoiceCards, type ModeOption } from "@/components/adapter/connection-mo
 import { FormControl, FormField, FormItem, FormLabel } from "@/components/ui/form";
 import { Slider } from "@/components/ui/slider";
 import { PG_LEVELS, type JobFormValues, type PgCompressionAlgo } from "./job-form-schema";
+import { PartSection } from "./job-part-section";
 
 type DumpAlgo = Exclude<PgCompressionAlgo, "LEGACY">;
 
@@ -23,19 +24,6 @@ const ARCHIVE: ModeOption[] = [
     { value: "GZIP", title: "Gzip", description: "Small and fast, the usual pick" },
     { value: "BROTLI", title: "Brotli", description: "Smallest, takes longer" },
 ];
-
-/** A block of the part with its title and, on the right, who does the work. */
-function Section({ title, hint, children }: { title: string; hint: string; children: React.ReactNode }) {
-    return (
-        <div className="space-y-2.5">
-            <div className="flex items-baseline justify-between gap-3">
-                <p className="text-sm font-medium">{title}</p>
-                <span className="text-xs text-muted-foreground">{hint}</span>
-            </div>
-            {children}
-        </div>
-    );
-}
 
 interface CompressionPartProps {
     isPostgres: boolean;
@@ -77,7 +65,7 @@ export function CompressionPart({ isPostgres, pgMajorVersion }: CompressionPartP
     return (
         <>
             {isPostgres && (
-                <Section title="The dump" hint={pgMajorVersion !== null ? `pg_dump · PostgreSQL ${pgMajorVersion}` : "pg_dump"}>
+                <PartSection title="The dump" hint={pgMajorVersion !== null ? `pg_dump · PostgreSQL ${pgMajorVersion}` : "pg_dump"}>
                     <ChoiceCards value={dumpAlgo} onValueChange={pickDump} options={dumpOptions} aria-label="How pg_dump compresses the dump" />
                     {levels && (
                         <FormField
@@ -125,7 +113,7 @@ export function CompressionPart({ isPostgres, pgMajorVersion }: CompressionPartP
                             }}
                         />
                     )}
-                </Section>
+                </PartSection>
             )}
 
             {(!native || withFolders) && (
@@ -134,7 +122,7 @@ export function CompressionPart({ isPostgres, pgMajorVersion }: CompressionPartP
                     name="compression"
                     render={({ field }) => (
                         <FormItem>
-                            <Section title={native ? "The folders" : "The backup"} hint={isPostgres && !native ? "compressed by DBackup instead" : "compressed by DBackup"}>
+                            <PartSection title={native ? "The folders" : "The backup"} hint={isPostgres && !native ? "compressed by DBackup instead" : "compressed by DBackup"}>
                                 <FormControl>
                                     <ChoiceCards
                                         value={field.value}
@@ -144,7 +132,7 @@ export function CompressionPart({ isPostgres, pgMajorVersion }: CompressionPartP
                                         aria-label={native ? "How DBackup compresses the folders" : "How DBackup compresses the backup"}
                                     />
                                 </FormControl>
-                            </Section>
+                            </PartSection>
                         </FormItem>
                     )}
                 />

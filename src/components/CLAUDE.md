@@ -208,7 +208,7 @@ So `formatDate(x, "dd.MM.yyyy")` still converts into the user's timezone but ove
 
 ## 9. Feedback and loading
 
-- Success and error feedback: `toast` from `sonner`. Never `alert()`.
+- Success and error feedback: `toast` from `sonner`. Never `alert()`. The look comes from `ui/sonner.tsx`: a quiet card with the icon in the color of the kind and a line along its foot for the time left, which stops while the toasts are hovered. Hovering shows Close, and Copy on errors and warnings, so pass no colors or classes of your own.
 - User-facing errors go through `toast`. The logger is for diagnostics, not for the user - they are not interchangeable, and an error usually needs both.
 - Pending buttons: `disabled={isSaving}` plus `<Loader2 className="h-4 w-4 animate-spin" />`.
 - Initial page and section loads: `Skeleton` from `@/components/ui/skeleton`, shaped like the content it replaces. A bare centered spinner for a whole page is a last resort.

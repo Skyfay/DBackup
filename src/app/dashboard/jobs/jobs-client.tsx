@@ -26,6 +26,7 @@ import { DIALOG_SURFACE } from "@/components/ui/confirm-dialog";
 import { DataTable } from "@/components/ui/data-table";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ViewSwitch } from "@/components/ui/view-switch";
 import { useIsMobileState } from "@/hooks/use-mobile";
 import { useTableLayout } from "@/hooks/use-table-layout";
@@ -197,9 +198,19 @@ export function JobsClient({
 
     return (
         <div className="space-y-4">
-            {/* Tabs up here would switch to other records, like the kinds of connections. Jobs are one
-                list, so their filters sit beside the search. */}
-            <div className={cn("flex items-center gap-2 md:gap-3", !canManage && "hidden md:flex")}>
+            {/* One tab for the one list, so the row reads like the Connections page, whose tabs switch
+                between kinds of connections. The filters of the list sit beside its search. */}
+            <div className="flex items-center gap-2 md:gap-3">
+                <Tabs value="jobs">
+                    <TabsList aria-label="Job list">
+                        <TabsTrigger value="jobs">
+                            <span className="flex items-center gap-2">
+                                Jobs
+                                {hasLoaded && <span className="text-xs font-normal text-muted-foreground tabular-nums">{jobs.length}</span>}
+                            </span>
+                        </TabsTrigger>
+                    </TabsList>
+                </Tabs>
                 <div className="ml-auto flex shrink-0 items-center gap-2">
                     {/* Hidden by CSS rather than by the measured screen, so it never pops in after loading. */}
                     <div className="hidden md:block">

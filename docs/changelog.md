@@ -72,6 +72,7 @@ All notable changes to DBackup are documented here.
 - **jobs**: The API trigger dialog lists an Overview, a Setup, the scripts and the pipelines on the left like the job form, with a copy button on every URL and code that follows the theme. Its Setup creates a key with the two rights the API needs and fills it into every example until the dialog closes.
 - **ui**: The fields that pick a login, a connection, a key or a template offer New and Edit only to users who may create or change that kind of entry.
 - **ui**: Cloning a job or a connection, and creating a connection in the other storage role, opens a dialog in the new look. It starts with a name that is free and says what the copy gets and what is left to do.
+- **ui**: Toasts have the new look, with the icon in the color of their kind and a line along the foot for the time they have left. Hovering stops the time and shows Close, and errors and warnings get Copy for their text.
 - **templates**: The dialog for adding and editing a retention policy has the new look.
 - **templates**: The dialog for adding and editing a notification template has the new look. Each channel is picked from a searchable list that can also add one, and its runs are picked with buttons.
 - **templates**: The dialog for adding and editing a naming template has the new look and warns about a pattern without the time of day. The file names of a job are picked from a searchable list that shows the pattern of each template.

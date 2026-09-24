@@ -258,3 +258,44 @@
     animation: indeterminate 1.5s infinite linear;
   }
 }
+
+/*
+ * The time a toast has left, as a line along its foot in the color of its kind (see
+ * `components/ui/sonner.tsx`). Sonner stops the timer of every toast while the stack is hovered
+ * and marks them expanded, so the line stops with it. A toast that is still loading has no timer
+ * until it turns into a result. Kept out of the Tailwind layers, like the CSS sonner adds itself.
+ */
+[data-sonner-toast] {
+  background-image: linear-gradient(var(--toast-time-color, var(--muted-foreground)), var(--toast-time-color, var(--muted-foreground)));
+  background-repeat: no-repeat;
+  background-origin: padding-box;
+  background-position: left bottom;
+  background-size: 100% 2px;
+  animation: toast-time var(--toast-duration, 4000ms) linear forwards;
+}
+
+[data-sonner-toast][data-expanded="true"] {
+  animation-play-state: paused;
+}
+
+[data-sonner-toast][data-type="loading"] {
+  background-image: none;
+  animation: none;
+}
+
+/* The toasts behind the front one show only their edge, as sonner's own look does. */
+[data-sonner-toast][data-expanded="false"][data-front="false"] > * {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-sonner-toast] {
+    background-image: none;
+  }
+}
+
+@keyframes toast-time {
+  to {
+    background-size: 0% 2px;
+  }
+}

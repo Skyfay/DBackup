@@ -25,6 +25,7 @@ Every other page still has the old look. Do not copy patterns from it, copy them
 - Sections stack with `space-y-4 md:space-y-6`, grids use `gap-4 md:gap-6`.
 - Every grid or flex child that holds text gets `min-w-0`. Without it a long name pushes the page wider than a phone.
 - A route-level `loading.tsx` shows a Skeleton shaped like the page. When it must not apply to sibling routes, the page moves into a route group, like `(overview)`.
+- Tabs at the top of a page switch between lists of different records, like the kinds of connections. Quick filters of one list, like Needs attention on the Jobs page, are `QuickFilter` chips with their counts beside its search, passed as `toolbarExtra` to the `DataTable`. A page with one list has no tabs. See `connection-status-filter.tsx` and `job-status-filter.tsx`.
 - A row of tabs that can be wider than a phone becomes a `Select` below `md` and stays tabs above it, both hidden by CSS so neither pops in after loading. See `connections-tabs.tsx`. Tabs that do fit on a phone but not on a tablet sit in `<ScrollArea horizontal>` instead, so they scroll sideways rather than widening the page.
 - A layout that differs between phone and desktop waits for `useIsMobileState()`, which is undefined until the screen is measured, and shows its skeleton meanwhile. Rendering the desktop version first makes a phone flash it.
 

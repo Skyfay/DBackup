@@ -1,6 +1,6 @@
 "use client";
 
-import { cn } from "@/lib/utils";
+import { QuickFilter } from "@/components/ui/quick-filter";
 import type { AdapterConfig } from "./types";
 
 export type StatusFilter = "all" | "online" | "issues" | "unused";
@@ -40,30 +40,11 @@ interface ConnectionStatusFilterProps {
 export function ConnectionStatusFilter({ value, onChange, configs, withHealth }: ConnectionStatusFilterProps) {
     const options: StatusFilter[] = withHealth ? ["all", "online", "issues", "unused"] : ["all", "unused"];
     return (
-        <div role="group" aria-label="Filter by status" className="flex flex-wrap items-center gap-1">
-            {options.map((option) => {
-                const active = option === value;
-                const { label, dot } = OPTIONS[option];
-                return (
-                    <button
-                        key={option}
-                        type="button"
-                        aria-pressed={active}
-                        onClick={() => onChange(option)}
-                        className={cn(
-                            // Taller on phones, where a finger has to hit it.
-                            "inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 sm:h-7",
-                            active ? "border-border bg-muted text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
-                        )}
-                    >
-                        {dot && <span className={cn("size-1.5 rounded-full", dot)} aria-hidden="true" />}
-                        {label}
-                        <span className="font-normal text-muted-foreground tabular-nums">
-                            {configs.filter((config) => matchesStatus(config, option)).length}
-                        </span>
-                    </button>
-                );
-            })}
-        </div>
+        <QuickFilter
+            aria-label="Filter by status"
+            value={value}
+            onChange={onChange}
+            options={options.map((option) => ({ value: option, ...OPTIONS[option], count: configs.filter((config) => matchesStatus(config, option)).length }))}
+        />
     );
 }

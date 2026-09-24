@@ -147,8 +147,10 @@ describe("Task colors", () => {
         "stats-strip.tsx",
         "activity-chart.tsx",
         "storage-history-chart.tsx",
-        // A job's live run: the progress bar on its card and in its details, the running bar of its run chart.
+        // A job's live run: the progress bar on its card and in its details, the running bar of its run chart,
+        // and the dot of the Running filter.
         "job-card.tsx",
+        "job-status-filter.tsx",
         "job-details-content.tsx",
         "job-run-chart.tsx",
     ];

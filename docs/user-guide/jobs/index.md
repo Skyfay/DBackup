@@ -23,7 +23,7 @@ A job defines:
 | **What goes where** | The source and the destinations, with the encryption key and the compression |
 | **Next run** | The time within the next day, otherwise how long until then, or Paused |
 
-The **Columns** menu adds what a job keeps, who it notifies and when it was added, and moves or hides the rest. The tabs above the list show **All**, the jobs that **Need attention** because their last run failed or was partial, the **Running** ones and the **Paused** ones.
+The **Columns** menu adds what a job keeps, who it notifies and when it was added, and moves or hides the rest. The filters beside the search show **All**, the jobs that **Need attention** because their last run failed or was partial, the **Running** ones and the **Paused** ones, each with how many jobs it holds.
 
 The switch beside **New job** shows the jobs as a table or as cards. A card shows the way of a backup from left to right: the source, what happens on the way and the destinations. A phone always shows the cards. The page remembers the view per user.
 

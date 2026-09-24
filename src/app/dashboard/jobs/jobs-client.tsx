@@ -12,11 +12,11 @@ import { JobCard } from "@/components/dashboard/jobs/job-card";
 import { jobColumns } from "@/components/dashboard/jobs/job-columns";
 import { JobDeleteDialog } from "@/components/dashboard/jobs/job-delete-dialog";
 import { JobDetailsSheet } from "@/components/dashboard/jobs/job-details-sheet";
-import { JobFilterTabs } from "@/components/dashboard/jobs/job-filter-tabs";
 import { JobForm } from "@/components/dashboard/jobs/job-form";
 import type { AdapterOption, EncryptionOption } from "@/components/dashboard/jobs/job-form-schema";
 import { JobContextMenu, JobRowActions } from "@/components/dashboard/jobs/job-menus";
 import { matchesJobFilter, type JobFilter } from "@/components/dashboard/jobs/job-status";
+import { JobStatusFilter } from "@/components/dashboard/jobs/job-status-filter";
 import { JOBS_PAGE_ID, JOBS_TABLE_ID } from "@/components/dashboard/jobs/job-tables";
 import { useJobList } from "@/components/dashboard/jobs/use-job-list";
 import { useRunJob } from "@/components/dashboard/widgets/use-run-job";
@@ -197,8 +197,9 @@ export function JobsClient({
 
     return (
         <div className="space-y-4">
-            <div className="flex items-center gap-2 md:gap-3">
-                <JobFilterTabs value={filter} onChange={setFilter} jobs={jobs} />
+            {/* Tabs up here would switch to other records, like the kinds of connections. Jobs are one
+                list, so their filters sit beside the search. */}
+            <div className={cn("flex items-center gap-2 md:gap-3", !canManage && "hidden md:flex")}>
                 <div className="ml-auto flex shrink-0 items-center gap-2">
                     {/* Hidden by CSS rather than by the measured screen, so it never pops in after loading. */}
                     <div className="hidden md:block">
@@ -224,6 +225,7 @@ export function JobsClient({
                     data={visibleJobs}
                     searchKey="name"
                     searchPlaceholder="Search jobs"
+                    toolbarExtra={<JobStatusFilter value={filter} onChange={setFilter} jobs={jobs} />}
                     onRefresh={refresh}
                     isLoading={isLoading}
                     // Selecting for bulk actions is a table thing. Cards keep to one job at a time.

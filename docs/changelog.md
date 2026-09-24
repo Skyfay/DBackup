@@ -16,7 +16,7 @@ All notable changes to DBackup are documented here.
 - **jobs**: The jobs table shows each job's last run with its error or live progress, its last 12 runs as bars, where it backs up to and when it runs next. The Jobs page can also show its jobs as cards with the way of each backup, and phones always get the cards.
 - **jobs**: A click on a job opens a panel with its live progress or last error, the length of its latest runs, its success rate over 30 days and what it backs up to where. Its actions open from there, from the button at the end of the row and with a right click on the row.
 - **jobs**: The file names of a job warn when two runs of its schedule would get the same name, which replaces the earlier backup at every destination, and offer a template with the time. The field also shows a name the job will write.
-- **storage**: The Storage Explorer shows the backups of a job with every destination that holds a copy of each run and marks a missing copy, or the backups of a destination grouped by job. A timeline shows the runs of a job, or of every job at a destination, with their incremental chains.
+- **storage**: The Storage Explorer shows the backups of a job with every destination that holds a copy of each run and marks a missing copy, or the backups of a destination in a folder per job. A timeline shows the runs of a job, or of every job at a destination, with their incremental chains.
 - **storage**: A click on a backup in the Storage Explorer opens its copies, its chain, what it holds and its last integrity check. The backups of a deleted job stay listed and can be deleted together, and the page tells how old the list of each destination is and compares it with the storage on request.
 
 ### 🐛 Bug Fixes

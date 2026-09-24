@@ -9,7 +9,7 @@ Open **Storage Explorer** in the sidebar. The tabs at the top pick how the backu
 | Tab | Shows |
 | :--- | :--- |
 | **Jobs** | The backups of one job. Each row is one run, with every destination that holds a copy of it. |
-| **Destinations** | The backups at one destination, grouped by the job that made them, plus its **History** and **Alerts**. |
+| **Destinations** | The backups at one destination, in a folder per job, plus its **History** and **Alerts**. |
 
 The field next to the tabs picks the job or the destination and searches as you type. The page remembers what you picked in its address, so a link or a reload opens the same view.
 
@@ -46,13 +46,18 @@ Actions in this view work on the first copy in the upload order of the job. **De
 
 The strip shows what the destination stores, how many backups it holds and from how many jobs, the newest backup, the locked ones and the integrity checks.
 
-The list is grouped by job. Each group shows its newest three backups until you open it fully, and **By job** switches to the job view. The **Also at** column names the other destinations that hold the same backup.
+The switch beside the search shows the backups in one of two ways:
 
-Switch off **Grouped by job** to get a flat list, where rows can be selected for **Lock**, **Unlock** and **Delete** in one step.
+| View | Shows |
+| :--- | :--- |
+| **Folders** | One row per job, like the folders the jobs write into on the storage, with its number of backups, size, newest backup, the other destinations that hold copies and its integrity checks. A click opens the folder and lists its backups. |
+| **All backups** | Every backup at the destination in one list with its job. Rows of different jobs can be selected together for **Lock**, **Unlock** and **Delete**. |
+
+An open folder has **All folders** to go back and **Open in Jobs** to see the same job at every destination. Its list offers the same selection for the backups of that job. The **Also at** column names the other destinations that hold the same backup.
 
 ### Backups of a deleted job
 
-When a job is deleted, its backups stay. Retention no longer runs for them, since retention runs as part of a job. Their group says so and offers to delete all of them at this destination. Locked ones are left out.
+When a job is deleted, its backups stay. Retention no longer runs for them, since retention runs as part of a job. Its folder is marked **Job deleted**, and inside it a note says so and offers to delete all of its backups at this destination. Locked ones are left out.
 
 A deleted job leaves the list once none of its backups are left: when they are deleted here or on the storage, or when the destination itself is deleted in DBackup, which drops its list with it. A destination that does not answer keeps showing its last list, marked with a clock, until it answers again.
 
@@ -65,7 +70,7 @@ The switch next to the tabs shows a timeline above the list, from md screens up.
 - a bar stands for a day with several backups, like an hourly job
 - an amber ring marks a missing copy, a red point a failed check, a lock a locked backup
 
-The list stays hidden under the timeline, since it would show the same backups. A click on a job lists its backups below the timeline, a second click hides them again. By job the timeline has one lane for the job, by destination one lane per job at that destination. A click on a point opens that backup.
+The list stays hidden under the timeline, since it would show the same backups. By job the timeline has one lane for the job, and a click on it lists its backups below. By destination it has one lane per job at that destination, and a click on a lane opens the folder of that job below. A second click hides the list again, and a click on a point opens that backup.
 
 ## Details
 

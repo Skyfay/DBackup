@@ -195,14 +195,50 @@ describe("Storage Explorer", () => {
         expect(screen.getByText(/Not reachable/)).toBeInTheDocument();
     });
 
-    it("groups the backups of a destination by job and offers to delete those of a deleted job", async () => {
+    it("shows a folder per job on a destination and offers to delete the backups of a deleted job inside its folder", async () => {
+        const user = userEvent.setup();
         search = new URLSearchParams("destination=nas");
-        renderPage();
+        const { rerender } = renderPage();
+
+        const folder = await screen.findByRole("button", { name: /^ERP invoices/ });
+        expect(screen.getByRole("button", { name: /^Shop nightly/ })).toBeInTheDocument();
+        expect(screen.queryByText("ERP_invoices_old.tar")).not.toBeInTheDocument();
+
+        await user.click(folder);
+        expect(new URLSearchParams(replace.mock.lastCall![0].split("?")[1]).get("folder")).toBe("deleted:job-erp");
+        rerender(<StorageClient canDownload canRestore canDelete canViewHistory />);
 
         expect(await screen.findByText("Retention stopped with the job, so these backups stay until you delete them.")).toBeInTheDocument();
         expect(screen.getByRole("button", { name: /Delete 2 backups/ })).toBeInTheDocument();
-        expect(screen.getAllByText("Shop nightly").length).toBeGreaterThan(0);
-        expect(screen.getAllByText("ERP invoices").length).toBeGreaterThan(0);
+        expect(screen.getByText("ERP_invoices_old.tar")).toBeInTheDocument();
+        expect(screen.queryByText("Shop_nightly_newest.tar")).not.toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "All folders" })).toBeInTheDocument();
+    });
+
+    it("lists every backup of a destination in one list, so backups of different jobs can be picked together", async () => {
+        search = new URLSearchParams("destination=nas&layout=all");
+        renderPage();
+
+        expect(await screen.findByText("Shop_nightly_newest.tar")).toBeInTheDocument();
+        expect(screen.getByText("ERP_invoices_old.tar")).toBeInTheDocument();
+        expect(screen.getByRole("columnheader", { name: "Job" })).toBeInTheDocument();
+        expect(screen.getAllByRole("checkbox").length).toBeGreaterThan(4);
+    });
+
+    it("opens the folder of a job from its lane on the timeline of a destination", async () => {
+        const user = userEvent.setup();
+        search = new URLSearchParams("destination=nas&view=timeline");
+        const { rerender } = renderPage();
+
+        const lane = await screen.findByRole("button", { name: /^Shop nightly/ });
+        expect(screen.queryByRole("button", { name: "All folders" })).not.toBeInTheDocument();
+
+        await user.click(lane);
+        rerender(<StorageClient canDownload canRestore canDelete canViewHistory />);
+
+        expect(await screen.findByRole("button", { name: "All folders" })).toBeInTheDocument();
+        expect(screen.getByText("Shop_nightly_newest.tar")).toBeInTheDocument();
+        expect(screen.queryByText("ERP_invoices_old.tar")).not.toBeInTheDocument();
     });
 
     it("groups an incremental job by chain and shows what a restore of one of them reads", async () => {

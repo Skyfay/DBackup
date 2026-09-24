@@ -8,7 +8,7 @@ import { ArrowUpRight, HardDrive, List, RotateCw, ChartGantt } from "lucide-reac
 import { StorageHistoryTab, type StorageHistoryTabRef } from "@/components/dashboard/storage/storage-history-tab";
 import { StorageSettingsTab, type StorageSettingsTabRef } from "@/components/dashboard/storage/storage-settings-tab";
 import { BackupDetailsSheet, type BackupDetailsData } from "@/components/dashboard/storage/explorer/backup-details";
-import { DestinationBackups } from "@/components/dashboard/storage/explorer/destination-backups";
+import { DestinationBackups, type DestinationLayout } from "@/components/dashboard/storage/explorer/destination-backups";
 import { checkNow, destinationsOf, useExplorerData } from "@/components/dashboard/storage/explorer/explorer-data";
 import { ExplorerPicker, type ExplorerMode } from "@/components/dashboard/storage/explorer/explorer-picker";
 import { FreshnessButton } from "@/components/dashboard/storage/explorer/freshness-button";
@@ -137,6 +137,8 @@ export function StorageClient({ canDownload, canRestore, canDelete, canManageVau
     const display: Display = searchParams.get("view") === "timeline" ? "timeline" : "table";
     const tabParam = searchParams.get("tab");
     const tab: DestinationTab = tabParam === "history" || tabParam === "alerts" ? tabParam : "backups";
+    const layout: DestinationLayout = searchParams.get("layout") === "all" ? "all" : "folders";
+    const folderParam = searchParams.get("folder");
     const jobByParam = jobParam ? jobsByKey.get(jobParam) ?? jobs.find((job) => job.kind === "job" && job.name === jobParam) ?? null : null;
     const mode: ExplorerMode = jobParam && (jobByParam || !destinationParam) ? "jobs" : destinationParam ? "destinations" : defaultJob(jobs) ? "jobs" : "destinations";
     const job = mode === "jobs" ? jobByParam ?? (jobParam ? null : defaultJob(jobs)) : null;
@@ -272,7 +274,7 @@ export function StorageClient({ canDownload, canRestore, canDelete, canManageVau
                     value={mode}
                     onValueChange={(next) =>
                         setParams(next === "jobs"
-                            ? { job: job?.key ?? defaultJob(jobs)?.key ?? null, destination: null, tab: null }
+                            ? { job: job?.key ?? defaultJob(jobs)?.key ?? null, destination: null, folder: null, tab: null }
                             : { job: null, destination: destination?.id ?? destinations[0]?.id ?? null })}
                 >
                     <TabsList aria-label="Show backups">
@@ -299,14 +301,14 @@ export function StorageClient({ canDownload, canRestore, canDelete, canManageVau
                         value={mode === "jobs" ? job?.key ?? null : destination?.id ?? null}
                         onChange={(value) => {
                             setDetails(null);
-                            setParams(mode === "jobs" ? { job: value } : { destination: value });
+                            setParams(mode === "jobs" ? { job: value } : { destination: value, folder: null });
                         }}
                     />
                 </div>
                 <div className="ml-auto flex shrink-0 items-center gap-2">
                     {(mode === "jobs" || tab === "backups") && <FreshnessButton destinations={freshnessList} onCheckNow={onCheckNow} />}
                     {mode === "destinations" && (
-                        <Tabs value={tab} onValueChange={(next) => setParams({ tab: next === "backups" ? null : next })}>
+                        <Tabs value={tab} onValueChange={(next) => setParams({ tab: next === "backups" ? null : next, folder: null })}>
                             <TabsList aria-label="About this destination">
                                 <TabsTrigger value="backups">Backups</TabsTrigger>
                                 <TabsTrigger value="history">History</TabsTrigger>
@@ -372,13 +374,17 @@ export function StorageClient({ canDownload, canRestore, canDelete, canManageVau
                         jobs={jobsByKey}
                         destinations={destinationsById}
                         display={display}
+                        layout={layout}
+                        onLayout={(next) => setParams({ layout: next === "folders" ? null : next, folder: null })}
+                        folder={folderParam}
+                        onFolder={(key) => setParams({ folder: key })}
                         canDelete={canDelete}
                         handlersFor={handlersFor}
                         askDelete={askDelete}
                         onOpen={openBackup}
                         onOpenJob={(key) => {
                             setDetails(null);
-                            setParams({ job: key, destination: null, tab: null });
+                            setParams({ job: key, destination: null, folder: null, tab: null });
                         }}
                         openPath={openPath}
                         onChanged={reloadAll}

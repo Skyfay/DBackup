@@ -67,9 +67,13 @@ export async function executeCombinedDump(ctx: RunnerContext): Promise<void> {
     // The chain position is only part of the name for a job that actually builds chains; a
     // full-mode job resolves {chain} to nothing.
     const isChained = !!plan && ((job as { backupMode?: string }).backupMode ?? "FULL") === "INCREMENTAL";
+    // The archive, its index and its metadata live in a directory of this run, which the
+    // cleanup removes as a whole, whatever a step left in it.
+    ctx.runDir = await createTempDir("dbackup-run-");
     const { tempFile, chainInFileName } = await resolveBackupFilename(
         job,
-        isChained && plan ? { type: plan.type, index: plan.index } : undefined
+        isChained && plan ? { type: plan.type, index: plan.index } : undefined,
+        ctx.runDir
     );
     ctx.tempFile = tempFile;
     ctx.chainInFileName = chainInFileName;

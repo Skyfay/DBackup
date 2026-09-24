@@ -170,7 +170,9 @@ function makeDirectorySource(overrides: Partial<DirectorySourceContext> = {}): D
 const createdTempFiles: string[] = [];
 afterEach(async () => {
     for (const f of createdTempFiles.splice(0)) {
-        await fs.rm(f, { recursive: true, force: true }).catch(() => {});
+        // The archive of a run sits in a directory of its own, which goes with it.
+        const target = path.basename(path.dirname(f)).startsWith('dbackup-run-') ? path.dirname(f) : f;
+        await fs.rm(target, { recursive: true, force: true }).catch(() => {});
     }
 });
 
@@ -200,6 +202,37 @@ describe('executeCombinedDump', () => {
         // Packing is its own phase: it compresses and encrypts every entry, which is not
         // instant, and reporting it as still "Collecting Files" made the run look stuck.
         expect(stagesSet(ctx)).toEqual(['Dumping Databases', 'Collecting Files', 'Processing']);
+    });
+
+    it('gives every run a directory of its own, so two runs with the same file name never share a file', async () => {
+        const prisma = (await import('@/lib/prisma')).default as unknown as { namingTemplate: { findFirst: ReturnType<typeof vi.fn> } };
+        // Only the date in the name: two runs of one day resolve the same file name.
+        prisma.namingTemplate.findFirst.mockResolvedValue({ pattern: '{job_name}_yyyy-MM-dd' });
+        const run = async (content: string) => {
+            const ctx = makeCtx({
+                sourceAdapter: undefined,
+                sources: [makeDirectorySource({ adapter: makeFakeStorageAdapter({ 'a.txt': content }) })],
+                job: makeJob({ source: null }),
+            });
+            await executeCombinedDump(ctx);
+            createdTempFiles.push(ctx.tempFile!);
+            return ctx;
+        };
+
+        try {
+            const first = await run('FIRST');
+            const second = await run('SECOND RUN');
+
+            expect(path.basename(second.tempFile!)).toBe(path.basename(first.tempFile!));
+            expect(second.tempFile).not.toBe(first.tempFile);
+            expect(path.dirname(first.tempFile!)).toBe(first.runDir);
+            expect(path.basename(first.runDir!)).toMatch(/^dbackup-run-/);
+            // The first archive is still whole beside the second.
+            const manifest = await readArchiveManifest(await localFileSource(first.tempFile!));
+            expect(manifest.version).toBe(2);
+        } finally {
+            prisma.namingTemplate.findFirst.mockResolvedValue(null);
+        }
     });
 
     it('shows only the file phase for a directory-only backup', async () => {

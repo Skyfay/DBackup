@@ -110,6 +110,11 @@ export interface RunnerContext {
     destinations: DestinationContext[];
 
     // File paths
+    /**
+     * Directory of this run's own files: the archive, its index and its metadata. Made per run,
+     * so two runs never share a file, and removed as a whole by the cleanup.
+     */
+    runDir?: string;
     tempFile?: string;
     /**
      * Local path of the seekable archive's index sidecar, set by the dump step for every

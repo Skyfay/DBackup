@@ -1,12 +1,12 @@
 import path from "path";
 import prisma from "@/lib/prisma";
-import { getTempDir } from "@/lib/temp-dir";
 import { applyNamingPattern, chainSegment, fileNameParts, patternUsesChain } from "@/lib/templates/naming-template-engine";
 import fs from "fs/promises";
 import { formatBytes } from "@/lib/utils";
 import { JobWithRelations, RunnerContext } from "../types";
 
 export interface ResolvedBackupFilename {
+    /** The directory of this run, which the archive and its sidecars share with nothing else. */
     tempDir: string;
     tempFile: string;
     fileName: string;
@@ -21,10 +21,15 @@ export interface ResolvedBackupFilename {
  * Resolves the final backup filename and temp path for a job from its naming template. Every
  * backup is a seekable archive, which is a TAR whatever the source, so the extension is fixed
  * rather than derived from an adapter.
+ *
+ * The file goes into the run's own directory. Two runs can resolve the same name, like two
+ * runs of a job on one day with a template that has only the date, and in a shared directory
+ * they would write into one file and delete it under each other.
  */
 export async function resolveBackupFilename(
     job: JobWithRelations,
-    chain?: { type: "full" | "incremental"; index: number }
+    chain: { type: "full" | "incremental"; index: number } | undefined,
+    runDir: string
 ): Promise<ResolvedBackupFilename> {
     const [tzSetting, patternSetting, namingTemplate] = await Promise.all([
         prisma.systemSetting.findUnique({ where: { key: "system.timezone" } }),
@@ -49,10 +54,9 @@ export async function resolveBackupFilename(
     // to nothing and takes its separator with it.
     const chainValue = chain ? chainSegment(chain.type, chain.index) : "";
     const fileName = applyNamingPattern(pattern, sanitizedName, dbNameRaw, new Date(), timezone, chainValue) + ".tar";
-    const tempDir = getTempDir();
-    const tempFile = path.join(tempDir, fileName);
+    const tempFile = path.join(runDir, fileName);
 
-    return { tempDir, tempFile, fileName, chainInFileName: patternUsesChain(pattern) };
+    return { tempDir: runDir, tempFile, fileName, chainInFileName: patternUsesChain(pattern) };
 }
 
 /** Parses Job.databases (a JSON string array) defensively. */

@@ -7,6 +7,11 @@ const log = logger.child({ module: "Queue" });
 
 /**
  * Checks the queue and starts jobs if slots are available.
+ *
+ * A run waits while another run of the same job is still going, like one started by hand
+ * during the scheduled one. Two runs of one job at once would plan the same position of an
+ * incremental chain and could write the same file, so the waiting run starts right after,
+ * when the queue is checked again at the end of the first.
  */
 export async function processQueue() {
     // Skip queue processing during shutdown
@@ -27,28 +32,50 @@ export async function processQueue() {
     const setting = await prisma.systemSetting.findUnique({ where: { key: "maxConcurrentJobs" } });
     const maxJobs = setting ? parseInt(setting.value) : 1;
 
-    // 2. Count running jobs
-    const runningCount = await prisma.execution.count({
-        where: { status: "Running" }
+    // 2. Get pending runs (FIFO). Read before the running ones on purpose: a run that a
+    // concurrent call claims after this read is still in this list as the first of its job, so
+    // this call picks that one, and its claim in performExecution fails. A run claimed before
+    // this read shows up as running below. Either way no second run of a job starts beside it.
+    const pending = await prisma.execution.findMany({
+        where: { status: "Pending" },
+        orderBy: { startedAt: 'asc' }, // Creation time
+        select: { id: true, jobId: true },
     });
 
-    if (runningCount >= maxJobs) {
-        log.debug("Saturation reached", { runningCount, maxJobs });
+    if (pending.length === 0) {
+        log.debug("No pending jobs");
         return;
     }
 
-    const availableSlots = maxJobs - runningCount;
-
-    // 3. Get pending jobs (FIFO)
-    const pendingJobs = await prisma.execution.findMany({
-        where: { status: "Pending" },
-        orderBy: { startedAt: 'asc' }, // Creation time
-        take: availableSlots,
-        include: { job: true }
+    // 3. Running runs fill slots, and their jobs are busy
+    const running = await prisma.execution.findMany({
+        where: { status: "Running" },
+        select: { jobId: true },
     });
 
+    if (running.length >= maxJobs) {
+        log.debug("Saturation reached", { runningCount: running.length, maxJobs });
+        return;
+    }
+
+    const availableSlots = maxJobs - running.length;
+    const busyJobs = new Set(running.flatMap((execution) => (execution.jobId ? [execution.jobId] : [])));
+
+    // The oldest waiting run of every job that is not running, up to the free slots.
+    const pendingJobs: typeof pending = [];
+    for (const execution of pending) {
+        if (pendingJobs.length >= availableSlots) break;
+        if (execution.jobId && busyJobs.has(execution.jobId)) {
+            log.debug("Run waits for the running one of its job", { executionId: execution.id, jobId: execution.jobId });
+            continue;
+        }
+        // A run whose job was deleted starts as before and ends right there.
+        if (execution.jobId) busyJobs.add(execution.jobId);
+        pendingJobs.push(execution);
+    }
+
     if (pendingJobs.length === 0) {
-        log.debug("No pending jobs");
+        log.debug("Every pending run waits for a run of its job");
         return;
     }
 
@@ -67,13 +94,20 @@ export async function processQueue() {
     await Promise.allSettled(promises);
 }
 
+/**
+ * The runner, imported once and shared by every run. It imports the queue itself, so it is loaded
+ * when the first run starts. One import for all also keeps two runs started at the same moment
+ * from each importing it on their own, which a test's module mock does not survive.
+ */
+let runner: Promise<typeof import("@/lib/runner")> | undefined;
+
 async function executeQueuedJob(executionId: string, jobId: string) {
     log.debug("Executing queued job", { executionId, jobId });
 
-    // Dynamic import is fine, but for testing we need to ensure the mocked module is used if possible
-    // When using vitest, import() should use the mock registry.
-
-    // We import directly at top level if possible or use full dynamic
-    const runner = await import("@/lib/runner");
-    await runner.performExecution(executionId, jobId);
+    runner ??= import("@/lib/runner").catch((error: unknown) => {
+        // A failed import is tried again by the next run instead of failing every one after it.
+        runner = undefined;
+        throw error;
+    });
+    await (await runner).performExecution(executionId, jobId);
 }

@@ -501,4 +501,5 @@ API requests are subject to the same rate limits as the web interface:
 
 ### Job not starting (Pending)
 - The job may be queued due to the **max concurrent jobs** setting
+- A run of the same job may still be going, the new one starts right after it
 - Check under **Settings → System** for the concurrency limit

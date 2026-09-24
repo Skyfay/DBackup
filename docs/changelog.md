@@ -32,6 +32,8 @@ All notable changes to DBackup are documented here.
 - **connections**: The file browser of a path field answers a missing login or permission with 401 or 403 instead of a server error.
 - **jobs**: The schedule picker shows its times the way the scheduler runs them, without seconds, instead of converting them through the time zone of the browser. A cron expression the scheduler cannot read can no longer be saved to a job or a schedule preset.
 - **templates**: The preview of a naming template ends in .tar like the backup files and shows the time of the scheduler's time zone, instead of .sql and the time of the browser.
+- **jobs**: A run of a job waits while another run of the same job is still going and starts right after. With more than one queue slot both ran at once, planned the same step of an incremental chain and could write the same backup file.
+- **jobs**: Every run keeps its temporary files in a directory of its own, so two runs whose backups get the same name no longer write into one file and delete it under each other.
 
 ### 🔒 Security
 

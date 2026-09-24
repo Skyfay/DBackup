@@ -8,9 +8,11 @@ vi.mock('fs/promises', () => ({
     default: {
         access: vi.fn().mockResolvedValue(undefined),
         unlink: vi.fn().mockResolvedValue(undefined),
+        rm: vi.fn().mockResolvedValue(undefined),
     },
     access: vi.fn().mockResolvedValue(undefined),
     unlink: vi.fn().mockResolvedValue(undefined),
+    rm: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@/lib/prisma', () => ({
@@ -141,6 +143,15 @@ describe('stepCleanup', () => {
         const ctx = makeCtx();
         await expect(stepCleanup(ctx)).resolves.not.toThrow();
         expect(fsPromises.default.unlink).not.toHaveBeenCalled();
+    });
+
+    it("removes the run's own directory with whatever a step left in it", async () => {
+        const fsPromises = await import('fs/promises');
+        const ctx = makeCtx({ runDir: '/tmp/dbackup-run-1', tempFile: '/tmp/dbackup-run-1/backup.tar' });
+
+        await stepCleanup(ctx);
+
+        expect(fsPromises.default.rm).toHaveBeenCalledWith('/tmp/dbackup-run-1', { recursive: true, force: true });
     });
 
     it('does nothing when ctx.tempFile is not set', async () => {

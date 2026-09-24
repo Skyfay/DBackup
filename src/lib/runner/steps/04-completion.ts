@@ -46,6 +46,13 @@ export async function stepCleanup(ctx: RunnerContext) {
         });
     }
 
+    // The run's own directory, with anything a step left in it.
+    if (ctx.runDir) {
+        await fs.rm(ctx.runDir, { recursive: true, force: true }).catch(() => {
+            // Cleanup failed - ignore, same as the files above
+        });
+    }
+
     // 2. Release every snapshot this run created.
     //
     // This function runs from the runner's `finally`, so it covers success, failure and

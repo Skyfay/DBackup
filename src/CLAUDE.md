@@ -151,7 +151,7 @@ runJob(jobId) -> Execution (Pending) -> processQueue()
                     starts next pending job if a slot is free
 ```
 
-`processQueue()` runs after every enqueue and every completion. Jobs execute via `performExecution()` in `src/lib/runner.ts`.
+`processQueue()` runs after every enqueue and every completion. Jobs execute via `performExecution()` in `src/lib/runner.ts`. A pending run waits while another run of the same job is Running, so a job never runs twice at once. Every run keeps its archive and sidecars in its own directory (`ctx.runDir`), which `stepCleanup` removes.
 
 ## Encryption (two layers)
 

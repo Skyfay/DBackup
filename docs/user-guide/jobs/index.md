@@ -177,7 +177,7 @@ The **Last run** of a job shows how its newest run went:
 | :--- | :--- |
 | **Done** | The run succeeded |
 | **Running** | A run is going on right now, with its stage and progress |
-| **Queued** | The run waits for a free slot, see [Concurrent Execution](#concurrent-execution) |
+| **Queued** | The run waits for a free slot or for the running run of the same job, see [Concurrent Execution](#concurrent-execution) |
 | **Partial** | Some destinations got the backup, others failed |
 | **Failed** | The run failed, the error of its log is shown with it |
 
@@ -237,6 +237,8 @@ By default, one backup runs at a time. Configure concurrency:
 1. Go to **Settings** → **System**
 2. Set **Max Concurrent Jobs**
 3. Higher values = more parallel backups
+
+Runs of the same job never overlap, whatever the setting. A run started by hand, by the API or by the schedule while the job is still running waits as **Queued** and starts right after. Two runs of one job at once would plan the same step of an incremental chain and could write the same file.
 
 ::: warning Resource Usage
 More concurrent jobs = higher CPU/memory/disk usage

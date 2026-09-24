@@ -44,22 +44,23 @@ vi.mock('@/lib/logging/logger', () => ({
 import { processQueue } from '@/lib/execution/queue-manager';
 import { beginDatabaseMaintenance, endDatabaseMaintenance } from '@/lib/server/database-maintenance';
 
+/** The queue as the database holds it: the slots, the jobs of the running runs, the waiting runs. */
+function queue({ max, running = [], pending = [] }: { max: number | null; running?: string[]; pending?: { id: string; jobId: string | null }[] }) {
+    vi.mocked(prisma.systemSetting.findUnique).mockResolvedValue(
+        max === null ? null : { key: 'maxConcurrentJobs', value: String(max), description: null, updatedAt: new Date() },
+    );
+    vi.mocked(prisma.execution.findMany).mockImplementation((async (args: { where: { status: string } }) =>
+        args.where.status === 'Running' ? running.map((jobId) => ({ jobId })) : pending) as any);
+}
+
 describe('Queue Manager Concurrency', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mockIsShutdownRequested.mockReturnValue(false);
     });
 
     it('should respect maxConcurrentJobs limit under heavy load', async () => {
-        const maxJobs = 2;
-        vi.mocked(prisma.systemSetting.findUnique).mockResolvedValue({
-            key: 'maxConcurrentJobs',
-            value: String(maxJobs),
-            description: null,
-            updatedAt: new Date()
-        });
-        vi.mocked(prisma.execution.count).mockResolvedValue(maxJobs);
-        const pendingJob = { id: 'exec-waiting', jobId: 'job-waiting', status: 'Pending', startedAt: new Date() } as any;
-        vi.mocked(prisma.execution.findMany).mockResolvedValue([pendingJob]);
+        queue({ max: 2, running: ['job-a', 'job-b'], pending: [{ id: 'exec-waiting', jobId: 'job-waiting' }] });
 
         await processQueue();
 
@@ -67,47 +68,53 @@ describe('Queue Manager Concurrency', () => {
     });
 
     it('should start multiple jobs if slots are available', async () => {
-        const maxJobs = 5;
-        const currentRunning = 0;
-
-        vi.mocked(prisma.systemSetting.findUnique).mockResolvedValue({
-            key: 'maxConcurrentJobs',
-            value: String(maxJobs),
-            description: null,
-            updatedAt: new Date()
-        });
-
-        vi.mocked(prisma.execution.count).mockResolvedValue(currentRunning);
-
-        const pendingJobs = [
-            { id: 'exec-1', jobId: 'job-1', status: 'Pending', startedAt: new Date() },
-            { id: 'exec-2', jobId: 'job-2', status: 'Pending', startedAt: new Date() }
-        ] as any[];
-
-        vi.mocked(prisma.execution.findMany).mockResolvedValue(pendingJobs);
+        queue({ max: 5, pending: [{ id: 'exec-1', jobId: 'job-1' }, { id: 'exec-2', jobId: 'job-2' }] });
 
         await processQueue();
 
-        // Check call count
-        // Note: Dynamic imports and parallel execution might cause timing issues or partial mock application.
-        // We assert at least one call to verify flow, as precise internal orchestration of dynamic imports is fragile to test this way.
-        expect(mockPerformExecution).toHaveBeenCalled();
+        expect(mockPerformExecution.mock.calls).toEqual([['exec-1', 'job-1'], ['exec-2', 'job-2']]);
     }, 15000);
 
     it('should default to 1 concurrent job if setting missing', async () => {
-        vi.mocked(prisma.systemSetting.findUnique).mockResolvedValue(null);
-        vi.mocked(prisma.execution.count).mockResolvedValue(0);
+        queue({ max: null, pending: [{ id: 'exec-1', jobId: 'job-1' }] });
 
-        const pendingJobs = [
-            { id: 'exec-1', jobId: 'job-1', status: 'Pending' }
-        ] as any[];
-
-        vi.mocked(prisma.execution.findMany).mockResolvedValue(pendingJobs);
-
-        // Force wait a bit if promises are floating (though processQueue awaits Promise.allSettled)
         await processQueue();
 
         expect(mockPerformExecution).toHaveBeenCalledWith('exec-1', 'job-1');
+    });
+
+    it('keeps a second run of a job waiting while the first one runs, and starts the run of another job', async () => {
+        queue({ max: 2, running: ['job-1'], pending: [{ id: 'exec-by-hand', jobId: 'job-1' }, { id: 'exec-other', jobId: 'job-2' }] });
+
+        await processQueue();
+
+        expect(mockPerformExecution).toHaveBeenCalledTimes(1);
+        expect(mockPerformExecution).toHaveBeenCalledWith('exec-other', 'job-2');
+    });
+
+    it('starts only the oldest waiting run of a job, even with slots to spare', async () => {
+        queue({ max: 3, pending: [{ id: 'exec-scheduled', jobId: 'job-1' }, { id: 'exec-by-hand', jobId: 'job-1' }] });
+
+        await processQueue();
+
+        expect(mockPerformExecution).toHaveBeenCalledTimes(1);
+        expect(mockPerformExecution).toHaveBeenCalledWith('exec-scheduled', 'job-1');
+    });
+
+    it('starts nothing while every waiting run belongs to a job that runs', async () => {
+        queue({ max: 2, running: ['job-1'], pending: [{ id: 'exec-by-hand', jobId: 'job-1' }] });
+
+        await processQueue();
+
+        expect(mockPerformExecution).not.toHaveBeenCalled();
+    });
+
+    it('still starts a waiting run whose job was deleted, which then ends at once', async () => {
+        queue({ max: 1, pending: [{ id: 'exec-orphan', jobId: null }] });
+
+        await processQueue();
+
+        expect(mockPerformExecution).toHaveBeenCalledWith('exec-orphan', null);
     });
 
     it('should skip processing and return early when shutdown is requested', async () => {
@@ -121,15 +128,7 @@ describe('Queue Manager Concurrency', () => {
     });
 
     it('should return early when no pending jobs are found', async () => {
-        mockIsShutdownRequested.mockReturnValue(false);
-        vi.mocked(prisma.systemSetting.findUnique).mockResolvedValue({
-            key: 'maxConcurrentJobs',
-            value: '3',
-            description: null,
-            updatedAt: new Date()
-        });
-        vi.mocked(prisma.execution.count).mockResolvedValue(0); // slots available
-        vi.mocked(prisma.execution.findMany).mockResolvedValue([]); // nothing pending
+        queue({ max: 3 });
 
         await processQueue();
 
@@ -137,24 +136,15 @@ describe('Queue Manager Concurrency', () => {
     });
 
     it('should return early when running count equals maxJobs (saturation)', async () => {
-        mockIsShutdownRequested.mockReturnValue(false);
-        vi.mocked(prisma.systemSetting.findUnique).mockResolvedValue({
-            key: 'maxConcurrentJobs',
-            value: '2',
-            description: null,
-            updatedAt: new Date()
-        });
-        // running == max, so availableSlots = 0
-        vi.mocked(prisma.execution.count).mockResolvedValue(2);
+        // Running runs fill every slot.
+        queue({ max: 2, running: ['job-a', 'job-b'], pending: [{ id: 'exec-1', jobId: 'job-1' }] });
 
         await processQueue();
 
-        // Should bail out before querying pending jobs
-        expect(vi.mocked(prisma.execution.findMany)).not.toHaveBeenCalled();
         expect(mockPerformExecution).not.toHaveBeenCalled();
     });
+
     it('holds pending jobs back while database maintenance holds the connection', async () => {
-        mockIsShutdownRequested.mockReturnValue(false);
         beginDatabaseMaintenance();
         try {
             await processQueue();

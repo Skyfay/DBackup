@@ -92,8 +92,9 @@ interface PickListProps {
     onPick: (id: string) => void;
     onEdit?: (id: string) => void;
     /** Names the button at the foot that adds an entry, like "New login". */
-    createLabel: string;
-    onCreate: () => void;
+    createLabel?: string;
+    /** Left out for a viewer who may not add one, which takes the button with it. */
+    onCreate?: () => void;
     /** Beside it, Use none or a note on why there is none. */
     aside?: React.ReactNode;
     searchPlaceholder?: string;
@@ -140,13 +141,17 @@ export function PickList({
                 </CommandList>
             </Command>
             {/* Outline buttons like every other secondary action, so they read as buttons on the strip. */}
-            <div className="flex min-h-12 items-center justify-between gap-3 border-t bg-page/60 px-3 py-2">
-                <Button type="button" variant="outline" size="sm" onClick={onCreate}>
-                    <Plus />
-                    {createLabel}
-                </Button>
-                {aside}
-            </div>
+            {(onCreate || aside) && (
+                <div className="flex min-h-12 items-center justify-between gap-3 border-t bg-page/60 px-3 py-2">
+                    {onCreate && (
+                        <Button type="button" variant="outline" size="sm" onClick={onCreate}>
+                            <Plus />
+                            {createLabel}
+                        </Button>
+                    )}
+                    {aside}
+                </div>
+            )}
         </>
     );
 }

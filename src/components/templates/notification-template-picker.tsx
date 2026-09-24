@@ -20,9 +20,11 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { getNotificationTemplates } from "@/app/actions/templates";
+import { useCan } from "@/components/permissions/permissions-context";
+import { PERMISSIONS } from "@/lib/auth/permissions";
 import { NotificationTemplateDialog } from "@/components/settings/templates/notification-template-list";
 import { Badge } from "@/components/ui/badge";
-import { AdapterConfig } from "@prisma/client";
+import type { TemplateChannelConnection } from "@/services/templates/notification-template-service";
 
 type NotificationTemplate = {
   id: string;
@@ -34,7 +36,7 @@ type NotificationTemplate = {
     id: string;
     configId: string;
     events: string;
-    config: AdapterConfig;
+    config: TemplateChannelConnection;
   }[];
   _count: { jobs: number };
 };
@@ -58,7 +60,9 @@ export function NotificationTemplatePicker({
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<NotificationTemplate | null>(null);
   const [editOpen, setEditOpen] = useState(false);
-  const [availableChannels, setAvailableChannels] = useState<AdapterConfig[]>([]);
+  const [availableChannels, setAvailableChannels] = useState<TemplateChannelConnection[]>([]);
+  // Creating and editing a template are left out for a viewer who may not write templates.
+  const canWrite = useCan(PERMISSIONS.TEMPLATES.WRITE);
 
   const fetchTemplates = useCallback(async () => {
     setLoading(true);
@@ -152,7 +156,7 @@ export function NotificationTemplatePicker({
                           <Badge variant="secondary" className="text-xs">Default</Badge>
                         )}
                       </span>
-                      {!t.isSystem && (
+                      {canWrite && !t.isSystem && (
                         <button
                           type="button"
                           className="opacity-0 group-hover:opacity-100 transition-opacity ml-1 rounded p-0.5 hover:bg-accent"
@@ -170,20 +174,24 @@ export function NotificationTemplatePicker({
                   );
                 })}
               </CommandGroup>
-              <CommandSeparator />
-              <CommandGroup>
-                <CommandItem
-                  value="__create__"
-                  onSelect={() => {
-                    setOpen(false);
-                    setCreateOpen(true);
-                  }}
-                  className="font-medium"
-                >
-                  <Plus className="mr-2 h-3.5 w-3.5" />
-                  Create new template...
-                </CommandItem>
-              </CommandGroup>
+              {canWrite && (
+                <>
+                  <CommandSeparator />
+                  <CommandGroup>
+                    <CommandItem
+                      value="__create__"
+                      onSelect={() => {
+                        setOpen(false);
+                        setCreateOpen(true);
+                      }}
+                      className="font-medium"
+                    >
+                      <Plus className="mr-2 h-3.5 w-3.5" />
+                      Create new template...
+                    </CommandItem>
+                  </CommandGroup>
+                </>
+              )}
             </CommandList>
           </Command>
         </PopoverContent>

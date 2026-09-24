@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { EncryptionKeyPicker } from "@/components/dashboard/jobs/encryption-key-picker";
 import { NO_ENCRYPTION, type EncryptionOption } from "@/components/dashboard/jobs/job-form-schema";
+import { PermissionsProvider } from "@/components/permissions/permissions-context";
 import { freeKeyName } from "@/components/settings/encryption-key-dialog";
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
@@ -15,9 +16,10 @@ const KEYS: EncryptionOption[] = [
     { id: "backup", name: "Backup key", description: "Production", jobCount: 2 },
 ];
 
-function renderPicker(value = NO_ENCRYPTION, keys = KEYS) {
+function renderPicker(value = NO_ENCRYPTION, keys = KEYS, permissions?: string[]) {
     const onChange = vi.fn();
-    render(<EncryptionKeyPicker keys={keys} value={value} onChange={onChange} aria-label="Key" />);
+    const picker = <EncryptionKeyPicker keys={keys} value={value} onChange={onChange} aria-label="Key" />;
+    render(permissions ? <PermissionsProvider permissions={permissions}>{picker}</PermissionsProvider> : picker);
     return onChange;
 }
 
@@ -84,6 +86,16 @@ describe("encryption key picker", () => {
 
         await waitFor(() => expect(onChange).toHaveBeenCalledWith("new"));
         expect(actions.createEncryptionProfile).toHaveBeenCalledWith("Backup key 2", undefined);
+    });
+
+    it("offers no New to a viewer who may only read the Vault", async () => {
+        const user = userEvent.setup();
+        renderPicker(NO_ENCRYPTION, KEYS, ["vault:read", "jobs:write"]);
+
+        expect(screen.queryByRole("button", { name: "New" })).not.toBeInTheDocument();
+        await user.click(screen.getByRole("combobox", { name: "Key" }));
+        expect(screen.getByRole("option", { name: /Backup key/ })).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "New key" })).not.toBeInTheDocument();
     });
 
     it("keeps a new key from taking the name of one in the Vault", async () => {

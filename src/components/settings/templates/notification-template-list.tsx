@@ -43,7 +43,7 @@ import {
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
-import { AdapterConfig } from "@prisma/client";
+import type { TemplateChannelConnection } from "@/services/templates/notification-template-service";
 import {
   getNotificationTemplates,
   createNotificationTemplate,
@@ -71,7 +71,7 @@ type NotificationTemplateWithChannels = {
     id: string;
     configId: string;
     events: string;
-    config: AdapterConfig;
+    config: TemplateChannelConnection;
   }[];
   _count: { jobs: number };
 };
@@ -91,7 +91,7 @@ interface TemplateDialogProps {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   template?: NotificationTemplateWithChannels;
-  availableChannels: AdapterConfig[];
+  availableChannels: TemplateChannelConnection[];
   onSuccess: (t: NotificationTemplateWithChannels) => void;
 }
 
@@ -403,7 +403,7 @@ export function NotificationTemplateDialog({
 }
 
 interface NotificationTemplateListProps {
-  availableChannels: AdapterConfig[];
+  availableChannels: TemplateChannelConnection[];
 }
 
 export function NotificationTemplateList({

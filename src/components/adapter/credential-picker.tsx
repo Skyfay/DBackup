@@ -4,6 +4,7 @@ import { useEffect, useId, useState, useCallback } from "react";
 import { Plus, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { useCan } from "@/components/permissions/permissions-context";
 import { PickTrigger } from "@/components/ui/pick-list";
 import {
     Popover,
@@ -15,6 +16,7 @@ import {
     CredentialProfileDialog,
     type CredentialProfileSummary,
 } from "@/components/settings/credential-profile-dialog";
+import { PERMISSIONS } from "@/lib/auth/permissions";
 import type { CredentialType } from "@/lib/core/credentials";
 import { CREDENTIAL_TYPE_INFO } from "@/components/settings/credential-types";
 import { nounOf } from "@/lib/utils";
@@ -56,6 +58,7 @@ export function CredentialPicker({
     const [createOpen, setCreateOpen] = useState(false);
     const [editTarget, setEditTarget] = useState<CredentialProfileSummary | null>(null);
     const [editOpen, setEditOpen] = useState(false);
+    const canWrite = useCan(PERMISSIONS.CREDENTIALS.WRITE);
 
     const fetchProfiles = useCallback(async () => {
         setLoading(true);
@@ -97,8 +100,9 @@ export function CredentialPicker({
     const finalLabel = label ?? defaultLabel;
     const triggerId = useId();
 
-    // A saved profile is picked from the list, a new one is one click away beside it. The
-    // profile's secrets never show here, only its name, description and where it is used.
+    // A saved profile is picked from the list, a new one is one click away beside it for a viewer
+    // who may write logins. The profile's secrets never show here, only its name, description and
+    // where it is used.
     return (
         <div className="grid gap-2">
             <div className="flex items-baseline justify-between gap-3">
@@ -134,22 +138,32 @@ export function CredentialPicker({
                                 onChange(id);
                                 setOpen(false);
                             }}
-                            onEdit={(profile) => {
-                                setOpen(false);
-                                setEditTarget(profile);
-                                setEditOpen(true);
-                            }}
-                            onCreate={() => {
-                                setOpen(false);
-                                setCreateOpen(true);
-                            }}
+                            onEdit={
+                                canWrite
+                                    ? (profile) => {
+                                          setOpen(false);
+                                          setEditTarget(profile);
+                                          setEditOpen(true);
+                                      }
+                                    : undefined
+                            }
+                            onCreate={
+                                canWrite
+                                    ? () => {
+                                          setOpen(false);
+                                          setCreateOpen(true);
+                                      }
+                                    : undefined
+                            }
                         />
                     </PopoverContent>
                 </Popover>
-                <Button type="button" variant="outline" onClick={() => setCreateOpen(true)}>
-                    <Plus />
-                    New
-                </Button>
+                {canWrite && (
+                    <Button type="button" variant="outline" onClick={() => setCreateOpen(true)}>
+                        <Plus />
+                        New
+                    </Button>
+                )}
             </div>
 
             {description && <p className="text-xs text-muted-foreground">{description}</p>}

@@ -231,6 +231,7 @@ Never log whole session, user, or config objects. Log the specific field (`{ use
 - Before adding `"use client"` to a page, check whether only a sub-tree actually needs it.
 - Type all props with explicit interfaces. No implicit `any`.
 - Permission flags are resolved server-side (`getUserPermissions()`) and passed down as booleans such as `canManage`, `canExecute`. Do not re-check permissions in the client for security - client checks are for hiding UI only.
+- A control deep inside a form, like New in a pick field, reads the same list with `useCan(PERMISSIONS.X.WRITE)` from `@/components/permissions/permissions-context` instead of a prop through every level. The dashboard layout provides it, and outside a provider, like in a test, it hides nothing.
 
 ---
 

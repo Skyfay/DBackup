@@ -5,9 +5,11 @@ import { Timer } from "lucide-react";
 import type { RetentionPolicy } from "@prisma/client";
 import { toast } from "sonner";
 import { getRetentionPolicies } from "@/app/actions/templates";
+import { useCan } from "@/components/permissions/permissions-context";
 import { RetentionPolicyDialog } from "@/components/settings/templates/retention-policy-dialog";
 import { PickList, PickTrigger, type PickEntry } from "@/components/ui/pick-list";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { PERMISSIONS } from "@/lib/auth/permissions";
 import type { RetentionConfiguration } from "@/lib/core/retention";
 
 export const DEFAULT_RETENTION_SENTINEL = "__DEFAULT__";
@@ -65,7 +67,7 @@ interface Props {
 /**
  * Picks the retention policy of a destination, like the login field of a connection: the policies
  * in a list that says what each one keeps and how many destinations follow it, Edit on a row and
- * New policy at its foot.
+ * New policy at its foot, both for a viewer who may write templates.
  */
 export function RetentionPolicyPicker({
     value,
@@ -79,6 +81,7 @@ export function RetentionPolicyPicker({
     const [loading, setLoading] = useState(true);
     const [open, setOpen] = useState(false);
     const [dialog, setDialog] = useState<{ open: boolean; policy?: RetentionPolicy }>({ open: false });
+    const canWrite = useCan(PERMISSIONS.TEMPLATES.WRITE);
 
     useEffect(() => {
         getRetentionPolicies()
@@ -160,9 +163,9 @@ export function RetentionPolicyPicker({
                             onChange(id === NONE ? null : id);
                             setOpen(false);
                         }}
-                        onEdit={(id) => openDialog(policies.find((policy) => policy.id === id))}
+                        onEdit={canWrite ? (id) => openDialog(policies.find((policy) => policy.id === id)) : undefined}
                         createLabel="New policy"
-                        onCreate={() => openDialog()}
+                        onCreate={canWrite ? () => openDialog() : undefined}
                     />
                 </PopoverContent>
             </Popover>

@@ -37,6 +37,9 @@ const makeTemplate = (overrides: object = {}) => ({
   ...overrides,
 });
 
+// Every template names its channels without their configs, which hold webhook URLs and tokens.
+const CHANNELS = { include: { config: { select: { id: true, name: true, adapterId: true } } } };
+
 describe("NotificationTemplateService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -45,7 +48,7 @@ describe("NotificationTemplateService", () => {
   // ── getNotificationTemplates ─────────────────────────────────
 
   describe("getNotificationTemplates", () => {
-    it("returns all templates ordered by name", async () => {
+    it("returns all templates ordered by name, naming their channels without the configs", async () => {
       const templates = [makeTemplate({ id: "a" }), makeTemplate({ id: "b" })];
       prismaMock.notificationTemplate.findMany.mockResolvedValue(templates as any);
 
@@ -53,7 +56,7 @@ describe("NotificationTemplateService", () => {
 
       expect(prismaMock.notificationTemplate.findMany).toHaveBeenCalledWith({
         include: {
-          channels: { include: { config: true } },
+          channels: CHANNELS,
           _count: { select: { jobs: true } },
         },
         orderBy: { name: "asc" },
@@ -73,7 +76,7 @@ describe("NotificationTemplateService", () => {
 
       expect(prismaMock.notificationTemplate.findUnique).toHaveBeenCalledWith({
         where: { id: "tpl-1" },
-        include: { channels: { include: { config: true } } },
+        include: { channels: CHANNELS },
       });
       expect(result).toBe(tpl);
     });
@@ -303,7 +306,7 @@ describe("NotificationTemplateService", () => {
       expect(prismaMock.notificationTemplate.update).toHaveBeenCalledWith({
         where: { id: "tpl-1" },
         data: { isDefault: true },
-        include: { channels: { include: { config: true } } },
+        include: { channels: CHANNELS },
       });
       expect(result).toBe(updated);
     });

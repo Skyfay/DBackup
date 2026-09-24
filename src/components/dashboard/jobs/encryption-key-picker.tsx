@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import { KeyRound, LockOpen, Plus } from "lucide-react";
+import { useCan } from "@/components/permissions/permissions-context";
 import { EncryptionKeyDialog } from "@/components/settings/encryption-key-dialog";
 import { Button } from "@/components/ui/button";
 import { PickList, PickTrigger, type PickEntry } from "@/components/ui/pick-list";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { PERMISSIONS } from "@/lib/auth/permissions";
 import { cn } from "@/lib/utils";
 import { NO_ENCRYPTION, type EncryptionOption } from "./job-form-schema";
 
@@ -38,13 +40,14 @@ interface EncryptionKeyPickerProps extends Omit<React.ComponentProps<typeof Butt
 /**
  * Picks the key a job encrypts its backups with, like the login field of a connection: No
  * encryption and the keys of the Vault in a list that says how many jobs use each one, and New,
- * which makes a key and picks it. The props of a form field land on the button, so its label
- * names it.
+ * which makes a key and picks it, for a viewer who may write to the Vault. The props of a form
+ * field land on the button, so its label names it.
  */
 export function EncryptionKeyPicker({ keys, value, onChange, className, ...props }: EncryptionKeyPickerProps) {
     const [open, setOpen] = useState(false);
     const [creating, setCreating] = useState(false);
     const [added, setAdded] = useState<EncryptionOption[]>([]);
+    const canCreate = useCan(PERMISSIONS.VAULT.WRITE);
     const all = [...keys, ...added.filter((key) => !keys.some((known) => known.id === key.id))].sort(byName);
     const current = all.find((key) => key.id === value);
     const encrypted = value !== NO_ENCRYPTION;
@@ -78,15 +81,17 @@ export function EncryptionKeyPicker({ keys, value, onChange, className, ...props
                             setOpen(false);
                         }}
                         createLabel="New key"
-                        onCreate={startCreating}
+                        onCreate={canCreate ? startCreating : undefined}
                         aside={all.length === 0 && <span className="truncate text-xs text-muted-foreground">The Vault holds no key yet</span>}
                     />
                 </PopoverContent>
             </Popover>
-            <Button type="button" variant="outline" onClick={startCreating}>
-                <Plus />
-                New
-            </Button>
+            {canCreate && (
+                <Button type="button" variant="outline" onClick={startCreating}>
+                    <Plus />
+                    New
+                </Button>
+            )}
 
             <EncryptionKeyDialog
                 open={creating}

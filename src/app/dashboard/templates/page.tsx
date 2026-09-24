@@ -26,8 +26,11 @@ export default async function TemplatesPage() {
         redirect("/dashboard");
     }
 
+    // Only which connection each channel is. The page renders for anyone who may read templates,
+    // and a config holds webhook URLs, tokens and passwords, even in their encrypted form.
     const notificationChannels = await prisma.adapterConfig.findMany({
         where: { type: "notification" },
+        select: { id: true, name: true, adapterId: true },
         orderBy: { name: "asc" },
     });
 

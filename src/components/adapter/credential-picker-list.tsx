@@ -25,8 +25,9 @@ interface LoginListProps {
     /** The connection cannot work without one, so the list offers no way to clear it. */
     required: boolean;
     onPick: (id: string | null) => void;
-    onEdit: (profile: CredentialProfileSummary) => void;
-    onCreate: () => void;
+    /** Both left out for a viewer who may not write logins. */
+    onEdit?: (profile: CredentialProfileSummary) => void;
+    onCreate?: () => void;
 }
 
 const byName = (a: CredentialProfileSummary, b: CredentialProfileSummary) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
@@ -76,10 +77,13 @@ export function LoginList({ profiles, value, requiredType, adapter, noun, requir
             value={value}
             emptyText={profiles.length === 0 ? "Nothing of this kind is saved yet." : "Nothing matches."}
             onPick={onPick}
-            onEdit={(id) => {
-                const profile = profiles.find((entry) => entry.id === id);
-                if (profile) onEdit(profile);
-            }}
+            onEdit={
+                onEdit &&
+                ((id) => {
+                    const profile = profiles.find((entry) => entry.id === id);
+                    if (profile) onEdit(profile);
+                })
+            }
             createLabel={`New ${nounOf(noun)}`}
             onCreate={onCreate}
             aside={

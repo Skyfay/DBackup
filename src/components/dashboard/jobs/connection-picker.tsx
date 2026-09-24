@@ -5,20 +5,23 @@ import { Database, FolderOpen, HardDrive, Plus, type LucideIcon } from "lucide-r
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { AddConnectionDialogs } from "@/components/adapter/add-connection-dialogs";
 import { connectionAddress } from "@/components/adapter/connection-summary";
+import { useCan } from "@/components/permissions/permissions-context";
 import { Button } from "@/components/ui/button";
 import { PickList, PickTrigger, type PickEntry } from "@/components/ui/pick-list";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { getAdapterDefinition } from "@/lib/adapters/definitions";
+import { PERMISSIONS, type Permission } from "@/lib/auth/permissions";
 import { STORAGE_ROLES, type StorageRole } from "@/lib/core/storage-roles";
 import { cn } from "@/lib/utils";
 import type { AdapterOption } from "./job-form-schema";
 
 export type ConnectionKind = "database" | "destination" | "directory";
 
-const KINDS: Record<ConnectionKind, { icon: LucideIcon; note: string; noun: string; type: "database" | "storage"; role?: StorageRole }> = {
-    database: { icon: Database, note: "Databases", noun: "database", type: "database" },
-    destination: { icon: HardDrive, note: "Destinations", noun: "destination", type: "storage", role: STORAGE_ROLES.DESTINATION },
-    directory: { icon: FolderOpen, note: "Directory sources", noun: "directory source", type: "storage", role: STORAGE_ROLES.SOURCE },
+/** What each kind is called, where it comes from and who may add one. */
+const KINDS: Record<ConnectionKind, { icon: LucideIcon; note: string; noun: string; type: "database" | "storage"; role?: StorageRole; write: Permission }> = {
+    database: { icon: Database, note: "Databases", noun: "database", type: "database", write: PERMISSIONS.SOURCES.WRITE },
+    destination: { icon: HardDrive, note: "Destinations", noun: "destination", type: "storage", role: STORAGE_ROLES.DESTINATION, write: PERMISSIONS.DESTINATIONS.WRITE },
+    directory: { icon: FolderOpen, note: "Directory sources", noun: "directory source", type: "storage", role: STORAGE_ROLES.SOURCE, write: PERMISSIONS.DESTINATIONS.WRITE },
 };
 
 /** Tells the form about a connection added from one of its fields, so every field offers it. */
@@ -55,8 +58,8 @@ interface ConnectionPickerProps extends Omit<React.ComponentProps<typeof Button>
 /**
  * Picks one connection, like the login field of a connection form: the connections in a list that
  * says what each one is and where it points, and New at its foot, which adds one with the forms of
- * the Connections page and picks it. The props of a form field land on the button, so its label
- * names it.
+ * the Connections page and picks it, for a viewer who may add the kind. The props of a form field
+ * land on the button, so its label names it.
  */
 export function ConnectionPicker({ options, value, onChange, placeholder, kind, taken = [], newBeside = false, className, ...props }: ConnectionPickerProps) {
     const [open, setOpen] = useState(false);
@@ -64,6 +67,7 @@ export function ConnectionPicker({ options, value, onChange, placeholder, kind, 
     const [added, setAdded] = useState<AdapterOption[]>([]);
     const report = useContext(ConnectionAddedContext);
     const setup = KINDS[kind];
+    const canCreate = useCan(setup.write);
     const all = [...options, ...added.filter((option) => !options.some((known) => known.id === option.id))];
     const current = all.find((option) => option.id === value);
     const available = all.filter((option) => option.id === value || !taken.includes(option.id));
@@ -100,12 +104,12 @@ export function ConnectionPicker({ options, value, onChange, placeholder, kind, 
                             setOpen(false);
                         }}
                         createLabel={`New ${setup.noun}`}
-                        onCreate={startAdding}
+                        onCreate={canCreate ? startAdding : undefined}
                         searchPlaceholder="Search by name, type or address"
                     />
                 </PopoverContent>
             </Popover>
-            {newBeside && (
+            {newBeside && canCreate && (
                 <Button type="button" variant="outline" onClick={startAdding}>
                     <Plus />
                     New

@@ -37,6 +37,7 @@ All notable changes to DBackup are documented here.
 - **connections**: The file browser of a path field no longer follows a link into a system folder it keeps out, like /proc or /System.
 - **vault**: The Vault no longer sends the stored key of an encryption profile to the browser when it lists, creates, imports or renames profiles, not even in its encrypted form.
 - **jobs**: The job list no longer returns the stored configs of the connections a job uses, only their name, type and health. Reading jobs was enough to get them before.
+- **templates**: The notification templates and the Templates page no longer send the stored configs of notification channels to the browser, only the name and type of each channel. Reading jobs or templates was enough to get them before, without the right to read notification channels.
 
 ### 🎨 Improvements
 
@@ -57,6 +58,7 @@ All notable changes to DBackup are documented here.
 - **jobs**: The schedule of a job and of a schedule preset is picked as hourly, daily, weekly or monthly, with several times a day, several weekdays and the last day of the month, or as cron. It shows the next runs and warns with a free time to use when runs would wait because the queue has no slot left.
 - **jobs**: Picking some databases of a source has a search, a checkbox for all of them and the size and tables of each, with how many are picked and how big they are together. Once every database is picked it offers All databases, which also takes the ones added later.
 - **jobs**: The database, the destinations and the folders of a job are picked from lists that show each connection's type, address and status, and New adds a connection right from the job. The retention of a destination is picked from a list that says what each policy keeps and how many destinations follow it.
+- **ui**: The fields that pick a login, a connection, a key or a template offer New and Edit only to users who may create or change that kind of entry.
 - **templates**: The dialog for adding and editing a retention policy has the new look.
 - **templates**: The dialog for adding and editing a schedule preset has the new look. It and the Templates page now say that a job follows every change to its preset, instead of claiming it keeps its own copy of the schedule.
 

@@ -1,4 +1,5 @@
 import { AppSidebar } from "@/components/layout/app-sidebar"
+import { PermissionsProvider } from "@/components/permissions/permissions-context"
 import { Header } from "@/components/layout/header"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
@@ -48,29 +49,32 @@ export default async function DashboardLayout({
     const sidebarOpen = cookieStore.get("dbackup_sidebar_state")?.value !== "false";
 
     return (
-        <SidebarProvider defaultOpen={sidebarOpen} className="h-svh overflow-hidden">
-            <AppSidebar
-                permissions={permissions}
-                isSuperAdmin={isSuperAdmin}
-                updateAvailable={updateInfo.updateAvailable}
-                currentVersion={updateInfo.currentVersion}
-                latestVersion={updateInfo.latestVersion}
-                showQuickSetup={showQuickSetup}
-                groupName={userWithGroup?.group?.name}
-            />
-            <SidebarInset className="min-w-0 overflow-hidden bg-page">
-                <Header />
-                {/* Radix wraps the page in a `display: table` div that grows with its widest child, so a
-                    wide table pushed the whole page past the right edge, clipped and not scrollable.
-                    Block keeps the page at the window's width, and a wide table scrolls inside its card. */}
-                <ScrollArea className="min-h-0 flex-1 [&>[data-slot=scroll-area-viewport]>div]:block!">
-                    <div className="p-4 md:p-6">
-                        <div className="mx-auto space-y-6">
-                            {children}
+        // Lets a field deep inside a form leave out what the viewer may not do, like New.
+        <PermissionsProvider permissions={permissions}>
+            <SidebarProvider defaultOpen={sidebarOpen} className="h-svh overflow-hidden">
+                <AppSidebar
+                    permissions={permissions}
+                    isSuperAdmin={isSuperAdmin}
+                    updateAvailable={updateInfo.updateAvailable}
+                    currentVersion={updateInfo.currentVersion}
+                    latestVersion={updateInfo.latestVersion}
+                    showQuickSetup={showQuickSetup}
+                    groupName={userWithGroup?.group?.name}
+                />
+                <SidebarInset className="min-w-0 overflow-hidden bg-page">
+                    <Header />
+                    {/* Radix wraps the page in a `display: table` div that grows with its widest child, so a
+                        wide table pushed the whole page past the right edge, clipped and not scrollable.
+                        Block keeps the page at the window's width, and a wide table scrolls inside its card. */}
+                    <ScrollArea className="min-h-0 flex-1 [&>[data-slot=scroll-area-viewport]>div]:block!">
+                        <div className="p-4 md:p-6">
+                            <div className="mx-auto space-y-6">
+                                {children}
+                            </div>
                         </div>
-                    </div>
-                </ScrollArea>
-            </SidebarInset>
-        </SidebarProvider>
+                    </ScrollArea>
+                </SidebarInset>
+            </SidebarProvider>
+        </PermissionsProvider>
     )
 }

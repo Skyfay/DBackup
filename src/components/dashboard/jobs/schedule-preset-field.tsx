@@ -4,10 +4,12 @@ import { useEffect, useState } from "react";
 import { CalendarClock, Plus } from "lucide-react";
 import type { SchedulePreset } from "@prisma/client";
 import { getSchedulePresets } from "@/app/actions/templates";
+import { useCan } from "@/components/permissions/permissions-context";
 import { SchedulePresetDialog } from "@/components/settings/templates/schedule-preset-dialog";
 import { Button } from "@/components/ui/button";
 import { PickList, PickTrigger, type PickEntry } from "@/components/ui/pick-list";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { PERMISSIONS } from "@/lib/auth/permissions";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { describeSchedule } from "./job-schedule";
@@ -45,7 +47,8 @@ interface SchedulePresetFieldProps extends Omit<React.ComponentProps<typeof Butt
 /**
  * Picks the schedule preset a job follows, like the login field of a connection: the presets
  * in a list that says when each one runs and how many jobs follow it, New beside the field.
- * Edit on a row changes a preset for every job that follows it.
+ * Edit on a row changes a preset for every job that follows it. New and Edit are left out for a
+ * viewer who may not write templates.
  */
 export function SchedulePresetField({ value, onChange, jobId, ...props }: SchedulePresetFieldProps) {
     const [presets, setPresets] = useState<ListedPreset[]>([]);
@@ -53,6 +56,7 @@ export function SchedulePresetField({ value, onChange, jobId, ...props }: Schedu
     const [open, setOpen] = useState(false);
     const [dialog, setDialog] = useState<{ open: boolean; preset?: SchedulePreset }>({ open: false });
     const current = presets.find((preset) => preset.id === value);
+    const canWrite = useCan(PERMISSIONS.TEMPLATES.WRITE);
 
     useEffect(() => {
         getSchedulePresets()
@@ -108,16 +112,18 @@ export function SchedulePresetField({ value, onChange, jobId, ...props }: Schedu
                             if (preset) onChange(preset);
                             setOpen(false);
                         }}
-                        onEdit={(id) => openDialog(presets.find((entry) => entry.id === id))}
+                        onEdit={canWrite ? (id) => openDialog(presets.find((entry) => entry.id === id)) : undefined}
                         createLabel="New preset"
-                        onCreate={() => openDialog()}
+                        onCreate={canWrite ? () => openDialog() : undefined}
                     />
                 </PopoverContent>
             </Popover>
-            <Button type="button" variant="outline" onClick={() => openDialog()}>
-                <Plus />
-                New
-            </Button>
+            {canWrite && (
+                <Button type="button" variant="outline" onClick={() => openDialog()}>
+                    <Plus />
+                    New
+                </Button>
+            )}
 
             <SchedulePresetDialog
                 open={dialog.open}

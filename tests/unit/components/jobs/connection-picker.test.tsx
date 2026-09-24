@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConnectionPicker } from "@/components/dashboard/jobs/connection-picker";
 import type { AdapterOption } from "@/components/dashboard/jobs/job-form-schema";
+import { PermissionsProvider } from "@/components/permissions/permissions-context";
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 
@@ -61,5 +62,18 @@ describe("connection picker", () => {
         renderPicker({ newBeside: true });
 
         expect(screen.getByRole("button", { name: "New" })).toBeInTheDocument();
+    });
+
+    it("offers no New to a viewer who may add sources but no destinations", async () => {
+        const user = userEvent.setup();
+        render(
+            <PermissionsProvider permissions={["sources:write", "destinations:read"]}>
+                <ConnectionPicker kind="destination" options={OPTIONS} value="" onChange={vi.fn()} placeholder="Pick a destination" aria-label="Destination 1" newBeside />
+            </PermissionsProvider>
+        );
+
+        expect(screen.queryByRole("button", { name: "New" })).not.toBeInTheDocument();
+        await user.click(screen.getByRole("combobox", { name: "Destination 1" }));
+        expect(screen.queryByRole("button", { name: "New destination" })).not.toBeInTheDocument();
     });
 });

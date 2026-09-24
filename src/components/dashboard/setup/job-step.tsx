@@ -174,7 +174,15 @@ export function JobStep({ step, position, state, draft, onDraftChange, scheduler
                                         name="databases"
                                         render={({ field }) => (
                                             <FormItem>
-                                                <DatabaseChecklist sourceId={sourceId} value={field.value} onChange={field.onChange} />
+                                                <DatabaseChecklist
+                                                    sourceId={sourceId}
+                                                    value={field.value}
+                                                    onChange={field.onChange}
+                                                    onUseAll={() => {
+                                                        form.setValue("scope", "all");
+                                                        form.setValue("databases", []);
+                                                    }}
+                                                />
                                                 <FormMessage />
                                             </FormItem>
                                         )}

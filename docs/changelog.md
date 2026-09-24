@@ -55,6 +55,7 @@ All notable changes to DBackup are documented here.
 - **setup**: The Quick Setup lists its steps on the left with what each one made, and adds databases, destinations and channels with the same form as the Connections page. Every step can take an existing connection or key instead, and the job picks its schedule and its databases on cards.
 - **jobs**: The form for adding and editing a job lists its parts on the left, marks the ones that are done or still miss something, and shows one part at a time. Connections and schedule presets are picked from searchable lists, and the channels a job notifies directly can be seen and removed there.
 - **jobs**: The schedule of a job and of a schedule preset is picked as hourly, daily, weekly or monthly, with several times a day, several weekdays and the last day of the month, or as cron. It shows the next runs and warns with a free time to use when runs would wait because the queue has no slot left.
+- **jobs**: Picking some databases of a source has a search, a checkbox for all of them and the size and tables of each, with how many are picked and how big they are together. Once every database is picked it offers All databases, which also takes the ones added later.
 - **templates**: The dialog for adding and editing a schedule preset has the new look. It and the Templates page now say that a job follows every change to its preset, instead of claiming it keeps its own copy of the schedule.
 
 ### 🔄 Changed
@@ -79,6 +80,7 @@ All notable changes to DBackup are documented here.
 - **docs**: The encryption guide explains that the encryption service returns profiles without their key.
 - **docs**: The job guide describes the new Jobs page, the parts of the job form and the actions of a job, and the template and retention guides follow the new form. The API reference documents the job list fields and `GET /api/jobs/{id}/runs`.
 - **docs**: The scheduling guide describes the schedule picker and its warning when runs would wait for a free slot.
+- **docs**: The job guide explains how some databases of a source are picked.
 
 ### 🧪 Tests
 

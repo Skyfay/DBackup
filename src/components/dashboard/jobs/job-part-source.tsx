@@ -150,7 +150,15 @@ export function SourcePart({ sources, folderOptions, defaultExcludePresetIds }: 
                                     name="databases"
                                     render={({ field }) => (
                                         <FormItem>
-                                            <DatabaseChecklist sourceId={source.id} value={field.value} onChange={field.onChange} />
+                                            <DatabaseChecklist
+                                                sourceId={source.id}
+                                                value={field.value}
+                                                onChange={field.onChange}
+                                                onUseAll={() => {
+                                                    form.setValue("databaseScope", "all");
+                                                    form.setValue("databases", []);
+                                                }}
+                                            />
                                             <FormMessage />
                                         </FormItem>
                                     )}

@@ -101,6 +101,7 @@ Every other page still has the old look. Do not copy patterns from it, copy them
 - A list that also offers cards passes `view="cards"` and `renderCard` to DataTable. A card renders the row's own cells, so the Columns menu decides what it shows, see `connection-card.tsx`. A card may show what the record does instead, like the way of a backup from its source to its destinations in `job-card.tsx`. Bulk actions stay in the table view.
 - The views of a list are switched with `ViewSwitch` from `ui/view-switch.tsx`, and the choice is saved per page with `saveViewLayout`. A phone always gets the cards and no switch. See `connections-tabs.tsx` and `jobs-client.tsx`.
 - A list beside the details of the picked record passes `view="split"` and `renderSplit`, which gets every filtered row at once. See `connection-split-view.tsx`, whose details are the same component the side panel shows.
+- A list that picks several entries, like the databases of a job, always has its search, a checkbox in its head for the entries the search shows, and a foot with how many are picked and how big they are together. A picked entry the source no longer has stays on top so it can be unticked. See `database-checklist.tsx`.
 
 ## Banners
 

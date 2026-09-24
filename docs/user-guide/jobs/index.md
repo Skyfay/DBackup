@@ -46,6 +46,17 @@ A part shows a check once it has what the job needs. When something is missing, 
 | **Notifications** | The notification templates that report the runs |
 | **Advanced** | Compression, the file names, incremental backups for folders and the scheduled integrity check |
 
+### Picking Databases
+
+**All databases** backs up every database of the source, also the ones added to the server later. **Some databases** lists the databases on the server to pick from:
+
+- The search above the list finds a database by name. The checkbox beside it picks every database the search shows, or all of them without a search, and picks them off again.
+- Each database shows its size and its tables where the server tells them, and the **Name** button sorts the list by size instead.
+- The line below says how many are picked and how big they are together, and **Clear** picks them all off.
+- A picked database the server no longer has stays on top with **Not on the server**, so it can be unticked.
+
+Once every database is picked, the list offers **Use All databases**, which also takes the databases added later.
+
 ### Compression
 
 Reduce backup size significantly. Set it in the **Advanced** part:

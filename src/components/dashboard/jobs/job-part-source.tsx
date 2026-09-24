@@ -91,7 +91,7 @@ export function SourcePart({ sources, folderOptions, defaultExcludePresetIds }: 
                 render={({ field }) => (
                     <FormItem>
                         <FormControl>
-                            <ChoiceCards value={field.value} onValueChange={changeMode} options={MODES} aria-label="What goes in" className="grid gap-2.5 sm:grid-cols-3" />
+                            <ChoiceCards value={field.value} onValueChange={changeMode} options={MODES} aria-label="What the job backs up" className="grid gap-2.5 sm:grid-cols-3" />
                         </FormControl>
                     </FormItem>
                 )}

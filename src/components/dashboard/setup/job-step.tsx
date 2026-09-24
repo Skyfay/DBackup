@@ -161,9 +161,9 @@ export function JobStep({ step, position, state, draft, onDraftChange, scheduler
                                     name="scope"
                                     render={({ field }) => (
                                         <FormItem>
-                                            <FormLabel>What goes in</FormLabel>
+                                            <FormLabel>Databases</FormLabel>
                                             <FormControl>
-                                                <ChoiceCards value={field.value} onValueChange={field.onChange} options={SCOPES} aria-label="What goes in" />
+                                                <ChoiceCards value={field.value} onValueChange={field.onChange} options={SCOPES} aria-label="Which databases" />
                                             </FormControl>
                                         </FormItem>
                                     )}

@@ -204,7 +204,7 @@ export function JobDetailsContent({ job, canViewHistory, onRun, starting = false
                         )}
                     </Section>
 
-                    <Section title="What goes in">
+                    <Section title="Source">
                         <ul className="divide-y rounded-lg border">
                             {job.source && (
                                 <Row

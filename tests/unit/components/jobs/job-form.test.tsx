@@ -79,9 +79,9 @@ describe("job form", () => {
         await user.type(screen.getByLabelText("Name"), "Shop nightly");
         await user.click(screen.getByRole("button", { name: "Create job" }));
 
-        const part = await screen.findByRole("tab", { name: /What goes in/ });
+        const part = await screen.findByRole("tab", { name: /^Source/ });
         await waitFor(() => expect(part).toHaveAttribute("aria-selected", "true"));
-        expect(screen.getByRole("tabpanel", { name: /What goes in/ })).toHaveTextContent("Pick the database to back up.");
+        expect(screen.getByRole("tabpanel", { name: /^Source/ })).toHaveTextContent("Pick the database to back up.");
         expect(posted("/api/jobs", "POST")).toBeUndefined();
     });
 
@@ -90,7 +90,7 @@ describe("job form", () => {
         const onSaved = renderForm();
 
         await user.type(screen.getByLabelText("Name"), "Shop nightly");
-        await user.click(screen.getByRole("tab", { name: /What goes in/ }));
+        await user.click(screen.getByRole("tab", { name: /^Source/ }));
         await pick(user, screen.getByRole("combobox", { name: "Database" }), /^Shop/);
         await user.click(screen.getByRole("tab", { name: /Destinations/ }));
         const destinationsPart = screen.getByRole("tabpanel", { name: /Destinations/ });
@@ -119,7 +119,7 @@ describe("job form", () => {
 
         // Everything the job needs is there, so a stray submit would save it.
         await user.type(screen.getByLabelText("Name"), "Shop nightly");
-        await user.click(screen.getByRole("tab", { name: /What goes in/ }));
+        await user.click(screen.getByRole("tab", { name: /^Source/ }));
         await pick(user, screen.getByRole("combobox", { name: "Database" }), /^Shop/);
         await user.click(screen.getByRole("tab", { name: /Destinations/ }));
         await pick(user, within(screen.getByRole("tabpanel", { name: /Destinations/ })).getByRole("combobox", { name: "Destination 1" }), /^NAS/);

@@ -131,18 +131,19 @@ export function RetentionPolicyPicker({
         <>
             <Popover open={open} onOpenChange={setOpen} modal>
                 <PopoverTrigger asChild>
-                    <PickTrigger icon={Timer} loading={loading} disabled={loading} aria-expanded={open} aria-label={ariaLabel}>
+                    <PickTrigger icon={Timer} loading={loading} disabled={loading} aria-expanded={open} aria-label={ariaLabel} className="w-full">
                         {loading ? (
                             <span className="text-muted-foreground">Loading...</span>
                         ) : isDefault ? (
+                            // The field keeps its width, so the name stays whole and only the policy behind it is cut.
                             <span className="flex min-w-0 items-baseline gap-1.5">
-                                <span className="truncate">Default policy</span>
-                                <span className="hidden truncate text-xs text-muted-foreground sm:inline">{defaultPolicy ? defaultPolicy.name : "keeps everything"}</span>
+                                <span className="shrink-0">Default policy</span>
+                                <span className="min-w-0 truncate text-xs text-muted-foreground">{defaultPolicy ? defaultPolicy.name : "keeps all"}</span>
                             </span>
                         ) : selected ? (
                             <span className="truncate">{selected.name}</span>
                         ) : (
-                            <span className="truncate text-muted-foreground">{allowNone && !value ? "No policy, keeps everything" : placeholder}</span>
+                            <span className="truncate text-muted-foreground">{allowNone && !value ? "No policy, keeps all" : placeholder}</span>
                         )}
                     </PickTrigger>
                 </PopoverTrigger>

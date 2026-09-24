@@ -70,7 +70,7 @@ export function DestinationsPart({ options, array }: { options: AdapterOption[];
                                 value={rows[index]?.retentionPolicyId ?? null}
                                 onChange={(id) => form.setValue(`destinations.${index}.retentionPolicyId`, id ?? undefined, { shouldDirty: true })}
                                 allowDefault
-                                placeholder="No policy, keeps everything"
+                                placeholder="No policy, keeps all"
                                 aria-label={`Retention of destination ${index + 1}`}
                             />
                         </div>

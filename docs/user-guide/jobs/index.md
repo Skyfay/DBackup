@@ -40,7 +40,7 @@ A part shows a check once it has what the job needs. When something is missing, 
 | Part | What it holds |
 | :--- | :--- |
 | **Basics** | The name, whether the job runs on its schedule, and when it runs: its own schedule or a schedule preset |
-| **What goes in** | A database, folders from storage connections set up as directory sources, or both. For a database, all of its databases (also ones added later) or the picked ones |
+| **Source** | A database, folders from storage connections set up as directory sources, or both. For a database, all of its databases (also ones added later) or the picked ones |
 | **Destinations** | Where the backups go, in upload order, each with its retention policy (see [Multi-Destination](#multi-destination)) |
 | **Encryption** | The key from the Vault that encrypts every backup, or none |
 | **Notifications** | The notification templates that report the runs |

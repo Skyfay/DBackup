@@ -21,7 +21,7 @@ export interface JobPart {
 
 export const JOB_PARTS: JobPart[] = [
     { id: "basics", label: "Basics", description: "Its name, when it runs and whether it runs on its own.", keys: ["name", "enabled", "scheduleMode", "schedule", "schedulePresetId"] },
-    { id: "source", label: "What goes in", description: "A database, folders from storage connections, or both in one backup.", keys: ["sourceMode", "sourceId", "databaseScope", "databases", "directorySources"] },
+    { id: "source", label: "Source", description: "A database, folders from storage connections, or both in one backup.", keys: ["sourceMode", "sourceId", "databaseScope", "databases", "directorySources"] },
     { id: "destinations", label: "Destinations", description: "The backup goes to each one in turn, from the top. Each keeps its own backups.", keys: ["destinations"] },
     { id: "encryption", label: "Encryption", description: "Encrypts every backup before it leaves DBackup.", keys: ["encryptionProfileId"] },
     { id: "notifications", label: "Notifications", description: "Who hears about a run, and after which runs.", keys: ["notificationTemplateIds", "notificationIds", "notificationEvents"] },

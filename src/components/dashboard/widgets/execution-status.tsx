@@ -35,13 +35,15 @@ interface ExecutionStatusBadgeProps {
     status: string | null;
     /** Shown instead of the status label, for example "Never ran". */
     label?: string;
+    /** A legend of the statuses, where nothing runs, so the dot of Running stays still. */
+    still?: boolean;
     className?: string;
 }
 
 /** Execution status as a tinted pill with a dot. The dot pulses while the run is live. */
-export function ExecutionStatusBadge({ status, label, className }: ExecutionStatusBadgeProps) {
+export function ExecutionStatusBadge({ status, label, still = false, className }: ExecutionStatusBadgeProps) {
     const style = getStatusStyle(status);
-    const isLive = status === "Running";
+    const isLive = status === "Running" && !still;
 
     return (
         <span

@@ -41,16 +41,32 @@ const formSchema = z.object({
     expiresAt: z.date().optional(),
 })
 
-export function CreateApiKeyDialog() {
-    const [open, setOpen] = useState(false)
+interface CreateApiKeyDialogProps {
+    /** Opened from elsewhere, like the Setup of the API trigger, instead of from its own button. */
+    open?: boolean
+    onOpenChange?: (open: boolean) => void
+    /** What the form starts with. */
+    defaults?: { name?: string; permissions?: string[] }
+    /** Gets the new key instead of the dialog that shows it once, for a caller that shows it itself. */
+    onCreated?: (created: { name: string; rawKey: string }) => void
+}
+
+export function CreateApiKeyDialog({ open: openFromOutside, onOpenChange, defaults, onCreated }: CreateApiKeyDialogProps = {}) {
+    const [ownOpen, setOwnOpen] = useState(false)
     const [loading, setLoading] = useState(false)
     const [revealedKey, setRevealedKey] = useState<string | null>(null)
+    const controlled = openFromOutside !== undefined
+    const open = controlled ? openFromOutside : ownOpen
+    const setOpen = (next: boolean) => {
+        if (!controlled) setOwnOpen(next)
+        onOpenChange?.(next)
+    }
 
     const form = useForm<z.infer<typeof formSchema>>({
         resolver: zodResolver(formSchema),
         defaultValues: {
-            name: "",
-            permissions: [],
+            name: defaults?.name ?? "",
+            permissions: defaults?.permissions ?? [],
             expiresAt: undefined,
         },
     })
@@ -68,7 +84,8 @@ export function CreateApiKeyDialog() {
 
             if (result.success && result.data) {
                 toast.success("API key created successfully")
-                setRevealedKey(result.data.rawKey)
+                if (onCreated) onCreated({ name: values.name, rawKey: result.data.rawKey })
+                else setRevealedKey(result.data.rawKey)
                 setOpen(false)
                 form.reset()
             } else {
@@ -84,12 +101,14 @@ export function CreateApiKeyDialog() {
     return (
         <>
             <Dialog open={open} onOpenChange={setOpen}>
-                <DialogTrigger asChild>
-                    <Button tone="create">
-                        <Plus className="mr-2 h-4 w-4" />
-                        Create API Key
-                    </Button>
-                </DialogTrigger>
+                {!controlled && (
+                    <DialogTrigger asChild>
+                        <Button tone="create">
+                            <Plus className="mr-2 h-4 w-4" />
+                            Create API Key
+                        </Button>
+                    </DialogTrigger>
+                )}
                 <DialogContent tone="create" className="sm:max-w-4xl max-h-[90vh] p-0">
                     <DialogHeader className="p-6 pb-0 shrink-0">
                         <DialogTitle>Create API Key</DialogTitle>

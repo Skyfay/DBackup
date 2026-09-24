@@ -35,6 +35,8 @@ All notable changes to DBackup are documented here.
 - **jobs**: A run of a job waits while another run of the same job is still going and starts right after. With more than one queue slot both ran at once, planned the same step of an incremental chain and could write the same backup file.
 - **jobs**: Every run keeps its temporary files in a directory of its own, so two runs whose backups get the same name no longer write into one file and delete it under each other.
 - **jobs**: A cloned job keeps the retention policy of each destination, its naming template, its integrity checks and its incremental settings. The copy fell back to the defaults for them before.
+- **jobs**: The examples of the API trigger dialog end on a Partial or Cancelled run. Python, TypeScript and Go waited for them forever, Bash stopped with an unknown status and Ansible gave up after ten minutes.
+- **ci**: The `skyfay/dbackup:ci` image ends a Partial run with exit code 2 and a Cancelled one with 1, where it waited until it timed out. It waits up to an hour for a run instead of ten minutes, set with `DBACKUP_TIMEOUT`.
 
 ### 🔒 Security
 
@@ -67,6 +69,7 @@ All notable changes to DBackup are documented here.
 - **jobs**: The notifications of a job show each template with its channels and the runs they hear about, and a table of who hears about a run that marks a channel told twice. Channels a job names directly can be turned into a template there.
 - **jobs**: Compression has a part of its own between the destinations and the encryption, with a card and a sentence for every option and the level of pg_dump on a slider. A PostgreSQL job shows whether pg_dump or DBackup compresses the dump and the folders, and what its server version cannot do.
 - **jobs**: A job with folders has an Incremental part after the source, with a card for full or incremental backups and the days between full backups on a stepper. It draws the chain those make on the job's schedule, lists which sources store only their changes, and warns about a long chain with a shorter setting to use.
+- **jobs**: The API trigger dialog lists an Overview, a Setup, the scripts and the pipelines on the left like the job form, with a copy button on every URL and code that follows the theme. Its Setup creates a key with the two rights the API needs and fills it into every example until the dialog closes.
 - **ui**: The fields that pick a login, a connection, a key or a template offer New and Edit only to users who may create or change that kind of entry.
 - **ui**: Cloning a job or a connection, and creating a connection in the other storage role, opens a dialog in the new look. It starts with a name that is free and says what the copy gets and what is left to do.
 - **templates**: The dialog for adding and editing a retention policy has the new look.
@@ -98,6 +101,7 @@ All notable changes to DBackup are documented here.
 - **docs**: The job guide describes the new Jobs page, the parts of the job form and the actions of a job, and the template and retention guides follow the new form. The API reference documents the job list fields and `GET /api/jobs/{id}/runs`.
 - **docs**: The scheduling guide describes the schedule picker and its warning when runs would wait for a free slot.
 - **docs**: The job guide explains how some databases of a source are picked, how connections are added from a job and what the retention list shows.
+- **docs**: The webhook trigger guide describes the new API trigger dialog, the timeout and the exit codes of the CI image, and Partial and Cancelled runs in its examples and API reference. The API key guide points to the Setup of the dialog.
 
 ### 🧪 Tests
 

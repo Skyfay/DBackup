@@ -83,7 +83,11 @@ curl "https://your-instance.com/api/executions/EXECUTION_ID" \
 | `Pending` | Job is queued, waiting for an execution slot |
 | `Running` | Job is actively running |
 | `Success` | Job completed successfully |
+| `Partial` | Job completed, but part of it failed, like the upload to one destination |
 | `Failed` | Job failed - check `error` field for details |
+| `Cancelled` | A user cancelled the run |
+
+A run ends with one of the last four, so a script waits until it sees one of them.
 
 ### Include Execution Logs
 
@@ -94,11 +98,26 @@ curl "https://your-instance.com/api/executions/EXECUTION_ID?includeLogs=true" \
   -H "Authorization: Bearer dbackup_your_api_key"
 ```
 
+## The API Trigger Dialog
+
+**Trigger by API** in the menu of a job opens a dialog with everything a script needs for that job. The list on its left has these parts:
+
+| Part | What it shows |
+| :--- | :--- |
+| **Overview** | The URL that starts a run, the one that follows it, the job ID and the header, each with its own copy button, and what the requests answer |
+| **Setup** | Three steps: an API key, the request that starts the job and the one that follows its run |
+| **Scripts** | cURL, Bash, Python, TypeScript and Go, with the address and the job filled in |
+| **Pipelines** | GitHub Actions, GitLab CI and Azure DevOps with the `skyfay/dbackup:ci` image, and an Ansible playbook |
+
+For a user who may manage API keys, **Create key** in the Setup makes a key with `jobs:execute` and `history:read`. The new key shows once and fills into every example until the dialog closes. Until then the examples carry the placeholder `dbackup_YOUR_API_KEY`, marked in amber, and the pipelines list the two secrets they read with their values.
+
+The scripts end with exit code 0 after `Success`, 2 after `Partial` and 1 after `Failed` or `Cancelled`, so whatever runs them can tell the outcomes apart.
+
 ## Finding the Job ID
 
 You can find a job's ID in two ways:
 
-1. **In the UI**: Go to **Jobs**, click the **API Trigger** button (webhook icon) on the job row - it shows pre-filled curl commands with the correct job ID
+1. **In the UI**: Open the menu of a job on the **Jobs** page and pick **Trigger by API**. The dialog shows the job ID, and every example in it has the ID filled in
 2. **Via API**: List all jobs with a `GET /api/jobs` request:
 
 ```bash
@@ -121,6 +140,8 @@ This is the same script used inside the `skyfay/dbackup:ci` container. It trigge
 | `DBACKUP_API_KEY` | Yes | API key with `jobs:execute` and `history:read` permissions |
 | `DBACKUP_SKIP_TLS_VERIFY` | No | Set to `1` to skip TLS certificate verification (self-signed certs) |
 | `DBACKUP_AUTO_LOCK` | No | Set to `1` to lock the backup immediately after creation, excluding it from retention policies |
+| `DBACKUP_TIMEOUT` | No | Seconds to wait for the run before giving up, `3600` by default. The run goes on in DBackup. |
+| `DBACKUP_POLL_INTERVAL` | No | Seconds between two questions about the run, `10` by default |
 
 ```bash
 #!/usr/bin/env bash
@@ -138,6 +159,7 @@ require_env() {
 api_request() {
   local method="$1"
   local url="$2"
+  local body="${3:-}"
   local response_file
   local http_code
   local curl_exit
@@ -150,6 +172,10 @@ api_request() {
   if [ "${DBACKUP_SKIP_TLS_VERIFY:-0}" = "1" ]; then
     echo "TLS certificate verification: disabled" >&2
     curl_args+=(--insecure)
+  fi
+
+  if [ -n "${body}" ]; then
+    curl_args+=(-H "Content-Type: application/json" --data "${body}")
   fi
 
   http_code=$(curl "${curl_args[@]}" \
@@ -184,6 +210,15 @@ api_request() {
   rm -f "${response_file}"
 }
 
+require_seconds() {
+  local name="$1"
+  local value="$2"
+  if ! [[ "${value}" =~ ^[0-9]+$ ]]; then
+    echo "${name} must be a whole number of seconds, got: ${value}" >&2
+    exit 1
+  fi
+}
+
 json_value() {
   local response="$1"
   local filter="$2"
@@ -204,76 +239,113 @@ require_env "DBACKUP_URL"
 require_env "JOB_ID"
 require_env "DBACKUP_API_KEY"
 
-RESPONSE=$(api_request "POST" "${DBACKUP_URL}/api/jobs/${JOB_ID}/run") || exit 1
+# How long to wait for the run, one hour unless the pipeline says otherwise. The run itself goes
+# on in DBackup when the script gives up.
+TIMEOUT="${DBACKUP_TIMEOUT:-3600}"
+POLL_INTERVAL="${DBACKUP_POLL_INTERVAL:-10}"
+require_seconds "DBACKUP_TIMEOUT" "${TIMEOUT}"
+require_seconds "DBACKUP_POLL_INTERVAL" "${POLL_INTERVAL}"
+
+TRIGGER_BODY=""
+if [ "${DBACKUP_AUTO_LOCK:-0}" = "1" ]; then
+  echo "Auto-lock enabled: backup will be locked after creation" >&2
+  TRIGGER_BODY='{"lock":true}'
+fi
+
+RESPONSE=$(api_request "POST" "${DBACKUP_URL}/api/jobs/${JOB_ID}/run" "${TRIGGER_BODY}") || exit 1
 
 EXECUTION_ID=$(json_value "${RESPONSE}" '.executionId' "execution id") || exit 1
 echo "Execution started: $EXECUTION_ID"
 
-for i in $(seq 1 60); do
+# Ends with 0 after Success, 2 after Partial and 1 after Failed, Cancelled, a timeout or an error.
+DEADLINE=$(( $(date +%s) + TIMEOUT ))
+ATTEMPT=0
+while true; do
+  ATTEMPT=$(( ATTEMPT + 1 ))
   RESPONSE=$(api_request "GET" "${DBACKUP_URL}/api/executions/${EXECUTION_ID}") || exit 1
 
   STATUS=$(json_value "${RESPONSE}" '.data.status' "execution status") || exit 1
-  echo "Attempt $i: Status=$STATUS"
+  echo "Attempt ${ATTEMPT}: Status=${STATUS}"
 
-  case "$STATUS" in
+  case "${STATUS}" in
     "Success")
       echo "Backup completed!"
       exit 0
       ;;
-    "Failed")
-      ERROR=$(echo "$RESPONSE" | jq -r '.data.error // "Unknown"')
-      echo "Backup failed: $ERROR"
+    "Partial")
+      echo "Backup completed, but part of it failed. See the run in DBackup."
       echo "Response body:"
-      echo "$RESPONSE"
+      echo "${RESPONSE}"
+      exit 2
+      ;;
+    "Failed")
+      ERROR=$(echo "${RESPONSE}" | jq -r '.data.error // "Unknown"')
+      echo "Backup failed: ${ERROR}"
+      echo "Response body:"
+      echo "${RESPONSE}"
       exit 1
       ;;
+    "Cancelled")
+      echo "Backup cancelled in DBackup"
+      exit 1
+      ;;
+    "Pending"|"Running")
+      ;;
     *)
-      sleep 10
+      echo "Unknown status: ${STATUS}"
+      exit 1
       ;;
   esac
-done
 
-echo "Backup timed out"
-exit 1
+  if [ "$(date +%s)" -ge "${DEADLINE}" ]; then
+    echo "Backup still ${STATUS} after ${TIMEOUT} seconds, giving up. The run goes on in DBackup."
+    exit 1
+  fi
+  sleep "${POLL_INTERVAL}"
+done
 ```
 
 **Requirements:** `curl`, `jq`
 
+The script ends with exit code 0 after `Success`, 2 after `Partial` and 1 after `Failed`, `Cancelled`, a timeout or an error.
+
 ### Ansible Playbook
 
 ```yaml
-- name: Trigger DBackup job
+- name: Run the DBackup job and wait for it
   hosts: localhost
   vars:
     dbackup_url: "https://your-instance.com"
-    dbackup_api_key: "dbackup_your_api_key"
+    dbackup_api_key: "dbackup_your_api_key"  # Better kept in Ansible Vault
     job_id: "your-job-id"
 
   tasks:
-    - name: Trigger backup
+    - name: Start the job
       ansible.builtin.uri:
         url: "{{ dbackup_url }}/api/jobs/{{ job_id }}/run"
         method: POST
         headers:
           Authorization: "Bearer {{ dbackup_api_key }}"
         status_code: 200
-      register: trigger_result
+      register: run
 
-    - name: Wait for completion
+    - name: Wait until the run is done
       ansible.builtin.uri:
-        url: "{{ dbackup_url }}/api/executions/{{ trigger_result.json.executionId }}"
+        url: "{{ dbackup_url }}/api/executions/{{ run.json.executionId }}"
         headers:
           Authorization: "Bearer {{ dbackup_api_key }}"
-      register: poll_result
-      until: poll_result.json.data.status in ['Success', 'Failed']
-      retries: 60
+      register: poll
+      until: poll.json.data.status in ['Success', 'Partial', 'Failed', 'Cancelled']
+      retries: 360
       delay: 10
 
-    - name: Check result
+    - name: Fail unless the backup succeeded
       ansible.builtin.fail:
-        msg: "Backup failed: {{ poll_result.json.data.error }}"
-      when: poll_result.json.data.status == 'Failed'
+        msg: "Backup {{ poll.json.data.status }}: {{ poll.json.data.error | default('see the run in DBackup', true) }}"
+      when: poll.json.data.status != 'Success'
 ```
+
+The playbook waits up to an hour for the run.
 
 ### CI/CD Pipelines
 
@@ -292,6 +364,8 @@ The image is available on Docker Hub and GHCR:
 | `DBACKUP_API_KEY` | Yes | API key with `jobs:execute` and `history:read` permissions |
 | `DBACKUP_SKIP_TLS_VERIFY` | No | Set to `1` to skip TLS certificate verification (self-signed certs) |
 | `DBACKUP_AUTO_LOCK` | No | Set to `1` to lock the backup immediately after creation, excluding it from retention policies |
+| `DBACKUP_TIMEOUT` | No | Seconds to wait for the run before giving up, `3600` by default. The run goes on in DBackup. |
+| `DBACKUP_POLL_INTERVAL` | No | Seconds between two questions about the run, `10` by default |
 
 ---
 
@@ -401,8 +475,8 @@ for i in $(seq 1 30); do
   if [ "$STATUS" = "Success" ]; then
     echo "Backup complete - safe to deploy"
     exit 0
-  elif [ "$STATUS" = "Failed" ]; then
-    echo "Backup failed - aborting deploy!"
+  elif [ "$STATUS" = "Partial" ] || [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ]; then
+    echo "Backup ended as $STATUS - aborting deploy!"
     exit 1
   fi
   sleep 10
@@ -465,7 +539,7 @@ Authorization: Bearer dbackup_your_api_key
     "jobId": "string",
     "jobName": "string",
     "type": "Backup | Restore",
-    "status": "Pending | Running | Success | Failed",
+    "status": "Pending | Running | Success | Partial | Failed | Cancelled",
     "progress": "number | null",
     "stage": "string | null",
     "startedAt": "ISO 8601 | null",

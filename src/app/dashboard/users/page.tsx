@@ -17,8 +17,9 @@ import { redirect } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { AuditTable } from "@/components/audit/audit-table";
 
-export default async function UsersPage() {
+export default async function UsersPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
     const permissions = await getUserPermissions();
+    const { tab } = await searchParams;
 
     const hasReadUsers = permissions.includes(PERMISSIONS.USERS.READ);
     const hasReadGroups = permissions.includes(PERMISSIONS.GROUPS.READ);
@@ -55,7 +56,11 @@ export default async function UsersPage() {
                 </div>
             </div>
 
-            <Tabs defaultValue={hasReadUsers ? "users" : hasReadGroups ? "groups" : hasReadApiKeys ? "apikeys" : "audit"} className="space-y-4">
+            {/* A link like the one of the API trigger opens the API Keys tab with ?tab=apikeys. */}
+            <Tabs
+                defaultValue={tab === "apikeys" && hasReadApiKeys ? "apikeys" : hasReadUsers ? "users" : hasReadGroups ? "groups" : hasReadApiKeys ? "apikeys" : "audit"}
+                className="space-y-4"
+            >
                 <TabsList>
                     {hasReadUsers && <TabsTrigger value="users">Users</TabsTrigger>}
                     {hasReadGroups && <TabsTrigger value="groups">Groups</TabsTrigger>}

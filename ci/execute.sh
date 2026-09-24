@@ -64,6 +64,15 @@ api_request() {
   rm -f "${response_file}"
 }
 
+require_seconds() {
+  local name="$1"
+  local value="$2"
+  if ! [[ "${value}" =~ ^[0-9]+$ ]]; then
+    echo "${name} must be a whole number of seconds, got: ${value}" >&2
+    exit 1
+  fi
+}
+
 json_value() {
   local response="$1"
   local filter="$2"
@@ -84,6 +93,13 @@ require_env "DBACKUP_URL"
 require_env "JOB_ID"
 require_env "DBACKUP_API_KEY"
 
+# How long to wait for the run, one hour unless the pipeline says otherwise. The run itself goes
+# on in DBackup when the script gives up.
+TIMEOUT="${DBACKUP_TIMEOUT:-3600}"
+POLL_INTERVAL="${DBACKUP_POLL_INTERVAL:-10}"
+require_seconds "DBACKUP_TIMEOUT" "${TIMEOUT}"
+require_seconds "DBACKUP_POLL_INTERVAL" "${POLL_INTERVAL}"
+
 TRIGGER_BODY=""
 if [ "${DBACKUP_AUTO_LOCK:-0}" = "1" ]; then
   echo "Auto-lock enabled: backup will be locked after creation" >&2
@@ -95,29 +111,49 @@ RESPONSE=$(api_request "POST" "${DBACKUP_URL}/api/jobs/${JOB_ID}/run" "${TRIGGER
 EXECUTION_ID=$(json_value "${RESPONSE}" '.executionId' "execution id") || exit 1
 echo "Execution started: $EXECUTION_ID"
 
-for i in $(seq 1 60); do
+# Ends with 0 after Success, 2 after Partial and 1 after Failed, Cancelled, a timeout or an error.
+DEADLINE=$(( $(date +%s) + TIMEOUT ))
+ATTEMPT=0
+while true; do
+  ATTEMPT=$(( ATTEMPT + 1 ))
   RESPONSE=$(api_request "GET" "${DBACKUP_URL}/api/executions/${EXECUTION_ID}") || exit 1
 
   STATUS=$(json_value "${RESPONSE}" '.data.status' "execution status") || exit 1
-  echo "Attempt $i: Status=$STATUS"
+  echo "Attempt ${ATTEMPT}: Status=${STATUS}"
 
-  case "$STATUS" in
+  case "${STATUS}" in
     "Success")
       echo "Backup completed!"
       exit 0
       ;;
-    "Failed")
-      ERROR=$(echo "$RESPONSE" | jq -r '.data.error // "Unknown"')
-      echo "Backup failed: $ERROR"
+    "Partial")
+      echo "Backup completed, but part of it failed. See the run in DBackup."
       echo "Response body:"
-      echo "$RESPONSE"
+      echo "${RESPONSE}"
+      exit 2
+      ;;
+    "Failed")
+      ERROR=$(echo "${RESPONSE}" | jq -r '.data.error // "Unknown"')
+      echo "Backup failed: ${ERROR}"
+      echo "Response body:"
+      echo "${RESPONSE}"
       exit 1
       ;;
+    "Cancelled")
+      echo "Backup cancelled in DBackup"
+      exit 1
+      ;;
+    "Pending"|"Running")
+      ;;
     *)
-      sleep 10
+      echo "Unknown status: ${STATUS}"
+      exit 1
       ;;
   esac
-done
 
-echo "Backup timed out"
-exit 1
+  if [ "$(date +%s)" -ge "${DEADLINE}" ]; then
+    echo "Backup still ${STATUS} after ${TIMEOUT} seconds, giving up. The run goes on in DBackup."
+    exit 1
+  fi
+  sleep "${POLL_INTERVAL}"
+done

@@ -29,6 +29,8 @@ API keys provide a secure alternative to session-based authentication for progra
 4. Click **Create Key**
 5. **Copy the key immediately** - it won't be shown again
 
+For a script that starts one job, the **Setup** of that job's API trigger dialog creates a key with `jobs:execute` and `history:read` in one step and fills it into its examples. See [Webhook Triggers](/user-guide/features/webhook-triggers#the-api-trigger-dialog).
+
 ### Recommended Permission Sets
 
 | Use Case | Permissions |

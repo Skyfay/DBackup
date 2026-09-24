@@ -244,7 +244,7 @@ Never log whole session, user, or config objects. Log the specific field (`{ use
 | Raw `overflow-y-auto` instead of ScrollArea | Fails the build |
 | Locale date formatting | Fails the build |
 | `max-h` on the ScrollArea root | Baseline of 4, fails if it grows |
-| Palette color with no `dark:` variant | Baseline of 67, fails if it grows |
+| Palette color with no `dark:` variant | Baseline of 63, fails if it grows |
 | `info` blue outside the running status, raw `data-tone` attribute | Fails the build |
 
 Baselines may only be lowered. Fix violations, drop the number, and the guard locks the win in. Everything else in this guide is on you.

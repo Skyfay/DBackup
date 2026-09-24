@@ -14,7 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Separator } from "@/components/ui/separator";
 import { ArrowRight, ArrowLeft, FileIcon, AlertTriangle, ShieldAlert, Loader2, HardDrive, ChevronDown, ChevronUp, Server, ShieldCheck, HelpCircle, FolderInput, CheckCircle2, FolderOpen, MapPin, Download, GitBranch, Filter } from "lucide-react";
 import { toast } from "sonner";
-import { FileInfo } from "@/app/dashboard/storage/columns";
+import { FileInfo } from "@/components/dashboard/storage/file-info";
 import { useRouter, useSearchParams } from "next/navigation";
 import { formatBytes, compareVersions, cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";

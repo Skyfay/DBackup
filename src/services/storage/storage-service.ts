@@ -27,7 +27,13 @@ import { describeBackupFromMetadata } from "./backup-file-fields";
 export { describeBackupFromMetadata } from "./backup-file-fields";
 
 export type RichFileInfo = FileInfo & {
+    /** The job that made the backup, from its sidecar. It outlives a rename, the name does not. */
+    jobId?: string;
     jobName?: string;
+    /** When the backup was made, from its sidecar. The same at every destination. */
+    createdAt?: string;
+    /** The databases the backup holds, when its sidecar names them. */
+    databases?: string[];
     sourceName?: string;
     sourceType?: string;
     engineVersion?: string;
@@ -76,12 +82,60 @@ export type RichFileInfo = FileInfo & {
  *      cached without them are rebuilt.
  * - 3: the row the runner appends after an upload is now derived by the same code as the
  *      explorer's, so rows it wrote without compression or encryption are rebuilt.
+ * - 4: `jobId`, `createdAt` and `databases` from the sidecar, which the explorer needs to put
+ *      the copies of one run side by side and to tell a deleted job from a renamed one.
  */
-export const CACHE_SCHEMA_VERSION = 3;
+export const CACHE_SCHEMA_VERSION = 4;
+
+/**
+ * The oldest payload that is still served, while a rebuild runs in the background.
+ *
+ * Payloads before it hold paths or fields the explorer cannot work with (version 1 changed the
+ * S3 paths), so they are rebuilt before anything reads them. Later payloads only lack fields with
+ * a fallback, so a page shows them at once and the rebuild replaces them once the destination
+ * answers. A destination that does not answer keeps its last list instead of losing it.
+ */
+export const CACHE_MIN_READABLE_VERSION = 2;
 
 interface CachedListing {
     v: number;
     files: RichFileInfo[];
+}
+
+/** How long a destination whose listing failed is left alone before a background refresh asks it again. */
+const LISTING_RETRY_MS = 5 * 60_000;
+/** Background refreshes at once. After an upgrade every destination may need one, and they queue up. */
+const BACKGROUND_CONCURRENCY = 4;
+
+interface ListingState {
+    /** Live listings under way, one per destination, so a page, Check now and the warmup task share one. */
+    listings: Map<string, Promise<{ files: RichFileInfo[]; listedAt: Date }>>;
+    /** Reconciliations under way, one per destination. */
+    reconciliations: Map<string, Promise<void>>;
+    /** Background refreshes waiting for a free slot, in the order they were asked for. */
+    queued: Map<string, "rebuild" | "reconcile">;
+    /** The last failed listing or reconciliation per destination. */
+    failures: Map<string, { at: number; error: string }>;
+}
+
+declare global {
+    // On globalThis, because in development every route loads its own copy of this module.
+    var dbackupListingState: ListingState | undefined;
+}
+
+const listingState: ListingState = globalThis.dbackupListingState ??= {
+    listings: new Map(),
+    reconciliations: new Map(),
+    queued: new Map(),
+    failures: new Map(),
+};
+
+/** Forgets running and queued listings and past failures. For tests, which share one process. */
+export function clearListingState(): void {
+    listingState.listings.clear();
+    listingState.reconciliations.clear();
+    listingState.queued.clear();
+    listingState.failures.clear();
 }
 
 /**
@@ -94,13 +148,18 @@ function parseCachedListing(json: string): CachedListing {
     return parsed as CachedListing;
 }
 
-function serializeCachedListing(files: RichFileInfo[]): string {
-    return JSON.stringify({ v: CACHE_SCHEMA_VERSION, files } satisfies CachedListing);
+function serializeCachedListing(files: RichFileInfo[], version = CACHE_SCHEMA_VERSION): string {
+    return JSON.stringify({ v: version, files } satisfies CachedListing);
 }
 
 
 // After this many hours a cached listing is considered stale and triggers background reconciliation.
 const CACHE_STALENESS_HOURS = 2;
+
+/** Whether a listing is old enough to be compared with the storage again. */
+export function isListingStale(listedAt: Date, now = Date.now()): boolean {
+    return (now - listedAt.getTime()) / 3_600_000 > CACHE_STALENESS_HOURS;
+}
 
 export class StorageService {
     async toggleLock(adapterConfigId: string, filePath: string) {
@@ -238,18 +297,19 @@ export class StorageService {
     /**
      * Loads the cached listing for mutation, or null when there is nothing usable.
      *
-     * An outdated payload is dropped rather than patched: writing an entry back would
-     * stamp it with the current version while its other rows stay unenriched.
+     * A payload too old to read is dropped. An older one that is still readable is patched and
+     * keeps its version, so the change shows while the rebuild that brings its other rows up to
+     * date still happens.
      */
-    private async loadCurrentCache(adapterConfigId: string): Promise<RichFileInfo[] | null> {
+    private async loadCurrentCache(adapterConfigId: string): Promise<CachedListing | null> {
         const cached = await prisma.storageListCache.findUnique({ where: { adapterConfigId } });
         if (!cached) return null;
         const listing = parseCachedListing(cached.filesJson);
-        if (listing.v !== CACHE_SCHEMA_VERSION) {
+        if (listing.v < CACHE_MIN_READABLE_VERSION) {
             await prisma.storageListCache.deleteMany({ where: { adapterConfigId } });
             return null;
         }
-        return listing.files;
+        return listing;
     }
 
     /**
@@ -265,15 +325,15 @@ export class StorageService {
         adapterConfigId: string,
         mutate: (files: RichFileInfo[]) => RichFileInfo[] | null
     ): Promise<void> {
-        const files = await this.loadCurrentCache(adapterConfigId);
-        if (!files) return;
+        const listing = await this.loadCurrentCache(adapterConfigId);
+        if (!listing) return;
 
-        const next = mutate(files);
+        const next = mutate(listing.files);
         if (!next) return;
 
         await prisma.storageListCache.update({
             where: { adapterConfigId },
-            data: { filesJson: serializeCachedListing(next), cachedAt: new Date() },
+            data: { filesJson: serializeCachedListing(next, listing.v), cachedAt: new Date() },
         });
     }
 
@@ -405,7 +465,45 @@ export class StorageService {
         };
     }
 
-    async reconcileStorageListCache(adapterConfigId: string): Promise<void> {
+    /**
+     * Compares the cached listing of a destination with the storage: drops files that are gone
+     * and adds new ones with their sidecars. A payload from an older version is rebuilt instead.
+     *
+     * One reconciliation runs per destination at a time, a second call joins it. A failure is
+     * remembered, so the pages can say why and the background refresh waits before trying again.
+     */
+    reconcileStorageListCache(adapterConfigId: string): Promise<void> {
+        const running = listingState.reconciliations.get(adapterConfigId);
+        if (running) return running;
+        const work = this.runReconcile(adapterConfigId)
+            .then(() => {
+                listingState.failures.delete(adapterConfigId);
+            })
+            .catch((error: unknown) => {
+                listingState.failures.set(adapterConfigId, { at: Date.now(), error: getErrorMessage(error) });
+                throw error;
+            })
+            .finally(() => listingState.reconciliations.delete(adapterConfigId));
+        listingState.reconciliations.set(adapterConfigId, work);
+        return work;
+    }
+
+    private async runReconcile(adapterConfigId: string): Promise<void> {
+        const current = await prisma.storageListCache.findUnique({ where: { adapterConfigId } });
+        if (!current) return;
+        const currentListing = parseCachedListing(current.filesJson);
+        // Too old to read: drop it and let the next read rebuild it.
+        if (currentListing.v < CACHE_MIN_READABLE_VERSION) {
+            await prisma.storageListCache.deleteMany({ where: { adapterConfigId } });
+            return;
+        }
+        // Readable but older: only a full listing brings its rows up to date, reconciling would
+        // only enrich the files it has not seen before.
+        if (currentListing.v !== CACHE_SCHEMA_VERSION) {
+            await this.listLive(adapterConfigId);
+            return;
+        }
+
         const adapterConfig = await prisma.adapterConfig.findUnique({ where: { id: adapterConfigId } });
         if (!adapterConfig || adapterConfig.type !== "storage") return;
 
@@ -429,12 +527,9 @@ export class StorageService {
         if (!cached) return;
 
         const cachedListing = parseCachedListing(cached.filesJson);
-        // Reconciling an outdated payload would only stamp it with the current version
-        // while leaving its rows unenriched. Drop it and let the next read rebuild.
-        if (cachedListing.v !== CACHE_SCHEMA_VERSION) {
-            await prisma.storageListCache.deleteMany({ where: { adapterConfigId } });
-            return;
-        }
+        // A backup run may have rewritten the payload while the storage was listed. Anything but
+        // the current version is left to the next reconciliation, which rebuilds it.
+        if (cachedListing.v !== CACHE_SCHEMA_VERSION) return;
         const cachedFiles = cachedListing.files;
         const cachedPathSet = new Set(cachedFiles.map(f => f.path));
 
@@ -501,23 +596,111 @@ export class StorageService {
      * Stale caches (> CACHE_STALENESS_HOURS) trigger a background reconciliation.
      */
     async listFilesWithMetadata(adapterConfigId: string, typeFilter?: string, bypassCache = false): Promise<RichFileInfo[]> {
+        const { files } = await this.listDestinationFiles(adapterConfigId, bypassCache);
+        return this.applyTypeFilter(files, typeFilter);
+    }
+
+    /**
+     * The whole listing of a destination and when it was last compared with the storage.
+     *
+     * Served from the cache when there is one, like `listFilesWithMetadata`, so `listedAt` is
+     * the time of the last live listing or reconciliation, not of this call.
+     */
+    async listDestinationFiles(adapterConfigId: string, bypassCache = false): Promise<{ files: RichFileInfo[]; listedAt: Date }> {
         if (!bypassCache) {
-            const cached = await prisma.storageListCache.findUnique({ where: { adapterConfigId } });
+            const cached = await this.readCachedListing(adapterConfigId);
             if (cached) {
-                const listing = parseCachedListing(cached.filesJson);
-                // A payload from an older release is missing fields the UI reads, and no
-                // amount of reconciling brings them back - fall through and rebuild.
-                if (listing.v === CACHE_SCHEMA_VERSION) {
-                    const ageHours = (Date.now() - cached.cachedAt.getTime()) / 3_600_000;
-                    if (ageHours > CACHE_STALENESS_HOURS) {
-                        this.reconcileStorageListCache(adapterConfigId).catch(() => {});
-                    }
-                    return this.applyTypeFilter(listing.files, typeFilter);
-                }
-                log.info("Discarding outdated storage listing cache", { adapterConfigId, cachedVersion: listing.v });
+                if (!cached.current) this.refreshInBackground(adapterConfigId, "rebuild");
+                else if (isListingStale(cached.listedAt)) this.refreshInBackground(adapterConfigId, "reconcile");
+                return { files: cached.files, listedAt: cached.listedAt };
             }
         }
+        return this.listLive(adapterConfigId);
+    }
 
+    /**
+     * What the cache holds for a destination, without asking the storage. Null when there is no
+     * cache or only one too old to read. `current` is false for a payload of an older version.
+     */
+    async readCachedListing(adapterConfigId: string): Promise<{ files: RichFileInfo[]; listedAt: Date; current: boolean } | null> {
+        const cached = await prisma.storageListCache.findUnique({ where: { adapterConfigId } });
+        if (!cached) return null;
+        const listing = parseCachedListing(cached.filesJson);
+        if (listing.v < CACHE_MIN_READABLE_VERSION) {
+            log.info("Discarding outdated storage listing cache", { adapterConfigId, cachedVersion: listing.v });
+            await prisma.storageListCache.deleteMany({ where: { adapterConfigId } });
+            return null;
+        }
+        return { files: listing.files, listedAt: cached.cachedAt, current: listing.v === CACHE_SCHEMA_VERSION };
+    }
+
+    /** Whether a listing or a reconciliation of the destination runs right now or waits for its turn. */
+    isListing(adapterConfigId: string): boolean {
+        return listingState.listings.has(adapterConfigId)
+            || listingState.reconciliations.has(adapterConfigId)
+            || listingState.queued.has(adapterConfigId);
+    }
+
+    /** Why the last listing of a destination failed, until one succeeds again. */
+    listingFailure(adapterConfigId: string): { at: Date; error: string } | null {
+        const failure = listingState.failures.get(adapterConfigId);
+        return failure ? { at: new Date(failure.at), error: failure.error } : null;
+    }
+
+    /**
+     * Brings the cached listing of a destination up to date without anyone waiting for it: a full
+     * listing when there is no usable cache or one of an older version, a reconciliation when it
+     * is only old. A destination that failed a moment ago is left alone unless `force` is set.
+     * Returns whether a refresh runs now.
+     */
+    refreshInBackground(adapterConfigId: string, mode: "rebuild" | "reconcile", force = false): boolean {
+        if (this.isListing(adapterConfigId)) return true;
+        const failure = listingState.failures.get(adapterConfigId);
+        if (!force && failure && Date.now() - failure.at < LISTING_RETRY_MS) return false;
+        listingState.queued.set(adapterConfigId, mode);
+        this.startQueued();
+        return true;
+    }
+
+    /** Starts queued background refreshes while slots are free. */
+    private startQueued(): void {
+        while (listingState.queued.size > 0 && listingState.listings.size + listingState.reconciliations.size < BACKGROUND_CONCURRENCY) {
+            const [adapterConfigId, mode] = listingState.queued.entries().next().value!;
+            listingState.queued.delete(adapterConfigId);
+            const work = mode === "rebuild" ? this.listLive(adapterConfigId) : this.reconcileStorageListCache(adapterConfigId);
+            // The failure is kept for the pages, nothing else is waiting for it.
+            work.catch(() => {}).finally(() => this.startQueued());
+        }
+    }
+
+    /** Compares a destination with the storage now, for Check now: a reconciliation, or a full listing when that is needed. */
+    async checkNow(adapterConfigId: string): Promise<boolean> {
+        const cached = await this.readCachedListing(adapterConfigId);
+        return this.refreshInBackground(adapterConfigId, cached?.current ? "reconcile" : "rebuild", true);
+    }
+
+    /**
+     * Lists a destination from the storage and caches the result. One listing runs per destination
+     * at a time, a second call joins it, and a failure is remembered like one of a reconciliation.
+     */
+    private listLive(adapterConfigId: string): Promise<{ files: RichFileInfo[]; listedAt: Date }> {
+        const running = listingState.listings.get(adapterConfigId);
+        if (running) return running;
+        const work = this.fetchListing(adapterConfigId)
+            .then((result) => {
+                listingState.failures.delete(adapterConfigId);
+                return result;
+            })
+            .catch((error: unknown) => {
+                listingState.failures.set(adapterConfigId, { at: Date.now(), error: getErrorMessage(error) });
+                throw error;
+            })
+            .finally(() => listingState.listings.delete(adapterConfigId));
+        listingState.listings.set(adapterConfigId, work);
+        return work;
+    }
+
+    private async fetchListing(adapterConfigId: string): Promise<{ files: RichFileInfo[]; listedAt: Date }> {
         const adapterConfig = await prisma.adapterConfig.findUnique({
             where: { id: adapterConfigId }
         });
@@ -603,16 +786,18 @@ export class StorageService {
         });
 
         const results = backups.map(file => this.enrichSingleFile(file, metadataMap, jobMap, executionMap));
+        const listedAt = new Date();
 
-        // Persist to cache (full list without typeFilter applied)
+        // Persist to cache (full list without typeFilter applied). Awaited, so a page that asks
+        // again once the listing is done reads the new list. A failed write never fails the listing.
         const jsonStr = serializeCachedListing(results);
-        prisma.storageListCache.upsert({
+        await prisma.storageListCache.upsert({
             where:  { adapterConfigId },
-            create: { adapterConfigId, filesJson: jsonStr },
-            update: { filesJson: jsonStr, cachedAt: new Date() },
+            create: { adapterConfigId, filesJson: jsonStr, cachedAt: listedAt },
+            update: { filesJson: jsonStr, cachedAt: listedAt },
         }).catch(() => {});
 
-        return this.applyTypeFilter(results, typeFilter);
+        return { files: results, listedAt };
     }
 
     /**

@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { DateDisplay } from "@/components/utils/date-display";
 import { toast } from "sonner";
 import { useUserPreferences } from "@/hooks/use-user-preferences";
-import type { FileInfo } from "@/app/dashboard/storage/columns";
+import type { FileInfo } from "@/components/dashboard/storage/file-info";
 
 interface IntegrityModalProps {
     open: boolean;

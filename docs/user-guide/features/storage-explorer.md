@@ -1,404 +1,178 @@
 # Storage Explorer
 
-Browse, download, and manage your backup files.
+Browse, restore, download and manage the backups at your destinations, by job or by destination.
 
 ## Overview
 
-The Storage Explorer provides a file browser interface for all your backup destinations. From here you can:
+Open **Storage Explorer** in the sidebar. The tabs at the top pick how the backups are shown:
 
-- Browse backup files
-- View backup metadata
-- Download backups
-- Restore databases
-- Lock/unlock backups
-- Delete files
-
-## Accessing Storage Explorer
-
-1. Navigate to **Storage Explorer** in the sidebar
-2. Select a destination from the dropdown
-3. Browse folders and files
-
-## Interface
-
-### File List
-
-Each file shows:
-
-| Column | Description |
+| Tab | Shows |
 | :--- | :--- |
-| **Name** | Backup filename with extension |
-| **Source** | Database adapter icon (MySQL, PostgreSQL, etc.) |
-| **Size** | Compressed file size on storage |
-| **Date** | Last modified timestamp |
-| **Triggered by** | Who or what initiated the backup: **Manual** (username), **Scheduler**, or **API** (API key name). Populated from `.meta.json` - only available for backups created after v2.3.2. |
-| **Verification** | Result of the last integrity check: passed, failed, or not yet verified. |
-| **Status** | Lock icon if the backup is protected from retention |
+| **Jobs** | The backups of one job. Each row is one run, with every destination that holds a copy of it. |
+| **Destinations** | The backups at one destination, grouped by the job that made them, plus its **History** and **Alerts**. |
 
-The file list defaults to sorting by **Last Modified** descending, so the most recent backups appear first.
+The field next to the tabs picks the job or the destination and searches as you type. The page remembers what you picked in its address, so a link or a reload opens the same view.
 
-### Filters
+The jobs list has three groups:
 
-Filter backups by:
-- **Job**: Show only backups from specific job
-- **Date range**: Filter by backup date
-- **Size**: Filter by file size
+- **Jobs**: the jobs that exist
+- **Deleted jobs**: jobs that are gone while their backups are still at a destination
+- **Not from a job**: the config backups of DBackup itself, and files that nothing links to a job
 
-## File Types
+::: tip Many jobs
+With hundreds of jobs, type part of a name into the field. It filters jobs, deleted jobs and the other entries at once.
+:::
 
-### Backup Files
+## By job
 
-Main backup data:
-```
-backup_2024-01-15T12-00-00.tar         # Seekable archive, written by every job
-backup_2024-01-15T12-00-00.tar.index   # Its index, read for browsing and restoring
-```
+The strip on top counts the backups of the job, what they take up, the newest one, how many copies exist and how many passed their integrity check.
 
-Every backup is a seekable archive holding each database dump, and each file of a directory source, as its own compressed and encrypted entry. Backups written by earlier versions for database-only jobs are single files instead, and stay fully restorable and downloadable:
-```
-backup_2024-01-15T12-00-00.sql       # Plain SQL
-backup_2024-01-15T12-00-00.sql.gz    # Compressed
-backup_2024-01-15T12-00-00.sql.gz.enc # Encrypted
-```
+| Column | Shows |
+| :--- | :--- |
+| **Backup** | When the backup was made |
+| **Started by** | Schedule, API with the key name, or By hand with the user |
+| **Type** | Full, or Incremental with its place in the chain, for jobs with incremental backups |
+| **Size** | The complete snapshot, with what the archive stores under it for an incremental |
+| **Stored at** | Every destination that holds a copy |
+| **Integrity** | Verified, Check failed or Not checked |
 
-### Metadata Files
+A copy shows as **missing** when a destination of the job holds older backups of it but not this one. A destination added to the job later, or one whose retention keeps fewer backups, is not reported for the runs it never had.
 
-Sidecar files with backup info:
-```
-backup_2024-01-15T12-00-00.sql.meta.json
-```
+The quick filters beside the search show only locked backups, runs with a missing copy or runs with a failed check. For an incremental job the list is grouped by chain, the newest chain open.
 
-Contains:
-```json
-{
-  "jobName": "Daily MySQL",
-  "sourceName": "Production DB",
-  "databases": ["myapp", "users"],
-  "compression": "GZIP",
-  "encryption": {
-    "enabled": true,
-    "profileId": "uuid"
-  },
-  "size": 1048576,
-  "duration": 45000,
-  "timestamp": "2024-01-15T12:00:00Z"
-}
-```
+Actions in this view work on the first copy in the upload order of the job. **Delete** removes the backup from every destination that holds it.
+
+## By destination
+
+The strip shows what the destination stores, how many backups it holds and from how many jobs, the newest backup, the locked ones and the integrity checks.
+
+The list is grouped by job. Each group shows its newest three backups until you open it fully, and **By job** switches to the job view. The **Also at** column names the other destinations that hold the same backup.
+
+Switch off **Grouped by job** to get a flat list, where rows can be selected for **Lock**, **Unlock** and **Delete** in one step.
+
+### Backups of a deleted job
+
+When a job is deleted, its backups stay. Retention no longer runs for them, since retention runs as part of a job. Their group says so and offers to delete all of them at this destination. Locked ones are left out.
+
+## Timeline
+
+The switch next to the tabs shows a timeline above the list, from md screens up. It covers 7, 30 or 90 days:
+
+- a point is one backup, a filled larger point the full backup of a chain, a ring an incremental
+- a line joins the backups of one incremental chain
+- a bar stands for a day with several backups, like an hourly job
+- an amber ring marks a missing copy, a red point a failed check, a lock a locked backup
+
+By job the timeline has one lane for the job. By destination it has one lane per job at that destination, and a click on a lane filters the list to that job. A click on a point opens that backup.
+
+## Details
+
+A click on a row opens the panel of that backup:
+
+- **Restore**, **Download**, **Lock** and **Verify**, and the rest in the menu next to them
+- why a copy is missing: an upload that failed in a partial run, with **Open the run**
+- for a backup of a deleted job, that it stays until you delete it
+- **Its chain** for an incremental: the full and every incremental as boxes, the backups a restore reads, and which later incrementals build on it
+- **Stored at** with the last check of every copy and a download per destination
+- what is inside, the last integrity check, compression, encryption and the path
+
+A backup that later incrementals build on can only be deleted together with them. Deleting it alone is refused, since they could no longer be restored.
+
+## How current the list is
+
+DBackup keeps a list of the files at every destination. Its own backups, deletions, locks and checks change the list at once. The **Pre-warm Storage Cache** system task compares it with the storage every hour.
+
+The page never waits for a destination. It opens with the lists DBackup has, and lists a destination it has no list for, or only an old one, in the background. The backups show up as soon as the listing is done. A destination that did not answer keeps its last list and is left alone for five minutes before the page asks it again. One that the health check calls offline is left to the hourly task.
+
+The button next to the tabs tells when the list was last compared, and turns into **Listing** while a listing runs. Its popover shows every destination with the time of its list, and marks one that is offline or whose last listing failed, with the reason. Its backups show as they were at the last list, with a clock on their chips. **Check now** compares the destinations again right away, even one that failed a moment ago.
+
+::: tip Changes outside DBackup
+Backups copied into a destination by hand show up with the next comparison, found by their `.meta.json` sidecar. Files deleted by hand drop out the same way.
+:::
 
 ## Actions
 
-### View Details
-
-Click on a file to see:
-- Full metadata
-- Backup source info
-- Compression/encryption status
-- File checksums
-
-### Incremental Snapshots
-
-Jobs using [incremental backups](/user-guide/features/backup-modes) produce one row per
-snapshot, each a complete restorable point in time. A **Type** column marks them Full or
-Incremental. Every backup carries this marker, so database-only backups show **Full** there
-rather than a blank cell. Backups written before this column existed also show Full.
-
-The size column shows the **complete snapshot size**, not just what that archive stores -
-hover it to see the stored size. An incremental archive holding 2 GB can represent a 60 GB
-snapshot, and showing the 2 GB alone would be misleading.
-
-For these backups the download menu offers **Download Complete Snapshot**, which assembles
-the full contents from the chain as a `.tar.gz`. Plain **Download** still gives you the raw
-archive file, which for an incremental is only the delta - useful for diagnostics, not for
-recovery.
-
 ### Restore
 
-The **Restore** action opens the restore page for the selected backup. For backups with
-directory sources it shows a file tree per source, so you can restore everything (the
-default), a folder, or individual files - see [Restore](/user-guide/features/restore) for
-the full flow, including restoring back to the original location and downloading a
-selection as `.tar.gz`.
-
-If the backup contains **both** databases and directory sources, the action opens a short
-menu first:
+**Restore** opens the restore page. For a backup with databases and directory sources, the menu asks first:
 
 | Choice | Opens |
 | :--- | :--- |
-| **Restore Everything** | Both halves, databases and files |
-| **Databases Only** | The database section, files hidden |
-| **Files Only** | The file trees, no database target needed |
+| **Restore everything** | Both halves, databases and files |
+| **Restore databases only** | The database section, files hidden |
+| **Restore files only** | The file trees, no database target needed |
 
-Backups with only one kind of content skip the menu and open their restore page directly.
-The choice only narrows what the page offers - you can always go back and pick again.
+See [Restore](/user-guide/features/restore) for the whole flow. Listing a backup's contents reads only a small index file stored next to it, and destinations with ranged reads restore without transferring the whole archive. Which ones support that is in [File & Folder Backups](/user-guide/features/file-backups).
 
-Listing the backup's contents reads only a small index file stored next to it, so browsing
-a backup transfers a few megabytes whatever its size. Destinations that
-support ranged reads restore with a handful of small requests instead of transferring the
-archive:
-
-| Ranged reads | Full download per restore |
-| :--- | :--- |
-| Local Filesystem, S3 (and compatible), SFTP, Rsync, WebDAV, Google Drive, OneDrive, FTP, Dropbox | SMB |
-
-The full per-adapter picture, including which ones offer a folder browser when configuring
-a source, is in [File & Folder Backups](/user-guide/features/file-backups).
+::: warning Glacier / Deep Archive
+Backups in S3 `GLACIER` or `DEEP_ARCHIVE` have **Restore** and **Download** disabled. Restore the object in the AWS Console first, then try again.
+:::
 
 ### Download
 
-The **Download** button opens a menu whose options depend on the backup.
+The download entries depend on the backup. For a seekable archive:
 
-For a seekable archive:
-- **Download Encrypted Archive** or **Download Archive (.tar)**: The stored archive, exactly as it is
-- **Download Decrypted Dump** or **Download Dump**: For a backup of a single database, that database as a plain dump, decrypted and decompressed
-- **Download Database...**: For a backup of several databases, a list of them with a download and a wget / curl link per database. Only the chosen database is read from the destination.
-- **Download Contents** or **Download Decrypted Contents**: Everything in the backup as a `.tar.gz`, with dumps under `databases/`
-- **wget / curl Link**: Opens the Download Link modal
+- **Download Encrypted Archive** or **Download Archive (.tar)**: the stored archive as it is
+- **Download Decrypted Dump** or **Download Dump**: for a backup of one database, that database as a plain dump
+- **Download Database...**: for several databases, a list with a download and a wget / curl link per database
+- **Download Contents**, **Download Decrypted Contents** or **Download Complete Snapshot**: everything in the backup as a `.tar.gz`, for an incremental assembled from its chain
+- **wget / curl link**: a temporary link for a server
 
-A downloaded dump is named after the backup and the database, for example `nightly_2026-09-16_shop.sql`.
+For a backup written by an earlier version, **Download Encrypted (.enc)** gives the raw file and **Download Decrypted** decrypts it without decompressing.
 
-For a backup written by an earlier version:
-- **Download Encrypted (.enc)**: Downloads the raw encrypted file
-- **Download Decrypted**: Decrypts before download, decompression is **not** automatic
-- **wget / curl Link**: Opens the Download Link modal
+A wget / curl link works once and expires after 5 minutes:
 
-To decompress an older backup locally:
 ```bash
-# Gzip
-gunzip backup.sql.gz
-
-# Brotli
-brotli -d backup.sql.br
-```
-
-### wget / curl Download Links
-
-::: tip Server-Side Downloads
-For downloading backups directly to a remote server (e.g., during Redis restore), you can generate temporary download URLs that work with wget or curl.
-:::
-
-1. Click **Download** button on any backup
-2. Select **wget / curl Link** from the dropdown
-3. Choose download format:
-   - **Decrypted** or **Database dump**: Decrypted server-side (recommended)
-   - **Encrypted (.enc)** or **Encrypted archive**: Downloads the raw stored file
-4. Click **Generate Download Link**
-5. Copy the provided wget or curl command
-
-For a backup of several databases, open **Download Database...** and use the link button next to the database you need.
-
-**Generated Commands:**
-```bash
-# wget
 wget -O "backup.sql.gz" "https://your-server/api/storage/public-download?token=..."
-
-# curl
 curl -o "backup.sql.gz" "https://your-server/api/storage/public-download?token=..."
-
-# A database dump keeps the name the server gives it
-wget --content-disposition "https://your-server/api/storage/public-download?token=..."
-curl -OJ "https://your-server/api/storage/public-download?token=..."
 ```
 
-**Important:**
-- Links expire after **5 minutes**
-- Links are **single-use** (token consumed on first download)
-- The modal shows a live countdown timer
-- You can generate a new link anytime
+### Verify integrity
 
-### Verify Integrity
+**Verify** checks the stored file against the checksums in its sidecar. The result is written back and shows in the list. S3, Cloudflare R2, Hetzner, Google Drive and OneDrive verify with their native checksum API, other destinations download the file. See [Backup Verification](/user-guide/features/backup-verification).
 
-Check that a stored backup file matches its recorded checksums:
+### Lock and unlock
 
-1. Click **Verify** on a file row (or open the detail dialog)
-2. A tracked execution starts - progress is visible in History
-3. The result (passed / failed) is written back to the file row and `.meta.json`
-
-For S3, Cloudflare R2, Hetzner, Google Drive, and OneDrive, verification uses the native checksum API - no re-download required. For other destinations the file is downloaded and checksums are computed locally.
-
-::: tip
-Enable post-upload verification for all new backups in **Settings → System → Post-Upload Verification**.
-:::
-
-### Restore
-
-1. Click **Restore** button
-2. For a backup containing databases and directory sources, pick what to restore
-3. Select target database source, restore targets for directory sources, or both
-4. Configure options (see [Restore](/user-guide/features/restore))
-5. Confirm and monitor progress
-
-::: warning Glacier / Deep Archive
-Backups stored in S3 `GLACIER` or `DEEP_ARCHIVE` show an orange badge and have **Restore** and **Download** disabled. Restore the object via the AWS Console first, then retry from here.
-:::
-
-### Lock/Unlock
-
-Protect important backups from retention:
-
-1. Click **Lock** icon
-2. Backup is now protected
-
-Locked backups:
-- ✅ Cannot be deleted by retention policies
-- ✅ Don't count against retention limits
-- ⚠️ Can still be manually deleted
+A locked backup is skipped by retention and cannot be deleted until it is unlocked. Locking any backup of a chain keeps the whole chain, see [Backup Modes](/user-guide/features/backup-modes).
 
 ### Delete
 
-1. Click **Delete** button
-2. Confirm deletion
-3. Both `.enc` and `.meta.json` are removed
+Delete removes the archive and its sidecars. It cannot be undone.
 
-::: warning Permanent Action
-Deleted files cannot be recovered from DBackup. Ensure you have another copy before deleting.
-:::
+## File layout
 
-## Organization
+Backups sit in a folder per job, incremental chains in a folder per chain:
 
-### Folder Structure
-
-Backups are organized by job:
 ```
 /storage-root/
-├── mysql-daily/
-│   ├── backup_2024-01-15.sql.gz
-│   └── backup_2024-01-16.sql.gz
-├── postgres-weekly/
-│   └── backup_2024-01-14.sql.gz
-└── mongodb-hourly/
-    ├── backup_2024-01-15T00.archive.gz
-    └── backup_2024-01-15T01.archive.gz
+├── Shop nightly/
+│   ├── Shop_nightly_2026-09-23_03-00-00.tar
+│   ├── Shop_nightly_2026-09-23_03-00-00.tar.meta.json
+│   └── Shop_nightly_2026-09-23_03-00-00.tar.index
+└── Media sync/
+    └── chain-2026-09-20T00-30-00/
+        ├── full-000-Media_sync_2026-09-20.tar
+        └── inc-001-Media_sync_2026-09-21.tar
 ```
 
-### Naming Convention
-
-Backup names include timestamp:
-```
-{job-prefix}_{ISO-timestamp}.{extension}
-
-Example:
-backup_2024-01-15T12-00-00-123Z.sql.gz.enc
-```
-
-## Search and Filter
-
-### Quick Search
-
-Type in search box to filter by:
-- File name
-- Job name
-- Date
-
-### Advanced Filters
-
-Click **Filters** to set:
-- Date range
-- Minimum/maximum size
-- Specific job
-- Locked status
-
-## Bulk Actions
-
-Select multiple files for:
-- Bulk download
-- Bulk delete
-- Bulk lock/unlock
-
-::: tip Shift+Click
-Hold Shift to select a range of files.
-:::
-
-## Storage Statistics
-
-View at top of explorer:
-- **Total size**: All backups combined
-- **File count**: Number of backup files
-- **Latest backup**: Most recent timestamp
-- **Oldest backup**: Earliest timestamp
-
-## File Listing Cache
-
-File listings are cached in SQLite for instant repeat visits. You will never see a loading spinner for a destination you have opened before.
-
-The cache is automatically updated when:
-- A new backup is created or uploaded
-- A backup is deleted or locked/unlocked
-- A verification result is written
-
-The **Pre-warm Storage Cache** system task (hourly, enabled by default) reconciles caches against remote storage and pre-populates the cache for destinations not yet visited. If a backup file is deleted directly on the storage backend (outside DBackup), the next cache reconciliation will detect and remove the stale entry.
-
-## Execution Log Export
-
-From any execution detail dialog (History or live progress), you can:
-- **Copy to clipboard** - copies the full log text
-- **Download as `.log`** - saves the log as a file
-
-Sensitive data (IP addresses, credentials, connection strings) is automatically redacted before export.
-
-## Performance
-
-### Large File Lists
-
-For destinations with many files:
-- The file listing cache provides instant repeat loads
-- Filters help narrow results
-- Consider cleaning up old backups with retention policies
-
-### Download Speed
-
-Downloads are limited by:
-- Storage provider bandwidth
-- Your internet connection
-- Decryption processing (if encrypted)
+The `.meta.json` sidecar holds the job, the source, the databases, compression, encryption, checksums and the lock. The explorer reads it to put the copies of one backup side by side, and to tell the backups of a deleted job from those of a new job with the same name.
 
 ## Troubleshooting
 
-### Files Not Showing
+### A destination is missing its backups
 
-**Causes**:
-- Empty destination
-- Wrong path prefix
-- Permission issues
+**Solution:** Open the popover next to the tabs. It says whether the destination is being listed or why its last listing failed. Fix the connection on the Connections page, then use **Check now**.
 
-**Solutions**:
-1. Verify destination configuration
-2. Check backup job ran successfully
-3. Test connection on destination
+### A copy shows as missing
 
-### Download Fails
+**Solution:** Open the backup and read why. A partial run names the failed upload in its log. A copy deleted by hand stays missing, the next run makes a new backup.
 
-**Causes**:
-- Network timeout
-- File too large
-- Browser restrictions
+### Backups show without a job
 
-**Solutions**:
-1. Try again
-2. Check browser download settings
-3. Use smaller backup chunks
-
-### Metadata Missing
-
-**Causes**:
-- Old backup format
-- File manually copied
-- Incomplete upload
-
-**Solutions**:
-1. Backup still works, just no metadata
-2. Can restore by selecting manually
-3. Future backups will have metadata
-
-## Best Practices
-
-1. **Regular cleanup**: Use retention policies
-2. **Lock important backups**: Before migrations, updates
-3. **Verify backups**: Download and test periodically
-4. **Monitor size**: Watch storage growth
-5. **Organize by job**: Clear naming conventions
+**Solution:** These files have no `.meta.json`, because they were copied by hand or written by an old version. They can still be restored and downloaded.
 
 ## Next Steps
 
-- [Restore](/user-guide/features/restore) - Restore from backup
-- [Retention Policies](/user-guide/jobs/retention) - Automatic cleanup
-- [Download and decrypt](/user-guide/security/recovery-kit) - Manual decryption
+- [Restore](/user-guide/features/restore) - restore a backup
+- [Retention Policies](/user-guide/jobs/retention) - automatic cleanup
+- [Backup Modes](/user-guide/features/backup-modes) - full and incremental chains

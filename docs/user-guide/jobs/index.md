@@ -155,12 +155,12 @@ The button at the end of a row, a right click on the row and the details of a jo
 | :--- | :--- |
 | **Run now** | Starts the job right away. It also sits on the row, shown when the pointer is over it |
 | **Open the last run** | Opens the log of the newest run in History |
-| **Backups on ...** | Opens the Storage Explorer at the backups of the job, one entry per destination |
+| **Open backups** | Opens the Storage Explorer at the backups of the job, with every destination that holds a copy of each |
 | **Trigger by API** | Shows how to start the job from a script or a webhook |
 | **Edit** | Opens the job form |
 | **Clone** | Copies the job with every setting under a new name, the retention policy of each destination included. The copy starts paused, so it cannot run before you checked it |
 | **Pause** or **Resume** | A paused job does not run on its schedule, it can still be started by hand |
-| **Delete** | Removes the job. Backups it stored stay where they are |
+| **Delete** | Removes the job. Backups it stored stay where they are, under **Deleted jobs** in the Storage Explorer |
 
 Tick several jobs in the table to pause, resume or delete them together. A right click on one of the ticked rows offers the same.
 

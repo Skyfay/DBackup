@@ -50,19 +50,13 @@ The result is written back into the `.meta.json` sidecar so it persists across s
 
 ### Manual Verification (on-demand)
 
-In the **Storage Explorer**, each backup row has a shield icon in the Actions column:
+In the **Storage Explorer**, open the menu at the end of a backup's row and pick **Verify integrity**, or click **Verify** in the panel a click on the row opens. A loading toast appears while the check runs, then the result is shown and the list updates.
 
-- **Gray shield**: Never verified
-- **Green shield**: Last check passed
-- **Red shield**: Last check failed
-
-Click the icon to trigger a verification. A loading toast appears while the check runs, then the result is shown and the badge in the table updates automatically.
+The **Integrity** column shows the last result: **Verified**, **Check failed** or **Not checked**.
 
 ::: tip Re-verify anytime
-You can re-verify a backup at any time - clicking the green shield on an already-verified backup runs a fresh check.
+You can verify a backup again at any time. The panel offers **Verify again** once a check has run.
 :::
-
-The **Integrity** column shows the same status at a glance without opening the actions menu.
 
 ### Post-Upload Verification (automatic)
 

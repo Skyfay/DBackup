@@ -16,7 +16,7 @@ import {
     ChevronRight,
     ArrowLeft,
 } from "lucide-react";
-import { FileInfo } from "@/app/dashboard/storage/columns";
+import { FileInfo } from "@/components/dashboard/storage/file-info";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { databaseDownloadFileName } from "@/lib/archive/dump-names";

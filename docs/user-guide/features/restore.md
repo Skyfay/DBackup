@@ -19,8 +19,8 @@ Backups are seekable archives that store every database as its own entry. On des
 ### From Storage Explorer
 
 1. Go to **Storage Explorer** in sidebar
-2. Find the backup to restore
-3. Click **Restore** button
+2. Pick the job, or the destination, that holds the backup
+3. Click the backup, then **Restore** in its panel, or pick **Restore** in the menu at the end of its row
 4. Configure restore options
 5. Confirm and start
 

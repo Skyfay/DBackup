@@ -16,6 +16,8 @@ All notable changes to DBackup are documented here.
 - **jobs**: The jobs table shows each job's last run with its error or live progress, its last 12 runs as bars, where it backs up to and when it runs next. The Jobs page can also show its jobs as cards with the way of each backup, and phones always get the cards.
 - **jobs**: A click on a job opens a panel with its live progress or last error, the length of its latest runs, its success rate over 30 days and what it backs up to where. Its actions open from there, from the button at the end of the row and with a right click on the row.
 - **jobs**: The file names of a job warn when two runs of its schedule would get the same name, which replaces the earlier backup at every destination, and offer a template with the time. The field also shows a name the job will write.
+- **storage**: The Storage Explorer shows the backups of a job with every destination that holds a copy of each run and marks a missing copy, or the backups of a destination grouped by job. A timeline shows the runs of a job, or of every job at a destination, with their incremental chains.
+- **storage**: A click on a backup in the Storage Explorer opens its copies, its chain, what it holds and its last integrity check. The backups of a deleted job stay listed and can be deleted together, and the page tells how old the list of each destination is and compares it with the storage on request.
 
 ### 🐛 Bug Fixes
 
@@ -52,6 +54,7 @@ All notable changes to DBackup are documented here.
 - **ui**: The sidebar collapses to icons with the new button in the header or Ctrl+B (⌘B on macOS), and small screens get it as a slide-in menu. Both themes use a new zinc color palette where dialogs, menus and buttons, and the fields and switches in them, take the color of their task, like blue to add and violet to edit, and the interface uses the Geist font on every operating system.
 - **dashboard**: The overview was rebuilt with a status banner that names a failing job and can rerun it, trend cards, a switch between the latest executions and the jobs, and a backup calendar that shows as many weeks as the screen fits. It works on phones, and its statistics are cached for a minute or until the next backup finishes or a job changes.
 - **storage**: The storage history dialog shows one bar a day, with the stored size, the change in the range and the number of backups above the chart. It switches between 7 days, 30 days, 90 days and a year without loading again, and leads on to the Storage Explorer.
+- **storage**: The Storage Explorer opens at once from the lists DBackup keeps and lists a destination without a current list in the background. A destination that does not answer keeps its last list and no longer holds up the page.
 - **ui**: On phones every table leaves out the rows per page picker so its page controls fit, and the Connections page picks its list from a menu instead of a row of tabs.
 - **ui**: The filter menus of the tables are wider, keep their order while values are picked, and match the new look. The type filter on the Connections page shows each adapter's icon.
 - **ui**: The confirmation before a bulk action and the list of entries it could not process have a new look, with a header tinted for the kind of action. Their lists show each entry with its icon and type where the table has them.
@@ -83,6 +86,9 @@ All notable changes to DBackup are documented here.
 - **api**: `GET /api/adapters/{id}/health-history` averages only the checks that passed and also returns the slowest one, since when the current status holds and when a check last passed.
 - **api**: `GET /api/jobs` returns how each job is doing as `overview`, and the connections a job uses with `id`, `name`, `adapterId` and `lastStatus` only. The new `GET /api/jobs/{id}/runs` returns the latest 30 runs of a job with their size, its success rate over 30 days and its last successful backup.
 - **api**: The new `GET /api/jobs/schedules` returns the schedules of the enabled jobs with how long a run usually takes, the slots of the queue and the scheduler's time zone.
+- **api**: The new `GET /api/storage/explorer` returns every job and destination with its backup counts. `GET /api/storage/explorer/jobs/{key}` and `GET /api/storage/explorer/destinations/{id}` return the backups of one job or one destination with their copies.
+- **jobs**: The menu of a job opens its backups in the Storage Explorer with one entry instead of one per destination.
+- **storage**: The config backups of DBackup show in the Storage Explorer as an entry of their own instead of behind a switch.
 
 ### 🗑️ Removed
 
@@ -103,6 +109,7 @@ All notable changes to DBackup are documented here.
 - **docs**: The scheduling guide describes the schedule picker and its warning when runs would wait for a free slot.
 - **docs**: The job guide explains how some databases of a source are picked, how connections are added from a job and what the retention list shows.
 - **docs**: The webhook trigger guide describes the new API trigger dialog, the timeout and the exit codes of the CI image, and Partial and Cancelled runs in its examples and API reference. The API key guide points to the Setup of the dialog.
+- **docs**: The Storage Explorer guide describes the views by job and by destination, the timeline, the details of a backup and how current the lists are. The restore, verification, job, API and storage cache guides follow the new page.
 
 ### 🧪 Tests
 

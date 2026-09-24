@@ -17,23 +17,44 @@ One row per storage adapter. `cachedAt` drives the staleness check.
 
 ## Read Path
 
-`StorageService.listFilesWithMetadata(adapterConfigId, typeFilter?, bypassCache?)`:
+`StorageService.listDestinationFiles(adapterConfigId, bypassCache?)`, which `listFilesWithMetadata(adapterConfigId, typeFilter?, bypassCache?)` filters by type:
 
-1. If `bypassCache = false` (default): query `StorageListCache` by `adapterConfigId`.
-2. **Cache hit**: check age. If `cachedAt` is older than `CACHE_STALENESS_HOURS` (2 h), fire-and-forget `reconcileStorageListCache()` in the background, then return cached data immediately (stale-while-revalidate).
-3. **Cache miss**: run full fetch — `adapter.list("")` + parallel `.meta.json` reads + DB fallbacks — write result to `StorageListCache`, then return.
+1. If `bypassCache = false` (default): read the cached payload with `readCachedListing()`.
+2. **Current payload**: return it. If `cachedAt` is older than `CACHE_STALENESS_HOURS` (2 h), start `reconcileStorageListCache()` in the background first (stale-while-revalidate).
+3. **Readable payload of an older version**: return it and start a full listing in the background, which replaces it once the destination answers.
+4. **No payload, or one too old to read**: run a full fetch (`adapter.list("")`, parallel `.meta.json` reads, DB fallbacks), write it to `StorageListCache`, then return it.
 
 TypeFilter (`BACKUP` / `SYSTEM`) is applied **after** cache retrieval, so the cache always stores the full unfiltered list.
 
+The Storage Explorer never takes step 4 in a request. Its service reads with `readCachedListing()` only and calls `refreshInBackground()` for a destination without a current or fresh list, unless the health check calls it offline. The index reports such a destination as `listing` and the page asks again every few seconds until the listing is done.
+
+## Versions
+
+The payload is `{ v, files }`. `CACHE_SCHEMA_VERSION` rises when `enrichSingleFile` starts writing a field the UI depends on, since reconciliation only enriches files it has not seen before.
+
+| Payload version | Read |
+|--------|-------------|
+| Current | Served |
+| From `CACHE_MIN_READABLE_VERSION` up | Served, and rebuilt in the background. A surgical update keeps its version, so the rebuild still happens |
+| Older, or a bare array | Dropped and listed again, since its paths or fields cannot be used |
+
+A destination that does not answer keeps an older readable payload instead of losing its list.
+
+## Listings in the Background
+
+Live listings and reconciliations are deduplicated per destination: a second caller joins the running one, so a page, Check now and the warmup task never list the same destination at once. Background refreshes run at most four at a time, the rest wait in a queue, which matters right after an upgrade when every destination needs one. The state lives on `globalThis`, because in development every route loads its own copy of the module.
+
+A failed listing or reconciliation is remembered with its error. `listingFailure()` reports it until a later one succeeds, and `refreshInBackground()` leaves the destination alone for five minutes after a failure, unless called with `force`, as Check now does. Tests reset this state with `clearListingState()`.
+
 ## Write Path
 
-After a full fetch (cache miss), the result is persisted with a non-blocking `upsert`:
+A full fetch persists its result with an awaited `upsert` whose failure is ignored, so a page that asks again once the listing is done reads the new list:
 
 ```typescript
-prisma.storageListCache.upsert({
+await prisma.storageListCache.upsert({
     where:  { adapterConfigId },
-    create: { adapterConfigId, filesJson },
-    update: { filesJson, cachedAt: new Date() },
+    create: { adapterConfigId, filesJson, cachedAt: listedAt },
+    update: { filesJson, cachedAt: listedAt },
 }).catch(() => {});
 ```
 
@@ -85,18 +106,14 @@ The `system.warmup_storage_cache` task keeps the cache consistent for all storag
 - **Concurrency**: adapters are processed sequentially to avoid simultaneous rate-limit hits.
 
 **Per-adapter logic:**
-- **Cache exists**: calls `reconcileStorageListCache()` — runs `adapter.list()`, diffs against the cached list, removes entries for files deleted externally, enriches and appends new files. Detects changes made outside DBackup within the hour.
+- **Cache exists**: calls `reconcileStorageListCache()`, which runs `adapter.list()`, diffs against the cached list, removes entries for files deleted externally, enriches and appends new files. A payload of an older version gets a full listing instead. Detects changes made outside DBackup within the hour.
 - **No cache row**: calls `listFilesWithMetadata()` — full fetch to populate the cache from scratch.
 
 ## Force Refresh
 
-Pass `?refresh=true` on the files API route to bypass the cache and force a full re-fetch:
+Check now in the Storage Explorer calls `POST /api/storage/explorer/refresh` with the destinations of the page. It starts a reconciliation, or a full listing when there is no current payload, in the background even for a destination that failed a moment ago, and answers at once.
 
-```
-GET /api/storage/:id/files?refresh=true
-```
-
-This is wired to the Refresh button in the Storage Explorer UI. After the live fetch completes, the new result is written back to the cache.
+`GET /api/storage/:id/files?refresh=true` still lists a destination live and waits for it.
 
 ## Cache Invalidation Summary
 
@@ -107,14 +124,17 @@ This is wired to the Refresh button in the Storage Explorer UI. After the live f
 | Manual file delete | `removeStorageListCacheEntry` | `StorageService.deleteFile()` |
 | File lock toggled | `updateStorageListCacheEntry` | `StorageService.toggleLock()` |
 | Verification result written | `updateStorageListCacheEntry` | `VerificationService.writeVerificationResult()` |
-| Cache older than 2 h | `reconcileStorageListCache()` background | `StorageService.listFilesWithMetadata()` |
-| User clicks Refresh | `invalidateStorageListCache()` + full fetch | `GET /api/storage/:id/files?refresh=true` |
+| Cache older than 2 h | `reconcileStorageListCache()` background | `StorageService.listDestinationFiles()`, the Storage Explorer |
+| Payload of an older version | Full listing in the background | `StorageService.listDestinationFiles()`, the Storage Explorer |
+| User clicks Check now | `checkNow()` in the background | `POST /api/storage/explorer/refresh` |
+| API caller asks for a live list | Full fetch | `GET /api/storage/:id/files?refresh=true` |
 
 ## Key Files
 
 | File | Role |
 |------|------|
-| `src/services/storage/storage-service.ts` | All cache methods, reconciliation, enrichment |
+| `src/services/storage/storage-service.ts` | All cache methods, reconciliation, enrichment, the listings in the background |
+| `src/services/storage/explorer-service.ts` | The Storage Explorer's reads, which never wait for a storage |
 | `src/services/storage/verification-service.ts` | Surgical update after verification |
 | `src/lib/runner/steps/03-upload.ts` | Append on upload |
 | `src/lib/runner/steps/05-retention.ts` | Remove per deleted file |

@@ -80,6 +80,7 @@ For the full endpoint documentation with request/response schemas, examples, and
 | Adapters | `GET/POST/PUT/DELETE /api/adapters` | Sources, destinations & notifications |
 | Connection Testing | `POST /api/adapters/test-connection` | Test adapter connections |
 | Storage Explorer | `GET/POST/DELETE /api/storage/:id/*` | Browse, download, delete, restore backups |
+| Backups by job | `GET /api/storage/explorer`, `GET /api/storage/explorer/jobs/:key`, `GET /api/storage/explorer/destinations/:id` | Every job and destination with its backup counts, the runs of one job with their copies at every destination, the backups of one destination with their job and their copies elsewhere |
 | Vault | `GET /api/vault/:id/recovery-kit` | Download encryption recovery kit |
 | Settings | `GET/POST/PUT /api/settings/system-tasks` | System tasks configuration |
 | Health | `GET /api/health` | Health check (public, no auth) |

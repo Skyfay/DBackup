@@ -16,6 +16,15 @@ vi.mock('@/services/dashboard/cache', async (importOriginal) => ({
     invalidateDashboardCache: vi.fn(),
 }));
 
+// Every job the service hands out names its connections without their configs.
+const CONNECTION = { select: { id: true, name: true, type: true, adapterId: true } };
+
+/** Every value in a Prisma include, however deep, so a test can look for a config loaded whole. */
+function includeValues(include: unknown): unknown[] {
+    if (!include || typeof include !== 'object') return [include];
+    return Object.entries(include).flatMap(([key, value]) => [[key, value], ...includeValues(value)]);
+}
+
 describe('JobService', () => {
     let service: JobService;
 
@@ -85,9 +94,9 @@ describe('JobService', () => {
                     }
                 },
                 include: expect.objectContaining({
-                    source: true,
+                    source: CONNECTION,
                     destinations: expect.any(Object),
-                    notifications: true,
+                    notifications: CONNECTION,
                 })
             });
 
@@ -141,9 +150,9 @@ describe('JobService', () => {
             // Assert
             expect(prismaMock.job.findMany).toHaveBeenCalledWith({
                 include: expect.objectContaining({
-                    source: true,
+                    source: CONNECTION,
                     destinations: expect.any(Object),
-                    notifications: true,
+                    notifications: CONNECTION,
                     encryptionProfile: {
                         select: {
                             id: true,
@@ -157,6 +166,20 @@ describe('JobService', () => {
         });
     });
 
+    describe('the jobs it hands out', () => {
+        it('never load the config of a connection, so a response cannot carry one', async () => {
+            prismaMock.job.findMany.mockResolvedValue([]);
+
+            await service.getJobs();
+
+            const { include } = prismaMock.job.findMany.mock.calls[0][0] as { include: Record<string, unknown> };
+            const whole = includeValues(include).filter((entry) => Array.isArray(entry) && entry[1] === true).map((entry) => (entry as [string, unknown])[0]);
+            expect(whole).not.toContain('config');
+            expect(whole).not.toContain('source');
+            expect(whole).not.toContain('notifications');
+        });
+    });
+
     describe('getJobById', () => {
         it('should return a job when found', async () => {
             const mockJob = { id: 'job-1', name: 'Test Job', source: {}, destinations: [], notifications: [], sources: [] };
@@ -166,7 +189,7 @@ describe('JobService', () => {
 
             expect(prismaMock.job.findUnique).toHaveBeenCalledWith({
                 where: { id: 'job-1' },
-                include: expect.objectContaining({ source: true, notifications: true }),
+                include: expect.objectContaining({ source: CONNECTION, notifications: CONNECTION }),
             });
             expect(result).toEqual(mockJob);
         });

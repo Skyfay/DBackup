@@ -37,33 +37,35 @@ Per-job notifications alert you when a specific backup job completes or fails.
 
 ### Assigning to a Job
 
-1. Edit a backup job
-2. Go to the **Notifications** section
-3. Select a notification channel
-4. Choose the trigger condition:
-   - **Always** – Both success and failure
-   - **On Success** – Only when the backup succeeds
-   - **On Failure** – Only when the backup fails
+A job notifies through [notification templates](/user-guide/features/templates#notification-templates):
+
+1. Edit a backup job and open its **Notifications** part
+2. Pick a template under **Add a template**, or make one with **New**
+3. Save
+
+The part shows each template with its channels, and **Who hears about a run** below it lists every channel of the job with the runs it hears about. See [Creating Jobs](/user-guide/jobs/#notifications).
 
 ### Multiple Channels
 
-You can assign multiple notifications to one job - for example Discord for quick team awareness and Email for formal audit records.
+A template can name several channels, and a job can use several templates, for example Discord for quick team awareness and Email for formal audit records. A channel that is in two templates of the same job gets two messages after a run, which the job form points out.
 
-### Notification Conditions
+### Runs
 
-| Condition | When Triggered |
+Every channel of a template hears about the runs picked for it:
+
+| Run | When Triggered |
 | :--- | :--- |
-| **Always** | Every backup completion |
-| **On Success** | Only successful backups |
-| **On Failure** | Only failed backups |
+| **Succeeded** | The backup reached every destination |
+| **Partial** | The backup reached some destinations, others failed |
+| **Failed** | The backup failed |
 
 ::: tip Recommended Setup
-| Use Case | Condition |
+| Use Case | Runs |
 | :--- | :--- |
-| Critical production | Always |
-| Development | On Failure only |
-| Compliance | Always |
-| Team awareness | On Failure |
+| Critical production | Succeeded, Partial and Failed |
+| Development | Partial and Failed |
+| Compliance | Succeeded, Partial and Failed |
+| Team awareness | Partial and Failed |
 :::
 
 ---

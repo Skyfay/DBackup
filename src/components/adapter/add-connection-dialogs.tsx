@@ -13,7 +13,7 @@ import type { SavedConnection } from "./use-connection-form";
 interface AddConnectionDialogsProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    type: "database" | "storage";
+    type: "database" | "storage" | "notification";
     /** The role a new storage connection gets, kept as it is. */
     role?: StorageRole;
     /** Names what is added, like "Add destination". */

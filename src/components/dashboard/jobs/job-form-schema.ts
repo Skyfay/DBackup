@@ -8,6 +8,8 @@ export interface AdapterOption {
     id: string;
     name: string;
     adapterId: string;
+    /** What kind of connection it is, like "database", so one added from a field shows in the fields of its kind only. */
+    type?: string;
     metadata?: string | null;
     usableAsSource?: boolean;
     storageRole?: string;

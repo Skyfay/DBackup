@@ -2768,10 +2768,15 @@ components:
             $ref: "#/components/schemas/JobDestination"
         source:
           type: object
+          description: The source connection, never with its config, which holds hosts and secrets.
           properties:
+            id:
+              type: string
             name:
               type: string
             type:
+              type: string
+            adapterId:
               type: string
         createdAt:
           type: string
@@ -2791,8 +2796,13 @@ components:
           description: JSON retention policy
         config:
           type: object
+          description: The destination connection, never with its config.
           properties:
+            id:
+              type: string
             name:
+              type: string
+            type:
               type: string
             adapterId:
               type: string

@@ -38,6 +38,7 @@ All notable changes to DBackup are documented here.
 - **vault**: The Vault no longer sends the stored key of an encryption profile to the browser when it lists, creates, imports or renames profiles, not even in its encrypted form.
 - **jobs**: The job list no longer returns the stored configs of the connections a job uses, only their name, type and health. Reading jobs was enough to get them before.
 - **templates**: The notification templates and the Templates page no longer send the stored configs of notification channels to the browser, only the name and type of each channel. Reading jobs or templates was enough to get them before, without the right to read notification channels.
+- **jobs**: Creating, changing and cloning a job no longer answers with the stored configs of its connections, only their name and type. Changing jobs was enough to get them before.
 
 ### 🎨 Improvements
 
@@ -54,12 +55,14 @@ All notable changes to DBackup are documented here.
 - **vault**: A new credential profile starts with a list of what can be saved and the services that use each kind, while the New button of a login field opens the form for its kind right away. Every secret field has its own button to show what was typed, and an SSH login picks how it signs in and where its key comes from on cards.
 - **connections**: The file browser of a path field starts where the field points and shows the path as clickable parts with a filter, the size and date of every entry and a badge on the files the field takes. Hidden files stay out until asked for, and every entry can be reached with the keyboard.
 - **setup**: The Quick Setup lists its steps on the left with what each one made, and adds databases, destinations and channels with the same form as the Connections page. Every step can take an existing connection or key instead, and the job picks its schedule and its databases on cards.
-- **jobs**: The form for adding and editing a job lists its parts on the left, marks the ones that are done or still miss something, and shows one part at a time. Connections, schedule presets and encryption keys are picked from searchable lists that also make a new one, and the channels a job notifies directly can be seen and removed there.
+- **jobs**: The form for adding and editing a job lists its parts on the left, marks the ones that are done or still miss something, and shows one part at a time. Connections, schedule presets, encryption keys and notification templates are picked from searchable lists that also make a new one.
 - **jobs**: The schedule of a job and of a schedule preset is picked as hourly, daily, weekly or monthly, with several times a day, several weekdays and the last day of the month, or as cron. It shows the next runs and warns with a free time to use when runs would wait because the queue has no slot left.
 - **jobs**: Picking some databases of a source has a search, a checkbox for all of them and the size and tables of each, with how many are picked and how big they are together. Once every database is picked it offers All databases, which also takes the ones added later.
 - **jobs**: The database, the destinations and the folders of a job are picked from lists that show each connection's type, address and status, and New adds a connection right from the job. The retention of a destination is picked from a list that says what each policy keeps and how many destinations follow it.
+- **jobs**: The notifications of a job show each template with its channels and the runs they hear about, and a table of who hears about a run that marks a channel told twice. Channels a job names directly can be turned into a template there.
 - **ui**: The fields that pick a login, a connection, a key or a template offer New and Edit only to users who may create or change that kind of entry.
 - **templates**: The dialog for adding and editing a retention policy has the new look.
+- **templates**: The dialog for adding and editing a notification template has the new look. Each channel is picked from a searchable list that can also add one, and its runs are picked with buttons.
 - **templates**: The dialog for adding and editing a schedule preset has the new look. It and the Templates page now say that a job follows every change to its preset, instead of claiming it keeps its own copy of the schedule.
 
 ### 🔄 Changed

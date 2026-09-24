@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState } from "react";
-import { Database, FolderOpen, HardDrive, Plus, type LucideIcon } from "lucide-react";
+import { Bell, Database, FolderOpen, HardDrive, Plus, type LucideIcon } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { AddConnectionDialogs } from "@/components/adapter/add-connection-dialogs";
 import { connectionAddress } from "@/components/adapter/connection-summary";
@@ -15,13 +15,14 @@ import { STORAGE_ROLES, type StorageRole } from "@/lib/core/storage-roles";
 import { cn } from "@/lib/utils";
 import type { AdapterOption } from "./job-form-schema";
 
-export type ConnectionKind = "database" | "destination" | "directory";
+export type ConnectionKind = "database" | "destination" | "directory" | "notification";
 
 /** What each kind is called, where it comes from and who may add one. */
-const KINDS: Record<ConnectionKind, { icon: LucideIcon; note: string; noun: string; type: "database" | "storage"; role?: StorageRole; write: Permission }> = {
+const KINDS: Record<ConnectionKind, { icon: LucideIcon; note: string; noun: string; type: "database" | "storage" | "notification"; role?: StorageRole; write: Permission }> = {
     database: { icon: Database, note: "Databases", noun: "database", type: "database", write: PERMISSIONS.SOURCES.WRITE },
     destination: { icon: HardDrive, note: "Destinations", noun: "destination", type: "storage", role: STORAGE_ROLES.DESTINATION, write: PERMISSIONS.DESTINATIONS.WRITE },
     directory: { icon: FolderOpen, note: "Directory sources", noun: "directory source", type: "storage", role: STORAGE_ROLES.SOURCE, write: PERMISSIONS.DESTINATIONS.WRITE },
+    notification: { icon: Bell, note: "Notification channels", noun: "notification channel", type: "notification", write: PERMISSIONS.NOTIFICATIONS.WRITE },
 };
 
 /** Tells the form about a connection added from one of its fields, so every field offers it. */
@@ -122,7 +123,7 @@ export function ConnectionPicker({ options, value, onChange, placeholder, kind, 
                 role={setup.role}
                 title={`Add ${setup.noun}`}
                 onSaved={(saved) => {
-                    const option: AdapterOption = { ...saved, storageRole: setup.role };
+                    const option: AdapterOption = { ...saved, type: setup.type, storageRole: setup.role };
                     setAdded((list) => [...list, option]);
                     report?.(option);
                     onChange(saved.id);

@@ -107,9 +107,11 @@ A live preview and clickable token chips (grouped by category) are shown in the 
 
 ### Notifications
 
-A job reports its runs through [notification templates](/user-guide/features/templates). Each template decides its channels and after which runs it sends. Pick one or more in the **Notifications** part, the first one of a new job is the default template.
+A job reports its runs through [notification templates](/user-guide/features/templates#notification-templates). Each template names channels, and each channel hears about the runs picked for it: succeeded, partial or failed. The **Notifications** part shows the templates of the job with their channels and runs. **Add a template** picks another one from a list, **New** beside it makes one. A new job starts with the default template.
 
-A job made by the [Quick Setup](/user-guide/first-steps#quick-setup) names its channel directly instead. The **Notifications** part lists such channels with when they are told, and ignores them as soon as a template is picked.
+Below the templates, **Who hears about a run** lists every channel of the job with a column for succeeded, partial and failed runs. A channel in two templates gets two messages after the same run, and the table counts both and says so. The line under the table names how many channels hear about a failed run, or warns when nobody does.
+
+A job made by the [Quick Setup](/user-guide/first-steps#quick-setup) or an older version names its channels directly instead, with one choice of runs for all of them. **Make a template of them** turns them into a template that takes their place. Once a template is on the job, those channels get no message, and **Remove them** clears them.
 
 ## Multi-Destination
 

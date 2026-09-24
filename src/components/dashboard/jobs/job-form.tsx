@@ -15,7 +15,8 @@ import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { cn } from "@/lib/utils";
 import { JOB_PARTS, firstPartWithError, jobErrorKeys, jobPartStatuses, type JobPart, type JobPartId } from "./job-form-layout";
 import type { AdapterOption, EncryptionOption, JobFormJob } from "./job-form-schema";
-import { BasicsPart, EncryptionPart, NotificationsPart } from "./job-parts";
+import { BasicsPart, EncryptionPart } from "./job-parts";
+import { NotificationsPart } from "./job-part-notifications";
 import { AdvancedPart } from "./job-part-advanced";
 import { ConnectionAddedContext } from "./connection-picker";
 import { AddDestinationButton, DestinationsPart } from "./job-part-destinations";
@@ -69,12 +70,13 @@ export function JobForm({ sources: loadedSources, destinations, directorySourceO
     // A connection added from a field shows in every field of its kind at once, until the page
     // brings it along with the others.
     const [added, setAdded] = useState<AdapterOption[]>([]);
-    const withAdded = (list: AdapterOption[], role: string | undefined) => [
+    const withAdded = (list: AdapterOption[], type: AdapterOption["type"], role?: string) => [
         ...list,
-        ...added.filter((option) => option.storageRole === role && !list.some((known) => known.id === option.id)),
+        ...added.filter((option) => option.type === type && option.storageRole === role && !list.some((known) => known.id === option.id)),
     ];
-    const sources = withAdded(loadedSources, undefined);
-    const directorySourceOptions = withAdded(loadedFolders, STORAGE_ROLES.SOURCE);
+    const sources = withAdded(loadedSources, "database");
+    const directorySourceOptions = withAdded(loadedFolders, "storage", STORAGE_ROLES.SOURCE);
+    const notificationChannels = withAdded(notifications, "notification");
     const state = useJobForm({ sources, initialData, onSaved });
     const reportAdded = (option: AdapterOption) => {
         setAdded((list) => [...list, option]);
@@ -89,6 +91,7 @@ export function JobForm({ sources: loadedSources, destinations, directorySourceO
     // DESTINATION is the column default, so a connection without a role is a destination too.
     const destinationOptions = withAdded(
         destinations.filter((option) => (option.storageRole ?? STORAGE_ROLES.DESTINATION) === STORAGE_ROLES.DESTINATION),
+        "storage",
         STORAGE_ROLES.DESTINATION,
     );
 
@@ -112,7 +115,7 @@ export function JobForm({ sources: loadedSources, destinations, directorySourceO
             case "encryption":
                 return <EncryptionPart encryptionProfiles={encryptionProfiles} />;
             case "notifications":
-                return <NotificationsPart notifications={notifications} />;
+                return <NotificationsPart channels={notificationChannels} />;
             case "advanced":
                 return <AdvancedPart isPostgres={state.isPostgres} pgMajorVersion={state.pgMajorVersion} nativeCompression={state.nativeCompression} />;
         }

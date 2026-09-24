@@ -80,23 +80,26 @@ export interface UpdateJobInput {
     verifyByHash?: boolean;
 }
 
+/**
+ * A connection of a job as it may leave this service: which one it is, never its config. The jobs
+ * reach the browser and API clients through the routes, and a config holds hosts, logins, keys and
+ * webhook URLs, even in their encrypted form. The runner loads what it needs itself.
+ */
+const connection = { select: { id: true, name: true, type: true, adapterId: true } } as const;
+
 const jobInclude = {
-    source: true,
+    source: connection,
     destinations: {
-        include: { config: true },
+        include: { config: connection },
         orderBy: { priority: 'asc' as const }
     },
     sources: {
-        include: { config: true, excludePatternPresets: true },
+        include: { config: connection, excludePatternPresets: { select: { id: true } } },
         orderBy: { priority: 'asc' as const }
     },
-    notifications: true,
+    notifications: connection,
     notificationTemplates: {
-        include: {
-            template: {
-                include: { channels: { include: { config: true } } }
-            }
-        },
+        include: { template: { select: { id: true, name: true } } },
         orderBy: { priority: 'asc' as const }
     },
     encryptionProfile: { select: { id: true, name: true } },

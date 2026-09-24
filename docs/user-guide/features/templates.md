@@ -1,10 +1,10 @@
 # Templates
 
-Manage reusable Retention Policies, Naming Templates, and Schedule Presets from a single place.
+Manage reusable Retention Policies, Naming Templates, Schedule Presets and Notification Templates from a single place.
 
 ## Overview
 
-The **Templates** page (Administration → Templates) provides three types of reusable building blocks for backup jobs. Instead of configuring retention, filenames, and schedules inline on every job, you define them once here and reference them across all jobs.
+The **Templates** page (Administration → Templates) provides reusable building blocks for backup jobs. Instead of configuring retention, filenames, schedules and notifications inline on every job, you define them once here and reference them across all jobs.
 
 ## Retention Policies
 
@@ -87,6 +87,20 @@ A Schedule Preset is a named cron expression that can be shared across jobs. Its
 3. Pick a preset from the list, or add one with **New** beside the field
 
 The list shows when each preset runs and how many jobs follow it, and the field names the time zone of the scheduler the times are in. The job follows the preset: when the preset changes, every job that follows it runs on the new schedule without being edited. **Edit** on a preset in the list changes it from the job form. To stop following, pick **Its own schedule**, which starts from the preset's expression.
+
+## Notification Templates
+
+A Notification Template names [notification channels](/user-guide/notifications/) and after which runs each one hears about a job: succeeded, partial or failed. Its dialog lists the channels as rows. Each row picks its channel from a searchable list, which can also add a new channel, and has a button for every run.
+
+Mark a template as the default with the star in the list, and a new job starts with it.
+
+### Using a Notification Template
+
+1. Open a job (create or edit)
+2. In the **Notifications** part, pick a template under **Add a template**, or add one with **New** beside the field
+3. Save the job
+
+The job follows the template: when the template changes, every job that uses it sends the new way without being edited. **Edit** on a template in the job form changes it for all of them. See [Creating Jobs](/user-guide/jobs/#notifications) for the table of who hears about a run.
 
 ## Next Steps
 

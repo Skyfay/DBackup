@@ -8,14 +8,20 @@ import { cn } from "@/lib/utils";
 import { MAX_TIMES, parseTime, timeText } from "./schedule-model";
 
 /** One line of the picker: what it sets on the left, the controls beside it. */
-export function PickerRow({ label, children, aside }: { label: string; children: React.ReactNode; aside?: React.ReactNode }) {
+/**
+ * A labelled row of pills. Shortcuts like Weekdays go in a line of their own above the pills, so
+ * the pills keep the full width, and the label stays level with the pills.
+ */
+export function PickerRow({ label, children, above }: { label: string; children: React.ReactNode; above?: React.ReactNode }) {
     return (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <span className="w-full shrink-0 text-xs text-muted-foreground sm:w-20">{label}</span>
-            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5" role="group" aria-label={label}>
-                {children}
+            <span className={cn("w-full shrink-0 text-xs text-muted-foreground sm:w-20", above && "sm:self-end sm:pb-2")}>{label}</span>
+            <div className="grid min-w-0 flex-1 gap-2">
+                {above && <div className="flex flex-wrap items-center gap-1.5">{above}</div>}
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5" role="group" aria-label={label}>
+                    {children}
+                </div>
             </div>
-            {aside && <div className="flex items-center gap-1 sm:ml-auto">{aside}</div>}
         </div>
     );
 }
@@ -43,10 +49,13 @@ export function Pill({ picked, onClick, children, label }: { picked: boolean; on
     );
 }
 
-/** A small text button beside the pills, like Weekdays. */
+/**
+ * A shortcut above the pills, like Weekdays. An outline button like every other secondary action,
+ * so it reads as something to press and not as a label, and smaller than the pills it fills in.
+ */
 export function QuickPick({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
     return (
-        <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={onClick}>
+        <Button type="button" variant="outline" size="sm" className="h-7 px-2.5 text-xs" onClick={onClick}>
             {children}
         </Button>
     );

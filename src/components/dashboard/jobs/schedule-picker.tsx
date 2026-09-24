@@ -145,7 +145,7 @@ export function SchedulePicker({ value, onChange, jobId, presetId, subject = "jo
                 {mode === "weekly" && (
                     <PickerRow
                         label="On"
-                        aside={
+                        above={
                             <>
                                 <QuickPick onClick={() => update({ ...schedule, days: WEEKDAYS })}>Weekdays</QuickPick>
                                 <QuickPick onClick={() => update({ ...schedule, days: WEEKEND })}>Weekend</QuickPick>

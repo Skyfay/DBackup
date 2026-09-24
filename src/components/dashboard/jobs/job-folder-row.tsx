@@ -49,7 +49,7 @@ export function FolderRow({ index, options, onRemove, onSync }: FolderRowProps) 
                     render={({ field }) => (
                         <FormItem className="w-full min-w-0 sm:w-52 sm:shrink-0">
                             <FormControl>
-                                <ConnectionPicker options={options} value={field.value} onChange={field.onChange} placeholder="Pick a connection" aria-label="Connection" />
+                                <ConnectionPicker kind="directory" options={options} value={field.value} onChange={field.onChange} placeholder="Pick a connection" aria-label="Connection" />
                             </FormControl>
                             <FormMessage />
                         </FormItem>

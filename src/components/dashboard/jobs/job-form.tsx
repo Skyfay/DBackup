@@ -17,6 +17,7 @@ import { JOB_PARTS, firstPartWithError, jobErrorKeys, jobPartStatuses, type JobP
 import type { AdapterOption, EncryptionOption, JobFormJob } from "./job-form-schema";
 import { BasicsPart, EncryptionPart, NotificationsPart } from "./job-parts";
 import { AdvancedPart } from "./job-part-advanced";
+import { ConnectionAddedContext } from "./connection-picker";
 import { AddDestinationButton, DestinationsPart } from "./job-part-destinations";
 import { SourcePart } from "./job-part-source";
 import { useJobForm } from "./use-job-form";
@@ -54,6 +55,8 @@ export interface JobFormProps {
     encryptionProfiles: EncryptionOption[];
     initialData: JobFormJob | null;
     onSaved: () => void;
+    /** A connection was added from one of the fields, so the page can load its lists again. */
+    onConnectionAdded?: () => void;
 }
 
 /**
@@ -62,8 +65,21 @@ export interface JobFormProps {
  * is lost on the way. Each entry shows a check once its part has what the job needs, and Create
  * moves to the first part with a problem.
  */
-export function JobForm({ sources, destinations, directorySourceOptions, notifications, encryptionProfiles, initialData, onSaved }: JobFormProps) {
+export function JobForm({ sources: loadedSources, destinations, directorySourceOptions: loadedFolders, notifications, encryptionProfiles, initialData, onSaved, onConnectionAdded }: JobFormProps) {
+    // A connection added from a field shows in every field of its kind at once, until the page
+    // brings it along with the others.
+    const [added, setAdded] = useState<AdapterOption[]>([]);
+    const withAdded = (list: AdapterOption[], role: string | undefined) => [
+        ...list,
+        ...added.filter((option) => option.storageRole === role && !list.some((known) => known.id === option.id)),
+    ];
+    const sources = withAdded(loadedSources, undefined);
+    const directorySourceOptions = withAdded(loadedFolders, STORAGE_ROLES.SOURCE);
     const state = useJobForm({ sources, initialData, onSaved });
+    const reportAdded = (option: AdapterOption) => {
+        setAdded((list) => [...list, option]);
+        onConnectionAdded?.();
+    };
     const { form } = state;
     const destinationArray = useFieldArray({ control: form.control, name: "destinations" });
     const [picked, setPicked] = useState<JobPartId>("basics");
@@ -71,7 +87,10 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
     const { errors, isSubmitting } = form.formState;
     const statuses = jobPartStatuses(values, jobErrorKeys(errors));
     // DESTINATION is the column default, so a connection without a role is a destination too.
-    const destinationOptions = destinations.filter((option) => (option.storageRole ?? STORAGE_ROLES.DESTINATION) === STORAGE_ROLES.DESTINATION);
+    const destinationOptions = withAdded(
+        destinations.filter((option) => (option.storageRole ?? STORAGE_ROLES.DESTINATION) === STORAGE_ROLES.DESTINATION),
+        STORAGE_ROLES.DESTINATION,
+    );
 
     const submit = form.handleSubmit(state.save, (invalid) => {
         const target = firstPartWithError(jobErrorKeys(invalid));
@@ -100,53 +119,55 @@ export function JobForm({ sources, destinations, directorySourceOptions, notific
     };
 
     return (
-        <Form {...form}>
-            <form onSubmit={submit} noValidate {...toneAttribute(tone)} className="flex min-h-0 flex-1 flex-col">
-                <DialogHead tone={tone} icon={initialData ? Pencil : Plus}>
-                    <DialogTitle className="text-base">{initialData ? "Edit backup job" : "New backup job"}</DialogTitle>
-                    <DialogDescription className={cn(dialogNoteClass(tone), "truncate")}>
-                        {initialData ? initialData.name : "What goes in, where it goes and when"}
-                    </DialogDescription>
-                </DialogHead>
+        <ConnectionAddedContext.Provider value={reportAdded}>
+            <Form {...form}>
+                <form onSubmit={submit} noValidate {...toneAttribute(tone)} className="flex min-h-0 flex-1 flex-col">
+                    <DialogHead tone={tone} icon={initialData ? Pencil : Plus}>
+                        <DialogTitle className="text-base">{initialData ? "Edit backup job" : "New backup job"}</DialogTitle>
+                        <DialogDescription className={cn(dialogNoteClass(tone), "truncate")}>
+                            {initialData ? initialData.name : "What goes in, where it goes and when"}
+                        </DialogDescription>
+                    </DialogHead>
 
-                <Tabs
-                    orientation="vertical"
-                    value={picked}
-                    onValueChange={(value) => setPicked(value as JobPartId)}
-                    className="min-h-0 flex-1 gap-0 md:h-[min(34rem,calc(95dvh-9.5rem))] md:flex-none md:flex-row"
-                >
-                    <SectionSelect sections={PARTS} statuses={statuses} value={picked} onValueChange={(value) => setPicked(value as JobPartId)} />
-                    <SectionRail sections={PARTS} statuses={statuses} />
-                    {/* The height is capped on the viewport, on a phone where the parent has none of its own.
-                        From md up the part fills the fixed height beside the list. */}
-                    <ScrollArea className="min-h-0 min-w-0 flex-1 *:data-[slot=scroll-area-viewport]:max-h-[calc(95dvh-15rem)] md:h-full md:*:data-[slot=scroll-area-viewport]:max-h-none [&>[data-slot=scroll-area-viewport]>div]:block!">
-                        {JOB_PARTS.map((part) => (
-                            <TabsContent key={part.id} value={part.id} forceMount className="space-y-5 p-5 data-[state=inactive]:hidden">
-                                <PartHeading
-                                    part={part}
-                                    action={part.id === "destinations" ? <AddDestinationButton options={destinationOptions} array={destinationArray} /> : undefined}
-                                />
-                                {body(part.id)}
-                            </TabsContent>
-                        ))}
-                    </ScrollArea>
-                </Tabs>
+                    <Tabs
+                        orientation="vertical"
+                        value={picked}
+                        onValueChange={(value) => setPicked(value as JobPartId)}
+                        className="min-h-0 flex-1 gap-0 md:h-[min(34rem,calc(95dvh-9.5rem))] md:flex-none md:flex-row"
+                    >
+                        <SectionSelect sections={PARTS} statuses={statuses} value={picked} onValueChange={(value) => setPicked(value as JobPartId)} />
+                        <SectionRail sections={PARTS} statuses={statuses} />
+                        {/* The height is capped on the viewport, on a phone where the parent has none of its own.
+                            From md up the part fills the fixed height beside the list. */}
+                        <ScrollArea className="min-h-0 min-w-0 flex-1 *:data-[slot=scroll-area-viewport]:max-h-[calc(95dvh-15rem)] md:h-full md:*:data-[slot=scroll-area-viewport]:max-h-none [&>[data-slot=scroll-area-viewport]>div]:block!">
+                            {JOB_PARTS.map((part) => (
+                                <TabsContent key={part.id} value={part.id} forceMount className="space-y-5 p-5 data-[state=inactive]:hidden">
+                                    <PartHeading
+                                        part={part}
+                                        action={part.id === "destinations" ? <AddDestinationButton array={destinationArray} /> : undefined}
+                                    />
+                                    {body(part.id)}
+                                </TabsContent>
+                            ))}
+                        </ScrollArea>
+                    </Tabs>
 
-                <div className={cn(DIALOG_FOOTER, "flex flex-wrap items-center justify-between gap-3")}>
-                    <span className="hidden text-xs text-muted-foreground sm:inline">
-                        {initialData ? "Changes apply from the next run" : "Every part can be changed later"}
-                    </span>
-                    <div className="ml-auto flex shrink-0 items-center gap-2">
-                        <DialogClose asChild>
-                            <Button type="button" variant="ghost">Cancel</Button>
-                        </DialogClose>
-                        <Button type="submit" disabled={isSubmitting}>
-                            {isSubmitting && <Loader2 className="animate-spin" />}
-                            {initialData ? "Save changes" : "Create job"}
-                        </Button>
+                    <div className={cn(DIALOG_FOOTER, "flex flex-wrap items-center justify-between gap-3")}>
+                        <span className="hidden text-xs text-muted-foreground sm:inline">
+                            {initialData ? "Changes apply from the next run" : "Every part can be changed later"}
+                        </span>
+                        <div className="ml-auto flex shrink-0 items-center gap-2">
+                            <DialogClose asChild>
+                                <Button type="button" variant="ghost">Cancel</Button>
+                            </DialogClose>
+                            <Button type="submit" disabled={isSubmitting}>
+                                {isSubmitting && <Loader2 className="animate-spin" />}
+                                {initialData ? "Save changes" : "Create job"}
+                            </Button>
+                        </div>
                     </div>
-                </div>
-            </form>
-        </Form>
+                </form>
+            </Form>
+        </ConnectionAddedContext.Provider>
     );
 }

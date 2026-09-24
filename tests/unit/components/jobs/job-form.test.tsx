@@ -126,7 +126,8 @@ describe("job form", () => {
         await user.click(screen.getByRole("tab", { name: /Basics/ }));
         await user.click(screen.getByRole("radio", { name: /A schedule preset/ }));
 
-        await user.click(await screen.findByRole("button", { name: "New" }));
+        // The database field has a New of its own, so the one beside the preset is looked up in its part.
+        await user.click(within(screen.getByRole("tabpanel", { name: /Basics/ })).getByRole("button", { name: "New" }));
         const dialog = await screen.findByRole("dialog", { name: "New schedule preset" });
         await user.type(within(dialog).getByLabelText("Name"), "Nightly");
         await user.click(within(dialog).getByRole("button", { name: "Create preset" }));

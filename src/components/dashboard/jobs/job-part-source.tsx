@@ -107,6 +107,8 @@ export function SourcePart({ sources, folderOptions, defaultExcludePresetIds }: 
                                 <FormLabel>Database</FormLabel>
                                 <FormControl>
                                     <ConnectionPicker
+                                        kind="database"
+                                        newBeside
                                         options={databaseOptions}
                                         value={field.value}
                                         onChange={(id) => {

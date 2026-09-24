@@ -2,9 +2,6 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -26,8 +23,6 @@ import { Loader2, Plus, Trash2, Pencil, Timer, Star } from "lucide-react";
 import { RetentionPolicy } from "@prisma/client";
 import {
   getRetentionPolicies,
-  createRetentionPolicy,
-  updateRetentionPolicy,
   deleteRetentionPolicy,
   setDefaultRetentionPolicy,
   unsetDefaultRetentionPolicy,
@@ -38,7 +33,7 @@ import { unwrapBulkAction } from "@/lib/bulk-request";
 import { bulkDeleteRetentionPolicies } from "@/app/actions/templates-bulk";
 import { ColumnDef } from "@tanstack/react-table";
 import { DateDisplay } from "@/components/utils/date-display";
-import { RetentionPolicyForm } from "./retention-policy-form";
+import { RetentionPolicyDialog } from "./retention-policy-dialog";
 
 export function RetentionPolicyList() {
   const [policies, setPolicies] = useState<RetentionPolicy[]>([]);
@@ -309,116 +304,5 @@ export function RetentionPolicyList() {
         </DialogContent>
       </Dialog>
     </>
-  );
-}
-
-interface RetentionPolicyDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  policy?: RetentionPolicy;
-  onSuccess: (policy: RetentionPolicy) => void;
-}
-
-export function RetentionPolicyDialog({
-  open,
-  onOpenChange,
-  policy,
-  onSuccess,
-}: RetentionPolicyDialogProps) {
-  const [name, setName] = useState(policy?.name ?? "");
-  const [description, setDescription] = useState(policy?.description ?? "");
-  const [config, setConfig] = useState<RetentionConfiguration>(() => {
-    if (policy) {
-      try {
-        return JSON.parse(policy.config) as RetentionConfiguration;
-      } catch {
-        return { mode: "NONE" };
-      }
-    }
-    return { mode: "NONE" };
-  });
-  const [isSaving, setIsSaving] = useState(false);
-
-  useEffect(() => {
-    if (open) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setName(policy?.name ?? "");
-      setDescription(policy?.description ?? "");
-      setConfig(
-        policy
-          ? (() => {
-              try {
-                return JSON.parse(policy.config) as RetentionConfiguration;
-              } catch {
-                return { mode: "NONE" };
-              }
-            })()
-          : { mode: "NONE" }
-      );
-    }
-  }, [open, policy]);
-
-  const handleSave = async () => {
-    if (!name.trim()) return;
-    setIsSaving(true);
-    const res = policy
-      ? await updateRetentionPolicy(policy.id, { name, description, config })
-      : await createRetentionPolicy({ name, description, config });
-    setIsSaving(false);
-    if (res.success && res.data) {
-      toast.success(
-        policy ? "Retention policy updated" : "Retention policy created"
-      );
-      onSuccess(res.data);
-    } else {
-      toast.error(res.error || "Failed to save retention policy");
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent tone={policy ? "edit" : "create"} className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>
-            {policy ? "Edit Retention Policy" : "New Retention Policy"}
-          </DialogTitle>
-          <DialogDescription>
-            Configure a reusable retention policy that can be assigned to
-            destinations.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="rp-name">Name</Label>
-            <Input
-              id="rp-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Smart GFS Production"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="rp-desc">Description (optional)</Label>
-            <Textarea
-              id="rp-desc"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Short description"
-              rows={2}
-            />
-          </div>
-          <RetentionPolicyForm value={config} onChange={setConfig} />
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button onClick={handleSave} disabled={isSaving || !name.trim()}>
-            {isSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-            {policy ? "Save Changes" : "Create"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

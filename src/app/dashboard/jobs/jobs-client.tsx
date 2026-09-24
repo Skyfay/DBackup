@@ -269,6 +269,8 @@ export function JobsClient({
                                 setForm({ open: false, job: null });
                                 void reload();
                             }}
+                            // A connection added from the form comes back with the page, with its status and address.
+                            onConnectionAdded={() => router.refresh()}
                         />
                     )}
                 </DialogContent>

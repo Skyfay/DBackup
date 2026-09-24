@@ -19,10 +19,10 @@ export function ListMessage({ error }: { error: (FieldError & { root?: FieldErro
 
 export type DestinationArray = UseFieldArrayReturn<JobFormValues, "destinations">;
 
-/** Adds a destination, for the head of the part. */
-export function AddDestinationButton({ options, array }: { options: AdapterOption[]; array: DestinationArray }) {
+/** Adds a destination, for the head of the part. A row can also add a new connection, so it never runs out. */
+export function AddDestinationButton({ array }: { array: DestinationArray }) {
     return (
-        <Button type="button" variant="outline" size="sm" disabled={array.fields.length >= options.length} onClick={() => array.append(emptyDestination())}>
+        <Button type="button" variant="outline" size="sm" onClick={() => array.append(emptyDestination())}>
             <Plus />
             Add destination
         </Button>
@@ -52,6 +52,7 @@ export function DestinationsPart({ options, array }: { options: AdapterOption[];
                                 <FormItem className="min-w-0 flex-1">
                                     <FormControl>
                                         <ConnectionPicker
+                                            kind="destination"
                                             options={options}
                                             value={picker.value}
                                             onChange={picker.onChange}
@@ -70,6 +71,7 @@ export function DestinationsPart({ options, array }: { options: AdapterOption[];
                                 onChange={(id) => form.setValue(`destinations.${index}.retentionPolicyId`, id ?? undefined, { shouldDirty: true })}
                                 allowDefault
                                 placeholder="No policy, keeps everything"
+                                aria-label={`Retention of destination ${index + 1}`}
                             />
                         </div>
                         <Button

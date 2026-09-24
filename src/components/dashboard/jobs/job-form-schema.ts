@@ -13,6 +13,9 @@ export interface AdapterOption {
     storageRole?: string;
     /** Whether the folder picker can browse this connection's root. */
     supportsBrowse?: boolean;
+    /** The config without its secrets, for where the connection points. */
+    config?: string;
+    lastStatus?: string;
 }
 
 export interface EncryptionOption {

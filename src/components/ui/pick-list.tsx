@@ -14,6 +14,10 @@ export interface PickEntry {
     meta: string;
     /** More words the search finds it by, like its description. */
     keywords?: string[];
+    /** Its own picture for the tile, like the logo of a connection's type. The list's icon otherwise. */
+    icon?: React.ReactNode;
+    /** False for an entry nobody edits, like a policy that ships with DBackup. */
+    editable?: boolean;
 }
 
 export interface PickGroup {
@@ -37,7 +41,7 @@ function PickRow({ entry, icon: Icon, picked, onPick, onEdit }: PickRowProps) {
                 className={cn("flex size-8 shrink-0 items-center justify-center rounded-md border", picked ? "border-tone/30 bg-tone/12" : "bg-muted")}
                 aria-hidden="true"
             >
-                <Icon className={cn("size-3.5", picked ? "text-tone" : "text-muted-foreground")} />
+                {entry.icon ?? <Icon className={cn("size-3.5", picked ? "text-tone" : "text-muted-foreground")} />}
             </span>
             <span className="grid min-w-0 flex-1 gap-0.5">
                 <span className="truncate font-medium">{entry.name}</span>
@@ -51,7 +55,7 @@ function PickRow({ entry, icon: Icon, picked, onPick, onEdit }: PickRowProps) {
             )}
             {/* Shown on hover from md up, always on a phone, which has none. The row picks on a
                 click and on Enter, so the button keeps both to itself. */}
-            {onEdit && (
+            {onEdit && entry.editable !== false && (
                 <Button
                     type="button"
                     variant="outline"
@@ -146,6 +150,8 @@ export function PickList({
 
 interface PickTriggerProps extends React.ComponentProps<typeof Button> {
     icon: LucideIcon;
+    /** Takes the place of the icon, like the logo of the picked connection. */
+    leading?: React.ReactNode;
     loading?: boolean;
 }
 
@@ -153,7 +159,7 @@ interface PickTriggerProps extends React.ComponentProps<typeof Button> {
  * The button of a field that picks a saved entry, with the entry's icon, its name or a
  * placeholder, and a focus ring in the tone of the dialog around it.
  */
-export function PickTrigger({ icon: Icon, loading = false, className, children, ...props }: PickTriggerProps) {
+export function PickTrigger({ icon: Icon, leading, loading = false, className, children, ...props }: PickTriggerProps) {
     return (
         <Button
             type="button"
@@ -166,7 +172,7 @@ export function PickTrigger({ icon: Icon, loading = false, className, children, 
                 {loading ? (
                     <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
                 ) : (
-                    <Icon className="size-4 shrink-0 text-muted-foreground" />
+                    (leading ?? <Icon className="size-4 shrink-0 text-muted-foreground" />)
                 )}
                 {children}
             </span>

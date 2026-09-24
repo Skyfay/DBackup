@@ -24,8 +24,12 @@ function validateConfig(config: RetentionConfiguration): RetentionConfiguration 
   }
 }
 
+/** Every policy with how many destinations of jobs follow it. */
 export async function getRetentionPolicies() {
-  return prisma.retentionPolicy.findMany({ orderBy: { name: "asc" } });
+  return prisma.retentionPolicy.findMany({
+    include: { _count: { select: { jobDestinations: true } } },
+    orderBy: { name: "asc" },
+  });
 }
 
 export async function getRetentionPolicy(id: string) {

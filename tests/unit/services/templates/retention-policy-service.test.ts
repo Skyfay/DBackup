@@ -58,6 +58,7 @@ describe("RetentionPolicyService", () => {
       const result = await getRetentionPolicies();
 
       expect(prismaMock.retentionPolicy.findMany).toHaveBeenCalledWith({
+        include: { _count: { select: { jobDestinations: true } } },
         orderBy: { name: "asc" },
       });
       expect(result).toHaveLength(2);

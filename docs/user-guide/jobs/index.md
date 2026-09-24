@@ -123,9 +123,11 @@ A job can upload to **multiple storage destinations** simultaneously - ideal for
 2. Click **Add destination** and pick a storage connection
 3. Repeat to add more. They are uploaded in the order they are numbered
 
+The list of connections shows each one with its type, where it points and, when it is not online, its status. **New destination** at the foot of the list adds a connection with the same dialogs as the Connections page and picks it right away. The database of a job and the connections of its folders are picked the same way, with **New** beside the database field.
+
 ### Per-Destination Retention
 
-Each destination row has its own **Retention Policy** picker. To create or manage policies, go to **Administration → Templates → Retention Policies**.
+Each destination row has its own **Retention Policy** picker. Its list says what each policy keeps, like "Keeps the last 14", and how many destinations follow it. **Edit** on a policy changes it for every destination that follows it, and **New policy** adds one and picks it. The policies that ship with DBackup cannot be edited. All policies are also managed under **Administration → Templates → Retention Policies**.
 
 - Example: assign a "30-day daily" policy to local storage and a "12-month monthly" policy to S3
 - **Default policy** follows the policy marked as the system default in Templates

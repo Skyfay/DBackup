@@ -1,228 +1,177 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { Loader2, Plus, Timer, ChevronsUpDown, Check, Pencil } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-  CommandSeparator,
-} from "@/components/ui/command";
-import { cn } from "@/lib/utils";
+import { useEffect, useState } from "react";
+import { Timer } from "lucide-react";
+import type { RetentionPolicy } from "@prisma/client";
 import { toast } from "sonner";
-import { RetentionPolicy } from "@prisma/client";
 import { getRetentionPolicies } from "@/app/actions/templates";
-import { RetentionPolicyDialog } from "@/components/settings/templates/retention-policy-list";
+import { RetentionPolicyDialog } from "@/components/settings/templates/retention-policy-dialog";
+import { PickList, PickTrigger, type PickEntry } from "@/components/ui/pick-list";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import type { RetentionConfiguration } from "@/lib/core/retention";
 
 export const DEFAULT_RETENTION_SENTINEL = "__DEFAULT__";
+const NONE = "__NONE__";
 
-interface Props {
-  value: string | null | undefined;
-  onChange: (id: string | null) => void;
-  placeholder?: string;
-  allowNone?: boolean;
-  allowDefault?: boolean;
+/** A policy with how many destinations of jobs follow it. */
+type ListedPolicy = RetentionPolicy & { _count?: { jobDestinations: number } };
+
+const byName = (a: RetentionPolicy, b: RetentionPolicy) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+
+/** What a policy keeps, in a few words: "Keeps the last 14" or "7 daily, 4 weekly, 12 monthly". */
+export function describeRetention(config: string): string {
+    try {
+        const parsed = JSON.parse(config) as RetentionConfiguration;
+        if (parsed.mode === "SIMPLE" && parsed.simple) return `Keeps the last ${parsed.simple.keepCount}`;
+        if (parsed.mode === "SMART" && parsed.smart) {
+            const { hourly, daily, weekly, monthly, yearly } = parsed.smart;
+            const tiers = (
+                [
+                    [hourly, "hourly"],
+                    [daily, "daily"],
+                    [weekly, "weekly"],
+                    [monthly, "monthly"],
+                    [yearly, "yearly"],
+                ] as const
+            )
+                .filter(([count]) => typeof count === "number" && count > 0)
+                .map(([count, name]) => `${count} ${name}`);
+            return tiers.length > 0 ? tiers.join(", ") : "Smart, without a tier";
+        }
+    } catch {
+        // A policy that cannot be read keeps everything, like the retention step does.
+    }
+    return "Keeps everything";
 }
 
+function usage(policy: ListedPolicy): string {
+    const count = policy._count?.jobDestinations ?? 0;
+    if (count === 0) return "Not used yet";
+    return count === 1 ? "Used by 1 destination" : `Used by ${count} destinations`;
+}
+
+interface Props {
+    value: string | null | undefined;
+    onChange: (id: string | null) => void;
+    placeholder?: string;
+    /** Offers No policy, for a destination that keeps everything. */
+    allowNone?: boolean;
+    /** Offers the default policy, which follows whatever policy is marked as the default. */
+    allowDefault?: boolean;
+    /** Names the field for screen readers where there is no label, like in a row of destinations. */
+    "aria-label"?: string;
+}
+
+/**
+ * Picks the retention policy of a destination, like the login field of a connection: the policies
+ * in a list that says what each one keeps and how many destinations follow it, Edit on a row and
+ * New policy at its foot.
+ */
 export function RetentionPolicyPicker({
-  value,
-  onChange,
-  placeholder = "Select retention policy...",
-  allowNone = false,
-  allowDefault = false,
+    value,
+    onChange,
+    placeholder = "Pick a retention policy",
+    allowNone = false,
+    allowDefault = false,
+    "aria-label": ariaLabel = "Retention policy",
 }: Props) {
-  const [policies, setPolicies] = useState<RetentionPolicy[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [open, setOpen] = useState(false);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<RetentionPolicy | null>(null);
-  const [editOpen, setEditOpen] = useState(false);
+    const [policies, setPolicies] = useState<ListedPolicy[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [open, setOpen] = useState(false);
+    const [dialog, setDialog] = useState<{ open: boolean; policy?: RetentionPolicy }>({ open: false });
 
-  const defaultPolicy = policies.find((p) => p.isDefault);
+    useEffect(() => {
+        getRetentionPolicies()
+            .then((res) => {
+                if (res.success && res.data) setPolicies(res.data);
+                else toast.error("Failed to load retention policies");
+            })
+            .catch(() => toast.error("Failed to load retention policies"))
+            .finally(() => setLoading(false));
+    }, []);
 
-  const fetchPolicies = useCallback(async () => {
-    setLoading(true);
-    const res = await getRetentionPolicies();
-    if (res.success && res.data) {
-      setPolicies(res.data);
-    } else {
-      toast.error("Failed to load retention policies");
-    }
-    setLoading(false);
-  }, []);
+    const defaultPolicy = policies.find((policy) => policy.isDefault);
+    const isDefault = value === DEFAULT_RETENTION_SENTINEL;
+    const selected = policies.find((policy) => policy.id === value);
 
-  useEffect(() => {
-    fetchPolicies();
-  }, [fetchPolicies]);
+    const special: PickEntry[] = [
+        ...(allowDefault
+            ? [{
+                id: DEFAULT_RETENTION_SENTINEL,
+                name: "Default policy",
+                meta: defaultPolicy ? `${defaultPolicy.name} · ${describeRetention(defaultPolicy.config)}` : "No default is set, keeps everything",
+                editable: false,
+            }]
+            : []),
+        ...(allowNone ? [{ id: NONE, name: "No policy", meta: "Keeps everything", editable: false }] : []),
+    ];
+    const entries: PickEntry[] = policies.map((policy) => ({
+        id: policy.id,
+        name: policy.name,
+        meta: `${describeRetention(policy.config)} · ${usage(policy)}`,
+        keywords: policy.description ? [policy.description] : undefined,
+        // A policy that ships with DBackup stays as it is.
+        editable: !policy.isSystem,
+    }));
 
-  const selected = policies.find((p) => p.id === value && value !== DEFAULT_RETENTION_SENTINEL);
-  const isDefault = value === DEFAULT_RETENTION_SENTINEL;
+    const openDialog = (policy?: RetentionPolicy) => {
+        setOpen(false);
+        setDialog({ open: true, policy });
+    };
 
-  return (
-    <>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            variant="outline"
-            role="combobox"
-            aria-expanded={open}
-            disabled={loading}
-            className="w-full min-w-0 justify-between font-normal"
-          >
-            {loading ? (
-              <span className="flex items-center gap-2 text-muted-foreground">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Loading...
-              </span>
-            ) : isDefault ? (
-              <span className="flex items-center gap-2 min-w-0">
-                <Timer className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                <span className="truncate">{defaultPolicy ? `Default (${defaultPolicy.name})` : "No retention (keep all)"}</span>
-              </span>
-            ) : selected ? (
-              <span className="flex items-center gap-2 min-w-0">
-                <Timer className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                <span className="truncate">{selected.name}</span>
-              </span>
-            ) : (
-              <span className="text-muted-foreground">{placeholder}</span>
-            )}
-            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent
-          className="w-[--radix-popover-trigger-width] p-0"
-          align="start"
-        >
-          <Command>
-            <CommandInput placeholder="Search policies..." />
-            <CommandList>
-              <CommandEmpty>No policies found.</CommandEmpty>
-              <CommandGroup>
-                {allowDefault && (
-                  <CommandItem
-                    value="__default__"
-                    onSelect={() => {
-                      onChange(DEFAULT_RETENTION_SENTINEL);
-                      setOpen(false);
-                    }}
-                  >
-                    <Check
-                      className={cn(
-                        "mr-2 h-4 w-4",
-                        isDefault ? "opacity-100" : "opacity-0"
-                      )}
-                    />
-                    <span className="flex flex-col gap-0.5">
-                      <span>Default</span>
-                      <span className="text-xs text-muted-foreground">
-                        {defaultPolicy ? defaultPolicy.name : "No default set - keeps all"}
-                      </span>
-                    </span>
-                  </CommandItem>
-                )}
-                {allowNone && (
-                  <CommandItem
-                    value="__none__"
-                    onSelect={() => {
-                      onChange(null);
-                      setOpen(false);
-                    }}
-                  >
-                    <Check
-                      className={cn(
-                        "mr-2 h-4 w-4",
-                        !value && !isDefault ? "opacity-100" : "opacity-0"
-                      )}
-                    />
-                    <span className="text-muted-foreground">No policy (keep all)</span>
-                  </CommandItem>
-                )}
-                {policies.map((policy) => (
-                  <CommandItem
-                    key={policy.id}
-                    value={policy.name}
-                    className="group pr-1"
-                    onSelect={() => {
-                      onChange(policy.id);
-                      setOpen(false);
-                    }}
-                  >
-                    <Check
-                      className={cn(
-                        "mr-2 h-4 w-4",
-                        value === policy.id ? "opacity-100" : "opacity-0"
-                      )}
-                    />
-                    <span className="flex-1">{policy.name}</span>
-                    {!policy.isSystem && (
-                      <button
-                        type="button"
-                        className="opacity-0 group-hover:opacity-100 transition-opacity ml-1 rounded p-0.5 hover:bg-accent"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setOpen(false);
-                          setEditTarget(policy);
-                          setEditOpen(true);
+    const saved = (policy: RetentionPolicy) => {
+        // The saved policy comes without its destinations, which a change does not touch.
+        setPolicies((list) => [...list.filter((entry) => entry.id !== policy.id), { ...policy, _count: list.find((entry) => entry.id === policy.id)?._count }].sort(byName));
+        // A new policy is picked right away, an edited one only refreshes what the field shows.
+        if (!dialog.policy) onChange(policy.id);
+        setDialog((current) => ({ ...current, open: false }));
+    };
+
+    return (
+        <>
+            <Popover open={open} onOpenChange={setOpen} modal>
+                <PopoverTrigger asChild>
+                    <PickTrigger icon={Timer} loading={loading} disabled={loading} aria-expanded={open} aria-label={ariaLabel}>
+                        {loading ? (
+                            <span className="text-muted-foreground">Loading...</span>
+                        ) : isDefault ? (
+                            <span className="flex min-w-0 items-baseline gap-1.5">
+                                <span className="truncate">Default policy</span>
+                                <span className="hidden truncate text-xs text-muted-foreground sm:inline">{defaultPolicy ? defaultPolicy.name : "keeps everything"}</span>
+                            </span>
+                        ) : selected ? (
+                            <span className="truncate">{selected.name}</span>
+                        ) : (
+                            <span className="truncate text-muted-foreground">{allowNone && !value ? "No policy, keeps everything" : placeholder}</span>
+                        )}
+                    </PickTrigger>
+                </PopoverTrigger>
+                {/* On the raised surface, so it stands out from the dialog it opens over. */}
+                <PopoverContent tone="pick" align="end" className="w-(--radix-popover-trigger-width) min-w-80 overflow-hidden bg-raised p-0">
+                    <PickList
+                        icon={Timer}
+                        title="Pick from Templates"
+                        note="Retention policies"
+                        groups={[{ entries: special }, { heading: special.length > 0 && entries.length > 0 ? "Policies" : undefined, entries }]}
+                        value={isDefault ? DEFAULT_RETENTION_SENTINEL : allowNone && !value ? NONE : value}
+                        emptyText={policies.length === 0 && special.length === 0 ? "There is no retention policy yet." : "Nothing matches."}
+                        onPick={(id) => {
+                            onChange(id === NONE ? null : id);
+                            setOpen(false);
                         }}
-                      >
-                        <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
-                      </button>
-                    )}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-              <CommandSeparator />
-              <CommandGroup>
-                <CommandItem
-                  value="__create__"
-                  onSelect={() => {
-                    setOpen(false);
-                    setCreateOpen(true);
-                  }}
-                  className="font-medium"
-                >
-                  <Plus className="mr-2 h-3.5 w-3.5" />
-                  Create new policy...
-                </CommandItem>
-              </CommandGroup>
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
+                        onEdit={(id) => openDialog(policies.find((policy) => policy.id === id))}
+                        createLabel="New policy"
+                        onCreate={() => openDialog()}
+                    />
+                </PopoverContent>
+            </Popover>
 
-      <RetentionPolicyDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        onSuccess={(policy) => {
-          setPolicies((prev) => [
-            ...prev.filter((p) => p.id !== policy.id),
-            policy,
-          ].sort((a, b) => a.name.localeCompare(b.name)));
-          onChange(policy.id);
-          setCreateOpen(false);
-        }}
-      />
-
-      <RetentionPolicyDialog
-        open={editOpen}
-        onOpenChange={(v) => { setEditOpen(v); if (!v) setEditTarget(null); }}
-        policy={editTarget ?? undefined}
-        onSuccess={(policy) => {
-          setPolicies((prev) => prev.map((p) => p.id === policy.id ? policy : p));
-          setEditTarget(null);
-          setEditOpen(false);
-        }}
-      />
-    </>
-  );
+            <RetentionPolicyDialog
+                open={dialog.open}
+                onOpenChange={(next) => setDialog((current) => ({ ...current, open: next }))}
+                policy={dialog.policy}
+                onSuccess={saved}
+            />
+        </>
+    );
 }

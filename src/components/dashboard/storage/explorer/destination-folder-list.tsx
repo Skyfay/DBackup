@@ -131,7 +131,8 @@ export function FolderList({ folders, destination, destinations, onFolder, toolb
 interface FolderHeadProps {
     folder: BackupFolder;
     destination: ExplorerDestination;
-    onBack: () => void;
+    /** Back to the list of folders, left out where the folder closes another way. */
+    onBack?: () => void;
     onOpenJob: (key: string) => void;
     onDeleteAll?: () => void;
 }
@@ -142,10 +143,12 @@ export function FolderHead({ folder, destination, onBack, onOpenJob, onDeleteAll
     return (
         <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-3">
-                <Button variant="outline" size="sm" onClick={onBack}>
-                    <ChevronLeft />
-                    All folders
-                </Button>
+                {onBack && (
+                    <Button variant="outline" size="sm" onClick={onBack}>
+                        <ChevronLeft />
+                        All folders
+                    </Button>
+                )}
                 <div className="flex min-w-0 flex-1 items-center gap-3">
                     <FolderTile folder={folder} destination={destination} />
                     <div className="min-w-0">

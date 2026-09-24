@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import { flexRender, type ColumnDef, type Row, type SortingState } from "@tanstack/react-table";
 import { ChevronDown, ChevronRight, Layers, Lock, LockOpen, Trash2 } from "lucide-react";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
-import { Button } from "@/components/ui/button";
 import { DataTable, type BulkAction } from "@/components/ui/data-table";
 import { QuickFilter } from "@/components/ui/quick-filter";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -15,7 +14,8 @@ import { cn, formatBytes } from "@/lib/utils";
 import type { ExplorerDestination, ExplorerFile, ExplorerJobView } from "@/services/storage/explorer-types";
 import { backupActions, type BackupActionHandlers } from "./backup-actions";
 import { BackupContextMenu, BackupRowMenu } from "./backup-menus";
-import { BackupTimeline, type TimelineLane } from "./backup-timeline";
+import { BackupTimeline, dayStartOf, type TimelineLane } from "./backup-timeline";
+import { DayChip, ListSwitch } from "./explorer-controls";
 import { BackupFlags, CopyChips, IntegrityBadge, JobTile, MadeAt, SizeCell, StartedBy, TypeChip } from "./explorer-cells";
 import { count, isIncremental, madeAt, snapshotBytes, typeLabel } from "./explorer-format";
 import { ExplorerStrip } from "./explorer-strip";
@@ -23,6 +23,7 @@ import { bulkAcross, type BackupTarget } from "./use-backup-actions";
 
 export type JobRun = ExplorerJobView["runs"][number];
 type RunFilter = "all" | "locked" | "missing" | "failed";
+type RunLayout = "chains" | "all";
 
 const failedCheck = (run: JobRun) => run.copies.some((copy) => copy.file?.verification?.passed === false);
 const hasMissing = (run: JobRun) => run.copies.some((copy) => copy.state === "missing");
@@ -72,26 +73,32 @@ export function JobBackups({ view, destinations, display, canDelete, handlersFor
     const { job, runs } = view;
     const [filter, setFilter] = useState<RunFilter>("all");
     const chained = runs.some((run) => run.file.chain);
-    const [grouped, setGrouped] = useState(true);
+    const [layout, setLayout] = useState<RunLayout>("chains");
     const [sorting, setSorting] = useState<SortingState>([{ id: "run", desc: true }]);
-    // The timeline shows the same backups as the list, so it leaves the list out until its lane is clicked.
-    const [listOpen, setListOpen] = useState(false);
+    // The timeline shows the same backups as the list, so the list waits for the job or a day to
+    // be clicked. A day is the start of it, null the whole job.
+    const [pick, setPick] = useState<{ day: number | null } | null>(null);
     const { formatDate } = useDateFormatter();
-    const byChain = chained && grouped;
-    const showList = display === "table" || listOpen;
+    const byChain = chained && layout === "chains";
+    const showList = display === "table" || pick !== null;
+    const day = display === "timeline" ? pick?.day ?? null : null;
 
+    const ofDay = useMemo(
+        () => (day === null ? runs : runs.filter((run) => dayStartOf(Date.parse(run.createdAt)) === day)),
+        [runs, day]
+    );
     const visible = useMemo(() => {
         switch (filter) {
             case "locked":
-                return runs.filter(isLocked);
+                return ofDay.filter(isLocked);
             case "missing":
-                return runs.filter(hasMissing);
+                return ofDay.filter(hasMissing);
             case "failed":
-                return runs.filter(failedCheck);
+                return ofDay.filter(failedCheck);
             default:
-                return runs;
+                return ofDay;
         }
-    }, [runs, filter]);
+    }, [ofDay, filter]);
 
     const deleteRun = (run: JobRun) => {
         const targets = storedCopies(run);
@@ -217,22 +224,25 @@ export function JobBackups({ view, destinations, display, canDelete, handlersFor
 
     const toolbarExtra = (
         <div className="flex flex-wrap items-center gap-2">
+            {day !== null && <DayChip day={day} count={ofDay.length} onClear={() => setPick({ day: null })} />}
             <QuickFilter<RunFilter>
                 aria-label="Show"
                 value={filter}
                 onChange={setFilter}
                 options={[
-                    { value: "all", label: "All", count: runs.length },
-                    { value: "locked", label: "Locked", count: runs.filter(isLocked).length },
-                    { value: "missing", label: "Copy missing", count: runs.filter(hasMissing).length, dot: "bg-warning" },
-                    { value: "failed", label: "Check failed", count: failed, dot: "bg-destructive" },
+                    { value: "all", label: "All", count: ofDay.length },
+                    { value: "locked", label: "Locked", count: ofDay.filter(isLocked).length },
+                    { value: "missing", label: "Copy missing", count: ofDay.filter(hasMissing).length, dot: "bg-warning" },
+                    { value: "failed", label: "Check failed", count: ofDay.filter(failedCheck).length, dot: "bg-destructive" },
                 ]}
             />
             {chained && (
-                <Button variant="outline" size="sm" className="h-7" aria-pressed={grouped} onClick={() => setGrouped((value) => !value)}>
-                    <Layers />
-                    {grouped ? "Grouped by chain" : "Group by chain"}
-                </Button>
+                <ListSwitch<RunLayout>
+                    aria-label="Show the backups"
+                    value={layout}
+                    onChange={setLayout}
+                    options={[{ value: "chains", label: "Chains" }, { value: "all", label: "All backups" }]}
+                />
             )}
         </div>
     );
@@ -272,22 +282,22 @@ export function JobBackups({ view, destinations, display, canDelete, handlersFor
             {display === "timeline" && (
                 <BackupTimeline
                     title="Timeline"
-                    hint={listOpen ? "click the job to hide its backups" : "click the job to list its backups, a point to open one"}
+                    hint={pick === null
+                        ? "click a day to list its backups, the job to list all of them"
+                        : pick.day === null ? "click the job again to hide the list" : "click the day again to hide the list"}
                     lanes={[lane]}
-                    selectedLane={listOpen ? job.key : null}
-                    onLaneClick={() => setListOpen((open) => !open)}
+                    selectedLane={pick ? job.key : null}
+                    selectedDay={day !== null ? { lane: job.key, day } : null}
+                    onLaneClick={() => setPick((current) => (current && current.day === null ? null : { day: null }))}
+                    onDayClick={(clicked) => setPick((current) => (current?.day === clicked.day ? null : { day: clicked.day }))}
                     markedPointId={openPath}
-                    onPointClick={(_lane, path) => {
-                        const match = runs.find((entry) => entry.path === path);
-                        if (match) onOpen(match);
-                    }}
                 />
             )}
 
             {showList && (
                 <DataTable
-                    // The rows are runs of this job, so a selection must not carry over into another job.
-                    key={job.key}
+                    // The rows are runs of this job or day, so a selection must not carry over into another.
+                    key={`${job.key}:${day ?? "all"}`}
                     variant="card"
                     columns={columns}
                     data={visible}

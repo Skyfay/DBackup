@@ -115,7 +115,7 @@ function DisplaySwitch({ value, onChange }: { value: Display; onChange: (next: D
 
 /**
  * The Storage Explorer: the backups by job, with every copy of a run side by side, or by
- * destination, grouped by the job that made them. Both come from the lists DBackup keeps of every
+ * destination, in a folder per job. Both come from the lists DBackup keeps of every
  * destination. The picked job or destination, the tab and the view live in the address.
  */
 export function StorageClient({ canDownload, canRestore, canDelete, canManageVault = false, canViewHistory = false }: StorageClientProps) {
@@ -352,6 +352,8 @@ export function StorageClient({ canDownload, canRestore, canDelete, canManageVau
                     jobView.error ? <Empty title="The backups could not be loaded">{jobView.error}</Empty> : <PageSkeleton />
                 ) : (
                     <JobBackups
+                        // What was picked on the timeline of one job means nothing for the next.
+                        key={jobView.data.job.key}
                         view={jobView.data}
                         destinations={destinationsById}
                         display={display}
@@ -370,6 +372,7 @@ export function StorageClient({ canDownload, canRestore, canDelete, canManageVau
                     destinationView.error ? <Empty title="The backups could not be loaded">{destinationView.error}</Empty> : <PageSkeleton />
                 ) : (
                     <DestinationBackups
+                        key={destinationView.data.destination.id}
                         view={destinationView.data}
                         jobs={jobsByKey}
                         destinations={destinationsById}

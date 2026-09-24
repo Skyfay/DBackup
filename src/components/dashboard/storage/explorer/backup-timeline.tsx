@@ -6,12 +6,12 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useDateFormatter } from "@/hooks/use-date-formatter";
 import { cn } from "@/lib/utils";
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+export const DAY_MS = 24 * 60 * 60 * 1000;
 const RANGES = [7, 30, 90] as const;
 type Range = (typeof RANGES)[number];
 
 export interface TimelinePoint {
-    /** The path of the backup, which a click hands back. */
+    /** The path of the backup. */
     id: string;
     time: number;
     /** Points of one chain are joined by a line. */
@@ -37,14 +37,23 @@ export interface TimelineLane {
     endNote?: string;
 }
 
+/** A day of a lane, as the start of that day. */
+export interface TimelineDay {
+    lane: string;
+    day: number;
+}
+
 interface BackupTimelineProps {
     title: string;
     /** What a click does here, under the title. */
     hint?: string;
     lanes: TimelineLane[];
     selectedLane?: string | null;
+    /** The day whose backups are listed below the timeline. */
+    selectedDay?: TimelineDay | null;
     onLaneClick?: (key: string) => void;
-    onPointClick?: (laneKey: string, pointId: string) => void;
+    /** A click on a point or a bar hands back its day, whose backups the list below then shows. */
+    onDayClick?: (day: TimelineDay) => void;
     /** The backup whose details are open, drawn with a ring. */
     markedPointId?: string | null;
 }
@@ -57,6 +66,12 @@ interface Day {
 function startOfToday(): number {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+}
+
+/** The start of the day a backup falls on, the same way the timeline puts it on a day. */
+export function dayStartOf(time: number): number {
+    const today = startOfToday();
+    return today + Math.floor((time - today) / DAY_MS) * DAY_MS;
 }
 
 function position(index: number, days: number): string {
@@ -131,13 +146,15 @@ function Marker({ day, days, peak, marked, onClick }: { day: Day; days: number; 
     );
 }
 
-function LaneRow({ lane, days, start, selected, onLaneClick, onPointClick, markedPointId }: {
+function LaneRow({ lane, days, start, selected, selectedDay, onLaneClick, onDayClick, markedPointId }: {
     lane: TimelineLane;
     days: number;
     start: number;
     selected: boolean;
+    /** The start of the picked day of this lane. */
+    selectedDay: number | null;
     onLaneClick?: (key: string) => void;
-    onPointClick?: (laneKey: string, pointId: string) => void;
+    onDayClick?: (day: TimelineDay) => void;
     markedPointId?: string | null;
 }) {
     const { inRange, older, dayList, chains, peak, lastIndex } = useMemo(() => {
@@ -199,6 +216,13 @@ function LaneRow({ lane, days, start, selected, onLaneClick, onPointClick, marke
                 {older > 0 && <><ChevronLeft className="size-3" />{older}</>}
             </span>
             <div className="relative mr-4 h-13">
+                {selectedDay !== null && selectedDay >= start && (
+                    <span
+                        className="absolute inset-y-1.5 -translate-x-1/2 rounded-md bg-foreground/10"
+                        style={{ left: position(Math.round((selectedDay - start) / DAY_MS), days), width: `max(1.25rem, ${100 / days}%)` }}
+                        aria-hidden="true"
+                    />
+                )}
                 {chains.map((span, index) => {
                     const from = span.before ? 0 : ((span.from + 0.5) / days) * 100;
                     const to = ((span.to + 0.5) / days) * 100;
@@ -219,10 +243,7 @@ function LaneRow({ lane, days, start, selected, onLaneClick, onPointClick, marke
                         days={days}
                         peak={peak}
                         marked={markedPointId !== undefined && markedPointId !== null && day.points.some((point) => point.id === markedPointId)}
-                        onClick={onPointClick ? () => {
-                            const newest = day.points.reduce((latest, point) => (point.time > latest.time ? point : latest));
-                            onPointClick(lane.key, newest.id);
-                        } : undefined}
+                        onClick={onDayClick ? () => onDayClick({ lane: lane.key, day: start + day.index * DAY_MS }) : undefined}
                     />
                 ))}
                 {inRange === 0 && older === 0 && !lane.endNote && (
@@ -238,7 +259,7 @@ function LaneRow({ lane, days, start, selected, onLaneClick, onPointClick, marke
  * of one incremental chain, a bar for a day with many, and missing copies and failed checks in
  * their status colors. The range switches without loading again.
  */
-export function BackupTimeline({ title, hint, lanes, selectedLane, onLaneClick, onPointClick, markedPointId }: BackupTimelineProps) {
+export function BackupTimeline({ title, hint, lanes, selectedLane, selectedDay, onLaneClick, onDayClick, markedPointId }: BackupTimelineProps) {
     const [range, setRange] = useState<Range>(30);
     const { formatDate } = useDateFormatter();
     const today = startOfToday();
@@ -294,8 +315,9 @@ export function BackupTimeline({ title, hint, lanes, selectedLane, onLaneClick, 
                         days={range}
                         start={start}
                         selected={selectedLane === lane.key}
+                        selectedDay={selectedDay?.lane === lane.key ? selectedDay.day : null}
                         onLaneClick={onLaneClick}
-                        onPointClick={onPointClick}
+                        onDayClick={onDayClick}
                         markedPointId={markedPointId}
                     />
                 ))}

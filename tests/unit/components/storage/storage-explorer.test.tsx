@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { formatInTimeZone } from "date-fns-tz";
 import type { ExplorerDestination, ExplorerFile, ExplorerIndex, ExplorerJob, ExplorerJobView, ExplorerDestinationView } from "@/services/storage/explorer-types";
 
 let search = new URLSearchParams();
@@ -147,6 +148,8 @@ const mediaView: ExplorerJobView = {
 };
 
 const ok = (data: unknown) => Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true, data }) } as Response);
+/** A backup the way the timeline names it, in the formats of the signed in user. */
+const shown = (entry: ExplorerFile) => formatInTimeZone(new Date(entry.createdAt!), "UTC", "yyyy-MM-dd HH:mm");
 
 function renderPage() {
     return render(<StorageClient canDownload canRestore canDelete canViewHistory />);
@@ -231,12 +234,12 @@ describe("Storage Explorer", () => {
         const { rerender } = renderPage();
 
         const lane = await screen.findByRole("button", { name: /^Shop nightly/ });
-        expect(screen.queryByRole("button", { name: "All folders" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Open in Jobs" })).not.toBeInTheDocument();
 
         await user.click(lane);
         rerender(<StorageClient canDownload canRestore canDelete canViewHistory />);
 
-        expect(await screen.findByRole("button", { name: "All folders" })).toBeInTheDocument();
+        expect(await screen.findByRole("button", { name: "Open in Jobs" })).toBeInTheDocument();
         expect(screen.getByText("Shop_nightly_newest.tar")).toBeInTheDocument();
         expect(screen.queryByText("ERP_invoices_old.tar")).not.toBeInTheDocument();
     });
@@ -303,5 +306,45 @@ describe("Storage Explorer", () => {
 
         await user.click(lane);
         await waitFor(() => expect(screen.queryByText("Cloudflare R2 missing")).not.toBeInTheDocument());
+    });
+
+    it("lists the backups of a day picked on the timeline and opens the details from that list", async () => {
+        const user = userEvent.setup();
+        search = new URLSearchParams("view=timeline");
+        renderPage();
+
+        await user.click(await screen.findByRole("button", { name: `${shown(newest)} · Full` }));
+
+        expect(await screen.findByText("Verified")).toBeInTheDocument();
+        expect(screen.queryByText("Cloudflare R2 missing")).not.toBeInTheDocument();
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+        await user.click(screen.getByText("Verified").closest("tr")!);
+        expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    });
+
+    it("shows every backup of the job again once the picked day is removed", async () => {
+        const user = userEvent.setup();
+        search = new URLSearchParams("view=timeline");
+        renderPage();
+
+        await user.click(await screen.findByRole("button", { name: `${shown(newest)} · Full` }));
+        await user.click(await screen.findByRole("button", { name: /show every day/ }));
+
+        expect(await screen.findByText("Cloudflare R2 missing")).toBeInTheDocument();
+        expect(screen.getByText("Verified")).toBeInTheDocument();
+    });
+
+    it("opens the folder of a job on the day picked in its lane at a destination", async () => {
+        const user = userEvent.setup();
+        search = new URLSearchParams("destination=nas&view=timeline");
+        const { rerender } = renderPage();
+
+        await user.click(await screen.findByRole("button", { name: `${shown(erp)} · Full` }));
+        rerender(<StorageClient canDownload canRestore canDelete canViewHistory />);
+
+        expect(await screen.findByText("ERP_invoices_old.tar")).toBeInTheDocument();
+        expect(screen.queryByText("ERP_invoices_older.tar")).not.toBeInTheDocument();
+        expect(screen.getByRole("button", { name: /show every day/ })).toBeInTheDocument();
     });
 });

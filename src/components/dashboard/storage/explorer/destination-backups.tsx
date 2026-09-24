@@ -1,16 +1,16 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useDateFormatter } from "@/hooks/use-date-formatter";
 import { formatBytes } from "@/lib/utils";
 import type { DestinationBackup, ExplorerDestination, ExplorerDestinationView, ExplorerFile, ExplorerJob } from "@/services/storage/explorer-types";
 import type { BackupActionHandlers } from "./backup-actions";
-import { BackupTimeline, type TimelineLane } from "./backup-timeline";
+import { BackupTimeline, dayStartOf, type TimelineLane } from "./backup-timeline";
 import { DestinationBackupTable } from "./destination-backup-table";
 import { FolderHead, FolderList, FolderTile } from "./destination-folder-list";
 import { foldersOf } from "./destination-folders";
+import { DayChip, ListSwitch } from "./explorer-controls";
 import { count, isIncremental, madeAt, typeLabel } from "./explorer-format";
 import { ExplorerStrip } from "./explorer-strip";
 import type { BackupTarget } from "./use-backup-actions";
@@ -35,17 +35,6 @@ interface DestinationBackupsProps {
     onOpenJob: (key: string) => void;
     openPath: string | null;
     onChanged: () => void;
-}
-
-function LayoutSwitch({ value, onChange }: { value: DestinationLayout; onChange: (next: DestinationLayout) => void }) {
-    return (
-        <Tabs value={value} onValueChange={(next) => onChange(next as DestinationLayout)}>
-            <TabsList className="h-8" aria-label="Show the backups">
-                <TabsTrigger value="folders" className="px-2.5 text-xs">Folders</TabsTrigger>
-                <TabsTrigger value="all" className="px-2.5 text-xs">All backups</TabsTrigger>
-            </TabsList>
-        </Tabs>
-    );
 }
 
 /**
@@ -75,6 +64,13 @@ export function DestinationBackups({
     const folders = useMemo(() => foldersOf(backups, jobs), [backups, jobs]);
     // A folder whose last backup was deleted is gone, so the view falls back to the list.
     const open = folder ? folders.find((entry) => entry.key === folder) ?? null : null;
+    // A day picked on the timeline narrows the open folder to the backups of that day.
+    const [picked, setPicked] = useState<{ folder: string; day: number } | null>(null);
+    const day = display === "timeline" && open && picked?.folder === open.key ? picked.day : null;
+    const folderRows = useMemo(
+        () => (!open ? [] : day === null ? open.backups : open.backups.filter((backup) => dayStartOf(Date.parse(madeAt(backup.file))) === day)),
+        [open, day]
+    );
 
     const locked = backups.filter((backup) => backup.file.locked).length;
     const failed = backups.filter((backup) => backup.file.verification?.passed === false).length;
@@ -105,8 +101,8 @@ export function DestinationBackups({
 
     const tableFor = (rows: DestinationBackup[], showJob: boolean, toolbarExtra?: React.ReactNode) => (
         <DestinationBackupTable
-            // Another folder starts with its own filter and selection.
-            key={open?.key ?? "all"}
+            // Another folder or day starts with its own filter and selection.
+            key={`${open?.key ?? "all"}:${day ?? "all"}`}
             destination={destination}
             rows={rows}
             jobs={jobs}
@@ -119,7 +115,14 @@ export function DestinationBackups({
             toolbarExtra={toolbarExtra}
         />
     );
-    const layoutSwitch = <LayoutSwitch value={layout} onChange={onLayout} />;
+    const layoutSwitch = (
+        <ListSwitch<DestinationLayout>
+            aria-label="Show the backups"
+            value={layout}
+            onChange={onLayout}
+            options={[{ value: "folders", label: "Folders" }, { value: "all", label: "All backups" }]}
+        />
+    );
 
     let content: React.ReactNode = null;
     if (open) {
@@ -129,7 +132,8 @@ export function DestinationBackups({
                 <FolderHead
                     folder={open}
                     destination={destination}
-                    onBack={() => onFolder(null)}
+                    // On the timeline a second click on the job closes the folder instead.
+                    onBack={display === "table" ? () => onFolder(null) : undefined}
                     onOpenJob={onOpenJob}
                     onDeleteAll={canDelete
                         ? () => askDelete(
@@ -138,7 +142,7 @@ export function DestinationBackups({
                         )
                         : undefined}
                 />
-                {tableFor(open.backups, false)}
+                {tableFor(folderRows, false, day !== null ? <DayChip day={day} count={folderRows.length} onClear={() => setPicked(null)} /> : undefined)}
             </div>
         );
     } else if (display === "table") {
@@ -177,14 +181,26 @@ export function DestinationBackups({
             {display === "timeline" && (
                 <BackupTimeline
                     title="Timeline"
-                    hint={open ? "click the job again to close its folder" : "click a job to open its folder, a point to open a backup"}
+                    hint={!open
+                        ? "click a day to list its backups, a job to open its folder"
+                        : day === null ? "click the job again to close its folder" : "click the day again to hide the list"}
                     lanes={lanes}
                     selectedLane={open?.key ?? null}
+                    selectedDay={open && day !== null ? { lane: open.key, day } : null}
                     markedPointId={openPath}
-                    onLaneClick={(key) => onFolder(open?.key === key ? null : key)}
-                    onPointClick={(_lane, path) => {
-                        const match = backups.find((backup) => backup.file.path === path);
-                        if (match) onOpen(match);
+                    onLaneClick={(key) => {
+                        setPicked(null);
+                        if (open?.key === key && day === null) onFolder(null);
+                        else if (open?.key !== key) onFolder(key);
+                    }}
+                    onDayClick={(clicked) => {
+                        if (open?.key === clicked.lane && day === clicked.day) {
+                            setPicked(null);
+                            onFolder(null);
+                            return;
+                        }
+                        setPicked({ folder: clicked.lane, day: clicked.day });
+                        if (open?.key !== clicked.lane) onFolder(clicked.lane);
                     }}
                 />
             )}

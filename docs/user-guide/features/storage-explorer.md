@@ -38,7 +38,7 @@ The strip on top counts the backups of the job, what they take up, the newest on
 
 A copy shows as **missing** when a destination of the job holds older backups of it but not this one. A destination added to the job later, or one whose retention keeps fewer backups, is not reported for the runs it never had. A destination the job no longer writes to, and every destination of a deleted job, only counts for the runs between its oldest and its newest backup of the job.
 
-The quick filters beside the search show only locked backups, runs with a missing copy or runs with a failed check. For an incremental job the list is grouped by chain, the newest chain open.
+The quick filters beside the search show only locked backups, runs with a missing copy or runs with a failed check. For an incremental job **Chains** groups the list by chain with the newest chain open, and **All backups** shows one list whose rows can be selected for actions on several at once.
 
 Actions in this view work on the first copy in the upload order of the job. **Delete** removes the backup from every destination that holds it.
 
@@ -70,7 +70,12 @@ The switch next to the tabs shows a timeline above the list, from md screens up.
 - a bar stands for a day with several backups, like an hourly job
 - an amber ring marks a missing copy, a red point a failed check, a lock a locked backup
 
-The list stays hidden under the timeline, since it would show the same backups. By job the timeline has one lane for the job, and a click on it lists its backups below. By destination it has one lane per job at that destination, and a click on a lane opens the folder of that job below. A second click hides the list again, and a click on a point opens that backup.
+The list stays hidden under the timeline, since it would show the same backups. By job the timeline has one lane for the job, by destination one lane per job at that destination.
+
+- A click on a lane lists all of its backups below, by destination in the folder of that job.
+- A click on a point or a bar lists only the backups of that day. The day shows above the list like a filter, and a click on it lists every day again.
+- A second click on the same lane or day hides the list.
+- A click on a backup in the list opens its details.
 
 ## Details
 

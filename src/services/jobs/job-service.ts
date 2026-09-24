@@ -531,6 +531,9 @@ export class JobService {
             }
         }
 
+        // The copy has every setting of the original and only starts paused, so it does not run
+        // beside it before it is checked. Its incremental chain starts over, since chains are kept
+        // per job.
         const clonedJob = await prisma.job.create({
             data: {
                 name: uniqueName,
@@ -543,6 +546,11 @@ export class JobService {
                 pgCompression: original.pgCompression,
                 notificationEvents: original.notificationEvents,
                 schedulePresetId: original.schedulePresetId ?? null,
+                namingTemplateId: original.namingTemplateId ?? null,
+                skipVerification: original.skipVerification,
+                backupMode: original.backupMode,
+                fullEveryDays: original.fullEveryDays,
+                verifyByHash: original.verifyByHash,
                 notifications: {
                     connect: original.notifications.map((n) => ({ id: n.id }))
                 },
@@ -558,7 +566,8 @@ export class JobService {
                     create: original.destinations.map((d) => ({
                         configId: d.configId,
                         priority: d.priority,
-                        retention: d.retention
+                        retention: d.retention,
+                        retentionPolicyId: d.retentionPolicyId ?? null,
                     }))
                 },
                 sources: original.sources.length
@@ -569,6 +578,7 @@ export class JobService {
                             path: s.path,
                             excludePatterns: s.excludePatterns,
                             stopContainers: s.stopContainers,
+                            useStagingCache: s.useStagingCache,
                             excludePatternPresets: {
                                 connect: s.excludePatternPresets.map((p) => ({ id: p.id })),
                             },

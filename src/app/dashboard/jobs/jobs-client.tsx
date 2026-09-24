@@ -295,7 +295,7 @@ export function JobsClient({
                     noun="job"
                     existingNames={jobs.map((job) => job.name)}
                     facts={[
-                        { icon: ListChecks, text: `The copy backs up the same source to the same destinations on the same schedule as ${cloneTarget.name}.` },
+                        { icon: ListChecks, text: `The copy has every setting of ${cloneTarget.name}, the retention policy of each destination included.` },
                         { icon: CirclePause, text: "It starts paused and only runs once you turn it on." },
                     ]}
                     confirmLabel="Clone job"

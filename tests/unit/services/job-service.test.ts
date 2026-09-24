@@ -609,12 +609,19 @@ describe('JobService', () => {
             pgCompression: '',
             notificationEvents: 'ALWAYS',
             schedulePresetId: null,
+            namingTemplateId: 'names-1',
+            skipVerification: true,
+            backupMode: 'INCREMENTAL',
+            fullEveryDays: 3,
+            verifyByHash: true,
             notifications: [{ id: 'notif-1' }],
             destinations: [
-                { configId: 'dest-1', priority: 0, retention: '{}' },
-                { configId: 'dest-2', priority: 1, retention: '{"keep":5}' },
+                { configId: 'dest-1', priority: 0, retention: '{}', retentionPolicyId: 'policy-1' },
+                { configId: 'dest-2', priority: 1, retention: '{"keep":5}', retentionPolicyId: null },
             ],
-            sources: [],
+            sources: [
+                { configId: 'files-1', priority: 0, path: '/srv/app', excludePatterns: '["*.tmp"]', stopContainers: false, useStagingCache: false, excludePatternPresets: [{ id: 'preset-1' }] },
+            ],
         };
 
         it('throws when the source job is not found', async () => {
@@ -642,14 +649,45 @@ describe('JobService', () => {
                         notifications: { connect: [{ id: 'notif-1' }] },
                         destinations: {
                             create: [
-                                { configId: 'dest-1', priority: 0, retention: '{}' },
-                                { configId: 'dest-2', priority: 1, retention: '{"keep":5}' },
+                                { configId: 'dest-1', priority: 0, retention: '{}', retentionPolicyId: 'policy-1' },
+                                { configId: 'dest-2', priority: 1, retention: '{"keep":5}', retentionPolicyId: null },
                             ],
                         },
                     }),
                 })
             );
             expect(scheduler.refresh).toHaveBeenCalledTimes(1);
+        });
+
+        it('copies every setting of the job, the retention policy of each destination included, and starts it paused', async () => {
+            prismaMock.job.findUnique.mockResolvedValue(originalJob as any);
+            prismaMock.job.create.mockResolvedValue({ id: 'cloned' } as any);
+
+            await service.cloneJob('job-1', 'Production Backup (Copy)');
+
+            const { data } = prismaMock.job.create.mock.calls[0][0] as { data: Record<string, unknown> };
+            expect(data).toMatchObject({
+                enabled: false,
+                namingTemplateId: 'names-1',
+                skipVerification: true,
+                backupMode: 'INCREMENTAL',
+                fullEveryDays: 3,
+                verifyByHash: true,
+                sources: {
+                    create: [
+                        {
+                            configId: 'files-1',
+                            priority: 0,
+                            path: '/srv/app',
+                            excludePatterns: '["*.tmp"]',
+                            stopContainers: false,
+                            useStagingCache: false,
+                            excludePatternPresets: { connect: [{ id: 'preset-1' }] },
+                        },
+                    ],
+                },
+            });
+            expect((data.destinations as { create: { retentionPolicyId: string | null }[] }).create.map((d) => d.retentionPolicyId)).toEqual(['policy-1', null]);
         });
 
         it('generates "(Copy)" suffix when no name is provided and the base name is free', async () => {

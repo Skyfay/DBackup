@@ -158,7 +158,7 @@ The button at the end of a row, a right click on the row and the details of a jo
 | **Backups on ...** | Opens the Storage Explorer at the backups of the job, one entry per destination |
 | **Trigger by API** | Shows how to start the job from a script or a webhook |
 | **Edit** | Opens the job form |
-| **Clone** | Copies the job under a new name. The copy starts paused, so it cannot run before you checked it |
+| **Clone** | Copies the job with every setting under a new name, the retention policy of each destination included. The copy starts paused, so it cannot run before you checked it |
 | **Pause** or **Resume** | A paused job does not run on its schedule, it can still be started by hand |
 | **Delete** | Removes the job. Backups it stored stay where they are |
 

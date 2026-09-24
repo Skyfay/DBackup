@@ -1,16 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -31,7 +23,6 @@ import { Loader2, Plus, Trash2, Pencil, FileText, Star } from "lucide-react";
 import { NamingTemplate } from "@prisma/client";
 import {
   getNamingTemplates,
-  createNamingTemplate,
   updateNamingTemplate,
   deleteNamingTemplate,
 } from "@/app/actions/templates";
@@ -40,11 +31,8 @@ import { unwrapBulkAction } from "@/lib/bulk-request";
 import { bulkDeleteNamingTemplates } from "@/app/actions/templates-bulk";
 import { ColumnDef } from "@tanstack/react-table";
 import { DateDisplay } from "@/components/utils/date-display";
-import {
-  NAMING_TOKEN_GROUPS,
-  patternUsesChain,
-  previewPattern,
-} from "@/lib/templates/naming-template-engine";
+import { previewPattern } from "@/lib/templates/naming-template-engine";
+import { NamingTemplateDialog } from "./naming-template-dialog";
 
 export function NamingTemplateList() {
   const [templates, setTemplates] = useState<NamingTemplate[]>([]);
@@ -146,7 +134,7 @@ export function NamingTemplateList() {
       header: "Preview",
       cell: ({ row }) => (
         <span className="text-muted-foreground text-xs">
-          {previewPattern(row.original.pattern)}.sql
+          {previewPattern(row.original.pattern)}.tar
         </span>
       ),
     },
@@ -274,183 +262,5 @@ export function NamingTemplateList() {
         </DialogContent>
       </Dialog>
     </>
-  );
-}
-
-interface NamingTemplateDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  template?: NamingTemplate;
-  onSuccess: (template: NamingTemplate) => void;
-}
-
-export function NamingTemplateDialog({
-  open,
-  onOpenChange,
-  template,
-  onSuccess,
-}: NamingTemplateDialogProps) {
-  const [name, setName] = useState(template?.name ?? "");
-  const [description, setDescription] = useState(template?.description ?? "");
-  const [pattern, setPattern] = useState(
-    template?.pattern ?? "{job_name}_yyyy-MM-dd_HH-mm-ss"
-  );
-  const [isSaving, setIsSaving] = useState(false);
-  const patternInputRef = useRef<HTMLInputElement>(null);
-
-  // With {chain} in the pattern both outcomes matter: what an incremental run produces, and
-  // what everything else produces once the token and its separator fall away.
-  const usesChain = useMemo(() => patternUsesChain(pattern), [pattern]);
-  const preview = useMemo(
-    () => `${previewPattern(pattern, usesChain ? "inc-001" : "")}.sql`,
-    [pattern, usesChain]
-  );
-  const previewWithoutChain = useMemo(() => `${previewPattern(pattern)}.sql`, [pattern]);
-
-  useEffect(() => {
-    if (open) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setName(template?.name ?? "");
-      setDescription(template?.description ?? "");
-      setPattern(template?.pattern ?? "{job_name}_yyyy-MM-dd_HH-mm-ss");
-    }
-  }, [open, template]);
-
-  const insertToken = (token: string) => {
-    const input = patternInputRef.current;
-    if (!input) {
-      setPattern((prev) => prev + token);
-      return;
-    }
-    const start = input.selectionStart ?? pattern.length;
-    const end = input.selectionEnd ?? pattern.length;
-    const newPattern = pattern.slice(0, start) + token + pattern.slice(end);
-    setPattern(newPattern);
-    requestAnimationFrame(() => {
-      input.focus();
-      input.setSelectionRange(start + token.length, start + token.length);
-    });
-  };
-
-  const handleSave = async () => {
-    if (!name.trim() || !pattern.trim()) return;
-    setIsSaving(true);
-    const res = template
-      ? await updateNamingTemplate(template.id, {
-          name,
-          description,
-          pattern,
-        })
-      : await createNamingTemplate({ name, description, pattern });
-    setIsSaving(false);
-    if (res.success && res.data) {
-      toast.success(
-        template ? "Naming template updated" : "Naming template created"
-      );
-      onSuccess(res.data);
-    } else {
-      toast.error(res.error || "Failed to save naming template");
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent tone={template ? "edit" : "create"} className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>
-            {template ? "Edit Naming Template" : "New Naming Template"}
-          </DialogTitle>
-          <DialogDescription>
-            Define a filename pattern for backup files.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="nt-name">Name</Label>
-            <Input
-              id="nt-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Production Standard"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="nt-desc">Description (optional)</Label>
-            <Textarea
-              id="nt-desc"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Short description"
-              rows={2}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="nt-pattern">Pattern</Label>
-            <Input
-              ref={patternInputRef}
-              id="nt-pattern"
-              value={pattern}
-              onChange={(e) => setPattern(e.target.value)}
-              placeholder="{job_name}_yyyy-MM-dd_HH-mm-ss"
-              className="font-mono"
-            />
-            <div className="space-y-1 mt-1">
-              {NAMING_TOKEN_GROUPS.map((group) => (
-                <div key={group.group} className="flex flex-wrap items-center gap-1">
-                  <span className="text-xs text-muted-foreground w-10 shrink-0">
-                    {group.group}
-                  </span>
-                  {group.tokens.map((info) => (
-                    <Tooltip key={info.token}>
-                      <TooltipTrigger asChild>
-                        <Badge
-                          variant="outline"
-                          className="cursor-pointer hover:bg-muted text-xs font-mono"
-                          onClick={() => insertToken(info.token)}
-                        >
-                          {info.token}
-                        </Badge>
-                      </TooltipTrigger>
-                      <TooltipContent side="top">
-                        <p>{info.description}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  ))}
-                </div>
-              ))}
-            </div>
-            <div className="space-y-1.5 mt-2">
-              <Label>Preview</Label>
-              <div className="flex items-center h-9 w-full rounded-md border border-input bg-muted/40 px-3 text-sm font-mono text-muted-foreground">
-                <span className="truncate">{preview}</span>
-              </div>
-              {usesChain && (
-                <>
-                  <p className="text-xs text-muted-foreground">
-                    Above: an incremental run. Every other job drops the token together with
-                    the separator next to it:
-                  </p>
-                  <div className="flex items-center h-9 w-full rounded-md border border-input bg-muted/40 px-3 text-sm font-mono text-muted-foreground">
-                    <span className="truncate">{previewWithoutChain}</span>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSave}
-            disabled={isSaving || !name.trim() || !pattern.trim() || preview.startsWith("Invalid pattern")}
-          >
-            {isSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-            {template ? "Save Changes" : "Create"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

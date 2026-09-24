@@ -15,6 +15,7 @@ All notable changes to DBackup are documented here.
 - **connections**: Picking the type of a new connection now happens in one searchable list, grouped by what the type is. Databases are grouped by relational, document, key value and file based, notification channels by chat, push, email and SMS, and webhook.
 - **jobs**: The jobs table shows each job's last run with its error or live progress, its last 12 runs as bars, where it backs up to and when it runs next. The Jobs page can also show its jobs as cards with the way of each backup, and phones always get the cards.
 - **jobs**: A click on a job opens a panel with its live progress or last error, the length of its latest runs, its success rate over 30 days and what it backs up to where. Its actions open from there, from the button at the end of the row and with a right click on the row.
+- **jobs**: The file names of a job warn when two runs of its schedule would get the same name, which replaces the earlier backup at every destination, and offer a template with the time. The field also shows a name the job will write.
 
 ### 🐛 Bug Fixes
 
@@ -30,6 +31,7 @@ All notable changes to DBackup are documented here.
 - **connections**: Authorizing a cloud drive again checks the new token, instead of still reporting the old one as expired.
 - **connections**: The file browser of a path field answers a missing login or permission with 401 or 403 instead of a server error.
 - **jobs**: The schedule picker shows its times the way the scheduler runs them, without seconds, instead of converting them through the time zone of the browser. A cron expression the scheduler cannot read can no longer be saved to a job or a schedule preset.
+- **templates**: The preview of a naming template ends in .tar like the backup files and shows the time of the scheduler's time zone, instead of .sql and the time of the browser.
 
 ### 🔒 Security
 
@@ -60,9 +62,11 @@ All notable changes to DBackup are documented here.
 - **jobs**: Picking some databases of a source has a search, a checkbox for all of them and the size and tables of each, with how many are picked and how big they are together. Once every database is picked it offers All databases, which also takes the ones added later.
 - **jobs**: The database, the destinations and the folders of a job are picked from lists that show each connection's type, address and status, and New adds a connection right from the job. The retention of a destination is picked from a list that says what each policy keeps and how many destinations follow it.
 - **jobs**: The notifications of a job show each template with its channels and the runs they hear about, and a table of who hears about a run that marks a channel told twice. Channels a job names directly can be turned into a template there.
+- **jobs**: Compression has a part of its own between the destinations and the encryption, with a card and a sentence for every option and the level of pg_dump on a slider. A PostgreSQL job shows whether pg_dump or DBackup compresses the dump and the folders, and what its server version cannot do.
 - **ui**: The fields that pick a login, a connection, a key or a template offer New and Edit only to users who may create or change that kind of entry.
 - **templates**: The dialog for adding and editing a retention policy has the new look.
 - **templates**: The dialog for adding and editing a notification template has the new look. Each channel is picked from a searchable list that can also add one, and its runs are picked with buttons.
+- **templates**: The dialog for adding and editing a naming template has the new look and warns about a pattern without the time of day. The file names of a job are picked from a searchable list that shows the pattern of each template.
 - **templates**: The dialog for adding and editing a schedule preset has the new look. It and the Templates page now say that a job follows every change to its preset, instead of claiming it keeps its own copy of the schedule.
 
 ### 🔄 Changed
@@ -83,6 +87,7 @@ All notable changes to DBackup are documented here.
 - **docs**: The notification and job guides explain how to switch health check notifications and restore exclusion for several databases at once.
 - **docs**: The health check guide describes the new status popover and the added fields of the health history API.
 - **docs**: The source, destination, notification and first steps guides name the fields and parts of the new connection form, and the cloud drive and notification guides describe logging in with a credential profile. The adapter guides explain how the form places new fields.
+- **docs**: The job, template and PostgreSQL guides describe the Compression part and the file name warning. The token tables add `{chain}` and drop `{name}`, which no pattern replaces anymore, and the file names end in .tar.
 - **docs**: The first steps guide walks through the new Quick Setup.
 - **docs**: The encryption guide explains that the encryption service returns profiles without their key.
 - **docs**: The job guide describes the new Jobs page, the parts of the job form and the actions of a job, and the template and retention guides follow the new form. The API reference documents the job list fields and `GET /api/jobs/{id}/runs`.

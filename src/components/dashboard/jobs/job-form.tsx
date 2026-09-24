@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useFieldArray } from "react-hook-form";
-import { Bell, CalendarClock, Database, HardDrive, Loader2, Lock, Pencil, Plus, SlidersHorizontal, type LucideIcon } from "lucide-react";
+import { Bell, CalendarClock, Database, HardDrive, Loader2, Lock, Pencil, Plus, Shrink, SlidersHorizontal, type LucideIcon } from "lucide-react";
 import { SectionRail, SectionSelect, type NavEntry } from "@/components/adapter/connection-form-nav";
 import { Button } from "@/components/ui/button";
 import { DIALOG_FOOTER, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
@@ -18,6 +18,7 @@ import type { AdapterOption, EncryptionOption, JobFormJob } from "./job-form-sch
 import { BasicsPart, EncryptionPart } from "./job-parts";
 import { NotificationsPart } from "./job-part-notifications";
 import { AdvancedPart } from "./job-part-advanced";
+import { CompressionPart } from "./job-part-compression";
 import { ConnectionAddedContext } from "./connection-picker";
 import { AddDestinationButton, DestinationsPart } from "./job-part-destinations";
 import { SourcePart } from "./job-part-source";
@@ -27,6 +28,7 @@ const PART_ICONS: Record<JobPartId, LucideIcon> = {
     basics: CalendarClock,
     source: Database,
     destinations: HardDrive,
+    compression: Shrink,
     encryption: Lock,
     notifications: Bell,
     advanced: SlidersHorizontal,
@@ -112,12 +114,14 @@ export function JobForm({ sources: loadedSources, destinations, directorySourceO
                 return <SourcePart sources={sources} folderOptions={directorySourceOptions} defaultExcludePresetIds={state.defaultExcludePresetIds} />;
             case "destinations":
                 return <DestinationsPart options={destinationOptions} array={destinationArray} />;
+            case "compression":
+                return <CompressionPart isPostgres={state.isPostgres} pgMajorVersion={state.pgMajorVersion} />;
             case "encryption":
                 return <EncryptionPart encryptionProfiles={encryptionProfiles} />;
             case "notifications":
                 return <NotificationsPart channels={notificationChannels} />;
             case "advanced":
-                return <AdvancedPart isPostgres={state.isPostgres} pgMajorVersion={state.pgMajorVersion} nativeCompression={state.nativeCompression} />;
+                return <AdvancedPart />;
         }
     };
 

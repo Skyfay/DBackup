@@ -5,8 +5,9 @@ import { NotFoundError, ServiceError } from "@/lib/logging/errors";
 
 const log = logger.child({ service: "NamingTemplateService" });
 
+/** Every naming template with how many jobs name their backups by it. */
 export async function getNamingTemplates() {
-  return prisma.namingTemplate.findMany({ orderBy: { name: "asc" } });
+  return prisma.namingTemplate.findMany({ include: { _count: { select: { jobs: true } } }, orderBy: { name: "asc" } });
 }
 
 export async function getNamingTemplate(id: string) {

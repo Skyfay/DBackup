@@ -2,148 +2,22 @@
 
 import { useFormContext } from "react-hook-form";
 import { SwitchList } from "@/components/adapter/setting-switches";
-import { NamingTemplatePicker } from "@/components/templates/naming-template-picker";
 import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { PG_LEVELS, type JobFormValues } from "./job-form-schema";
+import { FileNamesField } from "./file-names-field";
+import type { JobFormValues } from "./job-form-schema";
 
-const ALGORITHMS: { value: JobFormValues["pgCompressionAlgo"]; label: string; since?: number }[] = [
-    { value: "LEGACY", label: "Gzip, level 6 · the default" },
-    { value: "NONE", label: "None" },
-    { value: "GZIP", label: "Gzip" },
-    { value: "LZ4", label: "LZ4 · PostgreSQL 14 and up", since: 14 },
-    { value: "ZSTD", label: "Zstd · PostgreSQL 16 and up", since: 16 },
-];
-
-interface AdvancedPartProps {
-    isPostgres: boolean;
-    pgMajorVersion: number | null;
-    /** PostgreSQL compresses the dump itself, so compressing it again only costs time. */
-    nativeCompression: boolean;
-}
-
-/** Compression, file names, incremental backups and integrity checks. */
-export function AdvancedPart({ isPostgres, pgMajorVersion, nativeCompression }: AdvancedPartProps) {
+/** File names, incremental backups and integrity checks. */
+export function AdvancedPart() {
     const form = useFormContext<JobFormValues>();
     const mode = form.watch("sourceMode");
-    const algo = form.watch("pgCompressionAlgo");
     const incremental = form.watch("backupMode") === "INCREMENTAL";
     const withFolders = mode !== "db";
-    const levels = PG_LEVELS[algo];
 
     return (
         <>
-            <FormField
-                control={form.control}
-                name="compression"
-                render={({ field }) => (
-                    <FormItem>
-                        <FormLabel>Compression</FormLabel>
-                        <Select value={field.value} onValueChange={field.onChange} disabled={nativeCompression && !withFolders}>
-                            <FormControl>
-                                <SelectTrigger className="w-full">
-                                    <SelectValue />
-                                </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                                <SelectItem value="NONE">None · fastest</SelectItem>
-                                <SelectItem value="GZIP">Gzip · small and fast</SelectItem>
-                                <SelectItem value="BROTLI">Brotli · smallest, slower</SelectItem>
-                            </SelectContent>
-                        </Select>
-                        <FormDescription>
-                            {nativeCompression && !withFolders
-                                ? "PostgreSQL compresses the dump itself, set below."
-                                : nativeCompression
-                                    ? "For the folders. The PostgreSQL dump keeps its own compression, set below."
-                                    : "Smaller backups for a little more work on every run."}
-                        </FormDescription>
-                    </FormItem>
-                )}
-            />
-
-            {isPostgres && (
-                <div className="grid gap-4 rounded-lg border p-4 sm:grid-cols-2">
-                    <FormField
-                        control={form.control}
-                        name="pgCompressionAlgo"
-                        render={({ field }) => (
-                            <FormItem>
-                                <FormLabel>PostgreSQL compression</FormLabel>
-                                <Select
-                                    value={field.value}
-                                    onValueChange={(value) => {
-                                        field.onChange(value);
-                                        const range = PG_LEVELS[value];
-                                        if (range) form.setValue("pgCompressionLevel", range.default);
-                                    }}
-                                >
-                                    <FormControl>
-                                        <SelectTrigger className="w-full">
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                    </FormControl>
-                                    <SelectContent>
-                                        {ALGORITHMS.map((option) => (
-                                            <SelectItem key={option.value} value={option.value} disabled={option.since !== undefined && pgMajorVersion !== null && pgMajorVersion < option.since}>
-                                                {option.label}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                                <FormDescription>
-                                    pg_dump compresses the dump while it writes it{pgMajorVersion !== null ? `, this server runs PostgreSQL ${pgMajorVersion}` : ""}.
-                                </FormDescription>
-                            </FormItem>
-                        )}
-                    />
-                    {levels && (
-                        <FormField
-                            control={form.control}
-                            name="pgCompressionLevel"
-                            render={({ field }) => (
-                                <FormItem>
-                                    <FormLabel>Level</FormLabel>
-                                    <Select value={String(field.value)} onValueChange={(value) => field.onChange(parseInt(value, 10))}>
-                                        <FormControl>
-                                            <SelectTrigger className="w-full">
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                        </FormControl>
-                                        <SelectContent>
-                                            {levels.values.map((level) => (
-                                                <SelectItem key={level} value={String(level)}>
-                                                    {level}
-                                                    {level === levels.default && " · default"}
-                                                    {level === levels.values[levels.values.length - 1] && " · smallest"}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                    <FormDescription>Higher is smaller and slower.</FormDescription>
-                                </FormItem>
-                            )}
-                        />
-                    )}
-                </div>
-            )}
-
-            <FormField
-                control={form.control}
-                name="namingTemplateId"
-                render={({ field }) => (
-                    <FormItem>
-                        <FormLabel>File names</FormLabel>
-                        <FormControl>
-                            <NamingTemplatePicker value={field.value || null} onChange={(id) => field.onChange(id || undefined)} allowNone placeholder="The default template" />
-                        </FormControl>
-                        <FormDescription>How the backup files are named. Templates live under Templates.</FormDescription>
-                        <FormMessage />
-                    </FormItem>
-                )}
-            />
+            <FileNamesField />
 
             <SwitchList>
                 {withFolders && (

@@ -42,9 +42,10 @@ A part shows a check once it has what the job needs. When something is missing, 
 | **Basics** | The name, whether the job runs on its schedule, and when it runs: its own schedule or a schedule preset |
 | **Source** | A database, folders from storage connections set up as directory sources, or both. For a database, all of its databases (also ones added later) or the picked ones |
 | **Destinations** | Where the backups go, in upload order, each with its retention policy (see [Multi-Destination](#multi-destination)) |
+| **Compression** | How pg_dump and DBackup make the backups smaller, see [Compression](#compression) |
 | **Encryption** | The key from the Vault that encrypts every backup, or none |
 | **Notifications** | The notification templates that report the runs |
-| **Advanced** | Compression, the file names, incremental backups for folders and the scheduled integrity check |
+| **Advanced** | The file names, incremental backups for folders and the scheduled integrity check |
 
 ### Picking Databases
 
@@ -59,7 +60,7 @@ Once every database is picked, the list offers **Use All databases**, which also
 
 ### Compression
 
-Reduce backup size significantly. Set it in the **Advanced** part:
+Reduce backup size significantly in the **Compression** part. Every option is a card that says what it is good for:
 
 | Algorithm | Speed | Compression | Best For |
 | :--- | :--- | :--- | :--- |
@@ -67,9 +68,7 @@ Reduce backup size significantly. Set it in the **Advanced** part:
 | **Gzip** | Fast | 60-70% | General use |
 | **Brotli** | Slower | 70-80% | Maximum compression |
 
-::: tip PostgreSQL Native Compression
-PostgreSQL jobs have an additional **PostgreSQL Compression** setting that controls native `pg_dump` compression (GZIP, LZ4, ZSTD). See [PostgreSQL → PostgreSQL Compression](/user-guide/sources/postgresql#postgresql-compression).
-:::
+A PostgreSQL job lets `pg_dump` compress the dump while it writes it, with Gzip, LZ4 or Zstd, and a slider for the level between faster and smaller that marks the default. DBackup then does not compress the dump a second time, only the folders of a job that has them. With **None** for the dump, DBackup compresses the whole backup instead. An option the PostgreSQL server cannot do stays visible and says which version it needs. See [PostgreSQL → PostgreSQL Compression](/user-guide/sources/postgresql#postgresql-compression).
 
 ### Encryption
 
@@ -87,13 +86,13 @@ Automatically clean up old backups. Retention is configured **per destination** 
 
 ### Filename Pattern
 
-Customize the filename of backup files globally in **Settings → General → Backup Filename Pattern**, or override it per job under **File names** in the **Advanced** part with a **Naming Template** (see [Templates](#templates) below). The pattern supports the following tokens:
+The backup files of a job are named by a **Naming Template**, the default one unless the job picks another under **File names** in the **Advanced** part (see [Templates](#templates) below). The field shows a name the job will write, with the time zone of the scheduler. The pattern supports the following tokens:
 
 | Token | Description | Example |
 | :--- | :--- | :--- |
-| `{job_name}` | Job name (canonical token) | `Daily MySQL Backup` |
-| `{name}` | Job name (legacy alias, still supported) | `Daily MySQL Backup` |
-| `{db_name}` | Database name | `mydb` |
+| `{job_name}` | Job name, every character but letters and digits turned into `_` | `Daily_MySQL_Backup` |
+| `{db_name}` | The picked databases joined with `_`, or `all` | `mydb` |
+| `{chain}` | Position in an incremental chain, left out for every other job | `full-000`, `inc-001` |
 | `yyyy` | 4-digit year | `2026` |
 | `MM` | 2-digit month (zero-padded) | `05` |
 | `MMM` | Short month name | `May` |
@@ -103,7 +102,11 @@ Customize the filename of backup files globally in **Settings → General → Ba
 | `mm` | 2-digit minute | `30` |
 | `ss` | 2-digit second | `00` |
 
-A live preview and clickable token chips (grouped by category) are shown in the settings form. Token chips insert at the current cursor position. The default pattern produces filenames like `JobName_2026-05-03T14-30-00.sql`.
+The default template produces file names like `Daily_MySQL_Backup_2026-05-03_14-30-00.tar`.
+
+::: warning Backups with the same name
+A backup replaces a file of the same name at every destination, together with its metadata. When two runs of the schedule would get the same name, like two runs a day with a template that has only the date, **File names** warns and offers a template with the time. A pattern without the time of day also lets a run started by hand replace the backup of that day, which the field notes. Incremental jobs are safe, since every file of a chain carries its position.
+:::
 
 ### Notifications
 
@@ -329,7 +332,7 @@ Named retention rules assignable per destination. Each policy defines Simple (ke
 Custom backup filename patterns saved as named templates. Supports all tokens listed in [Filename Pattern](#filename-pattern) above.
 
 - One template can be set as the **system default**
-- Override per job under **File names** in the **Advanced** part of the job
+- Override per job under **File names** in the **Advanced** part of the job, which warns when two runs would get the same name
 
 ### Schedule Presets
 

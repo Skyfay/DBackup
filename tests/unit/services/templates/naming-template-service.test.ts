@@ -43,13 +43,14 @@ describe("NamingTemplateService", () => {
   // ── Read operations ──────────────────────────────────────────
 
   describe("getNamingTemplates", () => {
-    it("returns all templates ordered by name", async () => {
+    it("returns all templates ordered by name, with how many jobs use each", async () => {
       const templates = [makeTemplate({ id: "a" }), makeTemplate({ id: "b" })];
       prismaMock.namingTemplate.findMany.mockResolvedValue(templates as any);
 
       const result = await getNamingTemplates();
 
       expect(prismaMock.namingTemplate.findMany).toHaveBeenCalledWith({
+        include: { _count: { select: { jobs: true } } },
         orderBy: { name: "asc" },
       });
       expect(result).toHaveLength(2);

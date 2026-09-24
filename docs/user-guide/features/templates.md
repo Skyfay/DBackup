@@ -44,15 +44,15 @@ Changing a policy in Templates takes effect on the next retention run for all jo
 
 ## Naming Templates
 
-A Naming Template defines the filename pattern for backup files. The system-level pattern is set in **Settings → General → Backup Filename Pattern**. Naming Templates let you override it per job.
+A Naming Template defines the file name pattern for backup files. The template marked as the default names the backups of every job without one of its own.
 
 ### Supported Tokens
 
 | Token | Description | Example |
 | :--- | :--- | :--- |
-| `{job_name}` | Job name | `Daily MySQL Backup` |
-| `{name}` | Job name (legacy alias) | `Daily MySQL Backup` |
-| `{db_name}` | Database name | `mydb` |
+| `{job_name}` | Job name, every character but letters and digits turned into `_` | `Daily_MySQL_Backup` |
+| `{db_name}` | The picked databases joined with `_`, or `all` | `mydb` |
+| `{chain}` | Position in an incremental chain, left out for every other job | `full-000`, `inc-001` |
 | `yyyy` | 4-digit year | `2026` |
 | `MM` | 2-digit month (zero-padded) | `05` |
 | `MMM` | Short month name | `May` |
@@ -62,9 +62,9 @@ A Naming Template defines the filename pattern for backup files. The system-leve
 | `mm` | 2-digit minute | `30` |
 | `ss` | 2-digit second | `00` |
 
-Token chips in the template editor are grouped by category (Job Info, Date, Time) and insert at the current cursor position. A live preview updates as you type.
+Token chips in the template dialog are grouped by category and insert at the current cursor position. The preview shows a name as a backup gets it, ending in `.tar`, with the time of the scheduler's time zone. A pattern without the time of day gets a warning, since two backups of a job on one day would then share a name and the later one would replace the earlier.
 
-Arbitrary literal text works without escaping - for example `prod_{db_name}-yyyy-MM-dd` is valid.
+Literal text works without escaping, for example `prod_{db_name}-yyyy-MM-dd`. The letter pairs of the date tokens are replaced wherever they appear, though, so a word like `summary` turns into `su30ary`.
 
 ### Default Naming Template
 
@@ -73,8 +73,10 @@ Mark one template as the **system default**. It is used for all jobs that have n
 ### Assigning a Naming Template to a Job
 
 1. Open a job (create or edit)
-2. In **Basic Settings**, use the **Filename Template** picker
-3. Select a template from the list
+2. In the **Advanced** part, pick a template under **File names**, or add one with **New** beside the field
+3. Save the job
+
+**Default template** at the top of the list follows whichever template is marked as the default. The field warns when two runs of the job's schedule would get the same name, see [Creating Jobs](/user-guide/jobs/#filename-pattern).
 
 ## Schedule Presets
 

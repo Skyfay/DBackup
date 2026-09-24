@@ -1,221 +1,124 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { Loader2, Plus, FileText, ChevronsUpDown, Check, Star, Pencil } from "lucide-react";
+import { useState } from "react";
+import { FileText, Plus } from "lucide-react";
+import type { NamingTemplate } from "@prisma/client";
+import { useCan } from "@/components/permissions/permissions-context";
+import { NamingTemplateDialog } from "@/components/settings/templates/naming-template-dialog";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-  CommandSeparator,
-} from "@/components/ui/command";
-import { cn } from "@/lib/utils";
-import { toast } from "sonner";
-import { NamingTemplate } from "@prisma/client";
-import { getNamingTemplates } from "@/app/actions/templates";
-import { NamingTemplateDialog } from "@/components/settings/templates/naming-template-list";
+import { PickList, PickTrigger, type PickEntry } from "@/components/ui/pick-list";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { PERMISSIONS } from "@/lib/auth/permissions";
+import type { ListedNamingTemplate } from "./use-naming-templates";
 
-interface Props {
-  value: string | null | undefined;
-  onChange: (id: string | null) => void;
-  placeholder?: string;
-  allowNone?: boolean;
+const DEFAULT = "__DEFAULT__";
+
+function usage(template: ListedNamingTemplate): string {
+    const count = template._count?.jobs ?? 0;
+    if (count === 0) return "Not used yet";
+    return count === 1 ? "Used by 1 job" : `Used by ${count} jobs`;
 }
 
-export function NamingTemplatePicker({ value, onChange, placeholder, allowNone }: Props) {
-  const [templates, setTemplates] = useState<NamingTemplate[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [open, setOpen] = useState(false);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<NamingTemplate | null>(null);
-  const [editOpen, setEditOpen] = useState(false);
+interface NamingTemplatePickerProps extends Omit<React.ComponentProps<typeof Button>, "value" | "onChange"> {
+    templates: ListedNamingTemplate[];
+    loading: boolean;
+    /** The template of the job, or null to follow whichever template is the default. */
+    value: string | null;
+    onChange: (id: string | null) => void;
+    /** Puts a template made or changed from here into the list. */
+    onSaved: (template: NamingTemplate) => void;
+}
 
-  const fetchTemplates = useCallback(async () => {
-    setLoading(true);
-    const res = await getNamingTemplates();
-    if (res.success && res.data) {
-      setTemplates(res.data);
-      // If no value is set yet and allowNone is false, auto-select the default template
-      if (!value && !allowNone) {
-        const defaultTemplate = res.data.find((t) => t.isDefault);
-        if (defaultTemplate) {
-          onChange(defaultTemplate.id);
-        }
-      }
-    } else {
-      toast.error("Failed to load naming templates");
-    }
-    setLoading(false);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+/**
+ * Picks the naming template of a job, like the login field of a connection: the default template
+ * first, which follows whichever one is marked as the default, then the templates with their
+ * pattern and how many jobs use them. Edit and New are there for a viewer who may write templates.
+ */
+export function NamingTemplatePicker({ templates, loading, value, onChange, onSaved, className, ...props }: NamingTemplatePickerProps) {
+    const [open, setOpen] = useState(false);
+    const [dialog, setDialog] = useState<{ open: boolean; template?: NamingTemplate }>({ open: false });
+    const canWrite = useCan(PERMISSIONS.TEMPLATES.WRITE);
+    const defaultTemplate = templates.find((template) => template.isDefault);
+    const selected = templates.find((template) => template.id === value);
 
-  useEffect(() => {
-    fetchTemplates();
-  }, [fetchTemplates]);
+    const special: PickEntry = {
+        id: DEFAULT,
+        name: "Default template",
+        meta: defaultTemplate ? `Follows the template marked as the default, now ${defaultTemplate.name}` : "No template is the default, so the built-in pattern is used",
+        editable: false,
+    };
+    const entries: PickEntry[] = templates.map((template) => ({
+        id: template.id,
+        name: template.name,
+        meta: [template.isDefault ? "Default" : null, template.pattern, usage(template)].filter(Boolean).join(" · "),
+        keywords: [template.pattern, ...(template.description ? [template.description] : [])],
+        // A template that ships with DBackup stays as it is.
+        editable: !template.isSystem,
+    }));
 
-  const selected = templates.find((t) => t.id === value);
-  const defaultTemplate = templates.find((t) => t.isDefault);
-  const displayPlaceholder =
-    placeholder ??
-    (defaultTemplate ? `Standard (${defaultTemplate.name})` : "Select template...");
+    const openDialog = (template?: NamingTemplate) => {
+        setOpen(false);
+        setDialog({ open: true, template });
+    };
 
-  return (
-    <>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            variant="outline"
-            role="combobox"
-            aria-expanded={open}
-            disabled={loading}
-            className="w-full min-w-0 justify-between font-normal"
-          >
-            {loading ? (
-              <span className="flex items-center gap-2 text-muted-foreground">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Loading...
-              </span>
-            ) : selected ? (
-              <span className="flex items-center gap-2 min-w-0">
-                <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                <span className="truncate">{selected.name}</span>
-                {selected.isDefault && (
-                  <Badge variant="outline" className="text-xs ml-1 shrink-0 border-yellow-500 text-yellow-600">
-                    Default
-                  </Badge>
-                )}
-              </span>
-            ) : defaultTemplate ? (
-              <span className="flex items-center gap-2 min-w-0">
-                <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                <span className="truncate text-muted-foreground">{defaultTemplate.name}</span>
-                <Badge variant="outline" className="text-xs ml-1 shrink-0 border-yellow-500/50 text-yellow-600/70">
-                  Default
-                </Badge>
-              </span>
-            ) : (
-              <span className="text-muted-foreground">{displayPlaceholder}</span>
-            )}
-            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent
-          className="w-[--radix-popover-trigger-width] p-0"
-          align="start"
-        >
-          <Command>
-            <CommandInput placeholder="Search templates..." />
-            <CommandList>
-              <CommandEmpty>No templates found.</CommandEmpty>
-              <CommandGroup>
-                {templates.map((template) => (
-                  <CommandItem
-                    key={template.id}
-                    value={template.name}
-                    className="group pr-1"
-                    onSelect={() => {
-                      onChange(template.id);
-                      setOpen(false);
-                    }}
-                  >
-                    <Check
-                      className={cn(
-                        "mr-2 h-4 w-4",
-                        value === template.id ? "opacity-100" : "opacity-0"
-                      )}
-                    />
-                    <span className="flex flex-1 items-center gap-2">
-                      {template.name}
-                      {template.isDefault && (
-                        <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
-                      )}
-                    </span>
-                    {!template.isSystem && (
-                      <button
-                        type="button"
-                        className="opacity-0 group-hover:opacity-100 transition-opacity ml-1 rounded p-0.5 hover:bg-accent"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setOpen(false);
-                          setEditTarget(template);
-                          setEditOpen(true);
+    return (
+        <div className={className ? `flex min-w-0 gap-2 ${className}` : "flex min-w-0 gap-2"}>
+            <Popover open={open} onOpenChange={setOpen} modal>
+                <PopoverTrigger asChild>
+                    <PickTrigger icon={FileText} loading={loading} disabled={loading} aria-expanded={open} {...props}>
+                        {loading ? (
+                            <span className="text-muted-foreground">Loading...</span>
+                        ) : selected ? (
+                            <>
+                                <span className="truncate">{selected.name}</span>
+                                <span className="hidden truncate font-mono text-xs text-muted-foreground sm:inline">{selected.pattern}</span>
+                            </>
+                        ) : (
+                            <>
+                                <span className="shrink-0">Default template</span>
+                                {defaultTemplate && <span className="truncate text-xs text-muted-foreground">{defaultTemplate.name}</span>}
+                            </>
+                        )}
+                    </PickTrigger>
+                </PopoverTrigger>
+                {/* On the raised surface, so it stands out from the dialog it opens over. */}
+                <PopoverContent tone="pick" align="start" className="w-(--radix-popover-trigger-width) min-w-80 overflow-hidden bg-raised p-0">
+                    <PickList
+                        icon={FileText}
+                        title="Pick from Templates"
+                        note="Naming templates"
+                        groups={[{ entries: [special] }, { heading: "Templates", entries }]}
+                        value={value ?? DEFAULT}
+                        emptyText="Nothing matches."
+                        onPick={(id) => {
+                            onChange(id === DEFAULT ? null : id);
+                            setOpen(false);
                         }}
-                      >
-                        <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
-                      </button>
-                    )}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-              {value && (
-                <>
-                  <CommandSeparator />
-                  <CommandGroup>
-                    <CommandItem
-                      value="__clear__"
-                      onSelect={() => {
-                        onChange(null);
-                        setOpen(false);
-                      }}
-                    >
-                      <Check className="mr-2 h-4 w-4 opacity-0" />
-                      <span className="text-muted-foreground">Use default template</span>
-                    </CommandItem>
-                  </CommandGroup>
-                </>
-              )}
-              <CommandSeparator />
-              <CommandGroup>
-                <CommandItem
-                  value="__create__"
-                  onSelect={() => {
-                    setOpen(false);
-                    setCreateOpen(true);
-                  }}
-                  className="font-medium"
-                >
-                  <Plus className="mr-2 h-3.5 w-3.5" />
-                  Create new template...
-                </CommandItem>
-              </CommandGroup>
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
+                        onEdit={canWrite ? (id) => openDialog(templates.find((template) => template.id === id)) : undefined}
+                        createLabel="New template"
+                        onCreate={canWrite ? () => openDialog() : undefined}
+                        searchPlaceholder="Search by name or pattern"
+                    />
+                </PopoverContent>
+            </Popover>
+            {canWrite && (
+                <Button type="button" variant="outline" onClick={() => openDialog()}>
+                    <Plus />
+                    New
+                </Button>
+            )}
 
-      <NamingTemplateDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        onSuccess={(template) => {
-          setTemplates((prev) =>
-            [...prev.filter((t) => t.id !== template.id), template].sort(
-              (a, b) => a.name.localeCompare(b.name)
-            )
-          );
-          onChange(template.id);
-          setCreateOpen(false);
-        }}
-      />
-
-      <NamingTemplateDialog
-        open={editOpen}
-        onOpenChange={(v) => { setEditOpen(v); if (!v) setEditTarget(null); }}
-        template={editTarget ?? undefined}
-        onSuccess={(template) => {
-          setTemplates((prev) => prev.map((t) => t.id === template.id ? template : t));
-          setEditTarget(null);
-          setEditOpen(false);
-        }}
-      />
-    </>
-  );
+            <NamingTemplateDialog
+                open={dialog.open}
+                onOpenChange={(next) => setDialog((current) => ({ ...current, open: next }))}
+                template={dialog.template}
+                onSuccess={(template) => {
+                    onSaved(template);
+                    // A new template is picked right away, an edited one only refreshes what the field shows.
+                    if (!dialog.template) onChange(template.id);
+                    setDialog((current) => ({ ...current, open: false }));
+                }}
+            />
+        </div>
+    );
 }

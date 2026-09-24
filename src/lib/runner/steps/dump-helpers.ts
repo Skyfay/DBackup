@@ -1,7 +1,7 @@
 import path from "path";
 import prisma from "@/lib/prisma";
 import { getTempDir } from "@/lib/temp-dir";
-import { applyNamingPattern, chainSegment, patternUsesChain } from "@/lib/templates/naming-template-engine";
+import { applyNamingPattern, chainSegment, fileNameParts, patternUsesChain } from "@/lib/templates/naming-template-engine";
 import fs from "fs/promises";
 import { formatBytes } from "@/lib/utils";
 import { JobWithRelations, RunnerContext } from "../types";
@@ -43,10 +43,7 @@ export async function resolveBackupFilename(
         } catch { return []; }
     })();
 
-    const dbNameRaw = jobDatabases.length === 0
-        ? 'all'
-        : jobDatabases.map(db => db.replace(/[^a-z0-9]/gi, '_')).join('_');
-    const sanitizedName = job.name.replace(/[^a-z0-9]/gi, '_');
+    const { jobName: sanitizedName, dbName: dbNameRaw } = fileNameParts(job.name, jobDatabases);
 
     // Only an incremental run has a position to write; for everything else the token resolves
     // to nothing and takes its separator with it.

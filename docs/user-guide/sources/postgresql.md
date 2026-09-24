@@ -147,7 +147,7 @@ Each backup produces a `.dump` file in PostgreSQL custom format — a compressed
 
 ### Native Dump Compression
 
-PostgreSQL's native dump compression is controlled by the **PostgreSQL Compression** setting on the job (separate from DBackup's pipeline compression). See the [PostgreSQL Compression](#postgresql-compression) section below.
+PostgreSQL's native dump compression is set in the **Compression** part of the job (separate from DBackup's pipeline compression). See the [PostgreSQL Compression](#postgresql-compression) section below.
 
 ## Extra Options Examples
 
@@ -173,22 +173,23 @@ PostgreSQL's native dump compression is controlled by the **PostgreSQL Compressi
 
 ## PostgreSQL Compression
 
-PostgreSQL native dump compression is a **job-level** setting configured when creating or editing a backup job (not the source). It controls the `-Z` flag passed to `pg_dump` and is separate from DBackup's own pipeline compression.
+PostgreSQL native dump compression is a **job-level** setting in the **Compression** part of a backup job (not the source). It controls the `-Z` flag passed to `pg_dump` and is separate from DBackup's own pipeline compression. Each option is a card, and the level is a slider between faster and smaller with the default marked.
 
-| Option | Description | PG Version |
-| :--- | :--- | :--- |
-| **Default** (empty) | Gzip level 6 — legacy behavior | All |
-| **None** | No native compression. Use DBackup's pipeline compression instead. | All |
-| **GZIP:N** | Gzip at level N (1–9) | All |
-| **LZ4:N** | LZ4 at level N — fast compression | 14+ |
-| **ZSTD:N** | Zstandard at level N — best ratio | 16+ |
+| Option | Description | Levels | PG Version |
+| :--- | :--- | :--- | :--- |
+| **Gzip** | The usual pick, works everywhere | 0 to 9, default 6 | All |
+| **LZ4** | Fastest, a little larger | 0 to 9, default 1 | 14+ |
+| **Zstd** | Small and fast. Levels above 19 need a lot of memory | 1 to 22, default 3 | 16+ |
+| **None** | No native compression, DBackup compresses the backup instead | | All |
+
+Jobs from before this setting have the old default, which is Gzip at level 6 and shows as that. It stays as it is until the setting is changed.
 
 ::: tip Combining Compression
-If you select **None** here and enable DBackup's Gzip or Brotli compression on the job, the compression happens in the pipeline after the dump — useful when you want a single compression method for all database types.
+With **None** for the dump, the part offers DBackup's own compression for the whole backup, which happens in the pipeline after the dump. That is useful when you want a single compression method for all database types.
 :::
 
 ::: warning LZ4 / ZSTD Version Requirements
-LZ4 requires PostgreSQL 14+ and ZSTD requires PostgreSQL 16+ — **on the PostgreSQL server**, not the DBackup host. Using these on older versions will cause the backup to fail.
+LZ4 requires PostgreSQL 14+ and ZSTD requires PostgreSQL 16+, **on the PostgreSQL server**, not the DBackup host. The job form reads the server's version and keeps these options out of reach, with the version they need, for an older server.
 :::
 
 ## Multi-Database Backups

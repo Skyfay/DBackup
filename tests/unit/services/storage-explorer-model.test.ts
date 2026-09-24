@@ -106,6 +106,29 @@ describe('buildExplorer', () => {
         expect(run.copies.map((copy) => copy.destinationId)).toEqual([NAS]);
     });
 
+    it('holds a destination the job no longer writes to only to the runs it got while it did', () => {
+        // Shop wrote to R2 until the 21st, then R2 was taken out of the job.
+        const model = buildExplorer([job({ destinationIds: [NAS] })], [
+            { destinationId: NAS, files: [file(20), file(21), file(22), file(23)] },
+            { destinationId: R2, files: [file(20), file(21)] },
+        ]);
+
+        const runs = model.runs.get('job-shop')!;
+        expect(runs.flatMap((run) => run.copies).filter((copy) => copy.state === 'missing')).toEqual([]);
+        expect(model.jobs[0].missingCopies).toBe(0);
+    });
+
+    it('still reports a gap inside the time a destination of a deleted job was written to', () => {
+        const gone = (day: number) => file(day, { jobId: 'job-gone', jobName: 'Gone', path: `Gone/${day}.tar` });
+        const model = buildExplorer([], [
+            { destinationId: NAS, files: [gone(20), gone(21), gone(22), gone(23)] },
+            { destinationId: R2, files: [gone(20), gone(22)] },
+        ]);
+
+        const missing = model.runs.get('deleted:job-gone')!.filter((run) => run.copies.some((copy) => copy.state === 'missing'));
+        expect(missing.map((run) => run.createdAt.slice(0, 10))).toEqual(['2026-09-21']);
+    });
+
     it('lists a deleted job with the name of its newest backup and where its backups lie', () => {
         const model = buildExplorer([job({ id: 'job-other', name: 'Other' })], [
             {

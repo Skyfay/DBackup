@@ -39,6 +39,8 @@ export interface TimelineLane {
 
 interface BackupTimelineProps {
     title: string;
+    /** What a click does here, under the title. */
+    hint?: string;
     lanes: TimelineLane[];
     selectedLane?: string | null;
     onLaneClick?: (key: string) => void;
@@ -236,7 +238,7 @@ function LaneRow({ lane, days, start, selected, onLaneClick, onPointClick, marke
  * of one incremental chain, a bar for a day with many, and missing copies and failed checks in
  * their status colors. The range switches without loading again.
  */
-export function BackupTimeline({ title, lanes, selectedLane, onLaneClick, onPointClick, markedPointId }: BackupTimelineProps) {
+export function BackupTimeline({ title, hint, lanes, selectedLane, onLaneClick, onPointClick, markedPointId }: BackupTimelineProps) {
     const [range, setRange] = useState<Range>(30);
     const { formatDate } = useDateFormatter();
     const today = startOfToday();
@@ -252,7 +254,7 @@ export function BackupTimeline({ title, lanes, selectedLane, onLaneClick, onPoin
                 <div className="min-w-0">
                     <h2 className="font-semibold">{title}</h2>
                     <p className="text-sm text-muted-foreground">
-                        {formatDate(new Date(start), "MMM d")} to today{lanes.length > 1 ? ` · ${lanes.length} jobs` : ""}
+                        {formatDate(new Date(start), "MMM d")} to today{lanes.length > 1 ? ` · ${lanes.length} jobs` : ""}{hint ? ` · ${hint}` : ""}
                     </p>
                 </div>
                 <div className="ml-auto flex items-center gap-4">

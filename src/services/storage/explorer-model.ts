@@ -101,13 +101,16 @@ function collect(jobs: JobRecord[], listings: DestinationListing[]): Map<string,
 /**
  * The runs of one job, each with its copies.
  *
- * A destination counts as missing a backup only when it belongs to the job and holds an older,
- * unlocked backup of it. A destination added later never had the older runs, and one with a
- * shorter retention has let them go, so neither of them is reported. A locked backup is left out
- * of that check, since it stays past the retention on purpose.
+ * A destination counts as missing a backup only when it should have got it. One the job writes to
+ * now should have every run since its oldest unlocked backup of the job: a destination added later
+ * never had the older runs, and one with a shorter retention has let them go, so neither of them is
+ * reported. One the job no longer writes to, and every destination of a deleted job, is only held
+ * to the runs between its oldest and its newest backup, since nothing says when the job stopped
+ * writing to it. Locked backups are left out of both limits, they stay past the retention on purpose.
  */
-export function runsOf(key: string, expected: string[], byDestination: Map<string, ExplorerFile[]>): BackupRun[] {
+export function runsOf(key: string, expected: string[], byDestination: Map<string, ExplorerFile[]>, configured: Set<string> = new Set(expected)): BackupRun[] {
     const oldest = new Map<string, number>();
+    const newest = new Map<string, number>();
     const paths = new Map<string, Map<string, ExplorerFile>>();
 
     for (const [destinationId, files] of byDestination) {
@@ -121,8 +124,10 @@ export function runsOf(key: string, expected: string[], byDestination: Map<strin
             copies.set(destinationId, file);
             if (!file.locked) {
                 const time = timeOf(file);
-                const known = oldest.get(destinationId);
-                if (known === undefined || time < known) oldest.set(destinationId, time);
+                const first = oldest.get(destinationId);
+                if (first === undefined || time < first) oldest.set(destinationId, time);
+                const last = newest.get(destinationId);
+                if (last === undefined || time > last) newest.set(destinationId, time);
             }
         }
     }
@@ -139,7 +144,8 @@ export function runsOf(key: string, expected: string[], byDestination: Map<strin
                 continue;
             }
             const since = oldest.get(destinationId);
-            if (since !== undefined && since < createdAt) copies.push({ destinationId, state: "missing" });
+            const until = configured.has(destinationId) ? Infinity : newest.get(destinationId) ?? -Infinity;
+            if (since !== undefined && since < createdAt && createdAt < until) copies.push({ destinationId, state: "missing" });
         }
         runs.push({ path, jobKey: key, file: first, createdAt: new Date(createdAt).toISOString(), copies });
     }
@@ -175,7 +181,7 @@ export function buildExplorer(jobs: JobRecord[], listings: DestinationListing[])
         const configured = record?.destinationIds ?? [];
         const holding = [...byDestination.keys()].filter((id) => !configured.includes(id)).sort();
         const expected = [...configured, ...holding];
-        const runs = runsOf(key, expected, byDestination);
+        const runs = runsOf(key, expected, byDestination, new Set(configured));
         runsByKey.set(key, runs);
 
         const sample = files.find((file) => file.sourceType) ?? files[0];

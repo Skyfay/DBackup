@@ -74,8 +74,11 @@ export function JobBackups({ view, destinations, display, canDelete, handlersFor
     const chained = runs.some((run) => run.file.chain);
     const [grouped, setGrouped] = useState(true);
     const [sorting, setSorting] = useState<SortingState>([{ id: "run", desc: true }]);
+    // The timeline shows the same backups as the list, so it leaves the list out until its lane is clicked.
+    const [listOpen, setListOpen] = useState(false);
     const { formatDate } = useDateFormatter();
     const byChain = chained && grouped;
+    const showList = display === "table" || listOpen;
 
     const visible = useMemo(() => {
         switch (filter) {
@@ -269,8 +272,10 @@ export function JobBackups({ view, destinations, display, canDelete, handlersFor
             {display === "timeline" && (
                 <BackupTimeline
                     title="Timeline"
+                    hint={listOpen ? "click the job to hide its backups" : "click the job to list its backups, a point to open one"}
                     lanes={[lane]}
-                    selectedLane={null}
+                    selectedLane={listOpen ? job.key : null}
+                    onLaneClick={() => setListOpen((open) => !open)}
                     markedPointId={openPath}
                     onPointClick={(_lane, path) => {
                         const match = runs.find((entry) => entry.path === path);
@@ -279,38 +284,40 @@ export function JobBackups({ view, destinations, display, canDelete, handlersFor
                 />
             )}
 
-            <DataTable
-                // The rows are runs of this job, so a selection must not carry over into another job.
-                key={job.key}
-                variant="card"
-                columns={columns}
-                data={visible}
-                searchKey="run"
-                searchPlaceholder="Search backups"
-                toolbarExtra={toolbarExtra}
-                sorting={sorting}
-                onSortingChange={setSorting}
-                enableRowSelection={canDelete && !byChain}
-                getRowId={(run) => run.path}
-                bulkActions={bulkActions}
-                onBulkActionComplete={onChanged}
-                onRowClick={onOpen}
-                view={byChain ? "split" : "table"}
-                renderSplit={(rows) => <ChainGroups rows={rows} openPath={openPath} onOpen={onOpen} />}
-                renderRowMenu={(run, bulk) => {
-                    const target = primaryCopy(run);
-                    const handlers = handlersFor(target.file, target.destinationId);
-                    return (
-                        <BackupContextMenu
-                            tile={<JobTile job={job} />}
-                            title={run.file.name}
-                            note={`${job.name} · ${typeLabel(run.file)}`}
-                            groups={backupActions(target.file, { ...handlers, onDelete: handlers.onDelete ? () => deleteRun(run) : undefined })}
-                            bulk={bulk}
-                        />
-                    );
-                }}
-            />
+            {showList && (
+                <DataTable
+                    // The rows are runs of this job, so a selection must not carry over into another job.
+                    key={job.key}
+                    variant="card"
+                    columns={columns}
+                    data={visible}
+                    searchKey="run"
+                    searchPlaceholder="Search backups"
+                    toolbarExtra={toolbarExtra}
+                    sorting={sorting}
+                    onSortingChange={setSorting}
+                    enableRowSelection={canDelete && !byChain}
+                    getRowId={(run) => run.path}
+                    bulkActions={bulkActions}
+                    onBulkActionComplete={onChanged}
+                    onRowClick={onOpen}
+                    view={byChain ? "split" : "table"}
+                    renderSplit={(rows) => <ChainGroups rows={rows} openPath={openPath} onOpen={onOpen} />}
+                    renderRowMenu={(run, bulk) => {
+                        const target = primaryCopy(run);
+                        const handlers = handlersFor(target.file, target.destinationId);
+                        return (
+                            <BackupContextMenu
+                                tile={<JobTile job={job} />}
+                                title={run.file.name}
+                                note={`${job.name} · ${typeLabel(run.file)}`}
+                                groups={backupActions(target.file, { ...handlers, onDelete: handlers.onDelete ? () => deleteRun(run) : undefined })}
+                                bulk={bulk}
+                            />
+                        );
+                    }}
+                />
+            )}
         </div>
     );
 }

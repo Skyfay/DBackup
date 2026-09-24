@@ -253,4 +253,19 @@ describe("Storage Explorer", () => {
             vi.useRealTimers();
         }
     });
+
+    it("shows only the timeline until the job is clicked, since the list below would repeat it", async () => {
+        const user = userEvent.setup();
+        search = new URLSearchParams("view=timeline");
+        renderPage();
+
+        const lane = await screen.findByRole("button", { name: /^Shop nightly/ });
+        expect(screen.queryByText("Cloudflare R2 missing")).not.toBeInTheDocument();
+
+        await user.click(lane);
+        expect(await screen.findByText("Cloudflare R2 missing")).toBeInTheDocument();
+
+        await user.click(lane);
+        await waitFor(() => expect(screen.queryByText("Cloudflare R2 missing")).not.toBeInTheDocument());
+    });
 });

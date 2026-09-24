@@ -254,6 +254,7 @@ export function DestinationBackups({ view, jobs, destinations, display, canDelet
             {display === "timeline" && (
                 <BackupTimeline
                     title="Timeline"
+                    hint={pickedJob ? "click the job again to hide its backups" : "click a job to list its backups, a point to open one"}
                     lanes={lanes}
                     selectedLane={pickedJob}
                     markedPointId={openPath}
@@ -265,50 +266,53 @@ export function DestinationBackups({ view, jobs, destinations, display, canDelet
                 />
             )}
 
-            <DataTable
-                // A path is only unique within one destination, so a selection must not carry over.
-                key={destination.id}
-                variant="card"
-                columns={columns}
-                data={visible}
-                searchKey="backup"
-                searchPlaceholder="Search backups"
-                filterableColumns={[{ id: "job", title: "Job", options: jobKeys.map((key) => ({ label: jobs.get(key)?.name ?? "Without a job", value: key })) }]}
-                toolbarExtra={toolbarExtra}
-                sorting={sorting}
-                onSortingChange={setSorting}
-                columnFilters={columnFilters}
-                onColumnFiltersChange={setColumnFilters}
-                enableRowSelection={canDelete && !grouped}
-                getRowId={(backup) => backup.file.path}
-                bulkActions={bulkActions}
-                onBulkActionComplete={onChanged}
-                onRowClick={onOpen}
-                view={grouped ? "split" : "table"}
-                renderSplit={(rows) => (
-                    <JobGroups
-                        rows={rows}
-                        jobs={jobs}
-                        destination={destination}
-                        openPath={openPath}
-                        onOpen={onOpen}
-                        onOpenJob={onOpenJob}
-                        onDeleteAll={canDelete ? (files) => askDelete(files.map(targetOf), `Delete ${count(files.length, "backup")} of a deleted job?`) : undefined}
-                    />
-                )}
-                renderRowMenu={(backup, bulk) => {
-                    const job = jobs.get(backup.jobKey);
-                    return (
-                        <BackupContextMenu
-                            tile={job ? <JobTile job={job} /> : <DestinationTile destination={destination} />}
-                            title={backup.file.name}
-                            note={`${job?.name ?? "Without a job"} · ${typeLabel(backup.file)}`}
-                            groups={backupActions(backup.file, handlersFor(backup.file, destination.id))}
-                            bulk={bulk}
+            {/* The timeline shows the same backups as the list, so the list waits for a job to be clicked. */}
+            {(display === "table" || pickedJob !== null) && (
+                <DataTable
+                    // A path is only unique within one destination, so a selection must not carry over.
+                    key={destination.id}
+                    variant="card"
+                    columns={columns}
+                    data={visible}
+                    searchKey="backup"
+                    searchPlaceholder="Search backups"
+                    filterableColumns={[{ id: "job", title: "Job", options: jobKeys.map((key) => ({ label: jobs.get(key)?.name ?? "Without a job", value: key })) }]}
+                    toolbarExtra={toolbarExtra}
+                    sorting={sorting}
+                    onSortingChange={setSorting}
+                    columnFilters={columnFilters}
+                    onColumnFiltersChange={setColumnFilters}
+                    enableRowSelection={canDelete && !grouped}
+                    getRowId={(backup) => backup.file.path}
+                    bulkActions={bulkActions}
+                    onBulkActionComplete={onChanged}
+                    onRowClick={onOpen}
+                    view={grouped ? "split" : "table"}
+                    renderSplit={(rows) => (
+                        <JobGroups
+                            rows={rows}
+                            jobs={jobs}
+                            destination={destination}
+                            openPath={openPath}
+                            onOpen={onOpen}
+                            onOpenJob={onOpenJob}
+                            onDeleteAll={canDelete ? (files) => askDelete(files.map(targetOf), `Delete ${count(files.length, "backup")} of a deleted job?`) : undefined}
                         />
-                    );
-                }}
-            />
+                    )}
+                    renderRowMenu={(backup, bulk) => {
+                        const job = jobs.get(backup.jobKey);
+                        return (
+                            <BackupContextMenu
+                                tile={job ? <JobTile job={job} /> : <DestinationTile destination={destination} />}
+                                title={backup.file.name}
+                                note={`${job?.name ?? "Without a job"} · ${typeLabel(backup.file)}`}
+                                groups={backupActions(backup.file, handlersFor(backup.file, destination.id))}
+                                bulk={bulk}
+                            />
+                        );
+                    }}
+                />
+            )}
         </div>
     );
 }

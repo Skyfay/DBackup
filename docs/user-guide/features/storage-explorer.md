@@ -36,7 +36,7 @@ The strip on top counts the backups of the job, what they take up, the newest on
 | **Stored at** | Every destination that holds a copy |
 | **Integrity** | Verified, Check failed or Not checked |
 
-A copy shows as **missing** when a destination of the job holds older backups of it but not this one. A destination added to the job later, or one whose retention keeps fewer backups, is not reported for the runs it never had.
+A copy shows as **missing** when a destination of the job holds older backups of it but not this one. A destination added to the job later, or one whose retention keeps fewer backups, is not reported for the runs it never had. A destination the job no longer writes to, and every destination of a deleted job, only counts for the runs between its oldest and its newest backup of the job.
 
 The quick filters beside the search show only locked backups, runs with a missing copy or runs with a failed check. For an incremental job the list is grouped by chain, the newest chain open.
 
@@ -54,6 +54,8 @@ Switch off **Grouped by job** to get a flat list, where rows can be selected for
 
 When a job is deleted, its backups stay. Retention no longer runs for them, since retention runs as part of a job. Their group says so and offers to delete all of them at this destination. Locked ones are left out.
 
+A deleted job leaves the list once none of its backups are left: when they are deleted here or on the storage, or when the destination itself is deleted in DBackup, which drops its list with it. A destination that does not answer keeps showing its last list, marked with a clock, until it answers again.
+
 ## Timeline
 
 The switch next to the tabs shows a timeline above the list, from md screens up. It covers 7, 30 or 90 days:
@@ -63,7 +65,7 @@ The switch next to the tabs shows a timeline above the list, from md screens up.
 - a bar stands for a day with several backups, like an hourly job
 - an amber ring marks a missing copy, a red point a failed check, a lock a locked backup
 
-By job the timeline has one lane for the job. By destination it has one lane per job at that destination, and a click on a lane filters the list to that job. A click on a point opens that backup.
+The list stays hidden under the timeline, since it would show the same backups. A click on a job lists its backups below the timeline, a second click hides them again. By job the timeline has one lane for the job, by destination one lane per job at that destination. A click on a point opens that backup.
 
 ## Details
 

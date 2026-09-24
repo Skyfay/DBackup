@@ -13,7 +13,7 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { toneAttribute, type Tone } from "@/components/ui/tone";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { cn } from "@/lib/utils";
-import { JOB_PARTS, firstPartWithError, jobErrorKeys, jobPartStatuses, type JobPart, type JobPartId } from "./job-form-layout";
+import { firstPartWithError, jobErrorKeys, jobPartStatuses, jobParts, type JobPart, type JobPartId } from "./job-form-layout";
 import type { AdapterOption, EncryptionOption, JobFormJob } from "./job-form-schema";
 import { BasicsPart, EncryptionPart } from "./job-parts";
 import { NotificationsPart } from "./job-part-notifications";
@@ -35,8 +35,6 @@ const PART_ICONS: Record<JobPartId, LucideIcon> = {
     notifications: Bell,
     advanced: SlidersHorizontal,
 };
-
-const PARTS: NavEntry[] = JOB_PARTS.map((part) => ({ id: part.id, label: part.label, icon: PART_ICONS[part.id] }));
 
 function PartHeading({ part, action }: { part: JobPart; action?: React.ReactNode }) {
     return (
@@ -92,6 +90,9 @@ export function JobForm({ sources: loadedSources, destinations, directorySourceO
     const values = form.watch();
     const { errors, isSubmitting } = form.formState;
     const statuses = jobPartStatuses(values, jobErrorKeys(errors));
+    // The list follows the source, so Incremental only shows for a job with folders.
+    const parts = jobParts(values.sourceMode);
+    const nav: NavEntry[] = parts.map((part) => ({ id: part.id, label: part.label, icon: PART_ICONS[part.id] }));
     // DESTINATION is the column default, so a connection without a role is a destination too.
     const destinationOptions = withAdded(
         destinations.filter((option) => (option.storageRole ?? STORAGE_ROLES.DESTINATION) === STORAGE_ROLES.DESTINATION),
@@ -100,7 +101,7 @@ export function JobForm({ sources: loadedSources, destinations, directorySourceO
     );
 
     const submit = form.handleSubmit(state.save, (invalid) => {
-        const target = firstPartWithError(jobErrorKeys(invalid));
+        const target = firstPartWithError(jobErrorKeys(invalid), jobParts(form.getValues("sourceMode")));
         if (target) setPicked(target);
     });
 
@@ -146,12 +147,12 @@ export function JobForm({ sources: loadedSources, destinations, directorySourceO
                         onValueChange={(value) => setPicked(value as JobPartId)}
                         className="min-h-0 flex-1 gap-0 md:h-[min(34rem,calc(95dvh-9.5rem))] md:flex-none md:flex-row"
                     >
-                        <SectionSelect sections={PARTS} statuses={statuses} value={picked} onValueChange={(value) => setPicked(value as JobPartId)} />
-                        <SectionRail sections={PARTS} statuses={statuses} />
+                        <SectionSelect sections={nav} statuses={statuses} value={picked} onValueChange={(value) => setPicked(value as JobPartId)} />
+                        <SectionRail sections={nav} statuses={statuses} />
                         {/* The height is capped on the viewport, on a phone where the parent has none of its own.
                             From md up the part fills the fixed height beside the list. */}
                         <ScrollArea className="min-h-0 min-w-0 flex-1 *:data-[slot=scroll-area-viewport]:max-h-[calc(95dvh-15rem)] md:h-full md:*:data-[slot=scroll-area-viewport]:max-h-none [&>[data-slot=scroll-area-viewport]>div]:block!">
-                            {JOB_PARTS.map((part) => (
+                            {parts.map((part) => (
                                 <TabsContent key={part.id} value={part.id} forceMount className="space-y-5 p-5 data-[state=inactive]:hidden">
                                     <PartHeading
                                         part={part}

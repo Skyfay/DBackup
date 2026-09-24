@@ -22,7 +22,7 @@ export interface JobPart {
 export const JOB_PARTS: JobPart[] = [
     { id: "basics", label: "Basics", description: "Its name, when it runs and whether it runs on its own.", keys: ["name", "enabled", "scheduleMode", "schedule", "schedulePresetId"] },
     { id: "source", label: "Source", description: "A database, folders from storage connections, or both in one backup.", keys: ["sourceMode", "sourceId", "databaseScope", "databases", "directorySources"] },
-    // Right after the source, since what can take part comes from there.
+    // Right after the source, since what can take part comes from there. Only a job with folders shows it, see jobParts.
     {
         id: "incremental",
         label: "Incremental",
@@ -36,6 +36,15 @@ export const JOB_PARTS: JobPart[] = [
     { id: "notifications", label: "Notifications", description: "Who hears about a run, and after which runs.", keys: ["notificationTemplateIds", "notificationIds", "notificationEvents"] },
     { id: "advanced", label: "Advanced", description: "File names and integrity checks.", keys: ["namingTemplateId", "skipVerification"] },
 ];
+
+/**
+ * The parts a job shows for its source. Incremental has nothing to choose until the job has folders,
+ * so a job of only a database leaves it out, like a part of the connection form that does not apply
+ * to the picked mode. Its fields are only checked while it shows, see jobSchema.
+ */
+export function jobParts(sourceMode: JobFormValues["sourceMode"]): JobPart[] {
+    return sourceMode === "db" ? JOB_PARTS.filter((part) => part.id !== "incremental") : JOB_PARTS;
+}
 
 /** The fields that failed validation, from react-hook-form's error tree. */
 export function jobErrorKeys(errors: object): string[] {
@@ -86,8 +95,8 @@ export function jobPartStatuses(values: JobFormValues, errorKeys: string[]): Rec
     return statuses;
 }
 
-/** The first part with an error, in the order the form lists them. */
-export function firstPartWithError(errorKeys: string[]): JobPartId | null {
+/** The first part with an error, in the order the form lists them, among the parts it shows. */
+export function firstPartWithError(errorKeys: string[], parts: JobPart[] = JOB_PARTS): JobPartId | null {
     const failing = new Set(errorKeys.map(partOfKey));
-    return JOB_PARTS.find((part) => failing.has(part.id))?.id ?? null;
+    return parts.find((part) => failing.has(part.id))?.id ?? null;
 }

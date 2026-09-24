@@ -2,7 +2,7 @@
 
 import { useDeferredValue, useMemo } from "react";
 import { useFormContext } from "react-hook-form";
-import { Database, FolderOpen, Info, TriangleAlert, type LucideIcon } from "lucide-react";
+import { Database, FolderOpen, TriangleAlert, type LucideIcon } from "lucide-react";
 import { ChoiceCards, type ModeOption } from "@/components/adapter/connection-mode-choice";
 import { SwitchList } from "@/components/adapter/setting-switches";
 import { Button } from "@/components/ui/button";
@@ -206,14 +206,13 @@ interface IncrementalPartProps {
 /**
  * Whether the backups store everything or only what changed. The job decides how its chains are
  * built, and the source says what can take part: folders store only their changes, a database is
- * dumped whole until its adapter can do more. The chain is worked out on the job's schedule, the
- * way the chain planner builds it, and a long one gets a shorter setting to use.
+ * dumped whole until its adapter can do more, which is why only a job with folders shows the part.
+ * The chain is worked out on the job's schedule, the way the chain planner builds it, and a long one
+ * gets a shorter setting to use.
  */
 export function IncrementalPart({ sources, folderOptions }: IncrementalPartProps) {
     const form = useFormContext<JobFormValues>();
-    const [mode, backupMode] = form.watch(["sourceMode", "backupMode"]);
-    const withFolders = mode !== "db";
-    const incremental = withFolders && backupMode === "INCREMENTAL";
+    const incremental = form.watch("backupMode") === "INCREMENTAL";
 
     return (
         <>
@@ -223,22 +222,9 @@ export function IncrementalPart({ sources, folderOptions }: IncrementalPartProps
                 render={({ field }) => (
                     <FormItem>
                         <FormControl>
-                            <ChoiceCards
-                                // A job of only a database is saved as full, whatever an earlier setting left.
-                                value={withFolders ? field.value : "FULL"}
-                                onValueChange={field.onChange}
-                                options={withFolders ? MODES : MODES.map((option) => ({ ...option, disabled: true }))}
-                                aria-label="What a backup stores"
-                            />
+                            <ChoiceCards value={field.value} onValueChange={field.onChange} options={MODES} aria-label="What a backup stores" />
                         </FormControl>
-                        {!withFolders && (
-                            <p className="flex gap-2.5 text-sm text-muted-foreground">
-                                <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                                So far only folders can be stored in part. This job backs up only a database, so every backup is full. A database joins in once its adapter
-                                can do it.
-                            </p>
-                        )}
-                        {withFolders && !incremental && <p className="text-xs text-muted-foreground">Every backup is complete on its own. Losing one costs only that one.</p>}
+                        {!incremental && <p className="text-xs text-muted-foreground">Every backup is complete on its own. Losing one costs only that one.</p>}
                     </FormItem>
                 )}
             />

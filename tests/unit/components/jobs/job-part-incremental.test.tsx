@@ -36,16 +36,6 @@ describe("incremental backups of a job", () => {
         global.fetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ schedulerTimezone: "UTC" }) } as Response)) as unknown as typeof fetch;
     });
 
-    it("says why a job of only a database backs up in full, whatever an earlier setting left", () => {
-        render(<Harness values={{ sourceMode: "db", directorySources: [], sourceId: "pg", backupMode: "INCREMENTAL" }} />);
-
-        expect(screen.getByRole("radio", { name: /^Every backup in full/ })).toBeChecked();
-        expect(screen.getByRole("radio", { name: /^Every backup in full/ })).toBeDisabled();
-        expect(screen.getByRole("radio", { name: /^Only what changed/ })).toBeDisabled();
-        expect(screen.getByText(/^So far only folders can be stored in part\. This job backs up only a database/)).toBeInTheDocument();
-        expect(screen.queryByText("The chain")).not.toBeInTheDocument();
-    });
-
     it("starts a new job of folders in full, and builds chains only once the user picks only what changed", async () => {
         const user = userEvent.setup();
         render(<Harness values={{}} />);

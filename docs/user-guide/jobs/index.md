@@ -41,7 +41,7 @@ A part shows a check once it has what the job needs. When something is missing, 
 | :--- | :--- |
 | **Basics** | The name, whether the job runs on its schedule, and when it runs: its own schedule or a schedule preset |
 | **Source** | A database, folders from storage connections set up as directory sources, or both. For a database, all of its databases (also ones added later) or the picked ones |
-| **Incremental** | Whether folders store only what changed, how often a new chain starts with a full backup, and which sources take part (see [Backup Modes](/user-guide/features/backup-modes)) |
+| **Incremental** | Only for a job with folders: whether they store only what changed, how often a new chain starts with a full backup, and which sources take part (see [Backup Modes](/user-guide/features/backup-modes)) |
 | **Destinations** | Where the backups go, in upload order, each with its retention policy (see [Multi-Destination](#multi-destination)) |
 | **Compression** | How pg_dump and DBackup make the backups smaller, see [Compression](#compression) |
 | **Encryption** | The key from the Vault that encrypts every backup, or none |

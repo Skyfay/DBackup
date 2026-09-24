@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_RETENTION_SENTINEL } from "@/components/templates/retention-policy-picker";
-import { firstPartWithError, jobPartStatuses } from "@/components/dashboard/jobs/job-form-layout";
+import { firstPartWithError, jobPartStatuses, jobParts } from "@/components/dashboard/jobs/job-form-layout";
 import { jobDefaults, jobSchema, toJobPayload, type JobFormValues } from "@/components/dashboard/jobs/job-form-schema";
 import type { JobListItem } from "@/services/jobs/job-list-service";
 
@@ -73,6 +73,26 @@ describe("job form values", () => {
         expect(toJobPayload(values, "mysql").pgCompression).toBe("");
     });
 
+    it("start a job without folders in full, whatever an older version stored for it", () => {
+        const folder = { configId: "files", path: "/srv", excludePatterns: [], excludePatternPresetIds: [], stopContainers: true };
+        expect(jobDefaults({ ...saved, backupMode: "INCREMENTAL" } as JobListItem).backupMode).toBe("FULL");
+        expect(jobDefaults({ ...saved, backupMode: "INCREMENTAL", sources: [folder] } as unknown as JobListItem).backupMode).toBe("INCREMENTAL");
+        expect(jobDefaults(null).backupMode).toBe("FULL");
+    });
+
+    it("check the days between full backups only where the job builds chains with them", () => {
+        const folders: JobFormValues = {
+            ...jobDefaults(saved),
+            sourceMode: "dirs",
+            directorySources: [{ configId: "files", path: "/srv", excludePatterns: [], excludePatternPresetIds: [], stopContainers: true }],
+        };
+        expect(errorsOf({ ...folders, backupMode: "INCREMENTAL", fullEveryDays: 0 })).toEqual(["fullEveryDays"]);
+        expect(errorsOf({ ...folders, backupMode: "INCREMENTAL", fullEveryDays: 400 })).toEqual(["fullEveryDays"]);
+        expect(errorsOf({ ...folders, backupMode: "FULL", fullEveryDays: 0 })).toEqual([]);
+        // A job of only a database hides the part, so an old value there cannot stop the save.
+        expect(errorsOf({ ...jobDefaults(saved), backupMode: "INCREMENTAL", fullEveryDays: 0 })).toEqual([]);
+    });
+
     it("refuse Some databases without one picked, a preset without its pick and folders mode without a folder", () => {
         const base = jobDefaults(saved);
         expect(errorsOf({ ...base, databases: [] })).toEqual(["databases"]);
@@ -87,6 +107,14 @@ describe("job form parts", () => {
         const statuses = jobPartStatuses(jobDefaults(saved), []);
         expect(statuses).toMatchObject({ basics: { kind: "done" }, source: { kind: "done" }, destinations: { kind: "done" }, encryption: { kind: "none" } });
         expect(jobPartStatuses(jobDefaults(null), []).source).toEqual({ kind: "todo" });
+    });
+
+    it("leave Incremental out of a job of only a database, and list it right after the source otherwise", () => {
+        expect(jobParts("db").map((part) => part.id)).toEqual(["basics", "source", "destinations", "compression", "encryption", "notifications", "advanced"]);
+        expect(jobParts("dirs").map((part) => part.id).slice(0, 4)).toEqual(["basics", "source", "incremental", "destinations"]);
+        expect(jobParts("both").map((part) => part.id)).toContain("incremental");
+        // The form only opens a part it lists.
+        expect(firstPartWithError(["verifyByHash", "destinations"], jobParts("db"))).toBe("destinations");
     });
 
     it("count errors on their part and open the first part that has one", () => {

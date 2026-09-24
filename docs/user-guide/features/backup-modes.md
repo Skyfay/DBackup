@@ -15,7 +15,7 @@ setting one up and what each adapter supports.
 | Storage for 7 daily copies of 60 GB | ~420 GB | ~66 GB |
 | Losing one backup file costs | That one backup | Everything the chain built on it |
 
-Incremental is **off by default**. A job of only a database shows the choice in its **Incremental** part, but every backup of it is full.
+Incremental is **off by default**, also for a job of folders. The **Incremental** part of a job only appears once the job backs up folders, since a job of only a database always makes full backups.
 
 ::: warning Database dumps are always full
 An incremental archive contains **every database in full**, plus only the directory files
@@ -24,12 +24,14 @@ that changed. If your job is mostly a large database, incremental saves very lit
 
 ## Enabling it
 
-1. Open the job and go to the **Incremental** part, right after **Source**.
+1. Open the job and go to the **Incremental** part, right after **Source**. It shows once the job backs up folders.
 2. Pick **Only what changed**.
 3. Set **Full backup every** N days (default 7).
 4. Optionally turn on **Detect changes by content**.
 
 The part draws a chain on the job's schedule, the full backup and the incremental ones after it, and says how many backups a chain holds. **What takes part** lists the sources of the job: every folder stores only its changes, and a database is dumped whole in every run.
+
+Switching the source of a job to **A database** alone turns incremental off, so folders added later start with full backups again.
 
 ### Full backup every N days
 

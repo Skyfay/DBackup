@@ -104,7 +104,7 @@ export const jobSchema = z
         notificationTemplateIds: z.array(z.string()),
         skipVerification: z.boolean(),
         backupMode: z.enum(["FULL", "INCREMENTAL"]),
-        fullEveryDays: z.number({ message: "Enter a number of days." }).int().min(1, "At least one day.").max(365, "At most 365 days."),
+        fullEveryDays: z.number({ message: "Enter a number of days." }),
         verifyByHash: z.boolean(),
     })
     .superRefine((values, ctx) => {
@@ -120,6 +120,12 @@ export const jobSchema = z
         }
         if (values.sourceMode !== "dirs" && values.databaseScope === "some" && values.databases.length === 0) {
             ctx.addIssue({ code: "custom", path: ["databases"], message: "Pick at least one database, or back up all of them." });
+        }
+        // Only an incremental job with folders builds chains. Anywhere else the setting is hidden
+        // and unused, so a value from an older version cannot stop the save.
+        const chained = values.sourceMode !== "db" && values.backupMode === "INCREMENTAL";
+        if (chained && !(Number.isInteger(values.fullEveryDays) && values.fullEveryDays >= 1 && values.fullEveryDays <= 365)) {
+            ctx.addIssue({ code: "custom", path: ["fullEveryDays"], message: "Pick between 1 and 365 days." });
         }
         if (values.sourceMode !== "db" && values.directorySources.length === 0) {
             ctx.addIssue({ code: "custom", path: ["directorySources"], message: "Add at least one folder." });
@@ -215,7 +221,8 @@ export function jobDefaults(job: JobFormJob | null): JobFormValues {
         notificationEvents: parseEvents(job?.notificationEvents),
         notificationTemplateIds: job?.notificationTemplates.map((entry) => entry.templateId) ?? [],
         skipVerification: job?.skipVerification ?? false,
-        backupMode: (job?.backupMode as JobFormValues["backupMode"]) ?? "FULL",
+        // Only a job with folders builds chains, whatever an older version stored for one without.
+        backupMode: hasFolders && job?.backupMode === "INCREMENTAL" ? "INCREMENTAL" : "FULL",
         fullEveryDays: job?.fullEveryDays ?? 7,
         verifyByHash: job?.verifyByHash ?? false,
     };

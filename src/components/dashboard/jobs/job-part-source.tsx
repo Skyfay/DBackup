@@ -48,8 +48,12 @@ export function SourcePart({ sources, folderOptions, defaultExcludePresetIds }: 
 
     const changeMode = (next: string) => {
         const value = next as JobFormValues["sourceMode"];
-        // What a mode leaves out is cleared, so a half filled row it hides cannot stop the save.
-        if (value === "db") folders.replace([]);
+        // What a mode leaves out is cleared, so a half filled row it hides cannot stop the save. A job
+        // of only a database has no Incremental part, so folders added later start in full again.
+        if (value === "db") {
+            folders.replace([]);
+            form.setValue("backupMode", "FULL");
+        }
         if (value === "dirs") {
             form.setValue("sourceId", "");
             form.setValue("databases", []);

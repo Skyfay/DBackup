@@ -113,6 +113,31 @@ describe("job form", () => {
         });
     });
 
+    it("lists Incremental right after the source once the job has folders, and starts it in full again after a database alone", async () => {
+        const user = userEvent.setup();
+        renderForm();
+        const partAfterSource = () => {
+            const tabs = screen.getAllByRole("tab");
+            return tabs[tabs.findIndex((tab) => tab.textContent?.startsWith("Source")) + 1];
+        };
+
+        // A job of only a database has nothing to choose there.
+        expect(screen.queryByRole("tab", { name: /^Incremental/ })).not.toBeInTheDocument();
+        await user.click(screen.getByRole("tab", { name: /^Source/ }));
+        await user.click(screen.getByRole("radio", { name: /^Folders/ }));
+        expect(partAfterSource()).toHaveTextContent(/^Incremental/);
+
+        await user.click(screen.getByRole("tab", { name: /^Incremental/ }));
+        await user.click(screen.getByRole("radio", { name: /^Only what changed/ }));
+        await user.click(screen.getByRole("tab", { name: /^Source/ }));
+        await user.click(screen.getByRole("radio", { name: /^A database/ }));
+        expect(screen.queryByRole("tab", { name: /^Incremental/ })).not.toBeInTheDocument();
+
+        await user.click(screen.getByRole("radio", { name: /^Folders/ }));
+        await user.click(screen.getByRole("tab", { name: /^Incremental/ }));
+        expect(screen.getByRole("radio", { name: /^Every backup in full/ })).toBeChecked();
+    });
+
     it("adds a schedule preset from the job without saving the job on the way", async () => {
         const user = userEvent.setup();
         const onSaved = renderForm();

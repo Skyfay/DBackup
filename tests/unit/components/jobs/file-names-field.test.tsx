@@ -70,6 +70,14 @@ describe("file names of a job", () => {
         await waitFor(() => expect(screen.queryByText(/get the same file name/)).not.toBeInTheDocument());
     });
 
+    it("warns a paused job too, since its schedule is still set for when it runs again", async () => {
+        render(<Harness values={{ namingTemplateId: "date", schedule: "0 * * * *", enabled: false }} />);
+
+        expect(await screen.findByText(/^Once the job runs on its schedule again, the runs on .+ get the same file name/)).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Use Standard" })).toBeInTheDocument();
+        expect(screen.queryByText(/The name has no time of day/)).not.toBeInTheDocument();
+    });
+
     it("stays quiet for an incremental job, whose chain position is part of every name", async () => {
         render(<Harness values={{ namingTemplateId: "date", sourceMode: "dirs", backupMode: "INCREMENTAL" }} />);
 

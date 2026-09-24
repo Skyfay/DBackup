@@ -40,11 +40,12 @@ export function FileNamesField() {
         (id ? templates.find((template) => template.id === id) : templates.find((template) => template.isDefault))?.pattern ?? BUILT_IN_PATTERN;
     const pattern = patternOf(value);
 
-    // Working out the runs waits for typing to settle, so the schedule and the name stay quick.
+    // Working out the runs waits for typing to settle, so the schedule and the name stay quick. A
+    // paused job is checked too, its schedule is still set for the day it runs again.
     const deferredSchedule = useDeferredValue(schedule);
     const clash = useMemo(
-        () => (timezone && enabled && !chained && !loading ? firstNameClash(pattern, deferredSchedule, timezone) : null),
-        [timezone, enabled, chained, loading, pattern, deferredSchedule],
+        () => (timezone && !chained && !loading ? firstNameClash(pattern, deferredSchedule, timezone) : null),
+        [timezone, chained, loading, pattern, deferredSchedule],
     );
     const safer: ListedNamingTemplate | undefined = useMemo(() => {
         if (!clash || !timezone) return undefined;
@@ -90,8 +91,8 @@ export function FileNamesField() {
                         <div role="status" className="flex flex-wrap items-center gap-x-2.5 gap-y-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs">
                             <TriangleAlert className="size-4 shrink-0 text-warning" aria-hidden="true" />
                             <span className="min-w-0 flex-1">
-                                The runs on {whenOf(clash, timezone)} get the same file name. The later backup replaces the earlier one at every destination, so the job
-                                keeps fewer backups than it makes.
+                                {enabled ? "The runs" : "Once the job runs on its schedule again, the runs"} on {whenOf(clash, timezone)} get the same file name. The later
+                                backup replaces the earlier one at every destination, so the job keeps fewer backups than it makes.
                             </span>
                             {safer && (
                                 <Button

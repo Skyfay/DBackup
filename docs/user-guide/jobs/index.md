@@ -105,7 +105,7 @@ The backup files of a job are named by a **Naming Template**, the default one un
 The default template produces file names like `Daily_MySQL_Backup_2026-05-03_14-30-00.tar`.
 
 ::: warning Backups with the same name
-A backup replaces a file of the same name at every destination, together with its metadata. When two runs of the schedule would get the same name, like two runs a day with a template that has only the date, **File names** warns and offers a template with the time. A pattern without the time of day also lets a run started by hand replace the backup of that day, which the field notes. Incremental jobs are safe, since every file of a chain carries its position.
+A backup replaces a file of the same name at every destination, together with its metadata. When two runs of the schedule would get the same name, like two runs a day with a template that has only the date, **File names** warns and offers a template with the time. It does so for a paused job too, since its schedule is still set. A pattern without the time of day also lets a run started by hand replace the backup of that day, which the field notes. Incremental jobs are safe, since every file of a chain carries its position.
 :::
 
 ### Notifications

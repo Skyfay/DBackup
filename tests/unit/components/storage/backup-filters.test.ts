@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { countBackups, filterBackups, primaryCopy, summarize, targetsOf, type BackupFilters } from "@/components/dashboard/storage/explorer/backup-filters";
+import { countBackups, filterBackups, primaryCopy, startedByKey, startedByOptions, summarize, targetsOf, type BackupFilters } from "@/components/dashboard/storage/explorer/backup-filters";
 import type { BackupRun, ExplorerFile, ExplorerJob } from "@/services/storage/explorer-types";
 
 const hoursAgo = (hours: number) => new Date(Date.now() - hours * 3_600_000).toISOString();
@@ -21,9 +21,9 @@ const jobs = new Map([
     ["deleted:erp", job("deleted:erp", "ERP invoices", "deleted")],
 ]);
 
-const shopNew = file("shop-new.tar", 3, { verification: { verifiedAt: hoursAgo(2), passed: true, trigger: "post-upload" } });
-const shopOld = file("shop-old.tar", 27, { locked: true });
-const crm = file("crm.tar", 1, { size: 30 });
+const shopNew = file("shop-new.tar", 3, { verification: { verifiedAt: hoursAgo(2), passed: true, trigger: "post-upload" }, trigger: { type: "Scheduler" } });
+const shopOld = file("shop-old.tar", 27, { locked: true, trigger: { type: "Manual", actor: "Manu" } });
+const crm = file("crm.tar", 1, { size: 30, trigger: { type: "Api", actor: "Deploy hook" } });
 const crmFailed = file("crm.tar", 1, { size: 30, verification: { verifiedAt: hoursAgo(1), passed: false, trigger: "post-upload" } });
 const erp = file("erp.tar", 500, { size: 50 });
 
@@ -34,7 +34,7 @@ const runs: BackupRun[] = [
     { path: erp.path, jobKey: "deleted:erp", file: erp, createdAt: erp.createdAt!, copies: [{ destinationId: "nas", state: "stored", file: erp }] },
 ];
 
-const none: BackupFilters = { jobs: [], at: [], search: "", quick: "all" };
+const none: BackupFilters = { jobs: [], at: [], by: [], search: "", quick: "all" };
 const paths = (list: BackupRun[]) => list.map((run) => run.file.name);
 
 describe("the filters of the list of every backup", () => {
@@ -72,6 +72,27 @@ describe("the filters of the list of every backup", () => {
         const atR2 = filterBackups(runs, { ...none, at: ["r2"] }, jobs);
         expect(summarize(atR2, ["r2"], jobs)).toMatchObject({ runs: 3, jobs: 2, stored: 130, destinations: 1, copies: 3, missing: 1, failed: 1 });
         expect(summarize(runs, [], jobs)).toMatchObject({ runs: 4, jobs: 2, deletedJobs: 1, stored: 410, destinations: 2, copies: 7, missing: 1 });
+    });
+
+    it("tells who started each run, the schedule, a person by hand or an API key", () => {
+        expect(startedByKey(shopNew)).toBe("schedule");
+        expect(startedByKey(shopOld)).toBe("manual:Manu");
+        expect(startedByKey(crm)).toBe("api:Deploy hook");
+        expect(startedByKey(erp)).toBe("none");
+        expect(startedByOptions(runs).map((option) => [option.group, option.label])).toEqual([
+            ["", "Schedule"], ["By hand", "Manu"], ["API keys", "Deploy hook"], ["Other", "Not recorded"],
+        ]);
+    });
+
+    it("filters by who started the runs and counts the others under the rest of the filters", () => {
+        expect(paths(filterBackups(runs, { ...none, by: ["manual:Manu", "api:Deploy hook"] }, jobs))).toEqual(["crm.tar", "shop-old.tar"]);
+
+        const counts = countBackups(runs, { ...none, jobs: ["shop"], by: ["schedule"] }, jobs, ["nas", "r2"]);
+        expect(counts.by.get("schedule")).toBe(1);
+        expect(counts.by.get("manual:Manu")).toBe(1);
+        expect(counts.by.get("api:Deploy hook")).toBeUndefined();
+        expect(counts.jobs.get("crm")).toBeUndefined();
+        expect(counts.jobs.get("shop")).toBe(1);
     });
 
     it("acts only on the copies at the filtered destinations", () => {

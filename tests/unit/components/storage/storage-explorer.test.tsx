@@ -95,9 +95,9 @@ function file(name: string, hours: number, overrides: Partial<ExplorerFile> = {}
 }
 
 const newest = file("Shop_nightly_newest.tar", 3, { verification: { verifiedAt: hoursAgo(2.9), passed: true, trigger: "post-upload" } });
-const older = file("Shop_nightly_older.tar", 27);
+const older = file("Shop_nightly_older.tar", 27, { trigger: { type: "Manual", actor: "Manu" } });
 const erp = file("ERP_invoices_old.tar", 500, { path: "ERP/ERP_invoices_old.tar", jobId: "job-erp", jobName: "ERP invoices", databases: ["erp"] });
-const erpOlder = file("ERP_invoices_older.tar", 524, { path: "ERP/ERP_invoices_older.tar", jobId: "job-erp", jobName: "ERP invoices", databases: ["erp"] });
+const erpOlder = file("ERP_invoices_older.tar", 524, { path: "ERP/ERP_invoices_older.tar", jobId: "job-erp", jobName: "ERP invoices", databases: ["erp"], trigger: { type: "Api", actor: "Deploy hook" } });
 
 const chainFile = (index: number, hours: number) =>
     file(`${index === 0 ? "full-000" : `inc-00${index}`}-Media_sync.tar`, hours, {
@@ -202,6 +202,30 @@ describe("Storage Explorer", () => {
         expect(within(panel).getByText("billing")).toBeInTheDocument();
     });
 
+    it("folds many destinations into the ones up to date and the rest, and counts them on the button", async () => {
+        const user = userEvent.setup();
+        const many = [1, 2, 3, 4, 5].map((n) => destination(`d${n}`, `Store ${n}`));
+        many.push(destination("d6", "Store 6", { health: { status: "OFFLINE", checkedAt: hoursAgo(0), error: "timeout" } }));
+        many.push(destination("d7", "Store 7", { listError: "Permission denied" }));
+        vi.stubGlobal("fetch", vi.fn((url: string) => {
+            if (url === "/api/storage/explorer") return ok({ ...index, destinations: many });
+            if (url === "/api/storage/explorer/runs") return ok({ runs: [] });
+            return ok(null);
+        }));
+        renderPage();
+
+        const button = await screen.findByRole("button", { name: "How old the lists are" });
+        expect(button).toHaveTextContent("5 of 7 up to date");
+        await user.click(button);
+
+        expect(await screen.findByRole("button", { name: /Not up to date/ })).toHaveAttribute("aria-expanded", "true");
+        expect(screen.getByText("Store 6")).toBeInTheDocument();
+        expect(screen.queryByText("Store 1")).not.toBeInTheDocument();
+
+        await user.click(screen.getByRole("button", { name: /^Up to date/ }));
+        expect(screen.getByText("Store 1")).toBeInTheDocument();
+    });
+
     it("tells which destination did not answer", async () => {
         const user = userEvent.setup();
         renderPage();
@@ -224,6 +248,35 @@ describe("Storage Explorer", () => {
         rerender(page());
         await waitFor(() => expect(within(table()).queryByText("Shop nightly")).not.toBeInTheDocument());
         expect(within(table()).getAllByText("ERP invoices")).toHaveLength(2);
+    });
+
+    it("sets the jobs without backups at the filtered destination apart at the end of the job filter", async () => {
+        const user = userEvent.setup();
+        search = new URLSearchParams("at=r2");
+        renderPage();
+
+        await user.click(await screen.findByRole("button", { name: "Job" }));
+
+        expect(await screen.findByText("No backups with the other filters")).toBeInTheDocument();
+        expect(screen.getByRole("option", { name: /Shop nightly/ })).not.toHaveAttribute("aria-disabled", "true");
+        expect(screen.getByRole("option", { name: /Media sync/ })).toHaveAttribute("aria-disabled", "true");
+        expect(screen.getByRole("option", { name: /ERP invoices/ })).toHaveAttribute("aria-disabled", "true");
+    });
+
+    it("filters by who started a run, with the people by hand and the API keys in groups of their own", async () => {
+        const user = userEvent.setup();
+        const { rerender } = renderPage();
+
+        await user.click(await screen.findByRole("button", { name: "Started by" }));
+        expect(await screen.findByText("By hand")).toBeInTheDocument();
+        expect(screen.getByText("API keys")).toBeInTheDocument();
+        await user.click(screen.getByRole("option", { name: /Manu/ }));
+
+        expect(search.getAll("by")).toEqual(["manual:Manu"]);
+        rerender(page());
+        await waitFor(() => expect(within(table()).getAllByText("Shop nightly")).toHaveLength(1));
+        expect(within(table()).getByText("Cloudflare R2 missing")).toBeInTheDocument();
+        expect(within(table()).queryByText("Media sync")).not.toBeInTheDocument();
     });
 
     it("counts only the copies at the destination it is filtered by", async () => {

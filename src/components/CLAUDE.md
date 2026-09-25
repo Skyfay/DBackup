@@ -126,7 +126,7 @@ Use `DataTable` from `@/components/ui/data-table` for any list of records. It ha
 
 - Define columns as `ColumnDef[]` outside the render path where possible.
 - Row actions go in a `DropdownMenu` triggered by `<Button variant="ghost" className="h-8 w-8 p-0">` with `<MoreHorizontal className="h-4 w-4" />` and an `<span className="sr-only">Open menu</span>`.
-- Filter chips use `data-table-faceted-filter`.
+- Column filters use `data-table-faceted-filter`, which opens like a `Select` with a search, takes several values and shows how many rows each value leaves. Values no row has under the other filters sit at the end and cannot be picked.
 - Row actions that a right click should also offer are declared once as data, like `connectionActions`, and rendered by both the menu button and `renderRowMenu`.
 - A plain `<Table>` is fine for small static, non-interactive data.
 

@@ -2,7 +2,8 @@
 
 import { useCallback, useMemo, useState } from "react";
 import type { ColumnFiltersState, OnChangeFn, SortingState } from "@tanstack/react-table";
-import { Lock, LockOpen, Trash2 } from "lucide-react";
+import { Clock, KeyRound, Lock, LockOpen, MousePointerClick, Trash2 } from "lucide-react";
+import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
 import { DataTable, type BulkAction, type DataTableFilterableColumn } from "@/components/ui/data-table";
 import { QuickFilter } from "@/components/ui/quick-filter";
@@ -14,17 +15,18 @@ import type { BackupRun, ExplorerDestination, ExplorerFile, ExplorerJob, Explore
 import { backupActions, type BackupActionHandlers } from "./backup-actions";
 import { BackupCard } from "./backup-card";
 import { backupColumns } from "./backup-columns";
-import { countBackups, filterBackups, isLocked, primaryCopy, runKey, summarize, targetsOf, type BackupQuick } from "./backup-filters";
+import { countBackups, filterBackups, isLocked, primaryCopy, runKey, startedByOptions, summarize, targetsOf, type BackupQuick, type StartedByOption } from "./backup-filters";
 import { BackupContextMenu, BackupRowMenu } from "./backup-menus";
-import { DestinationTile, JobTile } from "./explorer-cells";
+import { JobIcon, JobTile } from "./explorer-cells";
 import { count, typeLabel } from "./explorer-format";
 import { ExplorerStrip } from "./explorer-strip";
 import { bulkAcross, type BackupTarget } from "./use-backup-actions";
 
-/** The job and destination filters, which live in the address. */
+/** The filters by job, destination and who started a run, which live in the address. */
 export interface BackupScope {
     jobs: string[];
     at: string[];
+    by: string[];
 }
 
 interface BackupsListProps {
@@ -48,6 +50,13 @@ interface BackupsListProps {
 }
 
 const GROUPS: Record<ExplorerJobKind, string> = { job: "Jobs", deleted: "Deleted jobs", system: "Not from a job", none: "Not from a job" };
+const STARTER_ICONS: Record<StartedByOption["group"], React.ComponentType<{ className?: string }> | null> = {
+    "": Clock,
+    "By hand": MousePointerClick,
+    "API keys": KeyRound,
+    Other: null,
+};
+const UNAVAILABLE = "No backups with the other filters";
 
 /** Turns the results per copy into results per backup, which is what the list selected. */
 function perRun(result: BulkResult, runs: BackupRun[], at: string[]): BulkResult {
@@ -90,7 +99,7 @@ export function BackupsList({
     const [sorting, setSorting] = useState<SortingState>([{ id: "backup", desc: true }]);
     const { at } = scope;
 
-    const filters = useMemo(() => ({ jobs: scope.jobs, at, search, quick }), [scope.jobs, at, search, quick]);
+    const filters = useMemo(() => ({ jobs: scope.jobs, at, by: scope.by, search, quick }), [scope.jobs, at, scope.by, search, quick]);
     const destinationIds = useMemo(() => destinations.map((destination) => destination.id), [destinations]);
     const visible = useMemo(() => filterBackups(runs, filters, jobsByKey), [runs, filters, jobsByKey]);
     const counts = useMemo(() => countBackups(runs, filters, jobsByKey, destinationIds), [runs, filters, jobsByKey, destinationIds]);
@@ -101,15 +110,20 @@ export function BackupsList({
     const columnFilters = useMemo<ColumnFiltersState>(() => [
         ...(scope.jobs.length > 0 ? [{ id: "job", value: scope.jobs }] : []),
         ...(at.length > 0 ? [{ id: "at", value: at }] : []),
+        ...(scope.by.length > 0 ? [{ id: "startedBy", value: scope.by }] : []),
         ...(search ? [{ id: "backup", value: search }] : []),
-    ], [scope.jobs, at, search]);
+    ], [scope.jobs, at, scope.by, search]);
     const onColumnFiltersChange: OnChangeFn<ColumnFiltersState> = (updater) => {
         const next = typeof updater === "function" ? updater(columnFilters) : updater;
         const valueOf = (id: string) => next.find((entry) => entry.id === id)?.value;
         setSearch((valueOf("backup") as string | undefined) ?? "");
-        const nextJobs = (valueOf("job") as string[] | undefined) ?? [];
-        const nextAt = (valueOf("at") as string[] | undefined) ?? [];
-        if (nextJobs.join("\n") !== scope.jobs.join("\n") || nextAt.join("\n") !== at.join("\n")) onScope({ jobs: nextJobs, at: nextAt });
+        const nextScope = {
+            jobs: (valueOf("job") as string[] | undefined) ?? [],
+            at: (valueOf("at") as string[] | undefined) ?? [],
+            by: (valueOf("startedBy") as string[] | undefined) ?? [],
+        };
+        const same = (a: string[], b: string[]) => a.join("\n") === b.join("\n");
+        if (!same(nextScope.jobs, scope.jobs) || !same(nextScope.at, at) || !same(nextScope.by, scope.by)) onScope(nextScope);
     };
 
     const scopeName = at.map((id) => destinationsById.get(id)?.name ?? "a removed destination").join(", ");
@@ -175,16 +189,18 @@ export function BackupsList({
         ];
     }, [canDelete, at, scopeName]);
 
+    const starters = useMemo(() => startedByOptions(runs), [runs]);
     const filterableColumns = useMemo<DataTableFilterableColumn<BackupRun>[]>(() => [
         {
             id: "job",
             title: "Job",
             contentClassName: "w-80",
+            unavailableLabel: UNAVAILABLE,
             options: jobs.map((job) => ({
                 value: job.key,
                 label: job.name,
                 group: GROUPS[job.kind],
-                lead: <JobTile job={job} size="sm" />,
+                lead: <JobIcon job={job} className="size-4 shrink-0" />,
                 count: counts.jobs.get(job.key) ?? 0,
             })),
         },
@@ -192,14 +208,31 @@ export function BackupsList({
             id: "at",
             title: "Destination",
             contentClassName: "w-72",
+            unavailableLabel: UNAVAILABLE,
             options: destinations.map((destination) => ({
                 value: destination.id,
                 label: destination.name,
-                lead: <DestinationTile destination={destination} size="sm" />,
+                lead: <AdapterIcon adapterId={destination.adapterId} className="size-4 shrink-0" />,
                 count: counts.at.get(destination.id) ?? 0,
             })),
         },
-    ], [jobs, destinations, counts]);
+        {
+            id: "startedBy",
+            title: "Started by",
+            contentClassName: "w-72",
+            unavailableLabel: UNAVAILABLE,
+            options: starters.map((starter) => {
+                const Icon = STARTER_ICONS[starter.group];
+                return {
+                    value: starter.value,
+                    label: starter.label,
+                    group: starter.group,
+                    lead: Icon ? <Icon className="size-4 shrink-0 text-muted-foreground" /> : undefined,
+                    count: counts.by.get(starter.value) ?? 0,
+                };
+            }),
+        },
+    ], [jobs, destinations, starters, counts]);
 
     const [storedValue, storedUnit] = formatBytes(summary.stored, 1).split(" ");
     const newestJob = summary.newest ? jobsByKey.get(summary.newest.jobKey) : undefined;

@@ -156,6 +156,7 @@ export function StorageClient({
     // older links name one of its destinations beside it, which becomes the destination filter.
     const jobParams = searchParams.getAll("job").join("\n");
     const atParams = searchParams.getAll("at").join("\n");
+    const byParams = searchParams.getAll("by").join("\n");
     const destinationParam = searchParams.get("destination");
     const pageTab: PageTab = !jobParams && destinationParam ? "destinations" : "backups";
     const scope = useMemo<BackupScope>(() => {
@@ -164,8 +165,9 @@ export function StorageClient({
         return {
             jobs: named.map((value) => (jobsByKey.has(value) ? value : jobs.find((job) => job.kind === "job" && job.name === value)?.key ?? value)),
             at: pageTab === "backups" && destinationParam && !at.includes(destinationParam) ? [...at, destinationParam] : at,
+            by: byParams ? byParams.split("\n") : [],
         };
-    }, [jobParams, atParams, destinationParam, pageTab, jobs, jobsByKey]);
+    }, [jobParams, atParams, byParams, destinationParam, pageTab, jobs, jobsByKey]);
 
     const display: Display = searchParams.get("view") === "timeline" ? "timeline" : "table";
     const tabParam = searchParams.get("tab");
@@ -328,7 +330,7 @@ export function StorageClient({
                         setDetails(null);
                         setParams(next === "backups"
                             ? { destination: null, tab: null, layout: null, folder: null, view: null }
-                            : { destination: destination?.id ?? destinations[0]?.id ?? null, job: null, at: null });
+                            : { destination: destination?.id ?? destinations[0]?.id ?? null, job: null, at: null, by: null });
                     }}
                 >
                     <TabsList aria-label="Show">
@@ -404,7 +406,7 @@ export function StorageClient({
                         destinations={destinations}
                         destinationsById={destinationsById}
                         scope={scope}
-                        onScope={(next) => setParams({ job: next.jobs, at: next.at, destination: null })}
+                        onScope={(next) => setParams({ job: next.jobs, at: next.at, by: next.by, destination: null })}
                         view={shownView}
                         columnLayout={columnLayout}
                         canDelete={canDelete}
@@ -438,7 +440,7 @@ export function StorageClient({
                         onOpen={openBackup}
                         onOpenJob={(key) => {
                             setDetails(null);
-                            setParams({ job: key, destination: null, at: null, folder: null, tab: null, layout: null, view: null });
+                            setParams({ job: key, destination: null, at: null, by: null, folder: null, tab: null, layout: null, view: null });
                         }}
                         openPath={openPath}
                         onChanged={reloadAll}

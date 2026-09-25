@@ -18,13 +18,49 @@ export interface BackupFilters {
     jobs: string[];
     /** Destination ids, none for every destination. */
     at: string[];
+    /** Who started the runs, as `startedByKey` names them, none for anyone. */
+    by: string[];
     /** Part of the name of a backup or of its job. */
     search: string;
     quick: BackupQuick;
 }
 
 /** A filter left out, for the counts beside that filter. */
-type Skip = "jobs" | "at" | "quick";
+type Skip = "jobs" | "at" | "by" | "quick";
+
+/** Who started the run that made a backup: `schedule`, `manual:<person>`, `api:<key name>`, or `none` when the backup does not say. */
+export function startedByKey(file: Pick<ExplorerFile, "trigger">): string {
+    const trigger = file.trigger;
+    if (!trigger) return "none";
+    if (trigger.type === "Scheduler") return "schedule";
+    return `${trigger.type === "Api" ? "api" : "manual"}:${trigger.actor ?? ""}`;
+}
+
+export interface StartedByOption {
+    value: string;
+    label: string;
+    /** The heading it is listed under, empty for the schedule. */
+    group: "" | "By hand" | "API keys" | "Other";
+}
+
+const STARTED_BY_ORDER: Record<StartedByOption["group"], number> = { "": 0, "By hand": 1, "API keys": 2, Other: 3 };
+
+/** Everyone who started a run of these backups: the schedule, every person by hand and every API key. */
+export function startedByOptions(runs: BackupRun[]): StartedByOption[] {
+    const options = new Map<string, StartedByOption>();
+    for (const run of runs) {
+        const value = startedByKey(run.file);
+        if (options.has(value)) continue;
+        if (value === "schedule") options.set(value, { value, label: "Schedule", group: "" });
+        else if (value === "none") options.set(value, { value, label: "Not recorded", group: "Other" });
+        else {
+            const actor = value.slice(value.indexOf(":") + 1);
+            const manual = value.startsWith("manual:");
+            options.set(value, { value, label: actor || (manual ? "No name recorded" : "No key name recorded"), group: manual ? "By hand" : "API keys" });
+        }
+    }
+    return [...options.values()].sort((a, b) => STARTED_BY_ORDER[a.group] - STARTED_BY_ORDER[b.group] || a.label.localeCompare(b.label));
+}
 
 /** A run's key in the list, since the path alone could repeat across jobs. */
 export function runKey(run: Pick<BackupRun, "jobKey" | "path">): string {
@@ -79,6 +115,7 @@ function matchesSearch(run: BackupRun, search: string, jobs: Map<string, Explore
 
 function passes(run: BackupRun, filters: BackupFilters, jobs: Map<string, ExplorerJob>, skip?: Skip): boolean {
     if (skip !== "jobs" && filters.jobs.length > 0 && !filters.jobs.includes(run.jobKey)) return false;
+    if (skip !== "by" && filters.by.length > 0 && !filters.by.includes(startedByKey(run.file))) return false;
     const at = skip === "at" ? [] : filters.at;
     // A copy that is missing there still belongs to the destination, it is what a filter for it should find.
     if (at.length > 0 && !run.copies.some((copy) => at.includes(copy.destinationId))) return false;
@@ -96,6 +133,8 @@ export interface BackupCounts {
     jobs: Map<string, number>;
     /** Backups per destination under every other filter. */
     at: Map<string, number>;
+    /** Backups per `startedByKey` under every other filter. */
+    by: Map<string, number>;
     quick: Record<BackupQuick, number>;
 }
 
@@ -107,6 +146,12 @@ export function countBackups(runs: BackupRun[], filters: BackupFilters, jobs: Ma
     const byDestination = new Map<string, number>();
     for (const id of destinationIds) byDestination.set(id, filterBackups(runs, { ...filters, at: [id] }, jobs).length);
 
+    const byStarter = new Map<string, number>();
+    for (const run of filterBackups(runs, filters, jobs, "by")) {
+        const key = startedByKey(run.file);
+        byStarter.set(key, (byStarter.get(key) ?? 0) + 1);
+    }
+
     const base = filterBackups(runs, filters, jobs, "quick");
     const quick: Record<BackupQuick, number> = { all: base.length, missing: 0, failed: 0, locked: 0, deleted: 0 };
     for (const run of base) {
@@ -115,7 +160,7 @@ export function countBackups(runs: BackupRun[], filters: BackupFilters, jobs: Ma
         if (isLocked(run, filters.at)) quick.locked++;
         if (jobs.get(run.jobKey)?.kind === "deleted") quick.deleted++;
     }
-    return { jobs: byJob, at: byDestination, quick };
+    return { jobs: byJob, at: byDestination, by: byStarter, quick };
 }
 
 export interface BackupSummary {

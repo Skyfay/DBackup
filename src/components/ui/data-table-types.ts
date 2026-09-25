@@ -34,6 +34,8 @@ export interface DataTableFilterableColumn<TData> {
     options: DataTableFilterOption[];
     /** Classes for the list, like a width for long names. */
     contentClassName?: string;
+    /** The heading over the options no row has under the other filters, which sit at the end and cannot be picked. */
+    unavailableLabel?: string;
 }
 
 /**

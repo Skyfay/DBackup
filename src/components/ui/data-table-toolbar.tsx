@@ -53,6 +53,7 @@ export function DataTableToolbar<TData>({
                 title={column.title}
                 options={column.options}
                 contentClassName={column.contentClassName}
+                unavailableLabel={column.unavailableLabel}
             />
         ) : null
     );

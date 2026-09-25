@@ -111,7 +111,9 @@ function CommandList({
         e.preventDefault()
       }}
     >
-      <ScrollArea viewportRef={viewportRef} className="max-h-75 **:data-[slot=scroll-area-viewport]:max-h-[inherit]">
+      {/* The viewport wraps its content in a table, which grows with the longest name and keeps
+          the entries from truncating. A list only scrolls down, so a block is enough. */}
+      <ScrollArea viewportRef={viewportRef} className="max-h-75 **:data-[slot=scroll-area-viewport]:max-h-[inherit] [&_[data-slot=scroll-area-viewport]>div]:block!">
         {children}
       </ScrollArea>
     </CommandPrimitive.List>

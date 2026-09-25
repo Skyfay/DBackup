@@ -89,22 +89,40 @@ async function applyRetentionForDestination(ctx: RunnerContext, dest: Destinatio
     }
 
     const files: FileInfo[] = await dest.adapter.list(dest.config, remoteDir);
-    const backupFiles = files.filter(f => isBackupFile(f.name));
+    const listed = files.filter(f => isBackupFile(f.name));
 
-    // Each backup's sidecar carries its lock flag, its chain membership and the time
-    // DBackup recorded when it wrote the backup. The chain id is what lets retention treat
-    // an incremental chain as one indivisible unit, and the timestamp is what it buckets by.
-    const sidecars = await loadBackupSidecars(dest.adapter, dest.config, files, backupFiles);
+    // Each backup's sidecar carries its lock flag, its chain membership, the job that made it
+    // and the time DBackup recorded when it wrote the backup. The chain id is what lets
+    // retention treat an incremental chain as one indivisible unit, and the timestamp is what
+    // it buckets by.
+    const sidecars = await loadBackupSidecars(dest.adapter, dest.config, files, listed);
+
+    // A backup whose sidecar names another job is not this job's to delete. A job named like a
+    // deleted one writes into the same folder, and what the deleted job left there stays until
+    // someone deletes it in the Storage Explorer. A backup without a sidecar or a job id counts
+    // as this job's, as it always did, so this only ever keeps more.
+    const jobId = ctx.job!.id;
+    const foreign = listed.filter(f => f.jobId !== undefined && f.jobId !== jobId);
+    const backupFiles = listed.filter(f => f.jobId === undefined || f.jobId === jobId);
+    if (foreign.length > 0) {
+        ctx.log(
+            `${destLabel} Retention: ${foreign.length} backup(s) in this folder belong to another job and are left alone: ${foreign.map(f => f.name).join(', ')}`,
+            'info'
+        );
+    }
+    const own = new Set(backupFiles);
 
     if (backupFiles.length > 0) {
+        const withTimestamp = backupFiles.filter(f => f.backupTimestamp).length;
         ctx.log(
-            `${destLabel} Retention: ${sidecars.withTimestamp} of ${backupFiles.length} backup(s) supplied their own creation time, the rest fall back to the file's modification time on the destination.`
+            `${destLabel} Retention: ${withTimestamp} of ${backupFiles.length} backup(s) supplied their own creation time, the rest fall back to the file's modification time on the destination.`
         );
     }
     // A destination whose modification times were reset, by a copy without -p or by a
     // restore of the backup directory, would otherwise collapse into one bucket without
     // anyone noticing until backups were already gone.
     for (const { file, recorded, modified } of sidecars.drifted) {
+        if (!own.has(file)) continue;
         ctx.log(
             `${destLabel} Retention: ${file.name} was written ${recorded.toISOString()} but the destination reports ${modified.toISOString()}. Retention uses the recorded time.`,
             'warning'

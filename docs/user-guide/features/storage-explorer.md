@@ -87,7 +87,7 @@ A click on a destination shows its details under the list, as wide as the page, 
 
 ### Backups of a deleted job
 
-When a job is deleted, its backups stay. Retention no longer runs for them, since retention runs as part of a job. The job keeps its row, marked **Job deleted**, with **Delete** for all of its backups at this destination after a confirmation. Locked ones are left out.
+When a job is deleted, its backups stay. Retention no longer runs for them, since retention runs as part of a job, and a new job with the same name writes into the same folder but leaves them alone. The job keeps its row, marked **Job deleted**, with **Delete** for all of its backups at this destination after a confirmation. Locked ones are left out.
 
 A deleted job leaves the lists once none of its backups are left: when they are deleted here or on the storage, or when the destination itself is deleted in DBackup, which drops its list with it. A destination that does not answer keeps showing its last list, marked with a clock, until it answers again.
 

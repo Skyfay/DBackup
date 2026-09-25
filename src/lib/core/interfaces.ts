@@ -399,6 +399,13 @@ export type FileInfo = {
      * others.
      */
     chainId?: string;
+    /**
+     * The job that made this backup, read from its `.meta.json`.
+     *
+     * Retention leaves a backup of another job alone. A job named like a deleted one writes
+     * into the same folder, and the backups the deleted job left there are not its to delete.
+     */
+    jobId?: string;
 };
 
 /** Optional options passed to upload() for adapters that support native checksum storage. */

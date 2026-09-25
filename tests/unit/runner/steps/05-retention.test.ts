@@ -270,6 +270,44 @@ describe('stepRetention', () => {
         await expect(stepRetention(ctx)).resolves.not.toThrow();
     });
 
+    it('leaves the backups of another job in the folder out of the policy', async () => {
+        // A job named like a deleted one writes into the same folder. What the deleted job left
+        // there is not this job's to delete, and must not take up the places of its policy.
+        const { RetentionService } = await import('@/services/backup/retention-service');
+        const at = (name: string, day: string) => ({ name, path: `/Test Job/${name}`, size: 1024, lastModified: new Date(day) });
+        const own = at('own.sql', '2026-06-08');
+        const unknown = at('before-sidecars.sql', '2026-05-01');
+        const left = at('left-by-deleted-job.sql', '2026-04-01');
+        (RetentionService.calculateRetention as ReturnType<typeof vi.fn>).mockReturnValue({ keep: [own], delete: [], keptForChain: [] });
+
+        const jobs: Record<string, string | undefined> = { 'own.sql': 'job-1', 'left-by-deleted-job.sql': 'job-deleted' };
+        const dest = makeDestination({
+            uploadResult: { success: true, path: '/Test Job/own.sql' },
+            adapter: {
+                upload: vi.fn(),
+                list: vi.fn().mockResolvedValue([
+                    own, unknown, left,
+                    { name: 'own.sql.meta.json', path: '/Test Job/own.sql.meta.json', size: 200, lastModified: new Date() },
+                    { name: 'left-by-deleted-job.sql.meta.json', path: '/Test Job/left-by-deleted-job.sql.meta.json', size: 200, lastModified: new Date() },
+                ]),
+                delete: vi.fn(),
+                read: vi.fn(async (_config: unknown, remotePath: string) => {
+                    const name = remotePath.split('/').pop()!.replace('.meta.json', '');
+                    return JSON.stringify({ jobId: jobs[name] });
+                }),
+            } as any,
+        });
+        const ctx = makeCtx({ destinations: [dest] });
+
+        await stepRetention(ctx);
+
+        const judged = (RetentionService.calculateRetention as ReturnType<typeof vi.fn>).mock.calls[0][0] as { name: string }[];
+        // A backup without a sidecar still counts as the job's own, like before.
+        expect(judged.map((f) => f.name).sort()).toEqual(['before-sidecars.sql', 'own.sql']);
+        expect(dest.adapter.delete).not.toHaveBeenCalledWith(dest.config, left.path);
+        expect(ctx.log).toHaveBeenCalledWith(expect.stringContaining('1 backup(s) in this folder belong to another job and are left alone: left-by-deleted-job.sql'), 'info');
+    });
+
     it('warns by name when a file mtime disagrees with its recorded creation time', async () => {
         // A destination whose modification times were reset has to be visible in the run
         // log, otherwise the only symptom is backups quietly disappearing.

@@ -202,7 +202,7 @@ Retention runs as the **final step** of each backup job, applied **per destinati
 
 1. Backup upload completes for a destination
 2. List all backups for this job in that specific destination
-3. Read each backup's metadata sidecar for its lock status, chain and creation time
+3. Read each backup's metadata sidecar for its lock status, chain, job and creation time
 4. Apply that destination's retention policy
 5. Delete expired backups
 6. Repeat for each remaining destination
@@ -210,6 +210,10 @@ Retention runs as the **final step** of each backup job, applied **per destinati
 ::: tip Skipped on Failure
 Retention is skipped for any destination where the upload failed. This prevents deleting old backups when the new backup didn't arrive.
 :::
+
+### Which Backups Count
+
+Retention only removes backups the job made itself, known by the job id in their `.meta.json` sidecar. A job named like a deleted one writes into the same folder, and the backups the deleted job left there stay until you delete them in the [Storage Explorer](/user-guide/features/storage-explorer#backups-of-a-deleted-job). The run log names them. A backup without a sidecar counts as the job's own, like before DBackup recorded the job.
 
 ### Which Time a Backup Is Judged By
 

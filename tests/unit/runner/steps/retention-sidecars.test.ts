@@ -130,6 +130,23 @@ describe('loadBackupSidecars', () => {
             expect(backups[1].chainId).toBe('chain-1');
         });
 
+        it('takes the job that made a backup from its sidecar', async () => {
+            const backups = [backup('a.sql'), backup('b.sql'), backup('c.sql')];
+            const listing = [...backups, ...backups.map((b) => sidecar(b.name))];
+            const { adapter } = trackingAdapter((p) =>
+                p.includes('a.sql') ? JSON.stringify({ jobId: 'job-1' })
+                    : p.includes('b.sql') ? JSON.stringify({ jobId: 42 })
+                    : JSON.stringify({ jobId: '' })
+            , 8);
+
+            await loadBackupSidecars(adapter, {}, listing, backups);
+
+            expect(backups[0].jobId).toBe('job-1');
+            // Anything but a job id leaves the backup without one, so it counts as the job's own.
+            expect(backups[1].jobId).toBeUndefined();
+            expect(backups[2].jobId).toBeUndefined();
+        });
+
         it('takes a valid timestamp as the backup creation time', async () => {
             const backups = [backup('a.sql')];
             const listing = [...backups, sidecar('a.sql')];

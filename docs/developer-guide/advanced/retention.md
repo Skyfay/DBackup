@@ -66,7 +66,7 @@ file.backupTimestamp ?? file.lastModified
 
 ### Reading the sidecars
 
-`loadBackupSidecars()` in `src/lib/runner/steps/retention-sidecars.ts` annotates the listed files with `locked`, `chainId` and `backupTimestamp`. It runs once per destination at the end of every successful job, over every backup present, so its round trip count is the dominant cost of the whole step.
+`loadBackupSidecars()` in `src/lib/runner/steps/retention-sidecars.ts` annotates the listed files with `locked`, `chainId`, `jobId` and `backupTimestamp`. It runs once per destination at the end of every successful job, over every backup present, so its round trip count is the dominant cost of the whole step.
 
 Two things keep that bounded:
 
@@ -74,6 +74,10 @@ Two things keep that bounded:
 - **Reads run in batches of `adapter.readConcurrency`.** Unset means serial, which is what every adapter did before the field existed. Only adapters whose `read()` is a stateless HTTP request or a local file access declare `STATELESS_READ_CONCURRENCY`, currently S3, WebDAV, Dropbox, Google Drive, OneDrive and Local.
 
 FTP, SMB, SFTP and rsync deliberately declare nothing. FTP dials a control connection per `read()` and its own upload path runs at `limit: concurrency ?? 1` for exactly that reason, SMB spawns an `smbclient` process per call, and the two SSH-based adapters already gate themselves at four channels. On those the server's connection count is what breaks first, not the bandwidth.
+
+### Backups of another job
+
+`05-retention.ts` hands the policy only the backups whose `jobId` is the running job's or unknown. The folder is named after the job, so a job named like a deleted one lists the backups the deleted job left there, and without the check its policy would count them and delete them. A backup without a sidecar, with an unreadable one or without a `jobId` keeps counting as the job's own, so the check only ever keeps more than before. The Storage Explorer and the retention preview of its timeline group backups by the same `jobId`.
 
 ### Tier limits and backwards compatibility
 

@@ -4,10 +4,10 @@ import { METADATA_SIDECAR_SUFFIX } from "@/lib/core/backup-files";
 /**
  * Loading the `.meta.json` sidecars that retention needs before it can decide anything.
  *
- * Three things live in there that a storage listing cannot tell us: whether a backup is
- * locked, which incremental chain it belongs to, and when DBackup actually wrote it. The
- * last one matters most, because the destination's own mtime is not trustworthy - see
- * `backupTimestamp` on FileInfo.
+ * Four things live in there that a storage listing cannot tell us: whether a backup is
+ * locked, which incremental chain it belongs to, which job made it, and when DBackup
+ * actually wrote it. The last one matters most, because the destination's own mtime is not
+ * trustworthy - see `backupTimestamp` on FileInfo.
  *
  * This runs at the end of every successful job, once per destination, over every backup
  * present. That is the reason it is worth being careful about how many round trips it
@@ -79,7 +79,7 @@ async function applySidecar(
     file: FileInfo,
     result: SidecarLoadResult
 ): Promise<void> {
-    let meta: { locked?: boolean; chain?: { id?: string }; timestamp?: string };
+    let meta: { locked?: boolean; chain?: { id?: string }; jobId?: string; timestamp?: string };
     try {
         const content = await adapter.read!(config, file.path + METADATA_SIDECAR_SUFFIX);
         if (!content) return;
@@ -93,6 +93,7 @@ async function applySidecar(
 
     if (meta.locked) file.locked = true;
     if (meta.chain?.id) file.chainId = meta.chain.id;
+    if (typeof meta.jobId === "string" && meta.jobId) file.jobId = meta.jobId;
 
     if (!meta.timestamp) return;
     const recorded = new Date(meta.timestamp);

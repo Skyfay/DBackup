@@ -39,6 +39,7 @@ All notable changes to DBackup are documented here.
 - **jobs**: Every run keeps its temporary files in a directory of its own, so two runs whose backups get the same name no longer write into one file and delete it under each other.
 - **jobs**: A cloned job keeps the retention policy of each destination, its naming template, its integrity checks and its incremental settings. The copy fell back to the defaults for them before.
 - **jobs**: The examples of the API trigger dialog end on a Partial or Cancelled run. Python, TypeScript and Go waited for them forever, Bash stopped with an unknown status and Ansible gave up after ten minutes.
+- **retention**: A job named like a deleted one no longer deletes the backups the deleted job left in its folder. Retention now leaves out every backup whose `.meta.json` names another job.
 - **ci**: The `skyfay/dbackup:ci` image ends a Partial run with exit code 2 and a Cancelled one with 1, where it waited until it timed out. It waits up to an hour for a run instead of ten minutes, set with `DBACKUP_TIMEOUT`.
 
 ### 🔒 Security

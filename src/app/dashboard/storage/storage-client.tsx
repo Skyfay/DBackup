@@ -43,8 +43,11 @@ type Display = "table" | "timeline";
 const POLL_MS = 3_000;
 const MAX_POLLS = 60;
 
-/** The views of the list of backups: the table, the cards and the timeline of jobs and days above the list. */
-const VIEWS: ViewMode[] = ["table", "cards", "timeline"];
+/**
+ * The views of the list of backups above a phone: the table and the timeline of jobs and days above
+ * it. A card only repeats a row of the table, so the cards are left to phones, which always get them.
+ */
+const VIEWS: ViewMode[] = ["table", "timeline"];
 
 interface StorageClientProps {
     canDownload: boolean;

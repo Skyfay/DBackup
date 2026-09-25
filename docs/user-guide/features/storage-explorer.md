@@ -27,7 +27,7 @@ The strip on top counts the backups the list shows, what they take up, the newes
 | **Stored at** | Every destination that holds a copy |
 | **Integrity** | Verified, Check failed or Not checked |
 
-**Columns** switches columns on and off, moves them and picks a row height, like on the other lists. **What is inside** starts switched off. The switch next to the tabs shows the list as a table or as cards from md screens up, and a phone always gets the cards.
+**Columns** switches columns on and off, moves them and picks a row height, like on the other lists. **What is inside** starts switched off. The switch next to the tabs shows the list as a table or as a timeline from md screens up, and a phone always gets the backups as cards.
 
 A dot on every copy in **Stored at** tells whether its destination answers right now, from the connection check that runs every minute: green when it does, amber when it missed its last check, red with the word **offline** after three missed checks in a row. A restore or download of an offline copy fails, and hovering the copy says since when it has not answered and where the same backup lies. A clock marks a copy whose destination could not be listed lately, so its list is old.
 
@@ -39,7 +39,7 @@ The filters beside the search narrow the list. Each opens a list with a search, 
 
 - **Job** lists the jobs in three groups: **Jobs**, the jobs that exist, **Deleted jobs**, jobs that are gone while their backups are still at a destination, and **Not from a job**, the config backups of DBackup itself and files that nothing links to a job. Type part of a name to find one among hundreds.
 - **Destination** keeps the backups with a copy at the picked destinations, a missing one included.
-- **Started by** lists **Schedule**, every person who started a run by hand and every API key that started one.
+- **Started by** lists **Schedule** under **System**, every person who started a run under **By hand** and every API key that started one under **API keys**.
 - **State** keeps the backups with a missing copy, a failed check, no copy that answers right now, a lock, or of a deleted job. While nothing is picked, it counts in amber the backups with a missing copy and in red the ones with a failed check or no copy that answers.
 
 The filters narrow each other. Entries without backups under the other filters wait at the end of a list under **No backups with the other filters** and cannot be picked.
@@ -48,7 +48,7 @@ A **Destination** filter also decides what the rest counts: the strip, the state
 
 ### Timeline
 
-The third view of the switch next to the tabs shows every job by day, from md screens up: a row per job and a column per day, as many days as the screen has room for. A cell tells what a job made that day:
+The timeline of the switch next to the tabs shows every job by day, from md screens up: a row per job and a column per day, as many days as the screen has room for. A cell tells what a job made that day:
 
 - a filled cell is a backup, with a number when there were several, **F** marks the full backup that starts a chain and an outline its incrementals
 - amber marks a missing copy, red a failed check, and a dashed red cross a day whose scheduled runs did not start at all

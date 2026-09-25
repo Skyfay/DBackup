@@ -311,6 +311,7 @@ describe("Storage Explorer", () => {
 
         await user.click(await screen.findByRole("button", { name: "Started by" }));
         expect(await screen.findByText("By hand")).toBeInTheDocument();
+        expect(screen.getByText("System")).toBeInTheDocument();
         expect(screen.getByText("API keys")).toBeInTheDocument();
         await user.click(screen.getByRole("option", { name: /Manu/ }));
 
@@ -392,12 +393,26 @@ describe("Storage Explorer", () => {
         expect(screen.getByRole("tab", { name: /Backups/ })).toHaveAttribute("aria-selected", "true");
     });
 
-    it("shows the backups as cards, the view a phone always gets", async () => {
+    it("shows the backups as cards on a phone, which gets no switch", async () => {
+        const width = window.innerWidth;
+        Object.defineProperty(window, "innerWidth", { value: 375, configurable: true });
+        try {
+            renderPage();
+
+            expect(await screen.findByText("Cloudflare R2 missing")).toBeInTheDocument();
+            expect(screen.queryByRole("table")).not.toBeInTheDocument();
+            expect(screen.getAllByRole("button", { name: "Media sync" })).toHaveLength(4);
+        } finally {
+            Object.defineProperty(window, "innerWidth", { value: width, configurable: true });
+        }
+    });
+
+    it("leaves the cards to phones and shows a saved card view as the table", async () => {
         renderPage("cards");
 
-        expect(await screen.findByText("Cloudflare R2 missing")).toBeInTheDocument();
-        expect(screen.queryByRole("table")).not.toBeInTheDocument();
-        expect(screen.getAllByRole("button", { name: "Media sync" })).toHaveLength(4);
+        expect(await screen.findByRole("table")).toBeInTheDocument();
+        expect(screen.getByRole("tab", { name: "Timeline view" })).toBeInTheDocument();
+        expect(screen.queryByRole("tab", { name: "Cards view" })).not.toBeInTheDocument();
     });
 
     it("asks again while a destination is listed in the background and shows its backups once they are in", async () => {

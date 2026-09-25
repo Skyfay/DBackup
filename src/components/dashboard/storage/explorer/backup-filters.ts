@@ -55,11 +55,11 @@ export function startedByKey(file: Pick<ExplorerFile, "trigger">): string {
 export interface StartedByOption {
     value: string;
     label: string;
-    /** The heading it is listed under, empty for the schedule. */
-    group: "" | "By hand" | "API keys" | "Other";
+    /** The heading it is listed under, System for the schedule. */
+    group: "System" | "By hand" | "API keys" | "Other";
 }
 
-const STARTED_BY_ORDER: Record<StartedByOption["group"], number> = { "": 0, "By hand": 1, "API keys": 2, Other: 3 };
+const STARTED_BY_ORDER: Record<StartedByOption["group"], number> = { System: 0, "By hand": 1, "API keys": 2, Other: 3 };
 
 /** Everyone who started a run of these backups: the schedule, every person by hand and every API key. */
 export function startedByOptions(runs: BackupRun[]): StartedByOption[] {
@@ -67,7 +67,7 @@ export function startedByOptions(runs: BackupRun[]): StartedByOption[] {
     for (const run of runs) {
         const value = startedByKey(run.file);
         if (options.has(value)) continue;
-        if (value === "schedule") options.set(value, { value, label: "Schedule", group: "" });
+        if (value === "schedule") options.set(value, { value, label: "Schedule", group: "System" });
         else if (value === "none") options.set(value, { value, label: "Not recorded", group: "Other" });
         else {
             const actor = value.slice(value.indexOf(":") + 1);

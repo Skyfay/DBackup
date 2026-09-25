@@ -101,7 +101,7 @@ describe("the filters of the list of every backup", () => {
         expect(startedByKey(crm)).toBe("api:Deploy hook");
         expect(startedByKey(erp)).toBe("none");
         expect(startedByOptions(runs).map((option) => [option.group, option.label])).toEqual([
-            ["", "Schedule"], ["By hand", "Manu"], ["API keys", "Deploy hook"], ["Other", "Not recorded"],
+            ["System", "Schedule"], ["By hand", "Manu"], ["API keys", "Deploy hook"], ["Other", "Not recorded"],
         ]);
     });
 

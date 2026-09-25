@@ -11,7 +11,7 @@ import { count } from "./explorer-format";
 
 const GROUPS: Record<ExplorerJobKind, string> = { job: "Jobs", deleted: "Deleted jobs", system: "Not from a job", none: "Not from a job" };
 const STARTER_ICONS: Record<StartedByOption["group"], React.ComponentType<{ className?: string }> | null> = {
-    "": Clock,
+    System: Clock,
     "By hand": MousePointerClick,
     "API keys": KeyRound,
     Other: null,

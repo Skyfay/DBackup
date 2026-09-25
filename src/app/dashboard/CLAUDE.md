@@ -15,7 +15,7 @@ The UI is redesigned page by page. Shadcn stays, the new look comes from tokens 
 | Confirmations and bulk results | `src/components/ui/confirm-dialog.tsx`, `bulk-confirm-dialog.tsx`, `bulk-result-dialog.tsx`, used by every table |
 | Quick Setup | `src/app/dashboard/setup/`, `src/components/dashboard/setup/` |
 | Jobs, list, details and form | `src/app/dashboard/jobs/`, `src/components/dashboard/jobs/`, including the API trigger and clone dialogs. |
-| Storage Explorer, by job and by destination | `src/app/dashboard/storage/storage-client.tsx`, `src/components/dashboard/storage/explorer/`. The History and Alerts tabs of a destination and the restore page still have the old look. |
+| Storage Explorer, the Backups tab | `src/app/dashboard/storage/storage-client.tsx`, `src/components/dashboard/storage/explorer/`. The Destinations tab and the timeline of the Backups tab wait for their canvas round, and the History and Alerts tabs of a destination and the restore page still have the old look. |
 
 Every other page still has the old look. Do not copy patterns from it, copy them from the Overview widgets. Add a row here when a page is done.
 
@@ -103,9 +103,10 @@ Every other page still has the old look. Do not copy patterns from it, copy them
 - A list that also offers cards passes `view="cards"` and `renderCard` to DataTable. A card renders the row's own cells, so the Columns menu decides what it shows, see `connection-card.tsx`. A card may show what the record does instead, like the way of a backup from its source to its destinations in `job-card.tsx`. Bulk actions stay in the table view.
 - The views of a list are switched with `ViewSwitch` from `ui/view-switch.tsx`, and the choice is saved per page with `saveViewLayout`. A phone always gets the cards and no switch. See `connections-tabs.tsx` and `jobs-client.tsx`.
 - A list beside the details of the picked record passes `view="split"` and `renderSplit`, which gets every filtered row at once. See `connection-split-view.tsx`, whose details are the same component the side panel shows.
-- A list whose rows fall into groups, like the backups of an incremental job by chain, passes `view="split"` and draws the groups in `renderSplit` with the row's own cells through `flexRender`. A segmented switch beside the search, `ListSwitch` in `explorer-controls.tsx`, turns the groups off, and only the flat table offers bulk actions. See `job-backups.tsx`.
 - A timeline above a list filters it. The list stays hidden until a lane or a day is clicked, a picked day shows as a chip in the toolbar of the list that a click removes, and a row of the list opens the details. See `backup-timeline.tsx` and `DayChip` in `explorer-controls.tsx`.
-- Records that sit in folders, like the backups of a destination by job, get one row per folder that opens it, not groups that expand in place, since those scroll away. The open folder has the way back and its place above its list and lives in the address. A segmented switch beside the search offers every record in one flat list for actions across folders. See `destination-backups.tsx` and `destination-folder-list.tsx`.
+- Records that can be looked at from several sides, like backups by job and by destination, are one list with a filter per side, not a tab, a mode or a folder per side. See `backups-list.tsx`.
+- A filter that also decides what the rest counts, like the destination filter of the Storage Explorer, gets the rows, the counts beside every filter and the numbers above the list from one pure module, and the DataTable gets `manualFiltering`, so they never disagree. See `backup-filters.ts`.
+- A filter whose options fall into kinds, like jobs, deleted jobs and the rest, gives each option a `group` and a `lead`, so the list shows them under headings with a logo and a count. See the Job filter in `backups-list.tsx`.
 - A list that picks several entries, like the databases of a job, always has its search, a checkbox in its head for the entries the search shows, and a foot with how many are picked and how big they are together. A picked entry the source no longer has stays on top so it can be unticked. See `database-checklist.tsx`.
 
 ## Banners

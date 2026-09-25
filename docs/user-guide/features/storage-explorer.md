@@ -1,50 +1,57 @@
 # Storage Explorer
 
-Browse, restore, download and manage the backups at your destinations, by job or by destination.
+Browse, restore, download and manage the backups at your destinations, in one list of every backup or by destination.
 
 ## Overview
 
-Open **Storage Explorer** in the sidebar. The tabs at the top pick how the backups are shown:
+Open **Storage Explorer** in the sidebar. The tabs at the top switch between two lists:
 
 | Tab | Shows |
 | :--- | :--- |
-| **Jobs** | The backups of one job. Each row is one run, with every destination that holds a copy of it. |
+| **Backups** | Every backup of every job. Each row is one run, with every destination that holds a copy of it. |
 | **Destinations** | The backups at one destination, in a folder per job, plus its **History** and **Alerts**. |
 
-The field next to the tabs picks the job or the destination and searches as you type. The page remembers what you picked in its address, so a link or a reload opens the same view.
+The page remembers its filters and the picked destination in its address, so a link or a reload opens the same view. **Open backups** in the menu of a job on the Jobs page opens the list filtered to that job.
 
-The jobs list has three groups:
+## Backups
 
-- **Jobs**: the jobs that exist
-- **Deleted jobs**: jobs that are gone while their backups are still at a destination
-- **Not from a job**: the config backups of DBackup itself, and files that nothing links to a job
-
-::: tip Many jobs
-With hundreds of jobs, type part of a name into the field. It filters jobs, deleted jobs and the other entries at once.
-:::
-
-## By job
-
-The strip on top counts the backups of the job, what they take up, the newest one, how many copies exist and how many passed their integrity check.
+The strip on top counts the backups the list shows, what they take up, the newest one, how many copies exist and how many passed their integrity check.
 
 | Column | Shows |
 | :--- | :--- |
 | **Backup** | When the backup was made |
+| **Job** | The job that made it, marked when the job was deleted |
+| **Type** | Full, or Incremental with its place in the chain |
 | **Started by** | Schedule, API with the key name, or By hand with the user |
-| **Type** | Full, or Incremental with its place in the chain, for jobs with incremental backups |
 | **Size** | The complete snapshot, with what the archive stores under it for an incremental |
 | **Stored at** | Every destination that holds a copy |
 | **Integrity** | Verified, Check failed or Not checked |
 
+**Columns** switches columns on and off, moves them and picks a row height, like on the other lists. **What is inside** starts switched off. The switch next to the tabs shows the list as a table or as cards from md screens up, and a phone always gets the cards.
+
 A copy shows as **missing** when a destination of the job holds older backups of it but not this one. A destination added to the job later, or one whose retention keeps fewer backups, is not reported for the runs it never had. A destination the job no longer writes to, and every destination of a deleted job, only counts for the runs between its oldest and its newest backup of the job.
 
-The quick filters beside the search show only locked backups, runs with a missing copy or runs with a failed check. For an incremental job **Chains** groups the list by chain with the newest chain open, and **All backups** shows one list whose rows can be selected for actions on several at once.
+### Filters
 
-Actions in this view work on the first copy in the upload order of the job. **Delete** removes the backup from every destination that holds it.
+The filters beside the search narrow the list:
 
-## By destination
+- **Job** lists the jobs with the number of backups each has, in three groups: **Jobs**, the jobs that exist, **Deleted jobs**, jobs that are gone while their backups are still at a destination, and **Not from a job**, the config backups of DBackup itself and files that nothing links to a job. Type part of a name to find one among hundreds.
+- **Destination** keeps the backups with a copy at the picked destinations, a missing one included.
+- The quick filters show only backups with a missing copy, a failed check, a lock, or of a deleted job.
 
-The strip shows what the destination stores, how many backups it holds and from how many jobs, the newest backup, the locked ones and the integrity checks.
+A **Destination** filter also decides what the rest counts: the strip, the quick filters, **Stored at** and the actions only look at the copies at the picked destinations. **Copy missing** with **NAS Backups** picked lists the backups NAS Backups lacks.
+
+### Actions
+
+Rows can be selected for **Lock**, **Unlock** and **Delete**, across jobs. Without a **Destination** filter they act on every copy of a backup, with one only on the copies at the picked destinations. The menu of a row works on the first copy in the upload order of the job, or on the copy at the picked destination.
+
+::: tip Cleaning up after a deleted job
+Pick **Job deleted**, select the backups with the box in the head of the table and delete them. With a **Destination** filter they go from that destination only.
+:::
+
+## Destinations
+
+The strip shows what the destination stores, how many backups it holds and from how many jobs, the newest backup, the locked ones and the integrity checks. The field next to the tabs picks the destination and searches as you type.
 
 The switch beside the search shows the backups in one of two ways:
 
@@ -53,26 +60,26 @@ The switch beside the search shows the backups in one of two ways:
 | **Folders** | One row per job, like the folders the jobs write into on the storage, with its number of backups, size, newest backup, the other destinations that hold copies and its integrity checks. A click opens the folder and lists its backups. |
 | **All backups** | Every backup at the destination in one list with its job. Rows of different jobs can be selected together for **Lock**, **Unlock** and **Delete**. |
 
-An open folder has **All folders** to go back and **Open in Jobs** to see the same job at every destination. Its list offers the same selection for the backups of that job. The **Also at** column names the other destinations that hold the same backup.
+An open folder has **All folders** to go back and **Open in Backups** to list every backup of the job in the **Backups** tab. Its list offers the same selection for the backups of that job. The **Also at** column names the other destinations that hold the same backup.
 
 ### Backups of a deleted job
 
 When a job is deleted, its backups stay. Retention no longer runs for them, since retention runs as part of a job. Its folder is marked **Job deleted**, and inside it a note says so and offers to delete all of its backups at this destination. Locked ones are left out.
 
-A deleted job leaves the list once none of its backups are left: when they are deleted here or on the storage, or when the destination itself is deleted in DBackup, which drops its list with it. A destination that does not answer keeps showing its last list, marked with a clock, until it answers again.
+A deleted job leaves the lists once none of its backups are left: when they are deleted here or on the storage, or when the destination itself is deleted in DBackup, which drops its list with it. A destination that does not answer keeps showing its last list, marked with a clock, until it answers again.
 
-## Timeline
+### Timeline
 
-The switch next to the tabs shows a timeline above the list, from md screens up. It covers 7, 30 or 90 days:
+The switch next to the tabs shows a timeline of the destination above its list, from md screens up, with one lane per job. It covers 7, 30 or 90 days:
 
 - a point is one backup, a filled larger point the full backup of a chain, a ring an incremental
 - a line joins the backups of one incremental chain
 - a bar stands for a day with several backups, like an hourly job
 - an amber ring marks a missing copy, a red point a failed check, a lock a locked backup
 
-The list stays hidden under the timeline, since it would show the same backups. By job the timeline has one lane for the job, by destination one lane per job at that destination.
+The list stays hidden under the timeline, since it would show the same backups.
 
-- A click on a lane lists all of its backups below, by destination in the folder of that job.
+- A click on a lane opens the folder of that job below.
 - A click on a point or a bar lists only the backups of that day. The day shows above the list like a filter, and a click on it lists every day again.
 - A second click on the same lane or day hides the list.
 - A click on a backup in the list opens its details.

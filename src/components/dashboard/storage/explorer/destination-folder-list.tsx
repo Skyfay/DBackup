@@ -165,7 +165,7 @@ export function FolderHead({ folder, destination, onBack, onOpenJob, onDeleteAll
                 </div>
                 <Button variant="outline" size="sm" className="w-full sm:w-auto" onClick={() => onOpenJob(folder.key)}>
                     <ArrowUpRight />
-                    Open in Jobs
+                    Open in Backups
                 </Button>
             </div>
             {folder.kind === "deleted" && (

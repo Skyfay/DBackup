@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { formatInTimeZone } from "date-fns-tz";
-import type { ExplorerDestination, ExplorerFile, ExplorerIndex, ExplorerJob, ExplorerJobView, ExplorerDestinationView } from "@/services/storage/explorer-types";
+import type { ViewMode } from "@/lib/core/table-preferences";
+import type { BackupRun, ExplorerDestination, ExplorerFile, ExplorerIndex, ExplorerJob, ExplorerDestinationView } from "@/services/storage/explorer-types";
 
 let search = new URLSearchParams();
 const replace = vi.fn((url: string) => {
@@ -17,6 +18,10 @@ vi.mock("@/lib/auth/client", () => ({
     useSession: () => ({ data: { user: { timezone: "UTC", dateFormat: "yyyy-MM-dd", timeFormat: "HH:mm" } } }),
 }));
 vi.mock("@/app/actions/storage/lock", () => ({ lockBackup: vi.fn() }));
+vi.mock("@/app/actions/auth/table-preferences", () => ({
+    saveTableLayout: vi.fn().mockResolvedValue({ success: true }),
+    saveViewLayout: vi.fn().mockResolvedValue({ success: true }),
+}));
 // The dialogs behind the actions have tests of their own. Here they only have to mount.
 vi.mock("@/components/dashboard/storage/download-link-modal", () => ({ DownloadLinkModal: () => null }));
 vi.mock("@/components/dashboard/storage/database-download-dialog", () => ({ DatabaseDownloadDialog: () => null }));
@@ -26,6 +31,9 @@ vi.mock("@/components/dashboard/storage/storage-history-tab", () => ({ StorageHi
 vi.mock("@/components/dashboard/storage/storage-settings-tab", () => ({ StorageSettingsTab: () => <p>Alerts of the destination</p> }));
 
 import { StorageClient } from "@/app/dashboard/storage/storage-client";
+
+// The list of a filter scrolls its active option into view, which jsdom cannot do.
+Element.prototype.scrollIntoView = vi.fn();
 
 const now = Date.now();
 const hoursAgo = (hours: number) => new Date(now - hours * 3_600_000).toISOString();
@@ -91,39 +99,6 @@ const older = file("Shop_nightly_older.tar", 27);
 const erp = file("ERP_invoices_old.tar", 500, { path: "ERP/ERP_invoices_old.tar", jobId: "job-erp", jobName: "ERP invoices", databases: ["erp"] });
 const erpOlder = file("ERP_invoices_older.tar", 524, { path: "ERP/ERP_invoices_older.tar", jobId: "job-erp", jobName: "ERP invoices", databases: ["erp"] });
 
-const index: ExplorerIndex = {
-    destinations: [destination("nas", "NAS Backups"), destination("r2", "Cloudflare R2", { health: { status: "OFFLINE", checkedAt: hoursAgo(0), error: "timeout" } })],
-    jobs: [
-        job({}),
-        job({ key: "deleted:job-erp", kind: "deleted", name: "ERP invoices", jobId: "job-erp", configuredDestinationIds: [], destinationIds: ["nas"], newest: hoursAgo(500), runs: 2, missingCopies: 0 }),
-    ],
-};
-
-const jobView: ExplorerJobView = {
-    job: index.jobs[0],
-    runs: [
-        {
-            path: newest.path, jobKey: "job-shop", file: newest, createdAt: newest.createdAt!, execution: null,
-            copies: [{ destinationId: "nas", state: "stored", file: newest }, { destinationId: "r2", state: "stored", file: newest }],
-        },
-        {
-            path: older.path, jobKey: "job-shop", file: older, createdAt: older.createdAt!,
-            execution: { id: "exec-1", status: "Partial", startedAt: hoursAgo(27), endedAt: hoursAgo(26.9) },
-            copies: [{ destinationId: "nas", state: "stored", file: older }, { destinationId: "r2", state: "missing" }],
-        },
-    ],
-};
-
-const destinationView: ExplorerDestinationView = {
-    destination: index.destinations[0],
-    backups: [
-        { file: newest, jobKey: "job-shop", elsewhere: [{ destinationId: "r2", state: "stored" }] },
-        { file: older, jobKey: "job-shop", elsewhere: [{ destinationId: "r2", state: "missing" }] },
-        { file: erp, jobKey: "deleted:job-erp", elsewhere: [] },
-        { file: erpOlder, jobKey: "deleted:job-erp", elsewhere: [] },
-    ],
-};
-
 const chainFile = (index: number, hours: number) =>
     file(`${index === 0 ? "full-000" : `inc-00${index}`}-Media_sync.tar`, hours, {
         path: `Media sync/chain-1/${index === 0 ? "full-000" : `inc-00${index}`}-Media_sync.tar`,
@@ -138,54 +113,92 @@ const chainFile = (index: number, hours: number) =>
         logicalSize: 8_000 + index * 100,
     });
 const chain = [chainFile(0, 72), chainFile(1, 48), chainFile(2, 24), chainFile(3, 1)];
-const media = job({ key: "job-media", name: "Media sync", jobId: "job-media", sourceType: null, hasFolders: true, incremental: true, configuredDestinationIds: ["nas"], destinationIds: ["nas"], runs: 4, newest: hoursAgo(10) });
-const mediaView: ExplorerJobView = {
-    job: media,
-    runs: [...chain].reverse().map((entry) => ({
-        path: entry.path, jobKey: "job-media", file: entry, createdAt: entry.createdAt!, execution: null,
-        copies: [{ destinationId: "nas", state: "stored" as const, file: entry }],
-    })),
+const media = job({ key: "job-media", name: "Media sync", jobId: "job-media", sourceType: null, hasFolders: true, incremental: true, configuredDestinationIds: ["nas"], destinationIds: ["nas"], runs: 4, newest: hoursAgo(1) });
+
+const index: ExplorerIndex = {
+    destinations: [destination("nas", "NAS Backups"), destination("r2", "Cloudflare R2", { health: { status: "OFFLINE", checkedAt: hoursAgo(0), error: "timeout" } })],
+    jobs: [
+        job({}),
+        media,
+        job({ key: "deleted:job-erp", kind: "deleted", name: "ERP invoices", jobId: "job-erp", configuredDestinationIds: [], destinationIds: ["nas"], newest: hoursAgo(500), runs: 2, missingCopies: 0 }),
+    ],
+};
+
+const stored = (entry: ExplorerFile, destinationId = "nas") => ({ destinationId, state: "stored" as const, file: entry });
+const run = (entry: ExplorerFile, jobKey: string, copies: BackupRun["copies"]): BackupRun => ({ path: entry.path, jobKey, file: entry, createdAt: entry.createdAt!, copies });
+
+const runs: BackupRun[] = [
+    run(chain[3], "job-media", [stored(chain[3])]),
+    run(newest, "job-shop", [stored(newest), stored(newest, "r2")]),
+    run(chain[2], "job-media", [stored(chain[2])]),
+    run(older, "job-shop", [stored(older), { destinationId: "r2", state: "missing" }]),
+    run(chain[1], "job-media", [stored(chain[1])]),
+    run(chain[0], "job-media", [stored(chain[0])]),
+    run(erp, "deleted:job-erp", [stored(erp)]),
+    run(erpOlder, "deleted:job-erp", [stored(erpOlder)]),
+];
+
+const destinationView: ExplorerDestinationView = {
+    destination: index.destinations[0],
+    backups: [
+        { file: newest, jobKey: "job-shop", elsewhere: [{ destinationId: "r2", state: "stored" }] },
+        { file: older, jobKey: "job-shop", elsewhere: [{ destinationId: "r2", state: "missing" }] },
+        { file: erp, jobKey: "deleted:job-erp", elsewhere: [] },
+        { file: erpOlder, jobKey: "deleted:job-erp", elsewhere: [] },
+    ],
 };
 
 const ok = (data: unknown) => Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true, data }) } as Response);
 /** A backup the way the timeline names it, in the formats of the signed in user. */
 const shown = (entry: ExplorerFile) => formatInTimeZone(new Date(entry.createdAt!), "UTC", "yyyy-MM-dd HH:mm");
 
-function renderPage() {
-    return render(<StorageClient canDownload canRestore canDelete canViewHistory />);
+function page(view: ViewMode = "table") {
+    return <StorageClient canDownload canRestore canDelete canViewHistory initialLayout={null} initialView={view} />;
 }
+
+function renderPage(view: ViewMode = "table") {
+    return render(page(view));
+}
+
+/** The rows of the list of backups, without the popovers the filters open. */
+const table = () => screen.getByRole("table");
 
 describe("Storage Explorer", () => {
     beforeEach(() => {
         search = new URLSearchParams();
+        replace.mockClear();
         vi.stubGlobal("fetch", vi.fn((url: string) => {
-            if (url === "/api/storage/explorer") return ok({ ...index, jobs: [...index.jobs, media] });
-            if (url === "/api/storage/explorer/jobs/job-media") return ok(mediaView);
-            if (url.startsWith("/api/storage/explorer/jobs/")) return ok(jobView);
+            if (url === "/api/storage/explorer") return ok(index);
+            if (url === "/api/storage/explorer/runs") return ok({ runs });
+            if (url.startsWith("/api/storage/explorer/execution")) {
+                const path = new URLSearchParams(url.split("?")[1]).get("path");
+                return ok(path === older.path ? { id: "exec-1", status: "Partial", startedAt: hoursAgo(27), endedAt: hoursAgo(26.9) } : null);
+            }
             if (url.startsWith("/api/storage/explorer/destinations/")) return ok(destinationView);
+            if (url.endsWith("/files/bulk")) return ok({ succeeded: [newest.path], failed: [] });
             return ok(null);
         }));
     });
 
-    it("opens on the job with the newest backup and shows where each run lies", async () => {
+    it("lists every backup of every job with where each copy lies", async () => {
         renderPage();
 
         expect(await screen.findByText("Cloudflare R2 missing")).toBeInTheDocument();
-        expect(screen.getAllByText("NAS Backups").length).toBeGreaterThan(0);
-        expect(screen.getByRole("combobox", { name: "Pick a job" })).toHaveTextContent("Shop nightly");
+        expect(within(table()).getAllByText("Shop nightly")).toHaveLength(2);
+        expect(within(table()).getAllByText("Media sync")).toHaveLength(4);
+        expect(within(table()).getAllByText("ERP invoices")).toHaveLength(2);
+        expect(screen.getByRole("tab", { name: /Backups/ })).toHaveAttribute("aria-selected", "true");
     });
 
-    it("opens the details of a run with its copies and the reason for the missing one", async () => {
+    it("opens the details of a backup with its copies and the reason for the missing one", async () => {
         const user = userEvent.setup();
         renderPage();
 
-        const missing = await screen.findByText("Cloudflare R2 missing");
-        await user.click(missing.closest("tr")!);
+        await user.click((await screen.findByText("Cloudflare R2 missing")).closest("tr")!);
 
         const panel = await screen.findByRole("dialog");
         expect(within(panel).getByText("1 of 2 copies is missing")).toBeInTheDocument();
-        expect(within(panel).getByText(/The run ended as Partial, its upload to Cloudflare R2 failed\./)).toBeInTheDocument();
-        expect(within(panel).getByText("Stored at")).toBeInTheDocument();
+        expect(await within(panel).findByText(/The run ended as Partial, its upload to Cloudflare R2 failed\./)).toBeInTheDocument();
         expect(within(panel).getByText("billing")).toBeInTheDocument();
     });
 
@@ -198,59 +211,54 @@ describe("Storage Explorer", () => {
         expect(screen.getByText(/Not reachable/)).toBeInTheDocument();
     });
 
-    it("shows a folder per job on a destination and offers to delete the backups of a deleted job inside its folder", async () => {
+    it("filters by job from a list split into jobs, deleted jobs and the rest", async () => {
         const user = userEvent.setup();
-        search = new URLSearchParams("destination=nas");
         const { rerender } = renderPage();
 
-        const folder = await screen.findByRole("button", { name: /^ERP invoices/ });
-        expect(screen.getByRole("button", { name: /^Shop nightly/ })).toBeInTheDocument();
-        expect(screen.queryByText("ERP_invoices_old.tar")).not.toBeInTheDocument();
+        await user.click(await screen.findByRole("button", { name: "Job" }));
+        expect(await screen.findByText("Deleted jobs")).toBeInTheDocument();
+        expect(screen.getByText("Jobs")).toBeInTheDocument();
+        await user.click(screen.getByRole("option", { name: /ERP invoices/ }));
 
-        await user.click(folder);
-        expect(new URLSearchParams(replace.mock.lastCall![0].split("?")[1]).get("folder")).toBe("deleted:job-erp");
-        rerender(<StorageClient canDownload canRestore canDelete canViewHistory />);
-
-        expect(await screen.findByText("Retention stopped with the job, so these backups stay until you delete them.")).toBeInTheDocument();
-        expect(screen.getByRole("button", { name: /Delete 2 backups/ })).toBeInTheDocument();
-        expect(screen.getByText("ERP_invoices_old.tar")).toBeInTheDocument();
-        expect(screen.queryByText("Shop_nightly_newest.tar")).not.toBeInTheDocument();
-        expect(screen.getByRole("button", { name: "All folders" })).toBeInTheDocument();
+        expect(search.getAll("job")).toEqual(["deleted:job-erp"]);
+        rerender(page());
+        await waitFor(() => expect(within(table()).queryByText("Shop nightly")).not.toBeInTheDocument());
+        expect(within(table()).getAllByText("ERP invoices")).toHaveLength(2);
     });
 
-    it("lists every backup of a destination in one list, so backups of different jobs can be picked together", async () => {
-        search = new URLSearchParams("destination=nas&layout=all");
+    it("counts only the copies at the destination it is filtered by", async () => {
+        search = new URLSearchParams("at=r2");
+        const { rerender } = renderPage();
+
+        expect(await screen.findByRole("button", { name: /Copy missing\s*1/ })).toBeInTheDocument();
+        expect(within(table()).getAllByText("Shop nightly")).toHaveLength(2);
+        expect(within(table()).queryByText("Media sync")).not.toBeInTheDocument();
+
+        // Every copy at the NAS is there, even of the backup that misses its copy at R2.
+        search = new URLSearchParams("at=nas");
+        rerender(page());
+        expect(await screen.findByRole("button", { name: /Copy missing\s*0/ })).toBeInTheDocument();
+    });
+
+    it("deletes a backup only at the destination the list is filtered by", async () => {
+        const user = userEvent.setup();
+        search = new URLSearchParams("at=nas");
         renderPage();
 
-        expect(await screen.findByText("Shop_nightly_newest.tar")).toBeInTheDocument();
-        expect(screen.getByText("ERP_invoices_old.tar")).toBeInTheDocument();
-        expect(screen.getByRole("columnheader", { name: "Job" })).toBeInTheDocument();
-        expect(screen.getAllByRole("checkbox").length).toBeGreaterThan(4);
+        await user.click(await screen.findByRole("button", { name: `Open menu for ${newest.name}` }));
+        await user.click(await screen.findByRole("menuitem", { name: /Delete/ }));
+        await user.click(await screen.findByRole("button", { name: "Delete backup" }));
+
+        await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith("/api/storage/nas/files/bulk", expect.anything()));
+        expect(vi.mocked(fetch)).not.toHaveBeenCalledWith("/api/storage/r2/files/bulk", expect.anything());
     });
 
-    it("opens the folder of a job from its lane on the timeline of a destination", async () => {
-        const user = userEvent.setup();
-        search = new URLSearchParams("destination=nas&view=timeline");
-        const { rerender } = renderPage();
-
-        const lane = await screen.findByRole("button", { name: /^Shop nightly/ });
-        expect(screen.queryByRole("button", { name: "Open in Jobs" })).not.toBeInTheDocument();
-
-        await user.click(lane);
-        rerender(<StorageClient canDownload canRestore canDelete canViewHistory />);
-
-        expect(await screen.findByRole("button", { name: "Open in Jobs" })).toBeInTheDocument();
-        expect(screen.getByText("Shop_nightly_newest.tar")).toBeInTheDocument();
-        expect(screen.queryByText("ERP_invoices_old.tar")).not.toBeInTheDocument();
-    });
-
-    it("groups an incremental job by chain and shows what a restore of one of them reads", async () => {
+    it("shows what a restore of an incremental reads", async () => {
         const user = userEvent.setup();
         search = new URLSearchParams("job=job-media");
         renderPage();
 
-        expect(await screen.findByText("4 backups · the current chain")).toBeInTheDocument();
-        await user.click(screen.getByText("Incremental · 2").closest("tr")!);
+        await user.click((await screen.findByText("Incremental · 2")).closest("tr")!);
 
         const panel = await screen.findByRole("dialog");
         expect(within(panel).getByText("Its chain")).toBeInTheDocument();
@@ -258,11 +266,21 @@ describe("Storage Explorer", () => {
         expect(within(panel).getByText(/Incremental 3 builds on it, so it can only be deleted together with it\./)).toBeInTheDocument();
     });
 
-    it("finds a job from an older link by its name", async () => {
+    it("turns an older link to a job at a destination into both filters", async () => {
         search = new URLSearchParams("destination=nas&job=Shop%20nightly");
         renderPage();
 
-        await waitFor(() => expect(screen.getByRole("combobox", { name: "Pick a job" })).toHaveTextContent("Shop nightly"));
+        await waitFor(() => expect(within(table()).getAllByText("Shop nightly")).toHaveLength(2));
+        expect(within(table()).queryByText("Media sync")).not.toBeInTheDocument();
+        expect(screen.getByRole("tab", { name: /Backups/ })).toHaveAttribute("aria-selected", "true");
+    });
+
+    it("shows the backups as cards, the view a phone always gets", async () => {
+        renderPage("cards");
+
+        expect(await screen.findByText("Cloudflare R2 missing")).toBeInTheDocument();
+        expect(screen.queryByRole("table")).not.toBeInTheDocument();
+        expect(screen.getAllByRole("button", { name: "Media sync" })).toHaveLength(4);
     });
 
     it("asks again while a destination is listed in the background and shows its backups once they are in", async () => {
@@ -275,7 +293,7 @@ describe("Storage Explorer", () => {
                         ? { ...index, destinations: [{ ...index.destinations[0], listing: true }, index.destinations[1]] }
                         : index);
                 }
-                if (url.startsWith("/api/storage/explorer/jobs/")) return ok(listing ? { ...jobView, runs: [] } : jobView);
+                if (url === "/api/storage/explorer/runs") return ok({ runs: listing ? [] : runs });
                 return ok(null);
             }));
             renderPage();
@@ -293,46 +311,51 @@ describe("Storage Explorer", () => {
         }
     });
 
-    it("shows only the timeline until the job is clicked, since the list below would repeat it", async () => {
+    it("shows a folder per job on a destination and offers to delete the backups of a deleted job inside its folder", async () => {
         const user = userEvent.setup();
-        search = new URLSearchParams("view=timeline");
+        search = new URLSearchParams("destination=nas");
+        const { rerender } = renderPage();
+
+        const folder = await screen.findByRole("button", { name: /^ERP invoices/ });
+        expect(screen.getByRole("button", { name: /^Shop nightly/ })).toBeInTheDocument();
+        expect(screen.queryByText("ERP_invoices_old.tar")).not.toBeInTheDocument();
+
+        await user.click(folder);
+        expect(search.get("folder")).toBe("deleted:job-erp");
+        rerender(page());
+
+        expect(await screen.findByText("Retention stopped with the job, so these backups stay until you delete them.")).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: /Delete 2 backups/ })).toBeInTheDocument();
+        expect(screen.getByText("ERP_invoices_old.tar")).toBeInTheDocument();
+        expect(screen.queryByText("Shop_nightly_newest.tar")).not.toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "All folders" })).toBeInTheDocument();
+    });
+
+    it("opens every backup of a job in the Backups tab from its folder at a destination", async () => {
+        const user = userEvent.setup();
+        search = new URLSearchParams("destination=nas&folder=job-shop");
         renderPage();
+
+        await user.click(await screen.findByRole("button", { name: "Open in Backups" }));
+
+        expect(search.getAll("job")).toEqual(["job-shop"]);
+        expect(search.get("destination")).toBeNull();
+    });
+
+    it("opens the folder of a job from its lane on the timeline of a destination", async () => {
+        const user = userEvent.setup();
+        search = new URLSearchParams("destination=nas&view=timeline");
+        const { rerender } = renderPage();
 
         const lane = await screen.findByRole("button", { name: /^Shop nightly/ });
-        expect(screen.queryByText("Cloudflare R2 missing")).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Open in Backups" })).not.toBeInTheDocument();
 
         await user.click(lane);
-        expect(await screen.findByText("Cloudflare R2 missing")).toBeInTheDocument();
+        rerender(page());
 
-        await user.click(lane);
-        await waitFor(() => expect(screen.queryByText("Cloudflare R2 missing")).not.toBeInTheDocument());
-    });
-
-    it("lists the backups of a day picked on the timeline and opens the details from that list", async () => {
-        const user = userEvent.setup();
-        search = new URLSearchParams("view=timeline");
-        renderPage();
-
-        await user.click(await screen.findByRole("button", { name: `${shown(newest)} · Full` }));
-
-        expect(await screen.findByText("Verified")).toBeInTheDocument();
-        expect(screen.queryByText("Cloudflare R2 missing")).not.toBeInTheDocument();
-        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-
-        await user.click(screen.getByText("Verified").closest("tr")!);
-        expect(await screen.findByRole("dialog")).toBeInTheDocument();
-    });
-
-    it("shows every backup of the job again once the picked day is removed", async () => {
-        const user = userEvent.setup();
-        search = new URLSearchParams("view=timeline");
-        renderPage();
-
-        await user.click(await screen.findByRole("button", { name: `${shown(newest)} · Full` }));
-        await user.click(await screen.findByRole("button", { name: /show every day/ }));
-
-        expect(await screen.findByText("Cloudflare R2 missing")).toBeInTheDocument();
-        expect(screen.getByText("Verified")).toBeInTheDocument();
+        expect(await screen.findByRole("button", { name: "Open in Backups" })).toBeInTheDocument();
+        expect(screen.getByText("Shop_nightly_newest.tar")).toBeInTheDocument();
+        expect(screen.queryByText("ERP_invoices_old.tar")).not.toBeInTheDocument();
     });
 
     it("opens the folder of a job on the day picked in its lane at a destination", async () => {
@@ -341,7 +364,7 @@ describe("Storage Explorer", () => {
         const { rerender } = renderPage();
 
         await user.click(await screen.findByRole("button", { name: `${shown(erp)} · Full` }));
-        rerender(<StorageClient canDownload canRestore canDelete canViewHistory />);
+        rerender(page());
 
         expect(await screen.findByText("ERP_invoices_old.tar")).toBeInTheDocument();
         expect(screen.queryByText("ERP_invoices_older.tar")).not.toBeInTheDocument();

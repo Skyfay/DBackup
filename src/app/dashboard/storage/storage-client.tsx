@@ -1,38 +1,49 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowUpRight, HardDrive, List, RotateCw, ChartGantt } from "lucide-react";
+import { HardDrive, List, RotateCw, ChartGantt } from "lucide-react";
+import { saveViewLayout } from "@/app/actions/auth/table-preferences";
 import { StorageHistoryTab, type StorageHistoryTabRef } from "@/components/dashboard/storage/storage-history-tab";
 import { StorageSettingsTab, type StorageSettingsTabRef } from "@/components/dashboard/storage/storage-settings-tab";
 import { BackupDetailsSheet, type BackupDetailsData } from "@/components/dashboard/storage/explorer/backup-details";
+import { primaryCopy, runKey, targetsOf } from "@/components/dashboard/storage/explorer/backup-filters";
+import { BACKUPS_PAGE_ID, BACKUPS_TABLE_ID } from "@/components/dashboard/storage/explorer/backup-tables";
+import { BackupsList, type BackupScope } from "@/components/dashboard/storage/explorer/backups-list";
 import { DestinationBackups, type DestinationLayout } from "@/components/dashboard/storage/explorer/destination-backups";
 import { checkNow, destinationsOf, useExplorerData } from "@/components/dashboard/storage/explorer/explorer-data";
-import { ExplorerPicker, type ExplorerMode } from "@/components/dashboard/storage/explorer/explorer-picker";
+import { ExplorerPicker } from "@/components/dashboard/storage/explorer/explorer-picker";
 import { FreshnessButton } from "@/components/dashboard/storage/explorer/freshness-button";
-import { JobBackups, primaryCopy } from "@/components/dashboard/storage/explorer/job-backups";
 import { useBackupActions } from "@/components/dashboard/storage/explorer/use-backup-actions";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ViewSwitch } from "@/components/ui/view-switch";
+import { useIsMobileState } from "@/hooks/use-mobile";
+import { useTableLayout } from "@/hooks/use-table-layout";
+import type { TablePreferences, ViewMode } from "@/lib/core/table-preferences";
 import type {
+    BackupRun,
     DestinationBackup,
+    ExplorerBackups,
     ExplorerDestination,
     ExplorerDestinationView,
     ExplorerFile,
     ExplorerIndex,
-    ExplorerJob,
-    ExplorerJobView,
+    RunExecution,
 } from "@/services/storage/explorer-types";
 
+type PageTab = "backups" | "destinations";
 type DestinationTab = "backups" | "history" | "alerts";
 type Display = "table" | "timeline";
 
 /** How often the page asks again while destinations are listed in the background, and for how long at most. */
 const POLL_MS = 3_000;
 const MAX_POLLS = 60;
+
+/** The views of the list of backups. A timeline follows once its design is settled. */
+const VIEWS: ViewMode[] = ["table", "cards"];
 
 interface StorageClientProps {
     canDownload: boolean;
@@ -41,13 +52,10 @@ interface StorageClientProps {
     /** Whether this user may create vault profiles, which key recovery does. */
     canManageVault?: boolean;
     canViewHistory?: boolean;
-}
-
-/** The job the page opens on: the one with the newest backup. */
-function defaultJob(jobs: ExplorerJob[]): ExplorerJob | null {
-    const withBackups = jobs.filter((job) => job.newest !== null);
-    if (withBackups.length === 0) return jobs.find((job) => job.kind === "job") ?? null;
-    return withBackups.reduce((latest, job) => (Date.parse(job.newest!) > Date.parse(latest.newest!) ? job : latest));
+    /** The column layout of the list of backups this user saved, null for the defaults. */
+    initialLayout: TablePreferences | null;
+    /** The view of the list of backups this user picked last. */
+    initialView: ViewMode;
 }
 
 /** The backups of a chain, oldest first, out of the files the page has. */
@@ -97,7 +105,7 @@ function Empty({ title, children }: { title: string; children: React.ReactNode }
     );
 }
 
-/** Switches between the list and the list under a timeline. */
+/** Switches the backups of a destination between the list and the list under a timeline. */
 function DisplaySwitch({ value, onChange }: { value: Display; onChange: (next: Display) => void }) {
     return (
         <Tabs value={value} onValueChange={(next) => onChange(next as Display)}>
@@ -114,79 +122,116 @@ function DisplaySwitch({ value, onChange }: { value: Display; onChange: (next: D
 }
 
 /**
- * The Storage Explorer: the backups by job, with every copy of a run side by side, or by
- * destination, in a folder per job. Both come from the lists DBackup keeps of every
- * destination. The picked job or destination, the tab and the view live in the address.
+ * The Storage Explorer: every backup of every job in one list, with the job and the destination as
+ * its filters, and the destinations with their history and alerts. Both come from the lists DBackup
+ * keeps of every destination. The filters, the tab and the picked destination live in the address.
  */
-export function StorageClient({ canDownload, canRestore, canDelete, canManageVault = false, canViewHistory = false }: StorageClientProps) {
+export function StorageClient({
+    canDownload,
+    canRestore,
+    canDelete,
+    canManageVault = false,
+    canViewHistory = false,
+    initialLayout,
+    initialView,
+}: StorageClientProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const index = useExplorerData<ExplorerIndex>("/api/storage/explorer");
     const historyRef = useRef<StorageHistoryTabRef>(null);
     const settingsRef = useRef<StorageSettingsTabRef>(null);
+    const columnLayout = useTableLayout(BACKUPS_TABLE_ID, initialLayout);
+    const [view, setView] = useState<ViewMode>(VIEWS.includes(initialView) ? initialView : "table");
+    // A phone has no room for the table, so it always gets the cards and no switch. The list
+    // waits until the screen is measured, so a phone never flashes the table first.
+    const isMobile = useIsMobileState();
+    const shownView: ViewMode | undefined = isMobile === undefined ? undefined : isMobile ? "cards" : view;
 
     const jobs = useMemo(() => index.data?.jobs ?? [], [index.data]);
     const destinations = useMemo(() => index.data?.destinations ?? [], [index.data]);
     const jobsByKey = useMemo(() => new Map(jobs.map((job) => [job.key, job])), [jobs]);
     const destinationsById = useMemo(() => new Map(destinations.map((destination) => [destination.id, destination])), [destinations]);
 
-    // What the address asks for. A job may come by its name from older links, like the ones the
-    // Jobs page used to make.
-    const jobParam = searchParams.get("job");
+    // What the address asks for. A link to the backups of a job may name the job by its name, and
+    // older links name one of its destinations beside it, which becomes the destination filter.
+    const jobParams = searchParams.getAll("job").join("\n");
+    const atParams = searchParams.getAll("at").join("\n");
     const destinationParam = searchParams.get("destination");
+    const pageTab: PageTab = !jobParams && destinationParam ? "destinations" : "backups";
+    const scope = useMemo<BackupScope>(() => {
+        const named = jobParams ? jobParams.split("\n") : [];
+        const at = atParams ? atParams.split("\n") : [];
+        return {
+            jobs: named.map((value) => (jobsByKey.has(value) ? value : jobs.find((job) => job.kind === "job" && job.name === value)?.key ?? value)),
+            at: pageTab === "backups" && destinationParam && !at.includes(destinationParam) ? [...at, destinationParam] : at,
+        };
+    }, [jobParams, atParams, destinationParam, pageTab, jobs, jobsByKey]);
+
     const display: Display = searchParams.get("view") === "timeline" ? "timeline" : "table";
     const tabParam = searchParams.get("tab");
     const tab: DestinationTab = tabParam === "history" || tabParam === "alerts" ? tabParam : "backups";
     const layout: DestinationLayout = searchParams.get("layout") === "all" ? "all" : "folders";
     const folderParam = searchParams.get("folder");
-    const jobByParam = jobParam ? jobsByKey.get(jobParam) ?? jobs.find((job) => job.kind === "job" && job.name === jobParam) ?? null : null;
-    const mode: ExplorerMode = jobParam && (jobByParam || !destinationParam) ? "jobs" : destinationParam ? "destinations" : defaultJob(jobs) ? "jobs" : "destinations";
-    const job = mode === "jobs" ? jobByParam ?? (jobParam ? null : defaultJob(jobs)) : null;
-    const destination = mode === "destinations" ? destinationsById.get(destinationParam ?? "") ?? destinations[0] ?? null : null;
+    const destination = pageTab === "destinations" ? destinationsById.get(destinationParam ?? "") ?? destinations[0] ?? null : null;
 
-    const setParams = useCallback((next: Record<string, string | null>) => {
+    const setParams = useCallback((next: Record<string, string | string[] | null>) => {
         const params = new URLSearchParams(searchParams.toString());
         for (const [key, value] of Object.entries(next)) {
-            if (value === null) params.delete(key);
-            else params.set(key, value);
+            params.delete(key);
+            if (Array.isArray(value)) value.forEach((entry) => params.append(key, entry));
+            else if (value !== null) params.set(key, value);
         }
-        router.replace(`/dashboard/storage?${params.toString()}`, { scroll: false });
+        const query = params.toString();
+        router.replace(query ? `/dashboard/storage?${query}` : "/dashboard/storage", { scroll: false });
     }, [router, searchParams]);
 
-    const jobView = useExplorerData<ExplorerJobView>(job ? `/api/storage/explorer/jobs/${encodeURIComponent(job.key)}` : null);
+    const backups = useExplorerData<ExplorerBackups>(pageTab === "backups" ? "/api/storage/explorer/runs" : null);
     const destinationView = useExplorerData<ExplorerDestinationView>(destination && tab === "backups" ? `/api/storage/explorer/destinations/${destination.id}` : null);
 
     const { reload: reloadIndex } = index;
-    const { reload: reloadJob } = jobView;
+    const { reload: reloadBackups } = backups;
     const { reload: reloadDestination } = destinationView;
     const reloadAll = useCallback(() => {
         reloadIndex();
-        reloadJob();
+        reloadBackups();
         reloadDestination();
-    }, [reloadIndex, reloadJob, reloadDestination]);
+    }, [reloadIndex, reloadBackups, reloadDestination]);
 
     const actions = useBackupActions({ canDownload, canRestore, canDelete, canManageVault, destinations: destinationsById, onChanged: reloadAll });
     const { handlersFor: handlersForTarget, askDelete } = actions;
     const handlersFor = useCallback((file: ExplorerFile, destinationId: string) => handlersForTarget({ file, destinationId }), [handlersForTarget]);
 
-    // The panel follows the path of its backup, so a reload after a lock or a check shows the new state.
-    const [details, setDetails] = useState<{ open: boolean; path: string } | null>(null);
+    const changeView = useCallback((next: ViewMode) => {
+        setView(next);
+        saveViewLayout(BACKUPS_PAGE_ID, next)
+            .then((result) => result.success)
+            .catch(() => false)
+            .then((saved) => {
+                if (!saved) toast.error("Your view could not be saved.");
+            });
+    }, []);
+
+    // The panel follows its backup, so a reload after a lock or a check shows the new state.
+    const [details, setDetails] = useState<{ open: boolean; key: string; path: string } | null>(null);
+    const detailsRun = pageTab === "backups" && details && backups.data ? backups.data.runs.find((run) => runKey(run) === details.key) ?? null : null;
+    // History keeps no index by path, so the run that made a backup is asked for when its details open.
+    const execution = useExplorerData<RunExecution | null>(detailsRun ? `/api/storage/explorer/execution?path=${encodeURIComponent(detailsRun.path)}` : null);
     const detailsData = useMemo<BackupDetailsData | null>(() => {
         if (!details) return null;
-        if (mode === "jobs" && jobView.data) {
-            const run = jobView.data.runs.find((entry) => entry.path === details.path);
-            if (!run) return null;
-            const primary = primaryCopy(run);
+        if (pageTab === "backups") {
+            if (!detailsRun || !backups.data) return null;
+            const primary = primaryCopy(detailsRun, scope.at);
+            const siblings = backups.data.runs.filter((run) => run.jobKey === detailsRun.jobKey).map((run) => run.file);
             return {
                 file: primary.file,
                 destinationId: primary.destinationId,
-                copies: run.copies,
-                job: jobView.data.job,
-                chain: chainOf(run.file, jobView.data.runs.map((entry) => entry.file)),
-                execution: run.execution,
+                copies: detailsRun.copies,
+                job: jobsByKey.get(detailsRun.jobKey) ?? null,
+                chain: chainOf(detailsRun.file, siblings),
+                execution: execution.data ?? null,
             };
         }
-        if (mode === "destinations" && destinationView.data && destination) {
+        if (destinationView.data && destination) {
             const backup = destinationView.data.backups.find((entry) => entry.file.path === details.path);
             if (!backup) return null;
             const siblings = destinationView.data.backups.filter((entry) => entry.jobKey === backup.jobKey).map((entry) => entry.file);
@@ -200,16 +245,23 @@ export function StorageClient({ canDownload, canRestore, canDelete, canManageVau
             };
         }
         return null;
-    }, [details, mode, jobView.data, destinationView.data, destination, jobsByKey]);
+    }, [details, pageTab, detailsRun, backups.data, scope.at, execution.data, destinationView.data, destination, jobsByKey]);
 
     const openPath = details?.open ? details.path : null;
-    const openRun = useCallback((run: { path: string }) => setDetails({ open: true, path: run.path }), []);
-    const openBackup = useCallback((backup: DestinationBackup) => setDetails({ open: true, path: backup.file.path }), []);
+    const openRun = useCallback((run: BackupRun) => setDetails({ open: true, key: runKey(run), path: run.path }), []);
+    const openBackup = useCallback((backup: DestinationBackup) => setDetails({ open: true, key: backup.file.path, path: backup.file.path }), []);
 
-    const freshnessList = useMemo<ExplorerDestination[]>(
-        () => (mode === "jobs" ? destinationsOf(job, destinationsById) : destination ? [destination] : []),
-        [mode, job, destination, destinationsById]
-    );
+    // How fresh the lists are that the page shows: those of the filtered destinations, of the
+    // destinations of the filtered jobs, or of every destination.
+    const freshnessList = useMemo<ExplorerDestination[]>(() => {
+        if (pageTab === "destinations") return destination ? [destination] : [];
+        if (scope.at.length > 0) return scope.at.map((id) => destinationsById.get(id)).filter((entry): entry is ExplorerDestination => entry !== undefined);
+        if (scope.jobs.length > 0) {
+            const ids = new Set(scope.jobs.flatMap((key) => destinationsOf(jobsByKey.get(key) ?? null, destinationsById).map((entry) => entry.id)));
+            return destinations.filter((entry) => ids.has(entry.id));
+        }
+        return destinations;
+    }, [pageTab, destination, scope, destinations, destinationsById, jobsByKey]);
     const onCheckNow = useCallback(async () => {
         try {
             await checkNow(freshnessList);
@@ -236,14 +288,14 @@ export function StorageClient({ canDownload, canRestore, canDelete, canManageVau
         return () => clearTimeout(timer);
     }, [listingIds, index.data, reloadAll]);
 
-    const jobCount = jobs.filter((entry) => entry.kind === "job" || entry.kind === "deleted").length;
+    const backupCount = jobs.reduce((sum, entry) => sum + entry.runs, 0);
 
     if (index.loading) {
         return (
             <div className="space-y-4 md:space-y-6">
                 <div className="flex flex-wrap items-center gap-2 md:gap-3">
                     <Skeleton className="h-9 w-56" />
-                    <Skeleton className="h-9 w-full md:w-104" />
+                    <Skeleton className="ml-auto h-9 w-40" />
                 </div>
                 <PageSkeleton />
             </div>
@@ -271,17 +323,19 @@ export function StorageClient({ canDownload, canRestore, canDelete, canManageVau
         <div className="space-y-4 md:space-y-6">
             <div className="flex flex-wrap items-center gap-2 md:gap-3">
                 <Tabs
-                    value={mode}
-                    onValueChange={(next) =>
-                        setParams(next === "jobs"
-                            ? { job: job?.key ?? defaultJob(jobs)?.key ?? null, destination: null, folder: null, tab: null }
-                            : { job: null, destination: destination?.id ?? destinations[0]?.id ?? null })}
+                    value={pageTab}
+                    onValueChange={(next) => {
+                        setDetails(null);
+                        setParams(next === "backups"
+                            ? { destination: null, tab: null, layout: null, folder: null, view: null }
+                            : { destination: destination?.id ?? destinations[0]?.id ?? null, job: null, at: null });
+                    }}
                 >
-                    <TabsList aria-label="Show backups">
-                        <TabsTrigger value="jobs">
+                    <TabsList aria-label="Show">
+                        <TabsTrigger value="backups">
                             <span className="flex items-center gap-2">
-                                Jobs
-                                <span className="text-xs font-normal text-muted-foreground tabular-nums">{jobCount}</span>
+                                Backups
+                                <span className="text-xs font-normal text-muted-foreground tabular-nums">{backupCount.toLocaleString()}</span>
                             </span>
                         </TabsTrigger>
                         <TabsTrigger value="destinations">
@@ -292,22 +346,21 @@ export function StorageClient({ canDownload, canRestore, canDelete, canManageVau
                         </TabsTrigger>
                     </TabsList>
                 </Tabs>
-                <div className="order-last w-full min-w-0 md:order-0 md:w-auto">
-                    <ExplorerPicker
-                        mode={mode}
-                        jobs={jobs}
-                        destinations={destinations}
-                        destinationsById={destinationsById}
-                        value={mode === "jobs" ? job?.key ?? null : destination?.id ?? null}
-                        onChange={(value) => {
-                            setDetails(null);
-                            setParams(mode === "jobs" ? { job: value } : { destination: value, folder: null });
-                        }}
-                    />
-                </div>
+                {pageTab === "destinations" && (
+                    <div className="order-last w-full min-w-0 md:order-0 md:w-auto">
+                        <ExplorerPicker
+                            destinations={destinations}
+                            value={destination?.id ?? null}
+                            onChange={(value) => {
+                                setDetails(null);
+                                setParams({ destination: value, folder: null });
+                            }}
+                        />
+                    </div>
+                )}
                 <div className="ml-auto flex shrink-0 items-center gap-2">
-                    {(mode === "jobs" || tab === "backups") && <FreshnessButton destinations={freshnessList} onCheckNow={onCheckNow} />}
-                    {mode === "destinations" && (
+                    {(pageTab === "backups" || tab === "backups") && <FreshnessButton destinations={freshnessList} onCheckNow={onCheckNow} />}
+                    {pageTab === "destinations" && (
                         <Tabs value={tab} onValueChange={(next) => setParams({ tab: next === "backups" ? null : next, folder: null })}>
                             <TabsList aria-label="About this destination">
                                 <TabsTrigger value="backups">Backups</TabsTrigger>
@@ -316,7 +369,7 @@ export function StorageClient({ canDownload, canRestore, canDelete, canManageVau
                             </TabsList>
                         </Tabs>
                     )}
-                    {mode === "destinations" && tab !== "backups" && (
+                    {pageTab === "destinations" && tab !== "backups" && (
                         <Button
                             variant="outline"
                             className="size-9 p-0"
@@ -326,48 +379,46 @@ export function StorageClient({ canDownload, canRestore, canDelete, canManageVau
                             <RotateCw />
                         </Button>
                     )}
-                    {(mode === "jobs" || tab === "backups") && (
-                        // A phone has no room for the timeline, so it always gets the list and no switch.
+                    {/* Hidden by CSS rather than by the measured screen, so neither pops in after loading. */}
+                    {pageTab === "destinations" && tab === "backups" && (
                         <div className="hidden md:block">
                             <DisplaySwitch value={display} onChange={(next) => setParams({ view: next === "table" ? null : next })} />
                         </div>
                     )}
-                    {mode === "jobs" && job?.kind === "job" && (
-                        <Button variant="outline" asChild className="hidden sm:inline-flex">
-                            <Link href={`/dashboard/jobs?job=${encodeURIComponent(job.key)}`}>
-                                <ArrowUpRight />
-                                Open job
-                            </Link>
-                        </Button>
+                    {pageTab === "backups" && (
+                        <div className="hidden md:block">
+                            <ViewSwitch value={view} onChange={changeView} views={VIEWS} />
+                        </div>
                     )}
                 </div>
             </div>
 
-            {mode === "jobs" && (
-                !job ? (
-                    <Empty title="This job has no backups">
-                        It was deleted and none of its backups are left. Pick another job above.
-                    </Empty>
-                ) : jobView.loading || !jobView.data ? (
-                    jobView.error ? <Empty title="The backups could not be loaded">{jobView.error}</Empty> : <PageSkeleton />
+            {pageTab === "backups" && (
+                backups.loading || !backups.data || !shownView ? (
+                    backups.error ? <Empty title="The backups could not be loaded">{backups.error}</Empty> : <PageSkeleton />
                 ) : (
-                    <JobBackups
-                        // What was picked on the timeline of one job means nothing for the next.
-                        key={jobView.data.job.key}
-                        view={jobView.data}
-                        destinations={destinationsById}
-                        display={display}
+                    <BackupsList
+                        runs={backups.data.runs}
+                        jobs={jobs}
+                        jobsByKey={jobsByKey}
+                        destinations={destinations}
+                        destinationsById={destinationsById}
+                        scope={scope}
+                        onScope={(next) => setParams({ job: next.jobs, at: next.at, destination: null })}
+                        view={shownView}
+                        columnLayout={columnLayout}
                         canDelete={canDelete}
                         handlersFor={handlersFor}
                         askDelete={askDelete}
                         onOpen={openRun}
-                        openPath={openPath}
+                        onRefresh={reloadAll}
+                        refreshing={backups.reloading}
                         onChanged={reloadAll}
                     />
                 )
             )}
 
-            {mode === "destinations" && destination && tab === "backups" && (
+            {pageTab === "destinations" && destination && tab === "backups" && (
                 destinationView.loading || !destinationView.data ? (
                     destinationView.error ? <Empty title="The backups could not be loaded">{destinationView.error}</Empty> : <PageSkeleton />
                 ) : (
@@ -387,20 +438,20 @@ export function StorageClient({ canDownload, canRestore, canDelete, canManageVau
                         onOpen={openBackup}
                         onOpenJob={(key) => {
                             setDetails(null);
-                            setParams({ job: key, destination: null, folder: null, tab: null });
+                            setParams({ job: key, destination: null, at: null, folder: null, tab: null, layout: null, view: null });
                         }}
                         openPath={openPath}
                         onChanged={reloadAll}
                     />
                 )
             )}
-            {mode === "destinations" && destination && tab === "history" && (
+            {pageTab === "destinations" && destination && tab === "history" && (
                 <StorageHistoryTab ref={historyRef} configId={destination.id} adapterName={destination.name} />
             )}
-            {mode === "destinations" && destination && tab === "alerts" && (
+            {pageTab === "destinations" && destination && tab === "alerts" && (
                 <StorageSettingsTab ref={settingsRef} configId={destination.id} adapterName={destination.name} />
             )}
-            {mode === "destinations" && !destination && (
+            {pageTab === "destinations" && !destination && (
                 <Empty title="No destinations yet">Add a destination on the Connections page, then its backups show here.</Empty>
             )}
 
@@ -410,11 +461,11 @@ export function StorageClient({ canDownload, canRestore, canDelete, canManageVau
                 onClose={() => setDetails((current) => (current ? { ...current, open: false } : null))}
                 destinations={destinationsById}
                 handlersFor={handlersFor}
-                onDeleteEverywhere={mode === "jobs" && canDelete && detailsData
-                    ? () => askDelete(
-                        detailsData.copies.flatMap((copy) => (copy.state === "stored" && copy.file ? [{ file: copy.file, destinationId: copy.destinationId }] : [])),
-                        detailsData.copies.filter((copy) => copy.state === "stored").length > 1 ? "Delete this backup at every destination?" : "Delete this backup?"
-                    )
+                onDeleteEverywhere={detailsRun && canDelete
+                    ? () => {
+                        const targets = targetsOf(detailsRun, []);
+                        askDelete(targets, targets.length > 1 ? "Delete this backup at every destination?" : "Delete this backup?");
+                    }
                     : undefined}
                 canViewHistory={canViewHistory}
             />

@@ -3,8 +3,8 @@ import type { RichFileInfo } from "./storage-service";
 /**
  * What the Storage Explorer loads, shared by its service, its API routes and the page.
  *
- * The explorer shows the backups two ways: by job, where one row is a run with a copy at every
- * destination of the job, and by destination, where one row is a file. Both come from the same
+ * The explorer lists every backup as a run with a copy at every destination of its job, which the
+ * page filters by job and by destination, and the files of one destination. Both come from the same
  * cached listings of the destinations, see `explorer-model.ts`.
  */
 
@@ -103,10 +103,9 @@ export interface ExplorerIndex {
     jobs: ExplorerJob[];
 }
 
-export interface ExplorerJobView {
-    job: ExplorerJob;
-    /** Newest first. */
-    runs: (BackupRun & { execution: RunExecution | null })[];
+export interface ExplorerBackups {
+    /** Every backup of every job, newest first. */
+    runs: BackupRun[];
 }
 
 export interface DestinationBackup {

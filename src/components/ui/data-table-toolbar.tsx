@@ -52,6 +52,7 @@ export function DataTableToolbar<TData>({
                 column={table.getColumn(column.id as string)}
                 title={column.title}
                 options={column.options}
+                contentClassName={column.contentClassName}
             />
         ) : null
     );

@@ -6,11 +6,11 @@ import { isListingStale, storageService } from "./storage-service";
 import { buildExplorer, normalizePath, timeOf, type DestinationListing, type ExplorerModel, type JobRecord } from "./explorer-model";
 import type {
     DestinationBackup,
+    ExplorerBackups,
     ExplorerDestination,
     ExplorerFile,
     ExplorerDestinationView,
     ExplorerIndex,
-    ExplorerJobView,
     HealthStatus,
     RunExecution,
 } from "./explorer-types";
@@ -27,8 +27,8 @@ interface Loaded {
 }
 
 /**
- * The Storage Explorer's view of every destination at once: by job, with the copies of each run
- * side by side, and by destination, with where else each backup lies.
+ * The Storage Explorer's view of every destination at once: every backup with its copies side by
+ * side, which the page filters by job and by destination, and the backups of one destination.
  *
  * Reads only the cached listings, so a page never waits for a storage. The cache is kept in step by
  * every upload, deletion, lock and check, compared with the storage by the hourly Pre-warm Storage
@@ -125,15 +125,20 @@ export class StorageExplorerService {
         return { destinations, jobs: model.jobs };
     }
 
-    /** The runs of one job, each with its copies and the run that made it while History still has it. */
-    async getJobView(key: string): Promise<ExplorerJobView | null> {
+    /** Every backup of every job, newest first, each with its copies at every destination. */
+    async getBackups(): Promise<ExplorerBackups> {
         const { model } = await this.load();
-        const job = model.jobs.find((entry) => entry.key === key);
-        if (!job) return null;
+        const runs = [...model.runs.values()].flat().sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+        return { runs };
+    }
 
-        const runs = model.runs.get(key) ?? [];
-        const executions = await this.executionsFor(runs.map((run) => run.path));
-        return { job, runs: runs.map((run) => ({ ...run, execution: executions.get(run.path) ?? null })) };
+    /**
+     * The run that made a backup while History still has it. Asked for one backup at a time, when its
+     * details open, since History keeps no index by path.
+     */
+    async getExecution(path: string): Promise<RunExecution | null> {
+        const normalized = normalizePath(path);
+        return (await this.executionsFor([normalized])).get(normalized) ?? null;
     }
 
     /** The backups of one destination, each with the job it belongs to and its copies elsewhere. */
@@ -166,7 +171,7 @@ export class StorageExplorerService {
         // The runner records the path without a leading slash, older runs may have one.
         const candidates = paths.flatMap((path) => [path, `/${path}`]);
         const rows = [];
-        // In slices, so a job with thousands of backups stays under SQLite's limit of variables.
+        // In slices, so a long list of backups stays under SQLite's limit of variables.
         for (let start = 0; start < candidates.length; start += EXECUTION_LOOKUP_SLICE) {
             rows.push(...await prisma.execution.findMany({
                 where: { path: { in: candidates.slice(start, start + EXECUTION_LOOKUP_SLICE) } },

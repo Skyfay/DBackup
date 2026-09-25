@@ -84,3 +84,48 @@ describe('the Storage Explorer never waits for a storage', () => {
         expect(storage.checkNow).toHaveBeenCalledWith('nas');
     });
 });
+
+describe('every backup in one list', () => {
+    let service: StorageExplorerService;
+
+    beforeEach(() => {
+        service = new StorageExplorerService();
+        prismaMock.job.findMany.mockResolvedValue([
+            { id: 'job-1', name: 'Shop', backupMode: 'FULL', source: { adapterId: 'postgres', name: 'Shop' }, sources: [], destinations: [{ configId: 'nas' }, { configId: 'r2' }] },
+            { id: 'job-2', name: 'CRM', backupMode: 'FULL', source: { adapterId: 'mysql', name: 'CRM' }, sources: [], destinations: [{ configId: 'nas' }] },
+        ] as never);
+        prismaMock.adapterConfig.findMany.mockResolvedValue([destination('nas'), destination('r2')] as never);
+        storage.isListing.mockReturnValue(false);
+        storage.listingFailure.mockReturnValue(null);
+    });
+
+    it('lists the backups of every job newest first, each with its copy at every destination', async () => {
+        const at = (hours: number) => new Date(Date.now() - hours * 3_600_000).toISOString();
+        const shop = { name: 'shop.tar', path: 'Shop/shop.tar', size: 10, lastModified: new Date(), jobId: 'job-1', jobName: 'Shop', createdAt: at(3) };
+        const crm = { name: 'crm.tar', path: 'CRM/crm.tar', size: 5, lastModified: new Date(), jobId: 'job-2', jobName: 'CRM', createdAt: at(1) };
+        storage.readCachedListing.mockImplementation(async (id: string) =>
+            ({ files: id === 'nas' ? [shop, crm] : [shop], listedAt: new Date(), current: true }));
+
+        const { runs } = await service.getBackups();
+
+        expect(runs.map((run) => run.path)).toEqual(['CRM/crm.tar', 'Shop/shop.tar']);
+        expect(runs[1].copies.map((copy) => [copy.destinationId, copy.state])).toEqual([['nas', 'stored'], ['r2', 'stored']]);
+        expect(runs[0].jobKey).toBe('job-2');
+    });
+
+    it('finds the run that made a backup under either way History wrote its path', async () => {
+        prismaMock.execution.findMany.mockResolvedValue([
+            { id: 'old', status: 'Success', startedAt: new Date('2026-09-20T03:00:00Z'), endedAt: null, path: '/Shop/shop.tar' },
+            { id: 'new', status: 'Partial', startedAt: new Date('2026-09-24T03:00:00Z'), endedAt: new Date('2026-09-24T03:02:00Z'), path: 'Shop/shop.tar' },
+        ] as never);
+
+        await expect(service.getExecution('/Shop/shop.tar')).resolves.toMatchObject({ id: 'new', status: 'Partial' });
+        expect(prismaMock.execution.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { path: { in: ['Shop/shop.tar', '/Shop/shop.tar'] } } }));
+    });
+
+    it('has no run for a backup History no longer holds', async () => {
+        prismaMock.execution.findMany.mockResolvedValue([]);
+
+        await expect(service.getExecution('Shop/gone.tar')).resolves.toBeNull();
+    });
+});

@@ -13,7 +13,11 @@ export interface DataTableFilterOption {
     label: string
     value: string
     icon?: React.ComponentType<{ className?: string }>
+    /** Drawn before the label in place of the icon, like the logo of a job. */
+    lead?: React.ReactNode
     count?: number
+    /** The heading the option is listed under. Groups keep the order of their first option. */
+    group?: string
 }
 
 /** What the right click menu of a row may do when the row is one of several selected. */
@@ -28,6 +32,8 @@ export interface DataTableFilterableColumn<TData> {
     id: keyof TData | string;
     title: string;
     options: DataTableFilterOption[];
+    /** Classes for the list, like a width for long names. */
+    contentClassName?: string;
 }
 
 /**

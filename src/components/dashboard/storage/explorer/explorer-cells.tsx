@@ -3,7 +3,7 @@
 import { CircleX, Clock, ClockAlert, FolderOpen, KeyRound, Layers, Lock, MousePointerClick, Settings2, ShieldCheck, Unlink } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipHead, TooltipTrigger } from "@/components/ui/tooltip";
 import { DateDisplay } from "@/components/utils/date-display";
 import { cn, formatBytes } from "@/lib/utils";
 import type { CopyState, ExplorerDestination, ExplorerFile, ExplorerJob } from "@/services/storage/explorer-types";
@@ -71,31 +71,40 @@ export function AnswerLegend() {
     );
 }
 
+const ANSWER_TONES: Record<Answer, "success" | "warning" | "destructive"> = { online: "success", missed: "warning", offline: "destructive" };
+const ANSWER_WORDS: Record<Answer, string> = { online: "answers right now", missed: "missed its last check", offline: "is offline" };
+
 /** The state of a destination in words, for the hover of a copy. */
 function AnswerTip({ destination, alternative }: { destination: ExplorerDestination; alternative?: string }) {
     const answer = answerOf(destination);
     const { health } = destination;
-    const title = answer === "online" ? `${destination.name} answers right now` : answer === "missed" ? `${destination.name} missed its last check` : `${destination.name} is offline`;
     return (
-        <div className="space-y-1">
-            <p className="flex items-center gap-2 font-medium"><AnswerDot answer={answer} />{title}</p>
-            {answer === "online" && (
-                <p>
-                    {health.latencyMs !== null ? `It answered in ${health.latencyMs} ms` : "It answered"}
-                    {health.checkedAt && <>, <RelativeTime date={health.checkedAt} /></>}.
-                </p>
-            )}
-            {answer === "missed" && <p>A restore or download of this copy may fail until it answers again.</p>}
-            {answer === "offline" && (
-                <>
-                    <p>{health.answeredAt ? <>No answer since <DateDisplay date={health.answeredAt} format="Pp" />.</> : "No answer in the checks DBackup keeps."}</p>
-                    <p>A restore or download of this copy fails until it answers.{alternative && ` ${alternative} holds the same backup and answers right now.`}</p>
-                </>
-            )}
-            {destination.listError && answer !== "offline" && (
-                <p>Its last listing failed{destination.listedAt && <>, so this is its list of <DateDisplay date={destination.listedAt} format="Pp" /></>}.</p>
-            )}
-        </div>
+        <>
+            <TooltipHead tone={ANSWER_TONES[answer]}>
+                {/* A long name gives way, so the state after it always shows. */}
+                <span className="flex min-w-0 gap-1">
+                    <span className="truncate">{destination.name}</span> <span className="shrink-0">{ANSWER_WORDS[answer]}</span>
+                </span>
+            </TooltipHead>
+            <div className="space-y-1 text-muted-foreground">
+                {answer === "online" && (
+                    <p>
+                        {health.latencyMs !== null ? `It answered in ${health.latencyMs} ms` : "It answered"}
+                        {health.checkedAt && <>, <RelativeTime date={health.checkedAt} /></>}.
+                    </p>
+                )}
+                {answer === "missed" && <p>A restore or download of this copy may fail until it answers again.</p>}
+                {answer === "offline" && (
+                    <>
+                        <p>{health.answeredAt ? <>No answer since <DateDisplay date={health.answeredAt} format="Pp" />.</> : "No answer in the checks DBackup keeps."}</p>
+                        <p>A restore or download of this copy fails until it answers.{alternative && ` ${alternative} holds the same backup and answers right now.`}</p>
+                    </>
+                )}
+                {destination.listError && answer !== "offline" && (
+                    <p>Its last listing failed{destination.listedAt && <>, so this is its list of <DateDisplay date={destination.listedAt} format="Pp" /></>}.</p>
+                )}
+            </div>
+        </>
     );
 }
 

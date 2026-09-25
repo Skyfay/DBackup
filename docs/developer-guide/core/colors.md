@@ -1,6 +1,6 @@
 # Task Colors
 
-Every dialog, popover, menu entry and button in DBackup takes the color of its task. Adding is blue, editing violet, picking turquoise, warning amber and deleting red. Everything else stays neutral. This page explains the rule and how the code applies it.
+Every dialog, popover, menu entry and button in DBackup takes the color of its task. Adding is blue, editing violet, picking turquoise, filtering fuchsia, warning amber and deleting red. Everything else stays neutral. This page explains the rule and how the code applies it.
 
 ## The Tones
 
@@ -9,14 +9,15 @@ Every dialog, popover, menu entry and button in DBackup takes the color of its t
 | `create` | Blue | Adds a new entry | New database, Create job, Clone, the type picker before a form |
 | `edit` | Violet | Changes an entry that exists | Edit database, Edit user, Edit template |
 | `pick` | Turquoise | Chooses an entry that exists | A saved login, a folder, a file, the databases of a job |
+| `filter` | Fuchsia | Narrows what a list shows | The filters of every table, framed in it once they hold something |
 | `warning` | Amber | Warns before going on, or reports what failed | Save anyway, Restore, the result of a bulk action |
 | `destructive` | Red | Loses something | Delete, Remove, Revoke |
 | `success` | Green | Reports that all is well | Never on an action |
 | `neutral` | Primary | Everything else | Settings, pages, menus, Sign in, Test, Download |
 
-The list is closed on purpose. An area of the app, like the Vault or the templates, never gets a color of its own. Every extra color is one more meaning to learn, and the palette has no hue left that does not look like one of the above.
+The list is closed on purpose. An area of the app, like the Vault or the templates, never gets a color of its own. Every extra color is one more meaning to learn, and the palette has no hue left that does not look like one of the above. Filtering took the last free one, since it is a task of its own: it changes no data and only narrows what a list shows.
 
-Status colors are a separate layer: green for completed, amber for partial, red for failed and blue for running. They show up as dots, badges, tinted rows and chart bars, never on an action. The `info` token is reserved for the running status and the newest bar of a chart.
+Status colors are a separate layer: green for completed, amber for partial, red for failed and blue for running. They show up as dots, badges, tinted rows, chart bars and the first line of a tooltip that tells a state, never on an action. The `info` token is reserved for the running status and the newest bar of a chart.
 
 ## How It Works
 
@@ -45,7 +46,7 @@ The primitives take a typed `tone` prop from `src/components/ui/tone.ts` and wri
 | `Switch`, `Checkbox`, `RadioGroupItem` | On, checked and picked in `--tone-control` |
 | `Input`, `Textarea`, `SelectTrigger`, `TagInput` | Focus ring from `--tone-ring` |
 
-`--tone-ring` follows `create`, `edit` and `pick` and stays the quiet gray `--ring` for every other tone. A red or amber border on a field reads as an error, so a destructive or warning dialog keeps the gray ring on its fields.
+`--tone-ring` follows `create`, `edit`, `pick` and `filter` and stays the quiet gray `--ring` for every other tone. A red or amber border on a field reads as an error, so a destructive or warning dialog keeps the gray ring on its fields.
 
 `--tone-control` is the tone of the task for switches, checkboxes and radio buttons. Where there is no task, on a page, in Settings or in a neutral dialog, it is `--control-neutral`, a quiet gray instead of the white or black of a neutral button, so a setting that is on never outshines the page.
 

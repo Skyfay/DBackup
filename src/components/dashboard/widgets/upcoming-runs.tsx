@@ -154,9 +154,11 @@ export function UpcomingRuns({ schedule, className }: { schedule: UpcomingSchedu
                                             style={{ left: `${position(group.at)}%` }}
                                         />
                                     </TooltipTrigger>
-                                    <TooltipContent side="top" className="text-xs">
-                                        <When at={group.at} withDay={withDay} />: {namesList(group.jobs)}
-                                        {failing && <span className="block">Its last run failed.</span>}
+                                    <TooltipContent side="top">
+                                        <span className="block font-medium">
+                                            <When at={group.at} withDay={withDay} />: {namesList(group.jobs)}
+                                        </span>
+                                        {failing && <span className="mt-0.5 block text-destructive">Its last run failed.</span>}
                                     </TooltipContent>
                                 </Tooltip>
                             );

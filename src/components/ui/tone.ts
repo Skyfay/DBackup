@@ -8,12 +8,13 @@
  * - `create` adds a new entry (blue)
  * - `edit` changes an entry that exists (violet)
  * - `pick` chooses an entry that exists, like a login or a folder (turquoise)
+ * - `filter` narrows what a list shows, like the filters of a table (fuchsia)
  * - `warning` warns before going on, or reports what failed (amber)
  * - `destructive` loses something, like deleting (red)
  * - `success` reports that all is well, never on an action (green)
  * - `neutral` is everything else, like settings, pages and menus
  */
-export type Tone = "neutral" | "create" | "edit" | "pick" | "warning" | "destructive" | "success";
+export type Tone = "neutral" | "create" | "edit" | "pick" | "filter" | "warning" | "destructive" | "success";
 
 /**
  * A menu entry with a tone looks like a picked card while it is highlighted: a frame and a light

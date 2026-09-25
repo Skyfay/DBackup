@@ -40,42 +40,40 @@ function oldestListing(destinations: ExplorerDestination[]): string | null {
     return times.reduce((oldest, time) => (Date.parse(time) < Date.parse(oldest) ? time : oldest));
 }
 
-function StateLine({ destination }: { destination: ExplorerDestination }) {
-    if (destination.listing) return <>Comparing with the storage now</>;
-    if (destination.listError && !destination.listedAt) {
-        return <span className="text-destructive">Could not be listed: {destination.listError}</span>;
-    }
-    if (destination.listError || destination.health.status === "OFFLINE") {
-        return (
-            <span className="text-warning">
-                {destination.listError ? "The last listing failed" : "Not reachable"}
-                {destination.listedAt && <> · the list is from <DateDisplay date={destination.listedAt} format="Pp" /></>}
-            </span>
-        );
-    }
-    if (!destination.listedAt) return <>Not listed yet</>;
-    return (
-        <>
-            Compared with the storage <RelativeTime date={destination.listedAt} /> · {count(destination.count, "backup")}
-        </>
-    );
+/** Why a list is not up to date, on the hover of its row. */
+function behindReason(destination: ExplorerDestination): string {
+    if (destination.listError) return `Listing failed: ${destination.listError}`;
+    if (destination.health.status === "OFFLINE") return "Offline, it does not answer the connection check";
+    return "Not listed yet";
+}
+
+/**
+ * When DBackup last compared its list with the storage, the same short line for every
+ * destination. One that is behind shows the date, so its age reads without a hover.
+ */
+function StateLine({ destination, state }: { destination: ExplorerDestination; state: Freshness }) {
+    if (state === "listing") return <>Comparing now</>;
+    if (!destination.listedAt) return <>Not compared yet</>;
+    if (state === "behind") return <>Compared <DateDisplay date={destination.listedAt} format="Pp" /></>;
+    return <>Compared <RelativeTime date={destination.listedAt} /></>;
 }
 
 function DestinationRow({ destination }: { destination: ExplorerDestination }) {
     const state = freshnessOf(destination);
+    const reason = state === "behind" ? behindReason(destination) : undefined;
     return (
-        <li className="flex items-center gap-3 px-3 py-2">
+        <li className="flex items-center gap-3 px-3 py-2" title={reason}>
             <DestinationTile destination={destination} />
             <div className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium">{destination.name}</span>
-                <span className="block truncate text-xs text-muted-foreground">
-                    <StateLine destination={destination} />
+                <span className={cn("block truncate text-xs", state === "behind" ? "text-warning" : "text-muted-foreground")}>
+                    <StateLine destination={destination} state={state} />
                 </span>
             </div>
             {state === "listing" ? (
                 <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" aria-hidden="true" />
             ) : state === "behind" ? (
-                <ClockAlert className="size-4 shrink-0 text-warning" aria-hidden="true" />
+                <ClockAlert className="size-4 shrink-0 text-warning" role="img" aria-label={reason} />
             ) : (
                 <Check className="size-4 shrink-0 text-success" aria-hidden="true" />
             )}
@@ -147,7 +145,7 @@ export function FreshnessButton({ destinations, onCheckNow }: FreshnessButtonPro
         ? "Listing"
         : byState.behind.length > 0 && destinations.length > 1
             ? `${byState.current.length} of ${destinations.length} up to date`
-            : oldest ? <>Checked <RelativeTime date={oldest} /></> : "Not listed yet";
+            : oldest ? <>Compared <RelativeTime date={oldest} /></> : "Not compared yet";
 
     return (
         <Popover open={open} onOpenChange={setOpen}>

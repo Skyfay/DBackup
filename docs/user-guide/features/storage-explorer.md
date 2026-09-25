@@ -35,16 +35,16 @@ A copy shows as **missing** when a destination of the job holds older backups of
 
 ### Filters
 
-The filters beside the search narrow the list. Each opens like the other selects of DBackup, with a search and the number of backups every entry would leave, and several entries can be picked:
+The filters beside the search narrow the list. Each opens a list with a search, a checkbox per entry and the number of backups every entry would leave, and several entries can be picked. The box beside the search picks every entry the search shows, the foot tells how many are picked and **Clear** empties the filter, and a filter that holds something is framed in the color of filtering:
 
 - **Job** lists the jobs in three groups: **Jobs**, the jobs that exist, **Deleted jobs**, jobs that are gone while their backups are still at a destination, and **Not from a job**, the config backups of DBackup itself and files that nothing links to a job. Type part of a name to find one among hundreds.
 - **Destination** keeps the backups with a copy at the picked destinations, a missing one included.
 - **Started by** lists **Schedule**, every person who started a run by hand and every API key that started one.
-- The quick filters show only backups with a missing copy, a failed check, a lock, or of a deleted job.
+- **State** keeps the backups with a missing copy, a failed check, no copy that answers right now, a lock, or of a deleted job. While nothing is picked, it counts in amber the backups with a missing copy and in red the ones with a failed check or no copy that answers.
 
 The filters narrow each other. Entries without backups under the other filters wait at the end of a list under **No backups with the other filters** and cannot be picked.
 
-A **Destination** filter also decides what the rest counts: the strip, the quick filters, **Stored at** and the actions only look at the copies at the picked destinations. **Copy missing** with **NAS Backups** picked lists the backups NAS Backups lacks.
+A **Destination** filter also decides what the rest counts: the strip, the states, **Stored at** and the actions only look at the copies at the picked destinations. **A copy is missing** with **NAS Backups** picked lists the backups NAS Backups lacks.
 
 ### Actions
 
@@ -108,7 +108,7 @@ DBackup keeps a list of the files at every destination. Its own backups, deletio
 
 The page never waits for a destination. It opens with the lists DBackup has, and lists a destination it has no list for, or only an old one, in the background. The backups show up as soon as the listing is done. A destination that did not answer keeps its last list and is left alone for five minutes before the page asks it again. One that the health check calls offline is left to the hourly task.
 
-The button next to the tabs tells when the lists were last compared, or how many of them are up to date when some are not, like **4 of 9 up to date**. It turns into **Listing** while a listing runs. Its popover shows every destination with the time of its list, and marks one that is offline or whose last listing failed, with the reason. From six destinations on, it folds them into **Not up to date**, which opens first, and **Up to date**. The backups of a destination that is not up to date show as they were at its last list, with a clock on their chips. **Check now** compares the destinations again right away, even one that failed a moment ago.
+The button next to the tabs tells when the lists were last compared, or how many of them are up to date when some are not, like **4 of 9 up to date**. It turns into **Listing** while a listing runs. Its popover shows when each destination was last compared. One that is not up to date shows the date in amber, and hovering it tells why, like a failed listing or a destination that is offline. From six destinations on, it folds them into **Not up to date**, which opens first, and **Up to date**. The backups of a destination that is not up to date show as they were at its last list, with a clock on their chips. **Check now** compares the destinations again right away, even one that failed a moment ago.
 
 ::: tip Changes outside DBackup
 Backups copied into a destination by hand show up with the next comparison, found by their `.meta.json` sidecar. Files deleted by hand drop out the same way.

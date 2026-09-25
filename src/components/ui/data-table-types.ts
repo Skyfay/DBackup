@@ -36,6 +36,14 @@ export interface DataTableFilterableColumn<TData> {
     contentClassName?: string;
     /** The heading over the options no row has under the other filters, which sit at the end and cannot be picked. */
     unavailableLabel?: string;
+    /** The title of the open list. `Filter by <title>` when left out. */
+    heading?: string;
+    /** The line under that title, like what the numbers count. */
+    note?: string;
+    /** What the filters leave, like 30 backups, in the foot of the open list. */
+    resultLabel?: string;
+    /** Shown in the closed field while nothing is picked, like how many rows need a look. */
+    hint?: React.ReactNode;
 }
 
 /**

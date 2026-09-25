@@ -150,7 +150,11 @@ const destinationView: ExplorerDestinationView = {
 
 const ok = (data: unknown) => Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true, data }) } as Response);
 /** A backup the way the timeline names it, in the formats of the signed in user. */
-const shown = (entry: ExplorerFile) => formatInTimeZone(new Date(entry.createdAt!), "UTC", "yyyy-MM-dd HH:mm");
+const shown = (entry: ExplorerFile) => at(entry.createdAt!);
+/** A moment in the formats of the signed in user. */
+function at(iso: string) {
+    return formatInTimeZone(new Date(iso), "UTC", "yyyy-MM-dd HH:mm");
+}
 
 function page(view: ViewMode = "table") {
     return <StorageClient canDownload canRestore canDelete canViewHistory initialLayout={null} initialView={view} />;
@@ -235,8 +239,9 @@ describe("Storage Explorer", () => {
         expect(screen.getByText("Offline, a restore from it fails")).toBeInTheDocument();
 
         await user.hover(within(newestRow).getByText("Cloudflare R2"));
-        expect((await screen.findAllByText("Cloudflare R2 is offline")).length).toBeGreaterThan(0);
-        expect(screen.getAllByText(/NAS Backups holds the same backup and answers right now\./).length).toBeGreaterThan(0);
+        const tip = await screen.findByRole("tooltip");
+        expect(tip).toHaveTextContent("Cloudflare R2 is offline");
+        expect(tip).toHaveTextContent("NAS Backups holds the same backup and answers right now.");
     });
 
     it("restores from a copy whose destination answers, even when it comes second in the upload order", async () => {
@@ -259,13 +264,17 @@ describe("Storage Explorer", () => {
         await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith("/api/storage/explorer/refresh", expect.objectContaining({ body: JSON.stringify({ destinationIds: ["r2"] }) })));
     });
 
-    it("tells which destination did not answer", async () => {
+    it("tells which destination did not answer, with the date of its last list and why on hover", async () => {
         const user = userEvent.setup();
         renderPage();
 
         await user.click(await screen.findByRole("button", { name: "How old the lists are" }));
         expect(await screen.findByText("1 destination did not answer")).toBeInTheDocument();
-        expect(screen.getByText(/Not reachable/)).toBeInTheDocument();
+        const popover = screen.getByRole("dialog");
+        const behind = within(popover).getByText("Cloudflare R2").closest("li")!;
+        expect(behind).toHaveTextContent(`Compared ${at(hoursAgo(0.5))}`);
+        expect(behind).toHaveAttribute("title", "Offline, it does not answer the connection check");
+        expect(within(popover).getByText("NAS Backups").closest("li")).toHaveTextContent("Compared 30 minutes ago");
     });
 
     it("filters by job from a list split into jobs, deleted jobs and the rest", async () => {
@@ -313,17 +322,39 @@ describe("Storage Explorer", () => {
     });
 
     it("counts only the copies at the destination it is filtered by", async () => {
+        const user = userEvent.setup();
         search = new URLSearchParams("at=r2");
         const { rerender } = renderPage();
 
-        expect(await screen.findByRole("button", { name: /Copy missing\s*1/ })).toBeInTheDocument();
+        await user.click(await screen.findByRole("button", { name: /^State/ }));
+        expect(await screen.findByRole("option", { name: /A copy is missing\s*1/ })).toBeInTheDocument();
         expect(within(table()).getAllByText("Shop nightly")).toHaveLength(2);
         expect(within(table()).queryByText("Media sync")).not.toBeInTheDocument();
+        await user.keyboard("{Escape}");
 
         // Every copy at the NAS is there, even of the backup that misses its copy at R2.
         search = new URLSearchParams("at=nas");
         rerender(page());
-        expect(await screen.findByRole("button", { name: /Copy missing\s*0/ })).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: /^State/ }));
+        expect(await screen.findByRole("option", { name: /A copy is missing\s*0/ })).toBeInTheDocument();
+    });
+
+    it("folds the quick filters into a State filter that counts what needs a look", async () => {
+        const user = userEvent.setup();
+        renderPage();
+
+        // The older backup misses its copy at R2, the newest has its only other copy there, which is offline.
+        const state = await screen.findByRole("button", { name: /^State/ });
+        expect(state).toHaveTextContent("1");
+        await user.click(state);
+        expect(await screen.findByText("Filter by state")).toBeInTheDocument();
+        await user.click(screen.getByRole("option", { name: /A copy is missing/ }));
+
+        await waitFor(() => expect(within(table()).getAllByText("Shop nightly")).toHaveLength(1));
+        expect(within(table()).getByText("Cloudflare R2 missing")).toBeInTheDocument();
+        expect(screen.getByText("1 of 5 picked")).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Clear" }));
+        await waitFor(() => expect(within(table()).getAllByText("Shop nightly")).toHaveLength(2));
     });
 
     it("deletes a backup only at the destination the list is filtered by", async () => {

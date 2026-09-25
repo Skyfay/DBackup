@@ -89,5 +89,7 @@ export function backupColumns({ jobs, destinations, at, onOpen, renderActions }:
             meta: { pin: "end", label: "Actions" },
             cell: ({ row }) => <div className="flex justify-end">{renderActions(row.original)}</div>,
         },
+        // Only here for the State filter. What it leaves is worked out in backup-filters.ts.
+        { id: "state", header: "State", meta: { label: "State", filterOnly: true } },
     ];
 }

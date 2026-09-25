@@ -90,6 +90,8 @@
   --edit-foreground: oklch(0.985 0 0);
   --pick: oklch(0.52 0.094 223.1); /* #0e7490, choosing an entry that exists */
   --pick-foreground: oklch(0.985 0 0);
+  --filter: oklch(0.591 0.293 322.9); /* #c026d3, narrowing what a list shows */
+  --filter-foreground: oklch(0.985 0 0);
   /* A switch that is on, a checked box or a picked radio outside a task: quiet, so a setting
      that is on is never the brightest thing on the page */
   --control-neutral: oklch(0.552 0.014 285.9); /* #71717a */
@@ -143,6 +145,8 @@
   --edit-foreground: oklch(0.169 0.004 286);
   --pick: oklch(0.797 0.134 211.5); /* #22d3ee */
   --pick-foreground: oklch(0.169 0.004 286);
+  --filter: oklch(0.74 0.238 322.2); /* #e879f9 */
+  --filter-foreground: oklch(0.169 0.004 286);
   --control-neutral: oklch(0.712 0.013 286.1); /* #a1a1aa */
   --control-neutral-foreground: oklch(0.21 0.006 285.9);
   --border: oklch(0.287 0.007 285.9); /* #2a2a2e */
@@ -170,8 +174,8 @@
  * Without an attribute everything is neutral. The tones are listed in `src/components/ui/tone.ts`,
  * the rules for picking one under Color in `src/app/dashboard/CLAUDE.md`.
  *
- * `--tone-ring` is the focus ring of a field. It follows adding, editing and picking and stays the
- * quiet gray everywhere else, since a red or amber border on a field reads as an error.
+ * `--tone-ring` is the focus ring of a field. It follows adding, editing, picking and filtering and
+ * stays the quiet gray everywhere else, since a red or amber border on a field reads as an error.
  *
  * `--tone-control` colors switches, checkboxes and radio buttons that are on. It is the tone of
  * the task, and the quiet `--control-neutral` gray where there is none, like in Settings.
@@ -208,6 +212,14 @@
   --tone-ring: var(--pick);
   --tone-control: var(--pick);
   --tone-control-foreground: var(--pick-foreground);
+}
+
+[data-tone="filter"] {
+  --tone: var(--filter);
+  --tone-foreground: var(--filter-foreground);
+  --tone-ring: var(--filter);
+  --tone-control: var(--filter);
+  --tone-control-foreground: var(--filter-foreground);
 }
 
 [data-tone="warning"] {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { countBackups, filterBackups, primaryCopy, startedByKey, startedByOptions, summarize, targetsOf, type BackupFilters } from "@/components/dashboard/storage/explorer/backup-filters";
+import { countBackups, filterBackups, primaryCopy, startedByKey, startedByOptions, summarize, targetsOf, type BackupFilters, type BackupLookup } from "@/components/dashboard/storage/explorer/backup-filters";
 import type { BackupRun, ExplorerFile, ExplorerJob } from "@/services/storage/explorer-types";
 
 const hoursAgo = (hours: number) => new Date(Date.now() - hours * 3_600_000).toISOString();
@@ -34,42 +34,63 @@ const runs: BackupRun[] = [
     { path: erp.path, jobKey: "deleted:erp", file: erp, createdAt: erp.createdAt!, copies: [{ destinationId: "nas", state: "stored", file: erp }] },
 ];
 
-const none: BackupFilters = { jobs: [], at: [], by: [], search: "", quick: "all" };
+const none: BackupFilters = { jobs: [], at: [], by: [], search: "", states: [] };
+/** Both destinations answer, unless a test says otherwise. */
+const lookup: BackupLookup = { jobs, answering: new Set(["nas", "r2"]) };
 const paths = (list: BackupRun[]) => list.map((run) => run.file.name);
 
 describe("the filters of the list of every backup", () => {
     it("keeps a backup whose copy is missing at the filtered destination, since that is what a look at it should find", () => {
-        expect(paths(filterBackups(runs, { ...none, at: ["r2"] }, jobs))).toEqual(["crm.tar", "shop-new.tar", "shop-old.tar"]);
-        expect(paths(filterBackups(runs, { ...none, at: ["r2"], quick: "missing" }, jobs))).toEqual(["shop-old.tar"]);
-        expect(paths(filterBackups(runs, { ...none, at: ["nas"], quick: "missing" }, jobs))).toEqual([]);
+        expect(paths(filterBackups(runs, { ...none, at: ["r2"] }, lookup))).toEqual(["crm.tar", "shop-new.tar", "shop-old.tar"]);
+        expect(paths(filterBackups(runs, { ...none, at: ["r2"], states: ["missing"] }, lookup))).toEqual(["shop-old.tar"]);
+        expect(paths(filterBackups(runs, { ...none, at: ["nas"], states: ["missing"] }, lookup))).toEqual([]);
     });
 
     it("looks for failed checks and locks only at the filtered destinations", () => {
-        expect(paths(filterBackups(runs, { ...none, quick: "failed" }, jobs))).toEqual(["crm.tar"]);
-        expect(paths(filterBackups(runs, { ...none, at: ["nas"], quick: "failed" }, jobs))).toEqual([]);
-        expect(paths(filterBackups(runs, { ...none, at: ["r2"], quick: "locked" }, jobs))).toEqual([]);
-        expect(paths(filterBackups(runs, { ...none, at: ["nas"], quick: "locked" }, jobs))).toEqual(["shop-old.tar"]);
+        expect(paths(filterBackups(runs, { ...none, states: ["failed"] }, lookup))).toEqual(["crm.tar"]);
+        expect(paths(filterBackups(runs, { ...none, at: ["nas"], states: ["failed"] }, lookup))).toEqual([]);
+        expect(paths(filterBackups(runs, { ...none, at: ["r2"], states: ["locked"] }, lookup))).toEqual([]);
+        expect(paths(filterBackups(runs, { ...none, at: ["nas"], states: ["locked"] }, lookup))).toEqual(["shop-old.tar"]);
+    });
+
+    it("keeps a backup in any of the picked states", () => {
+        expect(paths(filterBackups(runs, { ...none, states: ["failed", "locked"] }, lookup))).toEqual(["crm.tar", "shop-old.tar"]);
+        expect(paths(filterBackups(runs, { ...none, states: ["deleted"] }, lookup))).toEqual(["erp.tar"]);
+    });
+
+    it("finds the backups no copy of which answers right now, and counts them as needing a look", () => {
+        const nasOnly: BackupLookup = { jobs, answering: new Set(["nas"]) };
+        // Every backup has a copy at the NAS, so none is out of reach while it answers.
+        expect(filterBackups(runs, { ...none, states: ["unreachable"] }, nasOnly)).toEqual([]);
+        // Looking only at R2, which does not answer, the backups stored there are.
+        expect(paths(filterBackups(runs, { ...none, at: ["r2"], states: ["unreachable"] }, nasOnly))).toEqual(["crm.tar", "shop-new.tar"]);
+
+        const counts = countBackups(runs, { ...none, at: ["r2"] }, nasOnly, ["nas", "r2"]);
+        expect(counts.states.unreachable).toBe(2);
+        // crm fails its check and cannot be read, shop-new cannot be read, shop-old misses its copy.
+        expect(counts.attention).toEqual({ warning: 1, destructive: 2 });
     });
 
     it("finds a backup by its name or by the name of its job", () => {
-        expect(paths(filterBackups(runs, { ...none, search: "ERP inv" }, jobs))).toEqual(["erp.tar"]);
-        expect(paths(filterBackups(runs, { ...none, search: "shop-old" }, jobs))).toEqual(["shop-old.tar"]);
+        expect(paths(filterBackups(runs, { ...none, search: "ERP inv" }, lookup))).toEqual(["erp.tar"]);
+        expect(paths(filterBackups(runs, { ...none, search: "shop-old" }, lookup))).toEqual(["shop-old.tar"]);
     });
 
     it("counts each option under every other filter", () => {
-        const counts = countBackups(runs, { ...none, jobs: ["shop"], at: ["r2"] }, jobs, ["nas", "r2"]);
+        const counts = countBackups(runs, { ...none, jobs: ["shop"], at: ["r2"] }, lookup, ["nas", "r2"]);
 
         expect(counts.jobs.get("shop")).toBe(2);
         expect(counts.jobs.get("crm")).toBe(1);
         expect(counts.jobs.get("deleted:erp")).toBeUndefined();
         expect(counts.at.get("nas")).toBe(2);
         expect(counts.at.get("r2")).toBe(2);
-        expect(counts.quick).toEqual({ all: 2, missing: 1, failed: 0, locked: 0, deleted: 0 });
-        expect(countBackups(runs, none, jobs, []).quick.deleted).toBe(1);
+        expect(counts.states).toEqual({ missing: 1, failed: 0, unreachable: 0, locked: 0, deleted: 0 });
+        expect(counts.attention).toEqual({ warning: 1, destructive: 0 });
+        expect(countBackups(runs, none, lookup, []).states.deleted).toBe(1);
     });
 
     it("sums what the filtered destinations store and how many copies they miss", () => {
-        const atR2 = filterBackups(runs, { ...none, at: ["r2"] }, jobs);
+        const atR2 = filterBackups(runs, { ...none, at: ["r2"] }, lookup);
         expect(summarize(atR2, ["r2"], jobs)).toMatchObject({ runs: 3, jobs: 2, stored: 130, destinations: 1, copies: 3, missing: 1, failed: 1 });
         expect(summarize(runs, [], jobs)).toMatchObject({ runs: 4, jobs: 2, deletedJobs: 1, stored: 410, destinations: 2, copies: 7, missing: 1 });
     });
@@ -85,9 +106,9 @@ describe("the filters of the list of every backup", () => {
     });
 
     it("filters by who started the runs and counts the others under the rest of the filters", () => {
-        expect(paths(filterBackups(runs, { ...none, by: ["manual:Manu", "api:Deploy hook"] }, jobs))).toEqual(["crm.tar", "shop-old.tar"]);
+        expect(paths(filterBackups(runs, { ...none, by: ["manual:Manu", "api:Deploy hook"] }, lookup))).toEqual(["crm.tar", "shop-old.tar"]);
 
-        const counts = countBackups(runs, { ...none, jobs: ["shop"], by: ["schedule"] }, jobs, ["nas", "r2"]);
+        const counts = countBackups(runs, { ...none, jobs: ["shop"], by: ["schedule"] }, lookup, ["nas", "r2"]);
         expect(counts.by.get("schedule")).toBe(1);
         expect(counts.by.get("manual:Manu")).toBe(1);
         expect(counts.by.get("api:Deploy hook")).toBeUndefined();

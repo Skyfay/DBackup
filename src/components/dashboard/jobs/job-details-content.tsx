@@ -194,7 +194,7 @@ export function JobDetailsContent({ job, canViewHistory, onRun, starting = false
                 <div className="space-y-6 p-5">
                     {job.overview.live ? <LiveRunBox job={job} canViewHistory={canViewHistory} /> : job.overview.error && <RunIssue job={job} canViewHistory={canViewHistory} />}
 
-                    <DetailStats stats={stats} surface="bg-background" />
+                    <DetailStats stats={stats} />
 
                     <Section title={history ? `Last ${history.runs.length} runs` : "Last runs"} aside={typical !== null ? `about ${formatDuration(typical)} each` : undefined}>
                         {history === undefined ? <Skeleton className="h-24 w-full" /> : history === null ? (

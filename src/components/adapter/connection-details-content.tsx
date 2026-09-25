@@ -187,7 +187,7 @@ export function ConnectionDetailsContent({ variant, config, kind, canTest, canVi
                         <IssueBanner status={health} error={config.lastError} failures={config.consecutiveFailures} lastPassedAt={details?.lastPassedAt} />
                     )}
 
-                    <DetailStats stats={stats} surface={inSheet ? "bg-background" : "bg-card"} />
+                    <DetailStats stats={stats} />
 
                     {!notification && overview && (
                         <Section

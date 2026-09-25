@@ -287,7 +287,7 @@ export function BackupDetails({ data, destinations, handlersFor, onDeleteEverywh
                         </Banner>
                     )}
 
-                    <DetailStats stats={stats} surface="bg-background" />
+                    <DetailStats stats={stats} />
 
                     {chain && chain.length > 1 && <ChainSection chain={chain} file={file} />}
 

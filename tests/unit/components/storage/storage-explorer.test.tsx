@@ -46,7 +46,7 @@ function destination(id: string, name: string, overrides: Partial<ExplorerDestin
         listedAt: hoursAgo(0.5),
         listError: null,
         listing: false,
-        health: { status: "ONLINE", checkedAt: hoursAgo(0), error: null },
+        health: { status: "ONLINE", checkedAt: hoursAgo(0), error: null, latencyMs: 12, answeredAt: null },
         count: 3,
         size: 300,
         ...overrides,
@@ -116,7 +116,7 @@ const chain = [chainFile(0, 72), chainFile(1, 48), chainFile(2, 24), chainFile(3
 const media = job({ key: "job-media", name: "Media sync", jobId: "job-media", sourceType: null, hasFolders: true, incremental: true, configuredDestinationIds: ["nas"], destinationIds: ["nas"], runs: 4, newest: hoursAgo(1) });
 
 const index: ExplorerIndex = {
-    destinations: [destination("nas", "NAS Backups"), destination("r2", "Cloudflare R2", { health: { status: "OFFLINE", checkedAt: hoursAgo(0), error: "timeout" } })],
+    destinations: [destination("nas", "NAS Backups"), destination("r2", "Cloudflare R2", { health: { status: "OFFLINE", checkedAt: hoursAgo(0), error: "timeout", latencyMs: 10_000, answeredAt: hoursAgo(1) } })],
     jobs: [
         job({}),
         media,
@@ -205,7 +205,7 @@ describe("Storage Explorer", () => {
     it("folds many destinations into the ones up to date and the rest, and counts them on the button", async () => {
         const user = userEvent.setup();
         const many = [1, 2, 3, 4, 5].map((n) => destination(`d${n}`, `Store ${n}`));
-        many.push(destination("d6", "Store 6", { health: { status: "OFFLINE", checkedAt: hoursAgo(0), error: "timeout" } }));
+        many.push(destination("d6", "Store 6", { health: { status: "OFFLINE", checkedAt: hoursAgo(0), error: "timeout", latencyMs: null, answeredAt: null } }));
         many.push(destination("d7", "Store 7", { listError: "Permission denied" }));
         vi.stubGlobal("fetch", vi.fn((url: string) => {
             if (url === "/api/storage/explorer") return ok({ ...index, destinations: many });
@@ -224,6 +224,39 @@ describe("Storage Explorer", () => {
 
         await user.click(screen.getByRole("button", { name: /^Up to date/ }));
         expect(screen.getByText("Store 1")).toBeInTheDocument();
+    });
+
+    it("marks each copy with whether its destination answers right now, and says why on hover", async () => {
+        const user = userEvent.setup();
+        renderPage();
+
+        const newestRow = (await screen.findAllByText("Shop nightly"))[0].closest("tr")!;
+        expect(within(newestRow).getByText("offline")).toBeInTheDocument();
+        expect(screen.getByText("Offline, a restore from it fails")).toBeInTheDocument();
+
+        await user.hover(within(newestRow).getByText("Cloudflare R2"));
+        expect((await screen.findAllByText("Cloudflare R2 is offline")).length).toBeGreaterThan(0);
+        expect(screen.getAllByText(/NAS Backups holds the same backup and answers right now\./).length).toBeGreaterThan(0);
+    });
+
+    it("restores from a copy whose destination answers, even when it comes second in the upload order", async () => {
+        const user = userEvent.setup();
+        const answering = [run(newest, "job-shop", [stored(newest, "r2"), stored(newest)])];
+        vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+            if (url === "/api/storage/explorer") return ok(index);
+            if (url === "/api/storage/explorer/runs") return ok({ runs: answering });
+            if (url === "/api/storage/explorer/refresh") return ok({ listing: JSON.parse(String(init?.body)).destinationIds });
+            return ok(null);
+        }));
+        renderPage();
+
+        await user.click((await screen.findByText("Shop nightly")).closest("tr")!);
+        const panel = await screen.findByRole("dialog");
+        expect(within(panel).getByText(/which answers right now\./)).toHaveTextContent("Restore and download read from NAS Backups, which answers right now.");
+        expect(within(panel).getByText("1 of 2 answering right now")).toBeInTheDocument();
+
+        await user.click(within(panel).getByRole("button", { name: "Check now" }));
+        await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith("/api/storage/explorer/refresh", expect.objectContaining({ body: JSON.stringify({ destinationIds: ["r2"] }) })));
     });
 
     it("tells which destination did not answer", async () => {

@@ -1,4 +1,4 @@
-import type { BackupCopy, BackupRun, ExplorerFile, ExplorerJob } from "@/services/storage/explorer-types";
+import type { BackupCopy, BackupRun, ExplorerDestination, ExplorerFile, ExplorerJob } from "@/services/storage/explorer-types";
 import type { BackupTarget } from "./use-backup-actions";
 
 /**
@@ -77,9 +77,24 @@ export function targetsOf(run: BackupRun, at: string[]): BackupTarget[] {
     return copiesIn(run, at).flatMap((copy) => (copy.state === "stored" && copy.file ? [{ file: copy.file, destinationId: copy.destinationId }] : []));
 }
 
-/** The copy the list shows and acts on: the first one stored, in the upload order of the job. */
-export function primaryCopy(run: BackupRun, at: string[] = []): BackupTarget {
-    return targetsOf(run, at)[0] ?? targetsOf(run, [])[0] ?? { file: run.file, destinationId: run.copies[0]?.destinationId ?? "" };
+const ANSWER_RANK: Record<string, number> = { ONLINE: 0, DEGRADED: 1, OFFLINE: 2 };
+
+/** Ranks the destinations of the copies by whether they answer right now, the ones that do first. */
+export function byAnswer(destinations: Map<string, Pick<ExplorerDestination, "health">>): (destinationId: string) => number {
+    return (destinationId) => ANSWER_RANK[destinations.get(destinationId)?.health.status ?? ""] ?? 3;
+}
+
+/**
+ * The copy the list shows and acts on: the first one stored, in the upload order of the job. Given
+ * a rank, one whose destination answers right now comes before one that does not, so a restore
+ * reads from a copy it can reach.
+ */
+export function primaryCopy(run: BackupRun, at: string[] = [], rank?: (destinationId: string) => number): BackupTarget {
+    const inScope = targetsOf(run, at);
+    const pool = inScope.length > 0 ? inScope : targetsOf(run, []);
+    if (pool.length === 0) return { file: run.file, destinationId: run.copies[0]?.destinationId ?? "" };
+    if (!rank) return pool[0];
+    return pool.reduce((best, target) => (rank(target.destinationId) < rank(best.destinationId) ? target : best));
 }
 
 export const failedCheck = (run: BackupRun, at: string[] = []) => copiesIn(run, at).some((copy) => copy.file?.verification?.passed === false);

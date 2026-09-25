@@ -23,8 +23,19 @@ export interface ExplorerDestination {
     listError: string | null;
     /** A listing runs in the background right now. The page asks again until it is done. */
     listing: boolean;
-    /** The connection check that runs every minute, which tells whether the storage answers now. */
-    health: { status: HealthStatus; checkedAt: string | null; error: string | null };
+    /**
+     * The connection check that runs every minute, which tells whether the storage answers now.
+     * `DEGRADED` is a check or two that failed, `OFFLINE` three and more in a row.
+     */
+    health: {
+        status: HealthStatus;
+        checkedAt: string | null;
+        error: string | null;
+        /** How long the last check took, in milliseconds. */
+        latencyMs: number | null;
+        /** When it last answered, for one that does not answer now. Null when no kept check did. */
+        answeredAt: string | null;
+    };
     /** Backups in the listing. */
     count: number;
     /** Bytes of those backups. */

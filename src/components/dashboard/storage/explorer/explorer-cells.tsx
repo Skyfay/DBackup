@@ -44,13 +44,73 @@ export function isStale(destination: Pick<ExplorerDestination, "health" | "listE
     return destination.health.status === "OFFLINE" || destination.listError !== null;
 }
 
+/** Whether a destination answers right now, from the connection check that runs every minute. */
+export type Answer = "online" | "missed" | "offline";
+
+export function answerOf(destination: Pick<ExplorerDestination, "health">): Answer {
+    if (destination.health.status === "OFFLINE") return "offline";
+    if (destination.health.status === "DEGRADED") return "missed";
+    return "online";
+}
+
+const ANSWER_DOT: Record<Answer, string> = { online: "bg-success", missed: "bg-warning", offline: "bg-destructive" };
+
+export function AnswerDot({ answer }: { answer: Answer }) {
+    return <span className={cn("size-1.5 shrink-0 rounded-full", ANSWER_DOT[answer])} aria-hidden="true" />;
+}
+
+/** What the dot and the clock on a copy mean, under the toolbar of a list that shows copies. */
+export function AnswerLegend() {
+    return (
+        <p className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 pb-3 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5"><AnswerDot answer="online" />Answers right now</span>
+            <span className="inline-flex items-center gap-1.5"><AnswerDot answer="missed" />Missed its last check</span>
+            <span className="inline-flex items-center gap-1.5"><AnswerDot answer="offline" />Offline, a restore from it fails</span>
+            <span className="inline-flex items-center gap-1.5"><ClockAlert className="size-3.5 text-warning" aria-hidden="true" />Its list is old</span>
+        </p>
+    );
+}
+
+/** The state of a destination in words, for the hover of a copy. */
+function AnswerTip({ destination, alternative }: { destination: ExplorerDestination; alternative?: string }) {
+    const answer = answerOf(destination);
+    const { health } = destination;
+    const title = answer === "online" ? `${destination.name} answers right now` : answer === "missed" ? `${destination.name} missed its last check` : `${destination.name} is offline`;
+    return (
+        <div className="space-y-1">
+            <p className="flex items-center gap-2 font-medium"><AnswerDot answer={answer} />{title}</p>
+            {answer === "online" && (
+                <p>
+                    {health.latencyMs !== null ? `It answered in ${health.latencyMs} ms` : "It answered"}
+                    {health.checkedAt && <>, <RelativeTime date={health.checkedAt} /></>}.
+                </p>
+            )}
+            {answer === "missed" && <p>A restore or download of this copy may fail until it answers again.</p>}
+            {answer === "offline" && (
+                <>
+                    <p>{health.answeredAt ? <>No answer since <DateDisplay date={health.answeredAt} format="Pp" />.</> : "No answer in the checks DBackup keeps."}</p>
+                    <p>A restore or download of this copy fails until it answers.{alternative && ` ${alternative} holds the same backup and answers right now.`}</p>
+                </>
+            )}
+            {destination.listError && answer !== "offline" && (
+                <p>Its last listing failed{destination.listedAt && <>, so this is its list of <DateDisplay date={destination.listedAt} format="Pp" /></>}.</p>
+            )}
+        </div>
+    );
+}
+
 interface CopyChipProps {
     destination: ExplorerDestination | undefined;
     state: CopyState;
+    /** Another destination that holds the same backup and answers right now, for the hover of one that does not. */
+    alternative?: string;
 }
 
-/** One destination a backup lies at, or should: a quiet chip, dashed amber when the copy is missing. */
-export function CopyChip({ destination, state }: CopyChipProps) {
+/**
+ * One destination a backup lies at, or should: a quiet chip with a dot for whether the destination
+ * answers right now, dashed amber when the copy is missing. A clock marks a list that is old.
+ */
+export function CopyChip({ destination, state, alternative }: CopyChipProps) {
     const name = destination?.name ?? "Removed destination";
     if (state === "missing") {
         return (
@@ -60,26 +120,23 @@ export function CopyChip({ destination, state }: CopyChipProps) {
             </span>
         );
     }
-    const stale = destination ? isStale(destination) : false;
+    const answer = destination ? answerOf(destination) : null;
+    const listOld = destination !== undefined && destination.listError !== null && answer !== "offline";
     const chip = (
         <span className="inline-flex h-6 items-center gap-1.5 rounded-md bg-muted px-2 text-xs font-medium whitespace-nowrap">
+            {answer && <AnswerDot answer={answer} />}
             {destination && <AdapterIcon adapterId={destination.adapterId} className="size-3.5" />}
-            {name}
-            {stale && <ClockAlert className="size-3.5 text-warning" aria-label="Not compared with the storage lately" />}
+            <span className={cn(answer === "offline" && "text-muted-foreground")}>{name}</span>
+            {answer === "offline" && <span className="text-[11px] text-destructive">offline</span>}
+            {listOld && <ClockAlert className="size-3.5 text-warning" aria-label="Its list is old" />}
         </span>
     );
-    if (!stale || !destination) return chip;
+    if (!destination) return chip;
     return (
         <Tooltip>
             <TooltipTrigger asChild>{chip}</TooltipTrigger>
             <TooltipContent className="max-w-xs">
-                {destination.listedAt ? (
-                    <>
-                        {destination.name} did not answer, so this is its list of <DateDisplay date={destination.listedAt} format="Pp" />.
-                    </>
-                ) : (
-                    `${destination.name} could not be listed.`
-                )}
+                <AnswerTip destination={destination} alternative={alternative} />
             </TooltipContent>
         </Tooltip>
     );
@@ -92,10 +149,20 @@ export function CopyChips({ copies, destinations, empty = "Only here" }: {
     empty?: string;
 }) {
     if (copies.length === 0) return <span className="text-sm text-muted-foreground">{empty}</span>;
+    const answering = copies.find((copy) => {
+        const destination = destinations.get(copy.destinationId);
+        return copy.state === "stored" && destination !== undefined && answerOf(destination) === "online";
+    });
+    const alternative = answering ? destinations.get(answering.destinationId)?.name : undefined;
     return (
         <span className="flex flex-wrap gap-1.5">
             {copies.map((copy) => (
-                <CopyChip key={copy.destinationId} destination={destinations.get(copy.destinationId)} state={copy.state} />
+                <CopyChip
+                    key={copy.destinationId}
+                    destination={destinations.get(copy.destinationId)}
+                    state={copy.state}
+                    alternative={copy.destinationId === answering?.destinationId ? undefined : alternative}
+                />
             ))}
         </span>
     );

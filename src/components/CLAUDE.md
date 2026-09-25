@@ -28,6 +28,10 @@ This is the part that silently fails. `ScrollArea` renders a Radix Root wrapping
 
 Four files still set `max-h` on the root. `tests/unit/lint-guards/design-system.test.ts` holds that count as a baseline and fails the build if it grows, so new code cannot add to it.
 
+### Long text inside
+
+Radix wraps the content of the viewport in a table, which grows with its widest line so it can scroll sideways. Our `ScrollArea` turns that wrapper into a block unless it has `horizontal`, so text inside truncates at the width it is given instead of being cut off at the edge. Older files still add `[&>[data-slot=scroll-area-viewport]>div]:block!` by hand, new code does not need it.
+
 ### Filling the remaining height in a flex parent
 
 ```tsx

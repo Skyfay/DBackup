@@ -75,6 +75,21 @@ describe('the Storage Explorer never waits for a storage', () => {
         expect(index.destinations[0]).toMatchObject({ listError: 'NT_STATUS_IO_TIMEOUT', listing: false, health: { status: 'OFFLINE' } });
     });
 
+    it('tells how long the last connection check took and when an offline destination last answered', async () => {
+        prismaMock.adapterConfig.findMany.mockResolvedValue([destination('nas'), destination('r2', 'OFFLINE')] as never);
+        storage.readCachedListing.mockResolvedValue(null);
+        const lastAnswer = new Date('2026-09-24T05:00:00Z');
+        prismaMock.healthCheckLog.findFirst.mockImplementation((async (args: { where: { adapterConfigId: string; status?: string } }) => {
+            if (args.where.status === 'ONLINE') return { createdAt: lastAnswer };
+            return { latencyMs: args.where.adapterConfigId === 'nas' ? 12 : 10_000 };
+        }) as never);
+
+        const index = await service.getIndex();
+
+        expect(index.destinations.find((entry) => entry.id === 'nas')?.health).toMatchObject({ status: 'ONLINE', latencyMs: 12, answeredAt: null });
+        expect(index.destinations.find((entry) => entry.id === 'r2')?.health).toMatchObject({ status: 'OFFLINE', answeredAt: lastAnswer.toISOString() });
+    });
+
     it('checks only destinations it knows', async () => {
         prismaMock.adapterConfig.findMany.mockResolvedValue([{ id: 'nas' }] as never);
         storage.checkNow.mockResolvedValue(true);

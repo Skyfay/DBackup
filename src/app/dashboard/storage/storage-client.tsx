@@ -8,7 +8,7 @@ import { saveViewLayout } from "@/app/actions/auth/table-preferences";
 import { StorageHistoryTab, type StorageHistoryTabRef } from "@/components/dashboard/storage/storage-history-tab";
 import { StorageSettingsTab, type StorageSettingsTabRef } from "@/components/dashboard/storage/storage-settings-tab";
 import { BackupDetailsSheet, type BackupDetailsData } from "@/components/dashboard/storage/explorer/backup-details";
-import { primaryCopy, runKey, targetsOf } from "@/components/dashboard/storage/explorer/backup-filters";
+import { byAnswer, primaryCopy, runKey, targetsOf } from "@/components/dashboard/storage/explorer/backup-filters";
 import { BACKUPS_PAGE_ID, BACKUPS_TABLE_ID } from "@/components/dashboard/storage/explorer/backup-tables";
 import { BackupsList, type BackupScope } from "@/components/dashboard/storage/explorer/backups-list";
 import { DestinationBackups, type DestinationLayout } from "@/components/dashboard/storage/explorer/destination-backups";
@@ -222,7 +222,8 @@ export function StorageClient({
         if (!details) return null;
         if (pageTab === "backups") {
             if (!detailsRun || !backups.data) return null;
-            const primary = primaryCopy(detailsRun, scope.at);
+            // A restore from the panel reads from a copy whose destination answers right now.
+            const primary = primaryCopy(detailsRun, scope.at, byAnswer(destinationsById));
             const siblings = backups.data.runs.filter((run) => run.jobKey === detailsRun.jobKey).map((run) => run.file);
             return {
                 file: primary.file,
@@ -247,7 +248,7 @@ export function StorageClient({
             };
         }
         return null;
-    }, [details, pageTab, detailsRun, backups.data, scope.at, execution.data, destinationView.data, destination, jobsByKey]);
+    }, [details, pageTab, detailsRun, backups.data, scope.at, execution.data, destinationView.data, destination, jobsByKey, destinationsById]);
 
     const openPath = details?.open ? details.path : null;
     const openRun = useCallback((run: BackupRun) => setDetails({ open: true, key: runKey(run), path: run.path }), []);
@@ -272,6 +273,16 @@ export function StorageClient({
         }
         reloadAll();
     }, [freshnessList, reloadAll]);
+    const onCheckDestination = useCallback(async (destinationId: string) => {
+        const target = destinationsById.get(destinationId);
+        if (!target) return;
+        try {
+            await checkNow([target]);
+        } catch (error: unknown) {
+            toast.error(error instanceof Error ? error.message : `${target.name} could not be checked`);
+        }
+        reloadAll();
+    }, [destinationsById, reloadAll]);
 
     // While destinations are listed in the background the page asks again, so their backups show
     // up as soon as they are in. A listing that hangs does not keep it asking forever.
@@ -463,6 +474,7 @@ export function StorageClient({
                 onClose={() => setDetails((current) => (current ? { ...current, open: false } : null))}
                 destinations={destinationsById}
                 handlersFor={handlersFor}
+                onCheckDestination={(id) => void onCheckDestination(id)}
                 onDeleteEverywhere={detailsRun && canDelete
                     ? () => {
                         const targets = targetsOf(detailsRun, []);

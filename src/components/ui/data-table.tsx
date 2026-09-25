@@ -83,6 +83,8 @@ interface DataTableProps<TData, TValue> {
     columnLayout?: ColumnLayoutOption;
     /** Extra controls after the filters, such as quick status filters. */
     toolbarExtra?: React.ReactNode;
+    /** A line under the toolbar of the card look, like a legend for the marks in the rows. */
+    toolbarNote?: React.ReactNode;
     searchPlaceholder?: string;
     /** Rows per page to start with. */
     initialPageSize?: number;
@@ -139,6 +141,7 @@ export function DataTable<TData, TValue>({
     variant = "default",
     columnLayout,
     toolbarExtra,
+    toolbarNote,
     searchPlaceholder,
     initialPageSize = 10,
     onRowClick,
@@ -407,7 +410,10 @@ export function DataTable<TData, TValue>({
         const rows = table.getRowModel().rows;
         return (
             <div className="min-w-0 space-y-4">
-                <div className="rounded-xl border bg-card text-card-foreground shadow-sm">{toolbar}</div>
+                <div className="rounded-xl border bg-card text-card-foreground shadow-sm">
+                    {toolbar}
+                    {toolbarNote}
+                </div>
                 {rows.length > 0 ? (
                     <div className={cn("grid gap-4", cardGridClassName ?? "sm:grid-cols-2 xl:grid-cols-3")}>
                         {rows.map((row) =>
@@ -434,6 +440,7 @@ export function DataTable<TData, TValue>({
                 {/* The bulk bar lies over the toolbar while rows are selected, so nothing below moves. */}
                 <div className="relative">
                     {toolbar}
+                    {toolbarNote}
                     {bulkBar}
                 </div>
                 <div className="border-t">{grid}</div>

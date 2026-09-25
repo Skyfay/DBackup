@@ -17,7 +17,7 @@ All notable changes to DBackup are documented here.
 - **jobs**: A click on a job opens a panel with its live progress or last error, the length of its latest runs, its success rate over 30 days and what it backs up to where. Its actions open from there, from the button at the end of the row and with a right click on the row.
 - **jobs**: The file names of a job warn when two runs of its schedule would get the same name, which replaces the earlier backup at every destination, and offer a template with the time. The field also shows a name the job will write.
 - **storage**: The Storage Explorer lists every backup of every job with the destinations that hold a copy and marks a missing copy, filtered by job, by destination and by who started it, and shown as a table or as cards. The Destinations tab shows the backups of one destination in a folder per job, with a timeline of their runs and incremental chains.
-- **storage**: A click on a backup in the Storage Explorer opens its copies, its chain, what it holds and its last integrity check. The backups of a deleted job stay listed and can be deleted together, and the page tells how old the list of each destination is and compares it with the storage on request.
+- **storage**: A click on a backup in the Storage Explorer opens its copies with whether their destination answers right now, its chain, what it holds and its last integrity check. The backups of a deleted job stay listed and can be deleted together, and the page tells how old the list of each destination is and compares it with the storage on request.
 
 ### 🐛 Bug Fixes
 
@@ -25,6 +25,7 @@ All notable changes to DBackup are documented here.
 - **storage**: The storage scan of a local destination no longer fails when retention deletes a backup while it runs.
 - **storage**: The storage history chart shows a shrinking destination with a minus sign and compares against its oldest measurement in the chosen range. Its axes space the days by time and step in round sizes.
 - **ui**: A page with content wider than the window no longer runs past its right edge, where that content was cut off and could not be scrolled to.
+- **ui**: Long names in lists that scroll, like the pickers and the filters of the tables, end with an ellipsis instead of pushing counts and borders out of view.
 - **connections**: Directory sources no longer offer the storage history, which exists only for backup destinations.
 - **templates**: Deleting several retention policies no longer calls them "policys" in the confirmation and in the message afterwards.
 - **connections**: Creating a connection no longer does nothing when a required field sits in a part of the form that is not open. The form opens that part and shows what is missing.

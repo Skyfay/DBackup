@@ -15,9 +15,9 @@ import type { BackupRun, ExplorerDestination, ExplorerFile, ExplorerJob, Explore
 import { backupActions, type BackupActionHandlers } from "./backup-actions";
 import { BackupCard } from "./backup-card";
 import { backupColumns } from "./backup-columns";
-import { countBackups, filterBackups, isLocked, primaryCopy, runKey, startedByOptions, summarize, targetsOf, type BackupQuick, type StartedByOption } from "./backup-filters";
+import { byAnswer, countBackups, filterBackups, isLocked, primaryCopy, runKey, startedByOptions, summarize, targetsOf, type BackupQuick, type StartedByOption } from "./backup-filters";
 import { BackupContextMenu, BackupRowMenu } from "./backup-menus";
-import { JobIcon, JobTile } from "./explorer-cells";
+import { AnswerLegend, JobIcon, JobTile } from "./explorer-cells";
 import { count, typeLabel } from "./explorer-format";
 import { ExplorerStrip } from "./explorer-strip";
 import { bulkAcross, type BackupTarget } from "./use-backup-actions";
@@ -133,11 +133,13 @@ export function BackupsList({
         askDelete(targets, targets.length > 1 ? `Delete this backup at ${targets.length} destinations?` : "Delete this backup?");
     }, [askDelete, at]);
 
+    // A restore or download from a row reads from a copy whose destination answers right now.
+    const rank = useMemo(() => byAnswer(destinationsById), [destinationsById]);
     const groupsFor = useCallback((run: BackupRun) => {
-        const target = primaryCopy(run, at);
+        const target = primaryCopy(run, at, rank);
         const handlers = handlersFor(target.file, target.destinationId);
         return backupActions(target.file, { ...handlers, onDelete: handlers.onDelete ? () => deleteRun(run) : undefined });
-    }, [at, handlersFor, deleteRun]);
+    }, [at, rank, handlersFor, deleteRun]);
 
     const renderActions = useCallback((run: BackupRun) => <BackupRowMenu name={run.file.name} groups={groupsFor(run)} />, [groupsFor]);
 
@@ -282,6 +284,7 @@ export function BackupsList({
                 searchPlaceholder="Search backups"
                 filterableColumns={filterableColumns}
                 manualFiltering
+                toolbarNote={<AnswerLegend />}
                 columnFilters={columnFilters}
                 onColumnFiltersChange={onColumnFiltersChange}
                 toolbarExtra={

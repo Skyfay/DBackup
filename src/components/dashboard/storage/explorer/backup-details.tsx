@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Calendar, Database, Download, FolderOpen, Layers, Lock, RotateCcw, ShieldCheck, TriangleAlert, Unlink } from "lucide-react";
+import { Calendar, Database, Download, FolderOpen, Layers, Lock, RefreshCw, RotateCcw, ShieldCheck, TriangleAlert, Unlink } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { DetailStats, FactList, Section, type DetailStat } from "@/components/adapter/connection-details-sections";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import { cn, formatBytes, formatDuration } from "@/lib/utils";
 import type { CopyState, ExplorerDestination, ExplorerFile, ExplorerJob, RunExecution } from "@/services/storage/explorer-types";
 import { backupActions, type BackupActionHandlers } from "./backup-actions";
 import { BackupRowMenu } from "./backup-menus";
-import { DestinationTile, IntegrityBadge, JobTile, TypeChip, isStale } from "./explorer-cells";
+import { AnswerDot, DestinationTile, IntegrityBadge, JobTile, TypeChip, answerOf } from "./explorer-cells";
 import { contentsOf, count, madeAt, snapshotBytes, startedBy } from "./explorer-format";
 
 export interface BackupDetailsData {
@@ -34,6 +34,8 @@ interface BackupDetailsProps {
     handlersFor: (file: ExplorerFile, destinationId: string) => BackupActionHandlers;
     /** Deletes every copy of the backup, from the list by job. */
     onDeleteEverywhere?: () => void;
+    /** Lists a destination again, for a copy whose destination does not answer. */
+    onCheckDestination?: (destinationId: string) => void;
     canViewHistory: boolean;
 }
 
@@ -126,6 +128,37 @@ function ChainSection({ chain, file }: { chain: ExplorerFile[]; file: ExplorerFi
     );
 }
 
+/** Whether the destination of a copy answers right now, as the connection check last saw it. */
+function CopyAnswer({ destination }: { destination: ExplorerDestination }) {
+    const answer = answerOf(destination);
+    const { latencyMs, answeredAt } = destination.health;
+    return (
+        <span className={cn("inline-flex shrink-0 items-center gap-1.5 text-xs font-medium", answer === "online" ? "text-success" : answer === "missed" ? "text-warning" : "text-destructive")}>
+            <AnswerDot answer={answer} />
+            {answer === "online" && `Online${latencyMs !== null ? ` · ${latencyMs} ms` : ""}`}
+            {answer === "missed" && "Missed its last check"}
+            {answer === "offline" && (answeredAt ? <>Offline since <DateDisplay date={answeredAt} format="Pp" /></> : "Offline")}
+        </span>
+    );
+}
+
+/** Where a restore and a download read from, and whether that works right now. */
+function ReadFrom({ here, alternative }: { here: ExplorerDestination; alternative?: string }) {
+    const answer = answerOf(here);
+    return (
+        <p className={cn("flex items-center gap-2 text-xs", answer === "online" ? "text-muted-foreground" : answer === "missed" ? "text-warning" : "text-destructive")}>
+            <AnswerDot answer={answer} />
+            <span className="min-w-0">
+                {answer === "online" && <>Restore and download read from <span className="font-medium text-foreground">{here.name}</span>, which answers right now.</>}
+                {answer === "missed" && <>Restore and download read from {here.name}, which missed its last check.</>}
+                {answer === "offline" && (alternative
+                    ? <>{here.name} is offline. {alternative} holds the same backup and answers right now.</>
+                    : <>No copy answers right now. Restore and download fail until {here.name} answers again.</>)}
+            </span>
+        </p>
+    );
+}
+
 /** A banner in the look of the job panel: a colored edge, an icon, a title and one line. */
 function Banner({ tone, icon: Icon, title, children, action }: { tone: "warning" | "neutral"; icon: typeof Layers; title: string; children: React.ReactNode; action?: React.ReactNode }) {
     return (
@@ -142,13 +175,19 @@ function Banner({ tone, icon: Icon, title, children, action }: { tone: "warning"
 }
 
 /** Everything about one backup: its copies, its chain, what it holds and its last check. */
-export function BackupDetails({ data, destinations, handlersFor, onDeleteEverywhere, canViewHistory }: BackupDetailsProps) {
+export function BackupDetails({ data, destinations, handlersFor, onDeleteEverywhere, onCheckDestination, canViewHistory }: BackupDetailsProps) {
     const { file, destinationId, copies, job, chain, execution } = data;
     const handlers = handlersFor(file, destinationId);
     const groups = backupActions(file, { ...handlers, onDelete: onDeleteEverywhere ?? handlers.onDelete });
     const missing = copies.filter((copy) => copy.state === "missing");
     const stored = copies.filter((copy) => copy.state === "stored");
     const here = destinations.get(destinationId);
+    const answers = (id: string) => {
+        const destination = destinations.get(id);
+        return destination !== undefined && answerOf(destination) === "online";
+    };
+    const answering = stored.filter((copy) => answers(copy.destinationId));
+    const alternative = answering.find((copy) => copy.destinationId !== destinationId);
     const started = startedBy(file);
     const took = execution?.endedAt ? Date.parse(execution.endedAt) - Date.parse(execution.startedAt) : null;
     const jobName = job?.name ?? file.jobName ?? "Backup";
@@ -221,9 +260,10 @@ export function BackupDetails({ data, destinations, handlersFor, onDeleteEverywh
                     )}
                     <BackupRowMenu name={file.name} groups={groups} variant="outline" />
                 </div>
+                {here && <ReadFrom here={here} alternative={alternative ? destinations.get(alternative.destinationId)?.name : undefined} />}
             </SheetHeader>
 
-            <ScrollArea className="min-h-0 flex-1 [&>[data-slot=scroll-area-viewport]>div]:block!">
+            <ScrollArea className="min-h-0 flex-1">
                 <div className="space-y-6 p-5">
                     {missing.length > 0 && (
                         <Banner
@@ -251,12 +291,13 @@ export function BackupDetails({ data, destinations, handlersFor, onDeleteEverywh
 
                     {chain && chain.length > 1 && <ChainSection chain={chain} file={file} />}
 
-                    <Section title="Stored at" aside={stored.length > 1 ? `the same backup at ${stored.length} destinations` : undefined}>
+                    <Section title="Stored at" aside={stored.length > 0 ? `${answering.length} of ${stored.length} answering right now` : undefined}>
                         <ul className="divide-y rounded-lg border">
                             {copies.map((copy) => {
                                 const destination = destinations.get(copy.destinationId);
                                 const copyFile = copy.file;
                                 const copyHandlers = copyFile ? handlersFor(copyFile, copy.destinationId) : null;
+                                const offline = copy.state === "stored" && destination !== undefined && answerOf(destination) === "offline";
                                 return (
                                     <li key={copy.destinationId} className={cn("flex items-center gap-3 px-3 py-2", copy.state === "missing" && "bg-warning/5")}>
                                         {destination ? <DestinationTile destination={destination} /> : <span className="size-8" />}
@@ -269,6 +310,7 @@ export function BackupDetails({ data, destinations, handlersFor, onDeleteEverywh
                                                 {copy.destinationId === destinationId && stored.length > 1 && (
                                                     <span className="inline-flex h-5 shrink-0 items-center rounded-md bg-muted px-1.5 text-[11px] font-medium">Shown here</span>
                                                 )}
+                                                {copy.state === "stored" && destination && <CopyAnswer destination={destination} />}
                                             </span>
                                             <span className="block truncate text-xs text-muted-foreground">
                                                 {copy.state === "missing"
@@ -276,10 +318,15 @@ export function BackupDetails({ data, destinations, handlersFor, onDeleteEverywh
                                                     : copyFile?.verification?.passed
                                                         ? <>Verified <DateDisplay date={copyFile.verification.verifiedAt} format="Pp" /></>
                                                         : copyFile?.verification ? "Check failed" : "Not checked"}
-                                                {destination && isStale(destination) && " · not compared lately"}
+                                                {offline ? " · a restore from here fails" : copy.state === "stored" && destination?.listError ? " · its list is old" : ""}
                                             </span>
                                         </div>
-                                        {copyHandlers?.onDownload && (
+                                        {offline && onCheckDestination ? (
+                                            <Button variant="outline" size="sm" className="h-7" onClick={() => onCheckDestination(copy.destinationId)}>
+                                                <RefreshCw />
+                                                Check now
+                                            </Button>
+                                        ) : copyHandlers?.onDownload && (
                                             <Button variant="ghost" className="size-8 p-0" onClick={() => copyHandlers.onDownload?.(false)} aria-label={`Download from ${destination?.name ?? "this destination"}`}>
                                                 <Download />
                                             </Button>

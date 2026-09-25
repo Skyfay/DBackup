@@ -29,6 +29,8 @@ The strip on top counts the backups the list shows, what they take up, the newes
 
 **Columns** switches columns on and off, moves them and picks a row height, like on the other lists. **What is inside** starts switched off. The switch next to the tabs shows the list as a table or as cards from md screens up, and a phone always gets the cards.
 
+A dot on every copy in **Stored at** tells whether its destination answers right now, from the connection check that runs every minute: green when it does, amber when it missed its last check, red with the word **offline** after three missed checks in a row. A restore or download of an offline copy fails, and hovering the copy says since when it has not answered and where the same backup lies. A clock marks a copy whose destination could not be listed lately, so its list is old.
+
 A copy shows as **missing** when a destination of the job holds older backups of it but not this one. A destination added to the job later, or one whose retention keeps fewer backups, is not reported for the runs it never had. A destination the job no longer writes to, and every destination of a deleted job, only counts for the runs between its oldest and its newest backup of the job.
 
 ### Filters
@@ -91,7 +93,7 @@ The list stays hidden under the timeline, since it would show the same backups.
 
 A click on a row opens the panel of that backup:
 
-- **Restore**, **Download**, **Lock** and **Verify**, and the rest in the menu next to them
+- **Restore**, **Download**, **Lock** and **Verify**, and the rest in the menu next to them, with the copy they read from. A copy whose destination answers right now goes first, and **Stored at** shows every copy with its state and **Check now** for one that is offline
 - why a copy is missing: an upload that failed in a partial run, with **Open the run**
 - for a backup of a deleted job, that it stays until you delete it
 - **Its chain** for an incremental: the full and every incremental as boxes, the backups a restore reads, and which later incrementals build on it

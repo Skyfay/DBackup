@@ -89,6 +89,8 @@ export class StorageExplorerService {
             };
         }));
 
+        const checks = await Promise.all(configs.map((config) => this.lastChecks(config.id, config.lastStatus)));
+
         const destinations: ExplorerDestination[] = configs.map((config, index) => {
             const { files, listedAt, error, listing } = listed[index];
             const status = HEALTH_STATUSES.includes(config.lastStatus as HealthStatus) ? (config.lastStatus as HealthStatus) : "ONLINE";
@@ -99,7 +101,7 @@ export class StorageExplorerService {
                 listedAt,
                 listError: error,
                 listing,
-                health: { status, checkedAt: config.lastHealthCheck?.toISOString() ?? null, error: config.lastError },
+                health: { status, checkedAt: config.lastHealthCheck?.toISOString() ?? null, error: config.lastError, ...checks[index] },
                 count: files.length,
                 size: files.reduce((sum, file) => sum + (file.size ?? 0), 0),
             };
@@ -107,6 +109,29 @@ export class StorageExplorerService {
 
         const listings: DestinationListing[] = configs.map((config, index) => ({ destinationId: config.id, files: listed[index].files }));
         return { destinations, model: buildExplorer(jobs, listings) };
+    }
+
+    /**
+     * How long the last connection check of a destination took and, while it does not answer, when
+     * it last did. One lookup each on the index of the check log, so every page load can afford it.
+     */
+    private async lastChecks(destinationId: string, status: string): Promise<{ latencyMs: number | null; answeredAt: string | null }> {
+        try {
+            const [last, answered] = await Promise.all([
+                prisma.healthCheckLog.findFirst({ where: { adapterConfigId: destinationId }, orderBy: { createdAt: "desc" }, select: { latencyMs: true } }),
+                status === "ONLINE"
+                    ? null
+                    : prisma.healthCheckLog.findFirst({
+                        where: { adapterConfigId: destinationId, status: "ONLINE" },
+                        orderBy: { createdAt: "desc" },
+                        select: { createdAt: true },
+                    }),
+            ]);
+            return { latencyMs: last?.latencyMs ?? null, answeredAt: answered?.createdAt.toISOString() ?? null };
+        } catch (error: unknown) {
+            log.warn("Could not read the connection checks", { destinationId }, wrapError(error));
+            return { latencyMs: null, answeredAt: null };
+        }
     }
 
     /** Compares these destinations with the storage in the background, for Check now. Returns those that are being listed. */

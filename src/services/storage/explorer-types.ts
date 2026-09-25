@@ -131,3 +131,55 @@ export interface ExplorerDestinationView {
     /** Newest first. */
     backups: DestinationBackup[];
 }
+
+/** What the retention of one destination removes after a planned run. */
+export interface AgedOut {
+    destinationId: string;
+    /** Backups removed, a chain counting with every backup in it. */
+    count: number;
+    /** When the oldest of them was made. */
+    oldest: string;
+}
+
+export interface PlannedRun {
+    at: string;
+    /** For a job that builds chains, whether the run starts a new chain with a full backup. */
+    full?: boolean;
+    /** What the retention of each destination removes after the run, only where it removes something. */
+    agesOut?: AgedOut[];
+}
+
+/** A day of the scheduler's time zone whose planned runs did not start at all. */
+export interface MissedDay {
+    /** The first run that was due that day. */
+    at: string;
+    /** How many runs were due that day. */
+    runs: number;
+}
+
+/** What the schedule of an existing job plans and missed, for the timeline of the Backups tab. */
+export interface JobPlan {
+    /** The key of the job in the index, its id. */
+    jobKey: string;
+    /** The schedule as the scheduler reads it, a preset's when the job follows one. Null for a job without one. */
+    schedule: string | null;
+    enabled: boolean;
+    /** When the job was created, so the days before it are not taken for backups that aged out. */
+    createdAt: string;
+    /** The retention policy of the first destination, as its JSON, for a few words beside the job. */
+    retention: string | null;
+    /** The runs of the next days, soonest first. */
+    planned: PlannedRun[];
+    /** The days since the job was last changed whose runs did not start, oldest first. */
+    missed: MissedDay[];
+    /** The job runs more often than the plan holds, so its later runs are left out. */
+    truncated: boolean;
+}
+
+export interface ExplorerPlan {
+    /** The time zone the scheduler reads the schedules in. */
+    timezone: string;
+    /** How many days ahead the plan reaches. */
+    days: number;
+    jobs: JobPlan[];
+}

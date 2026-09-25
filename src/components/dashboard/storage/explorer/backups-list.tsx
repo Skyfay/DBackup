@@ -9,7 +9,7 @@ import type { ColumnLayoutOption } from "@/components/ui/use-column-layout";
 import type { BulkResult } from "@/lib/core/bulk";
 import type { ViewMode } from "@/lib/core/table-preferences";
 import { formatBytes } from "@/lib/utils";
-import type { BackupRun, ExplorerDestination, ExplorerFile, ExplorerJob } from "@/services/storage/explorer-types";
+import type { BackupRun, ExplorerDestination, ExplorerFile, ExplorerJob, ExplorerPlan } from "@/services/storage/explorer-types";
 import { backupActions, type BackupActionHandlers } from "./backup-actions";
 import { BackupCard } from "./backup-card";
 import { backupColumns } from "./backup-columns";
@@ -19,6 +19,7 @@ import { BackupContextMenu, BackupRowMenu } from "./backup-menus";
 import { AnswerLegend, JobTile } from "./explorer-cells";
 import { count, typeLabel } from "./explorer-format";
 import { ExplorerStrip } from "./explorer-strip";
+import { useTimelineList } from "./timeline-list";
 import { bulkAcross, type BackupTarget } from "./use-backup-actions";
 
 /** The filters by job, destination and who started a run, which live in the address. */
@@ -38,6 +39,8 @@ interface BackupsListProps {
     scope: BackupScope;
     onScope: (next: BackupScope) => void;
     view: ViewMode;
+    /** What the schedules plan and missed, for the timeline view. Null while it loads or in another view. */
+    plan: ExplorerPlan | null;
     columnLayout: ColumnLayoutOption;
     canDelete: boolean;
     handlersFor: (file: ExplorerFile, destinationId: string) => BackupActionHandlers;
@@ -75,6 +78,7 @@ export function BackupsList({
     scope,
     onScope,
     view,
+    plan,
     columnLayout,
     canDelete,
     handlersFor,
@@ -95,6 +99,17 @@ export function BackupsList({
     const visible = useMemo(() => filterBackups(runs, filters, lookup), [runs, filters, lookup]);
     const counts = useMemo(() => countBackups(runs, filters, lookup, destinationIds), [runs, filters, lookup, destinationIds]);
     const summary = useMemo(() => summarize(visible, at, jobsByKey), [visible, at, jobsByKey]);
+    const timeline = useTimelineList({
+        on: view === "timeline",
+        runs: visible,
+        jobs,
+        jobsByKey,
+        scopeJobs: scope.jobs,
+        narrowed: at.length > 0 || scope.by.length > 0 || states.length > 0 || search.trim() !== "",
+        plan,
+        destinations: destinationsById,
+        at,
+    });
 
     // The table keeps its own search box and filter buttons, but what they leave is worked out
     // here, so the list, the counts and the numbers agree.
@@ -233,12 +248,15 @@ export function BackupsList({
             <DataTable
                 variant="card"
                 columns={columns}
-                data={visible}
+                data={timeline.data}
                 searchKey="backup"
                 searchPlaceholder="Search backups"
                 filterableColumns={filterableColumns}
                 manualFiltering
                 toolbarNote={<AnswerLegend />}
+                toolbarExtra={timeline.chip}
+                aboveRows={timeline.above}
+                hideRows={timeline.hideRows}
                 columnFilters={columnFilters}
                 onColumnFiltersChange={onColumnFiltersChange}
                 sorting={sorting}
@@ -246,14 +264,14 @@ export function BackupsList({
                 onRefresh={onRefresh}
                 isLoading={refreshing}
                 // Selecting for actions on many is a table thing. Cards keep to one backup at a time.
-                enableRowSelection={canDelete && view === "table"}
+                enableRowSelection={canDelete && view !== "cards"}
                 getRowId={runKey}
                 bulkActions={bulkActions}
                 onBulkActionComplete={onChanged}
                 columnLayout={columnLayout}
                 initialPageSize={20}
                 onRowClick={onOpen}
-                view={view}
+                view={view === "timeline" ? "table" : view}
                 renderCard={(row) => (
                     <BackupCard
                         run={row.original}

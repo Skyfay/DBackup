@@ -13,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ViewSwitch } from "@/components/ui/view-switch";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
-import type { TablePreferences, ViewMode } from "@/lib/core/table-preferences";
+import { listView, type ListViewMode, type TablePreferences, type ViewMode } from "@/lib/core/table-preferences";
 import { useIsMobileState } from "@/hooks/use-mobile";
 import { CONNECTION_TABLE_IDS, CONNECTIONS_PAGE_ID, type ConnectionCounts } from "./connection-tables";
 
@@ -73,15 +73,15 @@ function tabLabel(tab: ConnectionTab, counts: ConnectionCounts) {
 export function ConnectionsTabs({ permissions, counts, layouts, initialView }: ConnectionsTabsProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const [view, setView] = useState<ViewMode>(initialView);
+    const [view, setView] = useState<ListViewMode>(listView(initialView));
     // A phone has no room for the table, so it always gets the cards and no switch. The lists
     // wait until the screen is measured, so a phone never flashes the table first.
     const isMobile = useIsMobileState();
-    const shownView: ViewMode | undefined = isMobile === undefined ? undefined : isMobile ? "cards" : view;
+    const shownView: ListViewMode | undefined = isMobile === undefined ? undefined : isMobile ? "cards" : view;
 
     const changeView = useCallback((next: ViewMode) => {
-        setView(next);
-        saveViewLayout(CONNECTIONS_PAGE_ID, next)
+        setView(listView(next));
+        saveViewLayout(CONNECTIONS_PAGE_ID, listView(next))
             .then((result) => result.success)
             .catch(() => false)
             .then((saved) => {

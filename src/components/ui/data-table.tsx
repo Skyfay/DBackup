@@ -85,6 +85,10 @@ interface DataTableProps<TData, TValue> {
     toolbarExtra?: React.ReactNode;
     /** A line under the toolbar of the card look, like a legend for the marks in the rows. */
     toolbarNote?: React.ReactNode;
+    /** A part of the card look between the toolbar and the rows, like a timeline that picks what the rows show. */
+    aboveRows?: React.ReactNode;
+    /** Leaves out the rows and the pages of the card look, for a list that waits for a pick in `aboveRows`. */
+    hideRows?: boolean;
     searchPlaceholder?: string;
     /** Rows per page to start with. */
     initialPageSize?: number;
@@ -142,6 +146,8 @@ export function DataTable<TData, TValue>({
     columnLayout,
     toolbarExtra,
     toolbarNote,
+    aboveRows,
+    hideRows = false,
     searchPlaceholder,
     initialPageSize = 10,
     onRowClick,
@@ -440,13 +446,20 @@ export function DataTable<TData, TValue>({
                 {/* The bulk bar lies over the toolbar while rows are selected, so nothing below moves. */}
                 <div className="relative">
                     {toolbar}
-                    {toolbarNote}
+                    {!aboveRows && toolbarNote}
                     {bulkBar}
                 </div>
-                <div className="border-t">{grid}</div>
-                <div className="border-t px-2">
-                    <DataTablePagination table={table} totalRows={totalRows} />
-                </div>
+                {aboveRows && <div className="border-t">{aboveRows}</div>}
+                {!hideRows && (
+                    <>
+                        {/* With a part above the rows, their legend moves down to them. */}
+                        {aboveRows && toolbarNote && <div className="border-t pt-3">{toolbarNote}</div>}
+                        <div className="border-t">{grid}</div>
+                        <div className="border-t px-2">
+                            <DataTablePagination table={table} totalRows={totalRows} />
+                        </div>
+                    </>
+                )}
                 {bulkDialogs}
             </div>
         );

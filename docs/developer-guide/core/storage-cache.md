@@ -135,6 +135,7 @@ Check now in the Storage Explorer calls `POST /api/storage/explorer/refresh` wit
 |------|------|
 | `src/services/storage/storage-service.ts` | All cache methods, reconciliation, enrichment, the listings in the background |
 | `src/services/storage/explorer-service.ts` | The Storage Explorer's reads, which never wait for a storage |
+| `src/services/storage/explorer-plan-service.ts` | What the schedules plan for the timeline of the Backups tab, with the retention of the runner applied to the cached backups |
 | `src/services/storage/verification-service.ts` | Surgical update after verification |
 | `src/lib/runner/steps/03-upload.ts` | Append on upload |
 | `src/lib/runner/steps/05-retention.ts` | Remove per deleted file |

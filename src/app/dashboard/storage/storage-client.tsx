@@ -31,6 +31,7 @@ import type {
     ExplorerDestinationView,
     ExplorerFile,
     ExplorerIndex,
+    ExplorerPlan,
     RunExecution,
 } from "@/services/storage/explorer-types";
 
@@ -42,8 +43,8 @@ type Display = "table" | "timeline";
 const POLL_MS = 3_000;
 const MAX_POLLS = 60;
 
-/** The views of the list of backups. A timeline follows once its design is settled. */
-const VIEWS: ViewMode[] = ["table", "cards"];
+/** The views of the list of backups: the table, the cards and the timeline of jobs and days above the list. */
+const VIEWS: ViewMode[] = ["table", "cards", "timeline"];
 
 interface StorageClientProps {
     canDownload: boolean;
@@ -189,15 +190,19 @@ export function StorageClient({
 
     const backups = useExplorerData<ExplorerBackups>(pageTab === "backups" ? "/api/storage/explorer/runs" : null);
     const destinationView = useExplorerData<ExplorerDestinationView>(destination && tab === "backups" ? `/api/storage/explorer/destinations/${destination.id}` : null);
+    // What the schedules plan and missed, only while the timeline shows.
+    const plan = useExplorerData<ExplorerPlan>(pageTab === "backups" && shownView === "timeline" ? "/api/storage/explorer/plan" : null);
 
     const { reload: reloadIndex } = index;
     const { reload: reloadBackups } = backups;
     const { reload: reloadDestination } = destinationView;
+    const { reload: reloadPlan } = plan;
     const reloadAll = useCallback(() => {
         reloadIndex();
         reloadBackups();
         reloadDestination();
-    }, [reloadIndex, reloadBackups, reloadDestination]);
+        reloadPlan();
+    }, [reloadIndex, reloadBackups, reloadDestination, reloadPlan]);
 
     const actions = useBackupActions({ canDownload, canRestore, canDelete, canManageVault, destinations: destinationsById, onChanged: reloadAll });
     const { handlersFor: handlersForTarget, askDelete } = actions;
@@ -419,6 +424,7 @@ export function StorageClient({
                         scope={scope}
                         onScope={(next) => setParams({ job: next.jobs, at: next.at, by: next.by, destination: null })}
                         view={shownView}
+                        plan={plan.data ?? null}
                         columnLayout={columnLayout}
                         canDelete={canDelete}
                         handlersFor={handlersFor}

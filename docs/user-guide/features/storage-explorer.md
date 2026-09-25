@@ -46,6 +46,20 @@ The filters narrow each other. Entries without backups under the other filters w
 
 A **Destination** filter also decides what the rest counts: the strip, the states, **Stored at** and the actions only look at the copies at the picked destinations. **A copy is missing** with **NAS Backups** picked lists the backups NAS Backups lacks.
 
+### Timeline
+
+The third view of the switch next to the tabs shows every job by day, from md screens up: a row per job and a column per day, as many days as the screen has room for. A cell tells what a job made that day:
+
+- a filled cell is a backup, with a number when there were several, **F** marks the full backup that starts a chain and an outline its incrementals
+- amber marks a missing copy, red a failed check, and a dashed red cross a day whose scheduled runs did not start at all
+- a striped bar stands for the days before the oldest backup a job still has, and for the days after the last backup of a deleted job
+
+The row **Every job** on top counts the backups of each day, and the filters above narrow the timeline like the list.
+
+The arrows page through the days, a screen at a time. The button with the dates opens a calendar to jump to a day, which then shows in the middle, and **Today** comes back. At today the arrow on the right adds the next 7 days with the runs the schedules plan, dashed, while today stays in view. Hovering a planned day tells whether it starts a new chain and which backups the retention of each destination removes after it.
+
+The list below waits for a click. A day of a job lists its backups on that day, a date the backups of every job that day, and a job its backups in view. The pick shows in the toolbar of the list, and a click on it or a second click on the same cell hides the list again. Missed runs are looked for over the last 90 days, from the last change of the job on.
+
 ### Actions
 
 Rows can be selected for **Lock**, **Unlock** and **Delete**, across jobs. Without a **Destination** filter they act on every copy of a backup, with one only on the copies at the picked destinations. The menu of a row works on the first copy in the upload order of the job, or on the copy at the picked destination.

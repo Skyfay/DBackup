@@ -475,6 +475,47 @@ describe("Storage Explorer", () => {
         expect(screen.queryByText("ERP_invoices_old.tar")).not.toBeInTheDocument();
     });
 
+    it("shows every job by day in the timeline and lists the backups of a picked day of a job below it", async () => {
+        const user = userEvent.setup();
+        // jsdom measures nothing, so the timeline gets a width of its own.
+        vi.stubGlobal("ResizeObserver", class {
+            report: (entries: { contentRect: { width: number } }[]) => void;
+            constructor(report: (entries: { contentRect: { width: number } }[]) => void) {
+                this.report = report;
+            }
+            observe() {
+                this.report([{ contentRect: { width: 1200 } }]);
+            }
+            unobserve() {}
+            disconnect() {}
+        });
+        const plan = { timezone: "UTC", days: 7, jobs: [{ jobKey: "job-shop", schedule: "0 3 * * *", enabled: true, createdAt: hoursAgo(2000), retention: null, planned: [{ at: hoursAgo(-24) }], missed: [], truncated: false }] };
+        vi.stubGlobal("fetch", vi.fn((url: string) => {
+            if (url === "/api/storage/explorer") return ok(index);
+            if (url === "/api/storage/explorer/runs") return ok({ runs });
+            if (url === "/api/storage/explorer/plan") return ok(plan);
+            return ok(null);
+        }));
+        renderPage("timeline");
+
+        expect(await screen.findByText("Timeline")).toBeInTheDocument();
+        // The list waits for a pick on the timeline.
+        expect(screen.queryByRole("table")).not.toBeInTheDocument();
+
+        const day = formatInTimeZone(new Date(newest.createdAt!), "UTC", "EEE, yyyy-MM-dd");
+        await user.click(await screen.findByRole("button", { name: `Shop nightly, ${day}` }));
+        expect(await screen.findByRole("table")).toBeInTheDocument();
+        expect(within(table()).getAllByText("Shop nightly")).toHaveLength(1);
+
+        await user.click(screen.getByRole("button", { name: /show them all/ }));
+        await waitFor(() => expect(screen.queryByRole("table")).not.toBeInTheDocument());
+
+        // At today the arrow on the right adds the next days, and goes no further.
+        await user.click(screen.getByRole("button", { name: "Show the next 7 days" }));
+        expect(await screen.findByText(/Next 7 days, as the schedules plan them/)).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Later days" })).toBeDisabled();
+    });
+
     it("opens the folder of a job on the day picked in its lane at a destination", async () => {
         const user = userEvent.setup();
         search = new URLSearchParams("destination=nas&view=timeline");
@@ -485,6 +526,6 @@ describe("Storage Explorer", () => {
 
         expect(await screen.findByText("ERP_invoices_old.tar")).toBeInTheDocument();
         expect(screen.queryByText("ERP_invoices_older.tar")).not.toBeInTheDocument();
-        expect(screen.getByRole("button", { name: /show every day/ })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: /show them all/ })).toBeInTheDocument();
     });
 });

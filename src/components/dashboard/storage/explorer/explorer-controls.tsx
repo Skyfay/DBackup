@@ -25,22 +25,26 @@ export function ListSwitch<T extends string>({ value, onChange, options, "aria-l
     );
 }
 
-/** The day picked on the timeline, shown like an active filter of the list below it. A click removes it. */
-export function DayChip({ day, count, onClear }: { day: number; count: number; onClear: () => void }) {
-    const { formatDate } = useDateFormatter();
-    // The middle of the day, so a time zone a few hours off still names the same date.
-    const label = formatDate(new Date(day + DAY_MS / 2), "P");
+/** What a timeline picked for the list below it, shown like an active filter of that list. A click removes it. */
+export function PickChip({ label, count, onClear }: { label: string; count: number; onClear: () => void }) {
     return (
         <button
             type="button"
             onClick={onClear}
-            aria-label={`Only ${label}, show every day`}
-            className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border bg-muted px-2.5 text-xs font-medium outline-none transition-colors hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-ring/50 sm:h-7"
+            aria-label={`Only ${label}, show them all`}
+            className="inline-flex h-8 min-w-0 items-center gap-1.5 rounded-full border border-border bg-muted px-2.5 text-xs font-medium outline-none transition-colors hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-ring/50 sm:h-7"
         >
-            <CalendarDays className="size-3.5 text-muted-foreground" aria-hidden="true" />
-            {label}
+            <CalendarDays className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <span className="truncate">{label}</span>
             <span className="font-normal text-muted-foreground tabular-nums">{count}</span>
-            <X className="size-3.5 text-muted-foreground" aria-hidden="true" />
+            <X className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
         </button>
     );
+}
+
+/** The day picked on the timeline of a destination. A click removes it. */
+export function DayChip({ day, count, onClear }: { day: number; count: number; onClear: () => void }) {
+    const { formatDate } = useDateFormatter();
+    // The middle of the day, so a time zone a few hours off still names the same date.
+    return <PickChip label={formatDate(new Date(day + DAY_MS / 2), "P")} count={count} onClear={onClear} />;
 }

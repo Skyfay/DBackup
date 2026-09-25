@@ -31,7 +31,7 @@ import { ViewSwitch } from "@/components/ui/view-switch";
 import { useIsMobileState } from "@/hooks/use-mobile";
 import { useTableLayout } from "@/hooks/use-table-layout";
 import { requestBulk } from "@/lib/bulk-request";
-import type { TablePreferences, ViewMode } from "@/lib/core/table-preferences";
+import { listView, type ListViewMode, type TablePreferences, type ViewMode } from "@/lib/core/table-preferences";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { cn } from "@/lib/utils";
 import type { JobListItem } from "@/services/jobs/job-list-service";
@@ -97,11 +97,11 @@ export function JobsClient({
     const { runJob, startingJobId } = useRunJob();
     const layout = useTableLayout(JOBS_TABLE_ID, initialLayout);
     const [filter, setFilter] = useState<JobFilter>("all");
-    const [view, setView] = useState<ViewMode>(VIEWS.includes(initialView) ? initialView : "table");
+    const [view, setView] = useState<ListViewMode>(VIEWS.includes(initialView) ? listView(initialView) : "table");
     // A phone has no room for the table, so it always gets the cards and no switch. The list
     // waits until the screen is measured, so a phone never flashes the table first.
     const isMobile = useIsMobileState();
-    const shownView: ViewMode | undefined = isMobile === undefined ? undefined : isMobile ? "cards" : view;
+    const shownView: ListViewMode | undefined = isMobile === undefined ? undefined : isMobile ? "cards" : view;
 
     const [form, setForm] = useState<{ open: boolean; job: JobListItem | null }>({ open: false, job: null });
     const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -115,8 +115,8 @@ export function JobsClient({
     const [linkHandled, setLinkHandled] = useState(false);
 
     const changeView = useCallback((next: ViewMode) => {
-        setView(next);
-        saveViewLayout(JOBS_PAGE_ID, next)
+        setView(listView(next));
+        saveViewLayout(JOBS_PAGE_ID, listView(next))
             .then((result) => result.success)
             .catch(() => false)
             .then((saved) => {

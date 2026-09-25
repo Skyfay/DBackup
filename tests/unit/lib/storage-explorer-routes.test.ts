@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     getExecution: vi.fn(),
     getDestinationView: vi.fn(),
     checkNow: vi.fn(),
+    getPlan: vi.fn(),
 }));
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
@@ -33,14 +34,20 @@ vi.mock("@/services/storage/explorer-service", () => ({
     },
 }));
 
+vi.mock("@/services/storage/explorer-plan-service", () => ({
+    storageExplorerPlanService: { getPlan: (...args: unknown[]) => mocks.getPlan(...args) },
+}));
+
 import { GET as getIndex } from "@/app/api/storage/explorer/route";
 import { GET as getBackups } from "@/app/api/storage/explorer/runs/route";
 import { GET as getExecution } from "@/app/api/storage/explorer/execution/route";
 import { GET as getDestination } from "@/app/api/storage/explorer/destinations/[id]/route";
 import { POST as refresh } from "@/app/api/storage/explorer/refresh/route";
+import { GET as getPlan } from "@/app/api/storage/explorer/plan/route";
 
 const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "u1", permissions, isSuperAdmin: false });
 const backups = () => getBackups(new NextRequest("http://localhost/api/storage/explorer/runs"));
+const plan = () => getPlan(new NextRequest("http://localhost/api/storage/explorer/plan"));
 const execution = (path?: string) =>
     getExecution(new NextRequest(`http://localhost/api/storage/explorer/execution${path === undefined ? "" : `?path=${encodeURIComponent(path)}`}`));
 const check = (body: unknown) =>
@@ -53,6 +60,7 @@ describe("Storage Explorer API", () => {
         mocks.getBackups.mockResolvedValue({ runs: [] });
         mocks.getExecution.mockResolvedValue(null);
         mocks.getDestinationView.mockResolvedValue({ destination: { id: "nas" }, backups: [] });
+        mocks.getPlan.mockResolvedValue({ timezone: "UTC", days: 7, jobs: [] });
     });
 
     it("turns away a request without a session", async () => {
@@ -62,6 +70,7 @@ describe("Storage Explorer API", () => {
         expect((await backups()).status).toBe(401);
         expect((await execution("Shop/a.tar")).status).toBe(401);
         expect((await destination("nas")).status).toBe(401);
+        expect((await plan()).status).toBe(401);
     });
 
     it("needs the permission to read storage before it loads anything", async () => {
@@ -71,10 +80,20 @@ describe("Storage Explorer API", () => {
         expect((await backups()).status).toBe(403);
         expect((await execution("Shop/a.tar")).status).toBe(403);
         expect((await destination("nas")).status).toBe(403);
+        expect((await plan()).status).toBe(403);
+        expect(mocks.getPlan).not.toHaveBeenCalled();
         expect(mocks.getIndex).not.toHaveBeenCalled();
         expect(mocks.getBackups).not.toHaveBeenCalled();
         expect(mocks.getExecution).not.toHaveBeenCalled();
         expect(mocks.getDestinationView).not.toHaveBeenCalled();
+    });
+
+    it("answers with what the schedules plan in the usual envelope", async () => {
+        signedIn(PERMISSIONS.STORAGE.READ);
+        const response = await plan();
+
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({ success: true, data: { timezone: "UTC", days: 7, jobs: [] } });
     });
 
     it("answers with the index in the usual envelope", async () => {

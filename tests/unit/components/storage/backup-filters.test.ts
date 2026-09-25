@@ -11,7 +11,7 @@ function file(name: string, hours: number, overrides: Partial<ExplorerFile> = {}
 function job(key: string, name: string, kind: ExplorerJob["kind"] = "job"): ExplorerJob {
     return {
         key, kind, name, jobId: key, sourceType: "postgres", sourceName: name, hasFolders: false, incremental: false,
-        configuredDestinationIds: [], destinationIds: [], runs: 0, size: 0, newest: null, oldest: null, failedChecks: 0, missingCopies: 0, locked: 0,
+        configuredDestinationIds: [], destinationIds: [], runs: 0, size: 0, newest: null, oldest: null, failedChecks: 0, missingCopies: 0, locked: 0, retention: {},
     };
 }
 

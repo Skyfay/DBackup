@@ -116,7 +116,7 @@ Backup success/failure notifications are configured **per-job** (Job → Notific
 | **Storage Limit Warning** | Storage usage is approaching the configured size limit | Enabled |
 | **Missing Backup Alert** | No new backup was created within the expected time window | Enabled |
 
-These events are configured per destination in **Destinations → [destination] → Alerts**.
+These events are configured per destination in the **Storage Explorer**: open the **Destinations** tab, pick the destination and use **Edit alerts**.
 
 #### Update Events
 

@@ -9,9 +9,9 @@ Open **Storage Explorer** in the sidebar. The tabs at the top switch between two
 | Tab | Shows |
 | :--- | :--- |
 | **Backups** | Every backup of every job. Each row is one run, with every destination that holds a copy of it. |
-| **Destinations** | The backups at one destination, in a folder per job, plus its **History** and **Alerts**. |
+| **Destinations** | Every destination with how it is doing, and the details of a picked one under the list: its numbers, its size over time, its alerts and every job with backups there. |
 
-The page remembers its filters and the picked destination in its address, so a link or a reload opens the same view. **Open backups** in the menu of a job on the Jobs page opens the list filtered to that job.
+The page remembers its filters and the picked destination in its address, so a link or a reload opens the same view. **Open backups** in the menu of a job on the Jobs page opens the list filtered to that job. Both tabs remember whether you last looked at the table or the timeline.
 
 ## Backups
 
@@ -70,38 +70,36 @@ Pick **Job deleted**, select the backups with the box in the head of the table a
 
 ## Destinations
 
-The strip shows what the destination stores, how many backups it holds and from how many jobs, the newest backup, the locked ones and the integrity checks. The field next to the tabs picks the destination and searches as you type.
+The strip shows how many destinations answer right now, what they store together, how much that grew in the last 7 days, their backups and the alerts that fire.
 
-The switch beside the search shows the backups in one of two ways:
+The table lists every destination with its status, what it stores, the share of its storage limit when that alert is on, the growth of the last 7 days, its backups, the jobs that write to it, how old its list is and its active alerts. **Type** and **State** filter it, the state being whether it answers, whether its list is old and whether an alert fires. The menu of a row offers **Show details**, **Open backups**, which lists its backups in the **Backups** tab, and **Check now**. Phones get a card per destination.
 
-| View | Shows |
-| :--- | :--- |
-| **Folders** | One row per job, like the folders the jobs write into on the storage, with its number of backups, size, newest backup, the other destinations that hold copies and its integrity checks. A click opens the folder and lists its backups. |
-| **All backups** | Every backup at the destination in one list with its job. Rows of different jobs can be selected together for **Lock**, **Unlock** and **Delete**. |
+### Details of a destination
 
-An open folder has **All folders** to go back and **Open in Backups** to list every backup of the job in the **Backups** tab. Its list offers the same selection for the backups of that job. The **Also at** column names the other destinations that hold the same backup.
+A click on a destination shows its details under the list, as wide as the page, and a second click hides them again:
+
+- whether it answers, with **Open backups**, **Check now**, **Edit alerts** and **Open connection**, and a banner with the error when it does not
+- what it stores, how that changed in the last 7 days, its backups, the newest one and how old its list is
+- its size over the last 30 days, 90 days or year, measured with every storage refresh
+- its **Alerts** for a usage spike, a storage limit and a missing backup, each off, all well or active. **Edit alerts** changes them and needs the permission to change settings
+
+**Jobs with backups here** lists every job with backups at the destination: how many and how big, the newest, the other destinations that hold copies and what the retention there keeps. Its search and its **Type** and **State** filters find a job among many, the states being a deleted job, a missing copy, a failed check and locked backups. **Show backups** lists the backups of a job at this destination in the **Backups** tab.
 
 ### Backups of a deleted job
 
-When a job is deleted, its backups stay. Retention no longer runs for them, since retention runs as part of a job. Its folder is marked **Job deleted**, and inside it a note says so and offers to delete all of its backups at this destination. Locked ones are left out.
+When a job is deleted, its backups stay. Retention no longer runs for them, since retention runs as part of a job. The job keeps its row, marked **Job deleted**, with **Delete** for all of its backups at this destination after a confirmation. Locked ones are left out.
 
 A deleted job leaves the lists once none of its backups are left: when they are deleted here or on the storage, or when the destination itself is deleted in DBackup, which drops its list with it. A destination that does not answer keeps showing its last list, marked with a clock, until it answers again.
 
 ### Timeline
 
-The switch next to the tabs shows a timeline of the destination above its list, from md screens up, with one lane per job. It covers 7, 30 or 90 days:
+The timeline of the switch next to the tabs shows every destination by day, from md screens up, as many days as the screen has room for:
 
-- a point is one backup, a filled larger point the full backup of a chain, a ring an incremental
-- a line joins the backups of one incremental chain
-- a bar stands for a day with several backups, like an hourly job
-- an amber ring marks a missing copy, a red point a failed check, a lock a locked backup
+- a filled cell counts the backups that arrived that day
+- amber marks a day with a missing copy, and a red cross today at a destination that does not answer
+- at today the arrow on the right adds the next 7 days with the backups the schedules plan, dashed, and scissors where the retention removes backups after them
 
-The list stays hidden under the timeline, since it would show the same backups.
-
-- A click on a lane opens the folder of that job below.
-- A click on a point or a bar lists only the backups of that day. The day shows above the list like a filter, and a click on it lists every day again.
-- A second click on the same lane or day hides the list.
-- A click on a backup in the list opens its details.
+The row **Every destination** on top counts the backups of each day. The arrows, the calendar and **Today** work like on the timeline of the backups. The list waits under the timeline, and a click on a destination or one of its days shows its details under it.
 
 ## Details
 

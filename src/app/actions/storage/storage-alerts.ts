@@ -5,10 +5,7 @@ import { checkPermission } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
-import {
-  getAlertConfig,
-  saveAlertConfig,
-} from "@/services/storage/storage-alert-service";
+import { saveAlertConfig } from "@/services/storage/storage-alert-service";
 
 const log = logger.child({ action: "storage-alerts" });
 
@@ -24,23 +21,6 @@ const alertConfigSchema = z.object({
 });
 
 // ── Actions ────────────────────────────────────────────────────
-
-/** Load storage alert configuration for a specific destination */
-export async function getStorageAlertSettings(configId: string) {
-  await checkPermission(PERMISSIONS.STORAGE.READ);
-
-  try {
-    const config = await getAlertConfig(configId);
-    return { success: true, data: config };
-  } catch (error: unknown) {
-    log.error(
-      "Failed to load storage alert settings",
-      { configId },
-      wrapError(error)
-    );
-    return { success: false, error: "Failed to load storage alert settings" };
-  }
-}
 
 /** Save storage alert configuration for a specific destination */
 export async function updateStorageAlertSettings(

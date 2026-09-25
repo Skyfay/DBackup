@@ -21,6 +21,10 @@ const buttonVariants = cva(
           "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost:
           "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
+        // A delete among quiet buttons, like in the bar of a selection or at the end of a row:
+        // red text, and on hover a red frame with a light red tint like Delete in a row menu.
+        "ghost-destructive":
+          "border border-transparent text-destructive hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {

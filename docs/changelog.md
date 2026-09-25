@@ -16,7 +16,7 @@ All notable changes to DBackup are documented here.
 - **jobs**: The jobs table shows each job's last run with its error or live progress, its last 12 runs as bars, where it backs up to and when it runs next. The Jobs page can also show its jobs as cards with the way of each backup, and phones always get the cards.
 - **jobs**: A click on a job opens a panel with its live progress or last error, the length of its latest runs, its success rate over 30 days and what it backs up to where. Its actions open from there, from the button at the end of the row and with a right click on the row.
 - **jobs**: The file names of a job warn when two runs of its schedule would get the same name, which replaces the earlier backup at every destination, and offer a template with the time. The field also shows a name the job will write.
-- **storage**: The Storage Explorer lists every backup of every job with the destinations that hold a copy and marks a missing copy, filtered by job, by destination, by who started it and by state, and shown as a table, as a timeline of every job by day with the runs its schedule plans for the next week, or as cards on a phone. The Destinations tab shows the backups of one destination in a folder per job, with a timeline of their runs and incremental chains.
+- **storage**: The Storage Explorer lists every backup of every job with the destinations that hold a copy and marks a missing copy, filtered by job, by destination, by who started it and by state, and shown as a table, as a timeline of every job by day with the runs its schedule plans for the next week, or as cards on a phone. The Destinations tab lists every destination with its status, size, growth and alerts as a table or a timeline by day, with the details of a picked one under it showing its size over time, its alerts and every job with backups there.
 - **storage**: A click on a backup in the Storage Explorer opens its copies with whether their destination answers right now, its chain, what it holds and its last integrity check. The backups of a deleted job stay listed and can be deleted together, and the page tells how old the list of each destination is and compares it with the storage on request.
 
 ### 🐛 Bug Fixes
@@ -88,7 +88,7 @@ All notable changes to DBackup are documented here.
 - **api**: `GET /api/adapters/{id}/health-history` averages only the checks that passed and also returns the slowest one, since when the current status holds and when a check last passed.
 - **api**: `GET /api/jobs` returns how each job is doing as `overview`, and the connections a job uses with `id`, `name`, `adapterId` and `lastStatus` only. The new `GET /api/jobs/{id}/runs` returns the latest 30 runs of a job with their size, its success rate over 30 days and its last successful backup.
 - **api**: The new `GET /api/jobs/schedules` returns the schedules of the enabled jobs with how long a run usually takes, the slots of the queue and the scheduler's time zone.
-- **api**: The new `GET /api/storage/explorer` returns every job and destination with its backup counts, and `GET /api/storage/explorer/runs` every backup with its copies at every destination. `GET /api/storage/explorer/destinations/{id}` returns the backups of one destination, and `GET /api/storage/explorer/execution` the run that made a backup.
+- **api**: The new `GET /api/storage/explorer` returns every job and destination with its backup counts, and `GET /api/storage/explorer/runs` every backup with its copies at every destination. `GET /api/storage/explorer/execution` returns the run that made a backup.
 - **jobs**: The menu of a job opens its backups in the Storage Explorer with one entry instead of one per destination.
 - **storage**: The config backups of DBackup show in the Storage Explorer as an entry of their own instead of behind a switch.
 
@@ -111,7 +111,7 @@ All notable changes to DBackup are documented here.
 - **docs**: The scheduling guide describes the schedule picker and its warning when runs would wait for a free slot.
 - **docs**: The job guide explains how some databases of a source are picked, how connections are added from a job and what the retention list shows.
 - **docs**: The webhook trigger guide describes the new API trigger dialog, the timeout and the exit codes of the CI image, and Partial and Cancelled runs in its examples and API reference. The API key guide points to the Setup of the dialog.
-- **docs**: The Storage Explorer guide describes the views by job and by destination, the timeline, the details of a backup and how current the lists are. The restore, verification, job, API and storage cache guides follow the new page.
+- **docs**: The Storage Explorer guide describes the list of backups, the Destinations tab, both timelines, the details of a backup and how current the lists are. The restore, verification, job, notification, API and storage cache guides follow the new page.
 
 ### 🧪 Tests
 

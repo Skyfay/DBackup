@@ -40,6 +40,17 @@ export interface ExplorerDestination {
     count: number;
     /** Bytes of those backups. */
     size: number;
+    /** How much the stored size changed in the last 7 days, from the size history. Null without a measurement that old. */
+    growth: number | null;
+    /** What the alerts of the destination watch, and which of them fire right now. */
+    alerts: DestinationAlerts;
+}
+
+/** The three storage alerts of a destination, each with its setting and whether it fires right now. */
+export interface DestinationAlerts {
+    usageSpike: { enabled: boolean; percent: number; active: boolean };
+    storageLimit: { enabled: boolean; bytes: number; active: boolean };
+    missingBackup: { enabled: boolean; hours: number; active: boolean };
 }
 
 /**
@@ -76,6 +87,8 @@ export interface ExplorerJob {
     failedChecks: number;
     missingCopies: number;
     locked: number;
+    /** The retention policy of each destination the job writes to, as its JSON, resolved like the runner does. */
+    retention: Record<string, string>;
 }
 
 export type CopyState = "stored" | "missing";
@@ -117,19 +130,6 @@ export interface ExplorerIndex {
 export interface ExplorerBackups {
     /** Every backup of every job, newest first. */
     runs: BackupRun[];
-}
-
-export interface DestinationBackup {
-    file: ExplorerFile;
-    jobKey: string;
-    /** The same backup at the other destinations of its job, without their files. */
-    elsewhere: { destinationId: string; state: CopyState }[];
-}
-
-export interface ExplorerDestinationView {
-    destination: ExplorerDestination;
-    /** Newest first. */
-    backups: DestinationBackup[];
 }
 
 /** What the retention of one destination removes after a planned run. */

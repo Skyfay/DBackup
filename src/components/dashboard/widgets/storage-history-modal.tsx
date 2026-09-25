@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, HardDrive } from "lucide-react";
 import { adapterTypeIcon } from "@/components/adapter/connection-type-icon";
@@ -11,14 +11,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DateDisplay } from "@/components/utils/date-display";
 import { useDateFormatter } from "@/hooks/use-date-formatter";
-import { logger } from "@/lib/logging/logger";
 import { cn, formatBytes } from "@/lib/utils";
-import type { StorageSnapshotEntry } from "@/services/dashboard-service";
 import { RelativeTime } from "./relative-time";
 import { StorageHistoryChart } from "./storage-history-chart";
 import { plotPoints, signedBytes } from "./storage-history-data";
-
-const log = logger.child({ component: "storage-history-modal" });
+import { useStorageHistory } from "./use-storage-history";
 
 const RANGES = [
     { days: 7, label: "7d", name: "7 days" },
@@ -29,12 +26,6 @@ const RANGES = [
 type RangeDays = (typeof RANGES)[number]["days"];
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-/** The longest range and the most the API hands out. It loads once, the ranges are cut from it here. */
-const LOADED_DAYS = 365;
-
-type HistoryResult =
-    | { configId: string; loadedAt: number; entries: StorageSnapshotEntry[] }
-    | { configId: string; error: string };
 
 interface StorageHistoryModalProps {
     open: boolean;
@@ -69,35 +60,10 @@ function Message({ children, className }: { children: React.ReactNode; className
 /** Size and backup count of one destination over time, opened from the dashboard and the destinations page. */
 export function StorageHistoryModal({ open, onOpenChange, configId, adapterName, adapterId }: StorageHistoryModalProps) {
     const [range, setRange] = useState<RangeDays>(30);
-    const [result, setResult] = useState<HistoryResult | null>(null);
+    const current = useStorageHistory(configId, open);
     const { formatDate } = useDateFormatter();
 
-    useEffect(() => {
-        if (!open) return;
-        let ignore = false;
-        fetch(`/api/storage/${configId}/history?days=${LOADED_DAYS}`)
-            .then((res) => res.json())
-            .then((json) => {
-                if (ignore) return;
-                setResult(
-                    json.success
-                        ? { configId, loadedAt: Date.now(), entries: json.data }
-                        : { configId, error: json.error || "Failed to load history" }
-                );
-            })
-            .catch((error: unknown) => {
-                if (ignore) return;
-                log.error("Loading the storage history failed", { configId }, error instanceof Error ? error : undefined);
-                setResult({ configId, error: "Failed to load history" });
-            });
-        return () => {
-            ignore = true;
-        };
-    }, [configId, open]);
-
     const dayKey = useCallback((at: number) => formatDate(new Date(at), "yyyy-MM-dd"), [formatDate]);
-    // A result for another destination counts as loading, so a new destination needs no reset.
-    const current = result?.configId === configId ? result : null;
     const history = current && "entries" in current ? current : null;
     const since = history ? history.loadedAt - range * DAY_MS : 0;
     const { points, daily } = useMemo(
@@ -172,7 +138,7 @@ export function StorageHistoryModal({ open, onOpenChange, configId, adapterName,
                 <div className={cn(DIALOG_FOOTER, "flex flex-wrap items-center justify-end gap-2")}>
                     <span className="mr-auto text-xs text-muted-foreground">Measured with every storage refresh, hourly by default.</span>
                     <Button variant="ghost" size="sm" asChild>
-                        <Link href={`/dashboard/storage?destination=${configId}`}>
+                        <Link href={`/dashboard/storage?tab=destinations&destination=${encodeURIComponent(configId)}`}>
                             Open in Storage Explorer
                             <ArrowRight />
                         </Link>

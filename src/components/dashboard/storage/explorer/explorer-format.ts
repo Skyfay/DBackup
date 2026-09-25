@@ -1,4 +1,4 @@
-import type { ExplorerFile, ExplorerJob } from "@/services/storage/explorer-types";
+import type { ExplorerFile } from "@/services/storage/explorer-types";
 
 /**
  * How the explorer words a backup. Kept free of React so the rules can be tested.
@@ -54,20 +54,6 @@ export function contentsOf(file: Pick<ExplorerFile, "sourceName" | "sourceType" 
     if (folders > 0) parts.push(plural(folders, "folder"));
     if (parts.length === 0) return file.sourceName && file.sourceName !== "Unknown" ? file.sourceName : "Unknown";
     return parts.join(" + ");
-}
-
-/** The words for a job in the picker, like "30 runs · 6.1 GB". */
-export function jobKindLabel(job: Pick<ExplorerJob, "kind">): string {
-    switch (job.kind) {
-        case "deleted":
-            return "Job deleted";
-        case "system":
-            return "Config backups";
-        case "none":
-            return "Without a job";
-        default:
-            return "Job";
-    }
 }
 
 /** A count with its noun, like "3 backups" or "1 copy". */

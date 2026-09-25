@@ -12,7 +12,7 @@ import { cn, formatBytes, formatDuration } from "@/lib/utils";
 import type { CopyState, ExplorerDestination, ExplorerFile, ExplorerJob, RunExecution } from "@/services/storage/explorer-types";
 import { backupActions, type BackupActionHandlers } from "./backup-actions";
 import { BackupRowMenu } from "./backup-menus";
-import { AnswerDot, DestinationTile, IntegrityBadge, JobTile, TypeChip, answerOf } from "./explorer-cells";
+import { AnswerDot, answerOf, AnswerText, DestinationTile, IntegrityBadge, JobTile, TypeChip } from "./explorer-cells";
 import { contentsOf, count, madeAt, snapshotBytes, startedBy } from "./explorer-format";
 
 export interface BackupDetailsData {
@@ -125,20 +125,6 @@ function ChainSection({ chain, file }: { chain: ExplorerFile[]; file: ExplorerFi
                 </div>
             </div>
         </Section>
-    );
-}
-
-/** Whether the destination of a copy answers right now, as the connection check last saw it. */
-function CopyAnswer({ destination }: { destination: ExplorerDestination }) {
-    const answer = answerOf(destination);
-    const { latencyMs, answeredAt } = destination.health;
-    return (
-        <span className={cn("inline-flex shrink-0 items-center gap-1.5 text-xs font-medium", answer === "online" ? "text-success" : answer === "missed" ? "text-warning" : "text-destructive")}>
-            <AnswerDot answer={answer} />
-            {answer === "online" && `Online${latencyMs !== null ? ` · ${latencyMs} ms` : ""}`}
-            {answer === "missed" && "Missed its last check"}
-            {answer === "offline" && (answeredAt ? <>Offline since <DateDisplay date={answeredAt} format="Pp" /></> : "Offline")}
-        </span>
     );
 }
 
@@ -310,7 +296,7 @@ export function BackupDetails({ data, destinations, handlersFor, onDeleteEverywh
                                                 {copy.destinationId === destinationId && stored.length > 1 && (
                                                     <span className="inline-flex h-5 shrink-0 items-center rounded-md bg-muted px-1.5 text-[11px] font-medium">Shown here</span>
                                                 )}
-                                                {copy.state === "stored" && destination && <CopyAnswer destination={destination} />}
+                                                {copy.state === "stored" && destination && <AnswerText destination={destination} />}
                                             </span>
                                             <span className="block truncate text-xs text-muted-foreground">
                                                 {copy.state === "missing"

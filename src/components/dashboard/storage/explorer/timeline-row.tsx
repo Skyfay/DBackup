@@ -1,7 +1,7 @@
 "use client";
 
 import { describeSchedule } from "@/components/dashboard/jobs/job-schedule";
-import { describeRetention } from "@/components/templates/retention-policy-picker";
+import { describeRetention } from "@/components/templates/retention-words";
 import { cn } from "@/lib/utils";
 import type { ExplorerDestination, ExplorerJob, JobPlan } from "@/services/storage/explorer-types";
 import { JobTile } from "./explorer-cells";

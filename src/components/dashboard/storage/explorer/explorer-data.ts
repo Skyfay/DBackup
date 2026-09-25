@@ -1,10 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { logger } from "@/lib/logging/logger";
 import type { ExplorerDestination, ExplorerJob } from "@/services/storage/explorer-types";
 
 const log = logger.child({ component: "storage-explorer" });
+
+/** How often the page asks again while destinations are listed in the background, and for how long at most. */
+const POLL_MS = 3_000;
+const MAX_POLLS = 60;
 
 async function fetchData<T>(url: string): Promise<T> {
     const res = await fetch(url);
@@ -75,4 +79,26 @@ export async function checkNow(destinations: ExplorerDestination[]): Promise<voi
 export function destinationsOf(job: ExplorerJob | null, destinations: Map<string, ExplorerDestination>): ExplorerDestination[] {
     if (!job) return [];
     return job.destinationIds.map((id) => destinations.get(id)).filter((entry): entry is ExplorerDestination => entry !== undefined);
+}
+
+/**
+ * Loads again while destinations are listed in the background, so their backups show up as soon as
+ * they are in. A listing that hangs does not keep the page asking forever.
+ */
+export function useListingPoll(destinations: ExplorerDestination[], reload: () => void) {
+    const listingIds = destinations.filter((entry) => entry.listing).map((entry) => entry.id).join(",");
+    const polls = useRef(0);
+    useEffect(() => {
+        if (!listingIds) {
+            polls.current = 0;
+            return;
+        }
+        if (polls.current >= MAX_POLLS) return;
+        const timer = setTimeout(() => {
+            polls.current += 1;
+            reload();
+        }, POLL_MS);
+        return () => clearTimeout(timer);
+        // Every answer arms the next ask, even when the same destinations are still listed.
+    }, [listingIds, destinations, reload]);
 }

@@ -102,6 +102,23 @@ export function toFileInfo(file: ExplorerFile): FileInfo {
     };
 }
 
+/** A destination of a job as the database holds it, with its own policy and its template. */
+export interface PolicyDestination {
+    retention: string;
+    retentionPolicyId: string | null;
+    retentionPolicy: { config: string } | null;
+}
+
+/**
+ * The policy of a destination as the runner resolves it, as its JSON: its template, else the inline
+ * setting a job saved before templates existed, else the default template. A template that is gone keeps all.
+ */
+export function retentionConfigOf(destination: PolicyDestination, fallback: string | null): string | null {
+    if (destination.retentionPolicyId) return destination.retentionPolicy?.config ?? null;
+    if (readPolicy(destination.retention)) return destination.retention;
+    return fallback;
+}
+
 /** A policy stored as JSON, NONE when it cannot be read, like the runner does. */
 export function readPolicy(config: string | null | undefined): RetentionConfiguration | null {
     if (!config || config.trim() === "" || config.trim() === "{}") return null;

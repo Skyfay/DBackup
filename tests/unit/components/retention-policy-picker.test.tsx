@@ -1,7 +1,8 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { DEFAULT_RETENTION_SENTINEL, RetentionPolicyPicker, describeRetention } from "@/components/templates/retention-policy-picker";
+import { DEFAULT_RETENTION_SENTINEL, RetentionPolicyPicker } from "@/components/templates/retention-policy-picker";
+import { describeRetention } from "@/components/templates/retention-words";
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 

@@ -97,6 +97,8 @@ interface DataTableProps<TData, TValue> {
      * they open, are left to those controls. Give the row a button as well for keyboard users.
      */
     onRowClick?: (row: TData) => void;
+    /** The id of the row whose details show elsewhere on the page, which stays marked while they do. */
+    activeRowId?: string | null;
     /**
      * "cards" draws the rows through `renderCard` in a grid, "split" hands every filtered row
      * to `renderSplit` at once. Both keep the toolbar, the search and the filters.
@@ -151,6 +153,7 @@ export function DataTable<TData, TValue>({
     searchPlaceholder,
     initialPageSize = 10,
     onRowClick,
+    activeRowId,
     view = "table",
     renderCard,
     cardGridClassName,
@@ -364,6 +367,7 @@ export function DataTable<TData, TValue>({
                         <TableRow
                             key={row.id}
                             data-state={row.getIsSelected() && "selected"}
+                            data-active={activeRowId && row.id === activeRowId ? "true" : undefined}
                             onClick={onRowClick ? (event) => isPlainClick(event) && onRowClick(row.original) : undefined}
                             className={cn(
                                 // Cells can show controls on hover of their row, like a card does.
@@ -372,8 +376,8 @@ export function DataTable<TData, TValue>({
                                 card && (compact ? "[&>td]:py-1" : "[&>td]:py-2.5"),
                                 wideCheckbox && "[&>td:first-child]:cursor-pointer [&>td:first-child]:pr-3 [&>td:nth-child(2)]:pl-0",
                                 onRowClick && "cursor-pointer",
-                                // The row stays marked while its right click menu is open.
-                                "data-[state=open]:bg-muted/50"
+                                // The row stays marked while its right click menu is open, or its details show.
+                                "data-[state=open]:bg-muted/50 data-[active=true]:bg-muted/60 data-[active=true]:hover:bg-muted/60"
                             )}
                         >
                             {row.getVisibleCells().map((cell) => (

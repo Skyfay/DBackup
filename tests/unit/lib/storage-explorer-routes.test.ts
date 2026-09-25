@@ -8,7 +8,6 @@ const mocks = vi.hoisted(() => ({
     getIndex: vi.fn(),
     getBackups: vi.fn(),
     getExecution: vi.fn(),
-    getDestinationView: vi.fn(),
     checkNow: vi.fn(),
     getPlan: vi.fn(),
 }));
@@ -29,7 +28,6 @@ vi.mock("@/services/storage/explorer-service", () => ({
         getIndex: (...args: unknown[]) => mocks.getIndex(...args),
         getBackups: (...args: unknown[]) => mocks.getBackups(...args),
         getExecution: (...args: unknown[]) => mocks.getExecution(...args),
-        getDestinationView: (...args: unknown[]) => mocks.getDestinationView(...args),
         checkNow: (...args: unknown[]) => mocks.checkNow(...args),
     },
 }));
@@ -41,7 +39,6 @@ vi.mock("@/services/storage/explorer-plan-service", () => ({
 import { GET as getIndex } from "@/app/api/storage/explorer/route";
 import { GET as getBackups } from "@/app/api/storage/explorer/runs/route";
 import { GET as getExecution } from "@/app/api/storage/explorer/execution/route";
-import { GET as getDestination } from "@/app/api/storage/explorer/destinations/[id]/route";
 import { POST as refresh } from "@/app/api/storage/explorer/refresh/route";
 import { GET as getPlan } from "@/app/api/storage/explorer/plan/route";
 
@@ -52,14 +49,12 @@ const execution = (path?: string) =>
     getExecution(new NextRequest(`http://localhost/api/storage/explorer/execution${path === undefined ? "" : `?path=${encodeURIComponent(path)}`}`));
 const check = (body: unknown) =>
     refresh(new NextRequest("http://localhost/api/storage/explorer/refresh", { method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json" } }));
-const destination = (id: string) => getDestination(new NextRequest(`http://localhost/api/storage/explorer/destinations/${id}`), { params: Promise.resolve({ id }) });
 
 describe("Storage Explorer API", () => {
     beforeEach(() => {
         mocks.getIndex.mockResolvedValue({ destinations: [], jobs: [] });
         mocks.getBackups.mockResolvedValue({ runs: [] });
         mocks.getExecution.mockResolvedValue(null);
-        mocks.getDestinationView.mockResolvedValue({ destination: { id: "nas" }, backups: [] });
         mocks.getPlan.mockResolvedValue({ timezone: "UTC", days: 7, jobs: [] });
     });
 
@@ -69,7 +64,6 @@ describe("Storage Explorer API", () => {
         expect((await getIndex()).status).toBe(401);
         expect((await backups()).status).toBe(401);
         expect((await execution("Shop/a.tar")).status).toBe(401);
-        expect((await destination("nas")).status).toBe(401);
         expect((await plan()).status).toBe(401);
     });
 
@@ -79,13 +73,11 @@ describe("Storage Explorer API", () => {
         expect((await getIndex()).status).toBe(403);
         expect((await backups()).status).toBe(403);
         expect((await execution("Shop/a.tar")).status).toBe(403);
-        expect((await destination("nas")).status).toBe(403);
         expect((await plan()).status).toBe(403);
         expect(mocks.getPlan).not.toHaveBeenCalled();
         expect(mocks.getIndex).not.toHaveBeenCalled();
         expect(mocks.getBackups).not.toHaveBeenCalled();
         expect(mocks.getExecution).not.toHaveBeenCalled();
-        expect(mocks.getDestinationView).not.toHaveBeenCalled();
     });
 
     it("answers with what the schedules plan in the usual envelope", async () => {
@@ -120,13 +112,6 @@ describe("Storage Explorer API", () => {
         const response = await execution("Shop nightly/a b.tar");
         expect(mocks.getExecution).toHaveBeenCalledWith("Shop nightly/a b.tar");
         expect(await response.json()).toMatchObject({ success: true, data: { id: "exec-1", status: "Partial" } });
-    });
-
-    it("answers 404 for a destination without backups", async () => {
-        signedIn(PERMISSIONS.STORAGE.READ);
-        mocks.getDestinationView.mockResolvedValue(null);
-
-        expect((await destination("missing")).status).toBe(404);
     });
 
     it("starts Check now for the named destinations and answers at once", async () => {

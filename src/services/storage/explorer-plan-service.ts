@@ -3,7 +3,7 @@ import type { RetentionConfiguration } from "@/lib/core/retention";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { storageExplorerService } from "./explorer-service";
-import { MISSED_DAYS, PLAN_DAYS, markFulls, missedDays, readPolicy, runsBetween, simulateRetention, toFileInfo } from "./explorer-plan";
+import { MISSED_DAYS, PLAN_DAYS, markFulls, missedDays, readPolicy, retentionConfigOf, runsBetween, simulateRetention, toFileInfo, type PolicyDestination } from "./explorer-plan";
 import type { AgedOut, BackupRun, ExplorerPlan, JobPlan } from "./explorer-types";
 
 const log = logger.child({ service: "StorageExplorerPlanService" });
@@ -11,11 +11,8 @@ const log = logger.child({ service: "StorageExplorerPlanService" });
 const DAY_MS = 86_400_000;
 const NONE: RetentionConfiguration = { mode: "NONE" };
 
-interface PlanDestination {
+interface PlanDestination extends PolicyDestination {
     configId: string;
-    retention: string;
-    retentionPolicyId: string | null;
-    retentionPolicy: { config: string } | null;
 }
 
 /**
@@ -71,7 +68,7 @@ export class StorageExplorerPlanService {
                 schedule,
                 enabled: job.enabled,
                 createdAt: job.createdAt.toISOString(),
-                retention: first ? configOf(first, fallback?.config ?? null) : null,
+                retention: first ? retentionConfigOf(first, fallback?.config ?? null) : null,
                 planned: [],
                 missed: [],
                 truncated: false,
@@ -158,18 +155,8 @@ function scheduleOf(job: { schedule: string; schedulePreset: { schedule: string 
     return (job.schedulePreset?.schedule ?? job.schedule ?? "").trim() || null;
 }
 
-/**
- * The policy of a destination as the runner resolves it: its template, else the inline setting a
- * job saved before templates existed, else the default template. A template that is gone keeps all.
- */
-function configOf(destination: PlanDestination, fallback: string | null): string | null {
-    if (destination.retentionPolicyId) return destination.retentionPolicy?.config ?? null;
-    if (readPolicy(destination.retention)) return destination.retention;
-    return fallback;
-}
-
 function policyOf(destination: PlanDestination, fallback: string | null): RetentionConfiguration {
-    return readPolicy(configOf(destination, fallback)) ?? NONE;
+    return readPolicy(retentionConfigOf(destination, fallback)) ?? NONE;
 }
 
 export const storageExplorerPlanService = new StorageExplorerPlanService();

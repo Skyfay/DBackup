@@ -11,7 +11,6 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils";
 import { capitalize } from "@/components/ui/data-table-bulk-dialogs";
 import type { BulkAction } from "@/components/ui/data-table-types";
 
@@ -61,12 +60,7 @@ export function DataTableBulkBar<TData>({
                                 <Button
                                     key={action.id}
                                     size="sm"
-                                    variant="ghost"
-                                    // Hovered like Delete in the row menu: a red frame and a light red tint.
-                                    className={cn(
-                                        action.variant === "destructive" &&
-                                            "border border-transparent text-destructive hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20"
-                                    )}
+                                    variant={action.variant === "destructive" ? "ghost-destructive" : "ghost"}
                                     disabled={runningId !== null}
                                     onClick={() => onStart(action)}
                                 >

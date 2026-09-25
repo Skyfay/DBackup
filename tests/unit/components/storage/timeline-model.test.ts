@@ -8,7 +8,7 @@ function job(overrides: Partial<ExplorerJob> = {}): ExplorerJob {
     return {
         key: "shop", kind: "job", name: "Shop nightly", jobId: "shop", sourceType: "postgres", sourceName: "Shop", hasFolders: false, incremental: false,
         configuredDestinationIds: ["nas"], destinationIds: ["nas"], runs: 3, size: 3, newest: "2026-09-24T03:00:00Z", oldest: "2026-09-20T03:00:00Z",
-        failedChecks: 1, missingCopies: 1, locked: 0, ...overrides,
+        failedChecks: 1, missingCopies: 1, locked: 0, retention: {}, ...overrides,
     };
 }
 

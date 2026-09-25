@@ -3,23 +3,17 @@ import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { isListingStale, storageService } from "./storage-service";
-import { buildExplorer, normalizePath, timeOf, type DestinationListing, type ExplorerModel, type JobRecord } from "./explorer-model";
-import type {
-    DestinationBackup,
-    ExplorerBackups,
-    ExplorerDestination,
-    ExplorerFile,
-    ExplorerDestinationView,
-    ExplorerIndex,
-    HealthStatus,
-    RunExecution,
-} from "./explorer-types";
+import { defaultAlertConfig, defaultAlertStates, getAlertConfig, getAlertStates } from "./storage-alert-service";
+import { retentionConfigOf } from "./explorer-plan";
+import { buildExplorer, normalizePath, type DestinationListing, type ExplorerModel, type JobRecord } from "./explorer-model";
+import type { DestinationAlerts, ExplorerBackups, ExplorerDestination, ExplorerFile, ExplorerIndex, HealthStatus, RunExecution } from "./explorer-types";
 
 const log = logger.child({ service: "StorageExplorerService" });
 
 const EXECUTION_LOOKUP_SLICE = 400;
 
 const HEALTH_STATUSES: HealthStatus[] = ["ONLINE", "DEGRADED", "OFFLINE"];
+const WEEK_MS = 7 * 86_400_000;
 
 interface Loaded {
     destinations: ExplorerDestination[];
@@ -36,16 +30,22 @@ interface Loaded {
  */
 export class StorageExplorerService {
     private async loadJobs(): Promise<JobRecord[]> {
-        const jobs = await prisma.job.findMany({
-            select: {
-                id: true,
-                name: true,
-                backupMode: true,
-                source: { select: { adapterId: true, name: true } },
-                sources: { select: { id: true } },
-                destinations: { select: { configId: true }, orderBy: { priority: "asc" } },
-            },
-        });
+        const [jobs, fallback] = await Promise.all([
+            prisma.job.findMany({
+                select: {
+                    id: true,
+                    name: true,
+                    backupMode: true,
+                    source: { select: { adapterId: true, name: true } },
+                    sources: { select: { id: true } },
+                    destinations: {
+                        select: { configId: true, retention: true, retentionPolicyId: true, retentionPolicy: { select: { config: true } } },
+                        orderBy: { priority: "asc" },
+                    },
+                },
+            }),
+            prisma.retentionPolicy.findFirst({ where: { isDefault: true }, select: { config: true } }),
+        ]);
         return jobs.map((job) => ({
             id: job.id,
             name: job.name,
@@ -54,6 +54,10 @@ export class StorageExplorerService {
             sourceName: job.source?.name ?? null,
             hasFolders: job.sources.length > 0,
             destinationIds: job.destinations.map((destination) => destination.configId),
+            retention: Object.fromEntries(job.destinations.flatMap((destination) => {
+                const config = retentionConfigOf(destination, fallback?.config ?? null);
+                return config ? [[destination.configId, config]] : [];
+            })),
         }));
     }
 
@@ -89,7 +93,12 @@ export class StorageExplorerService {
             };
         }));
 
-        const checks = await Promise.all(configs.map((config) => this.lastChecks(config.id, config.lastStatus)));
+        const now = Date.now();
+        const [checks, growths, alerts] = await Promise.all([
+            Promise.all(configs.map((config) => this.lastChecks(config.id, config.lastStatus))),
+            Promise.all(configs.map((config) => this.growthOf(config.id, now))),
+            Promise.all(configs.map((config) => this.alertsOf(config.id))),
+        ]);
 
         const destinations: ExplorerDestination[] = configs.map((config, index) => {
             const { files, listedAt, error, listing } = listed[index];
@@ -104,6 +113,8 @@ export class StorageExplorerService {
                 health: { status, checkedAt: config.lastHealthCheck?.toISOString() ?? null, error: config.lastError, ...checks[index] },
                 count: files.length,
                 size: files.reduce((sum, file) => sum + (file.size ?? 0), 0),
+                growth: growths[index],
+                alerts: alerts[index],
             };
         });
 
@@ -132,6 +143,37 @@ export class StorageExplorerService {
             log.warn("Could not read the connection checks", { destinationId }, wrapError(error));
             return { latencyMs: null, answeredAt: null };
         }
+    }
+
+    /** How much a destination grew in the last 7 days, from the newest measurement and the one a week before it. */
+    private async growthOf(destinationId: string, now: number): Promise<number | null> {
+        try {
+            const [latest, before] = await Promise.all([
+                prisma.storageSnapshot.findFirst({ where: { adapterConfigId: destinationId }, orderBy: { createdAt: "desc" }, select: { size: true } }),
+                prisma.storageSnapshot.findFirst({
+                    where: { adapterConfigId: destinationId, createdAt: { lte: new Date(now - WEEK_MS) } },
+                    orderBy: { createdAt: "desc" },
+                    select: { size: true },
+                }),
+            ]);
+            return latest && before ? Number(latest.size) - Number(before.size) : null;
+        } catch (error: unknown) {
+            log.warn("Could not read the size history", { destinationId }, wrapError(error));
+            return null;
+        }
+    }
+
+    /** The storage alerts of a destination with the ones that fire right now. When they cannot be read, the list shows them as off. */
+    private async alertsOf(destinationId: string): Promise<DestinationAlerts> {
+        const [config, states] = await Promise.all([getAlertConfig(destinationId), getAlertStates(destinationId)]).catch((error: unknown) => {
+            log.warn("Could not read the storage alerts", { destinationId }, wrapError(error));
+            return [defaultAlertConfig(), defaultAlertStates()] as const;
+        });
+        return {
+            usageSpike: { enabled: config.usageSpikeEnabled, percent: config.usageSpikeThresholdPercent, active: config.usageSpikeEnabled && states.usageSpike.active },
+            storageLimit: { enabled: config.storageLimitEnabled, bytes: config.storageLimitBytes, active: config.storageLimitEnabled && states.storageLimit.active },
+            missingBackup: { enabled: config.missingBackupEnabled, hours: config.missingBackupHours, active: config.missingBackupEnabled && states.missingBackup.active },
+        };
     }
 
     /** Compares these destinations with the storage in the background, for Check now. Returns those that are being listed. */
@@ -164,30 +206,6 @@ export class StorageExplorerService {
     async getExecution(path: string): Promise<RunExecution | null> {
         const normalized = normalizePath(path);
         return (await this.executionsFor([normalized])).get(normalized) ?? null;
-    }
-
-    /** The backups of one destination, each with the job it belongs to and its copies elsewhere. */
-    async getDestinationView(destinationId: string): Promise<ExplorerDestinationView | null> {
-        const { destinations, model } = await this.load();
-        const destination = destinations.find((entry) => entry.id === destinationId);
-        if (!destination) return null;
-
-        const backups: DestinationBackup[] = [];
-        for (const runs of model.runs.values()) {
-            for (const run of runs) {
-                const here = run.copies.find((copy) => copy.destinationId === destinationId && copy.state === "stored");
-                if (!here?.file) continue;
-                backups.push({
-                    file: here.file,
-                    jobKey: run.jobKey,
-                    elsewhere: run.copies
-                        .filter((copy) => copy.destinationId !== destinationId)
-                        .map((copy) => ({ destinationId: copy.destinationId, state: copy.state })),
-                });
-            }
-        }
-        backups.sort((a, b) => timeOf(b.file) - timeOf(a.file));
-        return { destination, backups };
     }
 
     /** The runs History still holds for these backups, by path. */

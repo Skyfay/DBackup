@@ -144,3 +144,79 @@ describe('every backup in one list', () => {
         await expect(service.getExecution('Shop/gone.tar')).resolves.toBeNull();
     });
 });
+
+describe('what a destination tells about itself', () => {
+    let service: StorageExplorerService;
+
+    beforeEach(() => {
+        service = new StorageExplorerService();
+        prismaMock.adapterConfig.findMany.mockResolvedValue([destination('nas'), destination('r2')] as never);
+        storage.readCachedListing.mockResolvedValue(null);
+        storage.isListing.mockReturnValue(false);
+        storage.listingFailure.mockReturnValue(null);
+    });
+
+    it('measures what a destination grew in the last 7 days, and nothing without a measurement a week old', async () => {
+        prismaMock.job.findMany.mockResolvedValue([] as never);
+        prismaMock.storageSnapshot.findFirst.mockImplementation((async (args: { where: { adapterConfigId: string; createdAt?: unknown } }) => {
+            if (args.where.adapterConfigId === 'r2') return args.where.createdAt ? null : { size: BigInt(900) };
+            return { size: BigInt(args.where.createdAt ? 1_000 : 1_500) };
+        }) as never);
+
+        const index = await service.getIndex();
+
+        expect(index.destinations.map((entry) => [entry.id, entry.growth])).toEqual([['nas', 500], ['r2', null]]);
+    });
+
+    it('reports the alerts of a destination, and only one that is on as firing', async () => {
+        prismaMock.job.findMany.mockResolvedValue([] as never);
+        prismaMock.systemSetting.findUnique.mockImplementation((async (args: { where: { key: string } }) => {
+            if (args.where.key === 'storage.alerts.nas') {
+                return { key: args.where.key, value: JSON.stringify({ storageLimitEnabled: true, storageLimitBytes: 1_000, missingBackupEnabled: false }) };
+            }
+            if (args.where.key === 'storage.alerts.nas.state') {
+                const firing = { active: true, lastNotifiedAt: null };
+                return { key: args.where.key, value: JSON.stringify({ storageLimit: firing, missingBackup: firing }) };
+            }
+            return null;
+        }) as never);
+
+        const index = await service.getIndex();
+
+        expect(index.destinations[0].alerts).toMatchObject({
+            storageLimit: { enabled: true, bytes: 1_000, active: true },
+            missingBackup: { enabled: false, active: false },
+            usageSpike: { enabled: false, active: false },
+        });
+        expect(index.destinations[1].alerts.storageLimit).toMatchObject({ enabled: false, active: false });
+    });
+
+    it('still lists the destinations when their alerts cannot be read', async () => {
+        prismaMock.job.findMany.mockResolvedValue([] as never);
+        prismaMock.systemSetting.findUnique.mockRejectedValue(new Error('database is locked'));
+
+        const index = await service.getIndex();
+
+        expect(index.destinations).toHaveLength(2);
+        expect(index.destinations[0].alerts.missingBackup).toMatchObject({ enabled: false, active: false });
+    });
+
+    it('resolves the retention at each destination of a job like the runner, from its template, its own setting or the default', async () => {
+        const keepSeven = JSON.stringify({ mode: 'SIMPLE', simple: { keepCount: 7 } });
+        const smart = JSON.stringify({ mode: 'SMART', smart: { daily: 7, weekly: 4 } });
+        const keepThirty = JSON.stringify({ mode: 'SIMPLE', simple: { keepCount: 30 } });
+        prismaMock.job.findMany.mockResolvedValue([{
+            id: 'job-1', name: 'Shop', backupMode: 'FULL', source: { adapterId: 'postgres', name: 'Shop' }, sources: [],
+            destinations: [
+                { configId: 'nas', retention: '{}', retentionPolicyId: 'p1', retentionPolicy: { config: keepSeven } },
+                { configId: 'r2', retention: smart, retentionPolicyId: null, retentionPolicy: null },
+                { configId: 'sftp', retention: '{}', retentionPolicyId: null, retentionPolicy: null },
+            ],
+        }] as never);
+        prismaMock.retentionPolicy.findFirst.mockResolvedValue({ config: keepThirty } as never);
+
+        const index = await service.getIndex();
+
+        expect(index.jobs.find((job) => job.key === 'job-1')?.retention).toEqual({ nas: keepSeven, r2: smart, sftp: keepThirty });
+    });
+});

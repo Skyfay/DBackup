@@ -288,7 +288,7 @@ export function RestoreClient({ canManageVault = false, canDownload = false }: R
                 if (autoRedirectOnJobStart) {
                     router.push(`/dashboard/history?executionId=${res.executionId}&autoOpen=true`);
                 } else {
-                    router.push(`/dashboard/storage?destination=${encodeURIComponent(destinationId)}`);
+                    router.push(`/dashboard/storage?at=${encodeURIComponent(destinationId)}`);
                 }
             } else {
                 toast.error(res.error || "Failed to start restore");
@@ -684,7 +684,7 @@ export function RestoreClient({ canManageVault = false, canDownload = false }: R
                 if (autoRedirectOnJobStart) {
                     router.push(`/dashboard/history?executionId=${data.executionId}&autoOpen=true`);
                 } else {
-                    router.push(`/dashboard/storage?destination=${encodeURIComponent(destinationId)}`);
+                    router.push(`/dashboard/storage?at=${encodeURIComponent(destinationId)}`);
                 }
             } else {
                 toast.error("Restore request failed");
@@ -712,7 +712,7 @@ export function RestoreClient({ canManageVault = false, canDownload = false }: R
     };
 
     const handleCancel = () => {
-        router.push(`/dashboard/storage?destination=${encodeURIComponent(destinationId)}`);
+        router.push(`/dashboard/storage?at=${encodeURIComponent(destinationId)}`);
     };
 
     // Invalid state - redirect back

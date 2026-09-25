@@ -24,6 +24,8 @@ export interface JobRecord {
     hasFolders: boolean;
     /** Where the job writes now, in its upload order. */
     destinationIds: string[];
+    /** The retention policy of each of those destinations, as its JSON. */
+    retention?: Record<string, string>;
 }
 
 export interface DestinationListing {
@@ -203,6 +205,7 @@ export function buildExplorer(jobs: JobRecord[], listings: DestinationListing[])
             failedChecks: runs.filter((run) => run.copies.some((copy) => copy.file?.verification?.passed === false)).length,
             missingCopies: runs.reduce((sum, run) => sum + run.copies.filter((copy) => copy.state === "missing").length, 0),
             locked: runs.filter((run) => run.copies.some((copy) => copy.file?.locked)).length,
+            retention: record?.retention ?? {},
         });
     }
 

@@ -8,6 +8,9 @@ import { DateDisplay } from "@/components/utils/date-display";
 import { cn, formatBytes } from "@/lib/utils";
 import type { CopyState, ExplorerDestination, ExplorerFile, ExplorerJob } from "@/services/storage/explorer-types";
 import { isIncremental, madeAt, snapshotBytes, startedBy, typeLabel } from "./explorer-format";
+import { answerOf, isStale, type Answer } from "./explorer-state";
+
+export { answerOf, isStale, type Answer };
 
 const TILE = "flex shrink-0 items-center justify-center rounded-lg border bg-muted/50";
 
@@ -39,24 +42,25 @@ export function DestinationTile({ destination, size = "md" }: { destination: Pic
     );
 }
 
-/** Whether a destination's listing may be behind: it did not answer its last check, or could not be listed. */
-export function isStale(destination: Pick<ExplorerDestination, "health" | "listError">): boolean {
-    return destination.health.status === "OFFLINE" || destination.listError !== null;
-}
-
-/** Whether a destination answers right now, from the connection check that runs every minute. */
-export type Answer = "online" | "missed" | "offline";
-
-export function answerOf(destination: Pick<ExplorerDestination, "health">): Answer {
-    if (destination.health.status === "OFFLINE") return "offline";
-    if (destination.health.status === "DEGRADED") return "missed";
-    return "online";
-}
 
 const ANSWER_DOT: Record<Answer, string> = { online: "bg-success", missed: "bg-warning", offline: "bg-destructive" };
 
 export function AnswerDot({ answer }: { answer: Answer }) {
     return <span className={cn("size-1.5 shrink-0 rounded-full", ANSWER_DOT[answer])} aria-hidden="true" />;
+}
+
+/** Whether a destination answers right now, as the connection check last saw it, with the time it took or since when it does not. */
+export function AnswerText({ destination, className }: { destination: ExplorerDestination; className?: string }) {
+    const answer = answerOf(destination);
+    const { latencyMs, answeredAt } = destination.health;
+    return (
+        <span className={cn("inline-flex shrink-0 items-center gap-1.5 text-xs font-medium", answer === "online" ? "text-success" : answer === "missed" ? "text-warning" : "text-destructive", className)}>
+            <AnswerDot answer={answer} />
+            {answer === "online" && `Online${latencyMs !== null ? ` · ${latencyMs} ms` : ""}`}
+            {answer === "missed" && "Missed its last check"}
+            {answer === "offline" && (answeredAt ? <>Offline since <DateDisplay date={answeredAt} format="Pp" /></> : "Offline")}
+        </span>
+    );
 }
 
 /** What the dot and the clock on a copy mean, under the toolbar of a list that shows copies. */

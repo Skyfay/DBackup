@@ -27,13 +27,21 @@ export function FileBrowserScroll({ children }: { children: React.ReactNode }) {
     );
 }
 
-/** Brings back the entries whose name starts with a dot. Nothing while there are none. */
-export function HiddenToggle({ count, shown, onToggle }: { count: number; shown: boolean; onToggle: () => void }) {
+interface HiddenToggleProps {
+    count: number;
+    shown: boolean;
+    onToggle: () => void;
+    /** What the button says, by default about hidden files. */
+    labels?: { show: string; hide: string };
+}
+
+/** Brings back the entries left out by default, like the ones whose name starts with a dot. Nothing while there are none. */
+export function HiddenToggle({ count, shown, onToggle, labels = { show: `Show ${count} hidden`, hide: "Hide hidden files" } }: HiddenToggleProps) {
     if (count === 0 && !shown) return <span />;
     return (
         <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" aria-pressed={shown} onClick={onToggle}>
             {shown ? <EyeOff /> : <Eye />}
-            {shown ? "Hide hidden files" : `Show ${count} hidden`}
+            {shown ? labels.hide : labels.show}
         </Button>
     );
 }
@@ -45,16 +53,20 @@ interface FileBrowserFooterProps {
     action: string;
     disabled?: boolean;
     onUse: () => void;
+    /** The line above what is picked, like "3 picked, 1 new". */
+    label?: string;
+    /** A path is cut from the start, so its end stays in view. A list of names is cut at its end. */
+    cut?: "start" | "end";
 }
 
-/** The picked path above the buttons, cut from the left so the end of a long path stays in view. */
-export function FileBrowserFooter({ chosen, action, disabled = false, onUse }: FileBrowserFooterProps) {
+/** What is picked above the buttons. */
+export function FileBrowserFooter({ chosen, action, disabled = false, onUse, label = "Picked", cut = "start" }: FileBrowserFooterProps) {
     return (
         <div className={cn(DIALOG_FOOTER, "flex items-center gap-3")}>
             <div className="min-w-0 flex-1">
-                <p className="text-xs text-muted-foreground">Picked</p>
+                <p className="text-xs text-muted-foreground">{label}</p>
                 {chosen ? (
-                    <p className="truncate text-left text-sm font-medium [direction:rtl]" title={chosen}>
+                    <p className={cn("truncate text-left text-sm font-medium", cut === "start" && "[direction:rtl]")} title={chosen}>
                         <bdi>{chosen}</bdi>
                     </p>
                 ) : (

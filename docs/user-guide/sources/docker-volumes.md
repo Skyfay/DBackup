@@ -44,8 +44,11 @@ A process that can talk to the Docker socket can start containers, and a contain
 3. **Over SSH**, enter the host and pick an `SSH_KEY` credential profile under **SSH login** in the **SSH server** part. For **Direct**, leave the socket empty unless it is somewhere unusual.
 4. Click **Test connection**. It reports the Docker version and how many volumes it can see.
 5. Click **Create source**, then open or create a job.
-6. Under **Directory Sources**, pick this adapter and click the volume button. It lists the volumes on that host - tick the ones to back up, or use **Every volume on this host** to tick them all. Each ticked volume becomes its own row with its own settings, and a volume created later is not swept in automatically.
-7. Optionally expand a source row to set **Stop containers while reading** and exclude patterns.
+6. In the **Source** part of the job, add a folder, pick this connection and click the volume button. The volumes are listed by Compose stack, each with the containers that mount it, whether they run and where they mount it. An anonymous volume goes by the container that mounts it, and the volumes no container mounts stay hidden until **Show … not in use**. Each ticked volume becomes its own row with its own settings, and a volume created later is not swept in automatically.
+7. Beside the list, **What the job reads** shows the order the job reads the ticked volumes in and which containers stop for each. **Stop containers while reading** on top of it applies to the volumes you add, while the ones already in the job keep their own setting.
+8. Optionally expand a source row to change **Stop containers while reading** for that volume and to set exclude patterns.
+
+The sizes in the list come from `docker system df` and show up a moment after the volumes, since Docker measures every volume to answer. DBackup keeps one measurement for ten minutes.
 
 ## How It Works
 

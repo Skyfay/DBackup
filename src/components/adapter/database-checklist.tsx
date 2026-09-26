@@ -4,6 +4,7 @@ import { useId, useState } from "react";
 import { ArrowUpDown, Info, RotateCw, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Highlight } from "@/components/ui/highlight";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -28,18 +29,6 @@ interface DatabaseChecklistProps {
 export function DatabaseChecklist(props: DatabaseChecklistProps) {
     // Another source starts over, with its own list and without the search of the last one.
     return <Checklist key={props.sourceId} {...props} />;
-}
-
-function Highlight({ text, term }: { text: string; term: string }) {
-    const at = term ? text.toLowerCase().indexOf(term) : -1;
-    if (at < 0) return <>{text}</>;
-    return (
-        <>
-            {text.slice(0, at)}
-            <mark className="rounded-sm bg-foreground/10 font-semibold text-foreground">{text.slice(at, at + term.length)}</mark>
-            {text.slice(at + term.length)}
-        </>
-    );
 }
 
 function Facts({ stats, loading }: { stats: DatabaseStats | undefined; loading: boolean }) {

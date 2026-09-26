@@ -1,6 +1,6 @@
 import { Readable } from "node:stream";
 import { pack } from "tar-stream";
-import type { ContainerInfo, DockerEngine, VolumeInfo } from "@/lib/adapters/storage/docker/engine/types";
+import type { ContainerDetail, ContainerInfo, DockerEngine, VolumeInfo } from "@/lib/adapters/storage/docker/engine/types";
 
 /**
  * An in-memory Docker daemon for unit tests.
@@ -19,11 +19,20 @@ export interface FakeContainer {
     /** Volumes this container holds. */
     volumes: string[];
     labels?: Record<string, string>;
+    image?: string;
+    /** Where the container mounts each of its volumes, `/<volume>` when not given. */
+    mountPaths?: Record<string, string>;
+    /** Folders of the host it mounts, as the destinations inside it. */
+    binds?: string[];
 }
 
 export interface FakeDockerOptions {
     volumes?: string[];
     containers?: FakeContainer[];
+    /** Labels and creation time of a volume, by name. */
+    volumeDetails?: Record<string, { labels?: Record<string, string>; createdAt?: string }>;
+    /** What `volumeSizes` measures, in bytes. */
+    sizes?: Record<string, number>;
     /** Throws instead of doing the thing, keyed by method name. */
     failOn?: Partial<Record<keyof DockerEngine, Error>>;
     /** File counts per volume. `null` stands for a helper that could not be run to count. */
@@ -84,6 +93,11 @@ export function createFakeDockerEngine(options: FakeDockerOptions = {}): FakeDoc
         id: c.id, name: c.name, running: c.running, labels: c.labels ?? {},
     });
 
+    const toVolume = (name: string): VolumeInfo => {
+        const details = options.volumeDetails?.[name];
+        return { name, driver: "local", labels: details?.labels ?? {}, ...(details?.createdAt ? { createdAt: details.createdAt } : {}) };
+    };
+
     const engine: FakeDockerEngine = {
         label: "fake://docker",
         calls,
@@ -96,12 +110,12 @@ export function createFakeDockerEngine(options: FakeDockerOptions = {}): FakeDoc
 
         async listVolumes(): Promise<VolumeInfo[]> {
             failIfAsked("listVolumes");
-            return [...volumes].map((name) => ({ name, driver: "local", labels: {} }));
+            return [...volumes].map(toVolume);
         },
 
         async inspectVolume(name) {
             failIfAsked("inspectVolume");
-            return volumes.has(name) ? { name, driver: "local", labels: {} } : null;
+            return volumes.has(name) ? toVolume(name) : null;
         },
 
         async createVolume(name) {
@@ -119,6 +133,23 @@ export function createFakeDockerEngine(options: FakeDockerOptions = {}): FakeDoc
         async containersUsingVolume(name) {
             failIfAsked("containersUsingVolume");
             return containers.filter((c) => c.volumes.includes(name)).map(toInfo);
+        },
+
+        async listContainers(): Promise<ContainerDetail[]> {
+            failIfAsked("listContainers");
+            return containers.map((c) => ({
+                ...toInfo(c),
+                image: c.image ?? "alpine:latest",
+                mounts: [
+                    ...c.volumes.map((volume) => ({ type: "volume", volume, destination: c.mountPaths?.[volume] ?? `/${volume}` })),
+                    ...(c.binds ?? []).map((destination) => ({ type: "bind", destination })),
+                ],
+            }));
+        },
+
+        async volumeSizes() {
+            failIfAsked("volumeSizes");
+            return new Map(Object.entries(options.sizes ?? {}));
         },
 
         async stopContainer(id) {

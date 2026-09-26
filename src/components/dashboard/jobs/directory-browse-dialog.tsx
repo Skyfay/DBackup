@@ -17,9 +17,6 @@ interface DirectoryBrowseDialogProps {
     /** Every folder of this connection the job has, whichever row opened the dialog. */
     initialRows: DirectoryTreeRow[];
     onConfirm: (rows: DirectoryTreeRow[]) => void;
-    /** This connection has nothing below its root, see DirectoryTree. */
-    flat?: boolean;
-    itemNoun?: string;
 }
 
 /**
@@ -30,20 +27,17 @@ interface DirectoryBrowseDialogProps {
  * "" is the tree's name for the root of the connection, while the form keeps the root as "/" so
  * the path field shows something. The two are swapped at this boundary only.
  */
-export function DirectoryBrowseDialog({ open, onOpenChange, configId, connectionName, initialRows, onConfirm, flat = false, itemNoun = "item" }: DirectoryBrowseDialogProps) {
+export function DirectoryBrowseDialog({ open, onOpenChange, configId, connectionName, initialRows, onConfirm }: DirectoryBrowseDialogProps) {
     const [rows, setRows] = useState<DirectoryTreeRow[]>([]);
 
     useEffect(() => {
         if (!open) return;
-        // A flat connection has no root to pick, so a stored root row is dropped rather than
-        // translated. Kept, it would be a row nobody can see and so nobody can untick.
-        setRows(flat ? initialRows.filter((row) => row.path !== "/" && row.path !== "") : initialRows.map((row) => (row.path === "/" ? { ...row, path: "" } : row)));
+        setRows(initialRows.map((row) => (row.path === "/" ? { ...row, path: "" } : row)));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open]);
 
-    const everything = !flat && rows.length === 1 && rows[0].path === "";
-    const noun = flat ? itemNoun : "folder";
-    const confirmLabel = everything ? "Back up everything" : rows.length > 1 ? `Use ${rows.length} ${noun}s` : `Use this ${noun}`;
+    const everything = rows.length === 1 && rows[0].path === "";
+    const confirmLabel = everything ? "Back up everything" : rows.length > 1 ? `Use ${rows.length} folders` : "Use this folder";
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -51,12 +45,12 @@ export function DirectoryBrowseDialog({ open, onOpenChange, configId, connection
                 <DialogHead tone="pick" icon={FolderOpen}>
                     <DialogTitle className="text-base">Pick from {connectionName}</DialogTitle>
                     <DialogDescription className={cn(dialogNoteClass("pick"), "truncate")}>
-                        {flat ? `Tick the ${itemNoun}s to back up, each one becomes a row of its own` : "Tick the folders to back up, or the root for everything"}
+                        Tick the folders to back up, or the root for everything
                     </DialogDescription>
                 </DialogHead>
                 <ScrollArea className="min-h-0 flex-1">
                     <div className="p-4">
-                        {open && <DirectoryTree key={configId} configId={configId} rows={rows} onRowsChange={setRows} flat={flat} itemNoun={itemNoun} />}
+                        {open && <DirectoryTree key={configId} configId={configId} rows={rows} onRowsChange={setRows} />}
                     </div>
                 </ScrollArea>
                 <div className={cn(DIALOG_FOOTER, "flex items-center justify-between gap-3")}>
@@ -69,8 +63,7 @@ export function DirectoryBrowseDialog({ open, onOpenChange, configId, connection
                             type="button"
                             disabled={rows.length === 0}
                             onClick={() => {
-                                // The root name only exists for a tree, a flat list never has an empty path.
-                                onConfirm(flat ? rows : rows.map((row) => (row.path === "" ? { ...row, path: "/" } : row)));
+                                onConfirm(rows.map((row) => (row.path === "" ? { ...row, path: "/" } : row)));
                                 onOpenChange(false);
                             }}
                         >

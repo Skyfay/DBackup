@@ -82,7 +82,7 @@ export function SourcePart({ sources, folderOptions, defaultExcludePresetIds }: 
             result.push({ ...entry, excludePatterns: row.excludePatterns });
         }
         for (const row of remaining) {
-            result.push({ configId, path: row.path, excludePatterns: row.excludePatterns, excludePatternPresetIds: defaultExcludePresetIds, stopContainers: true });
+            result.push({ configId, path: row.path, excludePatterns: row.excludePatterns, excludePatternPresetIds: defaultExcludePresetIds, stopContainers: row.stopContainers ?? true });
         }
         folders.replace(result);
     };

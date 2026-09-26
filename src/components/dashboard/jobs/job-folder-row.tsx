@@ -15,6 +15,7 @@ import { ConnectionPicker } from "./connection-picker";
 import { DirectoryBrowseDialog } from "./directory-browse-dialog";
 import type { DirectoryTreeRow } from "./directory-tree";
 import type { AdapterOption, JobFormValues } from "./job-form-schema";
+import { VolumePickerDialog } from "./volume-picker-dialog";
 
 interface FolderRowProps {
     index: number;
@@ -39,6 +40,12 @@ export function FolderRow({ index, options, onRemove, onSync }: FolderRowProps) 
     const noun = definition?.browseNoun ?? "folder";
     const excludes = patterns.length + presetIds.length;
     const setPresets = (next: string[]) => form.setValue(`directorySources.${index}.excludePatternPresetIds`, next, { shouldDirty: true });
+    // Every folder of the connection the job has, whichever row opened the picker.
+    const rowsOf = (id: string) =>
+        form
+            .getValues("directorySources")
+            .filter((source) => source.configId === id)
+            .map((source) => ({ path: source.path, excludePatterns: source.excludePatterns, excludePatternPresetIds: source.excludePatternPresetIds, stopContainers: source.stopContainers }));
 
     return (
         <div className="rounded-lg border">
@@ -139,21 +146,26 @@ export function FolderRow({ index, options, onRemove, onSync }: FolderRowProps) 
                 </div>
             )}
 
-            {connection?.supportsBrowse && (
-                <DirectoryBrowseDialog
-                    open={browsing}
-                    onOpenChange={setBrowsing}
-                    configId={connection.id}
-                    connectionName={connection.name}
-                    initialRows={form
-                        .getValues("directorySources")
-                        .filter((source) => source.configId === connection.id)
-                        .map((source) => ({ path: source.path, excludePatterns: source.excludePatterns, excludePatternPresetIds: source.excludePatternPresetIds }))}
-                    onConfirm={(rows) => onSync(connection.id, rows)}
-                    flat={flat}
-                    itemNoun={noun}
-                />
-            )}
+            {connection?.supportsBrowse &&
+                (connection.adapterId === "docker-volume" ? (
+                    <VolumePickerDialog
+                        open={browsing}
+                        onOpenChange={setBrowsing}
+                        configId={connection.id}
+                        connectionName={connection.name}
+                        initialRows={rowsOf(connection.id)}
+                        onConfirm={(rows) => onSync(connection.id, rows)}
+                    />
+                ) : (
+                    <DirectoryBrowseDialog
+                        open={browsing}
+                        onOpenChange={setBrowsing}
+                        configId={connection.id}
+                        connectionName={connection.name}
+                        initialRows={rowsOf(connection.id)}
+                        onConfirm={(rows) => onSync(connection.id, rows)}
+                    />
+                ))}
         </div>
     );
 }

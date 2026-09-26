@@ -168,6 +168,8 @@ wget --content-disposition "$URL"
 
 Naming several databases in `databases` returns them together as a `.tar.gz`. Backups written by earlier versions for database-only jobs are single files, so they can only be downloaded whole.
 
+`download-url` takes the same pick as `restore-files`: `databases`, `selections` of folder sources, or both, returned as one dump or one `.tar.gz`. The response carries the link as `data.url` with `data.token` and `data.fileName`, and `url` stays at the top for older scripts. The link streams, works for one complete download within 5 minutes, and a download that broke off can run again with it. `GET /api/storage/{id}/download-url?token=...` tells the user who made the link whether it is `open`, `fetched` (with `fetchedAt` and `fetchedFrom`) or `expired`.
+
 ### Show Statistics on a Homepage Dashboard
 
 Create an API key with only `dashboard:read` and point your dashboard widget at the stats endpoint:

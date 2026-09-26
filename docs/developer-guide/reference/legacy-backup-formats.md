@@ -62,5 +62,5 @@ Config backups are written as a `.tar.gz`, encrypted as a whole with the same AE
 - `resolveDecryptionKey()` and `legacyHeadVerifier()` in `src/services/restore/smart-recovery.ts`, and the whole-file branch in `src/services/backup/key-recovery.ts`
 - The whole-file decryption and the `.enc` zip branch in `storageService.downloadFile()`
 - `compression` and `encryption` in `BackupMetadata`
-- The branch for rows without a file index in `src/components/dashboard/storage/download-options.ts`
+- The modes for rows without a file index in `src/components/dashboard/storage/download/download-dialog.tsx`
 - `restoreWholeFile()` and `--decrypt` in the Recovery Kit

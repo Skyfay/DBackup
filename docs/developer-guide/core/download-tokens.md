@@ -1,343 +1,159 @@
 # Download Tokens
 
-Temporary, single-use download tokens for CLI/API access to backup files.
+Temporary, single-use links that download a backup, or part of one, without a session.
 
 ## Overview
 
-Download tokens allow users to download backup files via wget/curl without requiring browser cookies or session authentication. This is essential for:
+A download link lets a host without a DBackup session fetch a backup with curl, wget or PowerShell. It is what the download dialog of the Storage Explorer and the Redis restore guide put into their commands, and what scripts use with an API key:
 
-- Redis restore workflows (RDB must be copied to server)
-- Server-to-server backup transfers
-- Scripted/automated downloads
-- Air-gapped environments
+- Redis and Valkey restores, where the dump has to reach the Redis host
+- Server-to-server transfers and scripted downloads
+- Air-gapped or locked-down hosts that can only reach DBackup over HTTP
+
+A link works for **one complete download within 5 minutes**. A download that breaks off hands it back, so the same command can run again.
 
 ## Architecture
 
 ```
-User clicks "Generate Download Link"
+Download dialog, "A server", Make the link
               ↓
-POST /api/storage/[id]/download-url
+POST /api/storage/[id]/download-url      (a pick is planned first, so a missing key shows in the dialog)
               ↓
-generateDownloadToken(storageId, file, decrypt)
+generateLinkToken({ storageId, file, userId, decrypt, pick })
               ↓
-Returns public URL with token
+Returns data.url, data.token, data.fileName
               ↓
-wget/curl downloads via /api/storage/public-download?token=xxx
+curl / wget / PowerShell on another host: GET /api/storage/public-download?token=...
               ↓
-consumeDownloadToken() validates & marks used
+claimLinkToken()   one request at a time
               ↓
-File streamed (decrypted if requested)
+A pick streams through openArchiveDownload(), a whole file through a temp file
+              ↓
+Last byte sent: markTokenUsed(token, host)     Broke off: releaseLinkToken(token)
+              ↓
+The dialog asks GET /api/storage/[id]/download-url?token=... every 3 seconds and shows "Fetched at"
 ```
 
-## Token Lifecycle
+## Tokens
 
-### Generation
-
-```typescript
-// src/lib/download-tokens.ts
-import { generateDownloadToken } from "@/lib/auth/download-tokens";
-
-// Parameters:
-// - storageId: Storage adapter config ID
-// - file: File path within storage
-// - decrypt: Whether to decrypt on download (default: true)
-// - database: For a seekable archive, the database dump to download (optional)
-const token = generateDownloadToken(storageId, filePath, decrypt, database);
-```
-
-A seekable archive has no decrypted form as a whole, so a decrypted token for one resolves to a single database dump: the one named by `database`, or the archive's only database when it holds exactly one and no files. The dump is named after the backup and the database, for example `nightly_2026-09-16_shop.sql`, which is why the generated commands use `wget --content-disposition` and `curl -OJ` for it.
-
-### Token Data Structure
+All tokens live in `src/lib/auth/download-tokens.ts`, in memory.
 
 ```typescript
 interface DownloadToken {
-    storageId: string;    // Storage adapter ID
-    file: string;         // File path
-    decrypt: boolean;     // Decrypt before streaming
-    database?: string;    // Seekable archives: the dump to extract
-    createdAt: number;    // Unix timestamp
-    expiresAt: number;    // Unix timestamp (createdAt + 5 min)
-    used: boolean;        // Single-use flag
+    storageId: string;
+    file: string;
+    decrypt: boolean;
+    createdAt: number;
+    expiresAt: number;       // createdAt + 5 minutes
+    used: boolean;
+    createdBy?: string;      // links: the user who made it, the only one who sees its status
+    fetchedAt?: number;      // links: when the last byte left
+    fetchedFrom?: string;    // links: the host, from x-forwarded-for or x-real-ip
+    claimed?: boolean;       // links: a request is serving it right now
+    database?: string;       // older callers: the one dump of a seekable archive
+    pick?: {                 // links: dumps and folders of a seekable archive
+        databases?: string[];
+        selections?: { src: string; paths?: string[] }[];
+        profileIdOverride?: string;
+    };
+    selection?: { ... };     // browser downloads of a pick, bound to the session
+    localFile?: { ... };     // browser downloads prepared into a temp file, bound to the session
 }
 ```
 
-### Consumption
+| Function | Purpose |
+| :--- | :--- |
+| `generateLinkToken(params)` | A public link with its maker. Returns `{ token, expiresAt }` |
+| `claimLinkToken(token)` | Takes a link for one request, `null` when it ran out, is used up or is being served |
+| `markTokenUsed(token, from?)` | Spends it once the last byte left, with the host |
+| `releaseLinkToken(token)` | Hands it back after a transfer that broke off |
+| `linkStatus(token, userId)` | `open`, `fetched` or `expired` for its maker, `null` for anyone else |
+| `generateSelectionDownloadToken` | A browser download of a pick. Not spent on use, since a browser may retry or resume, and bound to the session instead |
+| `generateFileDownloadToken` | A browser download prepared into a temp file first, bound to the session |
 
-```typescript
-import { consumeDownloadToken, markTokenUsed } from "@/lib/auth/download-tokens";
-
-// Step 1: Validate token (does NOT mark as used yet)
-const data = consumeDownloadToken(token);
-
-if (!data) {
-    // Token invalid, expired, or already used
-    return error;
-}
-
-// Step 2: Perform the download operation
-const result = await downloadFile(data.storageId, data.file, data.decrypt);
-
-if (!result.success) {
-    // Download failed - token is NOT consumed, can be retried
-    return error;
-}
-
-// Step 3: Mark token as used ONLY after successful download
-markTokenUsed(token);
-```
-
-**Important:** The two-step process (`consumeDownloadToken` + `markTokenUsed`) ensures that tokens are only invalidated after a successful operation. If the download fails, the user can retry with the same token.
+A pick streams the same way as a browser download of it: `openArchiveDownload()` reads each entry by byte range, decrypts it and packs it on the fly, one dump as it is, several as one tar.gz at gzip level 1. Nothing waits on the disk of the DBackup host, and the first byte leaves at once. A link for a whole file, the archive as stored or an older backup decrypted, still goes through a temp file.
 
 ## API Endpoints
 
-### Generate Token
+### Make a link
 
-**POST** `/api/storage/[id]/download-url`
+**POST** `/api/storage/[id]/download-url`, with `storage:download`.
 
-**Request:**
 ```json
 {
-    "file": "backups/mysql/backup_2024-01-15.sql.gz.enc",
-    "decrypt": true
+    "file": "Shop nightly/Shop_nightly_2026-09-24.tar",
+    "databases": ["billing"],
+    "selections": [{ "src": "src-1" }],
+    "profileIdOverride": "optional vault profile"
 }
 ```
 
-**Response:**
+`decrypt: false` makes a link to the file as stored. `database` names the one dump for older callers. Without `databases` and `selections` the link is for the whole file.
+
 ```json
 {
     "success": true,
-    "url": "https://example.com/api/storage/public-download?token=abc123...",
+    "data": { "url": "https://dbackup.example/api/storage/public-download?token=...", "token": "...", "expiresAt": 1790000000000, "fileName": "Shop_nightly_2026-09-24_2-items.tar.gz" },
+    "url": "https://dbackup.example/api/storage/public-download?token=...",
     "expiresIn": "5 minutes",
     "singleUse": true
 }
 ```
 
-**Requires:** `STORAGE.DOWNLOAD` permission
+A pick is planned before the link exists, so a backup that needs a key answers `422` with `ENCRYPTION_KEY_REQUIRED` and the dialog asks for one.
 
-### Public Download
+### Ask whether a link was fetched
 
-**GET** `/api/storage/public-download?token=xxx`
+**GET** `/api/storage/[id]/download-url?token=...`, with `storage:download`.
 
-**No authentication required** - token provides authorization.
-
-**Response:** File stream with appropriate headers
-
-**Errors:**
-- `400`: Missing token
-- `401`: Invalid/expired token
-- `500`: Download failed
-
-## Security Features
-
-### Time-Limited
-
-Tokens expire after **5 minutes** (configurable via `TOKEN_TTL_MS`).
-
-### Single-Use
-
-Each token can only be used once. After `consumeDownloadToken()` is called:
-- Token is marked as `used: true`
-- Subsequent requests return `null`
-- Token is cleaned up after 1 minute
-
-### In-Memory Store
-
-Tokens are stored in-memory (`Map<string, DownloadToken>`), which means:
-- ✅ Fast lookups
-- ✅ No database overhead
-- ⚠️ Tokens lost on server restart (acceptable for 5-min TTL)
-
-**Development Note:** The store uses `globalThis` to persist across Next.js hot reloads:
-
-```typescript
-// Survives hot module replacement in development
-const globalForTokens = globalThis as unknown as {
-    downloadTokenStore: Map<string, DownloadToken> | undefined;
-};
-
-if (!globalForTokens.downloadTokenStore) {
-    globalForTokens.downloadTokenStore = new Map();
-}
-
-const tokenStore = globalForTokens.downloadTokenStore;
+```json
+{ "success": true, "data": { "state": "fetched", "expiresAt": 1790000000000, "fetchedAt": 1789999994000, "fetchedFrom": "10.0.0.5" } }
 ```
 
-### Automatic Cleanup
+Only the user who made the link gets its status. Anyone else, and a link that was already removed, gets `{ "state": "expired" }`.
 
-Background interval removes expired/used tokens every 60 seconds:
+### Public download
 
-```typescript
-function cleanupExpiredTokens(): void {
-    const now = Date.now();
-    for (const [token, data] of tokenStore.entries()) {
-        if (now > data.expiresAt ||
-            (data.used && now > data.createdAt + CLEANUP_INTERVAL_MS)) {
-            tokenStore.delete(token);
-        }
-    }
-}
-```
+**GET** `/api/storage/public-download?token=...`, public on purpose. It serves only what a token names, and answers `401` for a link that is used up, ran out or is being served to another request.
 
-## UI Components
+## Security
 
-### DownloadLinkModal
+- **Five minutes**: a link runs out after 5 minutes, fetched or not.
+- **One complete download**: a link is spent once its last byte left. While a request serves it, a second request is turned away, so a leaked link cannot be fetched in parallel.
+- **Status for its maker only**: a token seen in a log tells nobody else whether it was used.
+- **In memory**: tokens live in `globalThis.downloadTokenStore`, survive hot reloads, and are lost on a restart. A single instance only.
+- **Cleanup**: every minute, tokens past their expiry are removed. A used link stays until then, so its maker can still see when it was fetched. A prepared temp file that was never collected is deleted with its token.
 
-Reusable modal for generating download links:
+## UI
 
-```tsx
-import { DownloadLinkModal } from "@/components/dashboard/storage/download-link-modal";
-
-<DownloadLinkModal
-    open={isOpen}
-    onOpenChange={setIsOpen}
-    storageId="storage-config-id"
-    file={{
-        name: "backup.sql.gz.enc",
-        path: "backups/backup.sql.gz.enc",
-        size: 1048576,
-        isEncrypted: true
-    }}
-/>
-```
-
-**Features:**
-- Format selection (encrypted/decrypted) for encrypted files
-- Live countdown timer showing time until expiration
-- Copy-to-clipboard for wget and curl commands
-- Regenerate button for new tokens
-
-### Integration in Storage Explorer
-
-The modal is integrated into the file actions dropdown:
-
-```tsx
-// src/components/dashboard/storage/cells/actions-cell.tsx
-<DropdownMenuItem onClick={() => onGenerateLink(file)}>
-    <Terminal className="mr-2 h-4 w-4" />
-    <span>wget / curl Link</span>
-</DropdownMenuItem>
-```
+- `download/download-dialog.tsx`: the download dialog of the Storage Explorer. It lists the databases and folders of a seekable backup to tick, and goes to this computer or to a command for a server.
+- `download/use-download-link.ts`: makes a link for a pick, counts down its minutes and asks every 3 seconds whether it was fetched. The Redis restore guide uses it too.
+- `download/link-line.tsx`: the line above a command that says whether its link works, ran out or was fetched.
+- `download/download-model.ts`: the pick, its words and the command for each tool, free of React.
 
 ## Usage Examples
 
-### wget
+```bash
+# curl keeps the name DBackup sends, -f fails instead of saving an error as the file
+curl -fOJ "https://example.com/api/storage/public-download?token=abc..."
+
+# wget does the same with --content-disposition
+wget --content-disposition "https://example.com/api/storage/public-download?token=abc..."
+```
+
+```powershell
+Invoke-WebRequest -UseBasicParsing -Uri 'https://example.com/api/storage/public-download?token=abc...' -OutFile 'Shop_nightly_2026-09-24_billing.sql'
+```
+
+With an API key:
 
 ```bash
-# Download decrypted
-wget -O "backup.sql.gz" "https://example.com/api/storage/public-download?token=abc..."
-
-# Save to specific location
-wget -O "/var/restore/dump.rdb" "https://..."
+URL=$(curl -s -X POST "${BASE_URL}/api/storage/${STORAGE_ID}/download-url" \
+  -H "Authorization: Bearer ${API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d "{\"file\": \"${BACKUP}\", \"databases\": [\"billing\", \"shop\"]}" | jq -r '.data.url')
+curl -fOJ "$URL"
 ```
-
-### curl
-
-```bash
-# Download decrypted
-curl -o "backup.sql.gz" "https://example.com/api/storage/public-download?token=abc..."
-
-# Follow redirects
-curl -L -o "backup.sql.gz" "https://..."
-```
-
-### Scripted Usage
-
-```bash
-#!/bin/bash
-# Request token via authenticated API
-TOKEN=$(curl -s -X POST \
-    -H "Cookie: session=..." \
-    -H "Content-Type: application/json" \
-    -d '{"file": "backup.sql.gz.enc", "decrypt": true}' \
-    "https://example.com/api/storage/abc123/download-url" \
-    | jq -r '.url')
-
-# Download using token
-wget -O backup.sql.gz "$TOKEN"
-```
-
-## Configuration
-
-### Token TTL
-
-Modify in `src/lib/download-tokens.ts`:
-
-```typescript
-// Token validity: 5 minutes (default)
-const TOKEN_TTL_MS = 5 * 60 * 1000;
-```
-
-### Cleanup Interval
-
-```typescript
-// Cleanup interval: 1 minute (default)
-const CLEANUP_INTERVAL_MS = 60 * 1000;
-```
-
-## Best Practices
-
-1. **Use decrypt=true** for most cases - avoids manual decryption
-2. **Generate links just before use** - minimize expiration risk
-3. **Don't share links** - they're single-use for security
-4. **Handle failures gracefully** - regenerate if download fails
-5. **Use `-f` flag with curl** to fail on HTTP errors: `curl -f -o file.sql "..."`
-
-## Adding to Other Components
-
-To add download link generation to another part of the app:
-
-### 1. Add State and Handler
-
-```tsx
-import { DownloadLinkModal } from "@/components/dashboard/storage/download-link-modal";
-
-// State
-const [downloadLinkFile, setDownloadLinkFile] = useState<FileInfo | null>(null);
-
-// Handler
-const handleGenerateLink = (file: FileInfo) => {
-    setDownloadLinkFile(file);
-};
-```
-
-### 2. Add Modal to JSX
-
-```tsx
-{downloadLinkFile && (
-    <DownloadLinkModal
-        open={!!downloadLinkFile}
-        onOpenChange={(o) => { if (!o) setDownloadLinkFile(null); }}
-        storageId={selectedStorageId}
-        file={{
-            name: downloadLinkFile.name,
-            path: downloadLinkFile.path,
-            size: downloadLinkFile.size,
-            isEncrypted: downloadLinkFile.isEncrypted,
-        }}
-    />
-)}
-```
-
-### 3. Add Trigger Button
-
-```tsx
-<DropdownMenuItem onClick={() => handleGenerateLink(file)}>
-    <Terminal className="mr-2 h-4 w-4" />
-    <span>wget / curl Link</span>
-</DropdownMenuItem>
-```
-
-### Required Props
-
-| Prop | Type | Description |
-|------|------|-------------|
-| `open` | `boolean` | Controls modal visibility |
-| `onOpenChange` | `(open: boolean) => void` | Called when modal should close |
-| `storageId` | `string` | Storage adapter config ID |
-| `file.name` | `string` | Display filename |
-| `file.path` | `string` | Full path within storage |
-| `file.size` | `number` | File size in bytes |
-| `file.isEncrypted` | `boolean` | Shows format selection if true |
 
 ## Related
 

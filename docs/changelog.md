@@ -47,6 +47,7 @@ All notable changes to DBackup are documented here.
 - **retention**: A renamed job keeps applying its policy to the backups it left in the folder of its old name, so its first run after the update removes those the policy no longer keeps there. An incremental job names the rename as the reason for the new chain it starts.
 - **ci**: The `skyfay/dbackup:ci` image ends a Partial run with exit code 2 and a Cancelled one with 1, where it waited until it timed out. It waits up to an hour for a run instead of ten minutes, set with `DBACKUP_TIMEOUT`.
 - **storage**: The steps of the Redis and Valkey restore no longer copy a file their download command never wrote, and no longer stop Redis in a way a Docker restart policy undoes. The check afterwards no longer runs KEYS, which blocks a large instance.
+- **storage**: A download link for a server showed wget and curl with the same link, so whichever ran second failed. The dialog shows one command at a time, and a download that broke off can run again with the same link.
 
 ### 🔒 Security
 
@@ -90,6 +91,8 @@ All notable changes to DBackup are documented here.
 - **templates**: The dialog for adding and editing a naming template has the new look and warns about a pattern without the time of day. The file names of a job are picked from a searchable list that shows the pattern of each template.
 - **templates**: The dialog for adding and editing a schedule preset has the new look. It and the Templates page now say that a job follows every change to its preset, instead of claiming it keeps its own copy of the schedule.
 - **storage**: The restore of a Redis or Valkey backup writes one script for a Docker container, a Compose service, a Linux service or a Windows service with the one-time download link in it, and switches to the same commands step by step with every value filled in. The script checks that Redis will read the dump before it stops anything, asks for the password instead of writing it into a command and keeps the old dump.
+- **storage**: **Download...** opens one dialog for every download of a backup, where databases and folders are ticked and any mix comes as one tar.gz, with a search in a group from 8 entries on. It downloads in the browser or writes the curl, wget or PowerShell command for a server, and shows when a server fetched the link.
+- **storage**: A download link for databases and folders streams, so the first bytes arrive at once instead of after DBackup wrote the whole download to a temp file. A tar.gz of several databases and folders packs about twice as fast.
 
 ### 🔄 Changed
 
@@ -99,6 +102,7 @@ All notable changes to DBackup are documented here.
 - **api**: The new `GET /api/storage/explorer` returns every job and destination with its backup counts, and `GET /api/storage/explorer/runs` every backup with its copies at every destination. `GET /api/storage/explorer/execution` returns the run that made a backup.
 - **jobs**: The menu of a job opens its backups in the Storage Explorer with one entry instead of one per destination.
 - **storage**: The config backups of DBackup show in the Storage Explorer as an entry of their own instead of behind a switch.
+- **api**: `POST /api/storage/{id}/download-url` takes `databases` and `selections` like `restore-files` and returns the link as `data.url` with `data.token` and `data.fileName`. `GET /api/storage/{id}/download-url?token=` tells the user who made a link whether it was fetched.
 
 ### 🗑️ Removed
 
@@ -122,6 +126,7 @@ All notable changes to DBackup are documented here.
 - **docs**: The Storage Explorer guide describes the list of backups, the Destinations tab, both timelines, the details of a backup and how current the lists are. The restore, verification, job, notification, API and storage cache guides follow the new page.
 - **docs**: The restore guide describes the steps of the new restore page, its rows and lines, the folders and what happens before and after the start.
 - **docs**: The Redis, Valkey and restore guides describe the restore script of Redis and Valkey, its steps by hand and what to do when Redis writes an append only file.
+- **docs**: The Storage Explorer guide describes the download dialog, and the API reference and the download token page describe links for a pick and their status.
 
 ### 🧪 Tests
 

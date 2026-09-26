@@ -24,8 +24,7 @@ vi.mock("@/app/actions/auth/table-preferences", () => ({
     saveViewLayout: vi.fn().mockResolvedValue({ success: true }),
 }));
 // The dialogs behind the actions and the chart of the history have tests of their own. Here they only have to mount.
-vi.mock("@/components/dashboard/storage/download-link-modal", () => ({ DownloadLinkModal: () => null }));
-vi.mock("@/components/dashboard/storage/database-download-dialog", () => ({ DatabaseDownloadDialog: () => null }));
+vi.mock("@/components/dashboard/storage/download/download-dialog", () => ({ DownloadDialog: () => null }));
 vi.mock("@/components/dashboard/storage/integrity-modal", () => ({ IntegrityModal: () => null }));
 vi.mock("@/components/common/encryption-key-resolution-dialog", () => ({ EncryptionKeyResolutionDialog: () => null }));
 vi.mock("@/components/dashboard/storage/explorer/destination-history", () => ({ DestinationHistory: () => <p>History of the destination</p> }));

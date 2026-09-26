@@ -898,7 +898,7 @@ Redis cannot load an RDB snapshot over the network. The file has to be placed in
 - A script runs as one block, a subshell of a function in Bash and `& { }` in PowerShell, so a pasted script is read in full before its password prompt, and a failed check ends the block instead of the shell. PowerShell names its functions with a verb and a noun, since a short name like `Cli` is also the alias of `Clear-Item`, which wins over the function.
 - The script checks `PING`, `CONFIG GET appendonly`, `dir` and `dbfilename` before it downloads or stops anything. It compares the answers, since `redis-cli` exits with 0 even when Redis replies with an error.
 - The password reaches `redis-cli` as `REDISCLI_AUTH`, which `valkey-cli` reads as well, and `docker exec -e REDISCLI_AUTH` passes it on without writing it into the command.
-- `use-download-link.ts` makes the one-time link with `POST /api/storage/{id}/download-url` and counts down its five minutes, so the page marks a link that ran out.
+- `download/use-download-link.ts` makes the one-time link with `POST /api/storage/{id}/download-url`, counts down its five minutes and asks whether a server fetched it, shared with the download dialog.
 
 ### Token-Based Public Downloads
 
@@ -920,7 +920,7 @@ const data = consumeDownloadToken(token);
 
 The public download endpoint (`/api/storage/public-download`) validates the token and streams the file without requiring session authentication.
 
-For the reusable UI component (`DownloadLinkModal`), see [Download Tokens](/developer-guide/core/download-tokens).
+The download dialog of the Storage Explorer (`DownloadDialog`) makes these links for any pick, see [Download Tokens](/developer-guide/core/download-tokens).
 
 ## Related Documentation
 

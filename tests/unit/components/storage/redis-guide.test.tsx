@@ -22,7 +22,7 @@ const codes = () => [...document.querySelectorAll("pre code")].map((code) => cod
 describe("Redis restore guide", () => {
     beforeEach(() => {
         // The same answer the download-url route gives.
-        vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ success: true, url: LINK, expiresIn: "5 minutes", singleUse: true }) }) as Response));
+        vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ success: true, data: { url: LINK, token: "abc", expiresAt: Date.now() + 300_000 }, url: LINK }) }) as Response));
     });
     afterEach(() => {
         vi.useRealTimers();
@@ -73,14 +73,14 @@ describe("Redis restore guide", () => {
             vi.advanceTimersByTime(5 * 60 * 1000);
         });
 
-        expect(screen.getByText("The link in the commands has run out")).toBeInTheDocument();
+        expect(screen.getByText("The link in the commands ran out")).toBeInTheDocument();
         expect(screen.getByRole("button", { name: "New link" })).toBeEnabled();
     });
 
     it("tells someone who may not download why the commands have no link", () => {
         render(<RedisGuide file={FILE} destinationId="nas" engine="Valkey" canDownload={false} />);
 
-        expect(screen.getByText("The dump needs the Download permission")).toBeInTheDocument();
+        expect(screen.getByText("The link needs the Download permission")).toBeInTheDocument();
         expect(screen.queryByRole("button", { name: "Make the link" })).not.toBeInTheDocument();
         expect(codes()[0]).toContain("valkey-cli");
     });

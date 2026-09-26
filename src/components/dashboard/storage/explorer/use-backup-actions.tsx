@@ -6,10 +6,8 @@ import { toast } from "sonner";
 import { Trash2 } from "lucide-react";
 import { lockBackup } from "@/app/actions/storage/lock";
 import { EncryptionKeyResolutionDialog, type KeyResolutionResult } from "@/components/common/encryption-key-resolution-dialog";
-import { DatabaseDownloadDialog } from "@/components/dashboard/storage/database-download-dialog";
-import { DownloadLinkModal } from "@/components/dashboard/storage/download-link-modal";
+import { DownloadDialog } from "@/components/dashboard/storage/download/download-dialog";
 import { IntegrityModal } from "@/components/dashboard/storage/integrity-modal";
-import { startPreparedArchiveDownload } from "@/components/dashboard/storage/prepared-download";
 import type { RestoreMode } from "@/components/dashboard/storage/restore-scope";
 import { ConfirmDialog, DialogItemList } from "@/components/ui/confirm-dialog";
 import { keyOverrideBody, useEncryptionKeyRecovery } from "@/hooks/use-encryption-key-recovery";
@@ -67,8 +65,7 @@ export function useBackupActions({ canDownload, canRestore, canDelete, canManage
     const keyRecovery = useEncryptionKeyRecovery();
     /** Which backup the key dialog is about, so a typed key can be checked against it. */
     const [pendingKey, setPendingKey] = useState<BackupTarget | null>(null);
-    const [link, setLink] = useState<{ target: BackupTarget; database?: string } | null>(null);
-    const [database, setDatabase] = useState<BackupTarget | null>(null);
+    const [downloading, setDownloading] = useState<BackupTarget | null>(null);
     const [verify, setVerify] = useState<BackupTarget | null>(null);
     const [deleting, setDeleting] = useState<{ targets: BackupTarget[]; title: string } | null>(null);
     const [deletePending, setDeletePending] = useState(false);
@@ -115,20 +112,6 @@ export function useBackupActions({ canDownload, canRestore, canDelete, canManage
         void downloadDecrypted(target, null);
     }, [downloadDecrypted]);
 
-    const downloadContents = useCallback(async (target: BackupTarget, keyResolution?: KeyResolutionResult) => {
-        // A whole snapshot can be many gigabytes, so the browser fetches the prepared result itself.
-        await startPreparedArchiveDownload({
-            destinationId: target.destinationId,
-            body: { file: target.file.path, ...keyOverrideBody(keyResolution) },
-            intercept: async (res) => {
-                const tookOver = await keyRecovery.intercept(res, (result) => downloadContents(target, result));
-                if (tookOver) setPendingKey(target);
-                return tookOver;
-            },
-            preparingLabel: `Preparing ${target.file.name}...`,
-        });
-    }, [keyRecovery]);
-
     const toggleLock = useCallback(async (target: BackupTarget) => {
         try {
             const result = await lockBackup(target.destinationId, target.file.path);
@@ -169,14 +152,11 @@ export function useBackupActions({ canDownload, canRestore, canDelete, canManage
     /** The handlers of one copy, for its menu and its details. Actions the user may not take are left out. */
     const handlersFor = useCallback((target: BackupTarget): BackupActionHandlers => ({
         onRestore: canRestore ? (mode) => restore(target, mode) : undefined,
-        onDownload: canDownload ? (decrypt) => download(target, decrypt) : undefined,
-        onDownloadContents: canDownload ? () => void downloadContents(target) : undefined,
-        onDownloadDatabase: canDownload ? () => setDatabase(target) : undefined,
-        onLink: canDownload ? () => setLink({ target }) : undefined,
+        onDownload: canDownload ? () => setDownloading(target) : undefined,
         onVerify: () => setVerify(target),
         onToggleLock: canDelete ? () => void toggleLock(target) : undefined,
         onDelete: canDelete ? () => askDelete([target]) : undefined,
-    }), [canRestore, canDownload, canDelete, restore, download, downloadContents, toggleLock, askDelete]);
+    }), [canRestore, canDownload, canDelete, restore, toggleLock, askDelete]);
 
     const deleteCount = deleting?.targets.length ?? 0;
     const dialogs = (
@@ -203,37 +183,26 @@ export function useBackupActions({ canDownload, canRestore, canDelete, canManage
                 />
             </ConfirmDialog>
 
-            {link && (
-                <DownloadLinkModal
+            {downloading && (
+                <DownloadDialog
                     open
-                    onOpenChange={(open) => !open && setLink(null)}
-                    storageId={link.target.destinationId}
-                    file={{
-                        name: link.target.file.name,
-                        path: link.target.file.path,
-                        size: link.target.file.size,
-                        isEncrypted: link.target.file.isEncrypted,
-                        hasFileIndex: link.target.file.hasFileIndex,
-                        combined: link.target.file.combined,
-                        dbInfo: link.target.file.dbInfo,
+                    onOpenChange={(open) => !open && setDownloading(null)}
+                    destinationId={downloading.destinationId}
+                    file={downloading.file}
+                    keyOverride={keyRecovery.override}
+                    interceptKeyRequest={async (res, retry) => {
+                        const tookOver = await keyRecovery.intercept(res, retry);
+                        if (tookOver) setPendingKey(downloading);
+                        return tookOver;
                     }}
-                    database={link.database}
+                    onStored={() => download(downloading, false)}
+                    onDecrypted={() => download(downloading, true)}
+                    onSingleFiles={canRestore ? () => {
+                        setDownloading(null);
+                        restore(downloading, "files");
+                    } : undefined}
                 />
             )}
-
-            <DatabaseDownloadDialog
-                open={database !== null}
-                onOpenChange={(open) => !open && setDatabase(null)}
-                destinationId={database?.destinationId ?? ""}
-                file={database?.file ?? null}
-                keyOverride={keyRecovery.override}
-                interceptKeyRequest={async (res, retry) => {
-                    const tookOver = await keyRecovery.intercept(res, retry);
-                    if (tookOver) setPendingKey(database);
-                    return tookOver;
-                }}
-                onGenerateLink={canDownload && database ? (name) => setLink({ target: database, database: name }) : undefined}
-            />
 
             {verify && (
                 <IntegrityModal

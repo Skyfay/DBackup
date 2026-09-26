@@ -227,7 +227,7 @@ export function BackupDetails({ data, destinations, handlersFor, onDeleteEverywh
                         </Button>
                     )}
                     {handlers.onDownload && (
-                        <Button variant="outline" size="sm" onClick={() => handlers.onDownload?.(false)}>
+                        <Button variant="outline" size="sm" onClick={() => handlers.onDownload?.()}>
                             <Download />
                             Download
                         </Button>
@@ -313,7 +313,7 @@ export function BackupDetails({ data, destinations, handlersFor, onDeleteEverywh
                                                 Check now
                                             </Button>
                                         ) : copyHandlers?.onDownload && (
-                                            <Button variant="ghost" className="size-8 p-0" onClick={() => copyHandlers.onDownload?.(false)} aria-label={`Download from ${destination?.name ?? "this destination"}`}>
+                                            <Button variant="ghost" className="size-8 p-0" onClick={() => copyHandlers.onDownload?.()} aria-label={`Download from ${destination?.name ?? "this destination"}`}>
                                                 <Download />
                                             </Button>
                                         )}

@@ -62,7 +62,7 @@ describe("Download Token Cleanup (via setInterval)", () => {
     expect(getTokenStoreSize()).toBe(sizeBefore);
   });
 
-  it("should remove used tokens after the cleanup interval since creation", () => {
+  it("keeps a used link until it expires, so its maker can still see when it was fetched", () => {
     const start = 2_000_000;
     vi.setSystemTime(start);
 
@@ -70,11 +70,11 @@ describe("Download Token Cleanup (via setInterval)", () => {
     const token = generateDownloadToken("storage", "/used.sql");
     markTokenUsed(token);
 
-    // Advance by two cleanup intervals (2 min) so that
-    // `now > createdAt + CLEANUP_INTERVAL_MS` becomes true and the
-    // interval fires at least once after that threshold.
     vi.advanceTimersByTime(2 * 60 * 1000 + 1);
+    expect(getTokenStoreSize()).toBe(sizeBefore + 1);
 
+    // Past the 5-minute TTL and one more cleanup interval it is gone like any other.
+    vi.advanceTimersByTime(4 * 60 * 1000);
     expect(getTokenStoreSize()).toBe(sizeBefore);
   });
 

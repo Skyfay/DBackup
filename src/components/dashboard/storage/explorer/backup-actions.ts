@@ -1,6 +1,5 @@
 import type * as React from "react";
-import { Database, Download, FileCheck, FileLock2, FolderInput, Layers, Lock, LockOpen, PackageOpen, RotateCcw, ShieldCheck, Terminal, Trash2 } from "lucide-react";
-import { getDownloadOptions } from "@/components/dashboard/storage/download-options";
+import { Database, Download, FolderInput, Layers, Lock, LockOpen, RotateCcw, ShieldCheck, Trash2 } from "lucide-react";
 import { needsRestoreScopeChoice, type RestoreMode } from "@/components/dashboard/storage/restore-scope";
 import type { Tone } from "@/components/ui/tone";
 import type { ExplorerFile } from "@/services/storage/explorer-types";
@@ -22,12 +21,8 @@ export interface BackupActionGroup {
 
 export interface BackupActionHandlers {
     onRestore?: (mode?: RestoreMode) => void;
-    onDownload?: (decrypt: boolean) => void;
-    /** Everything in the backup, or a whole snapshot out of its chain, as a tar.gz. */
-    onDownloadContents?: () => void;
-    /** Picks one database out of several. */
-    onDownloadDatabase?: () => void;
-    onLink?: () => void;
+    /** Opens the download dialog, which holds every download of a backup and the commands for a server. */
+    onDownload?: () => void;
     onVerify?: () => void;
     onToggleLock?: () => void;
     onDelete?: () => void;
@@ -63,24 +58,9 @@ export function backupActions(file: ExplorerFile, handlers: BackupActionHandlers
         }
     }
 
-    const download: BackupAction[] = [];
-    if (handlers.onDownload) {
-        const onDownload = handlers.onDownload;
-        const options = getDownloadOptions(file);
-        download.push({ id: "download", label: options.raw.label, icon: file.isEncrypted ? FileLock2 : Download, onSelect: () => onDownload(false), disabled: archived, tone: "neutral" });
-        if (options.decrypted) {
-            download.push({ id: "download-decrypted", label: options.decrypted.label, icon: FileCheck, onSelect: () => onDownload(true), disabled: archived, tone: "neutral" });
-        }
-        if (options.pickDatabase && handlers.onDownloadDatabase) {
-            download.push({ id: "download-database", label: options.pickDatabase.label, icon: Database, onSelect: handlers.onDownloadDatabase, disabled: archived, tone: "neutral" });
-        }
-        if (options.contents && handlers.onDownloadContents) {
-            download.push({ id: "download-contents", label: options.contents.label, icon: PackageOpen, onSelect: handlers.onDownloadContents, disabled: archived, tone: "neutral" });
-        }
-        if (handlers.onLink) {
-            download.push({ id: "link", label: "wget / curl link", icon: Terminal, onSelect: handlers.onLink, disabled: archived, tone: "neutral" });
-        }
-    }
+    const download: BackupAction[] = handlers.onDownload
+        ? [{ id: "download", label: "Download...", icon: Download, onSelect: handlers.onDownload, disabled: archived, tone: "neutral" }]
+        : [];
 
     const manage: BackupAction[] = [
         ...(handlers.onVerify ? [{ id: "verify", label: "Verify integrity", icon: ShieldCheck, onSelect: handlers.onVerify, tone: "neutral" as const }] : []),

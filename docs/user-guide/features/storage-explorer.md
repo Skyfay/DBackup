@@ -146,22 +146,23 @@ Backups in S3 `GLACIER` or `DEEP_ARCHIVE` have **Restore** and **Download** disa
 
 ### Download
 
-The download entries depend on the backup. For a seekable archive:
+**Download...** opens one dialog for everything a backup offers. For a seekable archive it lists the databases and folders under **Unpacked**:
 
-- **Download Encrypted Archive** or **Download Archive (.tar)**: the stored archive as it is
-- **Download Decrypted Dump** or **Download Dump**: for a backup of one database, that database as a plain dump
-- **Download Database...**: for several databases, a list with a download and a wget / curl link per database
-- **Download Contents**, **Download Decrypted Contents** or **Download Complete Snapshot**: everything in the backup as a `.tar.gz`, for an incremental assembled from its chain
-- **wget / curl link**: a temporary link for a server
+- Tick what you need. One database comes as its plain dump, anything more as one `.tar.gz`, decrypted and unpacked. The head of a group ticks all of it, and a group with 8 or more entries gets a search, where the head ticks what the search shows.
+- **This computer** downloads it in the browser. It streams, so the first bytes arrive at once and a large pick needs no free space on the DBackup host.
+- **Single files** on a folder opens its files on the [restore page](/user-guide/features/restore), where **Download the picked files** takes them without restoring anything. It needs the Restore permission.
+- **As stored, encrypted** switches to the archive exactly as the destination holds it, which the [Recovery Kit](/user-guide/security/recovery-kit) opens with its key.
 
-For a backup written by an earlier version, **Download Encrypted (.enc)** gives the raw file and **Download Decrypted** decrypts it without decompressing.
+A backup written by an earlier version has no index, so the dialog offers it as a whole: **Decrypted** or **As stored**.
 
-A wget / curl link works once and expires after 5 minutes:
+**A server** writes the command for another host instead, with **curl**, **wget** or **PowerShell**. **Make the link** puts a link into it that works for one complete download within 5 minutes. The dialog shows when a server fetched it, with its address, and a download that broke off can run again with the same link. Only one command shows at a time, since the second one would find the link used up.
 
 ```bash
-wget -O "backup.sql.gz" "https://your-server/api/storage/public-download?token=..."
-curl -o "backup.sql.gz" "https://your-server/api/storage/public-download?token=..."
+curl -fOJ "https://your-server/api/storage/public-download?token=..."
+wget --content-disposition "https://your-server/api/storage/public-download?token=..."
 ```
+
+curl gets `-f`, so a link that is used up or ran out fails instead of saving the error as the file.
 
 ### Verify integrity
 

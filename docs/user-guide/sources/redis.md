@@ -98,7 +98,7 @@ Login: my-redis-password  (USERNAME_PASSWORD profile)
 A Redis backup is one RDB snapshot, the native Redis format, and it always contains every logical database of the server whichever ones the job selected. It is stored inside a seekable archive as a single entry named `dump`:
 
 - **Archive**: `backup_2026-02-02.tar`, compressed and encrypted per entry as the job configures
-- **Downloaded dump**: `backup_2026-02-02_dump.rdb`, from **Download Dump** in the Storage Explorer
+- **Downloaded dump**: `backup_2026-02-02_dump.rdb`, from **Download...** in the Storage Explorer
 
 Backups written by earlier versions are plain files (`backup_2026-02-02.rdb`, `.rdb.gz` or `.rdb.gz.enc`) and restore through the same guide.
 

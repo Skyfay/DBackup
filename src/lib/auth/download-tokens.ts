@@ -21,6 +21,22 @@ interface DownloadToken {
     createdAt: number;
     expiresAt: number;
     used: boolean;
+    /** Who made a link, the only user its status is shown to. */
+    createdBy?: string;
+    /** When a link was fetched in full, and from where, so the dialog that made it can say so. */
+    fetchedAt?: number;
+    fetchedFrom?: string;
+    /** Set while a link is being served, so a second request cannot fetch it at the same time. */
+    claimed?: boolean;
+    /**
+     * For a link to part of a seekable archive: the dumps and folders it holds, streamed as one
+     * dump or a tar.gz like a browser download of the same pick.
+     */
+    pick?: {
+        databases?: string[];
+        selections?: DownloadSelection[];
+        profileIdOverride?: string;
+    };
     /**
      * For a decrypted download of a seekable archive, the database dump to extract. Absent
      * means the archive's only database, which is what a single-database job holds.
@@ -97,6 +113,63 @@ export function generateDownloadToken(storageId: string, file: string, decrypt: 
     });
 
     return token;
+}
+
+/**
+ * A link for a command on another host: public, single-use and five minutes long. It records
+ * who made it, so that user can ask whether it was fetched yet.
+ */
+export function generateLinkToken(params: {
+    storageId: string;
+    file: string;
+    userId: string;
+    decrypt: boolean;
+    database?: string;
+    pick?: DownloadToken["pick"];
+}): { token: string; expiresAt: number } {
+    const token = crypto.randomBytes(32).toString("hex");
+    const now = Date.now();
+
+    tokenStore.set(token, {
+        storageId: params.storageId,
+        file: params.file,
+        decrypt: params.decrypt,
+        ...(params.database ? { database: params.database } : {}),
+        ...(params.pick ? { pick: params.pick } : {}),
+        createdBy: params.userId,
+        createdAt: now,
+        expiresAt: now + TOKEN_TTL_MS,
+        used: false,
+    });
+
+    return { token, expiresAt: now + TOKEN_TTL_MS };
+}
+
+/**
+ * Takes a link for one request. It stays taken until that request ends: fetched in full it is
+ * spent with `markTokenUsed`, broken off it is released for another try with `releaseLinkToken`.
+ */
+export function claimLinkToken(token: string): DownloadToken | null {
+    const data = consumeDownloadToken(token);
+    if (!data || data.claimed) return null;
+    data.claimed = true;
+    return data;
+}
+
+/** Hands a link back after a download that broke off, so the same command can run again. */
+export function releaseLinkToken(token: string): void {
+    const data = tokenStore.get(token);
+    if (data) data.claimed = false;
+}
+
+export type LinkState = "open" | "fetched" | "expired";
+
+/** Whether a link was fetched, for the user who made it and nobody else. */
+export function linkStatus(token: string, userId: string): { state: LinkState; expiresAt: number; fetchedAt?: number; fetchedFrom?: string } | null {
+    const data = tokenStore.get(token);
+    if (!data || data.createdBy !== userId) return null;
+    const state: LinkState = data.used ? "fetched" : Date.now() > data.expiresAt ? "expired" : "open";
+    return { state, expiresAt: data.expiresAt, ...(data.fetchedAt ? { fetchedAt: data.fetchedAt } : {}), ...(data.fetchedFrom ? { fetchedFrom: data.fetchedFrom } : {}) };
 }
 
 /**
@@ -236,12 +309,15 @@ export function consumeFileDownloadToken(
 }
 
 /**
- * Mark a token as used (call after successful download)
+ * Mark a token as used (call after successful download), with where it was fetched from.
  */
-export function markTokenUsed(token: string): void {
+export function markTokenUsed(token: string, from?: string): void {
     const data = tokenStore.get(token);
     if (data) {
         data.used = true;
+        data.claimed = false;
+        data.fetchedAt = Date.now();
+        if (from) data.fetchedFrom = from;
     }
 }
 
@@ -251,8 +327,9 @@ export function markTokenUsed(token: string): void {
 function cleanupExpiredTokens(): void {
     const now = Date.now();
     for (const [token, data] of tokenStore.entries()) {
-        // Remove if expired or used more than 1 minute ago
-        if (now > data.expiresAt || (data.used && now > data.createdAt + CLEANUP_INTERVAL_MS)) {
+        // A used token stays until it expires, so the dialog that made a link can still show
+        // when it was fetched.
+        if (now > data.expiresAt) {
             tokenStore.delete(token);
             // A prepared download that was never collected - the user closed the tab, or the
             // browser never followed the link - would otherwise leave its decrypted temp file

@@ -1,13 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, CircleCheck, Clock, Download, Link2, Loader2, RefreshCw, Terminal } from "lucide-react";
+import { ChevronDown, Download, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CodeBlock, type CodeLanguage } from "@/components/ui/code-block";
 import { cn } from "@/lib/utils";
-import { Notice, Section } from "./restore-parts";
+import { Section } from "./restore-parts";
 import type { GuideCode, GuideStep, RedisEngine } from "./redis-guide-script";
-import type { DownloadLink } from "./use-download-link";
 
 /** A part of the page that opens on demand, for what most readers never need. */
 export function FoldSection({ title, note, children }: { title: string; note: string; children: React.ReactNode }) {
@@ -25,63 +24,6 @@ export function FoldSection({ title, note, children }: { title: string; note: st
         >
             {open && children}
         </Section>
-    );
-}
-
-function minutes(seconds: number): string {
-    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
-}
-
-/** Whether the commands hold a link that works, with the way to make one or a new one. */
-export function LinkLine({ link, canDownload, engine }: { link: DownloadLink; canDownload: boolean; engine: RedisEngine }) {
-    if (!canDownload) {
-        return (
-            <Notice tone="warning" title="The dump needs the Download permission">
-                The commands fetch the dump with a download link, which only a user who may download backups can make.
-            </Notice>
-        );
-    }
-    const make = (label: string, Icon: typeof Link2) => (
-        <Button variant="outline" size="sm" onClick={() => void link.create()} disabled={link.creating} className="flex-1 sm:flex-none">
-            {link.creating ? <Loader2 className="animate-spin" /> : <Icon />}
-            {label}
-        </Button>
-    );
-    if (link.expired) {
-        return (
-            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-warning/30 bg-warning/5 px-3 py-2.5 text-sm">
-                <Clock className="size-4 shrink-0 text-warning" aria-hidden="true" />
-                <div className="min-w-0 flex-1">
-                    <p className="font-medium">The link in the commands has run out</p>
-                    <p className="text-muted-foreground">A new one takes a click, the rest stays the same.</p>
-                </div>
-                {make("New link", RefreshCw)}
-            </div>
-        );
-    }
-    if (link.url) {
-        return (
-            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-success/30 bg-success/5 px-3 py-2.5 text-sm">
-                <CircleCheck className="size-4 shrink-0 text-success" aria-hidden="true" />
-                <div className="min-w-0 flex-1">
-                    <p className="font-medium">The link is in the commands</p>
-                    <p className="text-muted-foreground">
-                        It works once and runs out in <span className="tabular-nums">{minutes(link.secondsLeft)}</span>. It hands out the plain dump.rdb, decrypted and unpacked.
-                    </p>
-                </div>
-                {make("New link", RefreshCw)}
-            </div>
-        );
-    }
-    return (
-        <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/40 px-3 py-2.5 text-sm">
-            <Link2 className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-            <div className="min-w-0 flex-1">
-                <p className="font-medium">The commands need a download link</p>
-                <p className="text-muted-foreground">It works once and for five minutes, so make it right before you run them on the {engine} host.</p>
-            </div>
-            {make("Make the link", Link2)}
-        </div>
     );
 }
 

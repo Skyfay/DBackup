@@ -13,7 +13,9 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useDateFormatter } from "@/hooks/use-date-formatter";
 import { Notice, Section } from "./restore-parts";
-import { AofSteps, FoldSection, GuideSteps, LinkLine } from "./redis-guide-parts";
+import { LinkLine } from "@/components/dashboard/storage/download/link-line";
+import { useDownloadLink } from "@/components/dashboard/storage/download/use-download-link";
+import { AofSteps, FoldSection, GuideSteps } from "./redis-guide-parts";
 import {
     codeLanguage,
     HOST_DEFAULTS,
@@ -27,7 +29,6 @@ import {
     type RedisGuideInput,
     type RedisHost,
 } from "./redis-guide-script";
-import { useDownloadLink } from "./use-download-link";
 
 const HOSTS: RedisHost[] = ["docker", "compose", "service", "windows"];
 
@@ -161,7 +162,7 @@ export function RedisGuide({ file, destinationId, engine, canDownload }: RedisGu
                     }
                 >
                     <div className="space-y-4">
-                        <LinkLine link={link} canDownload={canDownload} engine={engine} />
+                        <LinkLine link={link} canDownload={canDownload} holder="the commands" plural onCreate={() => void link.create()} />
                         <TabsContent value="script" className="space-y-3">
                             <CodeBlock name={fileName} code={script.code} language={language} icon={<Terminal />} mark={script.marks} />
                             <div className="flex flex-wrap items-center gap-3">

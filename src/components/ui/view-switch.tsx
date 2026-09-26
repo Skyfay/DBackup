@@ -1,6 +1,6 @@
 "use client";
 
-import { ChartGantt, LayoutGrid, LayoutPanelLeft, List } from "lucide-react";
+import { ChartGantt, LayoutGrid, LayoutPanelLeft, List, Waypoints } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { ViewMode } from "@/lib/core/table-preferences";
 
@@ -9,6 +9,7 @@ const OPTIONS: { value: ViewMode; label: string; Icon: typeof List }[] = [
     { value: "cards", label: "Cards", Icon: LayoutGrid },
     { value: "split", label: "List and details", Icon: LayoutPanelLeft },
     { value: "timeline", label: "Timeline", Icon: ChartGantt },
+    { value: "lines", label: "Lines", Icon: Waypoints },
 ];
 
 /** The views of a list page that leaves them out: the ones every list can have. */
@@ -21,7 +22,7 @@ interface ViewSwitchProps {
     views?: ViewMode[];
 }
 
-/** Switches a list page between table, cards, the list with details beside it and a timeline. */
+/** Switches a list page between table, cards, the list with details beside it, a timeline and lines. */
 export function ViewSwitch({ value, onChange, views = LIST_VIEWS }: ViewSwitchProps) {
     const options = OPTIONS.filter((option) => views.includes(option.value));
     return (

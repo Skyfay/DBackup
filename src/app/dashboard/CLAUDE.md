@@ -15,7 +15,8 @@ The UI is redesigned page by page. Shadcn stays, the new look comes from tokens 
 | Confirmations and bulk results | `src/components/ui/confirm-dialog.tsx`, `bulk-confirm-dialog.tsx`, `bulk-result-dialog.tsx`, used by every table |
 | Quick Setup | `src/app/dashboard/setup/`, `src/components/dashboard/setup/` |
 | Jobs, list, details and form | `src/app/dashboard/jobs/`, `src/components/dashboard/jobs/`, including the API trigger and clone dialogs. |
-| Storage Explorer, both tabs | `src/app/dashboard/storage/storage-client.tsx`, `src/components/dashboard/storage/explorer/`. The restore page still has the old look. |
+| Storage Explorer, both tabs | `src/app/dashboard/storage/storage-client.tsx`, `src/components/dashboard/storage/explorer/` |
+| Restore page | `src/app/dashboard/storage/restore/`, `src/components/dashboard/storage/restore/`. The Redis wizard, the key dialog, the folder picker and the file tree inside it still have the old look. |
 
 Every other page still has the old look. Do not copy patterns from it, copy them from the Overview widgets. Add a row here when a page is done.
 
@@ -113,6 +114,9 @@ Every other page still has the old look. Do not copy patterns from it, copy them
 - Anything that lies at a connection shows whether that connection answers right now with a dot before its name: `success` when it does, `warning` for a missed check, `destructive` with the word offline after three. The hover says since when and where else the record lies, and an action reads from a copy that answers. See `CopyChip` and `AnswerLegend` in `explorer-cells.tsx`.
 - A popover that lists many entries, like the destinations behind the freshness of the Storage Explorer, folds them from six on into groups that open and close, the one that needs a look open first. Every row has the same short line, like Compared 38 minutes ago, and one that needs a look shows the date and gives the reason on hover. See `freshness-button.tsx`.
 - A list that picks several entries, like the databases of a job, always has its search, a checkbox in its head for the entries the search shows, and a foot with how many are picked and how big they are together. A picked entry the source no longer has stays on top so it can be unticked. See `database-checklist.tsx`.
+- A form that maps entries from one place to another, like the databases of a backup to a server, shows them row by row beside what the other side has, like a diff: the new name in a field and what happens as a tag, amber for Overwrites and green for New, with quick filters by outcome. The same rows can show as `lines` in the `ViewSwitch`, from the source on the left to the target on the right, where entries that do the same share one bundle. See `database-rows.tsx` and `database-lines.tsx`.
+- A form whose parts depend on each other in one order, like the databases and then the files of a restore, is one step at a time with the steps as two cards on top, and only when both parts exist. See `RestoreSteps` in `restore-frame.tsx`.
+- A page that starts a run which changes something, like a restore, ends in a bar that stays at the foot while the page scrolls. It says in one sentence what the run does, and why its button waits when it does. The button asks with a `ConfirmDialog` in the tone of the task that lists what is overwritten. See `RestoreBar` in `restore-frame.tsx`.
 
 ## Banners
 

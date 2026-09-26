@@ -18,11 +18,12 @@ Backups are seekable archives that store every database as its own entry. On des
 
 ### From Storage Explorer
 
-1. Go to **Storage Explorer** in sidebar
-2. Pick the job, or the destination, that holds the backup
-3. Click the backup, then **Restore** in its panel, or pick **Restore** in the menu at the end of its row
-4. Configure restore options
-5. Confirm and start
+1. Go to **Storage Explorer** in the sidebar
+2. Click the backup, then **Restore** in its panel, or pick **Restore** in the menu at the end of its row
+3. Pick the server and the databases, then the folders, and check the bar at the foot of the page
+4. Click **Restore** and confirm
+
+The head of the page names the job, when the backup was made and the destination it reads from, with a dot for whether that destination answers right now. Beside it a small timeline shows every backup of the job over a month. A click on another one restores that one instead, without going back to the Storage Explorer.
 
 ### From History
 
@@ -33,79 +34,50 @@ Backups are seekable archives that store every database as its own entry. On des
 
 ## Restore Options
 
-### Target Selection
+A backup with databases and folders is restored in two steps, the databases first and the files second. A backup with only one of them has a single step. The bar at the foot of the page says in one sentence what the restore does, like "shop is overwritten, billing comes back as billing_restored", and when **Restore** waits, it says why.
 
-| Option | Description |
-| :--- | :--- |
-| **Target Source** | Database connection to restore to |
-| **Target Database** | Specific database name (optional) |
+### Target Server
 
-### Existing Databases on Target
+**Restore into** picks the server the databases go to. It offers only servers of the kind of the backup, and New in its list adds one. Once a server is picked, DBackup compares its version with the one the backup was made on. A backup of a newer version than the server is refused, see [Version Guard](#version-guard).
 
-After selecting a target source, DBackup automatically queries the server and displays all existing user databases in a collapsible overview:
+### Databases
+
+Every database of the backup is a row beside what the server has:
 
 | Column | Description |
 | :--- | :--- |
-| **Database** | Name of the existing database |
-| **Size** | Total size (data + indexes) |
-| **Tables** | Number of tables or collections |
+| **In the backup** | The database and its size in the backup. The box decides whether it comes back |
+| **On the server afterwards** | The name it gets there. A new name restores a copy beside the one there |
+| **What happens** | **Overwrites** with the size of the database there now, or **New** |
+| **There now** | The size of the database of that name on the server now |
 
-**Conflict Detection**: If a database from the backup has the same target name as an existing database on the server, the row is highlighted in red with a ⚠️ warning icon - indicating that database will be overwritten during restore.
+The databases only the server has follow at the end and stay as they are. The filters above the rows show all of them, only the overwritten, the new ones, the ones that stay or the ones left out, and the search finds one among many. **Restore as a copy** gives the databases shown that would overwrite one a free name like `shop_restored`, and **Own names** takes them back. With the download permission, each row can download its database as a dump.
 
-A summary footer shows the total number of databases and their combined size.
+The switch at the right of the toolbar shows the same as **Lines**: what comes back on the left, where it goes on the right, and a line between them, amber when it overwrites and green when it is new. Databases that do the same under their own names share one thick line, so a backup of 50 databases reads as quickly as one of 3. A click on a bundle opens its rows.
 
-::: tip
-This overview helps you verify the current state of the target server before restoring. Use it to spot naming conflicts and check available capacity.
-:::
+An older backup of one dump without the names of its databases goes into its original database, or under a new name.
 
-### Database Mapping
+### Folders
 
-Restore to different database names:
+Every folder source of the backup is a row with:
 
-```
-Source Database → Target Database
-─────────────────────────────────
-production      → staging_copy
-users_prod      → users_test
-```
+- **A directory source and a path** it goes to, with a folder browser. It is filled with where the folder was collected while that source exists, and **Put back where it was** returns to it.
+- **What lies there**: **Has files** when files of the same name are replaced, **Empty**, or **Not checked** when DBackup could not look. A Docker volume that exists is emptied before the backup goes in.
+- **A file tree**, **All files** by default, to restore only some folders or files. It loads level by level from the index of the backup, so even huge backups open at once.
 
-Configure in the mapping section of restore dialog.
+**Leave out** applies patterns to every folder, from the presets and typed by hand, with the presets starred as default picked. The foot counts the picked files and their size, warns when the destination cannot read parts of a file, and with the download permission offers **Download the picked files** as a `.tar.gz`.
 
-### Directory Sources and File Selection
-
-Backups with directory sources show one card per source. Each card offers:
-
-- **A file tree** ("All files" by default) - expand it to restore only a folder or
-  individual files. Selecting a folder takes everything inside it. The tree loads level by
-  level from the backup's index, so even huge backups browse instantly.
-- **A restore target**: any configured storage destination plus a path, with a folder
-  browser where the destination supports it. When the original directory source still
-  exists, **Use original location** fills both in one click - and is the preselected
-  default.
-- **A selection summary** with file count, total size, and a warning when the destination
-  cannot serve byte ranges (the restore then transfers the whole archive once).
-
-A database target server is only required when at least one database is selected -
-restoring only directories out of a database + directory backup works without one.
-
-**Download selection (.tar.gz)** streams the current file selection straight to your
-browser instead of restoring it anywhere - the quickest way to get a single file back.
+A server is only needed when a database is picked, so restoring only the folders of a backup with both works without one.
 
 ::: info Incremental snapshots
-Snapshots from an [incremental chain](/user-guide/features/backup-modes) restore
-transparently - the page shows which chain the snapshot belongs to, and reads from the
-other archives of the chain automatically. If an archive of the chain is missing, the
-restore is blocked up front with the missing filename rather than failing halfway.
+Snapshots from an [incremental chain](/user-guide/features/backup-modes) restore transparently. The page shows where the snapshot sits in its chain and reads the other archives by itself. If an archive of the chain is missing, the restore is refused up front with the missing file named, rather than failing halfway.
 :::
 
-### Privileged Credentials
+### Before and After the Start
 
-For creating new databases:
-1. Enable **Use Privileged Auth**
-2. Enter elevated credentials
-3. These are used for `CREATE DATABASE` only
+**Restore** asks first, in amber, and lists each database with the name it gets and whether it overwrites one, and each folder with where it goes. The restore then runs in the background, and the page moves on to its run in History, or back to the Storage Explorer when **Auto-redirect on job start** is off in your preferences.
 
-Regular restore uses the source configuration credentials.
+A start the server turns down keeps the page and says why, so the choices can be changed and started again. When the login of the server may not create databases, the page offers an admin login for this one run. It is used for `CREATE DATABASE` only and not saved.
 
 ## Restore Process
 
@@ -231,10 +203,10 @@ Prevents restoring newer backups to older servers:
 
 ### Overwrite Protection
 
-Before overwriting existing database:
-1. Warning displayed
-2. Confirmation required
-3. Consider backup first
+Before anything is overwritten:
+1. Each row says **Overwrites** with the size of the database there now
+2. The confirmation lists what is overwritten and asks in amber
+3. Consider a backup of the target first
 
 ### Rollback Considerations
 

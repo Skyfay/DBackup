@@ -20,6 +20,7 @@ All notable changes to DBackup are documented here.
 - **jobs**: The file names of a job warn when two runs of its schedule would get the same name, which replaces the earlier backup at every destination, and offer a template with the time. The field also shows a name the job will write.
 - **storage**: The Storage Explorer lists every backup of every job with the destinations that hold a copy and marks a missing copy, filtered by job, by destination, by who started it and by state, and shown as a table, as a timeline of every job by day with the runs its schedule plans for the next week, or as cards on a phone. The Destinations tab lists every destination with its status, size, growth and alerts as a table or a timeline by day, with the details of a picked one under it showing its size over time, its alerts and every job with backups there.
 - **storage**: A click on a backup in the Storage Explorer opens its copies with whether their destination answers right now, its chain, what it holds and its last integrity check. The backups of a deleted job stay listed and can be deleted together, and the page tells how old the list of each destination is and compares it with the storage on request.
+- **storage**: The restore page shows the databases of a backup row by row beside the server they go to, with what happens to each, filters and a copy beside the ones there in one click, or as lines from the backup to the server. A backup with databases and folders is restored in two steps, and a small timeline of the job picks another backup without going back.
 
 ### 🐛 Bug Fixes
 
@@ -41,6 +42,7 @@ All notable changes to DBackup are documented here.
 - **jobs**: Every run keeps its temporary files in a directory of its own, so two runs whose backups get the same name no longer write into one file and delete it under each other.
 - **jobs**: A cloned job keeps the retention policy of each destination, its naming template, its integrity checks and its incremental settings. The copy fell back to the defaults for them before.
 - **jobs**: The examples of the API trigger dialog end on a Partial or Cancelled run. Python, TypeScript and Go waited for them forever, Bash stopped with an unknown status and Ansible gave up after ten minutes.
+- **storage**: Someone who may restore but not download can restore folders, which the count of the picked files turned down before. Download of the picked files only shows with the download permission.
 - **retention**: A job named like a deleted one no longer deletes the backups the deleted job left in its folder. Retention now leaves out every backup whose `.meta.json` names another job.
 - **retention**: A renamed job keeps applying its policy to the backups it left in the folder of its old name, so its first run after the update removes those the policy no longer keeps there. An incremental job names the rename as the reason for the new chain it starts.
 - **ci**: The `skyfay/dbackup:ci` image ends a Partial run with exit code 2 and a Cancelled one with 1, where it waited until it timed out. It waits up to an hour for a run instead of ten minutes, set with `DBACKUP_TIMEOUT`.
@@ -116,6 +118,7 @@ All notable changes to DBackup are documented here.
 - **docs**: The job guide explains how some databases of a source are picked, how connections are added from a job and what the retention list shows.
 - **docs**: The webhook trigger guide describes the new API trigger dialog, the timeout and the exit codes of the CI image, and Partial and Cancelled runs in its examples and API reference. The API key guide points to the Setup of the dialog.
 - **docs**: The Storage Explorer guide describes the list of backups, the Destinations tab, both timelines, the details of a backup and how current the lists are. The restore, verification, job, notification, API and storage cache guides follow the new page.
+- **docs**: The restore guide describes the steps of the new restore page, its rows and lines, the folders and what happens before and after the start.
 
 ### 🧪 Tests
 

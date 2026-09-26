@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import { Readable } from "stream";
 import { z } from "zod";
 import { registerAdapters } from "@/lib/adapters";
-import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
+import { getAuthContext, checkPermissionWithContext, checkAnyPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
@@ -91,11 +91,17 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         const { file, selections, databases, target, excludePatterns, dryRun, prepare, profileIdOverride } = parsed.data;
 
         // A download only reads the backup, so it needs the download permission. Writing
-        // files back into a storage destination is a restore and is gated accordingly.
-        checkPermissionWithContext(
-            ctx,
-            target.kind === "download" ? PERMISSIONS.STORAGE.DOWNLOAD : PERMISSIONS.STORAGE.RESTORE
-        );
+        // files back into a storage destination is a restore and is gated accordingly. A dry run
+        // only counts what a pick holds, which the restore page asks for before a restore, so
+        // either permission may ask for one.
+        if (dryRun) {
+            checkAnyPermissionWithContext(ctx, [PERMISSIONS.STORAGE.RESTORE, PERMISSIONS.STORAGE.DOWNLOAD]);
+        } else {
+            checkPermissionWithContext(
+                ctx,
+                target.kind === "download" ? PERMISSIONS.STORAGE.DOWNLOAD : PERMISSIONS.STORAGE.RESTORE
+            );
+        }
 
         const input: FileRestoreInput = {
             storageConfigId: id, file, selections, databases, excludePatterns, target,

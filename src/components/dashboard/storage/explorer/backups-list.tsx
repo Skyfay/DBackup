@@ -7,7 +7,7 @@ import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
 import { DataTable, type BulkAction, type DataTableFilterableColumn } from "@/components/ui/data-table";
 import type { ColumnLayoutOption } from "@/components/ui/use-column-layout";
 import type { BulkResult } from "@/lib/core/bulk";
-import type { ViewMode } from "@/lib/core/table-preferences";
+import { listView, type ViewMode } from "@/lib/core/table-preferences";
 import { formatBytes } from "@/lib/utils";
 import type { BackupRun, ExplorerDestination, ExplorerFile, ExplorerJob, ExplorerPlan } from "@/services/storage/explorer-types";
 import { backupActions, type BackupActionHandlers } from "./backup-actions";
@@ -271,7 +271,7 @@ export function BackupsList({
                 columnLayout={columnLayout}
                 initialPageSize={20}
                 onRowClick={onOpen}
-                view={view === "timeline" ? "table" : view}
+                view={listView(view)}
                 renderCard={(row) => (
                     <BackupCard
                         run={row.original}

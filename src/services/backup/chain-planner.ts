@@ -161,7 +161,15 @@ export async function planChain(input: ChainPlanInput): Promise<ChainPlan> {
         return fresh(`the chain reached its maximum age of ${input.job.fullEveryDays} day(s)`);
     }
 
-    const chainDir = path.posix.basename(path.posix.dirname(previous.remotePath.replace(/\\/g, "/")));
+    const previousPath = previous.remotePath.replace(/\\/g, "/");
+    const chainDir = path.posix.basename(path.posix.dirname(previousPath));
+
+    // The chain lies in the folder named after the job when it started. A renamed job writes
+    // into a new folder, where the chain cannot go on, so it starts over and says why.
+    const folderOf = (value: string) => value.replace(/^\/+|\/+$/g, "");
+    if (folderOf(path.posix.dirname(path.posix.dirname(previousPath))) !== folderOf(input.job.name)) {
+        return fresh("the job was renamed, so a new chain starts in the folder of its new name");
+    }
 
     // The metadata is read from the first destination that can serve it - all destinations
     // receive identical archives, so any of them describes the run.

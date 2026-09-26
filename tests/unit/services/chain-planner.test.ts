@@ -173,6 +173,13 @@ describe("planChain", () => {
             expect(plan).toMatchObject({ type: "full", reason: expect.stringMatching(/added or replaced/i) });
         });
 
+        it("the job was renamed since the chain started", async () => {
+            // The chain lies in the folder of the old name, the job writes into a new one.
+            const plan = await planChain(input({ job: { ...input().job, name: "plex media" } }));
+            expect(plan).toMatchObject({ type: "full", reason: expect.stringMatching(/job was renamed/i) });
+            expect(registryGet).not.toHaveBeenCalled();
+        });
+
         it("a destination is missing part of the chain", async () => {
             registryGet.mockReturnValue({
                 read: vi.fn().mockResolvedValue(META),

@@ -3,6 +3,7 @@ import { RetentionService } from "@/services/backup/retention-service";
 import { FileInfo } from '@/lib/core/interfaces';
 import { isBackupFile, sidecarPathsFor, effectiveBackupTime } from '@/lib/core/backup-files';
 import { loadBackupSidecars } from './retention-sidecars';
+import { folderKey, loadFormerBackups } from './retention-folders';
 import path from "path";
 import { logger } from "@/lib/logging/logger";
 import prisma from "@/lib/prisma";
@@ -103,14 +104,25 @@ async function applyRetentionForDestination(ctx: RunnerContext, dest: Destinatio
     // as this job's, as it always did, so this only ever keeps more.
     const jobId = ctx.job!.id;
     const foreign = listed.filter(f => f.jobId !== undefined && f.jobId !== jobId);
-    const backupFiles = listed.filter(f => f.jobId === undefined || f.jobId === jobId);
+    const current = listed.filter(f => f.jobId === undefined || f.jobId === jobId);
     if (foreign.length > 0) {
         ctx.log(
             `${destLabel} Retention: ${foreign.length} backup(s) in this folder belong to another job and are left alone: ${foreign.map(f => f.name).join(', ')}`,
             'info'
         );
     }
+
+    // A renamed job left its earlier backups in the folder of its old name. The policy covers
+    // them too, so they go when it says, instead of staying there forever.
+    const former = await loadFormerBackups(dest.adapter, dest.config, dest.configId, jobId, remoteDir, new Set(files.map(f => folderKey(f.path))));
+    for (const { folder, count } of former.folders) {
+        ctx.log(`${destLabel} Retention: Also judging ${count} backup(s) this job left in ${folder}/ before it was renamed.`);
+    }
+    const backupFiles = [...current, ...former.files];
     const own = new Set(backupFiles);
+    const drifted = [...sidecars.drifted, ...former.drifted];
+    const formerFiles = new Set(former.files);
+    const labelOf = (file: FileInfo) => (formerFiles.has(file) ? folderKey(file.path) : file.name);
 
     if (backupFiles.length > 0) {
         const withTimestamp = backupFiles.filter(f => f.backupTimestamp).length;
@@ -121,7 +133,7 @@ async function applyRetentionForDestination(ctx: RunnerContext, dest: Destinatio
     // A destination whose modification times were reset, by a copy without -p or by a
     // restore of the backup directory, would otherwise collapse into one bucket without
     // anyone noticing until backups were already gone.
-    for (const { file, recorded, modified } of sidecars.drifted) {
+    for (const { file, recorded, modified } of drifted) {
         if (!own.has(file)) continue;
         ctx.log(
             `${destLabel} Retention: ${file.name} was written ${recorded.toISOString()} but the destination reports ${modified.toISOString()}. Retention uses the recorded time.`,
@@ -139,7 +151,7 @@ async function applyRetentionForDestination(ctx: RunnerContext, dest: Destinatio
         const mtimeNote = effective.getTime() === f.lastModified.getTime()
             ? ''
             : ` (mtime ${f.lastModified.toISOString()})`;
-        ctx.log(`${destLabel} Retention: Found file: ${f.name} (${effective.toISOString()})${mtimeNote}`);
+        ctx.log(`${destLabel} Retention: Found file: ${labelOf(f)} (${effective.toISOString()})${mtimeNote}`);
     }
 
     const { keep, delete: filesToDelete, keptForChain } = RetentionService.calculateRetention(backupFiles, policy, timezone);
@@ -161,7 +173,7 @@ async function applyRetentionForDestination(ctx: RunnerContext, dest: Destinatio
 
     let deletedCount = 0;
     for (const file of filesToDelete) {
-        ctx.log(`${destLabel} Retention: Deleting old backup ${file.name}...`);
+        ctx.log(`${destLabel} Retention: Deleting old backup ${labelOf(file)}...`);
         try {
             if (dest.adapter.delete) {
                 await dest.adapter.delete(dest.config, file.path);

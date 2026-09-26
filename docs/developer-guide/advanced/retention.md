@@ -79,6 +79,10 @@ FTP, SMB, SFTP and rsync deliberately declare nothing. FTP dials a control conne
 
 `05-retention.ts` hands the policy only the backups whose `jobId` is the running job's or unknown. The folder is named after the job, so a job named like a deleted one lists the backups the deleted job left there, and without the check its policy would count them and delete them. A backup without a sidecar, with an unreadable one or without a `jobId` keeps counting as the job's own, so the check only ever keeps more than before. The Storage Explorer and the retention preview of its timeline group backups by the same `jobId`.
 
+### Former folders of a renamed job
+
+A rename starts a new folder, since uploads go to `<job name>/`. `retention-folders.ts` finds the folders the job left backups in from the cached listing of the destination, which carries the `jobId` of every backup, so the search costs no storage call. A backup of a chain counts for the folder above its chain folder, and the root of the destination is never listed. `05-retention.ts` lists each former folder, reads its sidecars and adds the backups whose `jobId` is the running job's to the ones of the current folder, and the policy judges them together. Unlike the current folder, a backup without a `jobId` never counts there, since the folder may belong to another job by now. Without a cached listing, or with one from before it carried the `jobId`, the run judges the current folder only. The chain planner starts a new chain after a rename and says so, since the chain lies in the old folder.
+
 ### Tier limits and backwards compatibility
 
 `hourly` is optional on `SmartRetentionPolicy` because every policy written before the tier existed has no value for it. Two places turn that into a disabled tier:

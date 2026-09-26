@@ -175,6 +175,7 @@ This is automatic and logged in the execution. It happens when:
 - the configured interval has elapsed
 - the previous backup's metadata or file index cannot be read
 - a destination is missing part of the chain
+- the job was renamed, since the chain lies in the folder of its old name
 - the encryption profile changed
 - a directory source was added, removed or replaced
 - a directory source's exclude patterns changed

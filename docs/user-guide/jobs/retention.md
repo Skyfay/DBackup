@@ -215,6 +215,8 @@ Retention is skipped for any destination where the upload failed. This prevents 
 
 Retention only removes backups the job made itself, known by the job id in their `.meta.json` sidecar. A job named like a deleted one writes into the same folder, and the backups the deleted job left there stay until you delete them in the [Storage Explorer](/user-guide/features/storage-explorer#backups-of-a-deleted-job). The run log names them. A backup without a sidecar counts as the job's own, like before DBackup recorded the job.
 
+A renamed job writes into a folder with its new name. Retention follows it into the folder of its old name and judges the backups there together with the new ones, so the policy keeps covering every backup the job made. DBackup finds those folders in its list of the destination, and only backups whose sidecar names the job count there. The run log says how many it found in each folder.
+
 ### Which Time a Backup Is Judged By
 
 Backups are sorted into buckets by the creation time **DBackup recorded when it wrote the backup**, which is stored in the backup's `.meta.json` sidecar. The file's modification time on the destination is only used when there is no sidecar, for backups taken before this was recorded or for destinations DBackup cannot read files from.

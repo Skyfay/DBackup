@@ -169,6 +169,7 @@ export function FolderStep({ folders, directories, chain, file, destinationId, c
                     onOpenChange={(open) => !open && setBrowsing(null)}
                     configId={editingTarget.id}
                     configName={editingTarget.name}
+                    initialPath={editing.targetPath}
                     flat={shapeOf(editingTarget.id).flat}
                     itemNoun={shapeOf(editingTarget.id).noun}
                     onSelect={(path) => change(editing.entryId, { targetPath: path, checkStatus: undefined })}

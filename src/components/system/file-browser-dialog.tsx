@@ -1,16 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Database, Eye, EyeOff, File, FolderOpen, Search } from "lucide-react";
+import { Database, File, FolderOpen } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { DIALOG_FOOTER, DIALOG_SURFACE, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { DIALOG_SURFACE, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { FileBrowserList } from "./file-browser-list";
 import { fits, parentOf, visibleEntries, type FileAccept, type FolderListing } from "./file-browser-model";
+import { FileBrowserFilter, FileBrowserFooter, FileBrowserScroll, HiddenToggle } from "./file-browser-parts";
 import { FileBrowserPath } from "./file-browser-path";
 
 interface FileBrowserDialogProps {
@@ -175,17 +173,7 @@ function FileBrowserBody({
 
             <div className="space-y-2.5 border-b px-4 py-3">
                 <FileBrowserPath path={currentPath} editing={editingPath} onEditingChange={setEditingPath} onGo={(path) => void openAt(path, false)} />
-                <div className="relative">
-                    <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-                    <Input
-                        placeholder="Filter this folder"
-                        aria-label="Filter this folder"
-                        value={filter}
-                        onChange={(event) => setFilter(event.target.value)}
-                        className="h-8 pl-8"
-                        autoComplete="off"
-                    />
-                </div>
+                <FileBrowserFilter value={filter} onChange={setFilter} />
             </div>
 
             <div className="hidden items-center gap-2.5 px-5 pt-2 text-xs font-medium text-muted-foreground sm:flex" aria-hidden="true">
@@ -195,32 +183,22 @@ function FileBrowserBody({
                 <span className="w-28 text-right">Modified</span>
                 <span className="size-4" />
             </div>
-            {/* A fixed height, so the dialog does not jump from folder to folder. */}
-            <ScrollArea className="*:data-[slot=scroll-area-viewport]:h-[min(24rem,calc(95dvh-22rem))] [&>[data-slot=scroll-area-viewport]>div]:block!">
-                <div className="px-3 py-1.5">
-                    <FileBrowserList
-                        entries={entries}
-                        loading={loading}
-                        picked={picked}
-                        accept={accept}
-                        emptyText={filter ? "Nothing here matches the filter." : "This folder is empty."}
-                        onOpen={(path) => void openFolder(path)}
-                        onPick={setPicked}
-                        onUse={use}
-                        onUp={goUp}
-                    />
-                </div>
-            </ScrollArea>
+            <FileBrowserScroll>
+                <FileBrowserList
+                    entries={entries}
+                    loading={loading}
+                    picked={picked}
+                    accept={accept}
+                    emptyText={filter ? "Nothing here matches the filter." : "This folder is empty."}
+                    onOpen={(path) => void openFolder(path)}
+                    onPick={setPicked}
+                    onUse={use}
+                    onUp={goUp}
+                />
+            </FileBrowserScroll>
 
             <div className="flex min-h-9 flex-wrap items-center justify-between gap-2 px-4 pb-2 text-xs text-muted-foreground">
-                {hiddenCount > 0 || showHidden ? (
-                    <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" aria-pressed={showHidden} onClick={() => setShowHidden((current) => !current)}>
-                        {showHidden ? <EyeOff /> : <Eye />}
-                        {showHidden ? "Hide hidden files" : `Show ${hiddenCount} hidden`}
-                    </Button>
-                ) : (
-                    <span />
-                )}
+                <HiddenToggle count={hiddenCount} shown={showHidden} onToggle={() => setShowHidden((current) => !current)} />
                 {accept && dimmedCount > 0 && (
                     <span className="px-2">
                         {dimmedCount} {dimmedCount === 1 ? "file is" : "files are"} no {accept.label} file
@@ -228,27 +206,12 @@ function FileBrowserBody({
                 )}
             </div>
 
-            <div className={cn(DIALOG_FOOTER, "flex items-center gap-3")}>
-                <div className="min-w-0 flex-1">
-                    <p className="text-xs text-muted-foreground">Picked</p>
-                    {chosen ? (
-                        // Cut from the left, so the end of a long path, the file itself, stays in view.
-                        <p className="truncate text-left text-sm font-medium [direction:rtl]" title={chosen}>
-                            <bdi>{chosen}</bdi>
-                        </p>
-                    ) : (
-                        <p className="text-sm text-muted-foreground">Nothing picked yet</p>
-                    )}
-                </div>
-                <DialogClose asChild>
-                    <Button type="button" variant="ghost">
-                        Cancel
-                    </Button>
-                </DialogClose>
-                <Button type="button" disabled={!chosen || loading} onClick={() => chosen && use(chosen)}>
-                    {selectionType === "file" ? "Use this file" : "Use this folder"}
-                </Button>
-            </div>
+            <FileBrowserFooter
+                chosen={chosen}
+                action={selectionType === "file" ? "Use this file" : "Use this folder"}
+                disabled={loading}
+                onUse={() => chosen && use(chosen)}
+            />
         </>
     );
 }

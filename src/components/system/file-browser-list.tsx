@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronRight, Database, File, Folder } from "lucide-react";
+import { Check, ChevronRight, Database, File, Folder, type LucideIcon } from "lucide-react";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDateFormatter } from "@/hooks/use-date-formatter";
@@ -19,13 +19,17 @@ interface FileBrowserListProps {
     /** A double click on a file picks it and closes the browser. */
     onUse: (path: string) => void;
     onUp: () => void;
+    /** The size and date of every entry. Off for a listing that has neither. */
+    details?: boolean;
+    /** Drawn for an entry that is picked instead of opened, like a Docker volume. */
+    itemIcon?: LucideIcon;
 }
 
 /**
  * The entries of one folder. A click opens a folder and picks a file. Every row is a button, so
  * Tab reaches the list, the arrow keys move within it and Backspace goes one folder up.
  */
-export function FileBrowserList({ entries, loading, picked, accept, emptyText, onOpen, onPick, onUse, onUp }: FileBrowserListProps) {
+export function FileBrowserList({ entries, loading, picked, accept, emptyText, onOpen, onPick, onUse, onUp, details = true, itemIcon }: FileBrowserListProps) {
     const { formatDate } = useDateFormatter();
 
     const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -59,7 +63,7 @@ export function FileBrowserList({ entries, loading, picked, accept, emptyText, o
                 const isFolder = entry.type === "directory";
                 const fit = isFolder || fits(entry.name, accept);
                 const isPicked = !isFolder && picked === entry.path;
-                const Icon = isFolder ? Folder : accept && fit ? Database : File;
+                const Icon = isFolder ? Folder : (itemIcon ?? (accept && fit ? Database : File));
                 return (
                     <button
                         key={entry.path}
@@ -80,12 +84,16 @@ export function FileBrowserList({ entries, loading, picked, accept, emptyText, o
                                 <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">{accept.label}</span>
                             )}
                         </span>
-                        <span className="hidden w-20 shrink-0 text-right text-xs text-muted-foreground tabular-nums sm:block">
-                            {!isFolder && entry.size !== undefined ? formatBytes(entry.size, 1) : ""}
-                        </span>
-                        <span className="hidden w-28 shrink-0 text-right text-xs text-muted-foreground sm:block" title={entry.modified ? formatDate(entry.modified) : undefined}>
-                            {entry.modified && <RelativeTime date={entry.modified} />}
-                        </span>
+                        {details && (
+                            <>
+                                <span className="hidden w-20 shrink-0 text-right text-xs text-muted-foreground tabular-nums sm:block">
+                                    {!isFolder && entry.size !== undefined ? formatBytes(entry.size, 1) : ""}
+                                </span>
+                                <span className="hidden w-28 shrink-0 text-right text-xs text-muted-foreground sm:block" title={entry.modified ? formatDate(entry.modified) : undefined}>
+                                    {entry.modified && <RelativeTime date={entry.modified} />}
+                                </span>
+                            </>
+                        )}
                         {isFolder ? (
                             <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                         ) : isPicked ? (

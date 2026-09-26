@@ -1,13 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import {
-    Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Folder, HardDrive, ChevronRight, AlertTriangle } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { FolderOpen, HardDrive } from "lucide-react";
+import { toast } from "sonner";
+import { FileBrowserList } from "@/components/system/file-browser-list";
+import { visibleEntries, type FileEntry } from "@/components/system/file-browser-model";
+import { FileBrowserFilter, FileBrowserFooter, FileBrowserScroll, HiddenToggle } from "@/components/system/file-browser-parts";
+import { FileBrowserPath } from "@/components/system/file-browser-path";
+import { DIALOG_SURFACE, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 
 interface BrowseEntry {
     name: string;
@@ -15,11 +17,24 @@ interface BrowseEntry {
     path: string;
 }
 
-/** One level of the navigation stack. */
+/** One level of the way down. */
 interface Crumb {
     name: string;
     /** What the browse API needs to list this level. */
     browsePath: string;
+}
+
+type Level = { entries: BrowseEntry[]; unsupported: boolean } | { error: string };
+
+async function listLevel(configId: string, browsePath: string): Promise<Level> {
+    try {
+        const res = await fetch(`/api/adapters/${configId}/browse?path=${encodeURIComponent(browsePath)}`);
+        const body = await res.json();
+        if (!body.success) return { error: body.error || "Failed to list the folders" };
+        return { entries: body.data.entries, unsupported: body.supported === false };
+    } catch {
+        return { error: "Network error" };
+    }
 }
 
 interface FolderPickerDialogProps {
@@ -28,6 +43,8 @@ interface FolderPickerDialogProps {
     /** Storage adapter config to browse. */
     configId: string;
     configName: string;
+    /** The path in the field. The picker opens at the deepest folder of it that exists. */
+    initialPath?: string;
     /**
      * This adapter has nothing below its root, so there is no folder to descend into and no
      * path to assemble - a Docker volume is picked whole or not at all.
@@ -40,173 +57,147 @@ interface FolderPickerDialogProps {
 }
 
 /**
- * Folder navigation over a storage adapter, for picking a restore target path.
+ * The folder a restore goes into, on the directory source it goes to. The same browser as a path
+ * field, with the folders of the source instead of the disk of the server.
  *
- * Uses the same GET /api/adapters/[id]/browse the job form's source picker uses, but as
- * click-to-descend navigation with a breadcrumb instead of a checkbox tree - a restore
- * target is exactly one folder.
- *
- * The returned path is the breadcrumb names joined with "/". For path-based adapters that
- * is identical to the real relative path; for ID-based adapters (Google Drive) it is the
- * name path, which is what their upload path resolution expects.
+ * The returned path is the names on the way joined with "/". For path-based adapters that is
+ * identical to the real relative path, for ID-based adapters (Google Drive) it is the name path,
+ * which is what their upload path resolution expects.
  */
-export function FolderPickerDialog({ open, onOpenChange, configId, configName, onSelect, flat = false, itemNoun = "folder" }: FolderPickerDialogProps) {
-    const [stack, setStack] = useState<Crumb[]>([]);
-    const [entries, setEntries] = useState<BrowseEntry[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [unsupported, setUnsupported] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-
-    const loadLevel = useCallback(async (browsePath: string) => {
-        setLoading(true);
-        setError(null);
-        try {
-            const res = await fetch(`/api/adapters/${configId}/browse?path=${encodeURIComponent(browsePath)}`);
-            const body = await res.json();
-            if (!body.success) throw new Error(body.error || "Failed to browse folders");
-            setUnsupported(body.supported === false);
-            setEntries(body.data.entries);
-        } catch (e: unknown) {
-            setError(e instanceof Error ? e.message : String(e));
-            setEntries([]);
-        } finally {
-            setLoading(false);
-        }
-    }, [configId]);
-
-    useEffect(() => {
-        if (!open) return;
-        setStack([]);
-        setUnsupported(false);
-        void loadLevel("");
-    }, [open, loadLevel]);
-
-    const descend = (entry: BrowseEntry) => {
-        setStack((prev) => [...prev, { name: entry.name, browsePath: entry.path }]);
-        void loadLevel(entry.path);
-    };
-
-    const jumpTo = (depth: number) => {
-        const next = stack.slice(0, depth);
-        setStack(next);
-        void loadLevel(next.length > 0 ? next[next.length - 1].browsePath : "");
-    };
-
-    const currentPath = stack.map((c) => c.name).join("/");
-
+export function FolderPickerDialog(props: FolderPickerDialogProps) {
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent tone="pick" className="flex h-[70vh] max-w-lg flex-col">
-                <DialogHeader>
-                    <DialogTitle>Choose a {itemNoun}</DialogTitle>
-                    <DialogDescription>
-                        {flat
-                            ? <>Pick the {itemNoun} to restore into on <span className="font-medium">{configName}</span>. A {itemNoun} is restored whole, so there is nothing to choose inside it.</>
-                            : <>Pick the restore target folder on <span className="font-medium">{configName}</span>.</>}
-                    </DialogDescription>
-                </DialogHeader>
-
-                {/* Breadcrumb - a flat adapter has no depth to show */}
-                {!flat && <div className="flex flex-wrap items-center gap-1 text-sm">
-                    <button
-                        type="button"
-                        onClick={() => jumpTo(0)}
-                        className="flex items-center gap-1 rounded px-1.5 py-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                    >
-                        <HardDrive className="h-3.5 w-3.5" />
-                        Root
-                    </button>
-                    {stack.map((crumb, i) => (
-                        <span key={`${crumb.browsePath}-${i}`} className="flex items-center gap-1">
-                            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-                            <button
-                                type="button"
-                                onClick={() => jumpTo(i + 1)}
-                                className="max-w-40 truncate rounded px-1.5 py-0.5 hover:bg-muted"
-                            >
-                                {crumb.name}
-                            </button>
-                        </span>
-                    ))}
-                </div>}
-
-                {/* The dialog carries a definite height (h-, not max-h) so this can take the
-                    leftover space with flex-1: a ScrollArea's viewport is height:100%, which
-                    needs a definite height above it or it grows with its contents instead of
-                    scrolling. A fixed height here would instead push the footer out of a short
-                    window. */}
-                <ScrollArea className="min-h-0 flex-1 rounded-md border">
-                    <div className="p-1">
-                        {loading ? (
-                            <div className="space-y-2 p-2">
-                                <Skeleton className="h-5 w-48" />
-                                <Skeleton className="h-5 w-36" />
-                                <Skeleton className="h-5 w-44" />
-                            </div>
-                        ) : error ? (
-                            <div className="flex items-start gap-2 p-3 text-sm">
-                                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-                                <span>{error}</span>
-                            </div>
-                        ) : unsupported ? (
-                            <p className="p-3 text-sm text-muted-foreground">
-                                This adapter does not support folder browsing - type the target path manually instead.
-                            </p>
-                        ) : entries.length === 0 ? (
-                            <p className="p-3 text-sm text-muted-foreground">
-                                {flat ? `No ${itemNoun}s on this host.` : "No subfolders here."}
-                            </p>
-                        ) : (
-                            entries.map((entry) => (
-                                <button
-                                    key={entry.path}
-                                    type="button"
-                                    // Flat: the click IS the choice. Descending would open an empty
-                                    // level, and a separate confirm would ask twice for one decision.
-                                    onClick={() => {
-                                        if (!flat) { descend(entry); return; }
-                                        onSelect(entry.path);
-                                        onOpenChange(false);
-                                    }}
-                                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted/60"
-                                >
-                                    {flat
-                                        ? <HardDrive className="h-4 w-4 shrink-0 text-muted-foreground" />
-                                        : <Folder className="h-4 w-4 shrink-0 text-blue-500" />}
-                                    <span className="truncate">{entry.name}</span>
-                                    {!flat && <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-muted-foreground" />}
-                                </button>
-                            ))
-                        )}
-                    </div>
-                </ScrollArea>
-
-                <DialogFooter className="items-center gap-2 sm:justify-between">
-                    {/* Neither half applies to a flat adapter: there is no assembled path to
-                        show, and no "use this level" to confirm - picking a row is the whole
-                        interaction. Offering the root as a target would store a path the
-                        adapter turns into a mount with no volume name. */}
-                    {!flat && (
-                        <span className="truncate font-mono text-xs text-muted-foreground">
-                            /{currentPath}
-                        </span>
-                    )}
-                    <div className="flex gap-2 ml-auto">
-                        <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-                        {!flat && (
-                            <Button
-                                disabled={unsupported}
-                                onClick={() => {
-                                    onSelect(`/${currentPath}`.replace(/\/+$/, "") || "/");
-                                    onOpenChange(false);
-                                }}
-                            >
-                                Select this folder
-                            </Button>
-                        )}
-                    </div>
-                </DialogFooter>
+        <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+            <DialogContent tone="pick" showCloseButton={false} className={cn(DIALOG_SURFACE, "sm:max-w-2xl")}>
+                {/* Mounted per opening, so every visit starts fresh at the field's value. */}
+                <FolderPickerBody {...props} />
             </DialogContent>
         </Dialog>
+    );
+}
+
+function FolderPickerBody({ onOpenChange, configId, configName, initialPath = "", flat = false, itemNoun = "folder", onSelect }: FolderPickerDialogProps) {
+    const [stack, setStack] = useState<Crumb[]>([]);
+    const [entries, setEntries] = useState<BrowseEntry[]>([]);
+    const [loading, setLoading] = useState(true);
+    /** Whether the walk to the field's path is done, so there is a folder to pick. */
+    const [arrived, setArrived] = useState(false);
+    /** Why the source has no list to show at all, in place of the list. */
+    const [problem, setProblem] = useState<string | null>(null);
+    const [picked, setPicked] = useState<string | null>(null);
+    const [filter, setFilter] = useState("");
+    const [showHidden, setShowHidden] = useState(false);
+
+    const show = (crumbs: Crumb[], level: BrowseEntry[]) => {
+        setStack(crumbs);
+        setEntries(level);
+        setPicked(null);
+        setFilter("");
+    };
+
+    /** Lists a level and goes there, or stays where it is and says why not. */
+    const go = async (crumbs: Crumb[]) => {
+        setLoading(true);
+        const level = await listLevel(configId, crumbs.at(-1)?.browsePath ?? "");
+        if ("error" in level) toast.error(level.error);
+        else show(crumbs, level.entries);
+        setLoading(false);
+    };
+
+    // Walks down the path in the field by name, one level at a time, since an ID-based adapter
+    // cannot open a path in one step. A target the restore creates stops the walk where it ends.
+    useEffect(() => {
+        const walk = async () => {
+            const root = await listLevel(configId, "");
+            if ("error" in root || root.unsupported) {
+                setProblem("error" in root ? root.error : `${configName} cannot list its folders. Type the path in the field instead.`);
+                setLoading(false);
+                return;
+            }
+            const names = initialPath.split("/").filter(Boolean);
+            let crumbs: Crumb[] = [];
+            let level = root.entries;
+            for (const name of flat ? [] : names) {
+                const entry = level.find((candidate) => candidate.name === name);
+                if (!entry) break;
+                const next = await listLevel(configId, entry.path);
+                if ("error" in next) break;
+                crumbs = [...crumbs, { name, browsePath: entry.path }];
+                level = next.entries;
+            }
+            show(crumbs, level);
+            if (flat) setPicked(level.find((entry) => entry.path === names[0])?.path ?? null);
+            setArrived(true);
+            setLoading(false);
+        };
+        void walk();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // A volume is taken with a click like a file, a folder is gone into.
+    const rows = useMemo(
+        () =>
+            visibleEntries(
+                entries.map((entry): FileEntry => ({ name: entry.name, path: entry.path, type: flat ? "file" : "directory" })),
+                { showHidden, filter, selectionType: flat ? "file" : "directory" }
+            ),
+        [entries, flat, showHidden, filter]
+    );
+    const hiddenCount = entries.filter((entry) => entry.name.startsWith(".")).length;
+
+    const here = "/" + stack.map((crumb) => crumb.name).join("/");
+    const value = !arrived ? null : flat ? picked : here;
+    const use = (path: string) => {
+        onSelect(path);
+        onOpenChange(false);
+    };
+    const open = (path: string) => {
+        const entry = entries.find((candidate) => candidate.path === path);
+        if (entry) void go([...stack, { name: entry.name, browsePath: entry.path }]);
+    };
+    // A part hands back the browse path of its level, the top "/".
+    const jump = (path: string) => void go(stack.slice(0, path === "/" ? 0 : stack.findIndex((crumb) => crumb.browsePath === path) + 1));
+
+    return (
+        <>
+            <DialogHead tone="pick" icon={flat ? HardDrive : FolderOpen} className="px-5 py-4">
+                <DialogTitle className="text-base">Pick the {itemNoun} to restore into</DialogTitle>
+                <DialogDescription className={dialogNoteClass("pick")}>{flat ? `${configName} · a ${itemNoun} is restored whole` : configName}</DialogDescription>
+            </DialogHead>
+
+            <div className="space-y-2.5 border-b px-4 py-3">
+                {!flat && <FileBrowserPath path={here} segments={stack.map((crumb) => ({ name: crumb.name, path: crumb.browsePath }))} onGo={jump} />}
+                <FileBrowserFilter value={filter} onChange={setFilter} label={flat ? `Filter the ${itemNoun}s` : undefined} />
+            </div>
+
+            <FileBrowserScroll>
+                {problem ? (
+                    <p className="py-10 text-center text-sm text-muted-foreground">{problem}</p>
+                ) : (
+                    <FileBrowserList
+                        entries={rows}
+                        loading={loading}
+                        picked={picked}
+                        details={false}
+                        itemIcon={HardDrive}
+                        emptyText={filter ? "Nothing here matches the filter." : flat ? `${configName} has no ${itemNoun}s.` : "There is no folder in this one."}
+                        onOpen={open}
+                        onPick={setPicked}
+                        onUse={use}
+                        onUp={() => stack.length > 0 && void go(stack.slice(0, -1))}
+                    />
+                )}
+            </FileBrowserScroll>
+
+            <div className="flex min-h-9 items-center px-4 pb-2">
+                <HiddenToggle count={hiddenCount} shown={showHidden} onToggle={() => setShowHidden((current) => !current)} />
+            </div>
+
+            <FileBrowserFooter
+                chosen={flat ? (entries.find((entry) => entry.path === picked)?.name ?? null) : value}
+                action={`Use this ${itemNoun}`}
+                disabled={loading}
+                onUse={() => value && use(value)}
+            />
+        </>
     );
 }

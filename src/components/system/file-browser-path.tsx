@@ -9,9 +9,16 @@ import { pathSegments } from "./file-browser-model";
 
 interface FileBrowserPathProps {
     path: string;
+    /**
+     * The parts to show, each with what `onGo` gets to open it. Taken from the path when not
+     * given, and given where a folder is opened by an ID instead of its path.
+     */
+    segments?: { name: string; path: string }[];
     /** Typing a path replaces the clickable parts until it is sent or cancelled. */
-    editing: boolean;
-    onEditingChange: (editing: boolean) => void;
+    editing?: boolean;
+    /** Without it there is no Type a path. */
+    onEditingChange?: (editing: boolean) => void;
+    /** Gets "/" for the top. */
     onGo: (path: string) => void;
 }
 
@@ -19,10 +26,10 @@ interface FileBrowserPathProps {
  * Where the browser is, as clickable parts, so any folder on the way is one click back. Type a
  * path swaps the parts for a field, for someone who knows where to go.
  */
-export function FileBrowserPath({ path, editing, onEditingChange, onGo }: FileBrowserPathProps) {
+export function FileBrowserPath({ path, segments = pathSegments(path), editing = false, onEditingChange, onGo }: FileBrowserPathProps) {
     const [draft, setDraft] = useState(path);
 
-    if (editing) {
+    if (editing && onEditingChange) {
         return (
             <form
                 className="flex items-center gap-2"
@@ -51,7 +58,6 @@ export function FileBrowserPath({ path, editing, onEditingChange, onGo }: FileBr
         );
     }
 
-    const segments = pathSegments(path);
     return (
         <div className="flex min-w-0 items-center gap-2">
             <nav aria-label="Path" className="flex min-w-0 flex-1 flex-wrap items-center gap-0.5">
@@ -77,19 +83,21 @@ export function FileBrowserPath({ path, editing, onEditingChange, onGo }: FileBr
                     );
                 })}
             </nav>
-            <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-7 shrink-0 text-muted-foreground"
-                onClick={() => {
-                    setDraft(path);
-                    onEditingChange(true);
-                }}
-            >
-                <Pencil />
-                Type a path
-            </Button>
+            {onEditingChange && (
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 shrink-0 text-muted-foreground"
+                    onClick={() => {
+                        setDraft(path);
+                        onEditingChange(true);
+                    }}
+                >
+                    <Pencil />
+                    Type a path
+                </Button>
+            )}
         </div>
     );
 }

@@ -61,7 +61,7 @@ An older backup of one dump without the names of its databases goes into its ori
 
 Every folder source of the backup is a row with:
 
-- **A directory source and a path** it goes to, with a folder browser. It is filled with where the folder was collected while that source exists, and **Put back where it was** returns to it.
+- **A directory source and a path** it goes to, with a folder browser that opens at the deepest folder of the path that exists. A Docker volume is picked whole. The path is filled with where the folder was collected while that source exists, and **Put back where it was** returns to it.
 - **What lies there**: **Has files** when files of the same name are replaced, **Empty**, or **Not checked** when DBackup could not look. A Docker volume that exists is emptied before the backup goes in.
 - **A file tree**, **All files** by default, to restore only some folders or files. It loads level by level from the index of the backup, so even huge backups open at once.
 

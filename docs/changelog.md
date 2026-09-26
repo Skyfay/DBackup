@@ -93,6 +93,7 @@ All notable changes to DBackup are documented here.
 - **storage**: The restore of a Redis or Valkey backup writes one script for a Docker container, a Compose service, a Linux service or a Windows service with the one-time download link in it, and switches to the same commands step by step with every value filled in. The script checks that Redis will read the dump before it stops anything, asks for the password instead of writing it into a command and keeps the old dump.
 - **storage**: **Download...** opens one dialog for every download of a backup, where databases and folders are ticked and any mix comes as one tar.gz, with a search in a group from 8 entries on. It downloads in the browser or writes the curl, wget or PowerShell command for a server, and shows when a server fetched the link.
 - **storage**: A download link for databases and folders streams, so the first bytes arrive at once instead of after DBackup wrote the whole download to a temp file. A tar.gz of several databases and folders packs about twice as fast.
+- **storage**: **Verify integrity** opens a dialog with every copy of a backup, its last check and whether the destination checks it without a download, and verifies one copy or all of them. The copies without a download go first, and the dialog shows each copy while it is checked, the bytes of a download included.
 
 ### 🔄 Changed
 
@@ -103,6 +104,7 @@ All notable changes to DBackup are documented here.
 - **jobs**: The menu of a job opens its backups in the Storage Explorer with one entry instead of one per destination.
 - **storage**: The config backups of DBackup show in the Storage Explorer as an entry of their own instead of behind a switch.
 - **api**: `POST /api/storage/{id}/download-url` takes `databases` and `selections` like `restore-files` and returns the link as `data.url` with `data.token` and `data.fileName`. `GET /api/storage/{id}/download-url?token=` tells the user who made a link whether it was fetched.
+- **api**: The new `POST /api/storage/verify-copies` checks several copies of a backup in one run, which `GET /api/storage/verify-copies?executionId=` follows with the state of every copy. A check records how it ran as `verification.method` in the `.meta.json`.
 
 ### 🗑️ Removed
 
@@ -127,6 +129,7 @@ All notable changes to DBackup are documented here.
 - **docs**: The restore guide describes the steps of the new restore page, its rows and lines, the folders and what happens before and after the start.
 - **docs**: The Redis, Valkey and restore guides describe the restore script of Redis and Valkey, its steps by hand and what to do when Redis writes an append only file.
 - **docs**: The Storage Explorer guide describes the download dialog, and the API reference and the download token page describe links for a pick and their status.
+- **docs**: The verification and Storage Explorer guides describe the integrity dialog, and the integrity page explains how the copies of one backup are checked.
 
 ### 🧪 Tests
 

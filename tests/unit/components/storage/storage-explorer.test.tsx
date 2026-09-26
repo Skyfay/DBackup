@@ -25,7 +25,7 @@ vi.mock("@/app/actions/auth/table-preferences", () => ({
 }));
 // The dialogs behind the actions have tests of their own. Here they only have to mount.
 vi.mock("@/components/dashboard/storage/download/download-dialog", () => ({ DownloadDialog: () => null }));
-vi.mock("@/components/dashboard/storage/integrity-modal", () => ({ IntegrityModal: () => null }));
+vi.mock("@/components/dashboard/storage/integrity/integrity-dialog", () => ({ IntegrityDialog: () => null }));
 vi.mock("@/components/common/encryption-key-resolution-dialog", () => ({ EncryptionKeyResolutionDialog: () => null }));
 vi.mock("@/app/actions/storage/storage-alerts", () => ({ updateStorageAlertSettings: vi.fn().mockResolvedValue({ success: true }) }));
 

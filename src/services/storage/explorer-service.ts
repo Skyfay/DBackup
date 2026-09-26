@@ -3,6 +3,7 @@ import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { isListingStale, storageService } from "./storage-service";
+import { checksNatively } from "./verification-service";
 import { defaultAlertConfig, defaultAlertStates, getAlertConfig, getAlertStates } from "./storage-alert-service";
 import { retentionConfigOf } from "./explorer-plan";
 import { buildExplorer, normalizePath, type DestinationListing, type ExplorerModel, type JobRecord } from "./explorer-model";
@@ -107,6 +108,7 @@ export class StorageExplorerService {
                 id: config.id,
                 name: config.name,
                 adapterId: config.adapterId,
+                checksNatively: checksNatively(config.adapterId),
                 listedAt,
                 listError: error,
                 listing,

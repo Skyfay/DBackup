@@ -9,6 +9,8 @@ export class SystemTaskRunner {
   private currentStage = "Initializing";
   private currentProgress = 0;
   private currentDetail = "";
+  /** More state for whoever watches the run, like the checks of several copies. */
+  private extra: Record<string, unknown> = {};
   private stageStartTimes = new Map<string, number>();
   private stageProgressMap: Record<string, [number, number]>;
   private flusher: LogFlusher;
@@ -23,6 +25,7 @@ export class SystemTaskRunner {
       executionId,
       getLogs: () => this.logs,
       getMetadata: () => ({
+        ...this.extra,
         progress: this.currentProgress,
         stage: this.currentStage,
         detail: this.currentDetail,
@@ -85,6 +88,7 @@ export class SystemTaskRunner {
         endedAt: new Date(),
         logs: JSON.stringify(this.logs),
         metadata: JSON.stringify({
+          ...this.extra,
           progress: this.currentProgress,
           stage: this.currentStage,
         }),
@@ -136,6 +140,18 @@ export class SystemTaskRunner {
       const clamped = Math.max(0, Math.min(100, internalPercent));
       this.currentProgress = Math.round(min + (max - min) * (clamped / 100));
     }
+    void this.flushLogs();
+  }
+
+  /** Merges state into the metadata of the run, which the next flush writes. */
+  setExtra(extra: Record<string, unknown>): void {
+    this.extra = { ...this.extra, ...extra };
+    void this.flushLogs();
+  }
+
+  /** Sets the progress of the whole run directly, for a run without fixed stages. */
+  setProgress(percent: number): void {
+    this.currentProgress = Math.round(Math.max(0, Math.min(100, percent)));
     void this.flushLogs();
   }
 

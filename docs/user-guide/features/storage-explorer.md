@@ -166,7 +166,7 @@ curl gets `-f`, so a link that is used up or ran out fails instead of saving the
 
 ### Verify integrity
 
-**Verify** checks the stored file against the checksums in its sidecar. The result is written back and shows in the list. S3, Cloudflare R2, Hetzner, Google Drive and OneDrive verify with their native checksum API, other destinations download the file. See [Backup Verification](/user-guide/features/backup-verification).
+**Verify integrity** opens a dialog with every copy of the backup, its last check and how it is checked. **Verify** checks one copy against the checksums in its sidecar, **Verify all** checks every copy in one run, the ones with a native checksum API first: S3, Cloudflare R2, Hetzner, Google Drive, OneDrive and local folders need no download, other destinations download the file. The results are written back and show in the list. See [Backup Verification](/user-guide/features/backup-verification).
 
 ### Lock and unlock
 

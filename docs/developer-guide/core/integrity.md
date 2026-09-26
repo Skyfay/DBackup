@@ -96,6 +96,18 @@ Enable it in Settings - System Tasks. When failures are detected, an `INTEGRITY_
 
 Individual storage destinations can opt out of integrity checks entirely. Set `skipVerification: true` in the destination's metadata. When this flag is present, the destination is skipped in both scan modes with a log message.
 
+## Checking the copies of one backup
+
+The integrity dialog of the Storage Explorer (`src/components/dashboard/storage/integrity/`) checks the copies of one backup on demand. `src/services/storage/copy-verification.ts` runs them in one `SystemTaskRunner` execution of type `Verification`, which History lists:
+
+- `startCopyVerification(copies, triggeredBy)` orders the copies whose adapter has `verifyChecksum` first, then calls `verifyFile()` for each with an `onProgress` for a download, and returns the execution id at once.
+- Each copy carries a state (`waiting`, `checking`, `passed`, `failed`, `skipped`, `error`), its method (`native` or `download`) and the bytes of a download. The runner keeps them in its metadata through `setExtra`, so `readCopyVerification(executionId)` can hand them to the dialog.
+- A copy that does not match fires `INTEGRITY_CHECK_FAILURE` with every failure of the run.
+
+`POST /api/storage/verify-copies` starts a check with `{ copies: [{ destinationId, file }] }`, `GET /api/storage/verify-copies?executionId=` returns `{ status, progress, copies }`. Both need `storage:read`. `POST /api/storage/[id]/verify-async` runs through the same service with one copy.
+
+`verifyFile()` records how it checked a copy as `verification.method` in the sidecar, and the explorer marks each destination with `checksNatively`, so the dialog can say whether a copy moves over the network.
+
 ## Related
 
 - [Post-Upload Verification](/developer-guide/advanced/encryption) - how checksums are recorded at upload time

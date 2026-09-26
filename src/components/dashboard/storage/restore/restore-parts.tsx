@@ -5,14 +5,18 @@ import { cn } from "@/lib/utils";
 
 export type OutcomeTone = "warning" | "success" | "muted";
 
+/** The tones of a tag, which also reports what failed, like a copy that does not match. */
+export type TagTone = OutcomeTone | "destructive";
+
 const TAG = {
     warning: "border-warning/30 bg-warning/10 text-warning",
     success: "border-success/30 bg-success/10 text-success",
+    destructive: "border-destructive/30 bg-destructive/10 text-destructive",
     muted: "border-transparent bg-muted text-muted-foreground",
 } as const;
 
 /** What happens to a database or a folder, as a small tag at the end of its row. */
-export function OutcomeTag({ tone, icon = "none", children, className }: { tone: OutcomeTone; icon?: "alert" | "plus" | "check" | "help" | "spin" | "none"; children: React.ReactNode; className?: string }) {
+export function OutcomeTag({ tone, icon = "none", children, className }: { tone: TagTone; icon?: "alert" | "plus" | "check" | "help" | "spin" | "none"; children: React.ReactNode; className?: string }) {
     const Icon = { alert: AlertTriangle, plus: Plus, check: Check, help: CircleHelp, spin: Loader2, none: null }[icon];
     return (
         <span className={cn("inline-flex h-6 shrink-0 items-center gap-1 rounded-md border px-2 text-xs font-medium whitespace-nowrap", TAG[tone], className)}>

@@ -7,14 +7,14 @@ import { Trash2 } from "lucide-react";
 import { lockBackup } from "@/app/actions/storage/lock";
 import { EncryptionKeyResolutionDialog, type KeyResolutionResult } from "@/components/common/encryption-key-resolution-dialog";
 import { DownloadDialog } from "@/components/dashboard/storage/download/download-dialog";
-import { IntegrityModal } from "@/components/dashboard/storage/integrity-modal";
+import { IntegrityDialog } from "@/components/dashboard/storage/integrity/integrity-dialog";
 import type { RestoreMode } from "@/components/dashboard/storage/restore-scope";
 import { ConfirmDialog, DialogItemList } from "@/components/ui/confirm-dialog";
 import { keyOverrideBody, useEncryptionKeyRecovery } from "@/hooks/use-encryption-key-recovery";
 import { requestBulk } from "@/lib/bulk-request";
 import { emptyBulkResult, summarizeBulkResult, type BulkResult } from "@/lib/core/bulk";
 import { encodeUrlPayload } from "@/lib/url-payload";
-import type { ExplorerDestination, ExplorerFile } from "@/services/storage/explorer-types";
+import type { BackupCopy, ExplorerDestination, ExplorerFile } from "@/services/storage/explorer-types";
 import type { BackupActionHandlers } from "./backup-actions";
 
 /** One copy of a backup: the file and the destination it lies at. */
@@ -31,6 +31,10 @@ interface Options {
     destinations: Map<string, ExplorerDestination>;
     /** Reloads what the page shows after something changed. */
     onChanged: () => void;
+    /** Whether the user may open History, where a check of copies shows as a run. */
+    canViewHistory?: boolean;
+    /** Every copy of the backup a copy belongs to, which the integrity dialog lists. */
+    copiesOf?: (target: BackupTarget) => BackupCopy[];
 }
 
 const DELETE_LABELS = { verb: "delete", verbPast: "deleted", noun: "backup" };
@@ -60,7 +64,7 @@ export async function bulkAcross(action: "delete" | "lock" | "unlock", targets: 
  * job and the list by destination use it, so a copy is always handled the same way whichever list
  * it was opened from.
  */
-export function useBackupActions({ canDownload, canRestore, canDelete, canManageVault, destinations, onChanged }: Options) {
+export function useBackupActions({ canDownload, canRestore, canDelete, canManageVault, destinations, onChanged, canViewHistory = false, copiesOf }: Options) {
     const router = useRouter();
     const keyRecovery = useEncryptionKeyRecovery();
     /** Which backup the key dialog is about, so a typed key can be checked against it. */
@@ -205,12 +209,15 @@ export function useBackupActions({ canDownload, canRestore, canDelete, canManage
             )}
 
             {verify && (
-                <IntegrityModal
+                <IntegrityDialog
                     open
                     onOpenChange={(open) => !open && setVerify(null)}
                     file={verify.file}
-                    storageConfigId={verify.destinationId}
-                    onVerifyComplete={onChanged}
+                    copies={copiesOf?.(verify) ?? [{ destinationId: verify.destinationId, state: "stored", file: verify.file }]}
+                    focusDestinationId={verify.destinationId}
+                    destinations={destinations}
+                    canViewHistory={canViewHistory}
+                    onChanged={onChanged}
                 />
             )}
 

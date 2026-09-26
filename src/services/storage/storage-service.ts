@@ -63,6 +63,7 @@ export type RichFileInfo = FileInfo & {
         verifiedAt: string;
         passed: boolean;
         trigger: 'manual' | 'post-upload' | 'scheduled';
+        method?: 'native' | 'download';
     };
 };
 

@@ -114,6 +114,8 @@ export interface BackupMetadata {
         passed: boolean;
         trigger: 'manual' | 'post-upload' | 'scheduled';
         actualChecksum?: string;
+        /** How it was checked: by the checksum the destination keeps, or by downloading and hashing it. Absent on older checks. */
+        method?: 'native' | 'download';
     };
     /** Trigger information - what initiated the backup */
     trigger?: {

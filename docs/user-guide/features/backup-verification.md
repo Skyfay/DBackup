@@ -50,12 +50,19 @@ The result is written back into the `.meta.json` sidecar so it persists across s
 
 ### Manual Verification (on-demand)
 
-In the **Storage Explorer**, open the menu at the end of a backup's row and pick **Verify integrity**, or click **Verify** in the panel a click on the row opens. A loading toast appears while the check runs, then the result is shown and the list updates.
+In the **Storage Explorer**, open the menu at the end of a backup's row and pick **Verify integrity**, or click **Verify** in the panel a click on the row opens. The dialog lists every copy of the backup, one per destination, with:
 
-The **Integrity** column shows the last result: **Verified**, **Check failed** or **Not checked**.
+- where the copy lies, and whether that destination answers right now
+- how it is checked: by the checksum the destination keeps, without a download, or by downloading and hashing it, with the size that moves
+- its last check, with when and what ran it: after the upload, by the weekly check or by hand
+- **Passed**, **Does not match**, **Not checked**, or **Missing** for a copy whose upload failed
+
+**Verify** on a row checks that copy, **Verify all** checks every copy there is. The copies with a checksum of their own go first, since they take seconds, the downloads after them. The dialog shows each copy while it is checked, with the bytes of a download, and closing it does not stop the check. It runs as one entry in **History**, and **Open in History** leads there.
+
+A copy that does not match shows at the top of the dialog. A restore or a download reads from a copy that passed, and the broken one can be verified again or deleted, so the next run of the job writes it anew. **Stored checksums** unfolds the SHA-256 and MD5 the upload recorded, each with Copy.
 
 ::: tip Re-verify anytime
-You can verify a backup again at any time. The panel offers **Verify again** once a check has run.
+You can verify a backup again at any time, one copy or all of them.
 :::
 
 ### Post-Upload Verification (automatic)

@@ -11,7 +11,7 @@ import { DestinationsView } from "@/components/dashboard/storage/explorer/destin
 import { checkNow, destinationsOf, useExplorerData, useListingPoll } from "@/components/dashboard/storage/explorer/explorer-data";
 import { ExplorerEmpty, ExplorerSkeleton } from "@/components/dashboard/storage/explorer/explorer-page-states";
 import { FreshnessButton } from "@/components/dashboard/storage/explorer/freshness-button";
-import { useBackupActions } from "@/components/dashboard/storage/explorer/use-backup-actions";
+import { useBackupActions, type BackupTarget } from "@/components/dashboard/storage/explorer/use-backup-actions";
 import { useBackupDetails } from "@/components/dashboard/storage/explorer/use-backup-details";
 import { useExplorerAddress, type ExplorerTab } from "@/components/dashboard/storage/explorer/use-explorer-address";
 import { Button } from "@/components/ui/button";
@@ -95,7 +95,11 @@ export function StorageClient({
     }, [reloadIndex, reloadBackups, reloadPlan]);
     useListingPoll(destinations, reloadAll);
 
-    const actions = useBackupActions({ canDownload, canRestore, canDelete, canManageVault, destinations: destinationsById, onChanged: reloadAll });
+    // The integrity dialog lists every copy of a backup, which the list of backups knows.
+    const runs = backups.data?.runs;
+    const copiesOf = useCallback((target: BackupTarget) => runs?.find((run) => run.path === target.file.path)?.copies
+        ?? [{ destinationId: target.destinationId, state: "stored" as const, file: target.file }], [runs]);
+    const actions = useBackupActions({ canDownload, canRestore, canDelete, canManageVault, destinations: destinationsById, onChanged: reloadAll, canViewHistory, copiesOf });
     const { handlersFor: handlersForTarget, askDelete } = actions;
     const handlersFor = useCallback((file: ExplorerFile, destinationId: string) => handlersForTarget({ file, destinationId }), [handlersForTarget]);
     const details = useBackupDetails({ runs: pageTab === "backups" ? backups.data?.runs ?? null : null, at: scope.at, jobsByKey, destinationsById });

@@ -17,6 +17,8 @@ export interface ExplorerDestination {
     id: string;
     name: string;
     adapterId: string;
+    /** Whether it checks a backup by its own checksum, without a download. */
+    checksNatively?: boolean;
     /** When the listing was last compared with the storage. Null while it could not be listed at all. */
     listedAt: string | null;
     /** Why the last listing failed, while that is recent. The cached list, if any, is still shown. */

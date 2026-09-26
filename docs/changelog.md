@@ -46,6 +46,7 @@ All notable changes to DBackup are documented here.
 - **retention**: A job named like a deleted one no longer deletes the backups the deleted job left in its folder. Retention now leaves out every backup whose `.meta.json` names another job.
 - **retention**: A renamed job keeps applying its policy to the backups it left in the folder of its old name, so its first run after the update removes those the policy no longer keeps there. An incremental job names the rename as the reason for the new chain it starts.
 - **ci**: The `skyfay/dbackup:ci` image ends a Partial run with exit code 2 and a Cancelled one with 1, where it waited until it timed out. It waits up to an hour for a run instead of ten minutes, set with `DBACKUP_TIMEOUT`.
+- **storage**: The steps of the Redis and Valkey restore no longer copy a file their download command never wrote, and no longer stop Redis in a way a Docker restart policy undoes. The check afterwards no longer runs KEYS, which blocks a large instance.
 
 ### 🔒 Security
 
@@ -88,6 +89,7 @@ All notable changes to DBackup are documented here.
 - **templates**: The dialog for adding and editing a notification template has the new look. Each channel is picked from a searchable list that can also add one, and its runs are picked with buttons.
 - **templates**: The dialog for adding and editing a naming template has the new look and warns about a pattern without the time of day. The file names of a job are picked from a searchable list that shows the pattern of each template.
 - **templates**: The dialog for adding and editing a schedule preset has the new look. It and the Templates page now say that a job follows every change to its preset, instead of claiming it keeps its own copy of the schedule.
+- **storage**: The restore of a Redis or Valkey backup writes one script for a Docker container, a Compose service, a Linux service or a Windows service with the one-time download link in it, and switches to the same commands step by step with every value filled in. The script checks that Redis will read the dump before it stops anything, asks for the password instead of writing it into a command and keeps the old dump.
 
 ### 🔄 Changed
 
@@ -119,6 +121,7 @@ All notable changes to DBackup are documented here.
 - **docs**: The webhook trigger guide describes the new API trigger dialog, the timeout and the exit codes of the CI image, and Partial and Cancelled runs in its examples and API reference. The API key guide points to the Setup of the dialog.
 - **docs**: The Storage Explorer guide describes the list of backups, the Destinations tab, both timelines, the details of a backup and how current the lists are. The restore, verification, job, notification, API and storage cache guides follow the new page.
 - **docs**: The restore guide describes the steps of the new restore page, its rows and lines, the folders and what happens before and after the start.
+- **docs**: The Redis, Valkey and restore guides describe the restore script of Redis and Valkey, its steps by hand and what to do when Redis writes an append only file.
 
 ### 🧪 Tests
 

@@ -881,25 +881,24 @@ const mapping = [
 
 ## Custom Restore UI
 
-Some databases require special restore workflows. The restore dialog checks the `sourceType` and renders adapter-specific components:
+Some databases need a restore of their own. The restore page checks the `sourceType` of the backup and renders that instead of the database step:
 
 ```typescript
-// src/components/dashboard/storage/restore-dialog.tsx
-if (file.sourceType?.toLowerCase() === "redis") {
-  return <RedisRestoreWizard file={file} storageConfigId={id} onClose={onClose} />;
+// src/app/dashboard/storage/restore/restore-client.tsx
+if (isRedis) {
+    body = <RedisGuide file={file} destinationId={destinationId} engine={type === "valkey" ? "Valkey" : "Redis"} canDownload={canDownload} />;
 }
 ```
 
-### Redis Restore Wizard
+### Redis restore guide
 
-Redis cannot restore RDB files remotely - the file must be placed on the server's filesystem and the server restarted. The `RedisRestoreWizard` provides a guided 6-step process:
+Redis cannot load an RDB snapshot over the network. The file has to be placed in the data folder of the server and the server restarted, so `RedisGuide` in `src/components/dashboard/storage/restore/redis-guide.tsx` writes the commands for it:
 
-1. **Intro**: Explains why manual restore is required
-2. **Download**: Provides wget/curl commands with token-based authentication
-3. **Stop Server**: Shows `redis-cli SHUTDOWN NOSAVE` command
-4. **Replace File**: Instructions to replace `dump.rdb`
-5. **Start Server**: Commands to restart Redis
-6. **Verify**: How to check the restore succeeded
+- `redis-guide-script.ts` builds the script, the manual steps and the commands for an append only file from where Redis runs (`docker`, `compose`, `service` or `windows`), the target, the data folder, whether Redis asks for a password and the download link. The Bash commands live in `redis-guide-bash.ts` and the PowerShell ones in `redis-guide-powershell.ts`. All of it is pure, so the unit tests read the commands directly, and each block carries the marks the `CodeBlock` tints.
+- A script runs as one block, a subshell of a function in Bash and `& { }` in PowerShell, so a pasted script is read in full before its password prompt, and a failed check ends the block instead of the shell. PowerShell names its functions with a verb and a noun, since a short name like `Cli` is also the alias of `Clear-Item`, which wins over the function.
+- The script checks `PING`, `CONFIG GET appendonly`, `dir` and `dbfilename` before it downloads or stops anything. It compares the answers, since `redis-cli` exits with 0 even when Redis replies with an error.
+- The password reaches `redis-cli` as `REDISCLI_AUTH`, which `valkey-cli` reads as well, and `docker exec -e REDISCLI_AUTH` passes it on without writing it into the command.
+- `use-download-link.ts` makes the one-time link with `POST /api/storage/{id}/download-url` and counts down its five minutes, so the page marks a link that ran out.
 
 ### Token-Based Public Downloads
 

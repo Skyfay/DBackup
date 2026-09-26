@@ -34,18 +34,18 @@ export function FlowArrow({ tone }: { tone: OutcomeTone | null }) {
     );
 }
 
-/** A card of the page with its title, one line under it, and room for one control on the right. */
-export function Section({ title, note, action, children, className }: { title: string; note?: React.ReactNode; action?: React.ReactNode; children: React.ReactNode; className?: string }) {
+/** A card of the page with its title, one line under it, and room for one control on the right. Without children it is the head alone, like a folded part. */
+export function Section({ title, note, action, children, className }: { title: string; note?: React.ReactNode; action?: React.ReactNode; children?: React.ReactNode; className?: string }) {
     return (
         <section className={cn("min-w-0 rounded-xl border bg-card text-card-foreground shadow-sm", className)}>
-            <div className="flex flex-wrap items-start gap-3 px-4 pt-4 md:px-5">
+            <div className={cn("flex flex-wrap items-start gap-3 px-4 pt-4 md:px-5", !children && "pb-4 md:pb-5")}>
                 <div className="min-w-0 flex-1">
                     <h3 className="font-semibold">{title}</h3>
                     {note && <p className="text-sm text-muted-foreground">{note}</p>}
                 </div>
                 {action && <div className="flex shrink-0 flex-wrap items-center gap-2">{action}</div>}
             </div>
-            <div className="p-4 md:p-5">{children}</div>
+            {children && <div className="p-4 md:p-5">{children}</div>}
         </section>
     );
 }

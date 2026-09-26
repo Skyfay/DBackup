@@ -20,7 +20,7 @@ vi.mock("@/app/actions/backup/config-management", () => ({ restoreFromStorageAct
 vi.mock("@/components/common/encryption-key-resolution-dialog", () => ({ EncryptionKeyResolutionDialog: () => null }));
 vi.mock("@/components/dashboard/storage/archive-file-tree", () => ({ ArchiveFileTree: () => <p>The files of the folder</p> }));
 vi.mock("@/components/dashboard/storage/folder-picker-dialog", () => ({ FolderPickerDialog: () => null }));
-vi.mock("@/components/dashboard/storage/redis-restore-wizard", () => ({ RedisRestoreWizard: () => <p>The Redis wizard</p> }));
+vi.mock("@/components/dashboard/storage/restore/redis-guide", () => ({ RedisGuide: () => <p>The Redis guide</p> }));
 
 import { RestoreClient } from "@/app/dashboard/storage/restore/restore-client";
 

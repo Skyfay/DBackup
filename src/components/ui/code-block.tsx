@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
-export type CodeLanguage = "bash" | "python" | "typescript" | "go" | "yaml" | "json";
+export type CodeLanguage = "bash" | "powershell" | "python" | "typescript" | "go" | "yaml" | "json";
 
 type TokenKind = "comment" | "string" | "variable" | "number" | "keyword";
 
@@ -21,6 +21,7 @@ const TOKEN_CLASSES: Record<TokenKind, string> = {
 
 const KEYWORDS: Record<CodeLanguage, string[]> = {
     bash: ["if", "then", "else", "elif", "fi", "case", "esac", "do", "done", "while", "for", "in", "echo", "exit", "set", "sleep", "local", "export", "curl", "jq"],
+    powershell: ["if", "else", "elseif", "foreach", "in", "function", "try", "catch", "finally", "throw", "break", "return", "exit"],
     python: ["import", "from", "def", "class", "if", "elif", "else", "return", "raise", "try", "except", "with", "as", "for", "while", "in", "not", "and", "or", "True", "False", "None", "print"],
     typescript: ["import", "from", "export", "const", "let", "function", "async", "await", "if", "else", "return", "throw", "new", "while", "for", "of", "true", "false", "null"],
     go: ["package", "import", "func", "var", "const", "if", "else", "return", "for", "range", "defer", "struct", "type", "switch", "case", "default", "nil", "any"],
@@ -28,7 +29,7 @@ const KEYWORDS: Record<CodeLanguage, string[]> = {
     json: ["true", "false", "null"],
 };
 
-const COMMENTS: Record<CodeLanguage, string | null> = { bash: "#", python: "#", yaml: "#", typescript: "//", go: "//", json: null };
+const COMMENTS: Record<CodeLanguage, string | null> = { bash: "#", powershell: "#", python: "#", yaml: "#", typescript: "//", go: "//", json: null };
 
 const patterns = new Map<CodeLanguage, RegExp>();
 
@@ -78,29 +79,37 @@ export interface CodeMark {
     tone: "warning" | "success";
 }
 
-/** Text with every appearance of the mark tinted, for code and for a value shown beside it. */
-export function MarkedText({ text, mark }: { text: string; mark?: CodeMark }) {
-    if (!mark || !mark.text || !text.includes(mark.text)) return <>{text}</>;
-    const parts = text.split(mark.text);
-    return (
-        <>
-            {parts.map((part, index) => (
-                <span key={index}>
-                    {part}
-                    {index < parts.length - 1 && (
-                        <span
-                            className={cn(
-                                "rounded-sm px-0.5",
-                                mark.tone === "warning" ? "bg-warning/15 text-warning underline decoration-dotted underline-offset-4" : "bg-success/12 text-success",
-                            )}
-                        >
-                            {mark.text}
-                        </span>
-                    )}
-                </span>
-            ))}
-        </>
+const MARK_CLASSES: Record<CodeMark["tone"], string> = {
+    warning: "bg-warning/15 text-warning underline decoration-dotted underline-offset-4",
+    success: "bg-success/12 text-success",
+};
+
+/**
+ * Text with every appearance of each mark tinted, for code and for a value shown beside it.
+ * Where marks overlap, the longest wins.
+ */
+export function MarkedText({ text, mark }: { text: string; mark?: CodeMark | CodeMark[] }) {
+    const marks = (Array.isArray(mark) ? mark : mark ? [mark] : []).filter((each) => each.text && text.includes(each.text));
+    if (marks.length === 0) return <>{text}</>;
+    const toneOf = new Map(marks.map((each) => [each.text, each.tone]));
+    const pattern = new RegExp(
+        [...toneOf.keys()].sort((a, b) => b.length - a.length).map((each) => each.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"),
+        "g",
     );
+    const parts: React.ReactNode[] = [];
+    let at = 0;
+    for (const match of text.matchAll(pattern)) {
+        const index = match.index ?? 0;
+        if (index > at) parts.push(text.slice(at, index));
+        parts.push(
+            <span key={index} className={cn("rounded-sm px-0.5", MARK_CLASSES[toneOf.get(match[0]) ?? "success"])}>
+                {match[0]}
+            </span>,
+        );
+        at = index + match[0].length;
+    }
+    if (at < text.length) parts.push(text.slice(at));
+    return <>{parts}</>;
 }
 
 interface CodeBlockProps {
@@ -110,7 +119,8 @@ interface CodeBlockProps {
     language: CodeLanguage;
     /** Shown before the name, like the logo of the language. Defaults to a file. */
     icon?: React.ReactNode;
-    mark?: CodeMark;
+    /** The values to notice, one or several. */
+    mark?: CodeMark | CodeMark[];
     className?: string;
 }
 

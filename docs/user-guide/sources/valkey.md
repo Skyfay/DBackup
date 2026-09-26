@@ -27,6 +27,10 @@ Valkey is protocol-compatible with Redis. The Valkey source type exists so versi
 
 DBackup uses `redis-cli --rdb` to download a consistent RDB snapshot from the Valkey server. The backup includes all configured databases in a single file and works with both standalone and Sentinel deployments.
 
+## Restore
+
+A Valkey backup restores through the same guide as a Redis one, with `valkey-cli` and the `valkey` user in its commands. See [Restore in the Redis guide](/user-guide/sources/redis#restore) for the script and what to do when Valkey writes an append only file.
+
 ## Migrating from Redis Sources
 
 If you previously configured a Redis source pointing to a Valkey server, it will continue to work without changes. Create a new Valkey source to get accurate version labels and version history tracking.

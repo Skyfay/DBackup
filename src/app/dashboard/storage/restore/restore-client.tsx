@@ -6,12 +6,12 @@ import { ArrowLeft, HardDrive } from "lucide-react";
 import { EncryptionKeyResolutionDialog, type KeyResolutionResult } from "@/components/common/encryption-key-resolution-dialog";
 import type { FileInfo } from "@/components/dashboard/storage/file-info";
 import { startPreparedArchiveDownload } from "@/components/dashboard/storage/prepared-download";
-import { RedisRestoreWizard } from "@/components/dashboard/storage/redis-restore-wizard";
 import { normalizeRestoreScope, parseRestoreScope } from "@/components/dashboard/storage/restore-scope";
 import { DatabaseStep } from "@/components/dashboard/storage/restore/database-step";
 import { FolderStep } from "@/components/dashboard/storage/restore/folder-step";
 import { RestoreConfirm } from "@/components/dashboard/storage/restore/restore-confirm";
 import { RestoreBar, RestoreFailureCard, RestoreSteps, type RestoreStep } from "@/components/dashboard/storage/restore/restore-frame";
+import { RedisGuide } from "@/components/dashboard/storage/restore/redis-guide";
 import { RestoreHead } from "@/components/dashboard/storage/restore/restore-head";
 import { databaseSentence, pickedCount, plural, restoreBlocker, restoreLabel } from "@/components/dashboard/storage/restore/restore-model";
 import { Notice } from "@/components/dashboard/storage/restore/restore-parts";
@@ -131,7 +131,7 @@ export function RestoreClient({ canManageVault = false, canDownload = false }: R
 
     let body: React.ReactNode;
     if (isRedis) {
-        body = <RedisRestoreWizard file={file} destinationId={destinationId} onCancel={back} engineName={type === "valkey" ? "Valkey" : "Redis"} />;
+        body = <RedisGuide file={file} destinationId={destinationId} engine={type === "valkey" ? "Valkey" : "Redis"} canDownload={canDownload} />;
     } else if (isSystem) {
         body = <SystemRestore file={file} destinationId={destinationId} onCancel={back} />;
     } else {

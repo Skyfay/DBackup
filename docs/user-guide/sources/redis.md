@@ -100,34 +100,42 @@ A Redis backup is one RDB snapshot, the native Redis format, and it always conta
 - **Archive**: `backup_2026-02-02.tar`, compressed and encrypted per entry as the job configures
 - **Downloaded dump**: `backup_2026-02-02_dump.rdb`, from **Download Dump** in the Storage Explorer
 
-Backups written by earlier versions are plain files (`backup_2026-02-02.rdb`, `.rdb.gz` or `.rdb.gz.enc`) and restore through the same wizard.
+Backups written by earlier versions are plain files (`backup_2026-02-02.rdb`, `.rdb.gz` or `.rdb.gz.enc`) and restore through the same guide.
 
-## Restore Limitations
+## Restore
 
-::: warning Important
-Redis cannot restore RDB files remotely via network commands. Restoring a Redis backup requires:
-
-1. **Server access**: You need filesystem access to the Redis server
-2. **Service restart**: Redis must be stopped and restarted to load the new RDB file
-
-DBackup provides a **Restore Wizard** that guides you through the manual restore process with copy-paste commands.
+::: warning Redis reads a dump only while it starts
+Redis cannot load an RDB snapshot over the network. A restore stops Redis on its host, puts the dump into its data folder and starts it again, which replaces everything Redis holds.
 :::
 
-### Restore Process (Manual)
+**Restore** on a Redis backup in the Storage Explorer opens a guide instead of the database step:
 
-1. **Download the backup** from Storage Explorer with **Download Dump**, or **Download Decrypted** for an older backup
-2. **Stop the Redis server**: `redis-cli SHUTDOWN NOSAVE`
-3. **Replace the RDB file**: Copy backup to Redis data directory (usually `/var/lib/redis/dump.rdb`)
-4. **Start Redis**: `systemctl start redis` or `redis-server`
-5. **Verify**: Connect and check your data
+1. **Where does Redis run?** Pick **Docker**, **Docker Compose**, **Linux service** or **Windows service**, then name the container, the compose service or the service and the data folder. Turn off **Redis asks for a password** for an instance without one.
+2. **Make the link.** The commands download the dump with a link that works once and for five minutes. Making it needs the Download permission, and it hands out the plain `dump.rdb`, decrypted and unpacked.
+3. **Run the restore.** **Script** shows one script for the whole restore, **Manual** the same commands one step at a time with the link and every value filled in.
 
-### Using the Restore Wizard
+The script runs on the Redis host, on the Docker host or in the folder of the compose file, pasted into a shell or saved with **Download the script**. It does this, in this order:
 
-When you click "Restore" on a Redis backup in Storage Explorer, DBackup opens a guided wizard that:
+- Asks for the password and passes it to `redis-cli` as `REDISCLI_AUTH`, so it lands in no command and no history.
+- Checks that Redis answers, writes no append only file, keeps its data in the folder you named and reads `dump.rdb`. Otherwise it stops before it downloads or changes anything.
+- Downloads the dump, stops Redis, keeps the old dump as `dump.rdb.before-restore`, puts the new one in place and starts Redis again.
+- Waits up to two minutes for Redis to answer and lists the keys of every database with `INFO keyspace`.
 
-- Provides download commands (wget/curl with authentication)
-- Shows the exact commands for your deployment type
-- Includes commands for both Systemd and Docker deployments
+A container is stopped with `docker stop -t 60` or `docker compose stop -t 60`, which keeps it off even with a restart policy and gives Redis time to save once more. A Linux service is stopped with `systemctl`, and `install` hands the new dump to the `redis` user. A pasted script is read in full before it asks for the password, and a failed check leaves the shell open.
+
+On Windows the commands are PowerShell for Windows PowerShell 5.1 and PowerShell 7, run as an administrator. They stop and start the service with `Stop-Service` and `Start-Service` and expect `redis-cli` 5 or newer on the PATH, which reads the password from `REDISCLI_AUTH`, like the one of Redis for Windows. For another path or CLI, change `$Cli` at the top of the script. A saved script runs with `powershell -ExecutionPolicy Bypass -File restore-<job>.ps1`.
+
+**Manual** pastes one block at a time, and the password gets a block of its own so its prompt never reads the next line. **Download here** in its first step takes the dump on this computer with a link of its own, for a Redis host that cannot reach DBackup. Copy it to the Redis host as `dump.rdb`.
+
+### If Redis writes an append only file
+
+With `appendonly yes` Redis loads its AOF when it starts and never reads `dump.rdb`, so the script stops before it changes anything. The guide lists what to do instead:
+
+1. Keep a copy of the AOF, the folder `appendonlydir` or `appendonly.aof` before Redis 7. It is the only full copy of what Redis holds now.
+2. Set `appendonly no` where Redis gets its settings, like `redis.conf`, the command of the container or the compose file, and restart Redis.
+3. Run the script or the manual steps.
+4. Run `redis-cli CONFIG SET appendonly yes`. Redis writes a new AOF from the restored data.
+5. Set `appendonly yes` again where you changed it, so the AOF stays on after the next restart.
 
 ## Database Selection
 

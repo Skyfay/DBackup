@@ -190,6 +190,12 @@ gbak -rep -user sysdba -password *** backup.fbk database.fdb
 - Always replaces the target file's contents (no separate create-only step)
 - See [Firebird source](/user-guide/sources/firebird) for alias configuration
 
+### Redis and Valkey
+
+- Redis reads a dump only while it starts, so DBackup cannot restore it over the network
+- **Restore** opens a guide instead, with one script for a Docker container, a Compose service, a Linux service or a Windows service, or the same commands step by step
+- See [Restore in the Redis guide](/user-guide/sources/redis#restore) for the script and what to do about an append only file
+
 ## Safety Features
 
 ### Version Guard

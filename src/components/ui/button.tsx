@@ -21,6 +21,10 @@ const buttonVariants = cva(
           "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost:
           "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
+        // An action with a task among quiet buttons, like Edit alerts in the bar of a selection: its
+        // icon in the tone, and on hover a frame with a light tint in it like the entry in a row menu.
+        "ghost-tone":
+          "border border-transparent hover:border-tone/50 hover:bg-tone/5 dark:hover:bg-tone/10 [&_svg:not([class*='text-'])]:text-tone",
         // A delete among quiet buttons, like in the bar of a selection or at the end of a row:
         // red text, and on hover a red frame with a light red tint like Delete in a row menu.
         "ghost-destructive":

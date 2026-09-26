@@ -95,6 +95,7 @@ All notable changes to DBackup are documented here.
 - **storage**: A download link for databases and folders streams, so the first bytes arrive at once instead of after DBackup wrote the whole download to a temp file. A tar.gz of several databases and folders packs about twice as fast.
 - **storage**: **Verify integrity** opens a dialog with every copy of a backup, its last check and whether the destination checks it without a download, and verifies one copy or all of them. The copies without a download go first, and the dialog shows each copy while it is checked, the bytes of a download included.
 - **docker**: The volume picker of a job lists the volumes by Compose stack with the containers that mount each one, whether they run and where, and shows beside them which containers the job stops in which order. Anonymous volumes go by their container, and the ones no container mounts stay hidden until asked for.
+- **storage**: Ticked destinations in the Storage Explorer can be checked or get their alerts changed together, where every alert stays as each destination has it until it is set for all of them. A list under each alert shows what changes at each destination, and a storage limit that would fire right away is marked.
 
 ### 🔄 Changed
 

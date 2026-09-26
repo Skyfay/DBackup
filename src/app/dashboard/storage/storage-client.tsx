@@ -134,6 +134,14 @@ export function StorageClient({
         reloadAll();
     }, [reloadAll]);
     const checkDestination = useCallback((destination: ExplorerDestination) => void check([destination], `${destination.name} could not be checked`), [check]);
+    // The bulk action of the Destinations tab reports itself, so a failure is thrown for it rather than shown here.
+    const checkMany = useCallback(async (targets: ExplorerDestination[]) => {
+        try {
+            await checkNow(targets);
+        } finally {
+            reloadAll();
+        }
+    }, [reloadAll]);
     const onPick = useCallback((destinationId: string | null) => setParams({ tab: "destinations", destination: destinationId }), [setParams]);
 
     const backupCount = jobs.reduce((sum, entry) => sum + entry.runs, 0);
@@ -250,6 +258,7 @@ export function StorageClient({
                         canDelete={canDelete}
                         canEditAlerts={canEditAlerts}
                         onCheckNow={checkDestination}
+                        onCheckMany={checkMany}
                         askDelete={askDelete}
                         onRefresh={reloadAll}
                         refreshing={index.reloading || backups.reloading}

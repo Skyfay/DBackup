@@ -13,11 +13,11 @@ import { Switch } from "@/components/ui/switch";
 import { cn, formatBytes } from "@/lib/utils";
 import type { DestinationAlerts, ExplorerDestination } from "@/services/storage/explorer-types";
 
-const UNITS = { MB: 1024 ** 2, GB: 1024 ** 3, TB: 1024 ** 4 } as const;
-type Unit = keyof typeof UNITS;
+export const UNITS = { MB: 1024 ** 2, GB: 1024 ** 3, TB: 1024 ** 4 } as const;
+export type Unit = keyof typeof UNITS;
 
 /** A limit in the largest unit it is a whole number of, GB when it is not one. */
-function splitBytes(bytes: number): { value: number; unit: Unit } {
+export function splitBytes(bytes: number): { value: number; unit: Unit } {
     for (const unit of ["TB", "GB", "MB"] as const) {
         if (bytes >= UNITS[unit] && bytes % UNITS[unit] === 0) return { value: bytes / UNITS[unit], unit };
     }

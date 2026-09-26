@@ -1,4 +1,5 @@
 import * as React from "react";
+import type { Tone } from "@/components/ui/tone";
 import type { BulkLabels, BulkResult } from "@/lib/core/bulk";
 
 /**
@@ -66,6 +67,8 @@ export interface BulkAction<TData> {
     label?: (rows: TData[]) => string;
     icon?: React.ComponentType<{ className?: string }>;
     variant?: "outline" | "destructive";
+    /** The color of its task, like `edit` for Edit alerts, the same as the entry in the menu of a single row. Quiet when left out. */
+    tone?: Tone;
     /**
      * Omit for an action that runs straight away, such as enabling.
      * Present for anything destructive - the design system requires a confirmation there.
@@ -101,5 +104,18 @@ export interface BulkAction<TData> {
     /** A short muted fact after the name in the confirmation, such as the type of a connection. */
     itemDetail?: (row: TData) => string;
     /** Performs the action. Reports per-row outcomes rather than throwing on the first failure. */
-    run: (rows: TData[]) => Promise<BulkResult>;
+    run?: (rows: TData[]) => Promise<BulkResult>;
+    /**
+     * Opens a dialog of its own in place of `run`, for an action that needs settings first,
+     * like the alerts of several destinations. What it did comes back through `onDone` and is
+     * reported and cleared like the result of `run`.
+     */
+    dialog?: (props: BulkDialogProps<TData>) => React.ReactNode;
+}
+
+/** What the dialog of a bulk action gets: the rows it acts on, and how to hand back. */
+export interface BulkDialogProps<TData> {
+    rows: TData[];
+    onClose: () => void;
+    onDone: (result: BulkResult) => void;
 }

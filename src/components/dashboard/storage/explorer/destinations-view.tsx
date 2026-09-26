@@ -2,17 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SortingState } from "@tanstack/react-table";
-import { ArrowRight, PanelBottomClose, PanelBottomOpen, RefreshCw } from "lucide-react";
+import { ArrowRight, Bell, PanelBottomClose, PanelBottomOpen, RefreshCw } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { kindNames } from "@/components/adapter/connection-columns";
 import { signedBytes } from "@/components/dashboard/widgets/storage-history-data";
 import { Button } from "@/components/ui/button";
-import { DataTable, type DataTableFilterableColumn } from "@/components/ui/data-table";
+import { DataTable, type BulkAction, type DataTableFilterableColumn } from "@/components/ui/data-table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn, formatBytes } from "@/lib/utils";
 import type { BackupRun, ExplorerDestination, ExplorerJob, ExplorerPlan } from "@/services/storage/explorer-types";
 import type { BackupActionGroup } from "./backup-actions";
 import { BackupContextMenu, BackupRowMenu } from "./backup-menus";
+import { DestinationAlertsDialog } from "./destination-alerts";
+import { BulkAlertsDialog } from "./destination-alerts-bulk";
 import { DestinationCard } from "./destination-card";
 import { destinationColumns } from "./destination-columns";
 import { DestinationDetails } from "./destination-details";
@@ -65,6 +67,8 @@ interface DestinationsViewProps {
     canDelete: boolean;
     canEditAlerts: boolean;
     onCheckNow: (destination: ExplorerDestination) => void;
+    /** Checks the ticked destinations, and throws when that could not be asked for. */
+    onCheckMany: (destinations: ExplorerDestination[]) => Promise<void>;
     askDelete: (targets: BackupTarget[], title?: string) => void;
     onRefresh: () => void;
     refreshing: boolean;
@@ -77,11 +81,14 @@ interface DestinationsViewProps {
  * with the destination as a filter.
  */
 export function DestinationsView(props: DestinationsViewProps) {
-    const { destinations, destinationsById, jobs, runs, runsError, plan, view, picked, onPick, onOpenBackups, canDelete, canEditAlerts, onCheckNow, askDelete, onRefresh, refreshing, onChanged } = props;
+    const { destinations, destinationsById, jobs, runs, runsError, plan, view, picked, onPick, onOpenBackups, canDelete, canEditAlerts, onCheckNow, onCheckMany, askDelete, onRefresh, refreshing, onChanged } =
+        props;
     const [sorting, setSorting] = useState<SortingState>([]);
     const detailsRef = useRef<HTMLDivElement>(null);
     const summary = useMemo(() => summarizeDestinations(destinations), [destinations]);
     const pickedDestination = picked ? destinationsById.get(picked) ?? null : null;
+    // The destination whose alerts are open from its menu, without going through its details.
+    const [alertsOf, setAlertsOf] = useState<ExplorerDestination | null>(null);
     const toggle = useCallback((destinationId: string) => onPick(picked === destinationId ? null : destinationId), [picked, onPick]);
 
     // The details open under the list, so the page moves to them.
@@ -97,8 +104,37 @@ export function DestinationsView(props: DestinationsViewProps) {
                 : { id: "show", label: "Show details", icon: PanelBottomOpen, onSelect: () => onPick(destination.id), tone: "neutral" },
             { id: "backups", label: "Open backups", icon: ArrowRight, onSelect: () => onOpenBackups(destination.id), tone: "neutral" },
             { id: "check", label: "Check now", icon: RefreshCw, onSelect: () => onCheckNow(destination), tone: "neutral" },
+            ...(canEditAlerts ? [{ id: "alerts", label: "Edit alerts", icon: Bell, onSelect: () => setAlertsOf(destination), tone: "edit" as const }] : []),
         ],
-    }], [picked, onPick, onOpenBackups, onCheckNow]);
+    }], [picked, onPick, onOpenBackups, onCheckNow, canEditAlerts]);
+
+    // What the ticked destinations can do together, in the bar over the table and the right click on one of them.
+    const bulkActions = useMemo(() => {
+        const actions: BulkAction<ExplorerDestination>[] = [];
+        if (canEditAlerts) {
+            actions.push({
+                id: "alerts",
+                labels: { verb: "save the alerts of", verbPast: "saved", noun: "destination" },
+                label: () => "Edit alerts",
+                icon: Bell,
+                tone: "edit",
+                itemName: (destination) => destination.name,
+                dialog: ({ rows, onClose, onDone }) => <BulkAlertsDialog destinations={rows} onClose={onClose} onDone={onDone} />,
+            });
+        }
+        actions.push({
+            id: "check",
+            labels: { verb: "check", verbPast: "checked", noun: "destination" },
+            label: () => "Check now",
+            icon: RefreshCw,
+            itemName: (destination) => destination.name,
+            run: async (rows) => {
+                await onCheckMany(rows);
+                return { succeeded: rows.map((destination) => destination.id), failed: [] };
+            },
+        });
+        return actions;
+    }, [canEditAlerts, onCheckMany]);
 
     const columns = useMemo(() => destinationColumns({
         jobs,
@@ -167,6 +203,9 @@ export function DestinationsView(props: DestinationsViewProps) {
                 onRefresh={onRefresh}
                 isLoading={refreshing}
                 getRowId={(destination) => destination.id}
+                enableRowSelection={view !== "cards"}
+                bulkActions={bulkActions}
+                onBulkActionComplete={onChanged}
                 onRowClick={(destination) => toggle(destination.id)}
                 activeRowId={picked}
                 view={view === "cards" ? "cards" : "table"}
@@ -179,13 +218,13 @@ export function DestinationsView(props: DestinationsViewProps) {
                         actions={<BackupRowMenu name={row.original.name} groups={groupsFor(row.original)} />}
                     />
                 )}
-                renderRowMenu={(destination) => (
+                renderRowMenu={(destination, bulk) => (
                     <BackupContextMenu
                         tile={<DestinationTile destination={destination} />}
                         title={destination.name}
                         note={`${kindNames.get(destination.adapterId) ?? destination.adapterId} · ${count(destination.count, "backup")}`}
                         groups={groupsFor(destination)}
-                        bulk={null}
+                        bulk={bulk}
                     />
                 )}
                 aboveRows={view === "timeline" ? (
@@ -198,6 +237,8 @@ export function DestinationsView(props: DestinationsViewProps) {
                 hideRows={view === "timeline"}
                 initialPageSize={20}
             />
+
+            {alertsOf && <DestinationAlertsDialog destination={alertsOf} open onOpenChange={(open) => !open && setAlertsOf(null)} onSaved={onChanged} />}
 
             {pickedDestination && (
                 <div ref={detailsRef} className="scroll-mt-4">

@@ -60,7 +60,8 @@ export function DataTableBulkBar<TData>({
                                 <Button
                                     key={action.id}
                                     size="sm"
-                                    variant={action.variant === "destructive" ? "ghost-destructive" : "ghost"}
+                                    variant={action.variant === "destructive" ? "ghost-destructive" : action.tone && action.tone !== "neutral" ? "ghost-tone" : "ghost"}
+                                    tone={action.variant === "destructive" ? undefined : action.tone}
                                     disabled={runningId !== null}
                                     onClick={() => onStart(action)}
                                 >
@@ -95,7 +96,7 @@ export function DataTableBulkBar<TData>({
                                                         key={action.id}
                                                         onSelect={() => onStart(action)}
                                                         variant={action.variant === "destructive" ? "destructive" : "default"}
-                                                        tone={action.variant === "destructive" ? "destructive" : "neutral"}
+                                                        tone={action.variant === "destructive" ? "destructive" : action.tone ?? "neutral"}
                                                     >
                                                         {Icon && <Icon />}
                                                         {labelOf(action)}

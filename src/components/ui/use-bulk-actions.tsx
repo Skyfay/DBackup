@@ -23,7 +23,7 @@ export interface BulkActions<TData> {
     visibleActions: BulkAction<TData>[];
     /** The action running right now, for a spinner on its button. */
     runningId: string | null;
-    /** Starts one action: confirm when it asks for it, otherwise run it. */
+    /** Starts one action: open its dialog, confirm when it asks for it, otherwise run it. */
     start: (action: BulkAction<TData>) => void;
     /** The confirmation and the failure list, rendered once by the table. */
     dialogs: React.ReactNode;
@@ -46,6 +46,8 @@ export function useBulkActions<TData>({
     getRowId,
 }: BulkActionsOptions<TData>): BulkActions<TData> {
     const [pendingAction, setPendingAction] = React.useState<BulkAction<TData> | null>(null);
+    // The action with a dialog of its own, and the rows it was opened for.
+    const [openDialog, setOpenDialog] = React.useState<{ action: BulkAction<TData>; rows: TData[] } | null>(null);
     const [runningId, setRunningId] = React.useState<string | null>(null);
     const [outcome, setOutcome] = React.useState<BulkOutcome<TData> | null>(null);
 
@@ -103,6 +105,7 @@ export function useBulkActions<TData>({
 
     const execute = React.useCallback(
         async (action: BulkAction<TData>, rows: TData[]) => {
+            if (!action.run) return;
             setRunningId(action.id);
             try {
                 const result = await action.run(rows);
@@ -140,7 +143,8 @@ export function useBulkActions<TData>({
                 return;
             }
 
-            if (action.confirm) setPendingAction(action);
+            if (action.dialog) setOpenDialog({ action, rows: eligible });
+            else if (action.confirm) setPendingAction(action);
             else void execute(action, eligible);
         },
         [partition, execute]
@@ -162,6 +166,16 @@ export function useBulkActions<TData>({
                 />
             )}
             {outcome && <BulkFailures outcome={outcome} getRowId={getRowId} onClose={() => setOutcome(null)} />}
+            {openDialog?.action.dialog?.({
+                rows: openDialog.rows,
+                onClose: () => setOpenDialog(null),
+                onDone: (result) => {
+                    report(openDialog.action, result, openDialog.rows);
+                    if (result.succeeded.length > 0) onClearSelection();
+                    setOpenDialog(null);
+                    void onComplete?.();
+                },
+            })}
         </>
     );
 

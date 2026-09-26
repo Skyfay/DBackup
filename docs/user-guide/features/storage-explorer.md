@@ -72,7 +72,9 @@ Pick **Job deleted**, select the backups with the box in the head of the table a
 
 The strip shows how many destinations answer right now, what they store together, how much that grew in the last 7 days, their backups and the alerts that fire.
 
-The table lists every destination with its status, what it stores, the share of its storage limit when that alert is on, the growth of the last 7 days, its backups, the jobs that write to it, how old its list is and its active alerts. **Type** and **State** filter it, the state being whether it answers, whether its list is old and whether an alert fires. The menu of a row offers **Show details**, **Open backups**, which lists its backups in the **Backups** tab, and **Check now**. Phones get a card per destination.
+The table lists every destination with its status, what it stores, the share of its storage limit when that alert is on, the growth of the last 7 days, its backups, the jobs that write to it, how old its list is and its active alerts. **Type** and **State** filter it, the state being whether it answers, whether its list is old and whether an alert fires. The menu of a row and its right click offer **Show details**, **Open backups**, which lists its backups in the **Backups** tab, **Check now**, and **Edit alerts** for someone who may change settings. Phones get a card per destination.
+
+Destinations can be ticked to use **Check now** or **Edit alerts** on all of them, from the bar over the table or the right click on a ticked one. **Edit alerts** keeps every alert as each destination has it until it is set **On** or **Off** for all of them. A list under each alert shows how each destination has it now, or what changes at each once it is set, and a storage limit below what a destination stores is marked as firing right away. Only the destinations that change are saved.
 
 ### Details of a destination
 

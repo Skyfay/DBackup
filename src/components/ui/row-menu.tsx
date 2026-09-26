@@ -39,7 +39,7 @@ export function SelectionMenu<TData>({ bulk }: { bulk: RowMenuBulk<TData> }) {
                 key={action.id}
                 onSelect={() => bulk.start(action)}
                 variant={action.variant === "destructive" ? "destructive" : "default"}
-                tone={action.variant === "destructive" ? "destructive" : "neutral"}
+                tone={action.variant === "destructive" ? "destructive" : action.tone ?? "neutral"}
             >
                 {Icon && <Icon />} {label}
             </ContextMenuItem>

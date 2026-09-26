@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ViewMode } from "@/lib/core/table-preferences";
 import type { ExplorerIndex } from "@/services/storage/explorer-types";
@@ -14,7 +14,8 @@ vi.mock("next/navigation", () => ({
     useRouter: () => ({ push, replace }),
     useSearchParams: () => search,
 }));
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), warning: vi.fn() }));
+vi.mock("sonner", () => ({ toast }));
 vi.mock("@/lib/auth/client", () => ({
     useSession: () => ({ data: { user: { timezone: "UTC", dateFormat: "yyyy-MM-dd", timeFormat: "HH:mm" } } }),
 }));
@@ -28,7 +29,8 @@ vi.mock("@/components/dashboard/storage/download/download-dialog", () => ({ Down
 vi.mock("@/components/dashboard/storage/integrity/integrity-dialog", () => ({ IntegrityDialog: () => null }));
 vi.mock("@/components/common/encryption-key-resolution-dialog", () => ({ EncryptionKeyResolutionDialog: () => null }));
 vi.mock("@/components/dashboard/storage/explorer/destination-history", () => ({ DestinationHistory: () => <p>History of the destination</p> }));
-vi.mock("@/app/actions/storage/storage-alerts", () => ({ updateStorageAlertSettings: vi.fn().mockResolvedValue({ success: true }) }));
+const alertsOfMany = vi.hoisted(() => vi.fn());
+vi.mock("@/app/actions/storage/storage-alerts", () => ({ updateStorageAlertSettings: vi.fn().mockResolvedValue({ success: true }), updateStorageAlertsOfMany: alertsOfMany }));
 
 import { StorageClient } from "@/app/dashboard/storage/storage-client";
 
@@ -225,5 +227,57 @@ describe("Storage Explorer, Destinations tab", () => {
 
         expect(await details("NAS Backups")).toBeInTheDocument();
         expect(screen.getByRole("tab", { name: /Destinations/ })).toHaveAttribute("aria-selected", "true");
+    });
+
+    it("edits the alerts of a destination straight from its menu", async () => {
+        const user = userEvent.setup();
+        render(page());
+
+        await user.click(await screen.findByRole("button", { name: "Open menu for NAS Backups" }));
+        await user.click(await screen.findByRole("menuitem", { name: "Edit alerts" }));
+
+        expect(await screen.findByRole("dialog", { name: "Alerts of NAS Backups" })).toBeInTheDocument();
+    });
+
+    it("edits the alerts of the ticked destinations together, and saves only the ones that change", async () => {
+        const user = userEvent.setup();
+        serve(withAlerts);
+        alertsOfMany.mockResolvedValue({ success: true, data: { succeeded: ["r2"], failed: [] } });
+        render(page());
+
+        await user.click(within(await screen.findByRole("row", { name: /NAS Backups/ })).getByRole("checkbox", { name: "Select row" }));
+        await user.click(within(screen.getByRole("row", { name: /Cloudflare R2/ })).getByRole("checkbox", { name: "Select row" }));
+        // Edit alerts has the color of editing, in the bar and in the right click on a ticked row.
+        const edit = within(screen.getByRole("toolbar", { name: "Actions for the selected rows" })).getByRole("button", { name: "Edit alerts" });
+        expect(edit).toHaveAttribute("data-tone", "edit");
+        fireEvent.contextMenu(screen.getByRole("row", { name: /NAS Backups/ }));
+        expect(await screen.findByRole("menuitem", { name: "Edit alerts" })).toHaveAttribute("data-tone", "edit");
+        await user.keyboard("{Escape}");
+        await user.click(edit);
+
+        const dialog = await screen.findByRole("dialog", { name: "Alerts of 2 destinations" });
+        const missing = within(dialog).getByRole("region", { name: "Missing backup" });
+        expect(within(missing).getByText("On at NAS Backups after 48 hours, off at 1")).toBeInTheDocument();
+
+        await user.click(within(missing).getByRole("tab", { name: "On" }));
+        await user.click(within(missing).getByRole("button", { name: "What changes at each one" }));
+        expect(within(missing).getByText("stays", { exact: false })).toBeInTheDocument();
+        expect(within(dialog).getByText("Missing backup changes at 1 of 2")).toBeInTheDocument();
+
+        await user.click(within(dialog).getByRole("button", { name: "Save for 1" }));
+        expect(alertsOfMany).toHaveBeenCalledWith(["r2"], { missingBackup: { enabled: true, hours: 48 } });
+        await waitFor(() => expect(toast.success).toHaveBeenCalledWith("1 destination saved"));
+    });
+
+    it("checks the ticked destinations in one go", async () => {
+        const user = userEvent.setup();
+        render(page());
+
+        await user.click(within(await screen.findByRole("row", { name: /NAS Backups/ })).getByRole("checkbox", { name: "Select row" }));
+        await user.click(within(screen.getByRole("row", { name: /Cloudflare R2/ })).getByRole("checkbox", { name: "Select row" }));
+        await user.click(within(screen.getByRole("toolbar", { name: "Actions for the selected rows" })).getByRole("button", { name: "Check now" }));
+
+        await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/storage/explorer/refresh", expect.objectContaining({ body: JSON.stringify({ destinationIds: ["nas", "r2"] }) })));
+        await waitFor(() => expect(toast.success).toHaveBeenCalledWith("2 destinations checked"));
     });
 });

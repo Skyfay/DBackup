@@ -128,4 +128,4 @@ NT_STATUS_BAD_NETWORK_NAME
 
 - [Enable Encryption](/user-guide/security/encryption)
 - [Configure Retention](/user-guide/jobs/retention)
-- [Storage Explorer](/user-guide/features/storage-explorer)
+- [Backups](/user-guide/features/backups)

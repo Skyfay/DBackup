@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { contentsOf, count, snapshotBytes, startedBy, typeLabel } from '@/components/dashboard/storage/explorer/explorer-format';
 
-describe('how the Storage Explorer words a backup', () => {
+describe('how the Backups page words a backup', () => {
     it('names who started the run, with the key or the user when the sidecar has them', () => {
         expect(startedBy({ trigger: { type: 'Scheduler' } })).toEqual({ kind: 'schedule', label: 'Schedule' });
         expect(startedBy({ trigger: { type: 'Api', actor: 'Deploy hook' } })).toEqual({ kind: 'api', label: 'API · Deploy hook' });

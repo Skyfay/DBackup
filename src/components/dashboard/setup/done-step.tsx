@@ -1,24 +1,14 @@
 "use client";
 
+import { useId } from "react";
 import Link from "next/link";
-import { Check, Loader2, PartyPopper, Play } from "lucide-react";
+import { Loader2, PartyPopper, Play } from "lucide-react";
 import { useRunJob } from "@/components/dashboard/widgets/use-run-job";
 import { Button } from "@/components/ui/button";
 import { useDateFormatter } from "@/hooks/use-date-formatter";
-import { NOTIFY_ON, entryLabel, nextRun, scheduleName, type SetupJob, type SetupState, type SetupStep, type SetupStepId } from "./setup-model";
-import { StepFrame } from "./step-frame";
+import { nextRun, type SetupJob, type SetupState } from "./setup-model";
 
-/** What a step left behind, in one line, or null for a step that was skipped. */
-function summaryOf(id: SetupStepId, state: SetupState, job: SetupJob): string | null {
-    if (id === "job") return `${job.name} · ${scheduleName(job.schedule)}`;
-    const entry = state[id];
-    if (!entry) return null;
-    if (id === "notification") return `${entryLabel(entry)} · ${job.notifyOn === NOTIFY_ON.always ? "after every run" : "when a run fails"}`;
-    return entryLabel(entry);
-}
-
-interface DoneStepProps {
-    steps: SetupStep[];
+interface DoneCardProps {
     state: SetupState;
     job: SetupJob;
     schedulerTimezone: string;
@@ -26,67 +16,47 @@ interface DoneStepProps {
     canOpenVault: boolean;
 }
 
-/** Everything the setup made, in one list, and the way to the first run. */
-export function DoneStep({ steps, state, job, schedulerTimezone, canRunJob, canOpenVault }: DoneStepProps) {
+/** The setup is done: when the first run starts and the way to it, above the parts that say what was made. */
+export function DoneCard({ state, job, schedulerTimezone, canRunJob, canOpenVault }: DoneCardProps) {
+    const titleId = useId();
     const { formatDate } = useDateFormatter();
     // Starts the job like Run now on the Overview, which opens the run when the user wants that.
     const { runJob, startingJobId } = useRunJob();
     const next = nextRun(job.schedule, schedulerTimezone);
 
     return (
-        <StepFrame
-            tone="success"
-            icon={PartyPopper}
-            title="Your first backup is set up"
-            note="Everything is saved"
-            fill={false}
-            start={
-                canOpenVault && state.encryption && (
+        <section aria-labelledby={titleId} className="rounded-xl border bg-card p-4 text-card-foreground shadow-sm md:p-5">
+            <div className="flex items-start gap-3">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-success/12 text-success" aria-hidden="true">
+                    <PartyPopper className="size-4.5" />
+                </span>
+                <div className="min-w-0">
+                    <h2 id={titleId} className="text-base font-semibold">
+                        Your first backup is set up
+                    </h2>
+                    <p className="text-sm text-muted-foreground">
+                        {next ? `The first run starts ${formatDate(next, "Pp")}.` : "Everything is saved."}
+                        {state.encryption && ` Download the recovery kit of ${state.encryption.name} in the Vault, without it the backups cannot be opened.`}
+                    </p>
+                </div>
+            </div>
+            {/* A report like the result of a bulk action, so its buttons are outline and ghost. The green reports and never colors a button. */}
+            <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+                <Button asChild variant="ghost">
+                    <Link href="/dashboard">Go to the overview</Link>
+                </Button>
+                {canOpenVault && state.encryption && (
                     <Button asChild variant="outline">
                         <Link href="/dashboard/vault">Open the Vault</Link>
                     </Button>
-                )
-            }
-            end={
-                <>
-                    <Button asChild variant="ghost">
-                        <Link href="/dashboard">Go to the overview</Link>
+                )}
+                {canRunJob && (
+                    <Button type="button" variant="outline" disabled={startingJobId !== null} onClick={() => runJob(job.id, job.name)}>
+                        {startingJobId ? <Loader2 className="animate-spin" /> : <Play />}
+                        Run it now
                     </Button>
-                    {canRunJob && (
-                        // A report like the result of a bulk action, so its buttons are outline and ghost.
-                        // The green of the head reports and never colors a button.
-                        <Button type="button" variant="outline" disabled={startingJobId !== null} onClick={() => runJob(job.id, job.name)}>
-                            {startingJobId ? <Loader2 className="animate-spin" /> : <Play />}
-                            Run it now
-                        </Button>
-                    )}
-                </>
-            }
-        >
-            <div className="px-5 pt-1 pb-5">
-                <dl className="divide-y">
-                    {steps.map((step) => {
-                        const Icon = step.icon;
-                        const summary = summaryOf(step.id, state, job);
-                        return (
-                            <div key={step.id} className="flex items-center gap-3 py-3">
-                                <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                                <div className="grid min-w-0 flex-1 gap-0.5 sm:grid-cols-[10rem_minmax(0,1fr)] sm:items-center sm:gap-3">
-                                    <dt className="text-xs text-muted-foreground sm:text-sm">{step.title}</dt>
-                                    <dd className={summary ? "truncate text-sm font-medium" : "text-sm text-muted-foreground"} title={summary ?? undefined}>
-                                        {summary ?? "Skipped"}
-                                    </dd>
-                                </div>
-                                {summary && <Check className="size-4 shrink-0 text-success" strokeWidth={2.5} aria-hidden="true" />}
-                            </div>
-                        );
-                    })}
-                </dl>
-                <p className="mt-4 text-sm text-muted-foreground">
-                    {next && `The first run starts ${formatDate(next, "Pp")}.`}
-                    {state.encryption && ` Download the recovery kit of ${state.encryption.name} in the Vault, without it the backups cannot be opened.`}
-                </p>
+                )}
             </div>
-        </StepFrame>
+        </section>
     );
 }

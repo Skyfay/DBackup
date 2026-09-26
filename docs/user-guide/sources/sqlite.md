@@ -173,7 +173,7 @@ Error: sqlite3: command not found
 
 ### Local Restore
 
-1. Go to **Storage Explorer**
+1. Go to **Backups**
 2. Find your backup file
 3. Click **Restore**
 4. Select target SQLite source

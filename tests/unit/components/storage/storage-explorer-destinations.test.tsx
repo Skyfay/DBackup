@@ -32,7 +32,7 @@ vi.mock("@/components/dashboard/storage/explorer/destination-history", () => ({ 
 const alertsOfMany = vi.hoisted(() => vi.fn());
 vi.mock("@/app/actions/storage/storage-alerts", () => ({ updateStorageAlertSettings: vi.fn().mockResolvedValue({ success: true }), updateStorageAlertsOfMany: alertsOfMany }));
 
-import { StorageClient } from "@/app/dashboard/storage/storage-client";
+import { StorageClient } from "@/app/dashboard/backups/storage-client";
 
 // The list of a filter scrolls its active option into view, which jsdom cannot do, and so do the details.
 Element.prototype.scrollIntoView = vi.fn();
@@ -71,7 +71,7 @@ function serve(data: ExplorerIndex = index) {
 
 const details = (name: string) => screen.findByRole("region", { name: `Details of ${name}` });
 
-describe("Storage Explorer, Destinations tab", () => {
+describe("Backups page, Destinations tab", () => {
     beforeEach(() => {
         search = new URLSearchParams("tab=destinations");
         replace.mockClear();
@@ -109,7 +109,7 @@ describe("Storage Explorer, Destinations tab", () => {
 
         const jobs = within(await details("NAS Backups")).getByRole("table");
         const shop = within(jobs).getByRole("row", { name: /Shop nightly/ });
-        expect(within(shop).getByRole("link", { name: /Show backups/ })).toHaveAttribute("href", "/dashboard/storage?job=job-shop&at=nas");
+        expect(within(shop).getByRole("link", { name: /Show backups/ })).toHaveAttribute("href", "/dashboard/backups?job=job-shop&at=nas");
         expect(within(shop).getByText("Keeps everything")).toBeInTheDocument();
         expect(within(within(jobs).getByRole("row", { name: /ERP invoices/ })).getByText("Kept until you delete them")).toBeInTheDocument();
     });
@@ -155,7 +155,7 @@ describe("Storage Explorer, Destinations tab", () => {
         await user.click(await screen.findByRole("button", { name: "Open menu for NAS Backups" }));
         await user.click(await screen.findByRole("menuitem", { name: "Open backups" }));
 
-        expect(push).toHaveBeenCalledWith("/dashboard/storage?at=nas");
+        expect(push).toHaveBeenCalledWith("/dashboard/backups?at=nas");
     });
 
     it("shows the alerts of a destination in the list and in its details, where they can be changed", async () => {

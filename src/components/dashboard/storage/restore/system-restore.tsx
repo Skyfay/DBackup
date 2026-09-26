@@ -41,7 +41,7 @@ export function SystemRestore({ file, destinationId, onCancel }: { file: FileInf
             const res = await restoreFromStorageAction(destinationId, file.path, undefined, options);
             if (res.success && res.executionId) {
                 toast.success("The configuration is restored in the background");
-                router.push(autoRedirectOnJobStart ? `/dashboard/history?executionId=${res.executionId}&autoOpen=true` : `/dashboard/storage?at=${encodeURIComponent(destinationId)}`);
+                router.push(autoRedirectOnJobStart ? `/dashboard/history?executionId=${res.executionId}&autoOpen=true` : `/dashboard/backups?at=${encodeURIComponent(destinationId)}`);
                 return;
             }
             toast.error(res.error || "The restore could not start");

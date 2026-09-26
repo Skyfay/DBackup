@@ -116,23 +116,37 @@ interface AdapterPickerProps {
 }
 
 /**
- * Search and list on their own, for a page that brings its own head and buttons, like the setup.
- * It fills the height it is given, and only the list scrolls.
+ * The types as tiles, for a page with room for all of them, like the Quick Setup. A search joins
+ * them once there are more than fit at a glance.
  */
-export function AdapterPicker({ adapters, onSelect }: AdapterPickerProps) {
+export function AdapterTiles({ adapters, onSelect }: AdapterPickerProps) {
     const [search, setSearch] = useState("");
-    const groups = useAdapterGroups(adapters, search);
+    const term = search.trim().toLowerCase();
+    const shown = term ? adapters.filter((adapter) => adapter.name.toLowerCase().includes(term) || (adapter.group ?? "").toLowerCase().includes(term)) : adapters;
 
     return (
-        <div className="flex min-h-0 flex-1 flex-col">
-            <div className="px-5 pt-4">
-                <AdapterSearch value={search} onChange={setSearch} />
-            </div>
-            <ScrollArea className="min-h-0 flex-1 [&>[data-slot=scroll-area-viewport]>div]:block!">
-                <div className="px-5 py-3">
-                    <AdapterGroups groups={groups} onSelect={onSelect} />
+        <div className="space-y-3">
+            {adapters.length > 12 && <AdapterSearch value={search} onChange={setSearch} />}
+            {shown.length === 0 ? (
+                <p className="py-4 text-center text-sm text-muted-foreground">No type matches your search.</p>
+            ) : (
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                    {shown.map((adapter) => (
+                        <button
+                            key={adapter.id}
+                            type="button"
+                            onClick={() => onSelect(adapter)}
+                            className="flex min-w-0 items-center gap-2.5 rounded-lg border bg-card px-3 py-2.5 text-left outline-none transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring/50"
+                        >
+                            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-muted/50">
+                                <AdapterIcon adapterId={adapter.id} className="size-4" />
+                            </span>
+                            <span className="min-w-0 flex-1 truncate text-sm font-medium">{adapter.name}</span>
+                            {adapter.beta && <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">Beta</span>}
+                        </button>
+                    ))}
                 </div>
-            </ScrollArea>
+            )}
         </div>
     );
 }

@@ -25,11 +25,11 @@ const mockFetch = vi.fn((url: string, _init?: RequestInit) => {
     return json({ success: false, error: `Unexpected ${url}` }, false);
 });
 
-function renderForm(id: string, onSaved = vi.fn(), defaultRole?: StorageRole) {
+function renderForm(id: string, onSaved = vi.fn(), defaultRole?: StorageRole, lockRole = false) {
     render(
         <Dialog open>
             <DialogContent>
-                <ConnectionForm adapter={adapter(id)} defaultRole={defaultRole} onSaved={onSaved} />
+                <ConnectionForm adapter={adapter(id)} defaultRole={defaultRole} lockRole={lockRole} onSaved={onSaved} />
             </DialogContent>
         </Dialog>
     );
@@ -173,23 +173,20 @@ describe("connection form", () => {
         expect(JSON.parse(String(init?.body))).toMatchObject({ name: "Ops channel", type: "notification", metadata: {} });
     });
 
-    it("works on a page without a dialog and hands the new connection to the page", async () => {
+    it("hands the new connection back, and names a step only when a list of types came first", async () => {
         const user = userEvent.setup();
-        const onSaved = vi.fn();
-        render(<ConnectionForm container="page" adapter={adapter("teams")} step="Step 4 of 5" onSaved={onSaved} />);
+        const onSaved = renderForm("teams");
 
-        expect(screen.getByRole("heading", { name: "Add notification channel" })).toBeInTheDocument();
-        expect(screen.getByText("Microsoft Teams · Step 4 of 5")).toBeInTheDocument();
-        // There is no dialog to close, so there is no Cancel.
-        expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+        // The Quick Setup shows the types on its page and opens the form on the one picked there.
+        expect(screen.getByRole("dialog", { name: "Add notification channel" })).toHaveAccessibleDescription("Microsoft Teams");
         await user.type(screen.getByLabelText("Name"), "Ops channel");
         await user.click(screen.getByRole("button", { name: "Create channel" }));
 
         await waitFor(() => expect(onSaved).toHaveBeenCalledWith({ id: "new-id", name: "Ops channel", adapterId: "teams" }));
     });
 
-    it("keeps a destination a destination when the page decides the role", () => {
-        render(<ConnectionForm container="page" adapter={adapter("s3-aws")} defaultRole={STORAGE_ROLES.DESTINATION} lockRole onSaved={vi.fn()} />);
+    it("keeps a destination a destination when the caller decides the role", () => {
+        renderForm("s3-aws", vi.fn(), STORAGE_ROLES.DESTINATION, true);
 
         expect(screen.queryByRole("radio", { name: /Directory source/ })).not.toBeInTheDocument();
         expect(screen.getByRole("tabpanel", { name: /Behavior/ })).toHaveTextContent("Integrity checks");

@@ -3,7 +3,7 @@ import type { RestoreMode } from "@/components/dashboard/storage/restore-scope";
 // Re-exported so the explorer's call sites keep importing their types from one place.
 export type { RestoreMode };
 
-/** A backup file as the Storage Explorer and the restore page handle it, one row of a destination's listing. */
+/** A backup file as the Backups page and the restore page handle it, one row of a destination's listing. */
 export type FileInfo = {
     name: string;
     path: string;

@@ -354,7 +354,7 @@ Required binary not found on remote server. Tried: mongodump
 
 To restore a MongoDB backup:
 
-1. Go to **Storage Explorer**
+1. Go to **Backups**
 2. Find your backup file
 3. Click **Restore**
 4. Select target database configuration

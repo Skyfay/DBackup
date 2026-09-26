@@ -95,4 +95,4 @@ Ensure `Files.ReadWrite.All` permission is granted, the OAuth authorization is c
 
 - [Enable Encryption](/user-guide/security/encryption)
 - [Configure Retention](/user-guide/jobs/retention)
-- [Storage Explorer](/user-guide/features/storage-explorer)
+- [Backups](/user-guide/features/backups)

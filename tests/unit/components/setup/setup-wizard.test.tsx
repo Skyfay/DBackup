@@ -18,21 +18,24 @@ vi.mock("@/app/actions/backup/encryption", () => ({
 }));
 
 // The form of the Connections page has tests of its own. Here it only has to save or go back.
-vi.mock("@/components/adapter/connection-form", () => ({
-    ConnectionForm: ({ adapter, step, lockRole, onBack, onSaved }: {
-        adapter: AdapterDefinition;
-        step: string;
-        lockRole?: boolean;
-        onBack: () => void;
-        onSaved: (saved: SavedConnection) => void;
-    }) => (
-        <div>
-            <p>{`Form for ${adapter.name} · ${step}${lockRole ? " · role locked" : ""}`}</p>
-            <button type="button" onClick={onBack}>Change type</button>
-            <button type="button" onClick={() => onSaved({ id: `${adapter.id}-1`, name: `My ${adapter.name}`, adapterId: adapter.id })}>Save connection</button>
-        </div>
-    ),
-}));
+vi.mock("@/components/adapter/connection-form", async () => {
+    const { DialogDescription, DialogTitle } = await import("@/components/ui/dialog");
+    return {
+        ConnectionForm: ({ adapter, lockRole, onBack, onSaved }: {
+            adapter: AdapterDefinition;
+            lockRole?: boolean;
+            onBack: () => void;
+            onSaved: (saved: SavedConnection) => void;
+        }) => (
+            <div>
+                <DialogTitle>{`Form for ${adapter.name}${lockRole ? " · role locked" : ""}`}</DialogTitle>
+                <DialogDescription>The connection form</DialogDescription>
+                <button type="button" onClick={onBack}>Change type</button>
+                <button type="button" onClick={() => onSaved({ id: `${adapter.id}-1`, name: `My ${adapter.name}`, adapterId: adapter.id })}>Save connection</button>
+            </div>
+        ),
+    };
+});
 
 const json = (body: unknown, ok = true) => Promise.resolve({ ok, json: () => Promise.resolve(body) } as Response);
 
@@ -64,7 +67,18 @@ function renderWizard(rights: { vault?: boolean; notification?: boolean } = {}, 
     );
 }
 
-const rail = () => within(screen.getByRole("navigation", { name: "Setup steps" }));
+/** A part that is not open, found by its title. */
+const part = (title: string) => within(screen.getByRole("region", { name: title }));
+const preview = () => within(screen.getByRole("complementary", { name: "Your first backup" }));
+const openPart = (question: string) => screen.getByRole("heading", { level: 2, name: question });
+
+/** Takes the CRM database that exists, then adds a local destination. */
+async function pickCrmAndLocal(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(await screen.findByRole("radio", { name: /CRM/ }));
+    await user.click(screen.getByRole("button", { name: "Use this database" }));
+    await user.click(screen.getByRole("button", { name: /^Local Filesystem/ }));
+    await user.click(screen.getByRole("button", { name: "Save connection" }));
+}
 
 describe("quick setup", () => {
     beforeEach(() => {
@@ -73,38 +87,48 @@ describe("quick setup", () => {
         push.mockClear();
         createEncryptionProfile.mockReset().mockResolvedValue({ success: true, data: { id: "key-1" } });
         global.fetch = mockFetch as unknown as typeof fetch;
+        Element.prototype.scrollIntoView = vi.fn();
     });
 
-    it("walks from the database to the finished job, with each part named on the left", async () => {
+    it("walks from the database to the finished job, one part under the other", async () => {
         const user = userEvent.setup();
         renderWizard();
 
-        expect(screen.getByText("What do you want to back up? · Step 1 of 5")).toBeInTheDocument();
+        expect(openPart("What do you want to back up?")).toBeInTheDocument();
+        expect(part("Destination").getByText("Where the backups go")).toBeInTheDocument();
+        expect(preview().getByText("What to back up")).toBeInTheDocument();
         await user.click(screen.getByRole("button", { name: /^MySQL/ }));
-        expect(screen.getByText("Form for MySQL · Step 1 of 5")).toBeInTheDocument();
+        expect(await screen.findByRole("dialog", { name: "Form for MySQL" })).toBeInTheDocument();
         await user.click(screen.getByRole("button", { name: "Save connection" }));
 
-        // Saving moves on without a screen in between, and the rail shows what was made.
-        expect(screen.getByText("Where should the backups go? · Step 2 of 5")).toBeInTheDocument();
-        expect(rail().getByRole("button", { name: /Database.*My MySQL · MySQL.*done/ })).toBeInTheDocument();
+        // Saving opens the next part without a screen in between, and the part before keeps what it made.
+        expect(openPart("Where should the backups go?")).toBeInTheDocument();
+        expect(part("Database").getByText("My MySQL · MySQL")).toBeInTheDocument();
+        expect(preview().getByText("My MySQL · MySQL")).toBeInTheDocument();
         await user.click(screen.getByRole("button", { name: /^Local Filesystem/ }));
         // A storage connection added here is a destination, so the form does not ask.
-        expect(screen.getByText("Form for Local Filesystem · Step 2 of 5 · role locked")).toBeInTheDocument();
+        expect(await screen.findByRole("dialog", { name: "Form for Local Filesystem · role locked" })).toBeInTheDocument();
         await user.click(screen.getByRole("button", { name: "Save connection" }));
 
         await user.click(screen.getByRole("button", { name: "Create key" }));
         expect(createEncryptionProfile).toHaveBeenCalledWith("Backup key");
-        await user.click(await screen.findByRole("button", { name: "Skip" }));
+        expect(openPart("Who hears about a run?")).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Skip" }));
 
-        expect(rail().getByRole("button", { name: /Notifications.*Skipped/ })).toBeInTheDocument();
+        expect(part("Notifications").getByText("Skipped, add one later")).toBeInTheDocument();
         expect(screen.getByLabelText("Name")).toHaveValue("My MySQL backup");
         // The cards say when the scheduler fires, in the time zone and the time format of the user.
         expect(screen.getByRole("radio", { name: /Every night/ })).toBeChecked();
         expect(screen.getByText("At 03:00")).toBeInTheDocument();
         expect(screen.getByText("Sunday at 03:00")).toBeInTheDocument();
+        // The backup beside the parts follows the schedule while it is picked.
+        expect(preview().getByText("Backed up every night")).toBeInTheDocument();
+        await user.click(screen.getByRole("radio", { name: /Every week/ }));
+        expect(preview().getByText("Backed up every week")).toBeInTheDocument();
+        await user.click(screen.getByRole("radio", { name: /Every night/ }));
         await user.click(screen.getByRole("radio", { name: /Some databases/ }));
         await user.click(await screen.findByRole("checkbox", { name: "shop" }));
-        await user.click(screen.getByRole("button", { name: "Create backup job" }));
+        await user.click(screen.getByRole("button", { name: "Create the job" }));
 
         expect(await screen.findByText("Your first backup is set up")).toBeInTheDocument();
         expect(posted("/api/jobs")).toMatchObject({
@@ -117,8 +141,9 @@ describe("quick setup", () => {
             notificationIds: [],
         });
         expect(screen.getByText(/^The first run starts \d{4}-\d{2}-\d{2} 03:00\./)).toBeInTheDocument();
-        // Once the job exists, the steps can no longer be opened again.
-        expect(rail().getByRole("button", { name: /Database/ })).toBeDisabled();
+        expect(part("Backup job").getByText("My MySQL backup · every night")).toBeInTheDocument();
+        // Once the job exists, the parts can no longer be changed.
+        expect(screen.queryByRole("button", { name: "Change" })).not.toBeInTheDocument();
 
         // Like Run now on the Overview, it opens the new run unless the user switched that off.
         await user.click(screen.getByRole("button", { name: "Run it now" }));
@@ -126,21 +151,24 @@ describe("quick setup", () => {
         expect(posted("/api/jobs/job-1/run")).toEqual({});
     });
 
-    it("takes a connection that exists instead of a new one, and offers it again on the way back", async () => {
+    it("takes a connection that exists instead of a new one, and offers it again when the part is changed", async () => {
         databases = [{ id: "db-9", name: "CRM", adapterId: "postgres", type: "database", config: JSON.stringify({ host: "db01.internal", port: 5432 }) }];
         const user = userEvent.setup();
         renderWizard({ vault: false, notification: false });
 
-        await user.click(await screen.findByRole("button", { name: "Use existing" }));
-        expect(screen.getByText("Pick one you already have · Step 1 of 3")).toBeInTheDocument();
         const use = screen.getByRole("button", { name: "Use this database" });
         expect(use).toBeDisabled();
-        await user.click(screen.getByRole("radio", { name: /CRM.*PostgreSQL · db01\.internal:5432/ }));
+        await user.click(await screen.findByRole("radio", { name: /CRM.*PostgreSQL · db01\.internal:5432/ }));
         await user.click(use);
 
-        expect(rail().getByRole("button", { name: /Database.*CRM · PostgreSQL/ })).toBeInTheDocument();
-        await user.click(screen.getByRole("button", { name: "Back" }));
+        expect(part("Database").getByText("CRM · PostgreSQL")).toBeInTheDocument();
+        expect(openPart("Where should the backups go?")).toBeInTheDocument();
+        await user.click(part("Database").getByRole("button", { name: "Change" }));
         expect(await screen.findByRole("radio", { name: /CRM/ })).toBeChecked();
+        // The part that was open waits below, and taking the database again goes back to it.
+        expect(part("Destination").getByRole("button", { name: "Open" })).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Use this database" }));
+        expect(openPart("Where should the backups go?")).toBeInTheDocument();
     });
 
     it("names a new key so it does not clash with one the Vault already holds, or takes that one", async () => {
@@ -148,44 +176,35 @@ describe("quick setup", () => {
         const user = userEvent.setup();
         renderWizard({ notification: false }, [{ id: "key-9", name: "Backup key", detail: "" }]);
 
-        await user.click(await screen.findByRole("button", { name: "Use existing" }));
-        await user.click(screen.getByRole("radio", { name: /CRM/ }));
-        await user.click(screen.getByRole("button", { name: "Use this database" }));
-        await user.click(screen.getByRole("button", { name: /^Local Filesystem/ }));
-        await user.click(screen.getByRole("button", { name: "Save connection" }));
+        await pickCrmAndLocal(user);
 
         expect(screen.getByLabelText("Name")).toHaveValue("Backup key 2");
-        await user.click(screen.getByRole("button", { name: "Use existing" }));
         await user.click(screen.getByRole("radio", { name: /Backup key/ }));
         await user.click(screen.getByRole("button", { name: "Use this key" }));
 
-        expect(rail().getByRole("button", { name: /Encryption.*Backup key.*done/ })).toBeInTheDocument();
+        expect(part("Encryption").getByText("Backup key")).toBeInTheDocument();
         expect(createEncryptionProfile).not.toHaveBeenCalled();
     });
 
-    it("keeps the job as typed while an earlier step is open, and refuses a schedule it cannot read", async () => {
+    it("keeps the job as typed while an earlier part is open, and refuses a schedule it cannot read", async () => {
         databases = [{ id: "db-9", name: "CRM", adapterId: "postgres", type: "database", config: "{}" }];
         const user = userEvent.setup();
         renderWizard({ vault: false, notification: false });
 
-        await user.click(await screen.findByRole("button", { name: "Use existing" }));
-        await user.click(screen.getByRole("radio", { name: /CRM/ }));
-        await user.click(screen.getByRole("button", { name: "Use this database" }));
-        await user.click(screen.getByRole("button", { name: /^Local Filesystem/ }));
-        await user.click(screen.getByRole("button", { name: "Save connection" }));
+        await pickCrmAndLocal(user);
 
         const name = screen.getByLabelText("Name");
         await user.clear(name);
         await user.type(name, "CRM nightly");
-        await user.click(rail().getByRole("button", { name: /Backup destination/ }));
-        await user.click(rail().getByRole("button", { name: /Backup job/ }));
+        await user.click(part("Destination").getByRole("button", { name: "Change" }));
+        await user.click(part("Backup job").getByRole("button", { name: "Open" }));
         expect(screen.getByLabelText("Name")).toHaveValue("CRM nightly");
 
         await user.click(screen.getByRole("radio", { name: /Custom/ }));
         const cron = screen.getByLabelText("Cron expression");
         await user.clear(cron);
         await user.type(cron, "every night");
-        await user.click(screen.getByRole("button", { name: "Create backup job" }));
+        await user.click(screen.getByRole("button", { name: "Create the job" }));
 
         expect(await screen.findByText("Enter a cron expression with five parts, like 0 3 * * *.")).toBeInTheDocument();
         expect(posted("/api/jobs")).toBeUndefined();

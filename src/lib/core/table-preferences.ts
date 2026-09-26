@@ -34,7 +34,7 @@ export const VIEW_MODES = ["table", "cards", "split", "timeline", "lines"] as co
 export const ViewModeSchema = z.enum(VIEW_MODES);
 export type ViewMode = z.infer<typeof ViewModeSchema>;
 
-/** The views every list page has. Only the Storage Explorer adds the timeline, and the restore page the lines. */
+/** The views every list page has. Only the Backups page adds the timeline, and the restore page the lines. */
 export type ListViewMode = Exclude<ViewMode, "timeline" | "lines">;
 
 /** A saved view for a page without a timeline or lines, which shows the table instead. */

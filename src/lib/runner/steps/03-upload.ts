@@ -187,7 +187,7 @@ export async function stepUpload(ctx: RunnerContext) {
                     ...(ctx.chain.baseArchive ? { base: ctx.chain.baseArchive } : {}),
                     index: ctx.chain.index,
                 },
-                // The complete snapshot size, so the Storage Explorer can show what a
+                // The complete snapshot size, so the Backups page can show what a
                 // snapshot actually contains rather than only what this archive stores.
                 logicalSize: ctx.metadata?.logicalSize,
             }

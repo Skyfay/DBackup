@@ -77,7 +77,7 @@ FTP, SMB, SFTP and rsync deliberately declare nothing. FTP dials a control conne
 
 ### Backups of another job
 
-`05-retention.ts` hands the policy only the backups whose `jobId` is the running job's or unknown. The folder is named after the job, so a job named like a deleted one lists the backups the deleted job left there, and without the check its policy would count them and delete them. A backup without a sidecar, with an unreadable one or without a `jobId` keeps counting as the job's own, so the check only ever keeps more than before. The Storage Explorer and the retention preview of its timeline group backups by the same `jobId`.
+`05-retention.ts` hands the policy only the backups whose `jobId` is the running job's or unknown. The folder is named after the job, so a job named like a deleted one lists the backups the deleted job left there, and without the check its policy would count them and delete them. A backup without a sidecar, with an unreadable one or without a `jobId` keeps counting as the job's own, so the check only ever keeps more than before. The Backups page and the retention preview of its timeline group backups by the same `jobId`.
 
 ### Former folders of a renamed job
 

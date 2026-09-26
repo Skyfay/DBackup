@@ -373,7 +373,7 @@ export function ConfigBackupSettings({ initialSettings, storageAdapters, encrypt
                                 <br />
                                 <span className="text-xs opacity-75">
                                     Note: For selective restoration (e.g. only restoring Settings or Users),
-                                    please use the <b>Storage Explorer</b> instead.
+                                    please use the <b>Backups</b> page instead.
                                 </span>
                             </p>
 

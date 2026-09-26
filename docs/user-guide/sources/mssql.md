@@ -503,7 +503,7 @@ Each database is backed up to its own `.bak` and stored as one entry of the back
 
 To restore a SQL Server backup:
 
-1. Go to **Storage Explorer**
+1. Go to **Backups**
 2. Find your backup
 3. Click **Restore**
 4. Select target database configuration

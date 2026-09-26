@@ -34,7 +34,7 @@ interface RestoreTimelineProps {
 
 /**
  * Every backup of the job over a month as a small strip, the one being restored marked. A click on
- * another one restores that one instead, without going back to the Storage Explorer.
+ * another one restores that one instead, without going back to the Backups page.
  */
 export function RestoreTimeline({ file, destinationId, mode }: RestoreTimelineProps) {
     const router = useRouter();
@@ -58,7 +58,7 @@ export function RestoreTimeline({ file, destinationId, mode }: RestoreTimelinePr
         const copy = copyOf(run, destinationId);
         if (!copy?.file) return;
         const scope = mode && mode !== "all" ? `&mode=${mode}` : "";
-        router.push(`/dashboard/storage/restore?destinationId=${encodeURIComponent(copy.destinationId)}&file=${encodeURIComponent(encodeUrlPayload(copy.file))}${scope}`);
+        router.push(`/dashboard/backups/restore?destinationId=${encodeURIComponent(copy.destinationId)}&file=${encodeURIComponent(encodeUrlPayload(copy.file))}${scope}`);
     };
 
     const label = (

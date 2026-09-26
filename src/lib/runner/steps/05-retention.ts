@@ -100,7 +100,7 @@ async function applyRetentionForDestination(ctx: RunnerContext, dest: Destinatio
 
     // A backup whose sidecar names another job is not this job's to delete. A job named like a
     // deleted one writes into the same folder, and what the deleted job left there stays until
-    // someone deletes it in the Storage Explorer. A backup without a sidecar or a job id counts
+    // someone deletes it on the Backups page. A backup without a sidecar or a job id counts
     // as this job's, as it always did, so this only ever keeps more.
     const jobId = ctx.job!.id;
     const foreign = listed.filter(f => f.jobId !== undefined && f.jobId !== jobId);

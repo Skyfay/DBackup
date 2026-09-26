@@ -114,7 +114,7 @@ export function DestinationJobs({ destination, entries, destinations, canDelete,
                 return (
                     <div className="flex justify-end">
                         <Button variant="ghost" size="sm" asChild>
-                            <Link href={`/dashboard/storage?job=${encodeURIComponent(entry.job.key)}&at=${encodeURIComponent(destination.id)}`}>
+                            <Link href={`/dashboard/backups?job=${encodeURIComponent(entry.job.key)}&at=${encodeURIComponent(destination.id)}`}>
                                 Show backups
                                 <ArrowRight />
                             </Link>

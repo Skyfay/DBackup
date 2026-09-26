@@ -36,7 +36,7 @@ export function RestoreHead({ file, destinationId, scopeLabel, mode, onBack }: R
 
     return (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-            <Button variant="outline" size="icon" className="size-8 shrink-0" aria-label="Back to the Storage Explorer" onClick={onBack}>
+            <Button variant="outline" size="icon" className="size-8 shrink-0" aria-label="Back to Backups" onClick={onBack}>
                 <ArrowLeft />
             </Button>
             <span className="flex size-11 shrink-0 items-center justify-center rounded-lg border bg-muted" aria-hidden="true">

@@ -19,19 +19,25 @@ interface AddConnectionDialogsProps {
     /** Names what is added, like "Add destination". */
     title: string;
     onSaved: (saved: SavedConnection) => void;
+    /**
+     * Opens on the form of this type, for a place that shows the types itself, like the Quick
+     * Setup. Back then closes the form instead of going to the list of types.
+     */
+    start?: AdapterDefinition | null;
 }
 
 /**
  * Adding a connection from somewhere else than the Connections page, like a field of the job
  * form: the list of types first, then the connection form, the same two dialogs as on that page.
  */
-export function AddConnectionDialogs({ open, onOpenChange, type, role, title, onSaved }: AddConnectionDialogsProps) {
-    const [adapter, setAdapter] = useState<AdapterDefinition | null>(null);
+export function AddConnectionDialogs({ open, onOpenChange, type, role, title, onSaved, start = null }: AddConnectionDialogsProps) {
+    const [picked, setPicked] = useState<AdapterDefinition | null>(null);
+    const adapter = start ?? picked;
     // A type that cannot serve the role is left out, the server would refuse it anyway.
     const adapters = ADAPTER_DEFINITIONS.filter((definition) => definition.type === type && (!role || supportsStorageRole(definition.supportedRoles, role)));
 
     const close = () => {
-        setAdapter(null);
+        setPicked(null);
         onOpenChange(false);
     };
 
@@ -39,7 +45,7 @@ export function AddConnectionDialogs({ open, onOpenChange, type, role, title, on
         <>
             <Dialog open={open && !adapter} onOpenChange={(next) => !next && close()}>
                 <DialogContent tone="create" showCloseButton={false} className={cn(DIALOG_SURFACE, "sm:max-w-lg")}>
-                    <AdapterPickerDialog adapters={adapters} title={title} onSelect={setAdapter} />
+                    <AdapterPickerDialog adapters={adapters} title={title} onSelect={setPicked} />
                 </DialogContent>
             </Dialog>
             <Dialog open={open && !!adapter} onOpenChange={(next) => !next && close()}>
@@ -49,7 +55,8 @@ export function AddConnectionDialogs({ open, onOpenChange, type, role, title, on
                             adapter={adapter}
                             defaultRole={role}
                             lockRole={!!role}
-                            onBack={() => setAdapter(null)}
+                            step={start ? undefined : "Step 2 of 2"}
+                            onBack={() => (start ? close() : setPicked(null))}
                             onSaved={(saved) => {
                                 close();
                                 if (saved) onSaved(saved);

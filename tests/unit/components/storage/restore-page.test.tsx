@@ -22,7 +22,7 @@ vi.mock("@/components/dashboard/storage/archive-file-tree", () => ({ ArchiveFile
 vi.mock("@/components/dashboard/storage/folder-picker-dialog", () => ({ FolderPickerDialog: () => null }));
 vi.mock("@/components/dashboard/storage/restore/redis-guide", () => ({ RedisGuide: () => <p>The Redis guide</p> }));
 
-import { RestoreClient } from "@/app/dashboard/storage/restore/restore-client";
+import { RestoreClient } from "@/app/dashboard/backups/restore/restore-client";
 
 // cmdk scrolls the highlighted row of a list into view, which jsdom cannot do.
 Element.prototype.scrollIntoView = vi.fn();

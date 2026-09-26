@@ -134,7 +134,7 @@ export const AVAILABLE_PERMISSIONS = [
   { id: PERMISSIONS.JOBS.EXECUTE, label: "Execute Jobs Manually", category: "Jobs" },
 
   // Storage & History
-  { id: PERMISSIONS.STORAGE.READ, label: "Access Storage Explorer", category: "Storage" },
+  { id: PERMISSIONS.STORAGE.READ, label: "Access Backups", category: "Storage" },
   { id: PERMISSIONS.STORAGE.DOWNLOAD, label: "Download Backups", category: "Storage" },
   { id: PERMISSIONS.STORAGE.RESTORE, label: "Restore Backups", category: "Storage" },
   { id: PERMISSIONS.STORAGE.DELETE, label: "Delete Backups", category: "Storage" },

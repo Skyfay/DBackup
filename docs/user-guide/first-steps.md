@@ -12,15 +12,15 @@ Once logged in, open **Quick Setup** in the sidebar to set up your first backup 
 
 ## Quick Setup
 
-The steps are listed on the left, and each one shows what it created as soon as it is done:
+The setup is one page. Its parts sit one under the other, the open one in full and the others in a line with what they made. Beside them, the backup they add up to fills in as you go: the database, when it runs, where the backups go, the key and the channel.
 
-1. **Database** - pick the type, then fill in the same form as on the Connections page. Saving it moves on to the next step.
-2. **Backup destination** - the same for the place the backups go.
-3. **Encryption** (optional) - create a key in the Vault, or skip the step.
-4. **Notifications** (optional) - add a channel that reports the runs, or skip the step.
+1. **Database** - pick a database you already have, or pick a type to add a new one in the same dialog as on the Connections page. Saving it opens the next part.
+2. **Destination** - the same for the place the backups go.
+3. **Encryption** (optional) - take a key from the Vault or create one, or skip the part.
+4. **Notifications** (optional) - take or add a channel that reports the runs, or skip the part.
 5. **Backup job** - name the job, pick when it runs (every hour, every night, every week or a cron expression) and whether it backs up all databases of the server or only some.
 
-Every step can take a connection or a key you already have instead, with **Use existing**. The times on the schedule cards are shown in your own time zone. The last page lists everything that was set up, says when the first run starts and can start it right away with **Run it now**.
+**Change** opens a part that is done again, and what you typed into the job stays while you do. The times on the schedule cards are shown in your own time zone. Once the job is created, a card on top says when the first run starts and can start it right away with **Run it now**.
 
 The job keeps the last 10 backups, which you can change later on the job. Encryption and notifications only appear for users who may create them.
 
@@ -135,7 +135,7 @@ The execution view shows:
 After completion:
 
 1. Check **History** for execution details
-2. Browse **Storage Explorer** to see your backup file
+2. Browse **Backups** to see your backup file
 3. Verify the `.meta.json` sidecar file was created
 
 ## Step 5: Set Up Notifications (Optional)
@@ -165,5 +165,5 @@ Congratulations! You've created your first automated backup. Now explore:
 
 - [Encryption Vault](/user-guide/security/encryption) - Secure your backups
 - [Retention Policies](/user-guide/jobs/retention) - Automatic cleanup
-- [Storage Explorer](/user-guide/features/storage-explorer) - Browse and manage backups
+- [Backups](/user-guide/features/backups) - Browse and manage backups
 - [Restore](/user-guide/features/restore) - Restore from backups

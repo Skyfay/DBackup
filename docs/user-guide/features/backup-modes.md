@@ -114,7 +114,7 @@ knowing anything about DBackup.
 
 ## Restoring
 
-Every snapshot is a complete, restorable point in time - the Storage Explorer shows one row
+Every snapshot is a complete, restorable point in time - the Backups page shows one row
 per snapshot with its full size, not just what that archive stores. Restoring reads from
 whichever archives of the chain hold the data, automatically.
 
@@ -212,6 +212,6 @@ changes, a chunk-based tool is the better fit.
 
 ## Next Steps
 
-- [Storage Explorer](/user-guide/features/storage-explorer) - browsing and restoring files
+- [Backups](/user-guide/features/backups) - browsing and restoring files
 - [Retention Policies](/user-guide/features/templates) - configuring what is kept
 - [Recovery Kit](/user-guide/security/recovery-kit) - restoring without DBackup

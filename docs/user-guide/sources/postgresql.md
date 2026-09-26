@@ -340,7 +340,7 @@ dnf install postgresql
 
 To restore a PostgreSQL backup:
 
-1. Go to **Storage Explorer**
+1. Go to **Backups**
 2. Find your backup file
 3. Click **Restore**
 4. Select target database

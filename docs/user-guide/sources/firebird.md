@@ -152,6 +152,6 @@ Running restore of a newer database version on an older server is not recommende
 
 ## See Also
 
-- [Storage Explorer](/user-guide/features/storage-explorer) - Browse and download backups
+- [Backups](/user-guide/features/backups) - Browse and download backups
 - [Restore Guide](/user-guide/features/restore) - General restore documentation
 - [Encryption](/user-guide/security/encryption) - Encrypting your backups

@@ -50,7 +50,7 @@ const execution = (path?: string) =>
 const check = (body: unknown) =>
     refresh(new NextRequest("http://localhost/api/storage/explorer/refresh", { method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json" } }));
 
-describe("Storage Explorer API", () => {
+describe("Backups page API", () => {
     beforeEach(() => {
         mocks.getIndex.mockResolvedValue({ destinations: [], jobs: [] });
         mocks.getBackups.mockResolvedValue({ runs: [] });

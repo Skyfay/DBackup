@@ -63,7 +63,7 @@ features:
     title: Database Explorer
     details: Browse databases, tables, and live data directly from DBackup. Server-side pagination, full-text search, schema inspection, deep-link URLs, and database version history tracking - for all 8 database engines.
   - icon: 🔍
-    title: Storage Explorer
+    title: Backups page
     details: Browse backup files across all destinations, inspect metadata, download files, or generate direct download links.
   - icon: 🚨
     title: Storage Monitoring & Alerts

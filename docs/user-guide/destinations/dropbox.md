@@ -66,4 +66,4 @@ Dropbox free tier is 2 GB. Use [Retention Policies](/user-guide/jobs/retention) 
 
 - [Enable Encryption](/user-guide/security/encryption)
 - [Configure Retention](/user-guide/jobs/retention)
-- [Storage Explorer](/user-guide/features/storage-explorer)
+- [Backups](/user-guide/features/backups)

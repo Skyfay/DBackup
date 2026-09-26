@@ -11,7 +11,7 @@ export type ExplorerTab = "backups" | "destinations";
 export type AddressUpdate = Record<string, string | string[] | null>;
 
 /**
- * What the address of the Storage Explorer asks for: the tab, the filters of the backups and the
+ * What the address of the Backups page asks for: the tab, the filters of the backups and the
  * destination whose details show. A link to the backups of a job may name the job by its name, and
  * older links name one of its destinations beside it, which becomes the destination filter. A
  * destination on its own is the one whose details show in the Destinations tab.
@@ -45,11 +45,11 @@ export function useExplorerAddress(jobs: ExplorerJob[], jobsByKey: Map<string, E
             else if (value !== null) params.set(key, value);
         }
         const query = params.toString();
-        router.replace(query ? `/dashboard/storage?${query}` : "/dashboard/storage", { scroll: false });
+        router.replace(query ? `/dashboard/backups?${query}` : "/dashboard/backups", { scroll: false });
     }, [router, searchParams]);
 
     // A new entry in the history, so Back returns to the destination.
-    const showBackupsAt = useCallback((destinationId: string) => router.push(`/dashboard/storage?at=${encodeURIComponent(destinationId)}`), [router]);
+    const showBackupsAt = useCallback((destinationId: string) => router.push(`/dashboard/backups?at=${encodeURIComponent(destinationId)}`), [router]);
 
     return { tab, scope, picked, setParams, showBackupsAt };
 }

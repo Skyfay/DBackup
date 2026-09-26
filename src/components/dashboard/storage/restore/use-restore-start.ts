@@ -34,7 +34,7 @@ interface Options {
 
 /**
  * Starts a restore. It runs in the background, so success moves on to its run in History or back
- * to the Storage Explorer. A start the server turns down keeps the page and says why.
+ * to the Backups page. A start the server turns down keeps the page and says why.
  */
 export function useRestoreStart(options: Options) {
     const { file, destinationId, scope, sourceType, target, choices, classicName, folders, excludePatterns, keyOverrideRef } = options;
@@ -80,7 +80,7 @@ export function useRestoreStart(options: Options) {
                 toast.success("Restore started in the background");
                 router.push(autoRedirectOnJobStart && data.executionId
                     ? `/dashboard/history?executionId=${data.executionId}&autoOpen=true`
-                    : `/dashboard/storage?at=${encodeURIComponent(destinationId)}`);
+                    : `/dashboard/backups?at=${encodeURIComponent(destinationId)}`);
                 return;
             }
             const error = data.error || "The restore could not start";

@@ -445,7 +445,7 @@ const SFTPAdapter: StorageAdapter = {
 
 ## The `read()` Method
 
-The optional `read()` method is crucial for the Storage Explorer. It allows reading small text files (like `.meta.json`) without downloading to disk:
+The optional `read()` method is crucial for the Backups page. It allows reading small text files (like `.meta.json`) without downloading to disk:
 
 ```typescript
 async read(config, path) {
@@ -543,7 +543,7 @@ export const WebDAVAdapter: StorageAdapter = {
 ```
 
 ::: tip read() method
-The `read()` method is used by the Storage Explorer to read `.meta.json` sidecar files. If not implemented, the system falls back to download → read → delete, which is slower.
+The `read()` method is used by the Backups page to read `.meta.json` sidecar files. If not implemented, the system falls back to download → read → delete, which is slower.
 :::
 
 ::: tip test() method

@@ -39,18 +39,31 @@ export const EMPTY_SETUP: SetupState = {
 export interface SetupStep {
     id: SetupStepId;
     title: string;
-    /** What the rail says until the step is done. */
+    /** The heading of the part while it is open. */
+    question: string;
+    /** One line under the heading, what the part is for. */
+    note: string;
+    /** What a part still to come says. */
     todo: string;
     icon: LucideIcon;
     optional?: boolean;
 }
 
 const STEPS: SetupStep[] = [
-    { id: "database", title: "Database", todo: "What to back up", icon: Database },
-    { id: "destination", title: "Backup destination", todo: "Where backups go", icon: HardDrive },
-    { id: "encryption", title: "Encryption", todo: "Optional", icon: Lock, optional: true },
-    { id: "notification", title: "Notifications", todo: "Optional", icon: Bell, optional: true },
-    { id: "job", title: "Backup job", todo: "Schedule and what goes in", icon: CalendarClock },
+    { id: "database", title: "Database", question: "What do you want to back up?", note: "The server whose databases go into the backup", todo: "What to back up", icon: Database },
+    {
+        id: "destination", title: "Destination", question: "Where should the backups go?", note: "A destination can hold the backups of many jobs", todo: "Where the backups go",
+        icon: HardDrive,
+    },
+    {
+        id: "encryption", title: "Encryption", question: "Should the backups be encrypted?", note: "With a key from the Vault, before they leave DBackup", todo: "Optional, a key from the Vault",
+        icon: Lock, optional: true,
+    },
+    {
+        id: "notification", title: "Notifications", question: "Who hears about a run?", note: "A channel DBackup reports the runs to", todo: "Optional, who hears about a run",
+        icon: Bell, optional: true,
+    },
+    { id: "job", title: "Backup job", question: "When does it run, and what goes in?", note: "The job ties the parts above together", todo: "When it runs and what goes in", icon: CalendarClock },
 ];
 
 /** The steps this user can do. Encryption and notifications need the right to create them. */

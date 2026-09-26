@@ -24,7 +24,7 @@ export async function lockBackup(destinationId: string, filePath: string) {
 
     try {
         const locked = await storageService.toggleLock(destinationId, filePath);
-        revalidatePath(`/dashboard/storage`);
+        revalidatePath(`/dashboard/backups`);
         return { success: true, locked };
     } catch (error: unknown) {
         log.error("Failed to lock backup", { destinationId, filePath }, wrapError(error));

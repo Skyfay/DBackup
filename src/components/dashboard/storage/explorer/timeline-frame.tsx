@@ -7,7 +7,7 @@ import { daysEnding, partsOf, shiftDay, type DayKey } from "./timeline-model";
 import { AHEAD } from "./timeline-nav";
 
 /**
- * What the timelines of the Storage Explorer share: as many day columns as fit, the days in view
+ * What the timelines of the Backups page share: as many day columns as fit, the days in view
  * with the ways through them, the bands behind the rows and the row of days on top.
  */
 

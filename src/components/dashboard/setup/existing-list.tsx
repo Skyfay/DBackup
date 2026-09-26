@@ -65,8 +65,8 @@ interface ExistingListProps {
 }
 
 /**
- * The entries to pick from, one row each. A click marks a row in the tone of picking, and the
- * button in the footer takes it, the way the file browser works.
+ * The entries to pick from, one row each. A click marks a row, and the button at the foot of the
+ * part takes it, the way the file browser works.
  */
 export function ExistingList({ entries, value, onValueChange, label }: ExistingListProps) {
     const id = useId();

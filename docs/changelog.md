@@ -5,7 +5,7 @@ All notable changes to DBackup are documented here.
 ## vNEXT
 *Release: In Progress*
 
-> ⚠️ **Breaking:** Retention now follows a renamed job into the folder of its old name, where its backups stayed untouched until now. The first run of such a job after updating removes the backups there that its policy no longer keeps, all at once. Locked backups stay, so lock anything in the old folder you want to keep before updating. The Storage Explorer lists those backups under the job, and the retention step of that first run names every folder it looked at.
+> ⚠️ **Breaking:** Retention now follows a renamed job into the folder of its old name, where its backups stayed untouched until now. The first run of such a job after updating removes the backups there that its policy no longer keeps, all at once. Locked backups stay, so lock anything in the old folder you want to keep before updating. The Backups page lists those backups under the job, and the retention step of that first run names every folder it looked at.
 
 ### ✨ Features
 
@@ -18,8 +18,8 @@ All notable changes to DBackup are documented here.
 - **jobs**: The jobs table shows each job's last run with its error or live progress, its last 12 runs as bars, where it backs up to and when it runs next. The Jobs page can also show its jobs as cards with the way of each backup, and phones always get the cards.
 - **jobs**: A click on a job opens a panel with its live progress or last error, the length of its latest runs, its success rate over 30 days and what it backs up to where. Its actions open from there, from the button at the end of the row and with a right click on the row.
 - **jobs**: The file names of a job warn when two runs of its schedule would get the same name, which replaces the earlier backup at every destination, and offer a template with the time. The field also shows a name the job will write.
-- **storage**: The Storage Explorer lists every backup of every job with the destinations that hold a copy and marks a missing copy, filtered by job, by destination, by who started it and by state, and shown as a table, as a timeline of every job by day with the runs its schedule plans for the next week, or as cards on a phone. The Destinations tab lists every destination with its status, size, growth and alerts as a table or a timeline by day, with the details of a picked one under it showing its size over time, its alerts and every job with backups there.
-- **storage**: A click on a backup in the Storage Explorer opens its copies with whether their destination answers right now, its chain, what it holds and its last integrity check. The backups of a deleted job stay listed and can be deleted together, and the page tells how old the list of each destination is and compares it with the storage on request.
+- **storage**: The Backups page lists every backup of every job with the destinations that hold a copy and marks a missing copy, filtered by job, by destination, by who started it and by state, and shown as a table, as a timeline of every job by day with the runs its schedule plans for the next week, or as cards on a phone. The Destinations tab lists every destination with its status, size, growth and alerts as a table or a timeline by day, with the details of a picked one under it showing its size over time, its alerts and every job with backups there.
+- **storage**: A click on a backup on the Backups page opens its copies with whether their destination answers right now, its chain, what it holds and its last integrity check. The backups of a deleted job stay listed and can be deleted together, and the page tells how old the list of each destination is and compares it with the storage on request.
 - **storage**: The restore page shows the databases of a backup row by row beside the server they go to, with what happens to each, filters and a copy beside the ones there in one click, or as lines from the backup to the server. A backup with databases and folders is restored in two steps, and a small timeline of the job picks another backup without going back.
 
 ### 🐛 Bug Fixes
@@ -62,8 +62,8 @@ All notable changes to DBackup are documented here.
 
 - **ui**: The sidebar collapses to icons with the new button in the header or Ctrl+B (⌘B on macOS), and small screens get it as a slide-in menu. Both themes use a new zinc color palette where dialogs, menus and buttons, and the fields and switches in them, take the color of their task, like blue to add and violet to edit, and the interface uses the Geist font on every operating system.
 - **dashboard**: The overview was rebuilt with a status banner that names a failing job and can rerun it, trend cards, a switch between the latest executions and the jobs, and a backup calendar that shows as many weeks as the screen fits. It works on phones, and its statistics are cached for a minute or until the next backup finishes or a job changes.
-- **storage**: The storage history dialog shows one bar a day, with the stored size, the change in the range and the number of backups above the chart. It switches between 7 days, 30 days, 90 days and a year without loading again, and leads on to the Storage Explorer.
-- **storage**: The Storage Explorer opens at once from the lists DBackup keeps and lists a destination without a current list in the background. A destination that does not answer keeps its last list and no longer holds up the page.
+- **storage**: The storage history dialog shows one bar a day, with the stored size, the change in the range and the number of backups above the chart. It switches between 7 days, 30 days, 90 days and a year without loading again, and leads on to the Backups page.
+- **storage**: The Backups page opens at once from the lists DBackup keeps and lists a destination without a current list in the background. A destination that does not answer keeps its last list and no longer holds up the page.
 - **ui**: On phones every table leaves out the rows per page picker so its page controls fit, and the Connections page picks its list from a menu instead of a row of tabs.
 - **ui**: The filters of the tables open a list in a color of their own with a checkbox per value, and the foot tells how many are picked and clears them. Values without matches under the other filters wait at the end, and the type filter on the Connections page shows each adapter's icon.
 - **ui**: The confirmation before a bulk action and the list of entries it could not process have a new look, with a header tinted for the kind of action. Their lists show each entry with its icon and type where the table has them.
@@ -73,7 +73,7 @@ All notable changes to DBackup are documented here.
 - **connections**: The login field lists every saved login with its description and where it is in use, and puts the logins that other connections of the same kind already use first. The credentials API returns those connection types as `usedBy` with `includeCounts=true`.
 - **vault**: A new credential profile starts with a list of what can be saved and the services that use each kind, while the New button of a login field opens the form for its kind right away. Every secret field has its own button to show what was typed, and an SSH login picks how it signs in and where its key comes from on cards.
 - **connections**: The file browser of a path field starts where the field points and shows the path as clickable parts with a filter, the size and date of every entry and a badge on the files the field takes. Hidden files stay out until asked for, and every entry can be reached with the keyboard.
-- **setup**: The Quick Setup lists its steps on the left with what each one made, and adds databases, destinations and channels with the same form as the Connections page. Every step can take an existing connection or key instead, and the job picks its schedule and its databases on cards.
+- **setup**: The Quick Setup is one page with its parts one under the other and the backup they add up to beside them, which fills in as each part is done. Every part takes a connection or key you have or adds one with the dialogs of the Connections page, and the job picks its schedule and its databases on cards.
 - **jobs**: The form for adding and editing a job lists its parts on the left, marks the ones that are done or still miss something, and shows one part at a time. Connections, schedule presets, encryption keys and notification templates are picked from searchable lists that also make a new one.
 - **jobs**: The schedule of a job and of a schedule preset is picked as hourly, daily, weekly or monthly, with several times a day, several weekdays and the last day of the month, or as cron. It shows the next runs and warns with a free time to use when runs would wait because the queue has no slot left.
 - **jobs**: Picking some databases of a source has a search, a checkbox for all of them and the size and tables of each, with how many are picked and how big they are together. Once every database is picked it offers All databases, which also takes the ones added later.
@@ -95,7 +95,7 @@ All notable changes to DBackup are documented here.
 - **storage**: A download link for databases and folders streams, so the first bytes arrive at once instead of after DBackup wrote the whole download to a temp file. A tar.gz of several databases and folders packs about twice as fast.
 - **storage**: **Verify integrity** opens a dialog with every copy of a backup, its last check and whether the destination checks it without a download, and verifies one copy or all of them. The copies without a download go first, and the dialog shows each copy while it is checked, the bytes of a download included.
 - **docker**: The volume picker of a job lists the volumes by Compose stack with the containers that mount each one, whether they run and where, and shows beside them which containers the job stops in which order. Anonymous volumes go by their container, and the ones no container mounts stay hidden until asked for.
-- **storage**: Ticked destinations in the Storage Explorer can be checked or get their alerts changed together, where every alert stays as each destination has it until it is set for all of them. A list under each alert shows what changes at each destination, and a storage limit that would fire right away is marked.
+- **storage**: Ticked destinations on the Backups page can be checked or get their alerts changed together, where every alert stays as each destination has it until it is set for all of them. A list under each alert shows what changes at each destination, and a storage limit that would fire right away is marked.
 
 ### 🔄 Changed
 
@@ -103,10 +103,11 @@ All notable changes to DBackup are documented here.
 - **api**: `GET /api/jobs` returns how each job is doing as `overview`, and the connections a job uses with `id`, `name`, `adapterId` and `lastStatus` only. The new `GET /api/jobs/{id}/runs` returns the latest 30 runs of a job with their size, its success rate over 30 days and its last successful backup.
 - **api**: The new `GET /api/jobs/schedules` returns the schedules of the enabled jobs with how long a run usually takes, the slots of the queue and the scheduler's time zone.
 - **api**: The new `GET /api/storage/explorer` returns every job and destination with its backup counts, and `GET /api/storage/explorer/runs` every backup with its copies at every destination. `GET /api/storage/explorer/execution` returns the run that made a backup.
-- **jobs**: The menu of a job opens its backups in the Storage Explorer with one entry instead of one per destination.
-- **storage**: The config backups of DBackup show in the Storage Explorer as an entry of their own instead of behind a switch.
+- **jobs**: The menu of a job opens its backups on the Backups page with one entry instead of one per destination.
+- **storage**: The config backups of DBackup show on the Backups page as an entry of their own instead of behind a switch.
 - **api**: `POST /api/storage/{id}/download-url` takes `databases` and `selections` like `restore-files` and returns the link as `data.url` with `data.token` and `data.fileName`. `GET /api/storage/{id}/download-url?token=` tells the user who made a link whether it was fetched.
 - **api**: The new `POST /api/storage/verify-copies` checks several copies of a backup in one run, which `GET /api/storage/verify-copies?executionId=` follows with the state of every copy. A check records how it ran as `verification.method` in the `.meta.json`.
+- **ui**: The Storage Explorer is called Backups now and sits under Backup in the sidebar beside Connections and Jobs. Its address is /dashboard/backups, and links to the old one still lead there.
 
 ### 🗑️ Removed
 
@@ -127,12 +128,13 @@ All notable changes to DBackup are documented here.
 - **docs**: The scheduling guide describes the schedule picker and its warning when runs would wait for a free slot.
 - **docs**: The job guide explains how some databases of a source are picked, how connections are added from a job and what the retention list shows.
 - **docs**: The webhook trigger guide describes the new API trigger dialog, the timeout and the exit codes of the CI image, and Partial and Cancelled runs in its examples and API reference. The API key guide points to the Setup of the dialog.
-- **docs**: The Storage Explorer guide describes the list of backups, the Destinations tab, both timelines, the details of a backup and how current the lists are. The restore, verification, job, notification, API and storage cache guides follow the new page.
+- **docs**: The Backups guide describes the list of backups, the Destinations tab, both timelines, the details of a backup and how current the lists are. The restore, verification, job, notification, API and storage cache guides follow the new page.
 - **docs**: The restore guide describes the steps of the new restore page, its rows and lines, the folders and what happens before and after the start.
 - **docs**: The Redis, Valkey and restore guides describe the restore script of Redis and Valkey, its steps by hand and what to do when Redis writes an append only file.
-- **docs**: The Storage Explorer guide describes the download dialog, and the API reference and the download token page describe links for a pick and their status.
-- **docs**: The verification and Storage Explorer guides describe the integrity dialog, and the integrity page explains how the copies of one backup are checked.
+- **docs**: The Backups guide describes the download dialog, and the API reference and the download token page describe links for a pick and their status.
+- **docs**: The verification and Backups guides describe the integrity dialog, and the integrity page explains how the copies of one backup are checked.
 - **docs**: The Docker Volumes guide describes the volume picker with its stacks, the containers of each volume and what the job reads.
+- **docs**: The Storage Explorer guide is the Backups guide now, and its old address points to it.
 
 ### 🧪 Tests
 

@@ -3,7 +3,7 @@ import { formatInTimeZone } from "date-fns-tz";
 import type { BackupRun, ExplorerDestination, ExplorerFile, ExplorerIndex, ExplorerJob } from "@/services/storage/explorer-types";
 
 /**
- * Three jobs at two destinations for the tests of the Storage Explorer: a database job with a copy
+ * Three jobs at two destinations for the tests of the Backups page: a database job with a copy
  * missing at the offline Cloudflare R2, an incremental chain of folders, and a deleted job whose
  * backups stay at the NAS.
  */

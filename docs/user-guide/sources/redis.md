@@ -98,7 +98,7 @@ Login: my-redis-password  (USERNAME_PASSWORD profile)
 A Redis backup is one RDB snapshot, the native Redis format, and it always contains every logical database of the server whichever ones the job selected. It is stored inside a seekable archive as a single entry named `dump`:
 
 - **Archive**: `backup_2026-02-02.tar`, compressed and encrypted per entry as the job configures
-- **Downloaded dump**: `backup_2026-02-02_dump.rdb`, from **Download...** in the Storage Explorer
+- **Downloaded dump**: `backup_2026-02-02_dump.rdb`, from **Download...** on the Backups page
 
 Backups written by earlier versions are plain files (`backup_2026-02-02.rdb`, `.rdb.gz` or `.rdb.gz.enc`) and restore through the same guide.
 
@@ -108,7 +108,7 @@ Backups written by earlier versions are plain files (`backup_2026-02-02.rdb`, `.
 Redis cannot load an RDB snapshot over the network. A restore stops Redis on its host, puts the dump into its data folder and starts it again, which replaces everything Redis holds.
 :::
 
-**Restore** on a Redis backup in the Storage Explorer opens a guide instead of the database step:
+**Restore** on a Redis backup on the Backups page opens a guide instead of the database step:
 
 1. **Where does Redis run?** Pick **Docker**, **Docker Compose**, **Linux service** or **Windows service**, then name the container, the compose service or the service and the data folder. Turn off **Redis asks for a password** for an instance without one.
 2. **Make the link.** The commands download the dump with a link that works once and for five minutes. Making it needs the Download permission, and it hands out the plain `dump.rdb`, decrypted and unpacked.
@@ -236,6 +236,6 @@ apt-get install redis-tools
 
 ## See Also
 
-- [Storage Explorer](/user-guide/features/storage-explorer) - Browse and download backups
+- [Backups](/user-guide/features/backups) - Browse and download backups
 - [Restore Guide](/user-guide/features/restore) - General restore documentation
 - [Encryption](/user-guide/security/encryption) - Encrypting your backups

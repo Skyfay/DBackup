@@ -134,7 +134,7 @@ Now      last 24h        7 days         weeks        months        years
 
 Prevent specific backups from being deleted:
 
-1. Go to **Storage Explorer**
+1. Go to **Backups**
 2. Find the backup
 3. Click **Lock** icon
 
@@ -213,7 +213,7 @@ Retention is skipped for any destination where the upload failed. This prevents 
 
 ### Which Backups Count
 
-Retention only removes backups the job made itself, known by the job id in their `.meta.json` sidecar. A job named like a deleted one writes into the same folder, and the backups the deleted job left there stay until you delete them in the [Storage Explorer](/user-guide/features/storage-explorer#backups-of-a-deleted-job). The run log names them. A backup without a sidecar counts as the job's own, like before DBackup recorded the job.
+Retention only removes backups the job made itself, known by the job id in their `.meta.json` sidecar. A job named like a deleted one writes into the same folder, and the backups the deleted job left there stay until you delete them in the [Backups](/user-guide/features/backups#backups-of-a-deleted-job). The run log names them. A backup without a sidecar counts as the job's own, like before DBackup recorded the job.
 
 A renamed job writes into a folder with its new name. Retention follows it into the folder of its old name and judges the backups there together with the new ones, so the policy keeps covering every backup the job made. DBackup finds those folders in its list of the destination, and only backups whose sidecar names the job count there. The run log says how many it found in each folder.
 
@@ -344,5 +344,5 @@ Retention configuration in job:
 ## Next Steps
 
 - [Creating Jobs](/user-guide/jobs/) - Configure backup jobs
-- [Storage Explorer](/user-guide/features/storage-explorer) - Browse and lock backups
+- [Backups](/user-guide/features/backups) - Browse and lock backups
 - [Encryption](/user-guide/security/encryption) - Secure your backups

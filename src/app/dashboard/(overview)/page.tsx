@@ -34,7 +34,7 @@ export default async function DashboardPage() {
                 <KpiCards
                     kpis={overview.kpis}
                     historyHref={canViewHistory ? "/dashboard/history" : undefined}
-                    storageHref={canViewStorage ? "/dashboard/storage" : undefined}
+                    storageHref={canViewStorage ? "/dashboard/backups" : undefined}
                 />
                 <StatsStrip strip={overview.strip} />
                 <UpcomingRuns schedule={overview.upcoming} />

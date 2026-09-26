@@ -884,7 +884,7 @@ const mapping = [
 Some databases need a restore of their own. The restore page checks the `sourceType` of the backup and renders that instead of the database step:
 
 ```typescript
-// src/app/dashboard/storage/restore/restore-client.tsx
+// src/app/dashboard/backups/restore/restore-client.tsx
 if (isRedis) {
     body = <RedisGuide file={file} destinationId={destinationId} engine={type === "valkey" ? "Valkey" : "Redis"} canDownload={canDownload} />;
 }
@@ -920,7 +920,7 @@ const data = consumeDownloadToken(token);
 
 The public download endpoint (`/api/storage/public-download`) validates the token and streams the file without requiring session authentication.
 
-The download dialog of the Storage Explorer (`DownloadDialog`) makes these links for any pick, see [Download Tokens](/developer-guide/core/download-tokens).
+The download dialog of the Backups page (`DownloadDialog`) makes these links for any pick, see [Download Tokens](/developer-guide/core/download-tokens).
 
 ## Related Documentation
 

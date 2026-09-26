@@ -66,7 +66,7 @@ export function DestinationDetails({ destination, runs, jobs, destinations, canD
                 </div>
                 <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
                     <Button variant="outline" size="sm" asChild>
-                        <Link href={`/dashboard/storage?at=${encodeURIComponent(destination.id)}`}>
+                        <Link href={`/dashboard/backups?at=${encodeURIComponent(destination.id)}`}>
                             <ArrowRight />
                             Open backups
                         </Link>

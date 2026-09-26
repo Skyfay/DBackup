@@ -47,7 +47,7 @@ interface StorageClientProps {
 }
 
 /**
- * The Storage Explorer: every backup of every job in one list, with the job and the destination as
+ * The Backups page: every backup of every job in one list, with the job and the destination as
  * its filters, and every destination with how it is doing and its details under the list. Both come
  * from the lists DBackup keeps of every destination. The filters, the tab and the picked destination
  * live in the address.

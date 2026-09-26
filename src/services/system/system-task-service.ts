@@ -101,7 +101,7 @@ export const DEFAULT_TASK_CONFIG = {
         runOnStartup: true,
         enabled: true,
         label: "Pre-warm Storage Cache",
-        description: "Keeps the Storage Explorer cache fresh. Reconciles existing caches against remote storage to detect external changes, and pre-populates the cache for adapters not yet loaded."
+        description: "Keeps the cache of the Backups page fresh. Reconciles existing caches against remote storage to detect external changes, and pre-populates the cache for adapters not yet loaded."
     },
     [SYSTEM_TASKS.STUCK_EXECUTION_CHECK]: {
         interval: "*/5 * * * *", // Every 5 minutes

@@ -4,7 +4,7 @@ Temporary, single-use links that download a backup, or part of one, without a se
 
 ## Overview
 
-A download link lets a host without a DBackup session fetch a backup with curl, wget or PowerShell. It is what the download dialog of the Storage Explorer and the Redis restore guide put into their commands, and what scripts use with an API key:
+A download link lets a host without a DBackup session fetch a backup with curl, wget or PowerShell. It is what the download dialog of the Backups page and the Redis restore guide put into their commands, and what scripts use with an API key:
 
 - Redis and Valkey restores, where the dump has to reach the Redis host
 - Server-to-server transfers and scripted downloads
@@ -126,7 +126,7 @@ Only the user who made the link gets its status. Anyone else, and a link that wa
 
 ## UI
 
-- `download/download-dialog.tsx`: the download dialog of the Storage Explorer. It lists the databases and folders of a seekable backup to tick, and goes to this computer or to a command for a server.
+- `download/download-dialog.tsx`: the download dialog of the Backups page. It lists the databases and folders of a seekable backup to tick, and goes to this computer or to a command for a server.
 - `download/use-download-link.ts`: makes a link for a pick, counts down its minutes and asks every 3 seconds whether it was fetched. The Redis restore guide uses it too.
 - `download/link-line.tsx`: the line above a command that says whether its link works, ran out or was fetched.
 - `download/download-model.ts`: the pick, its words and the command for each tool, free of React.
@@ -157,6 +157,6 @@ curl -fOJ "$URL"
 
 ## Related
 
-- [Storage Explorer](/user-guide/features/storage-explorer) - User documentation
+- [Backups](/user-guide/features/backups) - User documentation
 - [Redis restore guide](/developer-guide/adapters/database#redis-restore-guide) - Redis-specific implementation
 - [Encryption](/developer-guide/advanced/encryption) - Backup encryption system

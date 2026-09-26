@@ -23,7 +23,7 @@ import { StorageExplorerService } from '@/services/storage/explorer-service';
 const destination = (id: string, lastStatus = 'ONLINE') => ({ id, name: id.toUpperCase(), adapterId: 'sftp', lastStatus, lastHealthCheck: new Date(), lastError: null });
 const file = { name: 'a.tar', path: 'Shop/a.tar', size: 10, lastModified: new Date(), jobId: 'job-1', jobName: 'Shop', createdAt: new Date().toISOString() };
 
-describe('the Storage Explorer never waits for a storage', () => {
+describe('the Backups page never waits for a storage', () => {
     let service: StorageExplorerService;
 
     beforeEach(() => {

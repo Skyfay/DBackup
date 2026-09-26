@@ -4,10 +4,10 @@ import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
+    Archive,
     ArrowUpCircle,
     CalendarClock,
     Database,
-    FolderOpen,
     History,
     LayoutDashboard,
     LayoutTemplate,
@@ -63,12 +63,13 @@ const navGroups: NavGroup[] = [
             // and only differ in what they connect to.
             { icon: Database, label: "Connections", href: "/dashboard/connections", permission: [PERMISSIONS.SOURCES.VIEW, PERMISSIONS.DESTINATIONS.READ, PERMISSIONS.NOTIFICATIONS.READ] },
             { icon: CalendarClock, label: "Jobs", href: "/dashboard/jobs", permission: PERMISSIONS.JOBS.READ },
+            // What the jobs made, beside the jobs: every backup and where it lies.
+            { icon: Archive, label: "Backups", href: "/dashboard/backups", permission: PERMISSIONS.STORAGE.READ },
         ],
     },
     {
         label: "Explorer",
         items: [
-            { icon: FolderOpen, label: "Storage Explorer", href: "/dashboard/storage", permission: PERMISSIONS.STORAGE.READ },
             { icon: SearchCode, label: "Database Explorer", href: "/dashboard/explorer", permission: PERMISSIONS.SOURCES.VIEW },
             { icon: History, label: "History", href: "/dashboard/history", permission: PERMISSIONS.HISTORY.READ },
         ],

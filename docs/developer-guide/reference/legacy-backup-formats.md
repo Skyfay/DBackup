@@ -52,7 +52,7 @@ DBackup cannot tell whether anyone still holds a backup in an older format. Rete
 - [ ] UI: remove `classicMode` from `restore-validation.ts` and what depends on it in `restore-client.tsx`.
 - [ ] Recovery Kit: remove `unpackMultiDbTar()` from `scripts/dbackup-recover.js`. `--decrypt` stays for config backups.
 - [ ] Tests: `tests/unit/services/restore-legacy-formats.test.ts`, `tests/unit/services/restore-pipeline*.test.ts`, the multi-database cases in the adapter `restore.test.ts` files, `tests/unit/adapters/database/{mysql,postgres,mongodb}/analyze.test.ts`, `tests/unit/adapters/database/common/tar-utils.test.ts`, the older-format cases in `tests/unit/lib/storage-analyze-route.test.ts` and `tests/unit/lib/recovery-kit-archive.test.ts`, and `tests/integration/{restore,multidb-restore}.test.ts`.
-- [ ] Docs: the older-format passages in `docs/user-guide/security/recovery-kit.md`, `encryption.md` and `compression.md`, `docs/user-guide/features/{restore,storage-explorer,api-reference}.md`, `docs/user-guide/sources/{mssql,azure-sql,redis}.md`, the multi-database TAR section in `docs/developer-guide/adapters/database.md`, the info box at the top of the archive format reference, and this page.
+- [ ] Docs: the older-format passages in `docs/user-guide/security/recovery-kit.md`, `encryption.md` and `compression.md`, `docs/user-guide/features/{restore,backups,api-reference}.md`, `docs/user-guide/sources/{mssql,azure-sql,redis}.md`, the multi-database TAR section in `docs/developer-guide/adapters/database.md`, the info box at the top of the archive format reference, and this page.
 
 ## What stays
 

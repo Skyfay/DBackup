@@ -45,7 +45,7 @@ curl -X POST "https://your-instance.com/api/jobs/JOB_ID/run" \
   -d '{"lock":true}'
 ```
 
-> Locked backups are skipped by the retention policy and must be unlocked manually in the Storage Explorer before they can be deleted.
+> Locked backups are skipped by the retention policy and must be unlocked manually on the Backups page before they can be deleted.
 
 ### 3. Poll Execution Status
 

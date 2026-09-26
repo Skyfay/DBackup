@@ -44,13 +44,13 @@ When a verification is triggered, DBackup uses the best available method for eac
 
 For adapters without native checksum APIs, DBackup downloads the full file, recomputes the hash, and compares it against the stored value.
 
-The result is written back into the `.meta.json` sidecar so it persists across sessions and appears immediately in the Storage Explorer without re-verifying.
+The result is written back into the `.meta.json` sidecar so it persists across sessions and appears immediately on the Backups page without re-verifying.
 
 ## Triggering a Verification
 
 ### Manual Verification (on-demand)
 
-In the **Storage Explorer**, open the menu at the end of a backup's row and pick **Verify integrity**, or click **Verify** in the panel a click on the row opens. The dialog lists every copy of the backup, one per destination, with:
+In the **Backups** page, open the menu at the end of a backup's row and pick **Verify integrity**, or click **Verify** in the panel a click on the row opens. The dialog lists every copy of the backup, one per destination, with:
 
 - where the copy lies, and whether that destination answers right now
 - how it is checked: by the checksum the destination keeps, without a download, or by downloading and hashing it, with the size that moves
@@ -81,7 +81,7 @@ For SFTP, FTP, SMB, WebDAV, Dropbox, and Rsync, automatic post-upload verificati
 
 DBackup includes a **Scheduled Integrity Check** job that periodically verifies all backups across all storage destinations. It runs through each destination, reads the `.meta.json` sidecar for each backup file, and runs the same native-first verification logic as the manual check.
 
-Results are written back to the sidecars as they complete, so the Storage Explorer badges stay up to date without any manual action.
+Results are written back to the sidecars as they complete, so the Backups page badges stay up to date without any manual action.
 
 The scheduler can be configured under **Settings - Scheduler** (cron expression). A weekly or monthly check on your full archive is a reasonable default for most setups.
 
@@ -116,6 +116,6 @@ If you see a failed check on a backup you intend to use for a restore, treat it 
 
 ## Next Steps
 
-- [Storage Explorer](/user-guide/features/storage-explorer) - Browse and manage backup files
+- [Backups](/user-guide/features/backups) - Browse and manage backup files
 - [Restore](/user-guide/features/restore) - Restore a backup to a database
 - [Encryption](/user-guide/security/encryption) - Encrypt backup files at rest

@@ -98,7 +98,7 @@ Individual storage destinations can opt out of integrity checks entirely. Set `s
 
 ## Checking the copies of one backup
 
-The integrity dialog of the Storage Explorer (`src/components/dashboard/storage/integrity/`) checks the copies of one backup on demand. `src/services/storage/copy-verification.ts` runs them in one `SystemTaskRunner` execution of type `Verification`, which History lists:
+The integrity dialog of the Backups page (`src/components/dashboard/storage/integrity/`) checks the copies of one backup on demand. `src/services/storage/copy-verification.ts` runs them in one `SystemTaskRunner` execution of type `Verification`, which History lists:
 
 - `startCopyVerification(copies, triggeredBy)` orders the copies whose adapter has `verifyChecksum` first, then calls `verifyFile()` for each with an `onProgress` for a download, and returns the execution id at once.
 - Each copy carries a state (`waiting`, `checking`, `passed`, `failed`, `skipped`, `error`), its method (`native` or `download`) and the bytes of a download. The runner keeps them in its metadata through `setExtra`, so `readCopyVerification(executionId)` can hand them to the dialog.

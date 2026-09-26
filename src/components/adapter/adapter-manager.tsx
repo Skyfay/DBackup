@@ -372,6 +372,7 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                             adapter={formAdapter}
                             initialData={editingConfig}
                             defaultRole={pickerRole}
+                            step="Step 2 of 2"
                             onBack={editingId ? undefined : backToPicker}
                             onSaved={afterSave}
                         />

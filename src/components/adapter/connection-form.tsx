@@ -102,13 +102,8 @@ interface ConnectionFormProps {
     lockRole?: boolean;
     /** Only while adding: back to the type picker. */
     onBack?: () => void;
-    /** Where adding stands, after the type in the head. */
+    /** Where adding stands, after the type in the head, when a list of types came before the form. */
     step?: string;
-    /**
-     * A dialog, or a panel on a page like the setup. On a page the head is plain headings and
-     * there is no Cancel, since there is no dialog to close.
-     */
-    container?: "dialog" | "page";
     onSaved: (saved?: SavedConnection) => void;
 }
 
@@ -126,8 +121,7 @@ export function ConnectionForm({
     defaultRole,
     lockRole,
     onBack,
-    step = "Step 2 of 2",
-    container = "dialog",
+    step,
     onSaved,
 }: ConnectionFormProps) {
     const connection = useConnectionForm({ adapter, initialData, defaultRole, lockRole, onSaved });
@@ -168,9 +162,8 @@ export function ConnectionForm({
     const tone: Tone = initialData ? "edit" : "create";
     const Section = isStorage ? StorageSection : isNotification ? NotificationSection : DatabaseSection;
     const SectionAction = isStorage ? StorageSectionAction : isNotification ? NotificationSectionAction : DatabaseSectionAction;
-    const inDialog = container === "dialog";
     const title = initialData ? `Edit ${noun}` : `Add ${noun}`;
-    const note = initialData ? `${initialData.name} · ${adapter.name}` : `${adapter.name} · ${step}`;
+    const note = initialData ? `${initialData.name} · ${adapter.name}` : step ? `${adapter.name} · ${step}` : adapter.name;
 
     return (
         <>
@@ -189,17 +182,8 @@ export function ConnectionForm({
                                 )
                             }
                         >
-                            {inDialog ? (
-                                <>
-                                    <DialogTitle className="text-base">{title}</DialogTitle>
-                                    <DialogDescription className={cn(dialogNoteClass(tone), "truncate")}>{note}</DialogDescription>
-                                </>
-                            ) : (
-                                <>
-                                    <h2 className="text-base leading-none font-semibold">{title}</h2>
-                                    <p className={cn(dialogNoteClass(tone), "truncate")}>{note}</p>
-                                </>
-                            )}
+                            <DialogTitle className="text-base">{title}</DialogTitle>
+                            <DialogDescription className={cn(dialogNoteClass(tone), "truncate")}>{note}</DialogDescription>
                         </DialogHead>
 
                         <Tabs
@@ -247,11 +231,9 @@ export function ConnectionForm({
                                 <TestResult state={connection.test} messaging={isNotification} />
                             </div>
                             <div className="ml-auto flex shrink-0 items-center gap-2">
-                                {inDialog && (
-                                    <DialogClose asChild>
-                                        <Button type="button" variant="ghost">Cancel</Button>
-                                    </DialogClose>
-                                )}
+                                <DialogClose asChild>
+                                    <Button type="button" variant="ghost">Cancel</Button>
+                                </DialogClose>
                                 <Button type="submit" disabled={busy}>
                                     {busy && <Loader2 className="animate-spin" />}
                                     {initialData ? "Save changes" : `Create ${short}`}

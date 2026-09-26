@@ -126,7 +126,7 @@ export async function stepFinalize(ctx: RunnerContext) {
                     baseArchive: ctx.chain.baseArchive ?? null,
                     chainIndex: ctx.chain.index,
                     // The complete snapshot size, as opposed to `size` which is what this
-                    // archive physically stores. The Storage Explorer shows this one.
+                    // archive physically stores. The Backups page shows this one.
                     logicalSize: typeof ctx.metadata?.logicalSize === "number" ? ctx.metadata.logicalSize : null,
                 }
                 : {}),

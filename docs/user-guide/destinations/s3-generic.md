@@ -133,4 +133,4 @@ self-signed certificate / UNABLE_TO_VERIFY_LEAF_SIGNATURE
 
 - [Enable Encryption](/user-guide/security/encryption)
 - [Configure Retention](/user-guide/jobs/retention)
-- [Storage Explorer](/user-guide/features/storage-explorer)
+- [Backups](/user-guide/features/backups)

@@ -285,7 +285,7 @@ export function SourceManager({ canCreate, canDelete }: Props) {
 
 | Permission | Description |
 | :--- | :--- |
-| `storage:read` | Browse Storage Explorer |
+| `storage:read` | Browse Backups page |
 | `storage:download` | Download backup files |
 | `storage:restore` | Trigger database restores |
 | `storage:delete` | Delete backup files |

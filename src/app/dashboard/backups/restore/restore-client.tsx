@@ -54,7 +54,7 @@ export function RestoreClient({ canManageVault = false, canDownload = false }: R
     const type = (file?.sourceType ?? "").toLowerCase();
     const isSystem = file?.sourceType === "SYSTEM";
     const isRedis = type === "redis" || type === "valkey";
-    const back = () => router.push(destinationId ? `/dashboard/storage?at=${encodeURIComponent(destinationId)}` : "/dashboard/storage");
+    const back = () => router.push(destinationId ? `/dashboard/backups?at=${encodeURIComponent(destinationId)}` : "/dashboard/backups");
 
     const { analysis, retry, keyRecovery, interceptKeyRequest, applyKeyResolution, keyOverrideRef } = useRestoreAnalysis(file, destinationId, { databases: wantsDatabases, files: wantsFiles }, isSystem || isRedis);
     const sourceType = analysis.sourceType || file?.sourceType || "";
@@ -73,10 +73,10 @@ export function RestoreClient({ canManageVault = false, canDownload = false }: R
             <div className="rounded-xl border border-dashed bg-card px-4 py-16 text-center shadow-sm">
                 <HardDrive className="mx-auto mb-4 size-10 text-muted-foreground/40" aria-hidden="true" />
                 <p className="font-medium">No backup is picked</p>
-                <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">Open a backup in the Storage Explorer and pick Restore.</p>
-                <Button variant="outline" className="mt-4" onClick={() => router.push("/dashboard/storage")}>
+                <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">Open a backup on the Backups page and pick Restore.</p>
+                <Button variant="outline" className="mt-4" onClick={() => router.push("/dashboard/backups")}>
                     <ArrowLeft />
-                    Back to the Storage Explorer
+                    Back to Backups
                 </Button>
             </div>
         );

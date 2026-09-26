@@ -98,7 +98,7 @@ Users in deleted group lose all permissions until reassigned.
 
 | Permission | Description |
 | :--- | :--- |
-| `storage:read` | Access Storage Explorer |
+| `storage:read` | Access Backups page |
 | `storage:download` | Download backup files |
 | `storage:restore` | Restore from backups |
 | `storage:delete` | Delete backup files |

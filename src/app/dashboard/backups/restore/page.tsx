@@ -8,7 +8,7 @@ export default async function RestorePage() {
     const canRestore = permissions.includes(PERMISSIONS.STORAGE.RESTORE);
 
     if (!canRestore) {
-        redirect("/dashboard/storage");
+        redirect("/dashboard/backups");
     }
 
     // Decides whether the key recovery dialog may offer to save a typed key, since doing so

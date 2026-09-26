@@ -12,7 +12,7 @@ import { loadBackupSidecars, type SidecarLoadResult } from "./retention-sidecars
  * A job writes into a folder named after it, so a rename starts a new folder and leaves the
  * backups made so far in the old one, where the retention of the job would never look again.
  * Retention follows the job there, so its policy keeps covering every backup the job made, the
- * way the Storage Explorer and the retention preview of its timeline already count them.
+ * way the Backups page and the retention preview of its timeline already count them.
  *
  * The cached listing of the destination knows which job made each backup, so finding those
  * folders costs no storage call. Each one is then listed and its sidecars read like the current

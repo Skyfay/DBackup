@@ -22,7 +22,7 @@ interface Loaded {
 }
 
 /**
- * The Storage Explorer's view of every destination at once: every backup with its copies side by
+ * The Backups page's view of every destination at once: every backup with its copies side by
  * side, which the page filters by job and by destination, and the backups of one destination.
  *
  * Reads only the cached listings, so a page never waits for a storage. The cache is kept in step by

@@ -16,14 +16,14 @@ Backups are seekable archives that store every database as its own entry. On des
 
 ## Starting a Restore
 
-### From Storage Explorer
+### From Backups page
 
-1. Go to **Storage Explorer** in the sidebar
+1. Go to **Backups** in the sidebar
 2. Click the backup, then **Restore** in its panel, or pick **Restore** in the menu at the end of its row
 3. Pick the server and the databases, then the folders, and check the bar at the foot of the page
 4. Click **Restore** and confirm
 
-The head of the page names the job, when the backup was made and the destination it reads from, with a dot for whether that destination answers right now. Beside it a small timeline shows every backup of the job over a month. A click on another one restores that one instead, without going back to the Storage Explorer.
+The head of the page names the job, when the backup was made and the destination it reads from, with a dot for whether that destination answers right now. Beside it a small timeline shows every backup of the job over a month. A click on another one restores that one instead, without going back to the Backups page.
 
 ### From History
 
@@ -75,7 +75,7 @@ Snapshots from an [incremental chain](/user-guide/features/backup-modes) restore
 
 ### Before and After the Start
 
-**Restore** asks first, in amber, and lists each database with the name it gets and whether it overwrites one, and each folder with where it goes. The restore then runs in the background, and the page moves on to its run in History, or back to the Storage Explorer when **Auto-redirect on job start** is off in your preferences.
+**Restore** asks first, in amber, and lists each database with the name it gets and whether it overwrites one, and each folder with where it goes. The restore then runs in the background, and the page moves on to its run in History, or back to the Backups page when **Auto-redirect on job start** is off in your preferences.
 
 A start the server turns down keeps the page and says why, so the choices can be changed and started again. When the login of the server may not create databases, the page offers an admin login for this one run. It is used for `CREATE DATABASE` only and not saved.
 
@@ -376,6 +376,6 @@ All restores are logged in History:
 
 ## Next Steps
 
-- [Storage Explorer](/user-guide/features/storage-explorer) - Browse backups
+- [Backups](/user-guide/features/backups) - Browse backups
 - [Encryption](/user-guide/security/encryption) - Understanding encryption
 - [Recovery Kit](/user-guide/security/recovery-kit) - Manual decryption

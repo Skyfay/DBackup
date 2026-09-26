@@ -13,7 +13,7 @@ registerAdapters();
 
 /**
  * GET /api/storage/explorer
- * Every destination and every job with its numbers, for the pickers and tabs of the Storage Explorer.
+ * Every destination and every job with its numbers, for the pickers and tabs of the Backups page.
  */
 export async function GET() {
     const ctx = await getAuthContext(await headers());

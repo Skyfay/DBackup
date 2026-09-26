@@ -3,7 +3,7 @@
 import { HardDrive } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
-/** The numbers and a list, while the Storage Explorer loads them. */
+/** The numbers and a list, while the Backups page loads them. */
 export function ExplorerSkeleton() {
     return (
         <div className="space-y-4 md:space-y-6" aria-busy="true">
@@ -34,7 +34,7 @@ export function ExplorerSkeleton() {
     );
 }
 
-/** What the Storage Explorer shows when it has nothing to list or could not load it. */
+/** What the Backups page shows when it has nothing to list or could not load it. */
 export function ExplorerEmpty({ title, children }: { title: string; children: React.ReactNode }) {
     return (
         <div className="rounded-xl border border-dashed bg-card px-4 py-16 text-center shadow-sm">

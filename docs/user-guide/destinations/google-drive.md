@@ -80,4 +80,4 @@ Google Drive has usage limits. Free accounts get 15 GB shared across Gmail, Driv
 
 - [Enable Encryption](/user-guide/security/encryption)
 - [Configure Retention](/user-guide/jobs/retention)
-- [Storage Explorer](/user-guide/features/storage-explorer)
+- [Backups](/user-guide/features/backups)

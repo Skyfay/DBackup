@@ -78,7 +78,7 @@ export function useBackupActions({ canDownload, canRestore, canDelete, canManage
         const encoded = encodeUrlPayload(target.file);
         // Only a backup holding databases and folders gets a scope, everything else has one thing to restore.
         const modeParam = mode && mode !== "all" ? `&mode=${mode}` : "";
-        router.push(`/dashboard/storage/restore?destinationId=${encodeURIComponent(target.destinationId)}&file=${encodeURIComponent(encoded)}${modeParam}`);
+        router.push(`/dashboard/backups/restore?destinationId=${encodeURIComponent(target.destinationId)}&file=${encodeURIComponent(encoded)}${modeParam}`);
     }, [router]);
 
     const downloadDecrypted = useCallback(async (target: BackupTarget, keyResolution: KeyResolutionResult | null) => {

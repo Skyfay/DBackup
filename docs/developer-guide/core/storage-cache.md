@@ -1,6 +1,6 @@
 # Storage List Cache
 
-The Storage Explorer calls `adapter.list("")` (recursive folder traversal) plus one `adapter.read()` per `.meta.json` sidecar on every load. For remote adapters like Google Drive this means dozens of API calls per page view. The storage list cache stores the full enriched listing in SQLite so repeat visits are instant.
+The Backups page calls `adapter.list("")` (recursive folder traversal) plus one `adapter.read()` per `.meta.json` sidecar on every load. For remote adapters like Google Drive this means dozens of API calls per page view. The storage list cache stores the full enriched listing in SQLite so repeat visits are instant.
 
 ## Database Model
 
@@ -26,7 +26,7 @@ One row per storage adapter. `cachedAt` drives the staleness check.
 
 TypeFilter (`BACKUP` / `SYSTEM`) is applied **after** cache retrieval, so the cache always stores the full unfiltered list.
 
-The Storage Explorer never takes step 4 in a request. Its service reads with `readCachedListing()` only and calls `refreshInBackground()` for a destination without a current or fresh list, unless the health check calls it offline. The index reports such a destination as `listing` and the page asks again every few seconds until the listing is done.
+The Backups page never takes step 4 in a request. Its service reads with `readCachedListing()` only and calls `refreshInBackground()` for a destination without a current or fresh list, unless the health check calls it offline. The index reports such a destination as `listing` and the page asks again every few seconds until the listing is done.
 
 ## Versions
 
@@ -111,7 +111,7 @@ The `system.warmup_storage_cache` task keeps the cache consistent for all storag
 
 ## Force Refresh
 
-Check now in the Storage Explorer calls `POST /api/storage/explorer/refresh` with the destinations of the page. It starts a reconciliation, or a full listing when there is no current payload, in the background even for a destination that failed a moment ago, and answers at once.
+Check now on the Backups page calls `POST /api/storage/explorer/refresh` with the destinations of the page. It starts a reconciliation, or a full listing when there is no current payload, in the background even for a destination that failed a moment ago, and answers at once.
 
 `GET /api/storage/:id/files?refresh=true` still lists a destination live and waits for it.
 
@@ -124,8 +124,8 @@ Check now in the Storage Explorer calls `POST /api/storage/explorer/refresh` wit
 | Manual file delete | `removeStorageListCacheEntry` | `StorageService.deleteFile()` |
 | File lock toggled | `updateStorageListCacheEntry` | `StorageService.toggleLock()` |
 | Verification result written | `updateStorageListCacheEntry` | `VerificationService.writeVerificationResult()` |
-| Cache older than 2 h | `reconcileStorageListCache()` background | `StorageService.listDestinationFiles()`, the Storage Explorer |
-| Payload of an older version | Full listing in the background | `StorageService.listDestinationFiles()`, the Storage Explorer |
+| Cache older than 2 h | `reconcileStorageListCache()` background | `StorageService.listDestinationFiles()`, the Backups page |
+| Payload of an older version | Full listing in the background | `StorageService.listDestinationFiles()`, the Backups page |
 | User clicks Check now | `checkNow()` in the background | `POST /api/storage/explorer/refresh` |
 | API caller asks for a live list | Full fetch | `GET /api/storage/:id/files?refresh=true` |
 
@@ -134,7 +134,7 @@ Check now in the Storage Explorer calls `POST /api/storage/explorer/refresh` wit
 | File | Role |
 |------|------|
 | `src/services/storage/storage-service.ts` | All cache methods, reconciliation, enrichment, the listings in the background |
-| `src/services/storage/explorer-service.ts` | The Storage Explorer's reads, which never wait for a storage |
+| `src/services/storage/explorer-service.ts` | The Backups page's reads, which never wait for a storage |
 | `src/services/storage/explorer-plan-service.ts` | What the schedules plan for the timeline of the Backups tab, with the retention of the runner applied to the cached backups |
 | `src/services/storage/verification-service.ts` | Surgical update after verification |
 | `src/lib/runner/steps/03-upload.ts` | Append on upload |

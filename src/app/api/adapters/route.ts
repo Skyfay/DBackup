@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const type = searchParams.get("type");
     // Storage adapters split into two exclusive roles. Callers that only care about one
-    // (the Storage Explorer, the Destinations page) pass it; the job form deliberately
+    // (the Backups page, the Destinations page) pass it; the job form deliberately
     // omits it and splits the single response itself.
     const roleParam = searchParams.get("role")?.toUpperCase();
     const role = isStorageRole(roleParam) ? roleParam : undefined;

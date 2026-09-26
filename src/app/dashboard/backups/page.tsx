@@ -26,7 +26,7 @@ export default async function StoragePage() {
     return (
         <>
             {/* The header bar already names the page in its breadcrumb. */}
-            <h1 className="sr-only">Storage Explorer</h1>
+            <h1 className="sr-only">Backups</h1>
             <Suspense>
                 <StorageClient
                     canDownload={canDownload}

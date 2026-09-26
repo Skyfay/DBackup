@@ -1,7 +1,7 @@
 import type { RichFileInfo } from "./storage-service";
 
 /**
- * What the Storage Explorer loads, shared by its service, its API routes and the page.
+ * What the Backups page loads, shared by its service, its API routes and the page.
  *
  * The explorer lists every backup as a run with a copy at every destination of its job, which the
  * page filters by job and by destination, and the files of one destination. Both come from the same

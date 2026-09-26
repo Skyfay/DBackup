@@ -29,7 +29,7 @@ vi.mock("@/components/dashboard/storage/integrity/integrity-dialog", () => ({ In
 vi.mock("@/components/common/encryption-key-resolution-dialog", () => ({ EncryptionKeyResolutionDialog: () => null }));
 vi.mock("@/app/actions/storage/storage-alerts", () => ({ updateStorageAlertSettings: vi.fn().mockResolvedValue({ success: true }), updateStorageAlertsOfMany: vi.fn() }));
 
-import { StorageClient } from "@/app/dashboard/storage/storage-client";
+import { StorageClient } from "@/app/dashboard/backups/storage-client";
 
 // The list of a filter scrolls its active option into view, which jsdom cannot do.
 Element.prototype.scrollIntoView = vi.fn();
@@ -45,7 +45,7 @@ function renderPage(view: ViewMode = "table", destinationsView: ViewMode = "tabl
 /** The rows of the list of backups, without the popovers the filters open. */
 const table = () => screen.getByRole("table");
 
-describe("Storage Explorer", () => {
+describe("Backups page", () => {
     beforeEach(() => {
         search = new URLSearchParams();
         replace.mockClear();

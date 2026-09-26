@@ -91,4 +91,4 @@ To limit transfer speed, add `--bwlimit=1000` (KB/s) in the **Options** field. U
 
 - [Enable Encryption](/user-guide/security/encryption)
 - [Configure Retention](/user-guide/jobs/retention)
-- [Storage Explorer](/user-guide/features/storage-explorer)
+- [Backups](/user-guide/features/backups)

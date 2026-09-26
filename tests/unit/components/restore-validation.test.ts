@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeRestoreValidity, type RestoreValidationInput } from "@/app/dashboard/storage/restore/restore-validation";
+import { computeRestoreValidity, type RestoreValidationInput } from "@/app/dashboard/backups/restore/restore-validation";
 
 const dir = (overrides: Partial<RestoreValidationInput["dirSelections"][number]> = {}) => ({
     selected: true,

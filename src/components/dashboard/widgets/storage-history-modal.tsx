@@ -138,8 +138,8 @@ export function StorageHistoryModal({ open, onOpenChange, configId, adapterName,
                 <div className={cn(DIALOG_FOOTER, "flex flex-wrap items-center justify-end gap-2")}>
                     <span className="mr-auto text-xs text-muted-foreground">Measured with every storage refresh, hourly by default.</span>
                     <Button variant="ghost" size="sm" asChild>
-                        <Link href={`/dashboard/storage?tab=destinations&destination=${encodeURIComponent(configId)}`}>
-                            Open in Storage Explorer
+                        <Link href={`/dashboard/backups?tab=destinations&destination=${encodeURIComponent(configId)}`}>
+                            Open in Backups
                             <ArrowRight />
                         </Link>
                     </Button>

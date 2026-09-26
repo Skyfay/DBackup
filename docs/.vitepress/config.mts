@@ -183,7 +183,7 @@ export default defineConfig({
           items: [
             { text: 'File & Folder Backups', link: '/user-guide/features/file-backups' },
             { text: 'Backup Modes', link: '/user-guide/features/backup-modes' },
-            { text: 'Storage Explorer', link: '/user-guide/features/storage-explorer' },
+            { text: 'Backups', link: '/user-guide/features/backups' },
             { text: 'Database Explorer', link: '/user-guide/features/database-explorer' },
             { text: 'Backup Verification', link: '/user-guide/features/backup-verification' },
             { text: 'Restore', link: '/user-guide/features/restore' },

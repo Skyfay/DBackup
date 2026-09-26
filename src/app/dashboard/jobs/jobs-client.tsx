@@ -110,7 +110,7 @@ export function JobsClient({
     const [apiTrigger, setApiTrigger] = useState<{ id: string; name: string } | null>(null);
     // The id stays after closing, so the panel keeps its content while it slides out.
     const [details, setDetails] = useState<{ id: string; open: boolean } | null>(null);
-    // A link like the Open job of the Storage Explorer names a job, whose panel opens once it loaded.
+    // A link like the Open job of the Backups page names a job, whose panel opens once it loaded.
     const linkedJobId = useSearchParams().get("job");
     const [linkHandled, setLinkHandled] = useState(false);
 
@@ -173,7 +173,7 @@ export function JobsClient({
         onRun: canExecute && !inPanel ? () => void run(job) : undefined,
         onOpenLastRun: canViewHistory && job.overview.lastRun ? () => router.push(`/dashboard/history?executionId=${job.overview.lastRun!.id}`) : undefined,
         backups: canViewStorage
-            ? [{ label: "Open backups", onSelect: () => router.push(`/dashboard/storage?job=${encodeURIComponent(job.id)}`) }]
+            ? [{ label: "Open backups", onSelect: () => router.push(`/dashboard/backups?job=${encodeURIComponent(job.id)}`) }]
             : [],
         onApiTrigger: canExecute ? () => setApiTrigger({ id: job.id, name: job.name }) : undefined,
         onEdit: canManage && !inPanel ? () => openForm(job) : undefined,

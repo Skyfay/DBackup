@@ -14,6 +14,11 @@ export interface PickEntry {
     meta: string;
     /** More words the search finds it by, like its description. */
     keywords?: string[];
+    /**
+     * What the search and the arrow keys know it by, when its name is not unique, like a database
+     * with the name of its server. Two rows with one value would light up and move together.
+     */
+    value?: string;
     /** Its own picture for the tile, like the logo of a connection's type. The list's icon otherwise. */
     icon?: React.ReactNode;
     /** A symbol of its own in place of the list's icon, drawn the same way, like the open lock of No encryption. */
@@ -39,7 +44,7 @@ interface PickRowProps {
 function PickRow({ entry, icon, picked, onPick, onEdit }: PickRowProps) {
     const Glyph = entry.glyph ?? icon;
     return (
-        <CommandItem value={entry.name} keywords={entry.keywords} onSelect={() => onPick(entry.id)} className="group gap-3 px-2 py-2">
+        <CommandItem value={entry.value ?? entry.name} keywords={entry.keywords} onSelect={() => onPick(entry.id)} className="group gap-3 px-2 py-2">
             <span
                 className={cn("flex size-8 shrink-0 items-center justify-center rounded-md border", picked ? "border-tone/30 bg-tone/12" : "bg-muted")}
                 aria-hidden="true"

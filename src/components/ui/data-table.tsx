@@ -85,8 +85,11 @@ interface DataTableProps<TData, TValue> {
     toolbarExtra?: React.ReactNode;
     /** A line under the toolbar of the card look, like a legend for the marks in the rows. */
     toolbarNote?: React.ReactNode;
-    /** A part of the card look between the toolbar and the rows, like a timeline that picks what the rows show. */
-    aboveRows?: React.ReactNode;
+    /**
+     * A part of the card look between the toolbar and the rows, like a timeline that picks what the rows show.
+     * As a function it gets every row that passes the search and the filters, so it can draw them itself.
+     */
+    aboveRows?: React.ReactNode | ((rows: Row<TData>[]) => React.ReactNode);
     /** Leaves out the rows and the pages of the card look, for a list that waits for a pick in `aboveRows`. */
     hideRows?: boolean;
     searchPlaceholder?: string;
@@ -453,7 +456,7 @@ export function DataTable<TData, TValue>({
                     {!aboveRows && toolbarNote}
                     {bulkBar}
                 </div>
-                {aboveRows && <div className="border-t">{aboveRows}</div>}
+                {aboveRows && <div className="border-t">{typeof aboveRows === "function" ? aboveRows(table.getPrePaginationRowModel().rows) : aboveRows}</div>}
                 {!hideRows && (
                     <>
                         {/* With a part above the rows, their legend moves down to them. */}

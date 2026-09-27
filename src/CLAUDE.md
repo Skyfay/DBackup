@@ -28,6 +28,7 @@ src/services/
   auth/          auth-service.ts, api-key-service.ts, credential-service.ts
   sso/           oidc-provider-service.ts, oidc-registry.ts
   storage/       storage-service.ts, verification-service.ts, storage-alert-service.ts
+  databases/     database-list-service.ts (cached database lists), database-explorer-service.ts (Database Explorer page model)
   notifications/ notification-log-service.ts, system-notification-service.ts
   system/        healthcheck-service.ts, system-task-service.ts, update-service.ts, db-version-service.ts, certificate-service.ts
   config/        config-service.ts, export.ts, import.ts, parse.ts, restore-pipeline.ts

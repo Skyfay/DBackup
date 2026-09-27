@@ -158,11 +158,9 @@ export function SetupWizard({ canCreateVault, canCreateNotification, canRunJob, 
     };
 
     return (
-        <div className="space-y-4 md:space-y-6">
-            <div>
-                <h1 className="text-2xl font-semibold tracking-tight">Quick Setup</h1>
-                <p className="text-sm text-muted-foreground">Your first backup, one part after the other.</p>
-            </div>
+        <>
+            {/* The header bar already names the page in its breadcrumb. */}
+            <h1 className="sr-only">Quick Setup</h1>
             <div className="grid items-start gap-4 md:gap-6 xl:grid-cols-[minmax(0,1fr)_20rem] 2xl:grid-cols-[minmax(0,1fr)_24rem]">
                 <div className="min-w-0 space-y-3">
                     {state.job && (
@@ -174,6 +172,6 @@ export function SetupWizard({ canCreateVault, canCreateNotification, canRunJob, 
                 </div>
                 <SetupPreview state={state} draft={jobDraft} parts={steps.map((step) => step.id)} />
             </div>
-        </div>
+        </>
     );
 }

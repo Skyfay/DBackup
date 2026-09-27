@@ -21,6 +21,7 @@ All notable changes to DBackup are documented here.
 - **storage**: The Backups page lists every backup of every job with the destinations that hold a copy and marks a missing copy, filtered by job, by destination, by who started it and by state, and shown as a table, as a timeline of every job by day with the runs its schedule plans for the next week, or as cards on a phone. The Destinations tab lists every destination with its status, size, growth and alerts as a table or a timeline by day, with the details of a picked one under it showing its size over time, its alerts and every job with backups there.
 - **storage**: A click on a backup on the Backups page opens its copies with whether their destination answers right now, its chain, what it holds and its last integrity check. The backups of a deleted job stay listed and can be deleted together, and the page tells how old the list of each destination is and compares it with the storage on request.
 - **storage**: The restore page shows the databases of a backup row by row beside the server they go to, with what happens to each, filters and a copy beside the ones there in one click, or as lines from the backup to the server. A backup with databases and folders is restored in two steps, and a small timeline of the job picks another backup without going back.
+- **explorer**: The Database Explorer lists every database of every server with the jobs that back it up, its last backup and the ones in no job, as a table or by day with the new versions of each server. A database opens as a page of its own with its tables and their rows read live, and a Redis or Valkey server is one entry whose keys a filter finds on the server.
 
 ### 🐛 Bug Fixes
 
@@ -108,10 +109,13 @@ All notable changes to DBackup are documented here.
 - **api**: `POST /api/storage/{id}/download-url` takes `databases` and `selections` like `restore-files` and returns the link as `data.url` with `data.token` and `data.fileName`. `GET /api/storage/{id}/download-url?token=` tells the user who made a link whether it was fetched.
 - **api**: The new `POST /api/storage/verify-copies` checks several copies of a backup in one run, which `GET /api/storage/verify-copies?executionId=` follows with the state of every copy. A check records how it ran as `verification.method` in the `.meta.json`.
 - **ui**: The Storage Explorer is called Backups now and sits under Backup in the sidebar beside Connections and Jobs. Its address is /dashboard/backups, and links to the old one still lead there.
+- **api**: The new `GET /api/databases` returns every database of every server with the jobs that back it up, `POST /api/databases/read` reads them from the servers now, and `GET /api/databases/runs` returns the runs and version changes of a time span.
+- **system**: The Update Database Versions task also lists the databases of every server with their sizes, which the Database Explorer shows without asking a server.
 
 ### 🗑️ Removed
 
 - **dashboard**: The job status donut and the year picker of the backup calendar are gone. Past years stay available through `GET /api/dashboard/calendar?year=`.
+- **explorer**: The General and Version History tabs of the Database Explorer are gone. The timeline marks each new version of a server and the page of a database names the one before.
 
 ### 📝 Documentation
 
@@ -135,10 +139,12 @@ All notable changes to DBackup are documented here.
 - **docs**: The verification and Backups guides describe the integrity dialog, and the integrity page explains how the copies of one backup are checked.
 - **docs**: The Docker Volumes guide describes the volume picker with its stacks, the containers of each volume and what the job reads.
 - **docs**: The Storage Explorer guide is the Backups guide now, and its old address points to it.
+- **docs**: The Database Explorer guide describes the list of databases, its timeline, the page of a database and what shows for a login that may only back up.
 
 ### 🧪 Tests
 
 - **tests**: The test that generates an SSH key no longer fails at random during a full run, where the busy crypto thread pool made it slower than the default timeout.
+- **tests**: The palette color guard allows 28 colors without a dark variant, down from 37.
 
 ### 🐳 Docker
 

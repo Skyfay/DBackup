@@ -15,6 +15,7 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { recordVersionIfChanged } from "./db-version-service";
+import { databaseListService } from "@/services/databases/database-list-service";
 import { runDataRetention } from "./data-retention-service";
 import { isDatabaseMaintenanceActive } from "@/lib/server/database-maintenance";
 
@@ -45,7 +46,7 @@ export const DEFAULT_TASK_CONFIG = {
         runOnStartup: true,
         enabled: true,
         label: "Update Database Versions",
-        description: "Checks connectivity and fetches version information from all configured database sources."
+        description: "Checks connectivity, fetches version information and lists the databases with their sizes of all configured database sources for the Database Explorer."
     },
     [SYSTEM_TASKS.SYNC_PERMISSIONS]: {
         interval: "0 0 * * *", // Daily at midnight
@@ -542,6 +543,10 @@ export class SystemTaskService {
                 log.error("Failed health check for source", { sourceName: source.name }, wrapError(e));
             }
         }
+
+        // The databases of every source for the Database Explorer, after the versions so a slow
+        // server does not hold those back. A failed read keeps the list from before.
+        await databaseListService.readSources();
     }
 
     private async runWarmupStorageCache() {

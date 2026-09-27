@@ -48,6 +48,7 @@ model AdapterConfig {
   healthLogs           HealthCheckLog[]
   versionHistory       DbVersionHistory[]
   storageListCache     StorageListCache?
+  databaseListCache    DatabaseListCache?
 }
 
 model CredentialProfile {
@@ -520,5 +521,16 @@ model StorageListCache {
   adapterConfigId String        @id
   filesJson       String
   cachedAt        DateTime      @default(now())
+  adapterConfig   AdapterConfig @relation(fields: [adapterConfigId], references: [id], onDelete: Cascade)
+}
+
+// The databases of a database connection as the Database Explorer lists them. Read every hour by
+// the version task and on Read now. A failed read keeps the last list and only records why.
+model DatabaseListCache {
+  adapterConfigId String        @id
+  databasesJson   String        @default("[]") // JSON array of { name, sizeInBytes?, tableCount? }
+  readAt          DateTime? // When the list was last read in full
+  error           String? // Why the latest read failed, cleared by the next good one
+  attemptedAt     DateTime      @default(now())
   adapterConfig   AdapterConfig @relation(fields: [adapterConfigId], references: [id], onDelete: Cascade)
 }

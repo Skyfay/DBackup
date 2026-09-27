@@ -29,6 +29,7 @@ prisma/schema.prisma
 │  ──▶ RetentionPolicy (default for destination)   │
 │  ──▶ HealthCheckLog, DbVersionHistory            │
 │  ──▶ StorageListCache                            │
+│  ──▶ DatabaseListCache                           │
 └────────────┬─────────────────────────────────────┘
              │
 ┌────────────▼──────────────────────────────────────┐
@@ -195,6 +196,7 @@ model AdapterConfig {
   healthLogs       HealthCheckLog[]
   versionHistory   DbVersionHistory[]
   storageListCache StorageListCache?
+  databaseListCache DatabaseListCache?
 }
 ```
 
@@ -618,6 +620,22 @@ model StorageListCache {
   adapterConfigId String        @id
   filesJson       String        // JSON: cached file listing
   cachedAt        DateTime      @default(now())
+
+  adapterConfig   AdapterConfig @relation(...)
+}
+```
+
+### DatabaseListCache
+
+Keeps the databases of a database connection for the Database Explorer, so the page opens without asking a server. One row per connection (keyed by `adapterConfigId`). The `UPDATE_DB_VERSIONS` system task refreshes it every hour and `POST /api/databases/read` on demand. A failed read keeps the list and only sets `error`.
+
+```prisma
+model DatabaseListCache {
+  adapterConfigId String        @id
+  databasesJson   String        @default("[]") // JSON: [{ name, sizeInBytes?, tableCount? }]
+  readAt          DateTime?     // Last read in full
+  error           String?       // Why the latest read failed, null after a good one
+  attemptedAt     DateTime      @default(now())
 
   adapterConfig   AdapterConfig @relation(...)
 }

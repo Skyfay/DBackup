@@ -133,6 +133,7 @@ Use `DataTable` from `@/components/ui/data-table` for any list of records. It ha
 - Column filters use `data-table-faceted-filter`. Its field is framed in the `filter` tone once it holds something, and its list has a `filter` head, a search with a box for every value it shows, a checkbox per value with how many rows it leaves, and a foot with how many are picked and Clear. Values no row has under the other filters sit at the end and cannot be picked.
 - Row actions that a right click should also offer are declared once as data, like `connectionActions`, and rendered by both the menu button and `renderRowMenu`.
 - A plain `<Table>` is fine for small static, non-interactive data.
+- Rows that scroll inside a pane of fixed height with a head that sticks take the parts of `ui/table` straight inside `<ScrollArea horizontal>`, without the `Table` wrapper. Its own `overflow-x-auto` box would be the one the head sticks to, so the head scrolled away. See `Grid` in `database-grids.tsx`.
 
 ---
 
@@ -248,7 +249,7 @@ Never log whole session, user, or config objects. Log the specific field (`{ use
 | Raw `overflow-y-auto` instead of ScrollArea | Fails the build |
 | Locale date formatting | Fails the build |
 | `max-h` on the ScrollArea root | Baseline of 4, fails if it grows |
-| Palette color with no `dark:` variant | Baseline of 37, fails if it grows |
+| Palette color with no `dark:` variant | Baseline of 28, fails if it grows |
 | `info` blue outside the running status, raw `data-tone` attribute | Fails the build |
 
 Baselines may only be lowered. Fix violations, drop the number, and the guard locks the win in. Everything else in this guide is on you.

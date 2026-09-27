@@ -51,7 +51,10 @@ export default async function DashboardLayout({
     return (
         // Lets a field deep inside a form leave out what the viewer may not do, like New.
         <PermissionsProvider permissions={permissions}>
-            <SidebarProvider defaultOpen={sidebarOpen} className="h-svh overflow-hidden">
+            {/* Clip, not hidden: a hidden box can still be scrolled by code. A screen-reader text, which is
+                absolutely placed, escapes the scroll area of the page and gives it room to scroll, so
+                scrollIntoView on details low on a short page pushed the header out and left the bottom empty. */}
+            <SidebarProvider defaultOpen={sidebarOpen} className="h-svh overflow-clip">
                 <AppSidebar
                     permissions={permissions}
                     isSuperAdmin={isSuperAdmin}
@@ -61,7 +64,7 @@ export default async function DashboardLayout({
                     showQuickSetup={showQuickSetup}
                     groupName={userWithGroup?.group?.name}
                 />
-                <SidebarInset className="min-w-0 overflow-hidden bg-page">
+                <SidebarInset className="min-w-0 overflow-clip bg-page">
                     <Header />
                     {/* Radix wraps the page in a `display: table` div that grows with its widest child, so a
                         wide table pushed the whole page past the right edge, clipped and not scrollable.

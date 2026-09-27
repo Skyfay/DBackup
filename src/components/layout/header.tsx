@@ -14,7 +14,8 @@ export function Header() {
 
     const segmentMap: Record<string, string> = {
         "users": "Users & Groups",
-        "setup": "Quick Setup"
+        "setup": "Quick Setup",
+        "explorer": "Database Explorer"
     }
 
     return (

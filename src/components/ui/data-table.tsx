@@ -476,7 +476,8 @@ export function DataTable<TData, TValue>({
         <div className="w-full">
             {toolbar}
             {bulkBar}
-            <div className="rounded-md border overflow-x-auto max-w-[calc(100vw-6rem)] md:max-w-[calc(100vw-22rem)]">
+            {/* The table scrolls sideways in its own scroll area, this box only rounds its corners. */}
+            <div className="rounded-md border overflow-hidden max-w-[calc(100vw-6rem)] md:max-w-[calc(100vw-22rem)]">
                 {grid}
             </div>
             <DataTablePagination table={table} totalRows={totalRows} />

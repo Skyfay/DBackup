@@ -66,6 +66,7 @@ All notable changes to DBackup are documented here.
 - **storage**: The storage history dialog shows one bar a day, with the stored size, the change in the range and the number of backups above the chart. It switches between 7 days, 30 days, 90 days and a year without loading again, and leads on to the Backups page.
 - **storage**: The Backups page opens at once from the lists DBackup keeps and lists a destination without a current list in the background. A destination that does not answer keeps its last list and no longer holds up the page.
 - **ui**: On phones every table leaves out the rows per page picker so its page controls fit, and the Connections page picks its list from a menu instead of a row of tabs.
+- **ui**: A table wider than its card scrolls sideways with the thin scrollbar of the app instead of the one of the browser.
 - **ui**: The filters of the tables open a list in a color of their own with a checkbox per value, and the foot tells how many are picked and clears them. Values without matches under the other filters wait at the end, and the type filter on the Connections page shows each adapter's icon.
 - **ui**: The confirmation before a bulk action and the list of entries it could not process have a new look, with a header tinted for the kind of action. Their lists show each entry with its icon and type where the table has them.
 - **connections**: Deleting connections leaves out the ones a job or a notification template still uses and names them before anything is deleted, instead of reporting them as failed afterwards.

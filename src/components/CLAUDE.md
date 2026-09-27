@@ -133,7 +133,8 @@ Use `DataTable` from `@/components/ui/data-table` for any list of records. It ha
 - Column filters use `data-table-faceted-filter`. Its field is framed in the `filter` tone once it holds something, and its list has a `filter` head, a search with a box for every value it shows, a checkbox per value with how many rows it leaves, and a foot with how many are picked and Clear. Values no row has under the other filters sit at the end and cannot be picked.
 - Row actions that a right click should also offer are declared once as data, like `connectionActions`, and rendered by both the menu button and `renderRowMenu`.
 - A plain `<Table>` is fine for small static, non-interactive data.
-- Rows that scroll inside a pane of fixed height with a head that sticks take the parts of `ui/table` straight inside `<ScrollArea horizontal>`, without the `Table` wrapper. Its own `overflow-x-auto` box would be the one the head sticks to, so the head scrolled away. See `Grid` in `database-grids.tsx`.
+- `Table` from `ui/table` sits in a `ScrollArea horizontal`, so a table wider than its box scrolls sideways with the scrollbar of the app, never the one of the browser. Every `DataTable` gets it from there. Never wrap a table in an `overflow-x-auto` box of its own.
+- Rows that scroll inside a pane of fixed height with a head that sticks take the parts of `ui/table` straight inside a `ScrollArea horizontal` that carries the height, without the `Table` wrapper. Its scroll area has no height, and the head would stick to it instead. See `Grid` in `database-grids.tsx`.
 
 ---
 

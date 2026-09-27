@@ -3,6 +3,7 @@
 import * as React from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import type { TableDensity, TablePreferences } from "@/lib/core/table-preferences";
+import { useTableDefaults } from "./table-defaults";
 import {
     isDefaultLayout,
     layoutColumns,
@@ -21,14 +22,17 @@ export interface ColumnLayoutOption {
 }
 
 /**
- * Holds the column layout of one DataTable: order, visibility and row height, plus the drag
- * state for moving columns by their header. Returns null when the table has no Columns menu.
+ * Holds the column layout of one DataTable: order, visibility, row height and rows per page,
+ * plus the drag state for moving columns by their header. A row height or page size that is the
+ * one of the profile is not kept, so the table follows the profile again. Returns null when the
+ * table has no Columns menu.
  */
 export function useColumnLayout<TData, TValue>(
     columns: ColumnDef<TData, TValue>[],
     option: ColumnLayoutOption | undefined,
     withSelect: boolean,
 ) {
+    const defaults = useTableDefaults();
     const described = React.useMemo(() => layoutColumns(columns), [columns]);
     const [layout, setLayout] = React.useState<ColumnLayout>(() => resolveLayout(described, option?.initial ?? null));
     const [drag, setDrag] = React.useState<{ id: string; over: string | null } | null>(null);
@@ -45,8 +49,13 @@ export function useColumnLayout<TData, TValue>(
     };
     const move = (id: string, toIndex: number) => update({ ...current, order: moveColumn(current.order, id, toIndex) });
 
+    const density = current.density ?? defaults.density;
+
     return {
-        density: current.density,
+        density,
+        /** The rows per page kept for this table, undefined while it follows the profile. */
+        pageSize: current.pageSize,
+        setPageSize: (pageSize: number) => update({ ...current, pageSize: pageSize === defaults.pageSize ? undefined : pageSize }),
         columnOrder: tanstackOrder(described, current, withSelect),
         columnVisibility: tanstackVisibility(described, current),
         // Filter-only columns are hidden by TanStack as well, they never belong in the saved layout.
@@ -54,7 +63,7 @@ export function useColumnLayout<TData, TValue>(
         settings: {
             columns: current.order.map((id) => ({ id, label: labels.get(id) ?? id, visible: !current.hidden.includes(id) })),
             pinned: described.filter((column) => column.pin === "start").map((column) => column.label),
-            density: current.density,
+            density,
             isCustomized: !isDefaultLayout(described, current),
             onToggle: (id: string) =>
                 update({
@@ -62,7 +71,7 @@ export function useColumnLayout<TData, TValue>(
                     hidden: current.hidden.includes(id) ? current.hidden.filter((entry) => entry !== id) : [...current.hidden, id],
                 }),
             onMove: move,
-            onDensityChange: (density: TableDensity) => update({ ...current, density }),
+            onDensityChange: (next: TableDensity) => update({ ...current, density: next === defaults.density ? undefined : next }),
             onReset: () => {
                 setLayout(resolveLayout(described, null));
                 option.onChange(null);

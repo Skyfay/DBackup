@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { prismaMock } from "@/lib/testing/prisma-mock";
-import { getTablePreferences, getViewMode, resetTablePreferences, saveTablePreferences, saveViewMode } from "@/services/user/preference-service";
+import {
+    getTableDefaults, getTablePreferences, getViewMode, resetTablePreferences, saveTablePreferences, saveViewMode, setTableDefaults,
+} from "@/services/user/preference-service";
 
 const layout = { order: ["status", "host"], hidden: ["host"], density: "compact" as const };
 
@@ -71,5 +73,36 @@ describe("getViewMode and saveViewMode", () => {
     it("refuses to store a view that does not exist", async () => {
         await expect(saveViewMode("user-1", "connections", "gallery" as never)).rejects.toThrow();
         expect(prismaMock.userPreference.upsert).not.toHaveBeenCalled();
+    });
+});
+
+describe("getTableDefaults and setTableDefaults", () => {
+    it("returns the rows per page and row height a user set, under a key no table id reaches", async () => {
+        prismaMock.userPreference.findUnique.mockResolvedValue({ value: JSON.stringify({ pageSize: 50, density: "compact" }) } as never);
+
+        await expect(getTableDefaults("user-1")).resolves.toEqual({ pageSize: 50, density: "compact" });
+        expect(prismaMock.userPreference.findUnique).toHaveBeenCalledWith(expect.objectContaining({
+            where: { userId_key: { userId: "user-1", key: "defaults:tables" } },
+        }));
+    });
+
+    it("falls back to 20 comfortable rows when nothing is set, the value is garbage or the read fails", async () => {
+        prismaMock.userPreference.findUnique.mockResolvedValueOnce(null);
+        await expect(getTableDefaults("user-1")).resolves.toEqual({ pageSize: 20, density: "comfortable" });
+
+        prismaMock.userPreference.findUnique.mockResolvedValueOnce({ value: JSON.stringify({ pageSize: 7, density: "compact" }) } as never);
+        await expect(getTableDefaults("user-1")).resolves.toEqual({ pageSize: 20, density: "comfortable" });
+
+        prismaMock.userPreference.findUnique.mockRejectedValueOnce(new Error("no such table: UserPreference"));
+        await expect(getTableDefaults("user-1")).resolves.toEqual({ pageSize: 20, density: "comfortable" });
+    });
+
+    it("stores the defaults and refuses a page size no table offers", async () => {
+        await setTableDefaults("user-1", { pageSize: 100, density: "compact" });
+        expect(prismaMock.userPreference.upsert).toHaveBeenCalledWith(expect.objectContaining({
+            create: { userId: "user-1", key: "defaults:tables", value: JSON.stringify({ pageSize: 100, density: "compact" }) },
+        }));
+
+        await expect(setTableDefaults("user-1", { pageSize: 5000, density: "compact" })).rejects.toThrow();
     });
 });

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ColumnFiltersState, OnChangeFn, PaginationState } from "@tanstack/react-table";
+import { useTableDefaults } from "@/components/ui/table-defaults";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 
@@ -24,7 +25,6 @@ interface UsePagedListOptions<T> {
     enabled: boolean;
     /** Poll interval in ms. Zero disables polling. */
     pollMs: number;
-    initialPageSize?: number;
     /** Runs whenever a page arrives, for state the caller keeps outside the rows. */
     onLoaded?: (result: PagedResult<T>) => void;
 }
@@ -40,13 +40,14 @@ export function usePagedList<T>({
     load,
     enabled,
     pollMs,
-    initialPageSize = 10,
     onLoaded,
 }: UsePagedListOptions<T>) {
+    const defaults = useTableDefaults();
     const [rows, setRows] = useState<T[]>([]);
     const [total, setTotal] = useState(0);
     const [isLoading, setIsLoading] = useState(false);
-    const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: initialPageSize });
+    // Starts with the rows per page of the profile.
+    const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: defaults.pageSize });
     const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
 
     const inFlight = useRef(false);

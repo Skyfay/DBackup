@@ -248,7 +248,6 @@ export function JobsClient({
                     bulkActions={bulkActions}
                     onBulkActionComplete={reload}
                     columnLayout={layout}
-                    initialPageSize={20}
                     onRowClick={openDetails}
                     view={shownView}
                     renderCard={(row) => <JobCard job={row.original} onOpen={openDetails} actions={renderActions(row.original)} />}

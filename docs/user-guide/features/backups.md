@@ -27,7 +27,7 @@ The strip on top counts the backups the list shows, what they take up, the newes
 | **Stored at** | Every destination that holds a copy |
 | **Integrity** | Verified, Check failed or Not checked |
 
-**Columns** switches columns on and off, moves them and picks a row height, like on the other lists. **What is inside** starts switched off. The switch next to the tabs shows the list as a table or as a timeline from md screens up, and a phone always gets the backups as cards.
+**Columns** switches columns on and off, moves them and picks a row height, like on the other lists. The list keeps its rows per page and row height until **Reset** brings back the ones of your [profile](/user-guide/features/profile-settings#tables). **What is inside** starts switched off. The switch next to the tabs shows the list as a table or as a timeline from md screens up, and a phone always gets the backups as cards.
 
 A dot on every copy in **Stored at** tells whether its destination answers right now, from the connection check that runs every minute: green when it does, amber when it missed its last check, red with the word **offline** after three missed checks in a row. A restore or download of an offline copy fails, and hovering the copy says since when it has not answered and where the same backup lies. A clock marks a copy whose destination could not be listed lately, so its list is old.
 

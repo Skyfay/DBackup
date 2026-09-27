@@ -36,6 +36,7 @@ import { useBulkActions } from "./use-bulk-actions";
 import { selectColumn } from "./data-table-selection";
 import { DataTableColumnSettings } from "./data-table-column-settings";
 import { useColumnLayout, type ColumnLayoutOption } from "./use-column-layout";
+import { useTableDefaults } from "./table-defaults";
 import { isPlainClick, toggleOnClick } from "./row-click";
 import { cn } from "@/lib/utils";
 import type { BulkAction, DataTableFilterableColumn, DataTableFilterOption, RowMenuBulk } from "./data-table-types";
@@ -77,8 +78,9 @@ interface DataTableProps<TData, TValue> {
     /** "card" draws the table as one panel with its toolbar inside, the look of the redesigned pages. */
     variant?: "default" | "card";
     /**
-     * Turns on the Columns menu: switch columns on and off, move them, pick a row height.
-     * Feed it from `useTableLayout`, which saves the layout to the user's account.
+     * Turns on the Columns menu: switch columns on and off, move them, pick a row height. The
+     * rows per page are kept with it. Feed it from `useTableLayout`, which saves the layout to
+     * the user's account. Without it the table follows the defaults of the profile.
      */
     columnLayout?: ColumnLayoutOption;
     /** Extra controls after the filters, such as quick status filters. */
@@ -93,8 +95,6 @@ interface DataTableProps<TData, TValue> {
     /** Leaves out the rows and the pages of the card look, for a list that waits for a pick in `aboveRows`. */
     hideRows?: boolean;
     searchPlaceholder?: string;
-    /** Rows per page to start with. */
-    initialPageSize?: number;
     /**
      * Makes the whole row clickable. Clicks on controls inside the row, and inside popovers
      * they open, are left to those controls. Give the row a button as well for keyboard users.
@@ -154,7 +154,6 @@ export function DataTable<TData, TValue>({
     aboveRows,
     hideRows = false,
     searchPlaceholder,
-    initialPageSize = 10,
     onRowClick,
     activeRowId,
     view = "table",
@@ -174,13 +173,16 @@ export function DataTable<TData, TValue>({
     manualSorting = false,
     manualFiltering = false,
 }: DataTableProps<TData, TValue>) {
+    // The rows per page and the row height of the profile, unless the table keeps its own.
+    const defaults = useTableDefaults();
+
     // Internal state (used if no controlled state is provided)
     const [internalSorting, setInternalSorting] = React.useState<SortingState>([]);
     const [internalColumnFilters, setInternalColumnFilters] = React.useState<ColumnFiltersState>([]);
-    const [internalPagination, setInternalPagination] = React.useState<PaginationState>({
+    const [internalPagination, setInternalPagination] = React.useState<PaginationState>(() => ({
         pageIndex: 0,
-        pageSize: initialPageSize,
-    });
+        pageSize: columnLayout?.initial?.pageSize ?? defaults.pageSize,
+    }));
     const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>(initialColumnVisibility);
     const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({});
 
@@ -201,12 +203,20 @@ export function DataTable<TData, TValue>({
         [enableRowSelection, columns]
     );
     const layout = useColumnLayout(columns, columnLayout, enableRowSelection);
+    const density = layout?.density ?? defaults.density;
+
+    // A table with a column layout keeps the rows per page it was switched to.
+    const changePagination: OnChangeFn<PaginationState> = (updater) => {
+        const next = typeof updater === "function" ? updater(pagination) : updater;
+        if (layout && next.pageSize !== pagination.pageSize) layout.setPageSize(next.pageSize);
+        setPagination(next);
+    };
 
     const table = useReactTable({
         data,
         columns: tableColumns,
         getRowId,
-        meta: { density: layout?.density },
+        meta: { density },
         enableRowSelection: enableRowSelection
             ? (row) => (isRowSelectable ? isRowSelectable(row.original) : true)
             : false,
@@ -224,7 +234,7 @@ export function DataTable<TData, TValue>({
         manualFiltering,
         onSortingChange: setSorting,
         onColumnFiltersChange: setColumnFilters,
-        onPaginationChange: setPagination,
+        onPaginationChange: changePagination,
         onColumnVisibilityChange: layout
             ? (updater) => {
                   const next = typeof updater === "function" ? updater(layout.columnVisibility) : updater;
@@ -269,7 +279,7 @@ export function DataTable<TData, TValue>({
         : [];
 
     const card = variant === "card";
-    const compact = layout?.density === "compact";
+    const compact = density === "compact";
     // In a card table the whole checkbox cell ticks the box, so a near miss beside it does not
     // open the row instead. The gap before the next column moves into that cell to widen it.
     const wideCheckbox = card && enableRowSelection;
@@ -313,7 +323,16 @@ export function DataTable<TData, TValue>({
             variant={variant}
             searchPlaceholder={searchPlaceholder}
             toolbarExtra={toolbarExtra}
-            columnSettings={layout ? <DataTableColumnSettings {...layout.settings} showDensity={view === "table"} /> : undefined}
+            columnSettings={layout ? (
+                <DataTableColumnSettings
+                    {...layout.settings}
+                    onReset={() => {
+                        layout.settings.onReset();
+                        if (pagination.pageSize !== defaults.pageSize) setPagination({ pageIndex: 0, pageSize: defaults.pageSize });
+                    }}
+                    showDensity={view === "table"}
+                />
+            ) : undefined}
         />
     );
     const bulkBar = hasBulk && (

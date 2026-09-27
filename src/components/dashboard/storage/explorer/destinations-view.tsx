@@ -235,7 +235,6 @@ export function DestinationsView(props: DestinationsViewProps) {
                     )
                 ) : undefined}
                 hideRows={view === "timeline"}
-                initialPageSize={20}
             />
 
             {alertsOf && <DestinationAlertsDialog destination={alertsOf} open onOpenChange={(open) => !open && setAlertsOf(null)} onSaved={onChanged} />}

@@ -18,8 +18,12 @@ const columns: LayoutColumn[] = [
 ];
 
 describe("resolveLayout", () => {
-    it("starts with every movable column in its place and the optional ones switched off", () => {
-        expect(resolveLayout(columns, null)).toEqual({ order: ["status", "host", "credential"], hidden: ["credential"], density: "comfortable" });
+    it("starts with every movable column in its place, the optional ones switched off and the rest from the profile", () => {
+        const layout = resolveLayout(columns, null);
+
+        expect(layout).toEqual({ order: ["status", "host", "credential"], hidden: ["credential"] });
+        expect(layout.density).toBeUndefined();
+        expect(layout.pageSize).toBeUndefined();
     });
 
     it("drops columns that no longer exist and adds new ones at the end with their default visibility", () => {
@@ -32,6 +36,10 @@ describe("resolveLayout", () => {
         const layout = resolveLayout(columns, { order: ["status", "host", "credential"], hidden: [], density: "comfortable" });
 
         expect(layout.hidden).toEqual([]);
+    });
+
+    it("keeps the rows per page the table was switched to", () => {
+        expect(resolveLayout(columns, { order: [], hidden: [], pageSize: 50 }).pageSize).toBe(50);
     });
 });
 
@@ -48,6 +56,13 @@ describe("isDefaultLayout", () => {
 
         expect(isDefaultLayout(columns, defaults)).toBe(true);
         expect(isDefaultLayout(columns, { ...defaults, order: moveColumn(defaults.order, "host", 0) })).toBe(false);
+    });
+
+    it("counts a row height or page size of its own as a change, since the table no longer follows the profile", () => {
+        const defaults = resolveLayout(columns, null);
+
+        expect(isDefaultLayout(columns, { ...defaults, density: "comfortable" })).toBe(false);
+        expect(isDefaultLayout(columns, { ...defaults, pageSize: 50 })).toBe(false);
     });
 });
 

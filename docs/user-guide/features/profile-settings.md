@@ -43,6 +43,12 @@ When enabled (default), starting a backup or restore job will automatically:
 
 If you prefer to stay on the current page when starting jobs, you can disable this option.
 
+#### Tables
+
+**Rows per page** and **Row height** set how every table starts, from 10 to 100 rows and comfortable or compact.
+
+A table with a **Columns** menu, like on the Connections, Jobs and Backups pages, keeps the rows per page and the row height you pick there instead. **Reset** in its **Columns** menu brings it back to the ones of your profile.
+
 ::: info
 Preference toggles are saved immediately when changed-no save button required.
 :::

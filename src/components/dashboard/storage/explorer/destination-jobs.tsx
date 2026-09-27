@@ -177,7 +177,6 @@ export function DestinationJobs({ destination, entries, destinations, canDelete,
                 </p>
             }
             getRowId={(entry) => entry.job.key}
-            initialPageSize={20}
         />
     );
 }

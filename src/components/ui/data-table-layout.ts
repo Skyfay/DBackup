@@ -17,7 +17,7 @@ declare module "@tanstack/react-table" {
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     interface TableMeta<TData extends RowData> {
-        /** The row height picked in the column menu, for cells that lay out differently when compact. */
+        /** The row height of the table, for cells that lay out differently when compact. */
         density?: TableDensity;
     }
 }
@@ -31,11 +31,15 @@ export interface LayoutColumn {
     filterOnly?: boolean;
 }
 
-/** The layout a table renders with: the movable columns in order, and the ones switched off. */
+/**
+ * The layout a table renders with: the movable columns in order, and the ones switched off. The
+ * row height and the rows per page are left out while the table follows the profile.
+ */
 export interface ColumnLayout {
     order: string[];
     hidden: string[];
-    density: TableDensity;
+    density?: TableDensity;
+    pageSize?: number;
 }
 
 /** TanStack derives a column's id from its accessor key when it has no explicit id. */
@@ -64,7 +68,7 @@ export function resolveLayout(columns: LayoutColumn[], saved: TablePreferences |
     const movable = columns.filter((column) => !column.pin && !column.filterOnly);
     const known = new Set(movable.map((column) => column.id));
     const defaultHidden = movable.filter((column) => column.defaultHidden).map((column) => column.id);
-    if (!saved) return { order: movable.map((column) => column.id), hidden: defaultHidden, density: "comfortable" };
+    if (!saved) return { order: movable.map((column) => column.id), hidden: defaultHidden };
 
     const savedOrder = saved.order.filter((id) => known.has(id));
     const added = movable.filter((column) => !savedOrder.includes(column.id));
@@ -75,6 +79,7 @@ export function resolveLayout(columns: LayoutColumn[], saved: TablePreferences |
             ...added.filter((column) => column.defaultHidden).map((column) => column.id),
         ],
         density: saved.density,
+        pageSize: saved.pageSize,
     };
 }
 
@@ -89,11 +94,12 @@ export function moveColumn(order: string[], id: string, toIndex: number): string
     return next;
 }
 
-/** True when a layout matches what the columns start with, so nothing needs to be stored. */
+/** True when a layout matches what the columns start with and follows the profile, so nothing needs to be stored. */
 export function isDefaultLayout(columns: LayoutColumn[], layout: ColumnLayout): boolean {
     const initial = resolveLayout(columns, null);
     return (
-        layout.density === initial.density &&
+        layout.density === undefined &&
+        layout.pageSize === undefined &&
         layout.order.join() === initial.order.join() &&
         [...layout.hidden].sort().join() === [...initial.hidden].sort().join()
     );

@@ -228,7 +228,6 @@ export function DatabaseExplorer({ canOpenBackups, initialView }: DatabaseExplor
                             )
                             : undefined}
                         hideRows={shownView === "timeline"}
-                        initialPageSize={20}
                     />
 
                 </>

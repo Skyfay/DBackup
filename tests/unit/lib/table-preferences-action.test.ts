@@ -1,15 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/auth/access-control", () => ({ getCurrentUserWithGroup: vi.fn() }));
 vi.mock("@/services/user/preference-service", () => ({
     saveTablePreferences: vi.fn(),
     resetTablePreferences: vi.fn(),
     saveViewMode: vi.fn(),
+    setTableDefaults: vi.fn(),
 }));
 
+import { revalidatePath } from "next/cache";
 import { getCurrentUserWithGroup } from "@/lib/auth/access-control";
-import { resetTablePreferences, saveTablePreferences, saveViewMode } from "@/services/user/preference-service";
-import { saveTableLayout, saveViewLayout } from "@/app/actions/auth/table-preferences";
+import { resetTablePreferences, saveTablePreferences, saveViewMode, setTableDefaults } from "@/services/user/preference-service";
+import { saveTableDefaults, saveTableLayout, saveViewLayout } from "@/app/actions/auth/table-preferences";
 
 const layout = { order: ["status"], hidden: [], density: "comfortable" as const };
 
@@ -58,5 +61,25 @@ describe("saveViewLayout", () => {
         vi.mocked(getCurrentUserWithGroup).mockResolvedValue(null);
         await expect(saveViewLayout("connections", "cards")).resolves.toMatchObject({ success: false, error: "Unauthorized" });
         expect(saveViewMode).not.toHaveBeenCalled();
+    });
+});
+
+describe("saveTableDefaults", () => {
+    beforeEach(() => {
+        vi.mocked(getCurrentUserWithGroup).mockResolvedValue({ id: "user-1" } as never);
+    });
+
+    it("saves the defaults of the signed-in user and renders the dashboard again, whose tables read them", async () => {
+        await expect(saveTableDefaults({ pageSize: 50, density: "compact" })).resolves.toEqual({ success: true });
+        expect(setTableDefaults).toHaveBeenCalledWith("user-1", { pageSize: 50, density: "compact" });
+        expect(revalidatePath).toHaveBeenCalledWith("/dashboard", "layout");
+    });
+
+    it("refuses a page size no table offers and a visitor without a session", async () => {
+        await expect(saveTableDefaults({ pageSize: 7, density: "compact" })).resolves.toMatchObject({ success: false });
+
+        vi.mocked(getCurrentUserWithGroup).mockResolvedValue(null);
+        await expect(saveTableDefaults({ pageSize: 50, density: "compact" })).resolves.toMatchObject({ success: false, error: "Unauthorized" });
+        expect(setTableDefaults).not.toHaveBeenCalled();
     });
 });

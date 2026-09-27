@@ -318,7 +318,6 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                     bulkActions={bulkActions}
                     onBulkActionComplete={afterChange}
                     columnLayout={layout}
-                    initialPageSize={20}
                     onRowClick={openDetails}
                     view={view}
                     renderCard={(row) => <ConnectionCard row={row} onOpen={openDetails} />}

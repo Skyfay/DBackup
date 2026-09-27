@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { Columns3, GripVertical, Pin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -82,7 +83,14 @@ export function DataTableColumnSettings({
                         <p className="text-sm font-semibold">Columns</p>
                         <p className="mt-0.5 text-xs text-muted-foreground">Drag to reorder. Saved to your account.</p>
                     </div>
-                    <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={onReset} disabled={!isCustomized}>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        onClick={onReset}
+                        disabled={!isCustomized}
+                        title="Back to the default columns, and to the row height and rows per page of your profile"
+                    >
                         Reset
                     </Button>
                 </div>
@@ -159,6 +167,13 @@ export function DataTableColumnSettings({
                         </div>
                     </>
                 )}
+                <div className="-mx-2 mt-1.5 border-t" />
+                <Link
+                    href="/dashboard/profile?tab=preferences"
+                    className="block rounded-sm px-2 pt-2 pb-1 text-xs text-muted-foreground outline-none hover:text-foreground hover:underline hover:underline-offset-4 focus-visible:ring-2 focus-visible:ring-ring/50"
+                >
+                    Rows per page and row height of every table in your profile
+                </Link>
             </PopoverContent>
         </Popover>
     );

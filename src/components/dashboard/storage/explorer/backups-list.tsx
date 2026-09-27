@@ -269,7 +269,6 @@ export function BackupsList({
                 bulkActions={bulkActions}
                 onBulkActionComplete={onChanged}
                 columnLayout={columnLayout}
-                initialPageSize={20}
                 onRowClick={onOpen}
                 view={listView(view)}
                 renderCard={(row) => (

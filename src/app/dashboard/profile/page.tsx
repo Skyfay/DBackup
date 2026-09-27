@@ -9,6 +9,7 @@ import { SecurityForm } from "@/components/settings/security-form";
 import { PreferencesForm } from "@/components/settings/preferences-form";
 import { SessionsForm } from "@/components/settings/sessions-form";
 import { SsoForm } from "@/components/settings/sso-form";
+import { TableDefaultsForm } from "@/components/settings/table-defaults-form";
 import { redirect } from "next/navigation";
 import { getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
@@ -96,6 +97,7 @@ export default async function ProfilePage() {
                         userId={session.user.id}
                         autoRedirectOnJobStart={userPreferences?.autoRedirectOnJobStart ?? true}
                     />
+                    <TableDefaultsForm />
                 </TabsContent>
                 <TabsContent value="security" className="space-y-4">
                     <SecurityForm

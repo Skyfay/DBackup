@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { getAuditLogs, getAuditFilterStats } from "@/app/actions/audit/audit";
 import { DataTable } from "@/components/ui/data-table";
+import { useTableDefaults } from "@/components/ui/table-defaults";
 import { AuditLogWithUser, columns } from "./columns";
 import { toast } from "sonner";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
@@ -14,11 +15,13 @@ interface FilterOption {
 }
 
 export function AuditTable() {
+  const defaults = useTableDefaults();
   const [logs, setLogs] = useState<AuditLogWithUser[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  // Starts with the rows per page of the profile.
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
-    pageSize: 20,
+    pageSize: defaults.pageSize,
   });
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
 

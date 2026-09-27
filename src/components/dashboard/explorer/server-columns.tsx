@@ -41,7 +41,8 @@ function CoverageBar({ covered, total }: { covered: number; total: number }) {
     );
 }
 
-function DatabasesCell({ row, coverage }: { row: ServerRow; coverage: boolean }) {
+/** The databases of a server with how many a job backs up, or the keys of a Redis or Valkey server. */
+export function DatabasesCell({ row, coverage }: { row: ServerRow; coverage: boolean }) {
     if (row.instance) {
         const total = row.instance.logical.length + row.instance.emptyLogical;
         return (
@@ -59,6 +60,19 @@ function DatabasesCell({ row, coverage }: { row: ServerRow; coverage: boolean })
             </p>
             <CoverageBar covered={row.covered} total={row.databases.length} />
         </div>
+    );
+}
+
+/** Whether a server answers, with the time of its last health check. */
+export function ServerStatus({ row }: { row: Pick<ServerRow, "server" | "summary"> }) {
+    const status = STATUS[row.server.status];
+    const latency = row.summary?.latencyMs;
+    return (
+        <span className="flex items-center gap-2 text-sm whitespace-nowrap">
+            <span className={cn("size-1.5 shrink-0 rounded-full", status.dot)} aria-hidden="true" />
+            {status.label}
+            {latency != null && row.server.status === "ONLINE" && <span className="text-xs text-muted-foreground tabular-nums">{latency} ms</span>}
+        </span>
     );
 }
 
@@ -156,17 +170,7 @@ export function serverColumns({ coverage, backups, biggest, renderActions }: Col
             id: "status",
             accessorFn: (row) => row.server.status,
             header: "Status",
-            cell: ({ row }) => {
-                const status = STATUS[row.original.server.status];
-                const latency = row.original.summary?.latencyMs;
-                return (
-                    <span className="flex items-center gap-2 text-sm whitespace-nowrap">
-                        <span className={cn("size-1.5 shrink-0 rounded-full", status.dot)} aria-hidden="true" />
-                        {status.label}
-                        {latency != null && row.original.server.status === "ONLINE" && <span className="text-xs text-muted-foreground tabular-nums">{latency} ms</span>}
-                    </span>
-                );
-            },
+            cell: ({ row }) => <ServerStatus row={row.original} />,
         },
         { id: "actions", header: "", enableSorting: false, cell: ({ row }) => <div className="flex justify-end">{renderActions(row.original)}</div> },
         // Only here for the filter.

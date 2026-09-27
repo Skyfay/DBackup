@@ -16,6 +16,7 @@ import { QuickFilter } from "@/components/ui/quick-filter";
 import type { DatabaseOverview, ServersOverview } from "@/services/databases/database-explorer-types";
 import { engineOf } from "./database-columns";
 import { backupsHref, useDatabaseData } from "./database-data";
+import { ServerCard } from "./server-card";
 import { serverColumns } from "./server-columns";
 import { matchesQuick, serverHref, serverRows, serversSummary, type ServerQuick, type ServerRow } from "./server-model";
 
@@ -28,6 +29,8 @@ const QUICK: { value: ServerQuick; label: string; dot?: string }[] = [
 interface ServersTabProps {
     overview: DatabaseOverview;
     canOpenBackups: boolean;
+    /** A phone, which gets cards instead of the table. */
+    cards: boolean;
 }
 
 /**
@@ -36,7 +39,7 @@ interface ServersTabProps {
  * engine is marked, since a backup restores only onto the same version or a newer one. A click
  * opens the page of the server.
  */
-export function ServersTab({ overview, canOpenBackups }: ServersTabProps) {
+export function ServersTab({ overview, canOpenBackups, cards }: ServersTabProps) {
     const router = useRouter();
     const loaded = useDatabaseData<ServersOverview>("/api/databases/servers", "The servers could not be loaded.");
     const [quick, setQuick] = useState<ServerQuick>("all");
@@ -121,6 +124,16 @@ export function ServersTab({ overview, canOpenBackups }: ServersTabProps) {
                 isLoading={loaded.reloading}
                 getRowId={(row) => row.server.id}
                 onRowClick={open}
+                view={cards ? "cards" : "table"}
+                renderCard={(row) => (
+                    <ServerCard
+                        row={row.original}
+                        coverage={coverage}
+                        backups={backups}
+                        href={serverHref(row.original.server.id)}
+                        actions={<BackupRowMenu name={row.original.server.name} groups={groupsFor(row.original)} />}
+                    />
+                )}
                 toolbarExtra={(
                     <QuickFilter
                         aria-label="Filter the servers"

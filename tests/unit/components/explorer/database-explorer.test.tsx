@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import type { ViewMode } from "@/lib/core/table-preferences";
 import { measureTimeline } from "../storage/explorer-fixtures";
 import { destination, file, job, run, stored } from "../storage/explorer-fixtures";
-import { ago, dbRun, overview, serve } from "./database-fixtures";
+import { ago, dbRun, onPhone, overview, serve } from "./database-fixtures";
 
 let search = new URLSearchParams();
 const replace = vi.fn((url: string) => {
@@ -35,6 +35,19 @@ describe("Database Explorer", () => {
         search = new URLSearchParams();
         replace.mockClear();
         push.mockClear();
+    });
+
+    it("shows the databases as cards on a phone, each opening its page", async () => {
+        serve();
+        await onPhone(async () => {
+            page();
+
+            expect(await screen.findByRole("link", { name: /^shop/ })).toHaveAttribute("href", "/dashboard/explorer/database?server=s1&database=shop");
+            // The link sits in the head of its card.
+            const analytics = screen.getByRole("link", { name: /^analytics/ }).parentElement!.parentElement!;
+            expect(within(analytics).getByText("In no job")).toBeInTheDocument();
+            expect(screen.queryByRole("table")).not.toBeInTheDocument();
+        });
     });
 
     it("lists every database with the jobs that back it up, and the ones in no job", async () => {

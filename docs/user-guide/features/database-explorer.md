@@ -24,7 +24,7 @@ Tables and rows are the only data read live, when you open them.
 
 ## Table and Timeline
 
-The switch in the top right shows the list as a table or by day, like the Backups page.
+The switch in the top right shows the list as a table or by day, like the Backups page. A phone shows the databases as cards and has no switch.
 
 The **timeline** groups the databases by server, with a column per day:
 
@@ -90,7 +90,7 @@ The **Servers** tab lists every database server with:
 - The size of its databases, and its kept backups with the time of the last one
 - Its status with the response time of its last health check
 
-The numbers above the list count the servers, their databases, the new versions of the last 30 days, the servers behind and the ones online. The quick filters keep the servers **Behind** or **Not all backed up**, and the **Engine** filter keeps one kind of database.
+A phone shows the servers as cards. The numbers above the list count the servers, their databases, the new versions of the last 30 days, the servers behind and the ones online. The quick filters keep the servers **Behind** or **Not all backed up**, and the **Engine** filter keeps one kind of database.
 
 A server is **behind** when a kept backup of another server with the same engine has a newer version than the one it runs. A backup restores only onto the same version or a newer one, so those backups would not restore onto it. The line under its version names the server and the version it is behind.
 

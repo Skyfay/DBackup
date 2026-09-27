@@ -447,7 +447,8 @@ export function DataTable<TData, TValue>({
                     {toolbarNote}
                 </div>
                 {rows.length > 0 ? (
-                    <div className={cn("grid gap-4", cardGridClassName ?? "sm:grid-cols-2 xl:grid-cols-3")}>
+                    // One column as wide as the screen on a phone, so a long name truncates instead of widening its card.
+                    <div className={cn("grid grid-cols-1 gap-4", cardGridClassName ?? "sm:grid-cols-2 xl:grid-cols-3")}>
                         {rows.map((row) =>
                             withRowMenu(row, (
                                 // `contents` keeps the card itself the grid item, the wrapper only carries the menu.

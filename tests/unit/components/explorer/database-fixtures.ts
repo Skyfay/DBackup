@@ -59,6 +59,17 @@ export const versionHistory: VersionPeriod[] = [
 ];
 export const fetchMock = vi.fn();
 
+/** Runs a check at the width of a phone, which gets the cards. */
+export async function onPhone(check: () => Promise<void>) {
+    const width = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { value: 375, configurable: true });
+    try {
+        await check();
+    } finally {
+        Object.defineProperty(window, "innerWidth", { value: width, configurable: true });
+    }
+}
+
 /** A run with what a test does not care about filled in. */
 export function dbRun(overrides: Partial<DatabaseRun> & Pick<DatabaseRun, "id" | "startedAt">): DatabaseRun {
     return {

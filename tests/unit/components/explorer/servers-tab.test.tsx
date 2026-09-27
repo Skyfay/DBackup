@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { serve } from "./database-fixtures";
+import { onPhone, serve } from "./database-fixtures";
 
 let search = new URLSearchParams();
 const replace = vi.fn((url: string) => {
@@ -69,6 +69,18 @@ describe("the Servers tab", () => {
         await user.click(screen.getByRole("button", { name: /Behind/ }));
         expect(screen.queryByRole("link", { name: "Shop cluster" })).not.toBeInTheDocument();
         expect(screen.getByRole("link", { name: "ERP" })).toBeInTheDocument();
+    });
+
+    it("shows the servers as cards on a phone, each opening its page", async () => {
+        await onPhone(async () => {
+            render(explorer());
+
+            expect(await screen.findByText("38 kept")).toBeInTheDocument();
+            expect(screen.getByRole("link", { name: /^Shop cluster/ })).toHaveAttribute("href", "/dashboard/explorer/server?server=s1");
+            expect(screen.getByText("behind ERP test, 16.0.4200")).toBeInTheDocument();
+            expect(screen.getByText("none kept")).toBeInTheDocument();
+            expect(screen.queryByRole("table")).not.toBeInTheDocument();
+        });
     });
 
     it("opens a server as a page of its own on a click on its row", async () => {

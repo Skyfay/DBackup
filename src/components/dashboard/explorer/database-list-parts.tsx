@@ -87,7 +87,7 @@ export function DatabaseCard({ database, server, jobsById, coverage, href, actio
 }) {
     const instance = database.kind === "instance";
     return (
-        <div className="relative rounded-xl border bg-card p-4 shadow-sm has-[a:focus-visible]:bg-muted/50">
+        <div className="relative min-w-0 rounded-xl border bg-card p-4 shadow-sm has-[a:focus-visible]:bg-muted/50">
             <div className="flex items-center gap-3">
                 <DestinationTile destination={{ adapterId: server?.adapterId ?? "" }} />
                 <Link href={href} className="min-w-0 flex-1 outline-none after:absolute after:inset-0">

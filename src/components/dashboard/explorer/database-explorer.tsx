@@ -136,7 +136,8 @@ export function DatabaseExplorer({ initialView, ...access }: DatabaseExplorerPro
         reload();
     }, [reload]);
 
-    if (overview.loading) return <DatabasesSkeleton />;
+    // Waits for the measured screen too, so a phone never flashes the table before its cards.
+    if (overview.loading || isMobile === undefined) return <DatabasesSkeleton />;
     if (!data || !summary) {
         return (
             <DatabasesEmpty title="The databases could not be loaded">
@@ -182,7 +183,7 @@ export function DatabaseExplorer({ initialView, ...access }: DatabaseExplorerPro
             </ExplorerTabs>
 
             {tab === "servers" ? (
-                <ServersTab overview={data} canOpenBackups={canOpenBackups} />
+                <ServersTab overview={data} canOpenBackups={canOpenBackups} cards={isMobile} />
             ) : neverRead ? (
                 <DatabasesEmpty title="The servers have not been read yet">
                     DBackup reads the databases of every server once an hour.{" "}

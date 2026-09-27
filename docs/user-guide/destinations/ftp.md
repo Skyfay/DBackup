@@ -5,7 +5,7 @@ Store backups on a remote FTP server. Supports plain FTP and explicit FTPS (FTP 
 ## Configuration
 
 ::: info Credential Profile required
-FTP requires a [Credential Profile](/user-guide/security/credential-profiles) of type `USERNAME_PASSWORD`. Create one in **Settings → Vault → Credentials** before saving the destination.
+FTP requires a [Credential Profile](/user-guide/security/credential-profiles) of type `USERNAME_PASSWORD`. Create one in **Vault → Credentials** before saving the destination.
 :::
 
 | Field | Description | Default | Required |
@@ -19,7 +19,7 @@ FTP requires a [Credential Profile](/user-guide/security/credential-profiles) of
 
 ## Setup Guide
 
-1. Create a `USERNAME_PASSWORD` credential profile in **Settings → Vault → Credentials** ([guide](/user-guide/security/credential-profiles))
+1. Create a `USERNAME_PASSWORD` credential profile in **Vault → Credentials** ([guide](/user-guide/security/credential-profiles))
 2. Ensure an FTP server is running on the target host
 3. Create a dedicated user with write access to the backup directory
 4. Go to **Connections** → **Backup Destinations** → **Add New** → **FTP**

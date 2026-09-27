@@ -65,13 +65,18 @@ model CredentialProfile {
 }
 
 model EncryptionProfile {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  secretKey   String
-  jobs        Job[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String    @id @default(cuid())
+  name            String
+  description     String?
+  secretKey       String
+  jobs            Job[]
+  // The last recovery kit that held this key. Kept here, since the audit log is cleaned after a while.
+  kitDownloadedAt DateTime?
+  // JSON array of other profile ids whose backups this key opens, a deleted one or one of another
+  // install, noted whenever a restore or a recovery matched it.
+  aliases         String    @default("[]")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 }
 
 model RetentionPolicy {

@@ -5,7 +5,7 @@ Store backups in AWS S3 with support for storage classes, lifecycle policies, an
 ## Configuration
 
 ::: info Credential Profile required
-Amazon S3 requires a [Credential Profile](/user-guide/security/credential-profiles) of type `ACCESS_KEY`. Create one in **Settings → Vault → Credentials** before saving the destination.
+Amazon S3 requires a [Credential Profile](/user-guide/security/credential-profiles) of type `ACCESS_KEY`. Create one in **Vault → Credentials** before saving the destination.
 :::
 
 | Field | Description | Default | Required |
@@ -39,7 +39,7 @@ Objects stored in `GLACIER` or `DEEP_ARCHIVE` are archived and cannot be downloa
    - Go to [IAM Console](https://console.aws.amazon.com/iam/) → **Users** → **Create user**
    - Attach the `AmazonS3FullAccess` policy (or a scoped policy - see below)
    - Create an **Access Key** (use case: "Application outside AWS") and copy both keys
-3. **Create an `ACCESS_KEY` credential profile** in **Settings → Vault → Credentials** with the Access Key ID and Secret Access Key ([guide](/user-guide/security/credential-profiles))
+3. **Create an `ACCESS_KEY` credential profile** in **Vault → Credentials** with the Access Key ID and Secret Access Key ([guide](/user-guide/security/credential-profiles))
 4. Go to **Connections** → **Backup Destinations** → **Add New** → **Amazon S3**
 5. Enter your Region and Bucket, then pick the credential profile under **Login**
 6. (Optional) Set a **Folder** in the **Location** part to organize backups in a subfolder

@@ -12,6 +12,7 @@ import {
     parseCredentialData,
 } from "@/lib/core/credentials";
 import { generateSshKeyPair, readPublicKey, sshFingerprint } from "@/lib/transport/openssh-key";
+import { holdsOf } from "@/lib/core/credential-holds";
 
 const log = logger.child({ service: "CredentialService" });
 
@@ -205,6 +206,52 @@ export async function listCredentialProfilesWithCounts(
             // Each adapter once, so a picker can suggest the logins that connections of the
             // same kind already use.
             usedBy: [...new Set(users.map((user) => user.adapterId))].sort(),
+        };
+    });
+}
+
+/** What the Vault shows of a connection that logs in with a profile. Never its config. */
+const vaultConnectionFields = {
+    id: true,
+    name: true,
+    adapterId: true,
+    type: true,
+    storageRole: true,
+    lastStatus: true,
+    lastHealthCheck: true,
+} as const;
+
+/**
+ * Lists credential profiles for the Vault page: each with what it holds in words that name no
+ * secret, and every connection that logs in with it in either slot. One decrypt per profile.
+ */
+export async function listCredentialProfilesForVault() {
+    const profiles = await prisma.credentialProfile.findMany({
+        orderBy: { createdAt: "desc" },
+        include: {
+            primaryAdapters: { select: vaultConnectionFields, orderBy: { name: "asc" } },
+            sshAdapters: { select: vaultConnectionFields, orderBy: { name: "asc" } },
+        },
+    });
+    return profiles.map(({ primaryAdapters, sshAdapters, data, ...profile }) => {
+        let payload: unknown = null;
+        try {
+            payload = JSON.parse(decrypt(data));
+        } catch (error) {
+            log.warn("A credential payload could not be read for the Vault", { id: profile.id }, wrapError(error));
+        }
+        const described = payload ? describeParsedPayload(payload) : {};
+        const holds = payload
+            ? holdsOf(profile.type as CredentialType, payload, described.fingerprint)
+            : { holds: "cannot be read", attention: "Its secret does not open with the ENCRYPTION_KEY of this install." };
+        return {
+            ...sanitize(profile),
+            ...described,
+            ...holds,
+            uses: [
+                ...primaryAdapters.map((adapter) => ({ ...adapter, slot: "primary" as const })),
+                ...sshAdapters.map((adapter) => ({ ...adapter, slot: "ssh" as const })),
+            ],
         };
     });
 }

@@ -23,7 +23,7 @@ MySQL below 5.7 is not supported, but dumps are not blocked either. When the det
 ## Configuration
 
 ::: info Credential Profiles required
-MySQL / MariaDB requires a [Credential Profile](/user-guide/security/credential-profiles). Create an `USERNAME_PASSWORD` profile in **Settings → Vault → Credentials** before saving the source. SSH mode additionally requires an `SSH_KEY` profile.
+MySQL / MariaDB requires a [Credential Profile](/user-guide/security/credential-profiles). Create an `USERNAME_PASSWORD` profile in **Vault → Credentials** before saving the source. SSH mode additionally requires an `SSH_KEY` profile.
 :::
 
 | Field | Description | Default | Required |

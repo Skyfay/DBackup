@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useImperativeHandle, type Ref } from "react";
+import { useState, useEffect, useCallback, useMemo, useImperativeHandle, useRef, type Ref } from "react";
 import { STORAGE_ROLES, storageRoleLabel, supportsStorageRole, canOfferCounterpart, counterpartStorageRole, type StorageRole } from "@/lib/core/storage-roles";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -13,7 +13,7 @@ import Link from "next/link";
 import { ADAPTER_DEFINITIONS, AdapterDefinition } from "@/lib/adapters/definitions";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable } from "@/components/ui/data-table";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { AdapterManagerProps, AdapterConfig } from "./types";
 import { ConnectionForm } from "./connection-form";
@@ -71,6 +71,14 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
     const [splitId, setSplitId] = useState<string | null>(null);
     const router = useRouter();
     const layout = useTableLayout(tableId, initialLayout);
+    // A link can open the details of one connection with `?open=`, like the connections a credential
+    // profile of the Vault lists. It opens once, when the list holds it.
+    const searchParams = useSearchParams();
+    const linked = useRef(searchParams.get("open"));
+    const viewNow = useRef(view);
+    useEffect(() => {
+        viewNow.current = view;
+    }, [view]);
 
     const kind: ConnectionKind =
         type === "database" ? "database"
@@ -95,7 +103,13 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
             const res = await fetch(listUrl);
             if (res.ok) {
                 const data = await res.json();
-                setConfigs(applyRoleFilter(data));
+                const list = applyRoleFilter(data);
+                setConfigs(list);
+                const wanted = linked.current;
+                if (wanted && list.some((config) => config.id === wanted)) {
+                    linked.current = null;
+                    setDetails({ id: wanted, open: true, view: viewNow.current });
+                }
             } else {
                  const data = await res.json();
                  toast.error(data.error || "Failed to load configurations");

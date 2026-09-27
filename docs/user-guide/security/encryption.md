@@ -29,45 +29,79 @@ Each backup is encrypted with:
 
 ## Encryption Profiles
 
-Profiles are managed in **Settings > Vault**.
+An encryption profile is a key in the Vault. Keys live on the **Encryption** tab of the **Vault** page in the sidebar.
 
-### Create a Profile
+### The Encryption Tab
 
-1. Go to **Settings** → **Vault**
-2. Click **Create Profile**
-3. Enter a descriptive name
-4. Click **Create**
+The numbers on top count the keys and how many are in use, the encrypted backups of all backups, backups whose key is missing, the keys that were never in a recovery kit and when the last kit was downloaded. The backups come from the listings the Backups page keeps of each destination, so a destination that was never listed is not counted.
 
-The system generates a secure 256-bit key.
+Each key is a row with:
 
-### View Profile Key
+| Column | Shows |
+| :--- | :--- |
+| **Key** | Its name and description |
+| **Key ID** | The first 8 characters of a hash of the key, see [Key ID](#key-id) |
+| **Encrypts** | The jobs, and the config backup, that encrypt their new backups with it |
+| **Protects** | How many backups were made with it, at how many destinations |
+| **Recovery kit** | When it was last in a downloaded kit, or **Never downloaded** in amber |
+| **Created** | When the key was made |
 
-After creation:
-1. Click on the profile
-2. Click **Show Key**
-3. Copy the 64-character hex string
+The chips beside the search show **All**, **In use** and **Never in a kit**. A click on a row opens a side panel with the jobs of the key, its backups per destination, its recovery kit and when it was made and last revealed, as far as the audit log still reaches. A right click on a row, or the button at its end, offers **Recovery kit**, **Reveal key**, **Edit** and **Delete**. Several selected keys get a recovery kit or are deleted together. A phone shows the keys as cards.
+
+When backups at a destination name a key the Vault does not have, a banner above the list says how many and where. Import that key from their recovery kit to open them again.
+
+### Key ID
+
+The Key ID tells keys apart without showing one, like two installs that should hold the same key, or an imported key and the one it came from. It is the start of the SHA-256 of the 32 bytes of the key, so anyone holding a key can check it:
+
+```bash
+echo -n "<64 hex characters>" | xxd -r -p | sha256sum | cut -c1-8
+```
+
+### Create a Key
+
+1. Click **New key**
+2. Enter a name and, if it helps, a description
+3. Click **Create key**
+
+DBackup makes a random 256-bit key. The dialog then offers the recovery kit of the new key, which holds the key and the tool to open its backups without DBackup. **Later** skips it, and the list marks the key until a kit with it was downloaded.
+
+### Reveal a Key
+
+**Reveal key** shows the Key ID and the 64 hex characters of the key with a copy button. Every reveal is written to the audit log first, like a revealed credential.
 
 ::: danger Save Your Key
-This key is the **only way** to decrypt your backups. Store it securely in a password manager!
+This key is the **only way** to decrypt your backups. A [recovery kit](/user-guide/security/recovery-kit) is the better way to keep it, since it holds the key together with the tool that uses it.
 :::
 
 ### Import a Key
 
-To restore access after reinstallation:
-1. Click **Import Key**
+To restore access after a reinstall, or to open backups of another install:
+
+1. Click **Import key**
 2. Enter a name
-3. Paste the 64-character hex key
-4. Click **Import**
+3. Paste the 64 hex characters of the key, or drop a file from its recovery kit: `master.key`, a file from its `keys/` folder, or the whole `.zip`. A kit with several keys asks which one.
+4. Check the Key ID under the field, then click **Import key**
 
-### Rename a Profile
+A key the Vault holds already is refused with the name of the key that has it. Backups that name a key the Vault lacks open with an imported key that fits, the restore finds it by itself.
 
-Click the pencil icon next to a profile to change its name or description. The key itself stays the same.
+A key imported from a recovery kit remembers the ID it had in the install the kit came from, so the Vault counts the backups that name that ID under the imported key right away. A kit with a single key made by an older version does not name the ID. Then the Vault learns it the first time a restore, or the **Encryption Key Required** dialog of a backup, opens one of those backups with the key.
+
+### Edit a Key
+
+**Edit** changes the name and the description. The key itself never changes, for a new one create a key and pick it in the jobs.
 
 Backups, jobs and Recovery Kits identify the key by the profile ID, so they keep working after a rename. A Recovery Kit downloaded earlier still lists the old name.
 
 ::: warning Config Backup Import
 Importing a config backup matches encryption profiles by name. If the imported config backup contains a different profile with the same name as a local one, its jobs are linked to the local key.
 :::
+
+### Delete a Key
+
+A key that a job or the config backup still encrypts with cannot be deleted. The dialog names them with a link to each, pick another key there first. Deleting it anyway would have stored the next backups of those jobs unencrypted.
+
+A key that backups still need names them and asks you to confirm that a recovery kit keeps the key, or that the backups are no longer needed. A key that was never in a kit can get its kit right there. After the delete nobody can open those backups, DBackup neither.
 
 ## Using Encryption
 

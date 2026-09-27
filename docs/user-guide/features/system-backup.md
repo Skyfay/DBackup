@@ -176,7 +176,7 @@ When starting fresh:
 3. First admin account: Sign up
 
 4. Import encryption profile key:
-   - Settings → Vault → Import Key
+   - Vault → Encryption → Import key
 
 5. Offline restore:
    - Settings → System Config → Offline Restore

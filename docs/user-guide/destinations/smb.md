@@ -5,7 +5,7 @@ Store backups on a Windows share, NAS, or any SMB/CIFS-compatible network storag
 ## Configuration
 
 ::: info Credential Profile required
-SMB requires a [Credential Profile](/user-guide/security/credential-profiles) of type `USERNAME_PASSWORD`. Create one in **Settings → Vault → Credentials** before saving the destination. For anonymous access, the credential profile username defaults to `guest` with no password.
+SMB requires a [Credential Profile](/user-guide/security/credential-profiles) of type `USERNAME_PASSWORD`. Create one in **Vault → Credentials** before saving the destination. For anonymous access, the credential profile username defaults to `guest` with no password.
 :::
 
 | Field | Description | Default | Required |
@@ -27,7 +27,7 @@ SMB requires a [Credential Profile](/user-guide/security/credential-profiles) of
 
 ## Setup Guide
 
-1. Create a `USERNAME_PASSWORD` credential profile in **Settings → Vault → Credentials** ([guide](/user-guide/security/credential-profiles))
+1. Create a `USERNAME_PASSWORD` credential profile in **Vault → Credentials** ([guide](/user-guide/security/credential-profiles))
 2. Ensure the SMB share is accessible from the DBackup server
 3. Create a dedicated user with write access to the share (recommended)
 4. Go to **Connections** → **Backup Destinations** → **Add New** → **SMB / CIFS**

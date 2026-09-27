@@ -12,16 +12,20 @@ import {
     getEncryptionProfiles,
     getEncryptionProfile,
     deleteEncryptionProfile,
+    deleteBlockerOf,
+    findProfileByKey,
     getProfileMasterKey,
     createEncryptionProfile,
     importEncryptionProfile,
+    markRecoveryKit,
 } from '@/services/backup/encryption-service';
 import { decrypt } from '@/lib/crypto';
+import { ConflictError, NotFoundError } from '@/lib/logging/errors';
 
 // --- Test fixtures ---
 
 // Every profile the service hands back leaves out its key, see summaryFields in the service.
-const SUMMARY = { id: true, name: true, description: true, createdAt: true, updatedAt: true };
+const SUMMARY = { id: true, name: true, description: true, kitDownloadedAt: true, createdAt: true, updatedAt: true };
 
 const validHex64 = 'a'.repeat(64); // 64 hex chars = 32 bytes
 
@@ -90,7 +94,12 @@ describe('getEncryptionProfile', () => {
 // --- deleteEncryptionProfile (lines 103-107) ---
 
 describe('deleteEncryptionProfile', () => {
-    beforeEach(() => vi.clearAllMocks());
+    beforeEach(() => {
+        vi.clearAllMocks();
+        prismaMock.encryptionProfile.findUnique.mockResolvedValue({ id: 'profile-1' } as any);
+        prismaMock.job.count.mockResolvedValue(0);
+        prismaMock.systemSetting.findUnique.mockResolvedValue(null);
+    });
 
     it('calls prisma.delete with the correct id', async () => {
         prismaMock.encryptionProfile.delete.mockResolvedValue(makeProfile() as any);
@@ -104,6 +113,82 @@ describe('deleteEncryptionProfile', () => {
         prismaMock.encryptionProfile.delete.mockRejectedValue(new Error('Foreign key constraint'));
 
         await expect(deleteEncryptionProfile('profile-1')).rejects.toThrow('Foreign key constraint');
+    });
+
+    // The relation is ON DELETE SET NULL, so a delete would quietly store the next backups in the clear.
+    it('refuses a key that jobs still encrypt with', async () => {
+        prismaMock.job.count.mockResolvedValue(2);
+
+        await expect(deleteEncryptionProfile('profile-1')).rejects.toThrow(ConflictError);
+        await expect(deleteEncryptionProfile('profile-1')).rejects.toThrow('2 jobs encrypt with this key');
+        expect(prismaMock.encryptionProfile.delete).not.toHaveBeenCalled();
+    });
+
+    it('refuses the key of the config backup', async () => {
+        prismaMock.systemSetting.findUnique.mockResolvedValue({ key: 'config.backup.profileId', value: 'profile-1' } as any);
+
+        await expect(deleteEncryptionProfile('profile-1')).rejects.toThrow('the config backup encrypts with this key');
+        expect(prismaMock.encryptionProfile.delete).not.toHaveBeenCalled();
+    });
+
+    it('names both when a job and the config backup use the key', async () => {
+        prismaMock.job.count.mockResolvedValue(1);
+        prismaMock.systemSetting.findUnique.mockResolvedValue({ key: 'config.backup.profileId', value: 'profile-1' } as any);
+
+        expect(await deleteBlockerOf('profile-1')).toBe('1 job and the config backup encrypt with this key. Pick another key there first.');
+    });
+
+    it('answers a key that is gone with NotFoundError', async () => {
+        prismaMock.encryptionProfile.findUnique.mockResolvedValue(null);
+
+        await expect(deleteEncryptionProfile('missing')).rejects.toThrow(NotFoundError);
+    });
+});
+
+// --- the recovery kit and the lookup by key ---
+
+describe('markRecoveryKit', () => {
+    beforeEach(() => vi.clearAllMocks());
+
+    it('notes the time on every key of the kit', async () => {
+        await markRecoveryKit(['a', 'b']);
+
+        expect(prismaMock.encryptionProfile.updateMany).toHaveBeenCalledWith({
+            where: { id: { in: ['a', 'b'] } },
+            data: { kitDownloadedAt: expect.any(Date) },
+        });
+    });
+});
+
+describe('findProfileByKey', () => {
+    beforeEach(() => vi.clearAllMocks());
+
+    it('hands back only the id and the name of the profile that holds the key', async () => {
+        prismaMock.encryptionProfile.findMany.mockResolvedValue([
+            makeProfile({ id: 'p1', name: 'One', secretKey: `enc:${'b'.repeat(64)}` }),
+            makeProfile({ id: 'p2', name: 'Two', secretKey: `enc:${validHex64}` }),
+        ] as any);
+
+        expect(await findProfileByKey(validHex64.toUpperCase())).toEqual({ id: 'p2', name: 'Two' });
+    });
+
+    it('skips a key the system key no longer opens', async () => {
+        vi.mocked(decrypt).mockImplementationOnce(() => { throw new Error('bad tag'); });
+        prismaMock.encryptionProfile.findMany.mockResolvedValue([makeProfile({ id: 'p1' })] as any);
+
+        expect(await findProfileByKey(validHex64)).toBeNull();
+    });
+});
+
+describe('importEncryptionProfile - the same key twice', () => {
+    beforeEach(() => vi.clearAllMocks());
+
+    it('refuses a key the Vault holds already', async () => {
+        prismaMock.encryptionProfile.findFirst.mockResolvedValue(null);
+        prismaMock.encryptionProfile.findMany.mockResolvedValue([makeProfile({ id: 'p1', name: 'Production' })] as any);
+
+        await expect(importEncryptionProfile('Copy', validHex64)).rejects.toThrow('This key is in the Vault already, as "Production".');
+        expect(prismaMock.encryptionProfile.create).not.toHaveBeenCalled();
     });
 });
 
@@ -197,6 +282,8 @@ describe('profiles handed back by the service', () => {
         prismaMock.encryptionProfile.findMany.mockResolvedValue([]);
         prismaMock.encryptionProfile.findUnique.mockResolvedValue(makeProfile() as any);
         prismaMock.encryptionProfile.delete.mockResolvedValue(makeProfile() as any);
+        prismaMock.job.count.mockResolvedValue(0);
+        prismaMock.systemSetting.findUnique.mockResolvedValue(null);
 
         await createEncryptionProfile('New key');
         await importEncryptionProfile('Imported key', validHex64);
@@ -204,10 +291,12 @@ describe('profiles handed back by the service', () => {
         await getEncryptionProfile('profile-1');
         await deleteEncryptionProfile('profile-1');
 
+        // The lookups that only compare keys or check a profile is there hand nothing back, see findProfileByKey.
+        const selectOf = (args: unknown) => (args as { select?: Record<string, unknown> } | undefined)?.select ?? {};
         const calls = [
             ...prismaMock.encryptionProfile.create.mock.calls,
-            ...prismaMock.encryptionProfile.findMany.mock.calls,
-            ...prismaMock.encryptionProfile.findUnique.mock.calls,
+            ...prismaMock.encryptionProfile.findMany.mock.calls.filter(([args]) => !('secretKey' in selectOf(args))),
+            ...prismaMock.encryptionProfile.findUnique.mock.calls.filter(([args]) => 'name' in selectOf(args)),
             ...prismaMock.encryptionProfile.delete.mock.calls,
         ];
         expect(calls).toHaveLength(5);

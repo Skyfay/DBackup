@@ -63,7 +63,7 @@ Now add the database you want to backup.
 
 ### Example: MySQL Database
 
-1. Create a `USERNAME_PASSWORD` credential profile in **Settings → Vault → Credentials** with your database user and password (see [Credential Profiles](/user-guide/security/credential-profiles))
+1. Create a `USERNAME_PASSWORD` credential profile in **Vault → Credentials** with your database user and password (see [Credential Profiles](/user-guide/security/credential-profiles))
 2. Go to **Connections** in the sidebar, then the **Databases** tab
 3. Click **Add New**
 4. Select **MySQL**

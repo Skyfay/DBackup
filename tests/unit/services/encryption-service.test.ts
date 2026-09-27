@@ -33,7 +33,7 @@ vi.spyOn(crypto, 'randomBytes').mockImplementation((size: number) => {
 });
 
 // Every profile the service hands back leaves out its key, see summaryFields in the service.
-const SUMMARY = { id: true, name: true, description: true, createdAt: true, updatedAt: true };
+const SUMMARY = { id: true, name: true, description: true, kitDownloadedAt: true, createdAt: true, updatedAt: true };
 
 describe('Encryption Service', () => {
 
@@ -85,6 +85,8 @@ describe('Encryption Service', () => {
             const mockEncrypted = 'encrypted-imported-value';
             (cryptoLib.encrypt as any).mockReturnValue(mockEncrypted);
             (prisma.encryptionProfile.findFirst as any).mockResolvedValue(null);
+            // No profile holds the key yet.
+            (prisma.encryptionProfile.findMany as any).mockResolvedValue([]);
             (prisma.encryptionProfile.create as any).mockResolvedValue({ id: '2', name: 'Imported', secretKey: mockEncrypted });
 
             await importEncryptionProfile('Imported Key', validKeyHex, 'Desc');

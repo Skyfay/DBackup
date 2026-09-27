@@ -25,7 +25,11 @@ import { wrapError } from "@/lib/logging/errors";
 
 const log = logger.child({ page: "settings" });
 
-export default async function SettingsPage() {
+/** The tabs of the page, which a link can open with `?tab=`, like the config backup from the Vault. */
+const SETTINGS_TABS = ["general", "notifications", "tasks", "config", "ratelimits", "certificate", "privacy"];
+
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+    const { tab } = await searchParams;
     const headersList = await headers();
     const session = await auth.api.getSession({
         headers: headersList
@@ -141,7 +145,7 @@ export default async function SettingsPage() {
                 </div>
             </div>
 
-            <Tabs defaultValue="general" className="space-y-4">
+            <Tabs defaultValue={tab && SETTINGS_TABS.includes(tab) ? tab : "general"} className="space-y-4">
                 <TabsList>
                     <TabsTrigger value="general">General</TabsTrigger>
                     <TabsTrigger value="notifications">Notifications</TabsTrigger>

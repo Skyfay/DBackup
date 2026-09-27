@@ -60,7 +60,7 @@ Mounting the path is only half of it - SQL Server also has to be allowed to writ
 ## Configuration
 
 ::: info Credential Profiles required
-Microsoft SQL Server requires a [Credential Profile](/user-guide/security/credential-profiles). Create an `USERNAME_PASSWORD` profile in **Settings → Vault → Credentials** before saving the source. SSH connection mode, and SSH file transfer mode in direct connections, additionally require an `SSH_KEY` profile.
+Microsoft SQL Server requires a [Credential Profile](/user-guide/security/credential-profiles). Create an `USERNAME_PASSWORD` profile in **Vault → Credentials** before saving the source. SSH connection mode, and SSH file transfer mode in direct connections, additionally require an `SSH_KEY` profile.
 :::
 
 ### Connection Settings

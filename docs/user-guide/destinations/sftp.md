@@ -5,7 +5,7 @@ Store backups on a remote server via SSH File Transfer Protocol. Supports passwo
 ## Configuration
 
 ::: info Credential Profile required
-SFTP requires a [Credential Profile](/user-guide/security/credential-profiles) of type `SSH_KEY`. Create one in **Settings → Vault → Credentials** before saving the destination.
+SFTP requires a [Credential Profile](/user-guide/security/credential-profiles) of type `SSH_KEY`. Create one in **Vault → Credentials** before saving the destination.
 :::
 
 | Field | Description | Default | Required |
@@ -28,7 +28,7 @@ Select the auth type when creating the `SSH_KEY` credential profile in the Vault
 
 ## Setup Guide
 
-1. Create an `SSH_KEY` credential profile in **Settings → Vault → Credentials** ([guide](/user-guide/security/credential-profiles))
+1. Create an `SSH_KEY` credential profile in **Vault → Credentials** ([guide](/user-guide/security/credential-profiles))
 2. Ensure the target server has SSH/SFTP enabled
 3. Create a dedicated user for backups (recommended):
    ```bash

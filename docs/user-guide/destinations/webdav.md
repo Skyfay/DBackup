@@ -5,7 +5,7 @@ Store backups on any WebDAV-compatible server - Nextcloud, ownCloud, Synology, A
 ## Configuration
 
 ::: info Credential Profile required
-WebDAV requires a [Credential Profile](/user-guide/security/credential-profiles) of type `USERNAME_PASSWORD`. Create one in **Settings → Vault → Credentials** before saving the destination.
+WebDAV requires a [Credential Profile](/user-guide/security/credential-profiles) of type `USERNAME_PASSWORD`. Create one in **Vault → Credentials** before saving the destination.
 :::
 
 | Field | Description | Default | Required |
@@ -17,7 +17,7 @@ WebDAV requires a [Credential Profile](/user-guide/security/credential-profiles)
 
 ## Setup Guide
 
-1. Create a `USERNAME_PASSWORD` credential profile in **Settings → Vault → Credentials** ([guide](/user-guide/security/credential-profiles))
+1. Create a `USERNAME_PASSWORD` credential profile in **Vault → Credentials** ([guide](/user-guide/security/credential-profiles))
 2. Obtain the WebDAV URL from your provider (see examples below)
 3. Go to **Connections** → **Backup Destinations** → **Add New** → **WebDAV**
 4. Enter the **URL** and pick the credential profile under **Login**

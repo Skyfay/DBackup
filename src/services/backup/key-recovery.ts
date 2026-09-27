@@ -30,9 +30,10 @@ import { logger } from "@/lib/logging/logger";
 import { HEAD_PROBE_SIZE, legacyHeadVerifier } from "@/services/restore/smart-recovery";
 import { archiveIndexService } from "./archive-index-service";
 import { archiveIndexVerifier, KeyVerifier } from "./key-resolution";
+import { rememberKeyFor } from "@/services/vault/key-aliases";
 import {
+    findProfileByKey,
     getEncryptionProfiles,
-    getProfileMasterKey,
     importEncryptionProfile,
 } from "./encryption-service";
 
@@ -80,16 +81,20 @@ export async function recoverEncryptionKey(
     // A key already in the vault under some other name is not a second profile. Silently
     // creating one would leave two entries holding the same secret, and deleting either
     // would then look safe when it is not.
-    const existing = await findProfileWithKey(candidate);
+    // The profile the backup names, which the Vault lacks, so it counts its backups under the key.
+    const namedId = meta.archive?.profileId ?? meta.encryption?.profileId;
+    const existing = await findProfileByKey(clean);
     if (existing) {
         log.info("Recovered key already present in the vault", { profileId: existing.id });
+        await rememberKeyFor(existing.id, namedId);
         return { status: "existing", profileId: existing.id, profileName: existing.name };
     }
 
     const profile = await importEncryptionProfile(
         await uniqueProfileName(name?.trim() || suggestedProfileName(meta, file)),
         clean,
-        `Recovered while opening ${path.basename(file)}.`
+        `Recovered while opening ${path.basename(file)}.`,
+        namedId ? [namedId] : []
     );
 
     log.info("Imported a recovered key into the vault", { profileId: profile.id });
@@ -243,18 +248,6 @@ async function readHead(
     } finally {
         await fs.unlink(tempFile).catch(() => { });
     }
-}
-
-/** The vault profile already holding these exact key bytes, if there is one. */
-async function findProfileWithKey(candidate: Buffer): Promise<{ id: string; name: string } | null> {
-    for (const profile of await getEncryptionProfiles()) {
-        try {
-            if (crypto.timingSafeEqual(await getProfileMasterKey(profile.id), candidate)) {
-                return { id: profile.id, name: profile.name };
-            }
-        } catch { /* an unreadable profile is not a match */ }
-    }
-    return null;
 }
 
 /** Names the profile after the job it was recovered for, so the vault entry explains itself. */

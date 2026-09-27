@@ -14,7 +14,7 @@ The default DBackup Docker image includes rsync. If you're running DBackup outsi
 ## Configuration
 
 ::: info Credential Profile required
-Rsync requires a [Credential Profile](/user-guide/security/credential-profiles) of type `SSH_KEY`. Create one in **Settings → Vault → Credentials** before saving the destination.
+Rsync requires a [Credential Profile](/user-guide/security/credential-profiles) of type `SSH_KEY`. Create one in **Vault → Credentials** before saving the destination.
 :::
 
 | Field | Description | Default | Required |
@@ -36,7 +36,7 @@ Rsync requires a [Credential Profile](/user-guide/security/credential-profiles) 
 
 ## Setup Guide
 
-1. Create an `SSH_KEY` credential profile in **Settings → Vault → Credentials** ([guide](/user-guide/security/credential-profiles))
+1. Create an `SSH_KEY` credential profile in **Vault → Credentials** ([guide](/user-guide/security/credential-profiles))
 2. Ensure the target server has rsync and SSH installed
 3. Create a dedicated user with write access to the backup directory:
    ```bash

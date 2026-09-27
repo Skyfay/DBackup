@@ -27,6 +27,8 @@ All notable changes to DBackup are documented here.
 - **explorer**: The Servers tab lists every database server with its address, its version, how much of it a job backs up, its kept backups and its status, and marks a server too old for the newest backups of its engine. A server opens as a page of its own with every version it ran, how long it ran each and how many of the backups made on it are kept.
 - **history**: The History page lists backups, restores and the system tasks in one list with the numbers of the last 30 days, filtered by type, job and who started a run. Its notifications open in a side panel with what was sent and the run it was for, and a phone gets cards.
 - **history**: A run opens as a page of its own from every link to it, with a way back to where it was opened, its steps next to their usual time, a summary of what each step did and its log with each problem told once in plain words. A live run fills a row for the database it dumps and the copy it uploads, and an integrity check or a verification lists every copy it checked.
+- **vault**: The Vault lists credential profiles with the connections that log in with each, and encryption keys with a Key ID, the jobs that use them, the backups they protect at each destination and their last recovery kit. A row opens its details in a side panel and its actions with a right click, and a phone gets cards.
+- **vault**: A new key offers its recovery kit right away, and Import key reads a key from the files of a recovery kit. The Vault marks keys that were never in a kit and backups that name a key it does not have.
 
 ### 🐛 Bug Fixes
 
@@ -55,6 +57,7 @@ All notable changes to DBackup are documented here.
 - **storage**: The steps of the Redis and Valkey restore no longer copy a file their download command never wrote, and no longer stop Redis in a way a Docker restart policy undoes. The check afterwards no longer runs KEYS, which blocks a large instance.
 - **storage**: A download link for a server showed wget and curl with the same link, so whichever ran second failed. The dialog shows one command at a time, and a download that broke off can run again with the same link.
 - **jobs**: A finished backup no longer loses the list of its databases and destinations to the last write of its log.
+- **vault**: Deleting an encryption key that a job or the config backup still encrypts with is refused. The job stored its next backups unencrypted without a word before.
 
 ### 🔒 Security
 
@@ -64,6 +67,7 @@ All notable changes to DBackup are documented here.
 - **jobs**: The job list no longer returns the stored configs of the connections a job uses, only their name, type and health. Reading jobs was enough to get them before.
 - **templates**: The notification templates and the Templates page no longer send the stored configs of notification channels to the browser, only the name and type of each channel. Reading jobs or templates was enough to get them before, without the right to read notification channels.
 - **jobs**: Creating, changing and cloning a job no longer answers with the stored configs of its connections, only their name and type. Changing jobs was enough to get them before.
+- **vault**: Revealing an encryption key is written to the audit log, like a revealed credential.
 
 ### 🎨 Improvements
 
@@ -120,6 +124,8 @@ All notable changes to DBackup are documented here.
 - **system**: The Update Database Versions task also lists the databases of every server with their sizes, which the Database Explorer shows without asking a server.
 - **api**: The new `GET /api/history/runs` returns a page of runs with the counts beside its filters and the numbers of the last 30 days, and `GET /api/history/runs/{id}` one run with its steps, its problems and its copies. `GET /api/notification-logs` filters by `channel` and adds the numbers and the options of its filters with `stats=true`.
 - **api**: The new `GET /api/databases/servers` returns every database server with its address, response time and kept backups and the newer backup of its engine it is behind, and `GET /api/databases/servers/{id}` one server with its uptime. `GET /api/databases/servers/{id}/versions?page=&size=` returns the versions a server ran a page at a time with the backups made and kept on each.
+- **vault**: Importing a key the Vault already holds is refused with the name of the key that has it.
+- **api**: The new `GET /api/vault/credentials` returns every credential profile with the connections that use it, and `GET /api/vault/keys` every encryption key with its jobs, its backups per destination and its last recovery kit.
 
 ### 🗑️ Removed
 
@@ -151,11 +157,12 @@ All notable changes to DBackup are documented here.
 - **docs**: The Storage Explorer guide is the Backups guide now, and its old address points to it.
 - **docs**: The Database Explorer guide describes the list of databases, its timeline, the page of a database, the Servers tab with the page of a server and what shows for a login that may only back up.
 - **docs**: A new History guide describes the list of runs, the page of a run with its summary, log, problems and live state, and the notifications. The job, data retention, logging and API guides follow it.
+- **docs**: The encryption and credential profile guides describe the new Vault page, the Key ID, the recovery kit of a key and why a key in use cannot be deleted. The adapter guides find the Vault in the sidebar instead of under Settings.
 
 ### 🧪 Tests
 
 - **tests**: The test that generates an SSH key no longer fails at random during a full run, where the busy crypto thread pool made it slower than the default timeout.
-- **tests**: The palette color guard allows 25 colors without a dark variant, down from 37.
+- **tests**: The palette color guard allows 23 colors without a dark variant, down from 37.
 
 ### 🐳 Docker
 

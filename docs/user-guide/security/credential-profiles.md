@@ -17,8 +17,8 @@ Adapter Config (host, port, database, ...)
    └── sshCredentialId     ─→  Credential Profile (SSH_KEY)
 ```
 
-Profiles live in **Settings → Vault → Credentials**. Encryption profiles live
-in the same vault on a separate tab.
+Profiles live on the **Credentials** tab of the **Vault** page in the sidebar.
+Encryption profiles live in the same vault on the **Encryption** tab.
 
 ## Credential Types
 
@@ -41,12 +41,30 @@ The `OAUTH` profile type is managed automatically during the OAuth authorization
 
 Local Filesystem adapters do not use a credential profile.
 
+## The Credentials Tab
+
+The numbers on top count the profiles and their kinds, the profiles in use and by how many connections, the unused ones, the ones that need a look and the secrets revealed in the last 30 days.
+
+Each profile is a row with:
+
+| Column | Shows |
+| :--- | :--- |
+| **Profile** | Its name and description |
+| **Type** | The kind of profile, like User and password or SSH login |
+| **Used by** | The connections that log in with it, in either slot |
+| **Stored** | What it holds without a secret: the user, the kind and fingerprint of an SSH key, the host of a webhook. An OAuth app that was never authorized shows in amber. |
+| **Changed** | When it was last edited |
+
+**Created** and **Revealed** can be switched on in the **Columns** menu. The **Type** and **Used by** filters and the chips **All**, **In use** and **Unused** narrow the list.
+
+A click on a row opens a side panel with every connection that logs in with the profile, whether it answers and a link that opens it on the Connections page, the public key of an SSH profile, and when it was made, changed and last revealed, as far as the audit log still reaches. A right click on a row, or the button at its end, offers **Public key**, **Reveal secret**, **Edit** and **Delete**. Several selected profiles are deleted together, and the ones still in use are left out. A phone shows the profiles as cards.
+
 ## Creating a Profile
 
 ### Standalone
 
 1. Open **Vault** in the sidebar and switch to the **Credentials** tab
-2. Click **New Profile**
+2. Click **New profile**
 3. Pick what you want to save. Every kind names the services that log in with it, and the search finds a kind by service as well. **Change type** at the top of the next step goes back to this list.
 4. Give it a **Name** and, if it helps you find it later, a **Description**
 5. Fill in the **Secret**. The fields follow the kind you picked, and the eye in a field shows what you typed.
@@ -86,7 +104,7 @@ An `SSH_KEY` profile does not need a key made somewhere else. Set **Auth method*
 
 The key is generated on the server in OpenSSH format, so the private half never reaches a browser and is stored encrypted like any other secret. After saving, the dialog shows the public key with a copy button and a `.pub` download. Install that line in `~/.ssh/authorized_keys` on the target host before running a backup through the profile.
 
-The public key is not a secret, so it stays available afterwards. The **key** action on the profile row shows it again, along with the `SHA256:...` fingerprint that `ssh-keygen -lf` prints for the same key. Pasted keys get the same action wherever DBackup can read the public half from them.
+The public key is not a secret, so it stays available afterwards. **Public key** in the menu of the profile and its side panel show it again, along with the `SHA256:...` fingerprint that `ssh-keygen -lf` prints for the same key. Pasted keys get the same wherever DBackup can read the public half from them.
 
 To rotate, edit the profile and generate again. Every adapter referencing the profile picks up the new key on its next operation, so install the new public key on the host first.
 
@@ -117,7 +135,7 @@ adapter:
 
 ## Editing and Rotating Secrets
 
-Click the **Edit** action on a profile row to:
+**Edit** in the menu of a profile or in its side panel lets you:
 
 - Rename the profile
 - Update the description
@@ -129,10 +147,10 @@ Rotating a profile takes effect in real time. There is no caching layer.
 
 ## Reference Tracking and Safe Deletion
 
-Each row shows the **References** count - the number of adapters that point
-to this profile (in either slot). Deleting a profile that is still in use is
-blocked with a `409 Conflict`; the dialog lists the adapters you need to
-detach or reassign first.
+The **Used by** column names the connections that point to a profile, in
+either slot. Deleting a profile that is still in use is refused with a
+`409 Conflict`. The dialog names every connection with a link that opens it,
+and **Delete profile** stays off until none uses the profile anymore.
 
 Adapters whose required primary credential is missing (e.g. you deleted a
 profile by force, or imported a config without profiles) are flagged as
@@ -152,8 +170,9 @@ adapter and encryption permissions:
 | `CREDENTIALS.REVEAL` | View the decrypted secret payload via the eye action / API |
 
 `REVEAL` is intentionally split from `READ` so you can let operators assign
-credentials to adapters without exposing the raw secrets to them. Every
-reveal is recorded in the audit log.
+credentials to adapters without exposing the raw secrets to them. **Reveal
+secret** shows each field of the profile with a copy button, and every reveal
+is recorded in the audit log before the secret leaves the server.
 
 ## Encryption at Rest
 
@@ -176,6 +195,7 @@ under the `Vault` tag. The endpoints are:
 | `DELETE` | `/api/credentials/{id}` | `409` if referenced |
 | `GET` | `/api/credentials/{id}/usage` | List adapter references |
 | `GET` | `/api/credentials/{id}/reveal` | Audited, requires `CREDENTIALS.REVEAL` |
+| `GET` | `/api/vault/credentials` | Every profile with the connections that use it, what it holds and its audit facts, for the Vault page |
 
 ## Related
 

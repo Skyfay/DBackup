@@ -5,7 +5,7 @@ Store backups in Hetzner Object Storage - affordable S3-compatible storage in Eu
 ## Configuration
 
 ::: info Credential Profile required
-Hetzner Object Storage requires a [Credential Profile](/user-guide/security/credential-profiles) of type `ACCESS_KEY`. Create one in **Settings → Vault → Credentials** before saving the destination.
+Hetzner Object Storage requires a [Credential Profile](/user-guide/security/credential-profiles) of type `ACCESS_KEY`. Create one in **Vault → Credentials** before saving the destination.
 :::
 
 | Field | Description | Default | Required |
@@ -32,7 +32,7 @@ Hetzner Object Storage requires a [Credential Profile](/user-guide/security/cred
 1. **Create a bucket** in the [Hetzner Cloud Console](https://console.hetzner.cloud/) → **Object Storage** → **Create Bucket**
 2. **Generate S3 credentials**: Go to **Object Storage** → **Settings** → **Generate credentials**
    - Copy the **Access Key** and **Secret Key** immediately (shown only once)
-3. **Create an `ACCESS_KEY` credential profile** in **Settings → Vault → Credentials** with those keys ([guide](/user-guide/security/credential-profiles))
+3. **Create an `ACCESS_KEY` credential profile** in **Vault → Credentials** with those keys ([guide](/user-guide/security/credential-profiles))
 4. Go to **Connections** → **Backup Destinations** → **Add New** → **Hetzner Object Storage**
 5. Select your **Region**, enter the Bucket name, then pick the credential profile under **Login**
 6. Enter a **Folder** in the **Location** part (required - e.g. `backups` or `dbackup/prod`)

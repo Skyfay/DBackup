@@ -12,6 +12,8 @@ import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { getErrorMessage } from "@/lib/logging/errors";
 import { BulkIdsSchema } from "@/lib/core/bulk-schema";
+import { isKeyHex, keyIdOf } from "@/services/vault/key-id";
+import { VAULT_AUDIT } from "@/services/vault/vault-audit";
 import { z } from "zod";
 
 const UpdateEncryptionProfileSchema = z.object({
@@ -58,8 +60,9 @@ export async function getEncryptionProfiles() {
 }
 
 /**
- * Revels the decrypted master key for a profile.
- * Requires VAULT:WRITE permission (highly sensitive).
+ * Reveals the decrypted master key for a profile.
+ * Requires VAULT:WRITE permission (highly sensitive), and is written to the audit log before the
+ * key leaves, like a revealed credential.
  */
 export async function revealMasterKey(id: string) {
     const headersList = await headers();
@@ -68,11 +71,33 @@ export async function revealMasterKey(id: string) {
 
     await checkPermission(PERMISSIONS.VAULT.WRITE);
 
+    const parsed = z.string().min(1).safeParse(id);
+    if (!parsed.success) return { success: false, error: "Invalid request" };
+
     try {
-        const key = await encryptionService.getDecryptedMasterKey(id);
+        await auditService.log(session.user.id, AUDIT_ACTIONS.EXPORT, AUDIT_RESOURCES.VAULT, { action: VAULT_AUDIT.REVEAL_KEY }, parsed.data);
+        const key = await encryptionService.getDecryptedMasterKey(parsed.data);
         return { success: true, data: key };
     } catch (e: unknown) {
         return { success: false, error: getErrorMessage(e) };
+    }
+}
+
+/**
+ * Tells the import dialog the Key ID of a key typed into it, and whether the Vault holds that key
+ * already. Requires VAULT:WRITE, like the import it prepares.
+ */
+export async function inspectEncryptionKey(keyHex: string) {
+    await checkPermission(PERMISSIONS.VAULT.WRITE);
+
+    const parsed = z.string().trim().refine(isKeyHex).safeParse(keyHex);
+    if (!parsed.success) return { success: false as const, error: "A key is 64 hex characters." };
+
+    try {
+        const existing = await encryptionService.findProfileByKey(parsed.data);
+        return { success: true as const, data: { keyId: keyIdOf(parsed.data), existing } };
+    } catch (e: unknown) {
+        return { success: false as const, error: getErrorMessage(e) };
     }
 }
 
@@ -111,15 +136,19 @@ export async function createEncryptionProfile(name: string, description?: string
  * Imports an existing encryption profile from a master key.
  * Requires VAULT:WRITE permission.
  */
-export async function importEncryptionProfile(name: string, keyHex: string, description?: string) {
+export async function importEncryptionProfile(name: string, keyHex: string, description?: string, standsFor: string[] = []) {
     const headersList = await headers();
     const session = await auth.api.getSession({ headers: headersList });
     if (!session) return { success: false, error: "Unauthorized" };
 
     await checkPermission(PERMISSIONS.VAULT.WRITE);
 
+    // The ids the key had in the install its recovery kit came from.
+    const formerIds = z.array(z.string().min(1).max(64)).max(20).safeParse(standsFor);
+    if (!formerIds.success) return { success: false, error: "Invalid request" };
+
     try {
-        const profile = await encryptionService.importEncryptionProfile(name, keyHex, description);
+        const profile = await encryptionService.importEncryptionProfile(name, keyHex, description, formerIds.data);
         if (session.user) {
             await auditService.log(
                 session.user.id,

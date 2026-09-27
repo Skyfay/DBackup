@@ -20,7 +20,7 @@ DBackup uses `pg_dump` from PostgreSQL 18 client, which is backward compatible w
 ## Configuration
 
 ::: info Credential Profiles required
-PostgreSQL requires a [Credential Profile](/user-guide/security/credential-profiles). Create an `USERNAME_PASSWORD` profile in **Settings → Vault → Credentials** before saving the source. SSH mode additionally requires an `SSH_KEY` profile.
+PostgreSQL requires a [Credential Profile](/user-guide/security/credential-profiles). Create an `USERNAME_PASSWORD` profile in **Vault → Credentials** before saving the source. SSH mode additionally requires an `SSH_KEY` profile.
 :::
 
 | Field | Description | Default | Required |

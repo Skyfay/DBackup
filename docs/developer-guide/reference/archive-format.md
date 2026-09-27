@@ -355,7 +355,7 @@ header on a potentially enormous archive.
 
 ## Recovering without DBackup
 
-**Encrypted archives** need the Recovery Kit (Settings → Vault → Download Recovery Kit):
+**Encrypted archives** need the Recovery Kit (Vault → Encryption → Recovery kit):
 
 ```bash
 node dbackup-recover.js --list    backup.tar

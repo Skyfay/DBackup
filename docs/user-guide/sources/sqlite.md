@@ -14,7 +14,7 @@ SQLite is a file-based database. DBackup supports two modes:
 ## Configuration
 
 ::: info SSH Credential Profile (SSH mode only)
-SQLite in SSH mode requires an `SSH_KEY` [Credential Profile](/user-guide/security/credential-profiles). Create one in **Settings → Vault → Credentials** before saving the source. Local mode does not require a credential profile.
+SQLite in SSH mode requires an `SSH_KEY` [Credential Profile](/user-guide/security/credential-profiles). Create one in **Vault → Credentials** before saving the source. Local mode does not require a credential profile.
 :::
 
 ### Local Mode
@@ -67,7 +67,7 @@ chmod 644 /path/to/database.db
 
 ## SSH Mode Setup
 
-1. Create an `SSH_KEY` credential profile in **Settings → Vault → Credentials** ([guide](/user-guide/security/credential-profiles))
+1. Create an `SSH_KEY` credential profile in **Vault → Credentials** ([guide](/user-guide/security/credential-profiles))
 2. Pick **Over SSH** under **Where the file is**
 3. In the **SSH server** part, enter host and port
 4. Pick the credential profile under **SSH login**

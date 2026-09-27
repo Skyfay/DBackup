@@ -372,6 +372,40 @@ describe('executeCombinedDump', () => {
         expect(dbAdapter.dumpOne).toHaveBeenCalledWith(expect.anything(), 'auto2', expect.any(String), expect.anything(), expect.any(Function));
     });
 
+    it('reports where each database stands, so the page of the run fills a row for each', async () => {
+        const setDumps = vi.fn();
+        const ctx = makeCtx({
+            sourceAdapter: makeFakeDbAdapter(),
+            job: makeJob({ databases: JSON.stringify(['db1', 'db2']) }),
+            setDumps,
+        });
+
+        await executeCombinedDump(ctx);
+        createdTempFiles.push(ctx.tempFile!);
+
+        const states = setDumps.mock.calls.map(([dumps]) => dumps.map((dump: { name: string; state: string }) => `${dump.name}:${dump.state}`).join(' '));
+        expect(states[0]).toBe('db1:waiting db2:waiting');
+        expect(states).toContain('db1:dumping db2:waiting');
+        expect(states).toContain('db1:done db2:dumping');
+        const last = setDumps.mock.calls.at(-1)![0];
+        expect(last).toEqual([
+            expect.objectContaining({ name: 'db1', state: 'done', bytes: Buffer.byteLength('-- dump of db1'), startedAt: expect.any(String), endedAt: expect.any(String) }),
+            expect.objectContaining({ name: 'db2', state: 'done', bytes: Buffer.byteLength('-- dump of db2') }),
+        ]);
+    });
+
+    it('marks the database a dump failed on, before the run fails', async () => {
+        const setDumps = vi.fn();
+        const ctx = makeCtx({
+            sourceAdapter: makeFakeDbAdapter({ dumpOne: vi.fn().mockRejectedValue(new Error('access denied')) }),
+            job: makeJob({ databases: JSON.stringify(['db1', 'db2']) }),
+            setDumps,
+        });
+
+        await expect(executeCombinedDump(ctx)).rejects.toThrow('access denied');
+        expect(setDumps.mock.calls.at(-1)![0].map((dump: { state: string }) => dump.state)).toEqual(['failed', 'waiting']);
+    });
+
     it('throws when the database adapter does not support combined backups (no dumpOne)', async () => {
         const dbAdapter = makeFakeDbAdapter({ dumpOne: undefined });
         const ctx = makeCtx({

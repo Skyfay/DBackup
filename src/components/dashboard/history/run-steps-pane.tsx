@@ -83,6 +83,11 @@ export function StepsPane({ run, now, picked, onPick, className }: StepsPaneProp
                 <p className="text-sm text-muted-foreground">{took ? `${shown.length} steps in ${took}, a click shows the lines of one` : "time taken / usual, a click shows the lines of one"}</p>
             </div>
             <ScrollArea className="min-h-0 flex-1">
+                {shown.length === 0 && (
+                    <p className="px-5 pb-5 text-sm text-muted-foreground">
+                        {run.logsPurgedAt ? "The steps went with the log, which data retention removed." : "No step has started yet."}
+                    </p>
+                )}
                 <div className="space-y-0.5 px-2.5 pb-3">
                     {shown.map((step) => {
                         const duration = step.state === "running" && step.startedAt ? now - Date.parse(step.startedAt) : step.durationMs;

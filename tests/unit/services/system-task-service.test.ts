@@ -51,6 +51,7 @@ vi.mock('@/lib/runner/system-task-runner', () => ({
             logEntry: vi.fn(),
             setStage: vi.fn(),
             setProgress: vi.fn(),
+            setExtra: vi.fn(),
         }),
     },
     INTEGRITY_CHECK_STAGE_PROGRESS_MAP: {},
@@ -276,6 +277,25 @@ describe('SystemTaskService', () => {
             await service.runTask(SYSTEM_TASKS.INTEGRITY_CHECK);
 
             expect(integrityService.runFullIntegrityCheck).toHaveBeenCalledTimes(1);
+        });
+
+        it('keeps the plan and every copy an integrity check checked in the metadata of its run', async () => {
+            const { integrityService } = await import('@/services/backup/integrity-service');
+            const { SystemTaskRunner } = await import('@/lib/runner/system-task-runner');
+            vi.mocked(integrityService.runFullIntegrityCheck).mockImplementationOnce(async (callbacks) => {
+                callbacks?.onPlan?.({ total: 1, destinations: [{ id: 's1', name: 'NAS', adapterId: 'sftp', count: 1 }] });
+                callbacks?.onCopy?.({ index: 0, destinationId: 's1', file: 'Shop/a.tar', size: 10, state: 'checking' });
+                callbacks?.onCopy?.({ index: 0, destinationId: 's1', file: 'Shop/a.tar', size: 10, state: 'passed', method: 'native' });
+                return { totalFiles: 1, verified: 1, passed: 1, failed: 0, skipped: 0, scanFailed: 0, errors: [] };
+            });
+
+            await service.runTask(SYSTEM_TASKS.INTEGRITY_CHECK);
+            const runner = await vi.mocked(SystemTaskRunner.create).mock.results.at(-1)!.value;
+            await vi.waitFor(() => expect(runner.finish).toHaveBeenCalled());
+
+            expect(runner.setExtra).toHaveBeenCalledWith({ plan: { total: 1, destinations: [{ id: 's1', name: 'NAS', adapterId: 'sftp', count: 1 }] } });
+            // One entry per copy, the last state it reached.
+            expect(runner.setExtra).toHaveBeenLastCalledWith({ copies: [{ destinationId: 's1', file: 'Shop/a.tar', size: 10, state: 'passed', method: 'native' }] });
         });
 
         it('calls refreshStorageStatsCache for REFRESH_STORAGE_STATS', async () => {

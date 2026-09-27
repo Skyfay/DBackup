@@ -120,6 +120,50 @@ const KNOWN: KnownProblem[] = [
         }),
     },
     {
+        test: /is a history table for the .* updatable ledger table/i,
+        describe: () => ({
+            title: "History tables of ledger tables are left out",
+            help: "A BACPAC holds the current rows of a ledger table, not its history. The data is all there, restored tables only prove nothing about earlier changes.",
+            actions: [],
+            harmless: true,
+        }),
+    },
+    {
+        test: /GENERATED ALWAYS column\) in a ledger table/i,
+        describe: () => ({
+            title: "Generated always columns of ledger tables are left out",
+            help: "SQL Server fills them again when the rows are written, so a restore works without them.",
+            actions: [],
+            harmless: true,
+        }),
+    },
+    {
+        test: /ledger data in system views will not be captured/i,
+        describe: () => ({
+            title: "The ledger views are left out",
+            help: "A BACPAC does not carry what the system views say about the ledger.",
+            actions: [],
+            harmless: true,
+        }),
+    },
+    {
+        test: /uses Ledger tables\. A BACPAC cannot capture/i,
+        describe: () => ({
+            title: "This database uses ledger tables",
+            help: "Its tamper evidence is not part of a BACPAC. Keep a copy made on the server if that evidence matters.",
+            actions: [],
+            harmless: true,
+        }),
+    },
+    {
+        test: /BACPAC export is not transactionally consistent/i,
+        describe: (context) => ({
+            title: "The export is not consistent while the database is written to",
+            help: "Stop writes while it runs, or export from a copy made with CREATE DATABASE ... AS COPY OF.",
+            actions: connection(context),
+        }),
+    },
+    {
         test: /server version mismatch|aborting because of server version mismatch|newer version backup/i,
         describe: () => ({
             title: "The versions do not match",
@@ -129,12 +173,19 @@ const KNOWN: KnownProblem[] = [
     },
 ];
 
-/** The plain words of a line, or a title that names the step for a line no entry knows. */
-export function describeProblem(message: string, tone: "error" | "warning", context: ProblemContext): ProblemText {
+/** The plain words of a line an entry knows, or null. */
+export function knownProblem(message: string, context: ProblemContext): ProblemText | null {
     for (const entry of KNOWN) {
         const match = message.match(entry.test);
         if (match) return entry.describe(context, match);
     }
+    return null;
+}
+
+/** The plain words of a line, or a title that names the step for a line no entry knows. */
+export function describeProblem(message: string, tone: "error" | "warning", context: ProblemContext): ProblemText {
+    const known = knownProblem(message, context);
+    if (known) return known;
     const step = context.step.toLowerCase();
     if (context.subject) {
         return { title: tone === "error" ? `${context.subject} failed` : `A warning from ${context.subject}`, help: null, actions: connection(context) };

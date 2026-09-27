@@ -29,7 +29,7 @@ src/services/
   sso/           oidc-provider-service.ts, oidc-registry.ts
   storage/       storage-service.ts, verification-service.ts, storage-alert-service.ts
   databases/     database-list-service.ts (cached database lists), database-explorer-service.ts (Database Explorer page model)
-  history/       run-list-service.ts (the runs of the History page), run-detail-service.ts (the page of a run), run-steps.ts, run-problems.ts, known-problems.ts
+  history/       run-list-service.ts (the runs of the History page), run-detail-service.ts (the page of a run), run-steps.ts, run-summary.ts, run-dumps.ts, run-checks.ts, run-problems.ts, known-problems.ts
   notifications/ notification-log-service.ts, system-notification-service.ts
   system/        healthcheck-service.ts, system-task-service.ts, update-service.ts, db-version-service.ts, certificate-service.ts
   config/        config-service.ts, export.ts, import.ts, parse.ts, restore-pipeline.ts

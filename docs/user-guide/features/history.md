@@ -1,6 +1,6 @@
 # History
 
-Every run of DBackup and every notification it sent. A run opens as a page of its own with its steps, its log and what to look at.
+Every run of DBackup and every notification it sent. A run opens as a page of its own with its steps, a summary of what each step did, its log and what to look at.
 
 ## Runs
 
@@ -35,11 +35,29 @@ A click on a run opens it as a page of its own. Every link to a run in DBackup l
 
 The button in the top left names the page the run was opened from, like **Overview**, and leads back there like the Back of the browser, to the same spot. A run opened from outside, like from a link in a notification, leads to History. The field beside the name opens another run of the same job, and the arrows step to the run before and after it.
 
-- **Steps**: every step with its time next to its usual time, every copy under **Uploading** and every channel under **Sending Notifications**. A click on a step shows only its lines.
-- **Log**: every line under the step it belongs to, with a search and a switch to show only the lines of problems. Commands, paths and raw errors are in a monospace font.
+- **Steps**: every step with its time next to its usual time, every copy under **Uploading** and every channel under **Sending Notifications**. A step the job has no use for, like **Dumping Databases** in a backup of folders only, is left out.
+- **Summary** and **Log**: the two tabs in the middle, described below.
 - **To look at**: each problem told once, in plain words, with the message of the server, where and when it came up, how often it was tried and what to do about it.
 
 **Copy** and **Download** save the log as text, without passwords or keys.
+
+### Summary
+
+The **Summary** tells each step in a sentence or two, with a row for every database it dumped, every folder it collected, every destination it stored a copy at and every channel it notified. A click on a step on the left scrolls to it.
+
+- A database opens to the command it was dumped with and the output of its tool, like **Output of mongodump**, and its warnings grouped by what they say.
+- A destination opens to the lines it wrote during the upload.
+- The database dumped now and the copy uploaded now fill a row marked **now**, with how far they are and how long they still take.
+
+How far a dump is comes from the tool where it counts. MongoDB counts the documents of each collection and SQL Server reports its progress in steps of ten percent. The other tools tell nothing, so DBackup compares what is written with the dump of the same database in the last backup of the job and says **about**. The first backup of a database shows only what is written and how fast.
+
+### Log
+
+The **Log** tab shows every line under the step it belongs to, with a search, a field to show the lines of one step and a switch to show only the lines of problems. A click on a step on the left picks it there.
+
+- The tool, destination or source that wrote a line stands in front of it, like **mongodump** or **NAS Backups**.
+- A command stands under its line on one row with how many options it has. A click opens it with every option on a row of its own, **Copy** copies it whole.
+- Commands, paths and raw errors are in a monospace font.
 
 ### Problems
 
@@ -61,6 +79,12 @@ While a run is live, its page follows it:
 The progress of an upload fills one line instead of writing a new one every few seconds. **Cancel run** stops it.
 
 On a phone the page is one column: what to look at or the live state first, then the steps and the log.
+
+### Integrity Checks and Verifications
+
+An integrity check and a verification show every copy they checked instead of a summary: the backup, its destination, its size, how it was checked and what came out. The copy checked now comes first, then the ones that differ or were skipped, then the rest, the newest first. A verification checks the copies of one backup, which it names on the right.
+
+The left side lists every destination with how many of its copies are checked, the matching ones green, the ones that differ red, and whether it checks a copy by a checksum it keeps or downloads it to hash it. An integrity check from before this page shows like any other run, with its copies in its log.
 
 ## Notifications
 

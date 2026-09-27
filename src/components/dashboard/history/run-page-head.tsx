@@ -41,7 +41,7 @@ function RunSwitcher({ run, go }: { run: RunDetail; go: (id: string) => void }) 
     return (
         <Popover open={open} onOpenChange={setOpen}>
             <PopoverTrigger asChild>
-                <PickTrigger icon={History} size="sm" aria-expanded={open} aria-label="Open another run of this job" className="w-full sm:w-64 sm:flex-none">
+                <PickTrigger icon={History} size="sm" aria-expanded={open} aria-label={run.job ? "Open another run of this job" : "Open another run of this task"} className="w-full sm:w-64 sm:flex-none">
                     <span className="truncate"><DateDisplay date={run.startedAt} format="Pp" /><span className="text-muted-foreground"> · {STATUS_WORDS[run.status]}</span></span>
                 </PickTrigger>
             </PopoverTrigger>
@@ -97,8 +97,8 @@ export function RunPageHead({ run, access, onChanged }: { run: RunDetail; access
                 <p className="mt-0.5 truncate text-xs text-muted-foreground"><DateDisplay date={run.startedAt} format="PPpp" /> · {facts}</p>
             </div>
             <div className="flex w-full min-w-0 flex-wrap items-center gap-2 lg:w-auto">
-                {run.job && run.recent.length > 1 && <RunSwitcher run={run} go={go} />}
-                {run.job && (
+                {(run.job || run.checks) && run.recent.length > 1 && <RunSwitcher run={run} go={go} />}
+                {(run.job || run.checks) && (
                     <>
                         <Button variant="outline" size="icon" className="size-8" disabled={!run.previous} onClick={() => run.previous && go(run.previous.id)} aria-label="The run before"><ChevronLeft /></Button>
                         <Button variant="outline" size="icon" className="size-8" disabled={!run.next} onClick={() => run.next && go(run.next.id)} aria-label="The run after"><ChevronRight /></Button>
@@ -109,6 +109,9 @@ export function RunPageHead({ run, access, onChanged }: { run: RunDetail; access
                 )}
                 {run.job && run.type === "Backup" && access.canOpenBackups && !live && (
                     <Button variant="outline" size="sm" asChild><Link href={`/dashboard/backups?job=${encodeURIComponent(run.job.id)}`}><Archive />Open backups</Link></Button>
+                )}
+                {run.checks && !run.checks.backup && access.canOpenBackups && (
+                    <Button variant="outline" size="sm" asChild><Link href="/dashboard/backups"><Archive />Open backups</Link></Button>
                 )}
                 {run.job && run.type === "Backup" && access.canExecute && !live && (
                     <Button variant="outline" size="sm" onClick={() => void startRun(run.job!.id, run.job!.name).then((id) => (id ? go(id) : onChanged()))}><Play />Run again</Button>

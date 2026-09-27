@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowDown, ArrowUpRight, CalendarClock, CircleCheck, CircleX, TriangleAlert } from "lucide-react";
+import { Archive, ArrowDown, ArrowUpRight, CalendarClock, CircleCheck, CircleX, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DateDisplay } from "@/components/utils/date-display";
 import { cn, formatBytes, formatDuration } from "@/lib/utils";
@@ -9,6 +9,7 @@ import type { RunDetail, RunProblem, RunProblemAction } from "@/services/history
 import { RunTile } from "./run-cells";
 import { bytesPerSecond, LivePill, LiveSummary, RecentBars, SpeedChart } from "./run-live";
 import { Mono } from "./run-log-lines";
+import { WarningKinds } from "./run-summary-parts";
 import type { SpeedSample } from "./use-run";
 
 export interface RunAccess {
@@ -45,6 +46,7 @@ function actionHref(action: RunProblemAction, run: RunDetail): string | null {
 export function ProblemCard({ problem, run, access, onShow }: { problem: RunProblem; run: RunDetail; access: RunAccess; onShow: () => void }) {
     const error = problem.tone === "error";
     const actions = problem.actions.filter((action) => (action.kind === "job" ? access.canOpenJobs : access.canOpenConnections));
+    const many = (problem.kinds?.length ?? 0) > 1;
     return (
         <div className={cn("relative overflow-hidden rounded-xl border p-4 pl-5", error ? "border-destructive/30 bg-destructive/5" : "border-warning/30 bg-warning/5")}>
             <span className={cn("absolute inset-y-0 left-0 w-1", error ? "bg-destructive" : "bg-warning")} aria-hidden="true" />
@@ -57,9 +59,13 @@ export function ProblemCard({ problem, run, access, onShow }: { problem: RunProb
                             {[problem.step, problem.subject].filter(Boolean).join(" · ")}{problem.at && <> · <DateDisplay date={problem.at} format="p" /></>}
                         </p>
                     </div>
-                    <p><Mono tone={problem.tone}>{problem.raw}</Mono></p>
+                    {problem.kinds && problem.kinds.length > 0 ? (
+                        <WarningKinds kinds={problem.kinds} />
+                    ) : (
+                        <p><Mono tone={problem.tone}>{problem.raw}</Mono></p>
+                    )}
                     {problem.tries.length > 1 && <p className="text-xs text-muted-foreground">Tried {problem.tries.length} times, the tries are folded into this one</p>}
-                    {problem.help && <p className="text-sm">{problem.help}</p>}
+                    {problem.help && !many && <p className="text-sm">{problem.help}</p>}
                     <div className="flex flex-wrap gap-2 pt-0.5">
                         {actions.map((action) => {
                             const href = actionHref(action, run);
@@ -136,8 +142,24 @@ export function RunRail({ run, now, speed, access, onShowProblem, className }: R
                     </p>
                 </RailCard>
             ))}
-            {run.job && run.recent.length > 1 && (
-                <RailCard title={`${run.job.name}, the last ${Math.min(run.recent.length, 10)} runs`}>
+            {run.checks?.backup && (
+                <RailCard title="The backup">
+                    <div className="flex items-center gap-3">
+                        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-muted"><Archive className="size-4 text-muted-foreground" aria-hidden="true" /></span>
+                        <div className="min-w-0 text-sm">
+                            <p className="truncate font-medium">{run.checks.backup.name}</p>
+                            <p className="truncate text-xs text-muted-foreground">
+                                {[run.checks.backup.file, run.checks.backup.size !== null ? formatBytes(run.checks.backup.size) : null, `${run.checks.total} ${run.checks.total === 1 ? "copy" : "copies"}`].filter(Boolean).join(" · ")}
+                            </p>
+                        </div>
+                    </div>
+                    {access.canOpenBackups && (
+                        <Button variant="outline" size="sm" className="mt-3" asChild><Link href="/dashboard/backups"><ArrowUpRight />Open backups</Link></Button>
+                    )}
+                </RailCard>
+            )}
+            {(run.job || run.checks) && run.recent.length > 1 && (
+                <RailCard title={`${run.job?.name ?? run.name}, the last ${Math.min(run.recent.length, 10)} runs`}>
                     <RecentBars runs={run.recent} current={run.id} />
                     <p className="mt-2 text-xs text-muted-foreground">
                         {run.usualMs !== null ? `usual ${formatDuration(run.usualMs)}` : "no successful run to compare with"}
@@ -145,7 +167,7 @@ export function RunRail({ run, now, speed, access, onShowProblem, className }: R
                     </p>
                 </RailCard>
             )}
-            {!run.job && run.type !== "Backup" && (
+            {!run.job && !run.checks && run.type !== "Backup" && (
                 <RailCard title="What it was">
                     <div className="flex items-center gap-3">
                         <RunTile row={run} />

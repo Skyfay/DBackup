@@ -8,8 +8,9 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { RunProblem } from "@/services/history/run-types";
+import { RunCenter } from "./run-center";
+import { DestinationsPane } from "./run-checks";
 import { originOf } from "./run-links";
-import { RunLog } from "./run-log";
 import { RunPageHead } from "./run-page-head";
 import { RunRail, type RunAccess } from "./run-rail";
 import { StepsPane } from "./run-steps-pane";
@@ -40,9 +41,10 @@ function RunSkeleton() {
 }
 
 /**
- * A run as a page of its own: its steps on the left with every copy and notification, its log in
- * the middle, and on the right how long it still takes while it is live, or what to look at after.
- * On a phone the right side comes first, then the steps and the log.
+ * A run as a page of its own: its steps on the left with every copy and notification, in the middle
+ * what it did in plain words and its log as a second tab, and on the right how long it still takes
+ * while it is live, or what to look at after. An integrity check and a verification show every copy
+ * they checked instead, with their destinations on the left. On a phone the right side comes first.
  */
 export function RunPage({ access }: { access: RunAccess }) {
     const searchParams = useSearchParams();
@@ -89,8 +91,10 @@ export function RunPage({ access }: { access: RunAccess }) {
                 <ScrollArea className="min-h-0 xl:order-3">
                     <RunRail run={run} now={now} speed={speed} access={access} onShowProblem={showProblem} />
                 </ScrollArea>
-                <StepsPane run={run} now={now} picked={picked} onPick={setPicked} className="max-xl:max-h-[32rem] xl:order-1" />
-                <RunLog
+                {run.checks
+                    ? <DestinationsPane run={run} checks={run.checks} className="max-xl:max-h-[32rem] xl:order-1" />
+                    : <StepsPane run={run} now={now} picked={picked} onPick={setPicked} className="max-xl:max-h-[32rem] xl:order-1" />}
+                <RunCenter
                     run={run}
                     now={now}
                     speed={speed}

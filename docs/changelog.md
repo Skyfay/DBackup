@@ -26,7 +26,7 @@ All notable changes to DBackup are documented here.
 - **explorer**: A database opens as a page of its own with its tables and their rows read live, and a Redis or Valkey server is one entry whose keys a filter finds on the server. The timeline folds a server with many databases into one row and pages its rows like a table.
 - **explorer**: The Servers tab lists every database server with its address, its version, how much of it a job backs up, its kept backups and its status, and marks a server too old for the newest backups of its engine. A server opens as a page of its own with every version it ran, how long it ran each and how many of the backups made on it are kept.
 - **history**: The History page lists backups, restores and the system tasks in one list with the numbers of the last 30 days, filtered by type, job and who started a run. Its notifications open in a side panel with what was sent and the run it was for, and a phone gets cards.
-- **history**: A run opens as a page of its own with its steps next to their usual time, every copy and notification, and its log with each problem told once in plain words and what to do about it. A live run shows the progress of every upload and follows the newest line, and every link to a run leads there with a way back to where it was opened.
+- **history**: A run opens as a page of its own from every link to it, with a way back to where it was opened, its steps next to their usual time, a summary of what each step did and its log with each problem told once in plain words. A live run fills a row for the database it dumps and the copy it uploads, and an integrity check or a verification lists every copy it checked.
 
 ### 🐛 Bug Fixes
 
@@ -54,6 +54,7 @@ All notable changes to DBackup are documented here.
 - **ci**: The `skyfay/dbackup:ci` image ends a Partial run with exit code 2 and a Cancelled one with 1, where it waited until it timed out. It waits up to an hour for a run instead of ten minutes, set with `DBACKUP_TIMEOUT`.
 - **storage**: The steps of the Redis and Valkey restore no longer copy a file their download command never wrote, and no longer stop Redis in a way a Docker restart policy undoes. The check afterwards no longer runs KEYS, which blocks a large instance.
 - **storage**: A download link for a server showed wget and curl with the same link, so whichever ran second failed. The dialog shows one command at a time, and a download that broke off can run again with the same link.
+- **jobs**: A finished backup no longer loses the list of its databases and destinations to the last write of its log.
 
 ### 🔒 Security
 
@@ -149,7 +150,7 @@ All notable changes to DBackup are documented here.
 - **docs**: The Docker Volumes guide describes the volume picker with its stacks, the containers of each volume and what the job reads.
 - **docs**: The Storage Explorer guide is the Backups guide now, and its old address points to it.
 - **docs**: The Database Explorer guide describes the list of databases, its timeline, the page of a database, the Servers tab with the page of a server and what shows for a login that may only back up.
-- **docs**: A new History guide describes the list of runs, the page of a run with its problems and live state, and the notifications. The job, data retention, logging and API guides follow it.
+- **docs**: A new History guide describes the list of runs, the page of a run with its summary, log, problems and live state, and the notifications. The job, data retention, logging and API guides follow it.
 
 ### 🧪 Tests
 

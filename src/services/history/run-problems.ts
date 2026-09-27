@@ -1,12 +1,14 @@
 import type { LogEntry } from "@/lib/core/logs";
 import { describeProblem, type ProblemContext } from "./known-problems";
+import { kindsOf } from "./run-dumps";
 import { isStepSummary, SUMMARY_LINES } from "./run-steps";
 import type { RunNotification, RunProblem, RunStep } from "./run-types";
 
 /**
  * What to look at in a run: every error and warning of its log and every notification that did
  * not go out, told once. Lines about the same thing in the same step fold into one problem, so a
- * destination that was tried three times is one problem with its tries.
+ * destination that was tried three times is one problem with its tries, and the warnings a tool
+ * wrote about many tables are one problem with a count for each kind of thing they say.
  */
 
 /** The destinations and channels of the run, so a line naming one gets the button that opens it. */
@@ -26,11 +28,6 @@ export function subjectOf(message: string): { subject: string | null; text: stri
 /** The part of a line the server wrote, without what DBackup put in front of it. */
 export function rawOf(text: string): string {
     return text.replace(/^(Upload FAILED|Integrity verification error|WARNING):\s*/i, "").trim();
-}
-
-/** Two tries of the same thing differ in their numbers, like the part or the wait. */
-function sameKind(text: string): string {
-    return text.replace(/\d+/g, "#").toLowerCase();
 }
 
 function contextFor(step: string, subject: string | null, targets: ProblemTargets): ProblemContext {
@@ -66,10 +63,9 @@ export function buildProblems(entries: LogEntry[], notifications: RunNotificatio
         if (entry.level !== "error" && entry.level !== "warning") continue;
         if (isStepSummary(entry) || SUMMARY_LINES.some((pattern) => pattern.test(entry.message))) continue;
         const step = entry.stage ?? "General";
-        const { subject, text } = subjectOf(entry.message);
-        // Warnings without an error stay apart by what they say, errors of one subject fold together.
-        const group = groups.find((candidate) => candidate.step === step && candidate.subject === subject
-            && (entry.level === "error" || candidate.entries.some((other) => other.level === "error") || candidate.entries.some((other) => sameKind(subjectOf(other.message).text) === sameKind(text))));
+        const { subject } = subjectOf(entry.message);
+        // Everything about one subject in one step folds together, the kinds of warnings are told apart below.
+        const group = groups.find((candidate) => candidate.step === step && candidate.subject === subject);
         if (group) group.entries.push(entry);
         else groups.push({ step, subject, entries: [entry] });
     }
@@ -78,23 +74,31 @@ export function buildProblems(entries: LogEntry[], notifications: RunNotificatio
     const lineProblems = new Map<LogEntry, string>();
     groups.forEach((group, index) => {
         const errors = group.entries.filter((entry) => entry.level === "error");
-        const main = errors.at(-1) ?? group.entries.at(-1)!;
+        const main = errors.at(-1) ?? group.entries[0];
         const tone = errors.length > 0 ? "error" : "warning";
         const raw = rawOf(subjectOf(main.message).text);
         const context = contextFor(group.step, group.subject, targets);
         const described = describeProblem(raw, tone, context);
         const id = `p${index + 1}`;
+        // Warnings with no error among them are counted by kind instead of read as tries.
+        const kinds = tone === "warning" && group.entries.length > 1
+            ? kindsOf(group.entries.map((entry) => ({ ...entry, message: rawOf(subjectOf(entry.message).text) })), group.step)
+            : undefined;
+        const many = kinds !== undefined && kinds.length > 1;
         problems.push({
             id,
             tone,
-            title: described.title,
+            title: many
+                ? `${group.entries.length} warnings ${group.subject ? `from ${group.subject}` : `while ${group.step.toLowerCase()}`}`
+                : described.title,
             raw,
             step: group.step,
             subject: context.subject,
             at: main.timestamp,
-            tries: triesOf(group.entries),
-            help: described.help,
+            tries: tone === "error" ? triesOf(group.entries) : [],
+            help: many ? null : described.help,
             actions: described.actions,
+            ...(kinds ? { kinds } : {}),
         });
         for (const entry of group.entries) lineProblems.set(entry, id);
     });

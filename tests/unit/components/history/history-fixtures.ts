@@ -1,5 +1,5 @@
 import { vi } from "vitest";
-import type { RunDetail, RunPage, RunRow } from "@/services/history/run-types";
+import type { RunDetail, RunDump, RunPage, RunRow, RunStepSummary } from "@/services/history/run-types";
 import type { NotificationLogRow } from "@/components/dashboard/history/notification-types";
 
 const HOUR = 3_600_000;
@@ -57,6 +57,32 @@ const problems: RunDetail["problems"] = [
     { id: "p2", tone: "warning", title: "Circular foreign keys in orders", raw: "pg_dump: warning: there are circular foreign-key constraints on this table: orders", step: "Dumping Databases", subject: "Shop cluster", at: ago(6.05), tries: [], help: "Nothing is missing from the dump.", actions: [] },
 ];
 
+const PG_DUMP = "pg_dump -h db.internal -p 5432 -U backup -F c -Z 6 -d shop";
+
+const dump = (overrides: Partial<RunDump>): RunDump => ({
+    name: "shop", state: "done", bytes: 1_400_000_000, durationMs: 120_000, startedAt: ago(6.09), facts: null, lastBytes: null,
+    command: null, outputs: [], warnings: [], errors: [], progress: null, ...overrides,
+});
+
+const offsiteSummary: RunStepSummary[] = [
+    { step: "Initializing", text: "Found shop and billing on Shop cluster, engine 16.4.", tool: null, dumps: [], items: [], checksum: null, now: null },
+    {
+        step: "Dumping Databases", text: "Dumped shop and billing with {tool}.", tool: "pg_dump", items: [], checksum: null, now: null,
+        dumps: [
+            dump({ command: PG_DUMP, warnings: [{ title: "Circular foreign keys in orders", count: 1, raw: "pg_dump: warning: there are circular foreign-key constraints on this table: orders", help: "Nothing is missing from the dump." }] }),
+            dump({ name: "billing", bytes: 800_000_000, durationMs: 70_000 }),
+        ],
+    },
+    {
+        step: "Uploading", text: "Stored the archive at 1 of 2 destinations.", tool: null, dumps: [], now: null,
+        checksum: "c5bc45b2a5ae65e4d9801b19d24c05d1109c7152da5568c51869e5b4f654650d",
+        items: [
+            { key: "nas", label: "NAS Backups", adapterId: "sftp", state: "done", text: "stored in 1m 12s", outputs: [{ source: "NAS Backups", lines: [{ at: ago(6.02), level: "info", type: "storage", message: "Upload complete: Shop offsite/a.tar" }] }] },
+            { key: "drive", label: "Google Drive", adapterId: "google-drive", state: "failed", text: "403 quota", outputs: [] },
+        ],
+    },
+];
+
 export function detail(overrides: Partial<RunDetail> = {}): RunDetail {
     return {
         ...row(),
@@ -68,7 +94,8 @@ export function detail(overrides: Partial<RunDetail> = {}): RunDetail {
         steps: [
             { name: "Initializing", state: "done", startedAt: ago(6.1), durationMs: 800, usualMs: 900, errors: 0, warnings: 0, lines: [{ at: ago(6.1), level: "info", type: "general", message: "Started by the schedule" }] },
             { name: "Dumping Databases", state: "warning", startedAt: ago(6.09), durationMs: 190_000, usualMs: 182_000, errors: 0, warnings: 1, lines: [
-                { at: ago(6.09), level: "info", type: "command", message: "pg_dump --format=custom --dbname=shop" },
+                { at: ago(6.09), level: "info", type: "general", message: "Dumping database: shop" },
+                { at: ago(6.09), level: "info", type: "command", message: "Dumping database: shop", details: PG_DUMP },
                 { at: ago(6.05), level: "warning", type: "general", message: "pg_dump: warning: there are circular foreign-key constraints on this table: orders", problem: "p2" },
             ] },
             { name: "Uploading", state: "failed", startedAt: ago(6.02), durationMs: 170_000, usualMs: 150_000, errors: 1, warnings: 2, lines: [
@@ -78,6 +105,8 @@ export function detail(overrides: Partial<RunDetail> = {}): RunDetail {
                 { at: ago(6), level: "error", type: "storage", message: "[Google Drive] Upload FAILED: 403 The user's Drive storage quota has been exceeded.", problem: "p1" },
             ] },
         ],
+        summary: offsiteSummary,
+        checks: null,
         problems,
         uploads: [
             { configId: "nas", name: "NAS Backups", adapterId: "sftp", state: "done", bytes: 2_200_000_000, total: 2_200_000_000, error: null, startedAt: null, endedAt: null },
@@ -117,6 +146,96 @@ export const liveDetail = () => detail({
     ],
     notifications: [],
     queue: [{ id: "waiting", name: "Shop nightly", starter: { key: "manual:Manu", kind: "manual", label: "Manu" } }],
+    summary: [
+        { step: "Dumping Databases", text: "Dumped crm with {tool}.", tool: "mysqldump", dumps: [dump({ name: "crm", bytes: 820 * 1_048_576, durationMs: 48_000 })], items: [], checksum: null, now: null },
+        {
+            step: "Uploading", text: "Stores the archive at each destination, one after the other.", tool: null, dumps: [], checksum: null, now: null,
+            items: [
+                { key: "nas", label: "NAS Backups", adapterId: "sftp", state: "done", text: "stored in 12s", outputs: [] },
+                { key: "r2", label: "Cloudflare R2", adapterId: "s3-r2", state: "running", text: "64 %", outputs: [{ source: "Cloudflare R2", lines: [{ at: ago(0.01), level: "info", type: "storage", message: "Multipart upload: 8 parallel parts of 5 MB" }] }] },
+            ],
+        },
+    ],
+});
+
+/** A MongoDB backup while it dumps its second database, which mongodump counts by document. */
+export const dumpingDetail = () => detail({
+    id: "mongo",
+    name: "MSSQL-Bug",
+    status: "Running",
+    adapterId: "mongodb",
+    endedAt: null,
+    durationMs: null,
+    usualMs: 104_000,
+    live: { stage: "Dumping Databases", percent: 40, detail: null },
+    job: { id: "job-mongo", name: "MSSQL-Bug" },
+    problems: [],
+    uploads: [{ configId: "local", name: "Local", adapterId: "local-filesystem", state: "waiting", bytes: null, total: null, error: null, startedAt: null, endedAt: null }],
+    notifications: [],
+    queue: [],
+    steps: [
+        { name: "Initializing", state: "done", startedAt: ago(0.02), durationMs: 26, usualMs: 49, errors: 0, warnings: 0, lines: [{ at: ago(0.02), level: "info", type: "general", message: "Databases to dump: testdb, testdb1" }] },
+        { name: "Dumping Databases", state: "running", startedAt: ago(0.02), durationMs: null, usualMs: 99_000, errors: 0, warnings: 0, lines: [
+            { at: ago(0.01), level: "info", type: "general", message: "Dumping database: testdb1" },
+            { at: ago(0.01), level: "info", type: "command", message: "Dumping database: testdb1", details: "mongodump --host localhost --port 27708 --db testdb1 --archive=/tmp/0002.archive --gzip" },
+            { at: ago(0.005), level: "info", type: "general", message: "[mongodump] 2026-09-27T17:01:37.030+0200\t[########................]  testdb1.stress_data  526527/1500000  (35.1%)" },
+        ] },
+        { name: "Processing", state: "pending", startedAt: null, durationMs: null, usualMs: 2_000, errors: 0, warnings: 0, lines: [] },
+    ],
+    summary: [
+        { step: "Initializing", text: "Found testdb and testdb1 on Test MongoDB 8.0, engine 8.0.20.", tool: null, dumps: [], items: [], checksum: null, now: null },
+        {
+            step: "Dumping Databases", text: "Dumps testdb and testdb1 one after the other with {tool}.", tool: "mongodump", items: [], checksum: null, now: null,
+            dumps: [
+                dump({ name: "testdb", facts: "2 collections · 1,500,001 documents", bytes: 890 * 1_048_576, durationMs: 52_000 }),
+                dump({
+                    name: "testdb1", state: "dumping", bytes: null, durationMs: 18_000,
+                    command: "mongodump --host localhost --port 27708 --db testdb1 --archive=/tmp/0002.archive --gzip",
+                    outputs: [{ source: "mongodump", lines: [{ at: ago(0.005), level: "info", type: "general", message: "[########................]  testdb1.stress_data  526527/1500000  (35.1%)" }] }],
+                    progress: { share: 0.351, exact: true, text: "526,527 of 1,500,000 documents", part: "stress_data", etaMs: 40_000 },
+                }),
+            ],
+        },
+    ],
+});
+
+/** An integrity check while it downloads a copy to hash it, one copy that differs found so far. */
+export const integrityDetail = () => detail({
+    id: "integrity",
+    type: "IntegrityCheck",
+    name: "Integrity check",
+    sub: "System task · the checksums of the backups",
+    status: "Running",
+    adapterId: null,
+    jobId: null,
+    job: null,
+    endedAt: null,
+    durationMs: null,
+    usualMs: 360_000,
+    live: { stage: "Verifying Checksums", percent: 45, detail: null },
+    databases: [],
+    problems: [],
+    uploads: [],
+    notifications: [],
+    queue: [],
+    summary: [],
+    steps: [{ name: "Verifying Checksums", state: "running", startedAt: ago(0.05), durationMs: null, usualMs: 300_000, errors: 1, warnings: 0, lines: [{ at: ago(0.04), level: "error", type: "general", message: "a.tar - checksum mismatch" }] }],
+    recent: [],
+    previous: null,
+    checks: {
+        total: 5,
+        backup: null,
+        destinations: [
+            { id: "nas", name: "NAS Backups", adapterId: "sftp", total: 3, checked: 2, passed: 1, differ: 1, skipped: 0, native: false },
+            { id: "r2", name: "Cloudflare R2", adapterId: "s3-r2", total: 2, checked: 1, passed: 1, differ: 0, skipped: 0, native: true },
+        ],
+        copies: [
+            { destinationId: "nas", file: "Shop nightly/a.tar", size: 104_000_000, state: "passed", method: "download", processed: null, total: null, reason: null, expected: null, actual: null },
+            { destinationId: "nas", file: "CRM daily/b.tar", size: 61_000_000, state: "failed", method: "download", processed: null, total: null, reason: null, expected: "91ac07d32e10", actual: "0b7f55e1c9d4" },
+            { destinationId: "r2", file: "CRM daily/b.tar", size: 61_000_000, state: "passed", method: "native", processed: null, total: null, reason: null, expected: null, actual: null },
+            { destinationId: "nas", file: "Wiki weekly/c.tar", size: 52_000_000, state: "checking", method: "download", processed: 32_500_000, total: 52_000_000, reason: null, expected: null, actual: null },
+        ],
+    },
 });
 
 export const fetchMock = vi.fn();

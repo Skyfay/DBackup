@@ -121,6 +121,15 @@ export interface RunProblemAction {
     label: string;
 }
 
+/** Lines that say the same thing about other tables or columns, counted as one kind. */
+export interface RunKind {
+    title: string;
+    count: number;
+    /** The first of its lines, as the tool wrote it. */
+    raw: string;
+    help: string | null;
+}
+
 /** Something to look at, told once however often it came up. */
 export interface RunProblem {
     id: string;
@@ -136,6 +145,8 @@ export interface RunProblem {
     tries: string[];
     help: string | null;
     actions: RunProblemAction[];
+    /** Warnings of one step about several things, each kind with how often it came up. */
+    kinds?: RunKind[];
 }
 
 export interface RunUpload {
@@ -170,6 +181,107 @@ export interface RunNeighbour {
     starter: RunStarter;
 }
 
+// ------------------------------------------------------------------ the summary of a run
+
+/** The lines a tool, a destination or a source wrote about one thing, folded under its name. */
+export interface RunOutput {
+    source: string;
+    lines: RunLine[];
+}
+
+export interface RunDumpProgress {
+    /** How far it is, from 0 to 1. Null when there is nothing to measure it against yet. */
+    share: number | null;
+    /** True when the tool counted it, false when it is measured against the dump of the last backup. */
+    exact: boolean;
+    /** What the share counts, like "526,527 of 1,500,000 documents". */
+    text: string;
+    /** What the share is of when it is less than the whole database, like a collection. */
+    part: string | null;
+    etaMs: number | null;
+}
+
+/** One database of the dump step. */
+export interface RunDump {
+    name: string;
+    state: "waiting" | "dumping" | "done" | "failed";
+    bytes: number | null;
+    durationMs: number | null;
+    startedAt: string | null;
+    /** What the tool said about it, like "2 collections · 1,500,001 documents". */
+    facts: string | null;
+    /** The size of its dump in the last backup of the job. */
+    lastBytes: number | null;
+    /** The command or statement it was dumped with. */
+    command: string | null;
+    outputs: RunOutput[];
+    warnings: RunKind[];
+    errors: string[];
+    progress: RunDumpProgress | null;
+}
+
+/** A destination, a folder or a channel of a step, one row of its summary. */
+export interface RunSummaryItem {
+    key: string;
+    label: string;
+    adapterId: string | null;
+    state: "done" | "failed" | "running" | "waiting" | "skipped" | "warning";
+    text: string;
+    outputs: RunOutput[];
+}
+
+/** A step told in a sentence or two, with a row for each database, destination or channel it went through. */
+export interface RunStepSummary {
+    step: string;
+    /** What the step did. `{tool}` in it stands for the program it ran, which the page shows as a badge. */
+    text: string | null;
+    tool: string | null;
+    dumps: RunDump[];
+    items: RunSummaryItem[];
+    /** The checksum every copy is checked against, on the upload step. */
+    checksum: string | null;
+    /** What the step does right now, like the entry it packs, while it is live. */
+    now: string | null;
+}
+
+// ------------------------------------------------------------------ the copies an integrity check or a verification checked
+
+export interface RunCopyCheck {
+    destinationId: string;
+    file: string;
+    size: number | null;
+    state: "waiting" | "checking" | "passed" | "failed" | "skipped" | "error";
+    method: "native" | "download" | null;
+    processed: number | null;
+    total: number | null;
+    reason: string | null;
+    expected: string | null;
+    actual: string | null;
+}
+
+export interface RunCheckDestination {
+    id: string;
+    name: string;
+    adapterId: string | null;
+    /** The copies it holds of what the run goes through. */
+    total: number;
+    checked: number;
+    passed: number;
+    differ: number;
+    skipped: number;
+    /** Whether it checks a copy by a checksum it keeps, without a download. */
+    native: boolean;
+}
+
+export interface RunChecks {
+    total: number;
+    destinations: RunCheckDestination[];
+    /** The copies checked so far, the one checked now among them. */
+    copies: RunCopyCheck[];
+    /** The backup a verification checks the copies of. */
+    backup: { name: string; file: string; size: number | null } | null;
+}
+
 export interface RunDetail extends RunRow {
     job: { id: string; name: string } | null;
     path: string | null;
@@ -177,8 +289,11 @@ export interface RunDetail extends RunRow {
     logsPurgedAt: string | null;
     databases: string[];
     steps: RunStep[];
+    summary: RunStepSummary[];
     problems: RunProblem[];
     uploads: RunUpload[];
+    /** What an integrity check or a verification checked. Null for every other run. */
+    checks: RunChecks | null;
     notifications: RunNotification[];
     /** The runs of the same job, newest first, for the switcher and the bars. */
     recent: RunNeighbour[];

@@ -153,9 +153,12 @@ describe("Task colors", () => {
         "job-status-filter.tsx",
         "job-details-content.tsx",
         "job-run-chart.tsx",
-        // A live run in History: the progress bar of its row and card, and the live parts of its page.
+        // A live run in History: the progress bar of its row and card, and the live parts of its page,
+        // like the row of what runs now and the copy an integrity check checks now.
         "run-cells.tsx",
         "run-live.tsx",
+        "run-summary-parts.tsx",
+        "run-checks.tsx",
     ];
 
     it("should keep the info blue to the running status", () => {

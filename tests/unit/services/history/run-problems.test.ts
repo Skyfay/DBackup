@@ -54,6 +54,36 @@ describe("buildProblems", () => {
     });
 });
 
+describe("warnings of one step about many things", () => {
+    const warning = (message: string) => ({ timestamp: "2026-09-27T00:00:03.000Z", level: "warning" as const, type: "general" as const, message, stage: "Dumping Databases" });
+
+    it("are one problem with a count for each kind of thing they say, not tries", () => {
+        const { problems, lineProblems } = buildProblems([
+            warning("A BACPAC export is not transactionally consistent while the database is being written to."),
+            warning("Element [dbo].[h1] is a history table for the [dbo].[t1] updatable ledger table. Migrating data in history tables is not supported."),
+            warning("Element [dbo].[t1].[ledger_start_transaction_id] is a column with system-generated values (a GENERATED ALWAYS column) in a ledger table."),
+            warning("Element [dbo].[t1].[ledger_end_transaction_id] is a column with system-generated values (a GENERATED ALWAYS column) in a ledger table."),
+        ], [], targets);
+
+        expect(problems).toHaveLength(1);
+        expect(problems[0]).toMatchObject({ tone: "warning", title: "4 warnings while dumping databases", tries: [], help: null });
+        expect(problems[0].kinds!.map((kind) => [kind.title, kind.count])).toEqual([
+            ["The export is not consistent while the database is written to", 1],
+            ["History tables of ledger tables are left out", 1],
+            ["Generated always columns of ledger tables are left out", 2],
+        ]);
+        expect(lineProblems.size).toBe(4);
+    });
+
+    it("keep the title of their one kind when they all say the same", () => {
+        const { problems } = buildProblems([
+            warning("Element [dbo].[t1].[a] is a column with system-generated values (a GENERATED ALWAYS column) in a ledger table."),
+            warning("Element [dbo].[t2].[b] is a column with system-generated values (a GENERATED ALWAYS column) in a ledger table."),
+        ], [], targets);
+        expect(problems[0]).toMatchObject({ title: "Generated always columns of ledger tables are left out", kinds: [expect.objectContaining({ count: 2 })] });
+    });
+});
+
 describe("describeProblem", () => {
     it("names the step for a message no entry knows", () => {
         expect(describeProblem("something odd", "error", { subject: null, step: "Processing", jobName: null, subjectKind: null })).toEqual({ title: "Failed while processing", help: null, actions: [] });

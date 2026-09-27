@@ -18,6 +18,7 @@ import { recordVersionIfChanged } from "./db-version-service";
 import { databaseListService } from "@/services/databases/database-list-service";
 import { runDataRetention } from "./data-retention-service";
 import { isDatabaseMaintenanceActive } from "@/lib/server/database-maintenance";
+import type { IntegrityCopy } from "@/services/backup/integrity-service";
 
 const log = logger.child({ service: "SystemTaskService" });
 
@@ -274,6 +275,10 @@ export class SystemTaskService {
                     triggerLabel ?? "Scheduler"
                 );
 
+                // Every copy it checked, kept in the metadata for the page of the run. The one it
+                // checks now is the last entry, and each copy is written once, however often it changes.
+                const copies: Omit<IntegrityCopy, "index">[] = [];
+
                 // Run async without blocking so callers receive the executionId immediately.
                 (async () => {
                     try {
@@ -283,6 +288,11 @@ export class SystemTaskService {
                             onStage: (stage) => runner.setStage(stage),
                             onFileProgress: (done, total) => {
                                 if (total > 0) runner.updateStageProgress((done / total) * 100);
+                            },
+                            onPlan: (plan) => runner.setExtra({ plan }),
+                            onCopy: ({ index, ...copy }) => {
+                                copies[index] = copy;
+                                runner.setExtra({ copies });
                             },
                         });
                         runner.setStage(INTEGRITY_CHECK_STAGES.COMPLETED);

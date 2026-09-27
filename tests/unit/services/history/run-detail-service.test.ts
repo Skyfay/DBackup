@@ -10,6 +10,7 @@ const JOB = {
     source: { id: "src-1", name: "Shop cluster", adapterId: "postgres" },
     sources: [],
     destinations: [{ configId: "nas", config: { name: "NAS Backups", adapterId: "sftp" } }, { configId: "drive", config: { name: "Google Drive", adapterId: "google-drive" } }],
+    _count: { sources: 0 },
 };
 
 function detailRecord(overrides: Record<string, unknown> = {}) {
@@ -56,6 +57,25 @@ describe("getRunDetail", () => {
         expect(run.uploads.map((upload) => [upload.name, upload.state])).toEqual([["NAS Backups", "done"], ["Google Drive", "failed"]]);
         expect(run.steps.find((step) => step.name === "Sending Notifications")?.state).toBe("failed");
         expect(run.notifications).toHaveLength(1);
+    });
+
+    it("leaves out the steps a job never has, and tells no steps for a log data retention removed", async () => {
+        prismaMock.execution.findUnique.mockResolvedValueOnce(detailRecord() as never);
+        const run = (await getRunDetail("run-1"))!;
+        // The job backs up a database and no folders, so it never collects files.
+        expect(run.steps.map((step) => step.name)).not.toContain("Collecting Files");
+        expect(run.steps.map((step) => step.name)).toContain("Dumping Databases");
+
+        prismaMock.execution.findUnique.mockResolvedValueOnce(detailRecord({ logs: "[]", logsPurgedAt: new Date("2026-09-24T00:00:00.000Z") }) as never);
+        expect((await getRunDetail("run-1"))!.steps).toEqual([]);
+    });
+
+    it("takes the copies of a finished backup from its upload list when the run lost its destinations", async () => {
+        prismaMock.execution.findUnique.mockResolvedValue(detailRecord({
+            metadata: JSON.stringify({ uploads: [{ configId: "nas", name: "NAS Backups", adapterId: "sftp", state: "done", bytes: 10, total: 10 }] }),
+        }) as never);
+        const run = (await getRunDetail("run-1"))!;
+        expect(run.uploads).toEqual([expect.objectContaining({ name: "NAS Backups", state: "done" })]);
     });
 
     it("shows the uploads of a live backup, the runs around it and who waits for it", async () => {

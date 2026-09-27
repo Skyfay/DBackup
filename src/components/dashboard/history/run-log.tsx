@@ -1,37 +1,38 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowDownToLine, ChevronDown, ChevronUp, Copy, Download, ScrollText, Search, X } from "lucide-react";
-import { toast } from "sonner";
+import { ArrowDown, ArrowDownToLine, ChevronDown, ChevronUp, Database, ListFilter, ScrollText, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DateDisplay } from "@/components/utils/date-display";
-import type { LogEntry } from "@/lib/core/logs";
-import { formatLogsAsText, generateLogFilename } from "@/lib/logs/format";
-import { sanitizeLogs } from "@/lib/logs/sanitize";
-import { cn, formatDuration } from "@/lib/utils";
+import { formatDuration } from "@/lib/utils";
 import type { RunDetail } from "@/services/history/run-types";
+import { LogActions } from "./run-log-actions";
 import { GroupHead, StepLines } from "./run-log-lines";
 import { LiveUploadRow } from "./run-live";
+import { dumpNow, NowRow } from "./run-summary-parts";
 import type { SpeedSample } from "./use-run";
 
-const TRIGGER: Record<string, string> = { schedule: "Scheduler", manual: "Manual", api: "Api" };
-
-function logText(run: RunDetail): string {
-    const entries: LogEntry[] = run.steps.flatMap((step) => step.lines.map((line) => ({
-        timestamp: line.at, level: line.level, type: line.type, message: line.message, stage: step.name, details: line.details,
-    })));
-    return formatLogsAsText(sanitizeLogs(entries), {
-        jobName: run.job?.name ?? run.name,
-        type: run.type,
-        status: run.status,
-        startedAt: run.startedAt,
-        endedAt: run.endedAt,
-        triggerType: TRIGGER[run.starter.kind] ?? null,
-        triggerLabel: run.starter.label,
-    });
+/** Which step the log shows, a field in the gray of the filters of a table. */
+function StepSelect({ steps, picked, onPick }: { steps: string[]; picked: string | null; onPick: (step: string | null) => void }) {
+    return (
+        <span className="flex items-center gap-1">
+            <Select value={picked ?? "all"} onValueChange={(value) => onPick(value === "all" ? null : value)}>
+                <SelectTrigger size="sm" className="min-w-36 gap-2 text-xs" aria-label="The step the log shows">
+                    <ListFilter className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                    <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">Every step</SelectItem>
+                    {steps.map((step) => <SelectItem key={step} value={step}>{step}</SelectItem>)}
+                </SelectContent>
+            </Select>
+            {picked && <Button variant="ghost" size="icon" className="size-8" onClick={() => onPick(null)} aria-label="Show every step"><X /></Button>}
+        </span>
+    );
 }
 
 interface RunLogProps {
@@ -42,11 +43,12 @@ interface RunLogProps {
     onPick: (step: string | null) => void;
     focused: string | null;
     onFocus: (problem: string | null) => void;
+    tabs: React.ReactNode;
     className?: string;
 }
 
 /** Every line of a run under the step it belongs to, the lines of a problem marked together, live while it runs. */
-export function RunLog({ run, now, speed, picked, onPick, focused, onFocus, className }: RunLogProps) {
+export function RunLog({ run, now, speed, picked, onPick, focused, onFocus, tabs, className }: RunLogProps) {
     const [search, setSearch] = useState("");
     const [mode, setMode] = useState<"all" | "problems">("all");
     const live = run.status === "Running" || run.status === "Pending";
@@ -71,6 +73,7 @@ export function RunLog({ run, now, speed, picked, onPick, focused, onFocus, clas
     const lineCount = run.steps.reduce((sum, step) => sum + step.lines.length, 0);
     const pending = live ? run.steps.filter((step) => step.state === "pending") : [];
     const pendingMs = pending.reduce((sum, step) => sum + (step.usualMs ?? 0), 0);
+    const dumping = run.summary.flatMap((entry) => entry.dumps).find((dump) => dump.state === "dumping");
 
     // A live log follows its newest line, until the reader scrolls up. Then it counts what came in.
     useEffect(() => {
@@ -106,63 +109,42 @@ export function RunLog({ run, now, speed, picked, onPick, focused, onFocus, clas
         const next = order[(position + delta + order.length) % order.length];
         onFocus(next);
     };
-    const copy = () => navigator.clipboard.writeText(logText(run)).then(() => toast.success("The log is copied")).catch(() => toast.error("The log could not be copied"));
-    const download = () => {
-        const url = URL.createObjectURL(new Blob([logText(run)], { type: "text/plain" }));
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = generateLogFilename(run.job?.name ?? run.name, run.startedAt);
-        link.click();
-        URL.revokeObjectURL(url);
-    };
     const purged = run.logsPurgedAt !== null;
 
     return (
-        <section aria-label="Log" className={cn("relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm", className)}>
-            <div className="space-y-3 px-5 pt-4 pb-3">
-                <div className="flex items-baseline gap-2">
-                    <h2 className="font-semibold">Log</h2>
-                    <p className="truncate text-sm text-muted-foreground">
-                        {picked ? `the lines of ${picked}` : live ? "live, the newest line at the bottom" : `${lineCount.toLocaleString()} lines`}
-                    </p>
+        <section aria-label="Log" className={className}>
+            <div className="flex flex-wrap items-center gap-2 border-b px-4 py-3">
+                {tabs}
+                <div className="relative w-full sm:w-48">
+                    <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                    <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search the log" aria-label="Search the log" className="h-8 pl-8" />
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                    {picked && (
-                        <Button variant="outline" size="sm" tone="filter" className="border-tone/50 bg-tone/5 dark:bg-tone/10" onClick={() => onPick(null)} aria-label={`Show every step, not only ${picked}`}>
-                            {picked}<X />
+                <StepSelect steps={run.steps.map((entry) => entry.name)} picked={picked} onPick={onPick} />
+                {order.length > 0 && (
+                    <>
+                        <Tabs value={mode} onValueChange={(value) => setMode(value as "all" | "problems")}>
+                            <TabsList className="h-8">
+                                <TabsTrigger value="all" className="px-2.5 text-xs">All lines</TabsTrigger>
+                                <TabsTrigger value="problems" className="px-2.5 text-xs">Problems <span className="ml-1 font-normal text-muted-foreground">{order.length}</span></TabsTrigger>
+                            </TabsList>
+                        </Tabs>
+                        <span className="flex items-center gap-1 text-xs text-muted-foreground tabular-nums">
+                            <Button variant="outline" size="icon" className="size-8" onClick={() => step(-1)} aria-label="The problem before"><ChevronUp /></Button>
+                            {position >= 0 ? `${position + 1} of ${order.length}` : `${order.length}`}
+                            <Button variant="outline" size="icon" className="size-8" onClick={() => step(1)} aria-label="The next problem"><ChevronDown /></Button>
+                        </span>
+                    </>
+                )}
+                <span className="ml-auto flex items-center gap-1.5">
+                    {live && (
+                        <Button variant="outline" size="sm" onClick={following ? () => setFollowing(false) : follow} aria-pressed={following}>
+                            <ArrowDownToLine />{following ? "Following" : "Follow"}
                         </Button>
                     )}
-                    <div className="relative w-full sm:w-52">
-                        <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-                        <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search the log" aria-label="Search the log" className="h-8 pl-8" />
-                    </div>
-                    {order.length > 0 && (
-                        <>
-                            <Tabs value={mode} onValueChange={(value) => setMode(value as "all" | "problems")}>
-                                <TabsList className="h-8">
-                                    <TabsTrigger value="all" className="px-2.5 text-xs">All lines</TabsTrigger>
-                                    <TabsTrigger value="problems" className="px-2.5 text-xs">Problems <span className="ml-1 font-normal text-muted-foreground">{order.length}</span></TabsTrigger>
-                                </TabsList>
-                            </Tabs>
-                            <span className="flex items-center gap-1 text-xs text-muted-foreground tabular-nums">
-                                <Button variant="outline" size="icon" className="size-8" onClick={() => step(-1)} aria-label="The problem before"><ChevronUp /></Button>
-                                {position >= 0 ? `${position + 1} of ${order.length}` : `${order.length}`}
-                                <Button variant="outline" size="icon" className="size-8" onClick={() => step(1)} aria-label="The next problem"><ChevronDown /></Button>
-                            </span>
-                        </>
-                    )}
-                    <span className="ml-auto flex items-center gap-1.5">
-                        {live && (
-                            <Button variant="outline" size="sm" onClick={following ? () => setFollowing(false) : follow} aria-pressed={following}>
-                                <ArrowDownToLine />{following ? "Following" : "Follow"}
-                            </Button>
-                        )}
-                        <Button variant="outline" size="icon" className="size-8" onClick={copy} disabled={purged} aria-label="Copy the log"><Copy /></Button>
-                        <Button variant="outline" size="icon" className="size-8" onClick={download} disabled={purged} aria-label="Download the log"><Download /></Button>
-                    </span>
-                </div>
+                    <LogActions run={run} />
+                </span>
             </div>
-            <ScrollArea className="min-h-0 flex-1 border-t" viewportRef={viewport} onScrollCapture={onScroll}>
+            <ScrollArea className="min-h-0 flex-1" viewportRef={viewport} onScrollCapture={onScroll}>
                 <div className="px-2 py-2">
                     {purged ? (
                         <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
@@ -173,11 +155,14 @@ export function RunLog({ run, now, speed, picked, onPick, focused, onFocus, clas
                             </p>
                         </div>
                     ) : steps.length === 0 ? (
-                        <p className="px-3 py-10 text-center text-sm text-muted-foreground">{term ? "No line matches the search." : "No lines yet."}</p>
+                        <p className="px-3 py-10 text-center text-sm text-muted-foreground">{term ? "No line matches the search." : lineCount === 0 ? "No lines yet." : "No line of this step matches."}</p>
                     ) : steps.map((entry) => (
                         <div key={entry.name}>
                             <GroupHead step={entry} now={now} />
                             <StepLines step={entry} problems={problems} focused={focused} />
+                            {entry.name === "Dumping Databases" && entry.state === "running" && dumping && mode === "all" && !term && (
+                                <NowRow lead={<Database className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />} {...dumpNow(dumping)} />
+                            )}
                             {entry.name === "Uploading" && entry.state === "running" && run.uploads.filter((upload) => upload.state === "uploading").map((upload) => (
                                 <LiveUploadRow key={upload.configId} upload={upload} speed={speed} />
                             ))}

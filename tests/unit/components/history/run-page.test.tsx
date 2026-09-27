@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { detail, liveDetail, serve } from "./history-fixtures";
+import { detail, dumpingDetail, integrityDetail, liveDetail, serve } from "./history-fixtures";
 
 let search = new URLSearchParams();
 const push = vi.fn();
@@ -71,13 +71,14 @@ describe("the page of a run", () => {
         open("id=offsite");
 
         expect(await screen.findByText("To look at")).toBeInTheDocument();
-        const log = screen.getByRole("region", { name: "Log" });
-        expect(within(log).getByText("the 3 lines of this problem")).toBeInTheDocument();
-        expect(screen.getAllByText("Google Drive is full").length).toBeGreaterThan(1);
+        expect(screen.getByText("Google Drive is full")).toBeInTheDocument();
         expect(screen.getByText("Tried 3 times, the tries are folded into this one")).toBeInTheDocument();
         expect(screen.getByRole("link", { name: /Open destination/ })).toHaveAttribute("href", "/dashboard/connections?tab=destinations");
 
+        // Show in log opens the log at the lines of the problem.
         await user.click(screen.getAllByRole("button", { name: /Show in log/ })[0]);
+        const log = screen.getByRole("region", { name: "Log" });
+        expect(within(log).getByText("the 3 lines of this problem")).toBeInTheDocument();
         // The problems count in the order of the log, the dump warning comes first.
         expect(within(log).getByText("2 of 2")).toBeInTheDocument();
     });
@@ -88,10 +89,14 @@ describe("the page of a run", () => {
         open("id=offsite");
 
         const steps = await screen.findByRole("region", { name: "Steps" });
+        await user.click(screen.getByRole("tab", { name: /Log/ }));
         await user.click(within(steps).getByRole("button", { name: /Dumping Databases/ }));
         const log = screen.getByRole("region", { name: "Log" });
-        expect(within(log).getByText("the lines of Dumping Databases")).toBeInTheDocument();
-        expect(within(log).queryByText("[NAS Backups] Upload complete: Shop offsite/a.tar")).not.toBeInTheDocument();
+        expect(within(log).getByRole("combobox", { name: "The step the log shows" })).toHaveTextContent("Dumping Databases");
+        expect(within(log).queryByText("Upload complete: Shop offsite/a.tar")).not.toBeInTheDocument();
+
+        await user.click(within(log).getByRole("button", { name: "Show every step" }));
+        expect(within(log).getByText("Upload complete: Shop offsite/a.tar")).toBeInTheDocument();
     });
 
     it("follows a live run with its progress, the upload in one row, who waits and a way to cancel it", async () => {
@@ -102,10 +107,112 @@ describe("the page of a run", () => {
         expect(screen.getAllByText("Live").length).toBeGreaterThan(0);
         expect(screen.getByText("Waits for this run")).toBeInTheDocument();
         expect(screen.getByText("Shop nightly")).toBeInTheDocument();
+        // The summary fills the row of the destination that uploads now.
+        const summary = screen.getByRole("region", { name: "Summary" });
+        expect(within(summary).getByText(/64 % · 39 MB of 61 MB/)).toBeInTheDocument();
+        expect(within(summary).getByText(/Then Verifying/)).toBeInTheDocument();
+
+        await userEvent.setup().click(screen.getByRole("tab", { name: /Log/ }));
         const log = screen.getByRole("region", { name: "Log" });
         expect(within(log).getByText(/64 % · 39 MB of 61 MB/)).toBeInTheDocument();
         expect(within(log).getByRole("button", { name: /Following/ })).toBeInTheDocument();
         expect(within(log).getByText(/Then Verifying/)).toBeInTheDocument();
+    });
+
+    it("tells each step in a sentence, each database a row that opens to its command, one option a line", async () => {
+        serve();
+        const user = userEvent.setup();
+        open("id=offsite");
+
+        const summary = await screen.findByRole("region", { name: "Summary" });
+        expect(within(summary).getByText("Found shop and billing on Shop cluster, engine 16.4.")).toBeInTheDocument();
+        expect(within(summary).getByText(/Dumped shop and billing with/)).toHaveTextContent("Dumped shop and billing with pg_dump.");
+        // A database with a warning opens by itself, the warning told once with its count.
+        expect(within(summary).getByText("Circular foreign keys in orders")).toBeInTheDocument();
+        expect(within(summary).getByText("×1")).toBeInTheDocument();
+
+        const command = within(summary).getByRole("button", { name: "Open the whole command" });
+        expect(within(summary).getByText("6 options")).toBeInTheDocument();
+        await user.click(command);
+        expect(within(summary).getByRole("button", { name: "Close the command" })).toHaveAttribute("aria-expanded", "true");
+        expect(within(summary).getByText("db.internal").closest("div")).toHaveTextContent(/^-h db\.internal$/);
+
+        // A destination opens to the lines it wrote.
+        await user.click(within(summary).getByRole("button", { name: /NAS Backups/ }));
+        await user.click(within(summary).getByRole("button", { name: /Output of/ }));
+        expect(within(summary).getByText("Upload complete: Shop offsite/a.tar")).toBeInTheDocument();
+        expect(within(summary).getByText(/c5bc45b2…f654650d/)).toBeInTheDocument();
+    });
+
+    it("fills the row of the database it dumps now, with what its tool counted and the time left", async () => {
+        serve({ run: dumpingDetail() });
+        open("id=mongo");
+
+        const summary = await screen.findByRole("region", { name: "Summary" });
+        expect(within(summary).getByText("35 % · 526,527 of 1,500,000 documents")).toBeInTheDocument();
+        expect(within(summary).getByText("about 40s left")).toBeInTheDocument();
+        expect(within(summary).getByText("stress_data")).toBeInTheDocument();
+        expect(within(summary).getByText("2 collections · 1,500,001 documents")).toBeInTheDocument();
+        // The output of the tool is open while it dumps.
+        expect(within(summary).getByText(/testdb1\.stress_data 526527\/1500000/)).toBeInTheDocument();
+    });
+
+    it("shows the log as built, the tool that wrote a line as a badge and each command under its line", async () => {
+        serve({ run: dumpingDetail() });
+        const user = userEvent.setup();
+        open("id=mongo");
+
+        await user.click(await screen.findByRole("tab", { name: /Log 4 lines/ }));
+        const log = screen.getByRole("region", { name: "Log" });
+        // The dump is started once in words and once with its command, only the one with the command shows.
+        expect(within(log).getAllByText("Dumping database: testdb1")).toHaveLength(1);
+        expect(within(log).getByRole("button", { name: "Open the whole command" })).toBeInTheDocument();
+        // The time mongodump writes into its lines is left out, the log shows its own.
+        expect(within(log).getByText(/testdb1\.stress_data 526527\/1500000/)).toHaveTextContent(/^mongodump \[#/);
+        expect(within(log).queryByText(/2026-09-27T17:01:37/)).not.toBeInTheDocument();
+        // The group heads of the steps stay, and what dumps now fills a row at the end.
+        expect(within(log).getByText("Dumping Databases")).toBeInTheDocument();
+        expect(within(log).getByText("35 % · 526,527 of 1,500,000 documents")).toBeInTheDocument();
+    });
+
+    it("tells warnings of many kinds as one problem that opens by kind", async () => {
+        serve({ run: detail({ problems: [{
+            id: "p1", tone: "warning", title: "26 warnings while dumping databases", raw: "Element [dbo].[a] is a history table", step: "Dumping Databases", subject: null, at: "", tries: [], help: null, actions: [],
+            kinds: [
+                { title: "Generated always columns of ledger tables are left out", count: 16, raw: "Element [dbo].[t].[c] is a column with system-generated values", help: "SQL Server fills them again." },
+                { title: "History tables of ledger tables are left out", count: 10, raw: "Element [dbo].[h] is a history table", help: null },
+            ],
+        }] }) });
+        const user = userEvent.setup();
+        open("id=offsite");
+
+        expect(await screen.findByText("26 warnings while dumping databases")).toBeInTheDocument();
+        expect(screen.getByText("×16")).toBeInTheDocument();
+        expect(screen.queryByText("SQL Server fills them again.")).not.toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: /Generated always columns/ }));
+        expect(screen.getByText("SQL Server fills them again.")).toBeInTheDocument();
+        expect(screen.getByText("and 15 more lines like it")).toBeInTheDocument();
+    });
+
+    it("shows every copy an integrity check checked, the one it checks now first, with its destinations beside it", async () => {
+        serve({ run: integrityDetail() });
+        const user = userEvent.setup();
+        open("id=integrity");
+
+        const destinations = await screen.findByRole("region", { name: "Destinations" });
+        expect(within(destinations).getByText("3 of 5 copies, one after the other")).toBeInTheDocument();
+        expect(within(destinations).getByText("2 of 3")).toBeInTheDocument();
+        expect(within(destinations).getByText(/downloads each copy to hash it/)).toBeInTheDocument();
+
+        const copies = screen.getByRole("region", { name: "Copies" });
+        const rows = within(copies).getAllByRole("row").slice(1);
+        expect(rows[0]).toHaveTextContent("Wiki weekly");
+        expect(rows[0]).toHaveTextContent("63 % · 30.99 MB of 49.59 MB");
+        expect(rows[1]).toHaveTextContent("expected 91ac…2e10, got 0b7f…c9d4");
+        expect(screen.getByText("Checked")).toBeInTheDocument();
+
+        await user.click(within(copies).getByRole("button", { name: /Differ/ }));
+        expect(within(copies).getAllByRole("row")).toHaveLength(2);
     });
 
     it("steps to the run before without losing where the back arrow leads", async () => {

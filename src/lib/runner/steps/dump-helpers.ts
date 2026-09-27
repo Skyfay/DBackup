@@ -73,9 +73,10 @@ export function parseJobDatabases(databasesJson: string | null | undefined): str
  * Shows how far a running dump has got, by watching its file grow.
  *
  * Adapters write their dump straight to disk and report no byte counts of their own, so the
- * file size is the only live progress there is. Returns the function that stops watching.
+ * file size is the only live progress there is. `onBytes` hears every new size. Returns the
+ * function that stops watching.
  */
-export function watchDumpSize(ctx: RunnerContext, file: string, label: string): () => void {
+export function watchDumpSize(ctx: RunnerContext, file: string, label: string, onBytes?: (bytes: number) => void): () => void {
     const startedAt = Date.now();
     const timer = setInterval(() => {
         fs.stat(file).then((stats) => {
@@ -83,6 +84,7 @@ export function watchDumpSize(ctx: RunnerContext, file: string, label: string): 
             const elapsed = (Date.now() - startedAt) / 1000;
             const speed = elapsed > 0 ? Math.round(stats.size / elapsed) : 0;
             ctx.updateDetail(`${label}: ${formatBytes(stats.size)} dumped - ${formatBytes(speed)}/s`);
+            onBytes?.(stats.size);
         }, () => { /* not written yet */ });
     }, 800);
     return () => clearInterval(timer);

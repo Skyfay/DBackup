@@ -170,6 +170,26 @@ describe('createLogFlusher', () => {
         expect(update).toHaveBeenCalledTimes(1);
     });
 
+    it('writes the lines that come after dispose() without the metadata the run ended with', async () => {
+        const logs: LogEntry[] = [entry('Upload complete')];
+        const flusher = createLogFlusher({
+            executionId: 'exec-1',
+            getLogs: () => logs,
+            getMetadata: () => ({ stage: 'Completed' }),
+            intervalMs: 1000,
+        });
+
+        flusher.dispose();
+        // The finalize step has written the final metadata by now, the notifications log on after it.
+        logs.push(entry('Sending notifications...'));
+        flusher.schedule();
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(update).toHaveBeenCalledTimes(1);
+        expect(update.mock.calls[0][0].data.metadata).toBeUndefined();
+        expect(writtenMessages(0)).toEqual(['Upload complete', 'Sending notifications...']);
+    });
+
     it('keeps going when a write fails', async () => {
         update.mockRejectedValueOnce(new Error('database is locked'));
 

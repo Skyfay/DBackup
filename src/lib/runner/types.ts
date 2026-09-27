@@ -83,6 +83,19 @@ export interface UploadState {
     endedAt: string | null;
 }
 
+/**
+ * One database of the dump step. Kept in the metadata of the run, so its page shows how far a
+ * dump has got, and the next run of the job can tell how far along it is against this size.
+ */
+export interface DumpState {
+    name: string;
+    state: "waiting" | "dumping" | "done" | "failed";
+    /** Bytes written so far, and the size of the dump once it is done. */
+    bytes: number | null;
+    startedAt: string | null;
+    endedAt: string | null;
+}
+
 export interface RunnerContext {
     jobId: string;
     job?: JobWithRelations;
@@ -99,6 +112,8 @@ export interface RunnerContext {
     updateStageProgress: (internalPercent: number) => void;
     /** Where the upload stands at each destination, kept in the live metadata for the page of the run. */
     setUploads?: (uploads: UploadState[]) => void;
+    /** Where the dump stands for each database, kept in the metadata like the uploads. */
+    setDumps?: (dumps: DumpState[]) => void;
 
     /** The optional database source. Each of its databases becomes one archive entry. */
     sourceAdapter?: DatabaseAdapter;

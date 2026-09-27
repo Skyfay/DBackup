@@ -5,7 +5,7 @@ import { DateDisplay } from "@/components/utils/date-display";
 import { ADAPTER_DEFINITIONS } from "@/lib/adapters/definitions";
 import { formatBytes } from "@/lib/utils";
 import type { AdapterConfig } from "./types";
-import { connectionAddress, connectionSshHost, connectionVersion } from "./connection-summary";
+import { connectionAddress, connectionSshHost, connectionVersion } from "@/lib/adapters/connection-summary";
 import {
     CredentialCell,
     HealthBars,

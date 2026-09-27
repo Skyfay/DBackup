@@ -24,6 +24,7 @@ All notable changes to DBackup are documented here.
 - **storage**: The restore page shows the databases of a backup row by row beside the server they go to, with what happens to each, filters and a copy beside the ones there in one click, or as lines from the backup to the server. A backup with databases and folders is restored in two steps, and a small timeline of the job picks another backup without going back.
 - **explorer**: The Database Explorer lists every database of every server with the jobs that back it up, its last backup and the ones in no job, as a table or by day with the new versions of each server. A day of the timeline shows its backups in a panel beside it, where a dropdown picks the run and Restore starts with only that database ticked.
 - **explorer**: A database opens as a page of its own with its tables and their rows read live, and a Redis or Valkey server is one entry whose keys a filter finds on the server. The timeline folds a server with many databases into one row and pages its rows like a table.
+- **explorer**: The Servers tab lists every database server with its address, its version, how much of it a job backs up, its kept backups and its status, and marks a server too old for the newest backups of its engine. A server opens as a page of its own with every version it ran, how long it ran each and how many of the backups made on it are kept.
 
 ### 🐛 Bug Fixes
 
@@ -114,11 +115,12 @@ All notable changes to DBackup are documented here.
 - **ui**: The Storage Explorer is called Backups now and sits under Backup in the sidebar beside Connections and Jobs. Its address is /dashboard/backups, and links to the old one still lead there.
 - **api**: The new `GET /api/databases` returns every database of every server with the jobs that back it up, `POST /api/databases/read` reads them from the servers now, and `GET /api/databases/runs` returns the runs and version changes of a time span. The new `GET /api/storage/explorer/backup?path=` returns one backup with its copies, and a restore page link takes `pick` to tick only those databases.
 - **system**: The Update Database Versions task also lists the databases of every server with their sizes, which the Database Explorer shows without asking a server.
+- **api**: The new `GET /api/databases/servers` returns every database server with its address, response time and kept backups and the newer backup of its engine it is behind, and `GET /api/databases/servers/{id}` one server with its uptime. `GET /api/databases/servers/{id}/versions?page=&size=` returns the versions a server ran a page at a time with the backups made and kept on each.
 
 ### 🗑️ Removed
 
 - **dashboard**: The job status donut and the year picker of the backup calendar are gone. Past years stay available through `GET /api/dashboard/calendar?year=`.
-- **explorer**: The General and Version History tabs of the Database Explorer are gone. The timeline marks each new version of a server and the page of a database names the one before.
+- **explorer**: The General and Version History tabs of the Database Explorer are gone. The timeline marks each new version of a server and the page of a server lists every version it ran.
 
 ### 📝 Documentation
 
@@ -142,7 +144,7 @@ All notable changes to DBackup are documented here.
 - **docs**: The verification and Backups guides describe the integrity dialog, and the integrity page explains how the copies of one backup are checked.
 - **docs**: The Docker Volumes guide describes the volume picker with its stacks, the containers of each volume and what the job reads.
 - **docs**: The Storage Explorer guide is the Backups guide now, and its old address points to it.
-- **docs**: The Database Explorer guide describes the list of databases, its timeline, the page of a database and what shows for a login that may only back up.
+- **docs**: The Database Explorer guide describes the list of databases, its timeline, the page of a database, the Servers tab with the page of a server and what shows for a login that may only back up.
 
 ### 🧪 Tests
 

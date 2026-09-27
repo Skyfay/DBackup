@@ -3,7 +3,7 @@
 import { useEffect, useId, useState } from "react";
 import { KeyRound } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
-import { connectionAddress } from "@/components/adapter/connection-summary";
+import { connectionAddress } from "@/lib/adapters/connection-summary";
 import type { AdapterConfig } from "@/components/adapter/types";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";

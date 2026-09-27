@@ -139,3 +139,60 @@ export interface DatabaseRunsData extends Omit<DatabaseRuns, "runs"> {
     runs: DatabaseRunRecord[];
     names: string[][];
 }
+
+// ------------------------------------------------------------------ the Servers tab
+
+/** A database server as the Servers tab lists it, beside what the overview holds of it. */
+export interface ServerSummary {
+    id: string;
+    /** Where it runs, host and port or a path, null when the connection has nothing to show. */
+    address: string | null;
+    /** How long its latest health check took, null before the first. */
+    latencyMs: number | null;
+    /** Kept backups of its jobs at any destination, null for a viewer who may not see backups. */
+    keptBackups: number | null;
+    /** When the newest of them was made. */
+    lastBackupAt: string | null;
+    /**
+     * The newest kept backup of its engine it is too old to take, like one of 16.4 while it runs
+     * 16.2, with the server that made it. Null when it takes every one, or backups are hidden.
+     */
+    behind: { version: string; serverName: string } | null;
+}
+
+export interface ServersOverview {
+    servers: ServerSummary[];
+    /** Version changes of any server in the last 30 days. */
+    newVersions: number;
+    /** Whether the viewer may see backups, which the kept counts and Behind need. */
+    backups: boolean;
+}
+
+/** One server for its page, with how often it answered. */
+export interface ServerDetails extends ServerSummary {
+    /** Share of the health checks of the last 30 days that passed in percent, null without any. */
+    uptime: number | null;
+}
+
+/** A version a server ran, from when the hourly check first read it until the next one came. */
+export interface VersionPeriod {
+    version: string;
+    /** Null for a version read before DBackup kept a history. */
+    since: string | null;
+    /** Null for the version running now. */
+    until: string | null;
+    /** How it came, an upgrade or an older version than before. Null when the server was added with it. */
+    change: { kind: "up" | "down"; from: string } | null;
+    /** Backups made while it ran that are still kept, null for a viewer who may not see backups. */
+    kept: number | null;
+    /** Backups its jobs made while it ran, null for a viewer who may not see jobs. */
+    made: number | null;
+}
+
+/** One page of the versions of a server, newest first. */
+export interface VersionPage {
+    versions: VersionPeriod[];
+    total: number;
+    page: number;
+    size: number;
+}

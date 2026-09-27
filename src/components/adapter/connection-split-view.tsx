@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { AdapterConfig } from "./types";
 import { healthOf } from "./connection-columns";
-import { connectionAddress } from "./connection-summary";
+import { connectionAddress } from "@/lib/adapters/connection-summary";
 import { resolveSelection, splitGroups } from "./connection-split";
 
 const DOTS = { ONLINE: "bg-success", DEGRADED: "bg-warning", OFFLINE: "bg-destructive", PENDING: "bg-muted-foreground/40" };

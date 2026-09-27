@@ -15,7 +15,7 @@ import { cn, formatBytes } from "@/lib/utils";
 import type { ConnectionDetails } from "@/services/adapters/connection-details";
 import type { AdapterConfig } from "./types";
 import { healthOf, kindNames, statusDetail, type ConnectionKind } from "./connection-columns";
-import { connectionAddress, connectionFacts, connectionVersion } from "./connection-summary";
+import { connectionAddress, connectionFacts, connectionVersion } from "@/lib/adapters/connection-summary";
 import { DetailStats, FactList, HealthTimeline, IssueBanner, Section, UsageList, type DetailStat } from "./connection-details-sections";
 
 const log = logger.child({ component: "connection-details" });

@@ -16,7 +16,6 @@ import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ViewSwitch } from "@/components/ui/view-switch";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { useIsMobileState } from "@/hooks/use-mobile";
@@ -30,7 +29,9 @@ import { DatabaseCard, DatabasesEmpty, DatabasesSkeleton, databaseFilters } from
 import { databaseHref, freshnessOf, summarize } from "./database-model";
 import { DatabasesTimeline } from "./databases-timeline";
 import { DATABASES_PAGE_ID } from "./explorer-ids";
+import { ExplorerTabs, type ExplorerTab } from "./explorer-tabs";
 import { ServerFreshness } from "./server-freshness";
+import { ServersTab } from "./servers-tab";
 
 const VIEWS: ViewMode[] = ["table", "timeline"];
 
@@ -40,11 +41,12 @@ interface DatabaseExplorerProps extends DayPanelAccess {
 }
 
 /**
- * The Databases tab of the Database Explorer: every database of every server with the jobs that
+ * The Database Explorer. Its Databases tab lists every database of every server with the jobs that
  * back it up, as a table or by day, and a Redis or Valkey server as one entry. A click opens a
  * database as a page of its own, with its tables and their rows read live, and a day of the
- * timeline shows its backups in a panel beside it. The list comes from what DBackup read from the
- * servers last, so the page opens without asking one. The picked day lives in the address.
+ * timeline shows its backups in a panel beside it. The Servers tab lists the servers, see
+ * `ServersTab`. The list comes from what DBackup read from the servers last, so the page opens
+ * without asking one. The tab and the picked day live in the address.
  */
 export function DatabaseExplorer({ initialView, ...access }: DatabaseExplorerProps) {
     const { canOpenBackups } = access;
@@ -60,6 +62,8 @@ export function DatabaseExplorer({ initialView, ...access }: DatabaseExplorerPro
         return sourceId ? [{ id: "server", value: [sourceId] }] : [];
     });
     const open = useCallback((database: ExplorerDatabase) => router.push(databaseHref(database)), [router]);
+    const tab: ExplorerTab = searchParams.get("tab") === "servers" ? "servers" : "databases";
+    const setTab = (next: ExplorerTab) => router.replace(next === "servers" ? "/dashboard/explorer?tab=servers" : "/dashboard/explorer", { scroll: false });
 
     const pickKey = searchParams.get("database");
     const pickDay = searchParams.get("day");
@@ -167,29 +171,19 @@ export function DatabaseExplorer({ initialView, ...access }: DatabaseExplorerPro
 
     return (
         <div className="space-y-4 md:space-y-6">
-            <div className="flex flex-wrap items-center gap-2 md:gap-3">
-                <Tabs value="databases">
-                    <TabsList aria-label="Show">
-                        <TabsTrigger value="databases">
-                            <span className="flex items-center gap-2">
-                                Databases
-                                <span className="text-xs font-normal text-muted-foreground tabular-nums">{data.databases.length.toLocaleString()}</span>
-                            </span>
-                        </TabsTrigger>
-                    </TabsList>
-                </Tabs>
-                <div className="ml-auto flex shrink-0 items-center gap-2">
-                    <ServerFreshness servers={data.servers} onReadNow={read} />
-                    {coverage && (
-                        // Hidden by CSS rather than by the measured screen, so it does not pop in after loading.
-                        <div className="hidden md:block">
-                            <ViewSwitch value={view} onChange={changeView} views={VIEWS} />
-                        </div>
-                    )}
-                </div>
-            </div>
+            <ExplorerTabs tab={tab} databases={data.databases.length} servers={data.servers.length} onTab={setTab}>
+                <ServerFreshness servers={data.servers} onReadNow={read} />
+                {coverage && tab === "databases" && (
+                    // Hidden by CSS rather than by the measured screen, so it does not pop in after loading.
+                    <div className="hidden md:block">
+                        <ViewSwitch value={view} onChange={changeView} views={VIEWS} />
+                    </div>
+                )}
+            </ExplorerTabs>
 
-            {neverRead ? (
+            {tab === "servers" ? (
+                <ServersTab overview={data} canOpenBackups={canOpenBackups} />
+            ) : neverRead ? (
                 <DatabasesEmpty title="The servers have not been read yet">
                     DBackup reads the databases of every server once an hour.{" "}
                     <Button variant="link" className="h-auto p-0" onClick={() => void read()}>Read them now</Button>

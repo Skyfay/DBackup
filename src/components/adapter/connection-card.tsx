@@ -6,7 +6,7 @@ import { isPlainClick } from "@/components/ui/row-click";
 import { cn } from "@/lib/utils";
 import type { AdapterConfig } from "./types";
 import { kindNames } from "./connection-columns";
-import { connectionVersion } from "./connection-summary";
+import { connectionVersion } from "@/lib/adapters/connection-summary";
 
 /** Columns a card draws in their own place rather than in the row of values. */
 const PLACED = new Set(["select", "name", "status", "address", "health", "actions"]);

@@ -144,3 +144,14 @@ export function lastBackupsOf(runs: KeptRun[], jobs: ExplorerDbJob[], databases:
     }
     return byKey;
 }
+
+/** The version the hourly check read last, from the metadata of a connection. */
+export function versionOf(metadata: string | null): string | null {
+    if (!metadata) return null;
+    try {
+        const parsed = JSON.parse(metadata) as { engineVersion?: unknown };
+        return typeof parsed.engineVersion === "string" && parsed.engineVersion.trim() ? parsed.engineVersion.trim() : null;
+    } catch {
+        return null;
+    }
+}

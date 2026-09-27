@@ -4,7 +4,7 @@ import { createContext, useContext, useState } from "react";
 import { Bell, Database, FolderOpen, HardDrive, Plus, type LucideIcon } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { AddConnectionDialogs } from "@/components/adapter/add-connection-dialogs";
-import { connectionAddress } from "@/components/adapter/connection-summary";
+import { connectionAddress } from "@/lib/adapters/connection-summary";
 import { useCan } from "@/components/permissions/permissions-context";
 import { Button } from "@/components/ui/button";
 import { PickList, PickTrigger, type PickEntry } from "@/components/ui/pick-list";

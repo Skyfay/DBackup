@@ -1,5 +1,7 @@
 import { vi } from "vitest";
-import type { DatabaseOverview, DatabaseRun, DatabaseRuns, DatabaseRunsData, ExplorerDatabase } from "@/services/databases/database-explorer-types";
+import type {
+    DatabaseOverview, DatabaseRun, DatabaseRuns, DatabaseRunsData, ExplorerDatabase, ServersOverview, VersionPeriod,
+} from "@/services/databases/database-explorer-types";
 import type { ExplorerBackup } from "@/services/storage/explorer-types";
 
 const HOUR = 3_600_000;
@@ -33,6 +35,28 @@ export const overview: DatabaseOverview = {
 };
 
 const json = (body: unknown) => Promise.resolve({ ok: true, json: () => Promise.resolve(body) } as Response);
+
+/** What the Servers tab adds to the servers of the overview. ERP is behind a newer backup of its engine. */
+export const serversOverview: ServersOverview = {
+    newVersions: 2,
+    backups: true,
+    servers: [
+        { id: "s1", address: "db.internal:5432", latencyMs: 4, keptBackups: 38, lastBackupAt: ago(6), behind: null },
+        { id: "s2", address: "erp-sql.internal:1433", latencyMs: 9, keptBackups: 30, lastBackupAt: ago(5), behind: { version: "16.0.4200", serverName: "ERP test" } },
+        { id: "s3", address: "cache.internal:6379, DB 0", latencyMs: 1, keptBackups: 0, lastBackupAt: null, behind: null },
+    ],
+};
+
+/** Seven versions of a server, newest first, as the versions route pages them. */
+export const versionHistory: VersionPeriod[] = [
+    { version: "16.4", since: "2026-09-17T02:14:00.000Z", until: null, change: { kind: "up", from: "16.2" }, kept: 10, made: 20 },
+    { version: "16.2", since: "2026-03-03T01:40:00.000Z", until: "2026-09-17T02:14:00.000Z", change: { kind: "up", from: "15.6" }, kept: 20, made: 396 },
+    { version: "15.6", since: "2025-11-12T03:10:00.000Z", until: "2026-03-03T01:40:00.000Z", change: { kind: "up", from: "15.5" }, kept: 0, made: 226 },
+    { version: "15.5", since: "2025-08-02T02:05:00.000Z", until: "2025-11-12T03:10:00.000Z", change: { kind: "up", from: "15.4" }, kept: 0, made: 204 },
+    { version: "15.4", since: "2025-07-30T14:20:00.000Z", until: "2025-08-02T02:05:00.000Z", change: { kind: "down", from: "15.5" }, kept: 0, made: 6 },
+    { version: "15.5", since: "2025-07-28T02:10:00.000Z", until: "2025-07-30T14:20:00.000Z", change: { kind: "up", from: "15.4" }, kept: 0, made: 4 },
+    { version: "15.4", since: "2025-02-12T10:02:00.000Z", until: "2025-07-28T02:10:00.000Z", change: null, kept: 0, made: 78 },
+];
 export const fetchMock = vi.fn();
 
 /** A run with what a test does not care about filled in. */
@@ -64,6 +88,17 @@ export function serve({ data = overview, runs, tables, backup }: { data?: Databa
         if (url === "/api/databases") return json({ success: true, data });
         if (url === "/api/databases/read") return json({ success: true, data });
         if (url.startsWith("/api/databases/runs")) return json({ success: true, data: wire(runs ?? { runs: [], versionChanges: [], planned: [] }) });
+        if (url === "/api/databases/servers") return json({ success: true, data: serversOverview });
+        const versions = url.match(/^\/api\/databases\/servers\/([^/]+)\/versions\?page=(\d+)&size=(\d+)$/);
+        if (versions) {
+            const [page, size] = [Number(versions[2]), Number(versions[3])];
+            return json({ success: true, data: { versions: versionHistory.slice((page - 1) * size, page * size), total: versionHistory.length, page, size } });
+        }
+        const server = url.match(/^\/api\/databases\/servers\/([^/?]+)$/);
+        if (server) {
+            const summary = serversOverview.servers.find((entry) => entry.id === server[1]);
+            return summary ? json({ success: true, data: { ...summary, uptime: 99.9 } }) : json({ success: false, error: "Server not found" });
+        }
         if (url.startsWith("/api/storage/explorer/backup")) return json({ success: true, data: backup ?? { run: null, job: null, chain: null, destinations: [] } });
         if (url === "/api/adapters/database-tables") {
             return json(tables ?? { success: true, tables: [{ name: "orders", rowCount: 1204332, sizeInBytes: 820_000_000 }, { name: "coupons", rowCount: 1210, sizeInBytes: 1_000_000 }] });

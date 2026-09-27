@@ -1,6 +1,6 @@
 # Database Explorer
 
-Every database on every server DBackup reaches, with the jobs that back it up, and its tables and rows read live without a separate database client.
+Every database on every server DBackup reaches, with the jobs that back it up, and its tables and rows read live without a separate database client. The servers themselves come with every version they ran.
 
 ## Overview
 
@@ -80,16 +80,52 @@ A click on a database reads its first keys with the type and the time to live. *
 
 The explorer only reads. It runs no queries of its own and changes nothing.
 
+## The Servers Tab
+
+The **Servers** tab lists every database server with:
+
+- Where it runs, as the host and port of its connection
+- Its version, since when it runs it and the one before
+- How many of its databases a job backs up, as a bar with the ones in no job in amber
+- The size of its databases, and its kept backups with the time of the last one
+- Its status with the response time of its last health check
+
+The numbers above the list count the servers, their databases, the new versions of the last 30 days, the servers behind and the ones online. The quick filters keep the servers **Behind** or **Not all backed up**, and the **Engine** filter keeps one kind of database.
+
+A server is **behind** when a kept backup of another server with the same engine has a newer version than the one it runs. A backup restores only onto the same version or a newer one, so those backups would not restore onto it. The line under its version names the server and the version it is behind.
+
+## The Page of a Server
+
+A click on a server opens it as a page of its own. The arrow in the top left leads back to the list, and the field beside the name opens another server.
+
+- The numbers: its version, its databases or keys, their size, its kept backups and how often it answered the health check in the last 30 days
+- **Open backups** shows the backups of its jobs on the Backups page, **Open connection** leads to the Connections page
+- A server that is behind says so on top, with the version its backups would need
+
+**Versions** lists every version the server ran, newest first, five a page:
+
+| Column | Meaning |
+| :--- | :--- |
+| Version | The version with **Now** on the current one, and the one before it with an arrow. A step back to an older version is marked in amber |
+| Since | When the hourly version check found it |
+| Until | When the check found the next one, or today |
+| On it | How long the server ran it |
+| Backups | How many backups its jobs made while the server ran it, and how many of those a destination still keeps |
+
+The oldest version is the one the server ran when it was added to DBackup. Retention removes old backups, so an older version often shows backups made and none kept.
+
+**Databases** lists the databases of the server, biggest first, with the jobs that back up each. A click opens the page of a database, and **All in Databases** shows every one of them on the Databases tab. A Redis or Valkey server lists its numbered databases with their keys.
+
 ## Required Permissions
 
 | Permission | What it grants |
 | :--- | :--- |
-| `sources:view` | The page, the databases and their sizes |
+| `sources:view` | The page, the databases and their sizes, the servers and their versions |
 | `sources:read` | The tables and rows of a database |
-| `jobs:read` | The jobs of each database, its last backup and the timeline |
+| `jobs:read` | The jobs of each database, its last backup and the timeline, and the backups made on each version of a server |
 | `storage:read`, `storage:restore`, `storage:download` | The backup of a day in the panel, restoring it and downloading it |
 | `jobs:execute` | **Run now** for a day the schedule still plans |
-| `storage:read` | **Open backups** |
+| `storage:read` | **Open backups**, the kept backups of each server and which servers are behind |
 | `history:read` | The link from a run to **History** |
 
 ## A Login That May Only Back Up

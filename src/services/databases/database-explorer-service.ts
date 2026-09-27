@@ -3,7 +3,7 @@ import { compareVersions } from "@/lib/utils";
 import { extractLastError } from "@/services/dashboard/health";
 import { runsBetween } from "@/services/storage/explorer-plan";
 import {
-    coverageOf, databaseKey, destinationsOfRun, isInstance, jobHolds, lastBackupOfJobs, lastBackupsOf, namesOfRun, parseJobDatabases, parseListedDatabases, type KeptRun,
+    coverageOf, databaseKey, destinationsOfRun, isInstance, jobHolds, lastBackupOfJobs, lastBackupsOf, namesOfRun, parseJobDatabases, parseListedDatabases, versionOf, type KeptRun,
 } from "./database-explorer-model";
 import type {
     DatabaseOverview, DatabaseRunRecord, DatabaseRunsData, ExplorerDatabase, ExplorerDbJob, ExplorerServer, LastBackup, PlannedRun, RunStatus, VersionChange,
@@ -15,16 +15,6 @@ const LAST_RUNS = 40;
 const MAX_SPAN_MS = 120 * 86_400_000;
 const STATUSES = new Set<RunStatus>(["Success", "Partial", "Failed", "Running", "Pending", "Cancelled"]);
 const SERVER_STATES = new Set(["ONLINE", "DEGRADED", "OFFLINE"]);
-
-function versionOf(metadata: string | null): string | null {
-    if (!metadata) return null;
-    try {
-        const parsed = JSON.parse(metadata) as { engineVersion?: unknown };
-        return typeof parsed.engineVersion === "string" && parsed.engineVersion.trim() ? parsed.engineVersion.trim() : null;
-    } catch {
-        return null;
-    }
-}
 
 const toNumber = (value: bigint | number | null): number | null => (value === null ? null : Number(value));
 

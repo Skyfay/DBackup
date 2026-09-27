@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { connectionAddress, connectionSshHost, connectionVersion } from "@/components/adapter/connection-summary";
+import { connectionAddress, connectionSshHost, connectionVersion } from "@/lib/adapters/connection-summary";
 
 const config = (value: Record<string, unknown>) => JSON.stringify(value);
 

@@ -552,7 +552,7 @@ Every new notification adapter touches these files:
 | 3 | `src/lib/adapters/index.ts` | Import and register the adapter |
 | 4 | `src/components/adapter/utils.ts` | Import icon and add to `ADAPTER_ICON_MAP` |
 | 5 | `src/components/adapter/form-constants.ts` | Add keys to `NOTIFICATION_CONNECTION_KEYS`, `NOTIFICATION_CONFIG_KEYS`, and `PLACEHOLDERS` |
-| 6 | `src/components/adapter/connection-summary.ts` | Add `case` to `connectionAddress()` for the Sends to column |
+| 6 | `src/lib/adapters/connection-summary.ts` | Add `case` to `connectionAddress()` for the Sends to column |
 | 7 | `src/components/adapter/schema-field.tsx` | Update `isTextArea` check (only if adapter has multi-line fields) |
 | 8 | `src/app/dashboard/history/notification-preview.tsx` | Add adapter-specific preview component and register in `PREVIEW_COMPONENTS` map (optional) |
 | 9 | `docs/user-guide/notifications/<id>.md` | Create docs page with setup guide |
@@ -763,7 +763,7 @@ const isTextArea = /* existing checks */ || fieldKey === "myMultiLineField";
 
 ### Step 6 - Add the Sends to Summary
 
-In `src/components/adapter/connection-summary.ts`, add a `case` to the `connectionAddress()` switch so the **Sends to** column of the Notifications table shows meaningful info instead of `-`:
+In `src/lib/adapters/connection-summary.ts`, add a `case` to the `connectionAddress()` switch so the **Sends to** column of the Notifications table shows meaningful info instead of `-`:
 
 ```typescript
 switch (adapterId) {
@@ -924,11 +924,11 @@ Add the entry under the "Notification Channels" section:
 src/lib/adapters/
 ├── definitions.ts          ← Schema + type + union + ADAPTER_DEFINITIONS
 ├── index.ts                ← Import + registry.register()
+├── connection-summary.ts   ← connectionAddress() case for the Sends to column
 └── notification/
     └── <id>.ts             ← NEW: Adapter implementation
 
 src/components/adapter/
-├── connection-summary.ts   ← connectionAddress() case for the Sends to column
 ├── utils.ts                ← Icon import + ADAPTER_ICON_MAP (+ ADAPTER_COLOR_MAP)
 ├── form-constants.ts       ← CONNECTION_KEYS + CONFIG_KEYS + PLACEHOLDERS
 └── schema-field.tsx        ← isTextArea check (only if multi-line fields)

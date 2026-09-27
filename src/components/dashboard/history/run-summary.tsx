@@ -94,7 +94,10 @@ interface RunSummaryProps {
 /** Every step of a run in a sentence or two, with a row for each database and destination, what runs now filling its row. */
 export function RunSummary({ run, now, speed, picked, tabs, className }: RunSummaryProps) {
     const live = run.status === "Running" || run.status === "Pending";
-    const shown = live ? run.steps.filter((step) => step.state !== "pending") : run.steps;
+    // Like the steps on the left: a step a successful run never needed, like notifications nobody set, is left out.
+    const shown = live
+        ? run.steps.filter((step) => step.state !== "pending")
+        : run.steps.filter((step) => step.state !== "skipped" || step.lines.length > 0 || run.status !== "Success");
     const pending = live ? run.steps.filter((step) => step.state === "pending") : [];
     const pendingMs = pending.reduce((sum, step) => sum + (step.usualMs ?? 0), 0);
 

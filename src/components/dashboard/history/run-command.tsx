@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Check, ChevronRight, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { isStatement, parseCommand, statementLines, type CommandArg } from "@/lib/logs/line-source";
 import { cn } from "@/lib/utils";
 
-function Arg({ arg }: { arg: CommandArg }) {
+export function Arg({ arg }: { arg: CommandArg }) {
     const joined = arg.flag?.endsWith("=") || arg.flag?.endsWith(":");
     return (
         <>
@@ -17,7 +17,7 @@ function Arg({ arg }: { arg: CommandArg }) {
     );
 }
 
-function CopyButton({ text }: { text: string }) {
+export function CopyButton({ text }: { text: string }) {
     const [copied, setCopied] = useState(false);
     const copy = () => navigator.clipboard.writeText(text)
         .then(() => {
@@ -86,6 +86,41 @@ export function CommandBlock({ command, className }: { command: string; classNam
                         ))}
                 </div>
             )}
+        </div>
+    );
+}
+
+/** One word of a command, which never breaks at its own hyphens. Only a long path breaks where it has to. */
+function Word({ arg }: { arg: CommandArg }) {
+    const length = (arg.flag ?? "").length + (arg.value ?? "").length;
+    return <span className={length < 40 ? "whitespace-nowrap" : "[overflow-wrap:anywhere]"}><Arg arg={arg} /></span>;
+}
+
+/**
+ * A command in full, on one line that wraps between its words, so nothing of it is cut off and
+ * nothing has to be opened. A statement for the server stands broken before its clauses.
+ */
+export function CommandLine({ command, className }: { command: string; className?: string }) {
+    const statement = isStatement(command);
+    const parsed = statement ? null : parseCommand(command);
+    return (
+        <div className={cn("flex min-w-0 items-start gap-3", className)}>
+            <div className="min-w-0 flex-1 pt-0.5 font-mono text-xs leading-5">
+                {statement ? (
+                    statementLines(command).map((line, index) => (
+                        <div key={index} className={cn("break-words", line.indent === 1 && "pl-4", line.indent > 1 && "pl-8")}>{line.text}</div>
+                    ))
+                ) : parsed ? (
+                    <>
+                        <span className="text-muted-foreground/70 select-none">$ </span>
+                        <span className="font-semibold">{parsed.binary}</span>
+                        {parsed.args.map((arg, index) => <Fragment key={index}> <Word arg={arg} /></Fragment>)}
+                    </>
+                ) : (
+                    <span className="break-words">{command}</span>
+                )}
+            </div>
+            <CopyButton text={command} />
         </div>
     );
 }

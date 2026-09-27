@@ -45,9 +45,9 @@ The button in the top left names the page the run was opened from, like **Overvi
 
 The **Summary** tells each step in a sentence or two, with a row for every database it dumped, every folder it collected, every destination it stored a copy at and every channel it notified. A click on a step on the left scrolls to it.
 
-- A database opens to the command it was dumped with and the output of its tool, like **Output of mongodump**, and its warnings grouped by what they say.
-- A destination opens to the lines it wrote during the upload.
-- The database dumped now and the copy uploaded now fill a row marked **now**, with how far they are and how long they still take.
+- A row says how many lines it holds, and one click opens it in place. A database shows the whole command it was dumped with, the lines of its tool, like **mongodump**, and its warnings grouped by what they say. A destination shows the lines it wrote.
+- A long output shows its newest lines, **Show all** the rest.
+- The database dumped now and the copy uploaded now fill a row marked **now**, with how far they are and how long they still take, and are open with their newest lines.
 
 How far a dump is comes from the tool where it counts. MongoDB counts the documents of each collection and SQL Server reports its progress in steps of ten percent. The other tools tell nothing, so DBackup compares what is written with the dump of the same database in the last backup of the job and says **about**. The first backup of a database shows only what is written and how fast.
 

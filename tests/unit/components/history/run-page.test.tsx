@@ -119,27 +119,30 @@ describe("the page of a run", () => {
         expect(within(log).getByText(/Then Verifying/)).toBeInTheDocument();
     });
 
-    it("tells each step in a sentence, each database a row that opens to its command, one option a line", async () => {
-        serve();
+    it("tells each step in a sentence, and one click on a row shows its whole command and its lines", async () => {
+        serve({ run: detail({ status: "Success", steps: [...detail().steps, { name: "Sending Notifications", state: "skipped", startedAt: null, durationMs: null, usualMs: null, errors: 0, warnings: 0, lines: [] }] }) });
         const user = userEvent.setup();
         open("id=offsite");
 
         const summary = await screen.findByRole("region", { name: "Summary" });
         expect(within(summary).getByText("Found shop and billing on Shop cluster, engine 16.4.")).toBeInTheDocument();
+        // A step the run never needed stays out, like on the left.
+        expect(within(summary).queryByText("Sending Notifications")).not.toBeInTheDocument();
         expect(within(summary).getByText(/Dumped shop and billing with/)).toHaveTextContent("Dumped shop and billing with pg_dump.");
-        // A database with a warning opens by itself, the warning told once with its count.
+
+        // A database with a warning is open by itself: its whole command in one piece, and the warning once with its count.
+        const shop = within(summary).getByRole("button", { name: /shop/ });
+        expect(shop).toHaveAttribute("aria-expanded", "true");
+        expect(within(summary).getByText("db.internal").closest("div")).toHaveTextContent("$ pg_dump -h db.internal -p 5432 -U backup -F c -Z 6 -d shop");
         expect(within(summary).getByText("Circular foreign keys in orders")).toBeInTheDocument();
         expect(within(summary).getByText("×1")).toBeInTheDocument();
+        // A database with nothing more to show does not open.
+        expect(within(summary).getByRole("button", { name: /billing/ })).toBeDisabled();
 
-        const command = within(summary).getByRole("button", { name: "Open the whole command" });
-        expect(within(summary).getByText("6 options")).toBeInTheDocument();
-        await user.click(command);
-        expect(within(summary).getByRole("button", { name: "Close the command" })).toHaveAttribute("aria-expanded", "true");
-        expect(within(summary).getByText("db.internal").closest("div")).toHaveTextContent(/^-h db\.internal$/);
-
-        // A destination opens to the lines it wrote.
-        await user.click(within(summary).getByRole("button", { name: /NAS Backups/ }));
-        await user.click(within(summary).getByRole("button", { name: /Output of/ }));
+        // A destination says how many lines it wrote, one click shows them, with nothing more to open.
+        const nas = within(summary).getByRole("button", { name: /NAS Backups/ });
+        expect(nas).toHaveTextContent("stored in 1m 12s · 1 line");
+        await user.click(nas);
         expect(within(summary).getByText("Upload complete: Shop offsite/a.tar")).toBeInTheDocument();
         expect(within(summary).getByText(/c5bc45b2…f654650d/)).toBeInTheDocument();
     });

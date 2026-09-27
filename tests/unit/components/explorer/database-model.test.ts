@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-    buildTimeline, databaseHref, emptyLogicalNames, foldedNames, freshnessOf, markOf, runsSpan, statesOf, summarize,
+    FOLD_FROM, buildTimeline, databaseHref, emptyLogicalNames, expandRuns, foldedNames, freshnessOf, markOf, pageGroups, runsSpan, statesOf, summarize, timelineUnits,
 } from "@/components/dashboard/explorer/database-model";
 import type { DatabaseRun, ExplorerDatabase, ExplorerDbJob, ExplorerServer, VersionChange } from "@/services/databases/database-explorer-types";
 
@@ -17,7 +17,7 @@ const instance = (serverId: string, jobIds: string[] = []): ExplorerDatabase => 
 });
 const job = (id: string, serverId: string): ExplorerDbJob => ({ id, name: id, serverId, enabled: true, databases: null, schedule: "0 3 * * *" });
 const run = (id: string, startedAt: string, databases: string[], status: DatabaseRun["status"] = "Success"): DatabaseRun => ({
-    id, jobId: "nightly", serverId: "s1", status, startedAt, size: 10, databases, destinations: [],
+    id, jobId: "nightly", serverId: "s1", status, startedAt, endedAt: null, size: 10, path: null, databases, destinations: [], error: null,
 });
 const change = (newVersion: string, detectedAt: string, previousVersion = "16.2"): VersionChange => ({ serverId: "s1", previousVersion, newVersion, detectedAt, downgrade: false });
 // The days are UTC here, so a run's day is the date of its time.
@@ -100,6 +100,16 @@ describe("the timeline of the databases", () => {
         expect(group.rows[0].cells.map((cell) => cell.kind)).toEqual(["none", "ok", "ok", "none", "planned"]);
     });
 
+    it("gives a server a row of every run of it, which it shows folded", () => {
+        const [group] = buildTimeline({
+            ...base,
+            runs: [run("r1", "2026-09-25T03:00:00Z", ["shop"]), run("r2", "2026-09-26T03:00:00Z", ["analytics"], "Failed")],
+            planned: [{ jobId: "nightly", at: "2026-09-28T03:00:00Z" }],
+            versionChanges: [],
+        });
+        expect(group.cells.map((cell) => cell.kind)).toEqual(["none", "ok", "failed", "none", "planned"]);
+    });
+
     it("leaves out a server without databases in view", () => {
         const groups = buildTimeline({ ...base, runs: [], planned: [], versionChanges: [] });
         expect(groups.map((group) => group.server.id)).toEqual(["s1"]);
@@ -134,7 +144,7 @@ describe("the runs the timeline asks for", () => {
 describe("the page of a database", () => {
     it("names the server and the database in the address, and only the server for an instance", () => {
         expect(databaseHref(database("s1", "shop"))).toBe("/dashboard/explorer/database?server=s1&database=shop");
-        expect(databaseHref(instance("cache"), { table: "3", day: "2026-09-26" })).toBe("/dashboard/explorer/database?server=cache&table=3&day=2026-09-26");
+        expect(databaseHref(instance("cache"), { table: "3" })).toBe("/dashboard/explorer/database?server=cache&table=3");
     });
 
     it("finds the empty numbered databases and names them in few words", () => {
@@ -143,5 +153,46 @@ describe("the page of a database", () => {
         expect(empty).not.toContain("0");
         expect(foldedNames(empty)).toBe("db1, db2, db4 to db15");
         expect(foldedNames(["5"])).toBe("db5");
+    });
+});
+
+describe("the lines and pages of the timeline", () => {
+    const many = Array.from({ length: FOLD_FROM + 2 }, (_, index) => database("big", `tenant_${index}`, ["tenants"]));
+    const groups = buildTimeline({
+        databases: [database("s1", "shop", ["nightly"]), database("s1", "billing", ["nightly"]), ...many],
+        servers: [server("s1"), server("big")],
+        jobs: [job("nightly", "s1"), job("tenants", "big")],
+        runs: [],
+        planned: [],
+        versionChanges: [],
+        days: DAYS,
+        now: NOW,
+        dayOf,
+    });
+    const byDefault = (group: (typeof groups)[number]) => group.rows.length > FOLD_FROM;
+
+    it("folds a server with many databases into one line, which a page counts once", () => {
+        const units = timelineUnits(groups, byDefault);
+        expect(units.map((unit) => unit.kind)).toEqual(["row", "row", "folded"]);
+    });
+
+    it("cuts pages by lines, and shows the head of a server cut by a page on both pages", () => {
+        const units = timelineUnits(groups, () => false);
+        const first = pageGroups(units, 0, 10);
+        const second = pageGroups(units, 1, 10);
+        expect(first.map((part) => [part.group.server.id, part.rows.length])).toEqual([["s1", 2], ["big", 8]]);
+        expect(second.map((part) => [part.group.server.id, part.rows.length])).toEqual([["big", 4]]);
+    });
+});
+
+describe("the runs of the API", () => {
+    it("looks up the databases of each run in the lists the API sends once", () => {
+        const expanded = expandRuns({
+            runs: [{ ...run("r1", "2026-09-25T03:00:00Z", []), databases: 0 }, { ...run("r2", "2026-09-26T03:00:00Z", []), databases: 0 }],
+            names: [["shop", "billing"]],
+            versionChanges: [],
+            planned: [],
+        });
+        expect(expanded.runs.map((entry) => entry.databases)).toEqual([["shop", "billing"], ["shop", "billing"]]);
     });
 });

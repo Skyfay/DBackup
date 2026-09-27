@@ -1,6 +1,6 @@
 import type { DayKey } from "@/components/dashboard/storage/explorer/timeline-model";
 import type {
-    DatabaseOverview, DatabaseRun, ExplorerDatabase, ExplorerDbJob, ExplorerServer, PlannedRun, VersionChange,
+    DatabaseOverview, DatabaseRun, DatabaseRuns, DatabaseRunsData, ExplorerDatabase, ExplorerDbJob, ExplorerServer, PlannedRun, VersionChange,
 } from "@/services/databases/database-explorer-types";
 
 /**
@@ -21,13 +21,21 @@ export function statesOf(database: ExplorerDatabase, server: ExplorerServer | un
     return states;
 }
 
-/** The page of a database or of an instance, with the table and the day to show when given. */
-export function databaseHref(database: Pick<ExplorerDatabase, "serverId" | "kind" | "name">, extra: { table?: string | null; day?: string | null } = {}): string {
+/** The page of a database or of an instance, with the table to show when given. */
+export function databaseHref(database: Pick<ExplorerDatabase, "serverId" | "kind" | "name">, extra: { table?: string | null } = {}): string {
     const params = new URLSearchParams({ server: database.serverId });
     if (database.kind === "database") params.set("database", database.name);
     if (extra.table) params.set("table", extra.table);
-    if (extra.day) params.set("day", extra.day);
     return `/dashboard/explorer/database?${params.toString()}`;
+}
+
+/** The runs as the API sends them, with the databases of each run looked up in the shared lists. */
+export function expandRuns(data: DatabaseRunsData): DatabaseRuns {
+    return {
+        runs: data.runs.map((run) => ({ ...run, databases: data.names[run.databases] ?? [] })),
+        versionChanges: data.versionChanges,
+        planned: data.planned,
+    };
 }
 
 /** A count in few characters, "184.3K". */
@@ -118,6 +126,8 @@ export interface TimelineGroup {
     rows: TimelineDatabaseRow[];
     /** The version changes of the server by the day they were read. */
     marks: Map<DayKey, VersionChange[]>;
+    /** Every run of the server by day, which a folded server shows in its one row. */
+    cells: DatabaseCell[];
 }
 
 function kindOf(runs: DatabaseRun[], planned: PlannedRun[]): CellKind {
@@ -166,18 +176,29 @@ export function buildTimeline({ databases, servers, jobs, runs, planned, version
 
     const jobsById = new Map(jobs.map((job) => [job.id, job]));
     const plannedByCell = new Map<string, PlannedRun[]>();
+    const plan = (key: string, entry: PlannedRun) => {
+        const list = plannedByCell.get(key);
+        if (list) list.push(entry);
+        else plannedByCell.set(key, [entry]);
+    };
+    // The keys each job plans for, found once, since an hourly job plans many runs.
+    const keysOfJob = new Map<string, string[]>();
+    for (const database of databases) {
+        for (const jobId of database.jobIds) {
+            const list = keysOfJob.get(jobId);
+            if (list) list.push(database.key);
+            else keysOfJob.set(jobId, [database.key]);
+        }
+    }
+    const keys = new Set(databases.map((database) => database.key));
     for (const entry of planned) {
         if (Date.parse(entry.at) <= now) continue;
         const job = jobsById.get(entry.jobId);
         const day = dayOf(entry.at);
         if (!job || !inView.has(day)) continue;
-        for (const database of databases) {
-            if (database.serverId !== job.serverId || !database.jobIds.includes(job.id)) continue;
-            const key = `${database.key}|${day}`;
-            const list = plannedByCell.get(key);
-            if (list) list.push(entry);
-            else plannedByCell.set(key, [entry]);
-        }
+        // A server whose own key is a row, an instance, is planned with that row.
+        if (!keys.has(job.serverId)) plan(`${job.serverId}|${day}`, entry);
+        for (const key of keysOfJob.get(job.id) ?? []) plan(`${key}|${day}`, entry);
     }
 
     const marksByServer = new Map<string, Map<DayKey, VersionChange[]>>();
@@ -193,22 +214,54 @@ export function buildTimeline({ databases, servers, jobs, runs, planned, version
     }
 
     const byServer = new Map<string, ExplorerDatabase[]>();
-    for (const database of databases) byServer.set(database.serverId, [...(byServer.get(database.serverId) ?? []), database]);
+    for (const database of databases) {
+        const list = byServer.get(database.serverId);
+        if (list) list.push(database);
+        else byServer.set(database.serverId, [database]);
+    }
+
+    const cellsOf = (key: string): DatabaseCell[] => days.map((day) => {
+        const cellRuns = runsByCell.get(`${key}|${day}`) ?? [];
+        const cellPlanned = plannedByCell.get(`${key}|${day}`) ?? [];
+        return { day, kind: kindOf(cellRuns, cellPlanned), runs: cellRuns, planned: cellPlanned };
+    });
 
     return servers
         .filter((server) => byServer.has(server.id))
         .map((server) => ({
             server,
             marks: marksByServer.get(server.id) ?? new Map(),
-            rows: (byServer.get(server.id) ?? []).map((database) => ({
-                database,
-                cells: days.map((day) => {
-                    const cellRuns = runsByCell.get(`${database.key}|${day}`) ?? [];
-                    const cellPlanned = plannedByCell.get(`${database.key}|${day}`) ?? [];
-                    return { day, kind: kindOf(cellRuns, cellPlanned), runs: cellRuns, planned: cellPlanned };
-                }),
-            })),
+            rows: (byServer.get(server.id) ?? []).map((database) => ({ database, cells: cellsOf(database.key) })),
+            cells: cellsOf(server.id),
         }));
+}
+
+/** A server with more databases than this starts folded into one row. */
+export const FOLD_FROM = 10;
+
+/** One line of the timeline: a folded server, or a database under the head of its server. */
+export type TimelineUnit = { kind: "folded"; group: TimelineGroup } | { kind: "row"; group: TimelineGroup; row: TimelineDatabaseRow };
+
+/**
+ * The lines of the timeline in order, a folded server counting as one. The pages of the timeline
+ * are cut from these, so a folded server with hundreds of databases takes one line of a page.
+ */
+export function timelineUnits(groups: TimelineGroup[], isFolded: (group: TimelineGroup) => boolean): TimelineUnit[] {
+    return groups.flatMap((group): TimelineUnit[] => (isFolded(group)
+        ? [{ kind: "folded", group }]
+        : group.rows.map((row) => ({ kind: "row", group, row }))));
+}
+
+/** The units of one page, grouped again by server, so a server cut by a page shows its head on both. */
+export function pageGroups(units: TimelineUnit[], page: number, size: number): { group: TimelineGroup; folded: boolean; rows: TimelineDatabaseRow[] }[] {
+    const out: { group: TimelineGroup; folded: boolean; rows: TimelineDatabaseRow[] }[] = [];
+    for (const unit of units.slice(page * size, (page + 1) * size)) {
+        const last = out[out.length - 1];
+        if (unit.kind === "folded") out.push({ group: unit.group, folded: true, rows: [] });
+        else if (last && !last.folded && last.group === unit.group) last.rows.push(unit.row);
+        else out.push({ group: unit.group, folded: false, rows: [unit.row] });
+    }
+    return out;
 }
 
 /** The newest change of a day, which its mark shows, and how many came before it that day. */

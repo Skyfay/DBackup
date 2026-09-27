@@ -3,7 +3,8 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ViewMode } from "@/lib/core/table-preferences";
 import { measureTimeline } from "../storage/explorer-fixtures";
-import { ago, overview, serve } from "./database-fixtures";
+import { destination, file, job, run, stored } from "../storage/explorer-fixtures";
+import { ago, dbRun, overview, serve } from "./database-fixtures";
 
 let search = new URLSearchParams();
 const replace = vi.fn((url: string) => {
@@ -24,7 +25,10 @@ import { DatabaseExplorer } from "@/components/dashboard/explorer/database-explo
 
 Element.prototype.scrollIntoView = vi.fn();
 
-const page = (view: ViewMode = "table") => render(<DatabaseExplorer canOpenBackups initialView={view} />);
+const explorer = (view: ViewMode) => (
+    <DatabaseExplorer canOpenBackups canRestore canDownload canDelete={false} canManageVault={false} canViewHistory canExecute initialView={view} />
+);
+const page = (view: ViewMode = "table") => render(explorer(view));
 
 describe("Database Explorer", () => {
     beforeEach(() => {
@@ -83,12 +87,14 @@ describe("Database Explorer", () => {
         expect(screen.queryByRole("tab", { name: "Timeline view" })).not.toBeInTheDocument();
     });
 
-    it("shows the databases by day with the new version of a server, and a day opens the database with its runs", async () => {
+    it("shows the databases by day with the new version of a server, and a day shows its backup beside the timeline", async () => {
         measureTimeline();
         const yesterday = ago(24);
+        const made = file("Shop_nightly_yesterday.tar", 24, { path: "Shop nightly/Shop_nightly_yesterday.tar" });
         serve({
+            backup: { run: run(made, "job-shop", [stored(made)]), job: job({}), chain: null, destinations: [destination("nas", "NAS Backups")] },
             runs: {
-                runs: [{ id: "r1", jobId: "nightly", serverId: "s1", status: "Success", startedAt: yesterday, size: 104, databases: ["shop"], destinations: [] }],
+                runs: [dbRun({ id: "r1", startedAt: yesterday, path: made.path })],
                 versionChanges: [
                     { serverId: "s1", previousVersion: "16.2", newVersion: "16.3", detectedAt: ago(48), downgrade: false },
                     { serverId: "s1", previousVersion: "16.3", newVersion: "16.4", detectedAt: yesterday, downgrade: false },
@@ -96,7 +102,7 @@ describe("Database Explorer", () => {
                 planned: [],
             },
         });
-        page("timeline");
+        const view = page("timeline");
 
         // Updates on days in a row each get a mark of their own.
         expect(await screen.findByLabelText("Updated to 16.4")).toBeInTheDocument();
@@ -104,7 +110,31 @@ describe("Database Explorer", () => {
         expect(screen.getByRole("group", { name: "Shop cluster" })).toBeInTheDocument();
 
         const day = yesterday.slice(0, 10);
-        const cell = screen.getAllByRole("link", { name: new RegExp(`^shop, .*${day}$`) })[0];
-        expect(cell).toHaveAttribute("href", `/dashboard/explorer/database?server=s1&database=shop&day=${day}`);
+        const user = userEvent.setup();
+        await user.click(screen.getAllByRole("button", { name: new RegExp(`^shop, .*${day}$`) })[0]);
+        expect(replace).toHaveBeenLastCalledWith(`/dashboard/explorer?database=s1%2Fshop&day=${day}`, { scroll: false });
+
+        // A narrow window gets the panel as a sheet, a wide one beside the timeline.
+        view.rerender(explorer("timeline"));
+        const panel = await screen.findByRole("dialog", { name: "Backups of the day" });
+        expect(await within(panel).findByRole("button", { name: "Restore shop" })).toBeInTheDocument();
+        expect(within(panel).getByRole("combobox", { name: "Run of that day" })).toHaveTextContent("Shop nightly");
+        expect(within(panel).getByText("Picked on the timeline")).toBeInTheDocument();
+    });
+
+    it("folds a server into one row with its runs, which the pages count once", async () => {
+        measureTimeline();
+        serve({ runs: { runs: [dbRun({ id: "r1", startedAt: ago(24) })], versionChanges: [], planned: [] } });
+        const user = userEvent.setup();
+        page("timeline");
+
+        expect(await screen.findByText("1 to 4 of 4 rows")).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Fold Shop cluster" }));
+
+        const group = screen.getByRole("group", { name: "Shop cluster" });
+        expect(within(group).queryByRole("link", { name: /analytics/ })).not.toBeInTheDocument();
+        expect(within(group).getByText("PostgreSQL 16.4 · 2 databases, 1 in a job")).toBeInTheDocument();
+        expect(within(group).getAllByRole("button", { name: /^Shop cluster, / })).toHaveLength(1);
+        expect(screen.getByText("1 to 3 of 3 rows")).toBeInTheDocument();
     });
 });

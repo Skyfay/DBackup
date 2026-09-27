@@ -37,9 +37,11 @@ function canTake(option: AdapterOption, type: string): boolean {
 
 /**
  * The databases of a backup and the server they go to: the servers that can take them, what
- * that server has now, whether its version fits, and the name each database gets there.
+ * that server has now, whether its version fits, and the name each database gets there. Every
+ * database starts ticked, or only the ones in `picked` when the backup holds one of them, like a
+ * restore started from a day of the Database Explorer.
  */
-export function useRestoreDatabases(file: FileInfo | null, analyzed: string[], sizes: Map<string, number>, sourceType: string) {
+export function useRestoreDatabases(file: FileInfo | null, analyzed: string[], sizes: Map<string, number>, sourceType: string, picked: string[] = []) {
     const type = sourceType.toLowerCase();
     const engine = getAdapterDefinition(type)?.name ?? sourceType;
     const isServer = SERVER_ADAPTERS.includes(type);
@@ -65,9 +67,12 @@ export function useRestoreDatabases(file: FileInfo | null, analyzed: string[], s
         };
     }, []);
 
+    const pickedKey = picked.join("\u0000");
     useEffect(() => {
-        setChoices(analyzed.map((name) => ({ id: name, name, targetName: name, selected: true })));
-    }, [analyzed]);
+        const wanted = pickedKey ? pickedKey.split("\u0000") : [];
+        const narrow = analyzed.some((name) => wanted.includes(name));
+        setChoices(analyzed.map((name) => ({ id: name, name, targetName: name, selected: !narrow || wanted.includes(name) })));
+    }, [analyzed, pickedKey]);
 
     useEffect(() => {
         if (!target) {

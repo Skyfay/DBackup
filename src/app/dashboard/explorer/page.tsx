@@ -19,6 +19,12 @@ export default async function ExplorerPage() {
             <Suspense>
                 <DatabaseExplorer
                     canOpenBackups={permissions.includes(PERMISSIONS.STORAGE.READ)}
+                    canRestore={permissions.includes(PERMISSIONS.STORAGE.RESTORE)}
+                    canDownload={permissions.includes(PERMISSIONS.STORAGE.DOWNLOAD)}
+                    canDelete={permissions.includes(PERMISSIONS.STORAGE.DELETE)}
+                    canManageVault={permissions.includes(PERMISSIONS.VAULT.WRITE)}
+                    canViewHistory={permissions.includes(PERMISSIONS.HISTORY.READ)}
+                    canExecute={permissions.includes(PERMISSIONS.JOBS.EXECUTE)}
                     initialView={view ?? "table"}
                 />
             </Suspense>

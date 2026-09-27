@@ -81,7 +81,10 @@ describe("Database Explorer API", () => {
 
         signedIn(PERMISSIONS.SOURCES.VIEW, PERMISSIONS.JOBS.READ);
         expect((await runs()).status).toBe(200);
-        expect(mocks.getRuns).toHaveBeenCalledWith(new Date("2026-09-20T00:00:00Z"), new Date("2026-09-28T00:00:00Z"));
+        expect(mocks.getRuns).toHaveBeenCalledWith(new Date("2026-09-20T00:00:00Z"), new Date("2026-09-28T00:00:00Z"), expect.any(Date), { withErrors: false });
+
+        await runs("from=2026-09-20T00:00:00Z&until=2026-09-28T00:00:00Z&errors=1");
+        expect(mocks.getRuns).toHaveBeenLastCalledWith(expect.any(Date), expect.any(Date), expect.any(Date), { withErrors: true });
     });
 
     it("refuses a time span that ends before it starts or is no date", async () => {

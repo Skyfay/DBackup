@@ -42,7 +42,18 @@ A server updated on several days in a row gets a mark on each day, and several u
 A backup is only restored onto the same version or a newer one. The backups made after an update need a server with that version.
 :::
 
-A click on a day opens the page of the database with the runs of that day on top, each with its job, its size, where it went and a link to the run in **History**.
+The server heads name the server on top and its engine, version and how many of its databases are in a job below. A server with more than 10 databases starts folded into one row with every run of it, and its arrow opens it. The rows come in pages like a table, with the rows per page of your [profile](/user-guide/features/profile-settings#tables).
+
+### The Backups of a Day
+
+A click on a day shows its backups in a panel beside the timeline, or over it on a smaller screen. The dropdown in its top right lists the runs of that day by time, however many there are, and the panel shows the one picked:
+
+- A backup shows like on the Backups page, with its copies, what it holds and its integrity. **Restore** starts with only the database you clicked ticked, the menu restores the whole backup, and **Download**, **Lock** and **Verify** work as there
+- A failed run shows its error with a link to **History**, and the backups before and after it, which **Show** opens in the panel
+- A run the schedule still plans that day offers **Run now**
+- A backup no destination holds anymore, like after retention removed it, says so and points to the backups around it
+
+A click on a name opens the page of the database with its live tables.
 
 ## The Page of a Database
 
@@ -76,6 +87,8 @@ The explorer only reads. It runs no queries of its own and changes nothing.
 | `sources:view` | The page, the databases and their sizes |
 | `sources:read` | The tables and rows of a database |
 | `jobs:read` | The jobs of each database, its last backup and the timeline |
+| `storage:read`, `storage:restore`, `storage:download` | The backup of a day in the panel, restoring it and downloading it |
+| `jobs:execute` | **Run now** for a day the schedule still plans |
 | `storage:read` | **Open backups** |
 | `history:read` | The link from a run to **History** |
 

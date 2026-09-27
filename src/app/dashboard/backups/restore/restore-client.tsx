@@ -58,7 +58,8 @@ export function RestoreClient({ canManageVault = false, canDownload = false }: R
 
     const { analysis, retry, keyRecovery, interceptKeyRequest, applyKeyResolution, keyOverrideRef } = useRestoreAnalysis(file, destinationId, { databases: wantsDatabases, files: wantsFiles }, isSystem || isRedis);
     const sourceType = analysis.sourceType || file?.sourceType || "";
-    const databases = useRestoreDatabases(file, analysis.databases, analysis.sizes, sourceType);
+    // A restore started for one database, like from a day of the Database Explorer, ticks only it.
+    const databases = useRestoreDatabases(file, analysis.databases, analysis.sizes, sourceType, searchParams.getAll("pick"));
     const folders = useRestoreFolders({ file, destinationId, directories: analysis.directories, applyKeyResolution, interceptKeyRequest });
     const run = useRestoreStart({
         file, destinationId, scope, sourceType, target: databases.target, choices: databases.choices, classicName: databases.classicName,

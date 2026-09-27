@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { logger } from "@/lib/logging/logger";
-import type { DatabaseOverview } from "@/services/databases/database-explorer-types";
+import type { DatabaseOverview, DatabaseRunsData } from "@/services/databases/database-explorer-types";
+import { expandRuns } from "./database-model";
 
 const log = logger.child({ component: "database-explorer" });
 
@@ -55,6 +56,13 @@ export function useDatabaseData<T>(url: string | null, fallback = "The databases
 
     const current = loaded?.url === url ? loaded : null;
     return { data: current?.data ?? null, error: current?.error ?? null, loading: url !== null && current === null, reloading, reload };
+}
+
+/** The runs of a span as the timeline and the panel of a day need them, with the databases of each run looked up. */
+export function useDatabaseRuns(url: string | null) {
+    const loaded = useDatabaseData<DatabaseRunsData>(url, "The runs could not be loaded.");
+    const data = useMemo(() => (loaded.data ? expandRuns(loaded.data) : null), [loaded.data]);
+    return { ...loaded, data };
 }
 
 /** Reads the databases of these servers, or of all of them, from the servers now, and answers with the fresh overview. */

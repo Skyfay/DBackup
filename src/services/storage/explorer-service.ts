@@ -7,7 +7,7 @@ import { checksNatively } from "./verification-service";
 import { defaultAlertConfig, defaultAlertStates, getAlertConfig, getAlertStates } from "./storage-alert-service";
 import { retentionConfigOf } from "./explorer-plan";
 import { buildExplorer, normalizePath, type DestinationListing, type ExplorerModel, type JobRecord } from "./explorer-model";
-import type { DestinationAlerts, ExplorerBackups, ExplorerDestination, ExplorerFile, ExplorerIndex, HealthStatus, RunExecution } from "./explorer-types";
+import type { DestinationAlerts, ExplorerBackup, ExplorerBackups, ExplorerDestination, ExplorerFile, ExplorerIndex, HealthStatus, RunExecution } from "./explorer-types";
 
 const log = logger.child({ service: "StorageExplorerService" });
 
@@ -199,6 +199,25 @@ export class StorageExplorerService {
         const { model } = await this.load();
         const runs = [...model.runs.values()].flat().sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
         return { runs };
+    }
+
+    /**
+     * One backup by the path its run recorded, with its copies, its job and its chain, like the
+     * details of the Backups page show it. The Database Explorer asks for it when a day opens.
+     */
+    async getBackup(path: string): Promise<ExplorerBackup> {
+        const { destinations, model } = await this.load();
+        const wanted = normalizePath(path);
+        for (const [jobKey, runs] of model.runs) {
+            const run = runs.find((entry) => normalizePath(entry.path) === wanted);
+            if (!run) continue;
+            const chainId = run.file.chain?.id;
+            const chain = chainId
+                ? runs.map((entry) => entry.file).filter((file) => file.chain?.id === chainId).sort((a, b) => (a.chain?.index ?? 0) - (b.chain?.index ?? 0))
+                : null;
+            return { run, job: model.jobs.find((job) => job.key === jobKey) ?? null, chain, destinations };
+        }
+        return { run: null, job: null, chain: null, destinations };
     }
 
     /**

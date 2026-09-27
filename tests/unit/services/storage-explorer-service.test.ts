@@ -143,6 +143,21 @@ describe('every backup in one list', () => {
 
         await expect(service.getExecution('Shop/gone.tar')).resolves.toBeNull();
     });
+
+    it('finds one backup by the path its run recorded, with its job and every destination', async () => {
+        const shop = { name: 'shop.tar', path: 'Shop/shop.tar', size: 10, lastModified: new Date(), jobId: 'job-1', jobName: 'Shop', createdAt: new Date().toISOString() };
+        storage.readCachedListing.mockResolvedValue({ files: [shop], listedAt: new Date(), current: true });
+
+        const found = await service.getBackup('/Shop/shop.tar');
+        expect(found.run?.copies.map((copy) => copy.destinationId)).toEqual(['nas', 'r2']);
+        expect(found.job?.name).toBe('Shop');
+        expect(found.destinations.map((entry) => entry.id)).toEqual(['nas', 'r2']);
+
+        // A backup retention removed is no longer found, the destinations still come along.
+        const gone = await service.getBackup('Shop/gone.tar');
+        expect(gone).toMatchObject({ run: null, job: null, chain: null });
+        expect(gone.destinations).toHaveLength(2);
+    });
 });
 
 describe('what a destination tells about itself', () => {

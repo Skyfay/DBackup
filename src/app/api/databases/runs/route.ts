@@ -9,12 +9,15 @@ import { databaseExplorerService } from "@/services/databases/database-explorer-
 
 const log = logger.child({ route: "databases/runs" });
 
-const QuerySchema = z.object({ from: z.coerce.date(), until: z.coerce.date() }).refine((query) => query.from <= query.until, { message: "from must not be after until" });
+const QuerySchema = z
+    .object({ from: z.coerce.date(), until: z.coerce.date(), errors: z.literal("1").optional() })
+    .refine((query) => query.from <= query.until, { message: "from must not be after until" });
 
 /**
- * GET /api/databases/runs?from=...&until=...
+ * GET /api/databases/runs?from=...&until=...[&errors=1]
  * The runs of the jobs that back up databases between two times, the version changes of the
- * servers then, and the runs the schedules plan until `until`. For the timeline of the Database Explorer.
+ * servers then, and the runs the schedules plan until `until`. For the timeline of the Database
+ * Explorer and the panel of a day, which asks for the error of each failed run.
  */
 export async function GET(req: NextRequest) {
     const ctx = await getAuthContext(await headers());
@@ -25,7 +28,7 @@ export async function GET(req: NextRequest) {
         checkPermissionWithContext(ctx, PERMISSIONS.JOBS.READ);
         const parsed = QuerySchema.safeParse(Object.fromEntries(req.nextUrl.searchParams));
         if (!parsed.success) return NextResponse.json({ success: false, error: "Invalid time span" }, { status: 400 });
-        const data = await databaseExplorerService.getRuns(parsed.data.from, parsed.data.until);
+        const data = await databaseExplorerService.getRuns(parsed.data.from, parsed.data.until, new Date(), { withErrors: parsed.data.errors === "1" });
         return NextResponse.json({ success: true, data });
     } catch (error: unknown) {
         if (error instanceof PermissionError) {

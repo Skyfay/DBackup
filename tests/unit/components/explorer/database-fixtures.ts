@@ -1,5 +1,6 @@
 import { vi } from "vitest";
-import type { DatabaseOverview, DatabaseRuns, ExplorerDatabase } from "@/services/databases/database-explorer-types";
+import type { DatabaseOverview, DatabaseRun, DatabaseRuns, DatabaseRunsData, ExplorerDatabase } from "@/services/databases/database-explorer-types";
+import type { ExplorerBackup } from "@/services/storage/explorer-types";
 
 const HOUR = 3_600_000;
 export const ago = (hours: number) => new Date(Date.now() - hours * HOUR).toISOString();
@@ -34,13 +35,36 @@ export const overview: DatabaseOverview = {
 const json = (body: unknown) => Promise.resolve({ ok: true, json: () => Promise.resolve(body) } as Response);
 export const fetchMock = vi.fn();
 
+/** A run with what a test does not care about filled in. */
+export function dbRun(overrides: Partial<DatabaseRun> & Pick<DatabaseRun, "id" | "startedAt">): DatabaseRun {
+    return {
+        jobId: "nightly", serverId: "s1", status: "Success", endedAt: null, size: 104_000_000, path: null, databases: ["shop"], destinations: [], error: null,
+        ...overrides,
+    };
+}
+
+/** The runs the way the API sends them, every list of names once. */
+export function wire(runs: DatabaseRuns): DatabaseRunsData {
+    const names: string[][] = [];
+    return {
+        ...runs,
+        names,
+        runs: runs.runs.map((run) => {
+            const found = names.findIndex((list) => list.join() === run.databases.join());
+            const index = found >= 0 ? found : names.push(run.databases) - 1;
+            return { ...run, databases: index };
+        }),
+    };
+}
+
 /** Answers the routes of the Database Explorer, the tables and rows of a server included. */
-export function serve({ data = overview, runs, tables }: { data?: DatabaseOverview; runs?: DatabaseRuns; tables?: unknown } = {}) {
+export function serve({ data = overview, runs, tables, backup }: { data?: DatabaseOverview; runs?: DatabaseRuns; tables?: unknown; backup?: ExplorerBackup } = {}) {
     fetchMock.mockReset();
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
         if (url === "/api/databases") return json({ success: true, data });
         if (url === "/api/databases/read") return json({ success: true, data });
-        if (url.startsWith("/api/databases/runs")) return json({ success: true, data: runs ?? { runs: [], versionChanges: [], planned: [] } });
+        if (url.startsWith("/api/databases/runs")) return json({ success: true, data: wire(runs ?? { runs: [], versionChanges: [], planned: [] }) });
+        if (url.startsWith("/api/storage/explorer/backup")) return json({ success: true, data: backup ?? { run: null, job: null, chain: null, destinations: [] } });
         if (url === "/api/adapters/database-tables") {
             return json(tables ?? { success: true, tables: [{ name: "orders", rowCount: 1204332, sizeInBytes: 820_000_000 }, { name: "coupons", rowCount: 1210, sizeInBytes: 1_000_000 }] });
         }

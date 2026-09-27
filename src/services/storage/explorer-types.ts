@@ -134,6 +134,17 @@ export interface ExplorerBackups {
     runs: BackupRun[];
 }
 
+/** One backup found by its path, with what its details need, for a page other than the Backups page. */
+export interface ExplorerBackup {
+    /** Null when no destination holds it anymore, like after retention removed it. */
+    run: BackupRun | null;
+    job: ExplorerJob | null;
+    /** The backups of its incremental chain, oldest first, when it is part of one. */
+    chain: ExplorerFile[] | null;
+    /** Every destination, for whether the ones holding a copy answer. */
+    destinations: ExplorerDestination[];
+}
+
 /** What the retention of one destination removes after a planned run. */
 export interface AgedOut {
     destinationId: string;

@@ -37,6 +37,10 @@ interface BackupDetailsProps {
     /** Lists a destination again, for a copy whose destination does not answer. */
     onCheckDestination?: (destinationId: string) => void;
     canViewHistory: boolean;
+    /** "panel" for a card beside a list, like the one of a day in the Database Explorer, the Sheet otherwise. */
+    frame?: "sheet" | "panel";
+    /** The database the backup was opened for, marked among what it holds and restored on its own. */
+    picked?: { name: string; onRestore?: () => void } | null;
 }
 
 const VERIFIED_BY: Record<string, string> = {
@@ -146,7 +150,7 @@ function ReadFrom({ here, alternative }: { here: ExplorerDestination; alternativ
 }
 
 /** A banner in the look of the job panel: a colored edge, an icon, a title and one line. */
-function Banner({ tone, icon: Icon, title, children, action }: { tone: "warning" | "neutral"; icon: typeof Layers; title: string; children: React.ReactNode; action?: React.ReactNode }) {
+export function Banner({ tone, icon: Icon, title, children, action }: { tone: "warning" | "neutral"; icon: typeof Layers; title: string; children: React.ReactNode; action?: React.ReactNode }) {
     return (
         <div className={cn("relative flex gap-3 overflow-hidden rounded-lg border p-3 pl-4", tone === "warning" ? "border-warning/30 bg-warning/5" : "bg-muted/40")}>
             <span className={cn("absolute inset-y-0 left-0 w-1", tone === "warning" ? "bg-warning" : "bg-muted-foreground/40")} aria-hidden="true" />
@@ -161,7 +165,7 @@ function Banner({ tone, icon: Icon, title, children, action }: { tone: "warning"
 }
 
 /** Everything about one backup: its copies, its chain, what it holds and its last check. */
-export function BackupDetails({ data, destinations, handlersFor, onDeleteEverywhere, onCheckDestination, canViewHistory }: BackupDetailsProps) {
+export function BackupDetails({ data, destinations, handlersFor, onDeleteEverywhere, onCheckDestination, canViewHistory, frame = "sheet", picked = null }: BackupDetailsProps) {
     const { file, destinationId, copies, job, chain, execution } = data;
     const handlers = handlersFor(file, destinationId);
     const groups = backupActions(file, { ...handlers, onDelete: onDeleteEverywhere ?? handlers.onDelete });
@@ -190,6 +194,10 @@ export function BackupDetails({ data, destinations, handlersFor, onDeleteEverywh
         ? file.databases.map((name) => ({ name, detail: file.engineVersion ? `${file.sourceType ?? ""} ${file.engineVersion}`.trim() : file.sourceName ?? "" }))
         : [];
     const folders = file.combined?.directorySources ?? 0;
+    // A Sheet names itself for screen readers through its title, a panel is a plain heading.
+    const Title: React.ElementType = frame === "sheet" ? SheetTitle : "h2";
+    const Description: React.ElementType = frame === "sheet" ? SheetDescription : "p";
+    const restorePicked = picked?.onRestore && inside.length > 1 && inside.some((entry) => entry.name === picked.name) ? picked : null;
 
     const facts = [
         { label: "Compression", value: file.compression ? COMPRESSION[file.compression] ?? file.compression : "None" },
@@ -201,16 +209,16 @@ export function BackupDetails({ data, destinations, handlersFor, onDeleteEverywh
 
     return (
         <>
-            <SheetHeader className="gap-4 border-b p-5 pr-12">
+            <SheetHeader className={cn("gap-4 border-b p-5", frame === "sheet" ? "pr-12" : "pr-5")}>
                 <div className="flex min-w-0 items-start gap-3">
                     {job ? <JobTile job={job} size="lg" /> : here ? <DestinationTile destination={here} size="lg" /> : null}
                     <div className="min-w-0">
-                        <SheetTitle className="truncate text-lg font-semibold">
+                        <Title className="truncate text-lg font-semibold">
                             <DateDisplay date={madeAt(file)} format="PPp" />
-                        </SheetTitle>
-                        <SheetDescription className="truncate text-sm text-muted-foreground" title={file.name}>
+                        </Title>
+                        <Description className="truncate text-sm text-muted-foreground" title={file.name}>
                             {jobName} · {file.name}
-                        </SheetDescription>
+                        </Description>
                         <div className="mt-2 flex flex-wrap gap-1.5">
                             <TypeChip file={file} />
                             {file.isEncrypted && <span className="inline-flex h-5 items-center rounded-md bg-muted px-1.5 text-[11px] font-medium">Encrypted</span>}
@@ -220,7 +228,13 @@ export function BackupDetails({ data, destinations, handlersFor, onDeleteEverywh
                     </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                    {handlers.onRestore && (
+                    {restorePicked ? (
+                        // The other databases stay a click away in the menu, as Restore.
+                        <Button variant="outline" size="sm" onClick={() => restorePicked.onRestore?.()}>
+                            <RotateCcw />
+                            Restore {restorePicked.name}
+                        </Button>
+                    ) : handlers.onRestore && (
                         <Button variant="outline" size="sm" onClick={() => handlers.onRestore?.()}>
                             <RotateCcw />
                             Restore
@@ -326,12 +340,17 @@ export function BackupDetails({ data, destinations, handlersFor, onDeleteEverywh
                     <Section title="What is inside" aside={contentsOf(file)}>
                         <ul className="divide-y rounded-lg border">
                             {inside.map((entry) => (
-                                <li key={entry.name} className="flex items-center gap-3 px-3 py-2">
+                                <li key={entry.name} className={cn("flex items-center gap-3 px-3 py-2", picked?.name === entry.name && "bg-muted/50")}>
                                     <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-muted/50">
                                         {file.sourceType ? <AdapterIcon adapterId={file.sourceType} className="size-4" /> : <Database className="size-4 text-muted-foreground" />}
                                     </span>
                                     <div className="min-w-0 flex-1">
-                                        <span className="block truncate text-sm font-medium">{entry.name}</span>
+                                        <span className="flex items-center gap-2 text-sm font-medium">
+                                            <span className="truncate">{entry.name}</span>
+                                            {picked?.name === entry.name && (
+                                                <span className="inline-flex h-5 shrink-0 items-center rounded-md bg-muted px-1.5 text-[11px] font-medium">Picked on the timeline</span>
+                                            )}
+                                        </span>
                                         {entry.detail && <span className="block truncate text-xs text-muted-foreground">{entry.detail}</span>}
                                     </div>
                                 </li>

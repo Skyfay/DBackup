@@ -100,6 +100,17 @@ describe("Restore page", () => {
         expect(screen.getByText(/shop comes back as shop_restored/)).toBeInTheDocument();
     });
 
+    it("ticks only the database a restore was started for, like from a day of the Database Explorer", async () => {
+        search = new URLSearchParams({ destinationId: "nas", file: encodeUrlPayload(FILE), pick: "shop" });
+        const user = userEvent.setup();
+        render(<RestoreClient />);
+        await pickServer(user);
+
+        expect(await screen.findByText("Restores 1 database into Shop staging")).toBeInTheDocument();
+        expect(screen.getByRole("checkbox", { name: "Restore shop" })).toBeChecked();
+        expect(screen.getByRole("checkbox", { name: "Restore billing" })).not.toBeChecked();
+    });
+
     it("draws the databases as lines, the ones that do the same in one bundle", async () => {
         const user = userEvent.setup();
         render(<RestoreClient />);

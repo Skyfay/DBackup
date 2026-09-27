@@ -17,7 +17,6 @@ export default async function ExplorerDatabasePage() {
                 <DatabasePage
                     canBrowse={permissions.includes(PERMISSIONS.SOURCES.READ)}
                     canOpenBackups={permissions.includes(PERMISSIONS.STORAGE.READ)}
-                    canViewHistory={permissions.includes(PERMISSIONS.HISTORY.READ)}
                 />
             </Suspense>
         </>

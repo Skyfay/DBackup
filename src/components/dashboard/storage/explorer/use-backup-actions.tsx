@@ -74,11 +74,13 @@ export function useBackupActions({ canDownload, canRestore, canDelete, canManage
     const [deleting, setDeleting] = useState<{ targets: BackupTarget[]; title: string } | null>(null);
     const [deletePending, setDeletePending] = useState(false);
 
-    const restore = useCallback((target: BackupTarget, mode?: RestoreMode) => {
+    /** Opens the restore page, with only the databases in `pick` ticked when given. */
+    const restore = useCallback((target: BackupTarget, mode?: RestoreMode, pick: string[] = []) => {
         const encoded = encodeUrlPayload(target.file);
         // Only a backup holding databases and folders gets a scope, everything else has one thing to restore.
         const modeParam = mode && mode !== "all" ? `&mode=${mode}` : "";
-        router.push(`/dashboard/backups/restore?destinationId=${encodeURIComponent(target.destinationId)}&file=${encodeURIComponent(encoded)}${modeParam}`);
+        const pickParams = pick.map((name) => `&pick=${encodeURIComponent(name)}`).join("");
+        router.push(`/dashboard/backups/restore?destinationId=${encodeURIComponent(target.destinationId)}&file=${encodeURIComponent(encoded)}${modeParam}${pickParams}`);
     }, [router]);
 
     const downloadDecrypted = useCallback(async (target: BackupTarget, keyResolution: KeyResolutionResult | null) => {

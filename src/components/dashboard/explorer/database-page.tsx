@@ -11,7 +11,6 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { DatabaseOverview, ExplorerDbJob } from "@/services/databases/database-explorer-types";
 import { readNow, useDatabaseData } from "./database-data";
-import { DatabaseDayRuns } from "./database-day-runs";
 import { DatabasesEmpty } from "./database-list-parts";
 import { DatabasePageHead, DatabaseStrip } from "./database-page-head";
 import { PanePrompt } from "./database-pane";
@@ -66,22 +65,20 @@ function BackLink() {
 interface DatabasePageProps {
     canBrowse: boolean;
     canOpenBackups: boolean;
-    canViewHistory: boolean;
 }
 
 /**
  * A database as a page of its own, opened from the list or the timeline of the Database Explorer:
- * its numbers, the runs of a day picked on the timeline, and its tables with the rows of the one
- * picked, which fill the height of the page. A Redis or Valkey server shows its numbered databases
- * and their keys instead. What is open lives in the address.
+ * its numbers and its tables with the rows of the one picked, read live and filling the height of
+ * the page. A Redis or Valkey server shows its numbered databases and their keys instead. The
+ * backups of a day show beside the timeline, not here. What is open lives in the address.
  */
-export function DatabasePage({ canBrowse, canOpenBackups, canViewHistory }: DatabasePageProps) {
+export function DatabasePage({ canBrowse, canOpenBackups }: DatabasePageProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const serverId = searchParams.get("server");
     const name = searchParams.get("database");
     const table = searchParams.get("table");
-    const day = searchParams.get("day");
     const overview = useDatabaseData<DatabaseOverview>("/api/databases");
     const [reading, setReading] = useState(false);
     const data = overview.data;
@@ -91,7 +88,7 @@ export function DatabasePage({ canBrowse, canOpenBackups, canViewHistory }: Data
     const jobsById = useMemo(() => new Map((data?.jobs ?? []).map((job) => [job.id, job])), [data]);
     const jobs = (database?.jobIds ?? []).map((id) => jobsById.get(id)).filter((job): job is ExplorerDbJob => job !== undefined);
 
-    const setParam = useCallback((key: "table" | "day", value: string | null) => {
+    const setParam = useCallback((key: "table", value: string | null) => {
         const params = new URLSearchParams(searchParams.toString());
         if (value) params.set(key, value);
         else params.delete(key);
@@ -137,9 +134,6 @@ export function DatabasePage({ canBrowse, canOpenBackups, canViewHistory }: Data
             <DatabasePageHead overview={data} database={database} server={server} jobs={jobs} canOpenBackups={canOpenBackups} />
             {server.status !== "ONLINE" && <IssueBanner status={server.status} error={null} />}
             <DatabaseStrip database={database} server={server} jobs={jobs} coverage={data.coverage} jobsById={jobsById} />
-            {day && data.coverage && (
-                <DatabaseDayRuns key={day} database={database} day={day} jobsById={jobsById} canViewHistory={canViewHistory} onClear={() => setParam("day", null)} />
-            )}
 
             {!canBrowse ? (
                 <p className="rounded-xl border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">

@@ -92,11 +92,21 @@ export interface DatabaseRun {
     serverId: string;
     status: RunStatus;
     startedAt: string;
+    endedAt: string | null;
     size: number | null;
+    /** The path of its backup at every destination, null while it runs and for a run that failed. */
+    path: string | null;
     /** The databases the run backed up, or the ones its job holds for a run that failed before it knew. */
     databases: string[];
     /** Where the backup went and how each upload ended. */
     destinations: { name: string; adapterId: string; ok: boolean }[];
+    /** The last error a failed run logged, only when asked for. */
+    error: string | null;
+}
+
+/** A run as the API sends it. Its databases point into the name lists, which the runs of one job share. */
+export interface DatabaseRunRecord extends Omit<DatabaseRun, "databases"> {
+    databases: number;
 }
 
 /** A version of a server that the hourly check read for the first time. */
@@ -119,4 +129,13 @@ export interface DatabaseRuns {
     runs: DatabaseRun[];
     versionChanges: VersionChange[];
     planned: PlannedRun[];
+}
+
+/**
+ * The runs as the API sends them. An hourly job over hundreds of databases would repeat the same
+ * names in every run, so each list of names is sent once.
+ */
+export interface DatabaseRunsData extends Omit<DatabaseRuns, "runs"> {
+    runs: DatabaseRunRecord[];
+    names: string[][];
 }

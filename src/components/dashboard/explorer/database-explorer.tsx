@@ -15,14 +15,17 @@ import { ExplorerStrip } from "@/components/dashboard/storage/explorer/explorer-
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ViewSwitch } from "@/components/ui/view-switch";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { useIsMobileState } from "@/hooks/use-mobile";
 import type { ViewMode } from "@/lib/core/table-preferences";
-import { formatBytes } from "@/lib/utils";
+import { cn, formatBytes } from "@/lib/utils";
 import type { DatabaseOverview, ExplorerDatabase } from "@/services/databases/database-explorer-types";
 import { databaseColumns, engineOf } from "./database-columns";
 import { backupsHref, readNow, useDatabaseData } from "./database-data";
+import { DatabaseDayPanel, type DayPanelAccess, type DayPick } from "./database-day-panel";
 import { DatabaseCard, DatabasesEmpty, DatabasesSkeleton, databaseFilters } from "./database-list-parts";
 import { databaseHref, freshnessOf, summarize } from "./database-model";
 import { DatabasesTimeline } from "./databases-timeline";
@@ -31,8 +34,7 @@ import { ServerFreshness } from "./server-freshness";
 
 const VIEWS: ViewMode[] = ["table", "timeline"];
 
-interface DatabaseExplorerProps {
-    canOpenBackups: boolean;
+interface DatabaseExplorerProps extends DayPanelAccess {
     /** The view this user picked last, table or timeline. */
     initialView: ViewMode;
 }
@@ -40,10 +42,12 @@ interface DatabaseExplorerProps {
 /**
  * The Databases tab of the Database Explorer: every database of every server with the jobs that
  * back it up, as a table or by day, and a Redis or Valkey server as one entry. A click opens a
- * database as a page of its own, with its tables and their rows read live. The list comes from
- * what DBackup read from the servers last, so the page opens without asking one.
+ * database as a page of its own, with its tables and their rows read live, and a day of the
+ * timeline shows its backups in a panel beside it. The list comes from what DBackup read from the
+ * servers last, so the page opens without asking one. The picked day lives in the address.
  */
-export function DatabaseExplorer({ canOpenBackups, initialView }: DatabaseExplorerProps) {
+export function DatabaseExplorer({ initialView, ...access }: DatabaseExplorerProps) {
+    const { canOpenBackups } = access;
     const router = useRouter();
     const searchParams = useSearchParams();
     const overview = useDatabaseData<DatabaseOverview>("/api/databases");
@@ -56,6 +60,23 @@ export function DatabaseExplorer({ canOpenBackups, initialView }: DatabaseExplor
         return sourceId ? [{ id: "server", value: [sourceId] }] : [];
     });
     const open = useCallback((database: ExplorerDatabase) => router.push(databaseHref(database)), [router]);
+
+    const pickKey = searchParams.get("database");
+    const pickDay = searchParams.get("day");
+    const pick: DayPick | null = pickKey && pickDay ? { key: pickKey, day: pickDay, run: searchParams.get("run") } : null;
+    const setPick = useCallback((next: DayPick | null) => {
+        const params = new URLSearchParams(searchParams.toString());
+        for (const name of ["database", "day", "run"]) params.delete(name);
+        if (next) {
+            params.set("database", next.key);
+            params.set("day", next.day);
+            if (next.run) params.set("run", next.run);
+        }
+        const query = params.toString();
+        router.replace(query ? `/dashboard/explorer?${query}` : "/dashboard/explorer", { scroll: false });
+    }, [router, searchParams]);
+    // From xl the panel sits beside the timeline, on smaller screens the timeline needs the width.
+    const docked = useMediaQuery("(min-width: 1280px)");
 
     const isMobile = useIsMobileState();
     const coverage = data?.coverage ?? false;
@@ -124,6 +145,19 @@ export function DatabaseExplorer({ canOpenBackups, initialView }: DatabaseExplor
         return <DatabasesEmpty title="No database connections yet">Add a database on the Connections page, then its databases show here with the jobs that back them up.</DatabasesEmpty>;
     }
 
+    const dayPanel = pick && shownView === "timeline"
+        ? (frame: "docked" | "sheet") => (
+            <DatabaseDayPanel
+                frame={frame}
+                pick={pick}
+                overview={data}
+                access={access}
+                onRun={(run) => setPick({ ...pick, run })}
+                onShow={(day, run) => setPick({ key: pick.key, day, run })}
+                onClose={() => setPick(null)}
+            />
+        )
+        : null;
     const [storedValue, storedUnit] = formatBytes(summary.size, 1).split(" ");
     const oldestRead = freshnessOf(data.servers).oldest;
     const neverRead = data.databases.length === 0 && data.servers.every((server) => !server.readAt);
@@ -186,49 +220,73 @@ export function DatabaseExplorer({ canOpenBackups, initialView }: DatabaseExplor
                         ]}
                     />
 
-                    <DataTable
-                        variant="card"
-                        columns={columns}
-                        data={data.databases}
-                        searchKey="database"
-                        searchPlaceholder="Search databases"
-                        filterableColumns={filterableColumns}
-                        initialColumnVisibility={{ server: false, engine: false, job: false, state: false }}
-                        columnFilters={filters}
-                        onColumnFiltersChange={setFilters}
-                        sorting={sorting}
-                        onSortingChange={setSorting}
-                        onRefresh={overview.reload}
-                        isLoading={overview.reloading}
-                        getRowId={(database) => database.key}
-                        onRowClick={open}
-                        view={shownView === "cards" ? "cards" : "table"}
-                        renderCard={(row) => (
-                            <DatabaseCard
-                                database={row.original}
-                                server={serversById.get(row.original.serverId)}
-                                jobsById={jobsById}
-                                coverage={coverage}
-                                href={databaseHref(row.original)}
-                                actions={<BackupRowMenu name={row.original.name} groups={groupsFor(row.original)} />}
+                    <div className={cn(dayPanel && docked && "flex items-start gap-4 md:gap-6")}>
+                        <div className="min-w-0 flex-1">
+                            <DataTable
+                                variant="card"
+                                columns={columns}
+                                data={data.databases}
+                                searchKey="database"
+                                searchPlaceholder="Search databases"
+                                filterableColumns={filterableColumns}
+                                initialColumnVisibility={{ server: false, engine: false, job: false, state: false }}
+                                columnFilters={filters}
+                                onColumnFiltersChange={setFilters}
+                                sorting={sorting}
+                                onSortingChange={setSorting}
+                                onRefresh={overview.reload}
+                                isLoading={overview.reloading}
+                                getRowId={(database) => database.key}
+                                onRowClick={open}
+                                view={shownView === "cards" ? "cards" : "table"}
+                                renderCard={(row) => (
+                                    <DatabaseCard
+                                        database={row.original}
+                                        server={serversById.get(row.original.serverId)}
+                                        jobsById={jobsById}
+                                        coverage={coverage}
+                                        href={databaseHref(row.original)}
+                                        actions={<BackupRowMenu name={row.original.name} groups={groupsFor(row.original)} />}
+                                    />
+                                )}
+                                renderRowMenu={(database) => (
+                                    <BackupContextMenu
+                                        tile={<DestinationTile destination={{ adapterId: serversById.get(database.serverId)?.adapterId ?? "" }} />}
+                                        title={database.name}
+                                        note={database.kind === "instance" ? engineOf(serversById.get(database.serverId)) : `${serversById.get(database.serverId)?.name ?? ""} · ${engineOf(serversById.get(database.serverId))}`}
+                                        groups={groupsFor(database)}
+                                        bulk={null}
+                                    />
+                                )}
+                                aboveRows={shownView === "timeline"
+                                    ? (rows) => (
+                                        <DatabasesTimeline
+                                            databases={rows.map((row) => row.original)}
+                                            servers={data.servers}
+                                            jobs={data.jobs}
+                                            picked={pick}
+                                            onPick={(key, day) => setPick(pick?.key === key && pick.day === day ? null : { key, day, run: null })}
+                                        />
+                                    )
+                                    : undefined}
+                                hideRows={shownView === "timeline"}
                             />
+                        </div>
+                        {dayPanel && docked && (
+                            // Stays in view while the timeline scrolls, as high as the window below the header.
+                            <aside aria-label="Backups of the day" className="sticky top-6 h-[calc(100svh-6.75rem)] w-[30rem] shrink-0 2xl:w-[34rem]">
+                                {dayPanel("docked")}
+                            </aside>
                         )}
-                        renderRowMenu={(database) => (
-                            <BackupContextMenu
-                                tile={<DestinationTile destination={{ adapterId: serversById.get(database.serverId)?.adapterId ?? "" }} />}
-                                title={database.name}
-                                note={database.kind === "instance" ? engineOf(serversById.get(database.serverId)) : `${serversById.get(database.serverId)?.name ?? ""} · ${engineOf(serversById.get(database.serverId))}`}
-                                groups={groupsFor(database)}
-                                bulk={null}
-                            />
-                        )}
-                        aboveRows={shownView === "timeline"
-                            ? (rows) => (
-                                <DatabasesTimeline databases={rows.map((row) => row.original)} servers={data.servers} jobs={data.jobs} />
-                            )
-                            : undefined}
-                        hideRows={shownView === "timeline"}
-                    />
+                    </div>
+                    {dayPanel && !docked && (
+                        <Sheet open onOpenChange={(next) => !next && setPick(null)}>
+                            <SheetContent side="right" showCloseButton={false} aria-describedby={undefined} className="w-full gap-0 p-0 sm:max-w-xl">
+                                <SheetTitle className="sr-only">Backups of the day</SheetTitle>
+                                {dayPanel("sheet")}
+                            </SheetContent>
+                        </Sheet>
+                    )}
 
                 </>
             )}

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ago, posted, serve } from "./database-fixtures";
+import { posted, serve } from "./database-fixtures";
 
 let search = new URLSearchParams();
 const replace = vi.fn((url: string) => {
@@ -24,7 +24,7 @@ Element.prototype.scrollIntoView = vi.fn();
 
 const page = (address: string) => {
     search = new URLSearchParams(address);
-    return render(<DatabasePage canBrowse canOpenBackups canViewHistory />);
+    return render(<DatabasePage canBrowse canOpenBackups />);
 };
 
 describe("the page of a database", () => {
@@ -43,7 +43,7 @@ describe("the page of a database", () => {
         await user.click(await screen.findByRole("button", { name: /orders/ }));
         expect(replace).toHaveBeenLastCalledWith("/dashboard/explorer/database?server=s1&database=shop&table=orders", { scroll: false });
 
-        view.rerender(<DatabasePage canBrowse canOpenBackups canViewHistory />);
+        view.rerender(<DatabasePage canBrowse canOpenBackups />);
         expect(await screen.findByText("paid")).toBeInTheDocument();
         expect(posted("/api/adapters/database-table-data")[0]).toMatchObject({ sourceId: "s1", database: "shop", table: "orders", page: 1, pageSize: 50 });
 
@@ -108,21 +108,6 @@ describe("the page of a database", () => {
         expect(screen.getByRole("option", { name: /Cache/ })).toHaveTextContent("Redis 7.2.5 · 184.3K keys");
         await user.click(screen.getByRole("option", { name: /erp/ }));
         expect(push).toHaveBeenLastCalledWith("/dashboard/explorer/database?server=s2&database=erp");
-    });
-
-    it("shows the runs of a day picked on the timeline, every run of a Redis server among them", async () => {
-        const yesterday = ago(24);
-        serve({
-            runs: {
-                runs: [{ id: "r9", jobId: "cache-daily", serverId: "s3", status: "Success", startedAt: yesterday, size: 12_000_000, databases: ["0", "3"], destinations: [{ name: "NAS", adapterId: "local-filesystem", ok: true }] }],
-                versionChanges: [],
-                planned: [],
-            },
-        });
-        page(`server=s3&day=${yesterday.slice(0, 10)}`);
-
-        expect(await screen.findByText("Runs with Cache")).toBeInTheDocument();
-        expect(await screen.findByText("NAS")).toBeInTheDocument();
     });
 
     it("says so when the database is no longer listed", async () => {

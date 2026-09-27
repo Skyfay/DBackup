@@ -157,11 +157,30 @@ describe("the page model of the Database Explorer", () => {
 
         const result = await new DatabaseExplorerService().getRuns(new Date("2026-09-20T00:00:00Z"), new Date("2026-09-29T00:00:00Z"), new Date("2026-09-27T10:00:00Z"));
 
+        // Both runs held shop, so the list of names goes out once.
         expect(result.runs).toEqual([
-            expect.objectContaining({ id: "r1", databases: ["shop"], destinations: [{ name: "NAS", adapterId: "sftp", ok: true }] }),
-            expect.objectContaining({ id: "r2", status: "Failed", databases: ["shop"] }),
+            expect.objectContaining({ id: "r1", databases: 0, destinations: [{ name: "NAS", adapterId: "sftp", ok: true }], error: null }),
+            expect.objectContaining({ id: "r2", status: "Failed", databases: 0 }),
         ]);
+        expect(result.names).toEqual([["shop"]]);
         expect(result.versionChanges).toEqual([expect.objectContaining({ serverId: "s1", newVersion: "16.2", downgrade: true })]);
         expect(result.planned.map((entry) => entry.at)).toEqual(["2026-09-28T03:00:00.000Z"]);
+    });
+
+    it("hands the panel of a day the last error of each failed run, read only for those", async () => {
+        mocks.prisma.execution.findMany.mockImplementation(async ({ select }: { select: Record<string, boolean> }) => (select.logs
+            ? [{ id: "r2", logs: JSON.stringify([{ level: "info", message: "Dumping shop" }, { level: "error", message: "pg_dump: timeout expired" }]) }]
+            : [
+                { id: "r1", jobId: "nightly", status: "Success", startedAt: new Date("2026-09-26T03:00:00Z"), endedAt: null, size: BigInt(104), path: "Shop/a.tar", metadata: JSON.stringify({ names: ["shop"] }) },
+                { id: "r2", jobId: "nightly", status: "Failed", startedAt: new Date("2026-09-27T03:00:00Z"), endedAt: null, size: null, path: null, metadata: null },
+            ]));
+        mocks.prisma.dbVersionHistory.findMany.mockResolvedValue([]);
+        mocks.prisma.databaseListCache.findMany.mockResolvedValue([]);
+
+        const result = await new DatabaseExplorerService().getRuns(new Date("2026-09-20T00:00:00Z"), new Date("2026-09-27T12:00:00Z"), new Date("2026-09-27T12:00:00Z"), { withErrors: true });
+
+        expect(result.runs.find((entry) => entry.id === "r2")?.error).toBe("pg_dump: timeout expired");
+        expect(result.runs.find((entry) => entry.id === "r1")).toMatchObject({ path: "Shop/a.tar", error: null });
+        expect(mocks.prisma.execution.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: { in: ["r2"] } } }));
     });
 });

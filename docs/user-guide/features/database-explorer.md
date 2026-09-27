@@ -14,6 +14,8 @@ A Redis or Valkey server is one entry with the keys of all its numbered database
 
 The numbers above the list count the databases, their size, their tables, how many are in a job and how much data no job backs up. The keys of Redis and Valkey do not count as tables.
 
+The filters for the server, the engine, the job and the state count what the other filters leave. A value without a database under them moves to the end of its list and cannot be picked, so with PostgreSQL picked as the engine only the PostgreSQL servers are left to pick.
+
 ## Where the Data Comes From
 
 The list does not ask a server when the page opens. DBackup reads the databases of every server with their sizes once an hour, in the same run that checks the version (the **Update Database Versions** system task). The button in the top right says how old the lists are, and its **Read now** reads every server at once.
@@ -90,7 +92,7 @@ The **Servers** tab lists every database server with:
 - The size of its databases, and its kept backups with the time of the last one
 - Its status with the response time of its last health check
 
-A phone shows the servers as cards. The numbers above the list count the servers, their databases, the new versions of the last 30 days, the servers behind and the ones online. The quick filters keep the servers **Behind** or **Not all backed up**, and the **Engine** filter keeps one kind of database.
+A phone shows the servers as cards. The numbers above the list count the servers, their databases, the new versions of the last 30 days, the servers behind and the ones online. The quick filters keep the servers **Behind** or **Not all backed up**, and the **Engine** filter keeps one kind of database. It counts the servers the quick filter leaves.
 
 A server is **behind** when a kept backup of another server with the same engine has a newer version than the one it runs. A backup restores only onto the same version or a newer one, so those backups would not restore onto it. The line under its version names the server and the version it is behind.
 

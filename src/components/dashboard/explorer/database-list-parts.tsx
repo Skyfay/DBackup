@@ -12,7 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { formatBytes } from "@/lib/utils";
 import type { DatabaseOverview, ExplorerDatabase, ExplorerDbJob, ExplorerServer } from "@/services/databases/database-explorer-types";
 import { JobsCell, engineOf, holdsOf, subOf } from "./database-columns";
-import { statesOf, type DatabaseState } from "./database-model";
+import type { DatabaseState } from "./database-model";
 
 const STATES: { value: DatabaseState; label: string; dot?: string; needsJobs: boolean }[] = [
     { value: "no-job", label: "In no job", dot: "bg-warning", needsJobs: true },
@@ -21,33 +21,34 @@ const STATES: { value: DatabaseState; label: string; dot?: string; needsJobs: bo
     { value: "unread", label: "Its server was not read", dot: "bg-warning", needsJobs: false },
 ];
 
-/** The filters of the list: the server, the engine, the job and the state of each database. */
+/**
+ * The filters of the list: the server, the engine, the job and the state of each database. The
+ * numbers beside the values come from the table, so each filter counts what the others leave and
+ * sets the values without a database apart at its end.
+ */
 export function databaseFilters(overview: DatabaseOverview): DataTableFilterableColumn<ExplorerDatabase>[] {
-    const { databases, servers, jobs, coverage } = overview;
-    const serversById = new Map(servers.map((server) => [server.id, server]));
-    const note = "The numbers count the databases";
+    const { servers, jobs, coverage } = overview;
+    const shared = { note: "The numbers count the databases", unavailableLabel: "No databases with the other filters" };
     const engines = [...new Set(servers.map((server) => server.adapterId))];
     const filters: DataTableFilterableColumn<ExplorerDatabase>[] = [
         {
             id: "server",
             title: "Server",
-            note,
+            ...shared,
             options: servers.map((server) => ({
                 value: server.id,
                 label: server.name,
                 lead: <AdapterIcon adapterId={server.adapterId} className="size-4 shrink-0" />,
-                count: databases.filter((database) => database.serverId === server.id).length,
             })),
         },
         {
             id: "engine",
             title: "Engine",
-            note,
+            ...shared,
             options: engines.map((adapterId) => ({
                 value: adapterId,
                 label: kindNames.get(adapterId) ?? adapterId,
                 lead: <AdapterIcon adapterId={adapterId} className="size-4 shrink-0" />,
-                count: databases.filter((database) => serversById.get(database.serverId)?.adapterId === adapterId).length,
             })),
         },
     ];
@@ -55,22 +56,21 @@ export function databaseFilters(overview: DatabaseOverview): DataTableFilterable
         filters.push({
             id: "job",
             title: "Job",
-            note,
+            ...shared,
             options: [
-                ...jobs.filter((job) => job.enabled).map((job) => ({ value: job.id, label: job.name, count: databases.filter((database) => database.jobIds.includes(job.id)).length })),
-                { value: "none", label: "In no job", count: databases.filter((database) => database.jobIds.length === 0).length },
+                ...jobs.filter((job) => job.enabled).map((job) => ({ value: job.id, label: job.name })),
+                { value: "none", label: "In no job" },
             ],
         });
     }
     filters.push({
         id: "state",
         title: "State",
-        note,
+        ...shared,
         options: STATES.filter((state) => coverage || !state.needsJobs).map((state) => ({
             value: state.value,
             label: state.label,
             lead: state.dot ? <span className="flex size-4 shrink-0 items-center justify-center"><span className={`size-2 rounded-full ${state.dot}`} /></span> : undefined,
-            count: databases.filter((database) => statesOf(database, serversById.get(database.serverId), coverage).includes(state.value)).length,
         })),
     });
     return filters;

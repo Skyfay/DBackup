@@ -74,6 +74,8 @@ interface ColumnsInput {
 
 /** The columns of the list of databases, with four only for the filters. */
 export function databaseColumns({ serversById, jobsById, coverage, biggest, renderActions }: ColumnsInput): ColumnDef<ExplorerDatabase>[] {
+    const jobsOf = (database: ExplorerDatabase) => (database.jobIds.length > 0 ? database.jobIds : ["none"]);
+    const stateOf = (database: ExplorerDatabase) => statesOf(database, serversById.get(database.serverId), coverage);
     const columns: ColumnDef<ExplorerDatabase>[] = [
         {
             id: "database",
@@ -180,14 +182,17 @@ export function databaseColumns({ serversById, jobsById, coverage, biggest, rend
         // Only here for the filters.
         { id: "server", accessorFn: (database) => database.serverId, filterFn: (row, id, value: string[]) => value.includes(row.getValue(id)) },
         { id: "engine", accessorFn: (database) => serversById.get(database.serverId)?.adapterId ?? "", filterFn: (row, id, value: string[]) => value.includes(row.getValue(id)) },
+        // A database counts once for each of its jobs and states in the numbers of the filters, not as one list.
         {
             id: "job",
-            accessorFn: (database) => (database.jobIds.length > 0 ? database.jobIds : ["none"]),
+            accessorFn: jobsOf,
+            getUniqueValues: jobsOf,
             filterFn: (row, id, value: string[]) => (row.getValue(id) as string[]).some((jobId) => value.includes(jobId)),
         },
         {
             id: "state",
-            accessorFn: (database) => statesOf(database, serversById.get(database.serverId), coverage),
+            accessorFn: stateOf,
+            getUniqueValues: stateOf,
             filterFn: (row, id, value: string[]) => (row.getValue(id) as string[]).some((state) => value.includes(state)),
         },
     );

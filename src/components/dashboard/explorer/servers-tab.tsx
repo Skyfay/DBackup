@@ -71,15 +71,16 @@ export function ServersTab({ overview, canOpenBackups, cards }: ServersTabProps)
 
     const filterableColumns = useMemo<DataTableFilterableColumn<ServerRow>[]>(() => {
         const engines = [...new Set(rows.map((row) => row.server.adapterId))];
+        // The numbers come from the table, so they count what the quick filter and the search leave.
         return [{
             id: "engine",
             title: "Engine",
             note: "The numbers count the servers",
+            unavailableLabel: "No servers with the other filters",
             options: engines.map((adapterId) => ({
                 value: adapterId,
                 label: kindNames.get(adapterId) ?? adapterId,
                 lead: <AdapterIcon adapterId={adapterId} className="size-4 shrink-0" />,
-                count: rows.filter((row) => row.server.adapterId === adapterId).length,
             })),
         }];
     }, [rows]);

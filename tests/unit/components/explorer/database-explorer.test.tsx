@@ -37,6 +37,30 @@ describe("Database Explorer", () => {
         push.mockClear();
     });
 
+    it("sets the servers and jobs apart that have no database under the picked engine", async () => {
+        serve();
+        const user = userEvent.setup();
+        page();
+
+        await user.click(await screen.findByRole("button", { name: "Engine" }));
+        await user.click(screen.getByRole("option", { name: /PostgreSQL/ }));
+        await user.keyboard("{Escape}");
+
+        await user.click(screen.getByRole("button", { name: "Server" }));
+        expect(await screen.findByText("No databases with the other filters")).toBeInTheDocument();
+        expect(screen.getByRole("option", { name: /Shop cluster/ })).not.toHaveAttribute("aria-disabled", "true");
+        expect(screen.getByRole("option", { name: /ERP/ })).toHaveAttribute("aria-disabled", "true");
+        expect(screen.getByRole("option", { name: /Cache/ })).toHaveAttribute("aria-disabled", "true");
+        await user.keyboard("{Escape}");
+
+        // Each job of a database counts on its own.
+        await user.click(screen.getByRole("button", { name: "Job" }));
+        expect(await screen.findByRole("option", { name: /Shop nightly/ })).not.toHaveAttribute("aria-disabled", "true");
+        expect(screen.getByRole("option", { name: /In no job/ })).not.toHaveAttribute("aria-disabled", "true");
+        expect(screen.getByRole("option", { name: /ERP nightly/ })).toHaveAttribute("aria-disabled", "true");
+        expect(screen.getByRole("option", { name: /Cache daily/ })).toHaveAttribute("aria-disabled", "true");
+    });
+
     it("shows the databases as cards on a phone, each opening its page", async () => {
         serve();
         await onPhone(async () => {

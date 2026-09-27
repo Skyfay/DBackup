@@ -20,6 +20,9 @@ vi.mock("@/app/actions/auth/table-preferences", () => ({ saveViewLayout: vi.fn()
 
 import { DatabaseExplorer } from "@/components/dashboard/explorer/database-explorer";
 
+// cmdk scrolls the highlighted row into view, which jsdom does not implement.
+Element.prototype.scrollIntoView = vi.fn();
+
 // The columns change once the servers call answers, so a row is looked up by what only that call brings.
 const rowOf = (element: HTMLElement) => element.closest("tr")!;
 
@@ -69,6 +72,18 @@ describe("the Servers tab", () => {
         await user.click(screen.getByRole("button", { name: /Behind/ }));
         expect(screen.queryByRole("link", { name: "Shop cluster" })).not.toBeInTheDocument();
         expect(screen.getByRole("link", { name: "ERP" })).toBeInTheDocument();
+    });
+
+    it("sets the engines apart that have no server under the quick filter", async () => {
+        const user = userEvent.setup();
+        render(explorer());
+
+        await user.click(await screen.findByRole("button", { name: /Behind/ }));
+        await user.click(screen.getByRole("button", { name: "Engine" }));
+
+        expect(await screen.findByText("No servers with the other filters")).toBeInTheDocument();
+        expect(screen.getByRole("option", { name: /Microsoft SQL Server/ })).not.toHaveAttribute("aria-disabled", "true");
+        expect(screen.getByRole("option", { name: /PostgreSQL/ })).toHaveAttribute("aria-disabled", "true");
     });
 
     it("shows the servers as cards on a phone, each opening its page", async () => {

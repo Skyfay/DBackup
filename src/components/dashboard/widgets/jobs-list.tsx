@@ -10,6 +10,7 @@ import { ExecutionStatusBadge } from "./execution-status";
 import { RUN_SLOTS, RunBars } from "./run-bars";
 import { RelativeTime } from "./relative-time";
 import { useRunJob } from "./use-run-job";
+import { runHref } from "@/components/dashboard/history/run-links";
 
 interface JobsListProps {
     rows: DashboardJobRow[];
@@ -46,13 +47,13 @@ function LastRun({ run }: { run: RunSummary | null }) {
 
 /** Where a click on the row goes: the job's latest run, or the job list for a job that never ran. */
 function rowHref(row: DashboardJobRow, canViewHistory: boolean, canViewJobs: boolean): string | null {
-    if (row.lastRun && canViewHistory) return `/dashboard/history?executionId=${row.lastRun.id}`;
+    if (row.lastRun && canViewHistory) return runHref(row.lastRun.id, "overview");
     return canViewJobs ? "/dashboard/jobs" : null;
 }
 
 /** Jobs with their state, recent runs and next run, live runs first. */
 export function JobsList({ rows, canViewHistory, canViewJobs, canExecute }: JobsListProps) {
-    const { runJob, startingJobId } = useRunJob();
+    const { runJob, startingJobId } = useRunJob("overview");
 
     if (rows.length === 0) {
         return <p className="px-4 py-10 text-center text-sm text-muted-foreground md:px-5">No jobs configured yet.</p>;

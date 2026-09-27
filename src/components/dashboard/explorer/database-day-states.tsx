@@ -10,6 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn, formatBytes } from "@/lib/utils";
 import type { DatabaseRun } from "@/services/databases/database-explorer-types";
 import type { DayEntry } from "./database-day-model";
+import { runHref } from "@/components/dashboard/history/run-links";
 
 /**
  * What the panel of a day shows for a run without a backup to open: one that failed, one still
@@ -34,7 +35,7 @@ interface StateProps {
 function HistoryLink({ runId }: { runId: string }) {
     return (
         <Button variant="outline" size="sm" className="mt-1" asChild>
-            <Link href={`/dashboard/history?executionId=${encodeURIComponent(runId)}`}>
+            <Link href={runHref(runId, "explorer")}>
                 <ArrowUpRight />
                 Open in History
             </Link>

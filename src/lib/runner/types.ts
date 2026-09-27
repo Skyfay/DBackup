@@ -69,6 +69,20 @@ export interface DirectorySourceContext {
     stopContainers?: boolean;
 }
 
+/** One destination of the upload step while a run is live. */
+export interface UploadState {
+    configId: string;
+    name: string;
+    adapterId: string;
+    state: "waiting" | "uploading" | "done" | "failed";
+    /** Bytes sent so far, null while the size of the archive is not known. */
+    bytes: number | null;
+    total: number | null;
+    error: string | null;
+    startedAt: string | null;
+    endedAt: string | null;
+}
+
 export interface RunnerContext {
     jobId: string;
     job?: JobWithRelations;
@@ -83,6 +97,8 @@ export interface RunnerContext {
     setStage: (stage: PipelineStage) => void;
     updateDetail: (detail: string) => void;
     updateStageProgress: (internalPercent: number) => void;
+    /** Where the upload stands at each destination, kept in the live metadata for the page of the run. */
+    setUploads?: (uploads: UploadState[]) => void;
 
     /** The optional database source. Each of its databases becomes one archive entry. */
     sourceAdapter?: DatabaseAdapter;

@@ -18,6 +18,7 @@ import { cn, formatBytes } from "@/lib/utils";
 import type { BackupCopy, ExplorerDestination, ExplorerFile } from "@/services/storage/explorer-types";
 import { checkOrder, copyRows, howText, lastCheckText, statusOf, summaryText, verifiable, type CopyRow, type CopyStatus } from "./integrity-model";
 import { useCopyVerification } from "./use-copy-verification";
+import { runHref } from "@/components/dashboard/history/run-links";
 
 const TAGS: Record<CopyStatus, { tone: TagTone; label: string; icon: "check" | "alert" | "spin" | "help" | "none" }> = {
     passed: { tone: "success", label: "Passed", icon: "check" },
@@ -147,7 +148,7 @@ export function IntegrityDialog({ open, onOpenChange, file, copies, focusDestina
                         <div className="ml-auto flex gap-2">
                             {run && canViewHistory && (
                                 <Button variant="outline" asChild>
-                                    <Link href={`/dashboard/history?executionId=${encodeURIComponent(run.executionId)}`}>
+                                    <Link href={runHref(run.executionId, "backups")}>
                                         <History />
                                         Open in History
                                     </Link>

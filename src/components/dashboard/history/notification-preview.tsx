@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useDateFormatter } from "@/hooks/use-date-formatter";
-import type { NotificationLogRow } from "./notification-log-columns";
+import type { NotificationLogRow } from "./notification-types";
 
 interface NotificationPreviewProps {
   entry: NotificationLogRow;

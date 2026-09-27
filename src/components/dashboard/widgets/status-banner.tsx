@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import type { DashboardHealth, UnhealthyJob } from "@/services/dashboard/types";
 import { RelativeTime } from "./relative-time";
 import { useRunJob } from "./use-run-job";
+import { runHref } from "@/components/dashboard/history/run-links";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Matches the number of jobs the service fills with error details. */
@@ -65,7 +66,7 @@ function JobActions({ job, canViewHistory, canExecute, runJob, startingJobId, pr
         <div className="flex shrink-0 gap-2">
             {canViewHistory && (
                 <Button asChild variant="outline" size="sm" className="flex-1 sm:flex-none">
-                    <Link href={`/dashboard/history?executionId=${job.executionId}`}>View logs</Link>
+                    <Link href={runHref(job.executionId, "overview")}>View logs</Link>
                 </Button>
             )}
             {canExecute && (
@@ -86,7 +87,7 @@ function JobActions({ job, canViewHistory, canExecute, runJob, startingJobId, pr
 
 /** The banner at the top of the dashboard: all good, or which jobs need attention and why. */
 export function StatusBanner({ health, canExecute, canViewHistory, canManageJobs }: StatusBannerProps) {
-    const { runJob, startingJobId } = useRunJob();
+    const { runJob, startingJobId } = useRunJob("overview");
     // A problem banner starts folded to two lines, the errors and actions sit behind the toggle.
     // It stays open through auto refreshes while the page is open, but every visit starts folded.
     const [expanded, setExpanded] = useState(false);

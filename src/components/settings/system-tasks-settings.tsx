@@ -13,6 +13,7 @@ import { DateDisplay } from "@/components/utils/date-display";
 import { IntegrityCheckSettingsModal, type IntegritySettings } from "@/components/settings/integrity-check-settings-modal";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useUserPreferences } from "@/hooks/use-user-preferences";
+import { runHref } from "@/components/dashboard/history/run-links";
 
 interface SystemTask {
     id: string;
@@ -149,7 +150,7 @@ export function SystemTasksSettings({ initialIntegritySettings }: SystemTasksSet
             if (res.ok) {
                 const data = await res.json();
                 if (data.executionId && autoRedirectOnJobStart) {
-                    router.push(`/dashboard/history?executionId=${data.executionId}`);
+                    router.push(runHref(data.executionId, "settings"));
                 } else {
                     toast.success("Task started in background");
                 }

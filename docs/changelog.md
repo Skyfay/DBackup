@@ -25,6 +25,8 @@ All notable changes to DBackup are documented here.
 - **explorer**: The Database Explorer lists every database of every server with the jobs that back it up, its last backup and the ones in no job, as a table or by day with the new versions of each server. A day of the timeline shows its backups in a panel beside it, where a dropdown picks the run and Restore starts with only that database ticked.
 - **explorer**: A database opens as a page of its own with its tables and their rows read live, and a Redis or Valkey server is one entry whose keys a filter finds on the server. The timeline folds a server with many databases into one row and pages its rows like a table.
 - **explorer**: The Servers tab lists every database server with its address, its version, how much of it a job backs up, its kept backups and its status, and marks a server too old for the newest backups of its engine. A server opens as a page of its own with every version it ran, how long it ran each and how many of the backups made on it are kept.
+- **history**: The History page lists backups, restores and the system tasks in one list with the numbers of the last 30 days, filtered by type, job and who started a run. Its notifications open in a side panel with what was sent and the run it was for, and a phone gets cards.
+- **history**: A run opens as a page of its own with its steps next to their usual time, every copy and notification, and its log with each problem told once in plain words and what to do about it. A live run shows the progress of every upload and follows the newest line, and every link to a run leads there with a way back to where it was opened.
 
 ### 🐛 Bug Fixes
 
@@ -115,12 +117,14 @@ All notable changes to DBackup are documented here.
 - **ui**: The Storage Explorer is called Backups now and sits under Backup in the sidebar beside Connections and Jobs. Its address is /dashboard/backups, and links to the old one still lead there.
 - **api**: The new `GET /api/databases` returns every database of every server with the jobs that back it up, `POST /api/databases/read` reads them from the servers now, and `GET /api/databases/runs` returns the runs and version changes of a time span. The new `GET /api/storage/explorer/backup?path=` returns one backup with its copies, and a restore page link takes `pick` to tick only those databases.
 - **system**: The Update Database Versions task also lists the databases of every server with their sizes, which the Database Explorer shows without asking a server.
+- **api**: The new `GET /api/history/runs` returns a page of runs with the counts beside its filters and the numbers of the last 30 days, and `GET /api/history/runs/{id}` one run with its steps, its problems and its copies. `GET /api/notification-logs` filters by `channel` and adds the numbers and the options of its filters with `stats=true`.
 - **api**: The new `GET /api/databases/servers` returns every database server with its address, response time and kept backups and the newer backup of its engine it is behind, and `GET /api/databases/servers/{id}` one server with its uptime. `GET /api/databases/servers/{id}/versions?page=&size=` returns the versions a server ran a page at a time with the backups made and kept on each.
 
 ### 🗑️ Removed
 
 - **dashboard**: The job status donut and the year picker of the backup calendar are gone. Past years stay available through `GET /api/dashboard/calendar?year=`.
 - **explorer**: The General and Version History tabs of the Database Explorer are gone. The timeline marks each new version of a server and the page of a server lists every version it ran.
+- **history**: The System Tasks tab and the log dialog of the History page are gone. The system tasks are a group of the Type filter, and a run opens as a page of its own.
 
 ### 📝 Documentation
 
@@ -145,11 +149,12 @@ All notable changes to DBackup are documented here.
 - **docs**: The Docker Volumes guide describes the volume picker with its stacks, the containers of each volume and what the job reads.
 - **docs**: The Storage Explorer guide is the Backups guide now, and its old address points to it.
 - **docs**: The Database Explorer guide describes the list of databases, its timeline, the page of a database, the Servers tab with the page of a server and what shows for a login that may only back up.
+- **docs**: A new History guide describes the list of runs, the page of a run with its problems and live state, and the notifications. The job, data retention, logging and API guides follow it.
 
 ### 🧪 Tests
 
 - **tests**: The test that generates an SSH key no longer fails at random during a full run, where the busy crypto thread pool made it slower than the default timeout.
-- **tests**: The palette color guard allows 28 colors without a dark variant, down from 37.
+- **tests**: The palette color guard allows 25 colors without a dark variant, down from 37.
 
 ### 🐳 Docker
 

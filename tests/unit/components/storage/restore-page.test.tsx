@@ -167,6 +167,6 @@ describe("Restore page", () => {
         await user.click(await screen.findByRole("button", { name: "Restore 3 databases" }));
         await user.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Restore 3 databases" }));
 
-        await waitFor(() => expect(push).toHaveBeenCalledWith("/dashboard/history?executionId=exec-1&autoOpen=true"));
+        await waitFor(() => expect(push).toHaveBeenCalledWith("/dashboard/history/run?id=exec-1&from=restore"));
     });
 });

@@ -391,7 +391,7 @@ model Execution {
 }
 ```
 
-The **Execution Logs** retention setting (`execution.logRetentionDays`, default 90 days) clears `logs` of finished runs and sets `logsPurgedAt`, while the row itself stays. `GET /api/executions/{id}` returns `logsPurgedAt` so the History dialog can explain the empty log. See `src/services/system/execution-retention.ts`.
+The **Execution Logs** retention setting (`execution.logRetentionDays`, default 90 days) clears `logs` of finished runs and sets `logsPurgedAt`, while the row itself stays. `GET /api/executions/{id}` and `GET /api/history/runs/{id}` return `logsPurgedAt` so the page of a run can explain the empty log. See `src/services/system/execution-retention.ts`.
 
 ### Retrieving Logs
 

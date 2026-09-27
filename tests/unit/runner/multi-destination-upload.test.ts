@@ -177,6 +177,23 @@ describe('Step 03 - Multi-Destination Upload', () => {
         expect(ctx.destinations[2].uploadResult?.success).toBe(true);
     });
 
+    it('should report where the upload stands at each destination for the page of the run', async () => {
+        const setUploads = vi.fn();
+        ctx.setUploads = setUploads;
+        ctx.destinations = [
+            createDestination({ configId: 'd1', configName: 'Local' }),
+            createDestination({ configId: 'd2', configName: 'Cloud', priority: 1, adapter: { upload: mockUploadFailing } as any }),
+        ];
+
+        await stepUpload(ctx);
+
+        // Both wait at first, then each one uploads and ends as done or failed.
+        expect(setUploads.mock.calls[0][0].map((upload: { state: string }) => upload.state)).toEqual(['waiting', 'waiting']);
+        const last = setUploads.mock.calls.at(-1)![0];
+        expect(last.map((upload: { name: string; state: string }) => [upload.name, upload.state])).toEqual([['Local', 'done'], ['Cloud', 'failed']]);
+        expect(last[1].error).toBeTruthy();
+    });
+
     it('should set finalRemotePath from first successful upload', async () => {
         ctx.destinations = [
             createDestination({

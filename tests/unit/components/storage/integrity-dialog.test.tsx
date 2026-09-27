@@ -92,7 +92,7 @@ describe("Integrity dialog", () => {
         expect(await within(rowOf("Hetzner Box")).findByText("Checking 30%")).toBeInTheDocument();
         expect(within(rowOf("Hetzner Box")).getByText("42 MB of 140 MB downloaded")).toBeInTheDocument();
         expect(screen.getByText("2 of 3 done")).toBeInTheDocument();
-        expect(screen.getByRole("link", { name: "Open in History" })).toHaveAttribute("href", "/dashboard/history?executionId=exec-1");
+        expect(screen.getByRole("link", { name: "Open in History" })).toHaveAttribute("href", "/dashboard/history/run?id=exec-1&from=backups");
 
         status = { ...status, status: "Success", progress: 100, copies: status.copies.map((copy) => ({ ...copy, state: "passed" })) };
         await act(async () => {

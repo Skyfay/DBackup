@@ -35,6 +35,7 @@ import { listView, type ListViewMode, type TablePreferences, type ViewMode } fro
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { cn } from "@/lib/utils";
 import type { JobListItem } from "@/services/jobs/job-list-service";
+import { runHref } from "@/components/dashboard/history/run-links";
 
 interface JobsClientProps {
     canManage: boolean;
@@ -94,7 +95,7 @@ export function JobsClient({
 }: JobsClientProps) {
     const router = useRouter();
     const { jobs, setJobs, hasLoaded, isLoading, refresh, reload } = useJobList();
-    const { runJob, startingJobId } = useRunJob();
+    const { runJob, startingJobId } = useRunJob("jobs");
     const layout = useTableLayout(JOBS_TABLE_ID, initialLayout);
     const [filter, setFilter] = useState<JobFilter>("all");
     const [view, setView] = useState<ListViewMode>(VIEWS.includes(initialView) ? listView(initialView) : "table");
@@ -171,7 +172,7 @@ export function JobsClient({
     /** What one job can do. The panel shows Run now and Edit as buttons of their own, so its menu leaves them out. */
     const handlers = useCallback((job: JobListItem, inPanel = false): JobActionHandlers => ({
         onRun: canExecute && !inPanel ? () => void run(job) : undefined,
-        onOpenLastRun: canViewHistory && job.overview.lastRun ? () => router.push(`/dashboard/history?executionId=${job.overview.lastRun!.id}`) : undefined,
+        onOpenLastRun: canViewHistory && job.overview.lastRun ? () => router.push(runHref(job.overview.lastRun!.id, "jobs")) : undefined,
         backups: canViewStorage
             ? [{ label: "Open backups", onSelect: () => router.push(`/dashboard/backups?job=${encodeURIComponent(job.id)}`) }]
             : [],

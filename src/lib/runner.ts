@@ -1,4 +1,4 @@
-import { RunnerContext } from "@/lib/runner/types";
+import { RunnerContext, type UploadState } from "@/lib/runner/types";
 import { stepInitialize } from "@/lib/runner/steps/01-initialize";
 import { stepExecuteDump } from "@/lib/runner/steps/02-dump";
 import { stepUpload } from "@/lib/runner/steps/03-upload";
@@ -104,6 +104,8 @@ export async function performExecution(executionId: string, jobId: string) {
     let currentProgress = 0;
     let currentStage = "Initializing";
     let currentDetail = "";
+    // Where the upload stands at each destination, set by the upload step.
+    let currentUploads: UploadState[] | null = null;
     const stageStartTimes = new Map<string, number>();
 
     // Declare ctx early
@@ -153,7 +155,7 @@ export async function performExecution(executionId: string, jobId: string) {
     const flusher = createLogFlusher({
         executionId,
         getLogs: () => logs,
-        getMetadata: () => ({ progress: currentProgress, stage: currentStage, detail: currentDetail }),
+        getMetadata: () => ({ progress: currentProgress, stage: currentStage, detail: currentDetail, ...(currentUploads ? { uploads: currentUploads } : {}) }),
     });
 
     const logEntry = (message: string, level: LogLevel = 'info', type: LogType = 'general', details?: string) => {
@@ -246,6 +248,10 @@ export async function performExecution(executionId: string, jobId: string) {
         setStage,
         updateDetail,
         updateStageProgress,
+        setUploads: (uploads: UploadState[]) => {
+            currentUploads = uploads;
+            flusher.schedule();
+        },
         status: "Running",
         startedAt: new Date(),
         execution: initialExe as any,

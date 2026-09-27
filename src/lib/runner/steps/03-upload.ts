@@ -1,4 +1,4 @@
-import { RunnerContext } from "../types";
+import { RunnerContext, type UploadState } from "../types";
 import path from "path";
 import { describeBackupFromMetadata } from "@/services/storage/backup-file-fields";
 import fs from "fs/promises";
@@ -224,10 +224,22 @@ export async function stepUpload(ctx: RunnerContext) {
 
     ctx.setStage(PIPELINE_STAGES.UPLOADING);
 
+    // Where the upload stands at each destination, for the page of the run while it is live.
+    const uploads: UploadState[] = ctx.destinations.map((d) => ({
+        configId: d.configId, name: d.configName, adapterId: d.adapterId, state: "waiting",
+        bytes: null, total: ctx.dumpSize ?? null, error: null, startedAt: null, endedAt: null,
+    }));
+    const reportUpload = (index: number, patch: Partial<UploadState>) => {
+        uploads[index] = { ...uploads[index], ...patch };
+        ctx.setUploads?.(uploads.map((upload) => ({ ...upload })));
+    };
+    if (uploads.length > 0) ctx.setUploads?.(uploads.map((upload) => ({ ...upload })));
+
     for (let i = 0; i < totalDests; i++) {
         const dest = ctx.destinations[i];
         const destLabel = `[${dest.configName}]`;
         const uploadStart = Date.now();
+        reportUpload(i, { state: "uploading", bytes: 0, startedAt: new Date(uploadStart).toISOString() });
         const destProgress = (percent: number) => {
             // Distribute progress across destinations
             const basePercent = (i / totalDests) * 100;
@@ -235,6 +247,7 @@ export async function stepUpload(ctx: RunnerContext) {
             const combinedPercent = Math.round(basePercent + slicePercent);
             if (ctx.dumpSize && ctx.dumpSize > 0) {
                 const uploadedBytes = Math.round((percent / 100) * ctx.dumpSize);
+                reportUpload(i, { bytes: uploadedBytes });
                 const elapsed = (Date.now() - uploadStart) / 1000;
                 const speed = elapsed > 0 ? Math.round(uploadedBytes / elapsed) : 0;
                 ctx.updateDetail(`${dest.configName} - ${formatBytes(uploadedBytes)} / ${formatBytes(ctx.dumpSize)} – ${formatBytes(speed)}/s`);
@@ -291,6 +304,7 @@ export async function stepUpload(ctx: RunnerContext) {
             }, ctx.abortSignal);
 
             dest.uploadResult = { success: true, path: remotePath };
+            reportUpload(i, { state: "done", bytes: ctx.dumpSize ?? null, endedAt: new Date().toISOString() });
             ctx.log(`${destLabel} Upload complete: ${remotePath}`);
             // Awaited rather than fired and forgotten: the previous form left the dynamic
             // import's own rejection unhandled (the .catch() only covered the inner call),
@@ -327,6 +341,7 @@ export async function stepUpload(ctx: RunnerContext) {
 
             const message = e instanceof Error ? e.message : String(e);
             dest.uploadResult = { success: false, error: message };
+            reportUpload(i, { state: "failed", error: message, endedAt: new Date().toISOString() });
             ctx.log(`${destLabel} Upload FAILED: ${message}`, 'error');
         }
     }

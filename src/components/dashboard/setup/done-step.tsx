@@ -21,7 +21,7 @@ export function DoneCard({ state, job, schedulerTimezone, canRunJob, canOpenVaul
     const titleId = useId();
     const { formatDate } = useDateFormatter();
     // Starts the job like Run now on the Overview, which opens the run when the user wants that.
-    const { runJob, startingJobId } = useRunJob();
+    const { runJob, startingJobId } = useRunJob("setup");
     const next = nextRun(job.schedule, schedulerTimezone);
 
     return (

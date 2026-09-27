@@ -1,9 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, type Mock } from 'vitest';
 import { prismaMock } from '@/lib/testing/prisma-mock';
 import {
     recordNotificationLog,
     getNotificationLogs,
     getNotificationLogById,
+    buildNotificationLogWhere,
+    getNotificationLogFacets,
+    getNotificationStats,
+    getNotificationFilterOptions,
     type NotificationLogEntry,
 } from '@/services/notifications/notification-log-service';
 
@@ -219,5 +223,49 @@ describe('getNotificationLogById()', () => {
         const result = await getNotificationLogById('missing-id');
 
         expect(result).toBeNull();
+    });
+});
+
+describe('the notifications of the History page', () => {
+    const groupBy = prismaMock.notificationLog.groupBy as unknown as Mock;
+
+    it('filters by the name a channel had when the message went out', () => {
+        expect(buildNotificationLogWhere({ channelName: ['Discord #ops', 'Telegram Manu'] })).toEqual({ channelName: { in: ['Discord #ops', 'Telegram Manu'] } });
+    });
+
+    it('counts the channels and events beside their filters, each under the other filters', async () => {
+        groupBy.mockReset();
+        groupBy
+            .mockResolvedValueOnce([{ adapterId: 'discord', _count: { _all: 2 } }])
+            .mockResolvedValueOnce([{ status: 'Failed', _count: { _all: 1 } }])
+            .mockResolvedValueOnce([{ channelName: 'Discord #ops', _count: { _all: 2 } }])
+            .mockResolvedValueOnce([{ eventType: 'backup_failure', _count: { _all: 2 } }]);
+        const facets = await getNotificationLogFacets({ channelName: 'Discord #ops' });
+        expect(facets.channelName).toEqual({ 'Discord #ops': 2 });
+        expect(facets.eventType).toEqual({ backup_failure: 2 });
+        expect(groupBy.mock.calls[2][0].where).toEqual({});
+    });
+
+    it('counts the last 30 days with the last channel that failed', async () => {
+        groupBy.mockReset();
+        groupBy
+            .mockResolvedValueOnce([{ status: 'Success', _count: { _all: 40 } }, { status: 'Failed', _count: { _all: 2 } }])
+            .mockResolvedValueOnce([{ channelName: 'Discord #ops', _count: { _all: 30 } }, { channelName: 'Telegram Manu', _count: { _all: 12 } }])
+            .mockResolvedValueOnce([{ eventType: 'backup_success', _count: { _all: 30 } }, { eventType: 'backup_failure', _count: { _all: 12 } }]);
+        prismaMock.notificationLog.findFirst.mockResolvedValue({ channelName: 'Telegram Manu', sentAt: new Date('2026-09-27T04:07:14.000Z') } as never);
+        expect(await getNotificationStats(new Date('2026-09-27T10:00:00.000Z'))).toEqual({
+            sent: 40, failed: 2, lastFailed: { channelName: 'Telegram Manu', at: '2026-09-27T04:07:14.000Z' }, channels: ['Discord #ops', 'Telegram Manu'], events: 2,
+        });
+    });
+
+    it('lists every channel and event there is for the filters', async () => {
+        groupBy.mockReset();
+        groupBy
+            .mockResolvedValueOnce([{ channelName: 'Telegram Manu', adapterId: 'telegram', _count: { _all: 1 } }, { channelName: 'Discord #ops', adapterId: 'discord', _count: { _all: 1 } }])
+            .mockResolvedValueOnce([{ eventType: 'user_login', _count: { _all: 1 } }, { eventType: 'backup_failure', _count: { _all: 1 } }]);
+        expect(await getNotificationFilterOptions()).toEqual({
+            channels: [{ name: 'Discord #ops', adapterId: 'discord' }, { name: 'Telegram Manu', adapterId: 'telegram' }],
+            events: ['backup_failure', 'user_login'],
+        });
     });
 });

@@ -153,6 +153,9 @@ describe("Task colors", () => {
         "job-status-filter.tsx",
         "job-details-content.tsx",
         "job-run-chart.tsx",
+        // A live run in History: the progress bar of its row and card, and the live parts of its page.
+        "run-cells.tsx",
+        "run-live.tsx",
     ];
 
     it("should keep the info blue to the running status", () => {
@@ -256,7 +259,7 @@ describe("Dark mode color pairing", () => {
      * Semantic tokens (bg-muted, text-muted-foreground) are already theme-aware and are the
      * preferred fix; an explicit dark: variant is the fallback.
      */
-    const BASELINE = 28;
+    const BASELINE = 25;
 
     it("should not add new palette colors without a dark: counterpart", () => {
         const PALETTE =

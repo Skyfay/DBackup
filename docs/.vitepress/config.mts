@@ -185,6 +185,7 @@ export default defineConfig({
             { text: 'Backup Modes', link: '/user-guide/features/backup-modes' },
             { text: 'Backups', link: '/user-guide/features/backups' },
             { text: 'Database Explorer', link: '/user-guide/features/database-explorer' },
+            { text: 'History', link: '/user-guide/features/history' },
             { text: 'Backup Verification', link: '/user-guide/features/backup-verification' },
             { text: 'Restore', link: '/user-guide/features/restore' },
             { text: 'Notifications', link: '/user-guide/features/notifications' },

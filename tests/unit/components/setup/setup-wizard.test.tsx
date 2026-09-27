@@ -147,7 +147,7 @@ describe("quick setup", () => {
 
         // Like Run now on the Overview, it opens the new run unless the user switched that off.
         await user.click(screen.getByRole("button", { name: "Run it now" }));
-        await waitFor(() => expect(push).toHaveBeenCalledWith("/dashboard/history?executionId=exec-1"));
+        await waitFor(() => expect(push).toHaveBeenCalledWith("/dashboard/history/run?id=exec-1&from=setup"));
         expect(posted("/api/jobs/job-1/run")).toEqual({});
     });
 

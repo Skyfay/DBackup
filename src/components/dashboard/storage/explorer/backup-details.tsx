@@ -14,6 +14,7 @@ import { backupActions, type BackupActionHandlers } from "./backup-actions";
 import { BackupRowMenu } from "./backup-menus";
 import { AnswerDot, answerOf, AnswerText, DestinationTile, IntegrityBadge, JobTile, TypeChip } from "./explorer-cells";
 import { contentsOf, count, madeAt, snapshotBytes, startedBy } from "./explorer-format";
+import { runHref } from "@/components/dashboard/history/run-links";
 
 export interface BackupDetailsData {
     /** The copy the panel is about. */
@@ -150,11 +151,18 @@ function ReadFrom({ here, alternative }: { here: ExplorerDestination; alternativ
 }
 
 /** A banner in the look of the job panel: a colored edge, an icon, a title and one line. */
-export function Banner({ tone, icon: Icon, title, children, action }: { tone: "warning" | "neutral"; icon: typeof Layers; title: string; children: React.ReactNode; action?: React.ReactNode }) {
+const BANNER_TONES = {
+    warning: { box: "border-warning/30 bg-warning/5", bar: "bg-warning", icon: "text-warning" },
+    destructive: { box: "border-destructive/30 bg-destructive/5", bar: "bg-destructive", icon: "text-destructive" },
+    neutral: { box: "bg-muted/40", bar: "bg-muted-foreground/40", icon: "text-muted-foreground" },
+} as const;
+
+export function Banner({ tone, icon: Icon, title, children, action }: { tone: keyof typeof BANNER_TONES; icon: typeof Layers; title: string; children: React.ReactNode; action?: React.ReactNode }) {
+    const colors = BANNER_TONES[tone];
     return (
-        <div className={cn("relative flex gap-3 overflow-hidden rounded-lg border p-3 pl-4", tone === "warning" ? "border-warning/30 bg-warning/5" : "bg-muted/40")}>
-            <span className={cn("absolute inset-y-0 left-0 w-1", tone === "warning" ? "bg-warning" : "bg-muted-foreground/40")} aria-hidden="true" />
-            <Icon className={cn("mt-0.5 size-4 shrink-0", tone === "warning" ? "text-warning" : "text-muted-foreground")} aria-hidden="true" />
+        <div className={cn("relative flex gap-3 overflow-hidden rounded-lg border p-3 pl-4", colors.box)}>
+            <span className={cn("absolute inset-y-0 left-0 w-1", colors.bar)} aria-hidden="true" />
+            <Icon className={cn("mt-0.5 size-4 shrink-0", colors.icon)} aria-hidden="true" />
             <div className="min-w-0 flex-1 space-y-1 text-sm">
                 <p className="font-medium">{title}</p>
                 <p className="text-muted-foreground">{children}</p>
@@ -271,7 +279,7 @@ export function BackupDetails({ data, destinations, handlersFor, onDeleteEverywh
                             icon={TriangleAlert}
                             title={`${missing.length} of ${copies.length} copies ${missing.length === 1 ? "is" : "are"} missing`}
                             action={canViewHistory && execution ? (
-                                <Link href={`/dashboard/history?executionId=${execution.id}`} className="inline-block font-medium hover:underline hover:underline-offset-4">
+                                <Link href={runHref(execution.id, "backups")} className="inline-block font-medium hover:underline hover:underline-offset-4">
                                     Open the run
                                 </Link>
                             ) : undefined}
@@ -401,7 +409,7 @@ export function BackupDetails({ data, destinations, handlersFor, onDeleteEverywh
                             <Calendar className="size-3.5" aria-hidden="true" />
                             Made by the run of <DateDisplay date={execution.startedAt} format="Pp" />
                             {canViewHistory && (
-                                <Link href={`/dashboard/history?executionId=${execution.id}`} className="font-medium text-foreground hover:underline hover:underline-offset-4">
+                                <Link href={runHref(execution.id, "backups")} className="font-medium text-foreground hover:underline hover:underline-offset-4">
                                     Open the run
                                 </Link>
                             )}

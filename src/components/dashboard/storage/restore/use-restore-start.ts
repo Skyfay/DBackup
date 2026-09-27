@@ -8,6 +8,7 @@ import type { RestoreMode } from "@/components/dashboard/storage/restore-scope";
 import type { KeyOverrideBody } from "@/hooks/use-encryption-key-recovery";
 import { useUserPreferences } from "@/hooks/use-user-preferences";
 import type { DbChoice, FolderChoice } from "./restore-model";
+import { runHref } from "@/components/dashboard/history/run-links";
 
 /** Why the server turned a start down, and whether an admin login could help. */
 export interface RestoreFailure {
@@ -79,7 +80,7 @@ export function useRestoreStart(options: Options) {
             if (res.ok && data.success) {
                 toast.success("Restore started in the background");
                 router.push(autoRedirectOnJobStart && data.executionId
-                    ? `/dashboard/history?executionId=${data.executionId}&autoOpen=true`
+                    ? runHref(data.executionId, "restore")
                     : `/dashboard/backups?at=${encodeURIComponent(destinationId)}`);
                 return;
             }

@@ -5,6 +5,7 @@ import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { useUserPreferences } from "@/hooks/use-user-preferences";
 import { logger } from "@/lib/logging/logger";
+import { runHref, type RunOrigin } from "@/components/dashboard/history/run-links";
 
 const log = logger.child({ component: "dashboard-run-job" });
 
@@ -12,7 +13,8 @@ const log = logger.child({ component: "dashboard-run-job" });
  * Starts a job from the dashboard. Follows the user's preference to jump to the new run, and
  * otherwise refreshes the page so the run shows up right away.
  */
-export function useRunJob() {
+/** Start a job, and follow its run on its page when the user wants that. `from` names where the page leads back to. */
+export function useRunJob(from: RunOrigin = "overview") {
     const router = useRouter();
     const { autoRedirectOnJobStart } = useUserPreferences();
     const [startingJobId, setStartingJobId] = useState<string | null>(null);
@@ -28,7 +30,7 @@ export function useRunJob() {
             }
             toast.success(`${jobName} started`);
             if (data.executionId && autoRedirectOnJobStart) {
-                router.push(`/dashboard/history?executionId=${data.executionId}`);
+                router.push(runHref(data.executionId, from));
             } else {
                 router.refresh();
             }
@@ -38,7 +40,7 @@ export function useRunJob() {
         } finally {
             setStartingJobId(null);
         }
-    }, [router, autoRedirectOnJobStart]);
+    }, [router, autoRedirectOnJobStart, from]);
 
     return { runJob, startingJobId };
 }

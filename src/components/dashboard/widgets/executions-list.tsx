@@ -5,6 +5,7 @@ import { cn, formatBytes, formatDuration } from "@/lib/utils";
 import type { LatestJobEntry } from "@/services/dashboard-service";
 import { ExecutionStatusBadge } from "./execution-status";
 import { RelativeTime } from "./relative-time";
+import { runHref } from "@/components/dashboard/history/run-links";
 
 interface ExecutionsListProps {
     executions: LatestJobEntry[];
@@ -73,7 +74,7 @@ export function ExecutionsList({ executions, canViewHistory }: ExecutionsListPro
                         <li key={execution.id}>
                             {canViewHistory ? (
                                 <Link
-                                    href={`/dashboard/history?executionId=${execution.id}`}
+                                    href={runHref(execution.id, "overview")}
                                     className={cn(rowClassName, "outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50")}
                                 >
                                     {cells}

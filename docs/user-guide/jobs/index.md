@@ -154,7 +154,7 @@ The button at the end of a row, a right click on the row and the details of a jo
 | Action | What it does |
 | :--- | :--- |
 | **Run now** | Starts the job right away. It also sits on the row, shown when the pointer is over it |
-| **Open the last run** | Opens the log of the newest run in History |
+| **Open the last run** | Opens the page of the newest run in [History](/user-guide/features/history), with its steps and its log |
 | **Open backups** | Opens the Backups page at the backups of the job, with every destination that holds a copy of each |
 | **Trigger by API** | Shows how to start the job from a script or a webhook |
 | **Edit** | Opens the job form |
@@ -196,10 +196,9 @@ During execution, view:
 ### Execution History
 
 After completion:
-1. Go to **History**
-2. View all past executions
-3. Check logs for details
-4. See success/failure status
+1. Go to **History**, or open the run from the job
+2. The page of a run shows its steps, its log and what to look at
+3. See [History](/user-guide/features/history) for the filters and the notifications
 
 ## Best Practices
 
@@ -257,7 +256,7 @@ switches the check off.
 
 The measure is progress, not age. A twelve-hour transfer that keeps reporting is left alone; a
 five-minute one that went quiet is not. The watchdog runs every five minutes and can be disabled
-per instance under **History** → **System Tasks**.
+per instance under **Settings** → **System Tasks**.
 
 ## Job Pipeline
 
@@ -300,8 +299,8 @@ When a job runs, it goes through these steps:
 ### Job Stuck in "Running"
 
 If a job shows running but isn't progressing:
-1. Check **History** for the execution
-2. View logs for errors
+1. Open the run in **History**
+2. Read its log and what it lists to look at
 3. The server may have restarted mid-backup
 4. Manually cancel if needed
 

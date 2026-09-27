@@ -12,6 +12,7 @@ import { useUserPreferences } from "@/hooks/use-user-preferences";
 import type { RestoreOptions } from "@/lib/types/config-backup";
 import { RestoreBar } from "./restore-frame";
 import { Notice, Section } from "./restore-parts";
+import { runHref } from "@/components/dashboard/history/run-links";
 
 const PARTS: { key: keyof RestoreOptions; title: string; description: string }[] = [
     { key: "settings", title: "System settings", description: "Time zone, system tasks, notifications and the rest of Settings" },
@@ -41,7 +42,7 @@ export function SystemRestore({ file, destinationId, onCancel }: { file: FileInf
             const res = await restoreFromStorageAction(destinationId, file.path, undefined, options);
             if (res.success && res.executionId) {
                 toast.success("The configuration is restored in the background");
-                router.push(autoRedirectOnJobStart ? `/dashboard/history?executionId=${res.executionId}&autoOpen=true` : `/dashboard/backups?at=${encodeURIComponent(destinationId)}`);
+                router.push(autoRedirectOnJobStart ? runHref(res.executionId, "backups") : `/dashboard/backups?at=${encodeURIComponent(destinationId)}`);
                 return;
             }
             toast.error(res.error || "The restore could not start");

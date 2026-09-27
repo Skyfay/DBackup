@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import type { ConnectionRole, ConnectionUsage } from "@/services/adapters/connection-details";
 import type { HealthBucket } from "@/services/adapters/connection-overview";
 import { LastRunCell, Muted } from "./connection-cells";
+import { runHref } from "@/components/dashboard/history/run-links";
 
 const BUCKETS: Record<HealthBucket, string> = {
     ok: "bg-success",
@@ -151,7 +152,7 @@ export function UsageList({ usage, counts, canViewHistory }: UsageListProps) {
                     <div className="min-w-0 flex-1">
                         {canViewHistory && job.lastRun ? (
                             <Link
-                                href={`/dashboard/history?executionId=${job.lastRun.id}`}
+                                href={runHref(job.lastRun.id, "connections")}
                                 className="block truncate text-sm font-medium hover:underline hover:underline-offset-4"
                             >
                                 {job.name}

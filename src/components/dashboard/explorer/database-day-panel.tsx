@@ -134,7 +134,7 @@ interface DatabaseDayPanelProps {
  */
 export function DatabaseDayPanel({ frame = "docked", pick, overview, access, onRun, onShow, onClose }: DatabaseDayPanelProps) {
     const format = useTimelineFormat();
-    const { runJob, startingJobId } = useRunJob();
+    const { runJob, startingJobId } = useRunJob("explorer");
     const target = useMemo(() => dayTarget(pick.key, overview), [pick.key, overview]);
     const span = panelSpan(pick.day);
     const runs = useDatabaseRuns(target ? `/api/databases/runs?from=${encodeURIComponent(span.from)}&until=${encodeURIComponent(span.until)}&errors=1` : null);

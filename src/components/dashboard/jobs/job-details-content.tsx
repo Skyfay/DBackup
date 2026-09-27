@@ -18,6 +18,7 @@ import { destinationsText, NextRun, sourceOf } from "./job-cells";
 import { retentionLabel } from "./job-retention";
 import { JobRunChart, typicalLength, useJobRuns } from "./job-run-chart";
 import { describeSchedule } from "./job-schedule";
+import { runHref } from "@/components/dashboard/history/run-links";
 
 const COMPRESSION: Record<string, string> = { NONE: "None", GZIP: "Gzip", BROTLI: "Brotli" };
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -72,7 +73,7 @@ function RunIssue({ job, canViewHistory }: { job: JobListItem; canViewHistory: b
                 <p className="font-medium">{failed ? "The last run failed" : "The last run reached only some destinations"}</p>
                 <p className="text-muted-foreground wrap-anywhere">{job.overview.error}</p>
                 {canViewHistory && lastRun && (
-                    <Link href={`/dashboard/history?executionId=${lastRun.id}`} className="inline-block font-medium hover:underline hover:underline-offset-4">
+                    <Link href={runHref(lastRun.id, "jobs")} className="inline-block font-medium hover:underline hover:underline-offset-4">
                         Open the run
                     </Link>
                 )}
@@ -88,7 +89,7 @@ function LiveRunBox({ job, canViewHistory }: { job: JobListItem; canViewHistory:
             <div className="flex items-center justify-between gap-3 text-sm">
                 <span className="font-medium">{live.status === "Pending" ? "Waiting for its turn" : `Running · ${live.stage ?? "Starting"}`}</span>
                 {canViewHistory && (
-                    <Link href={`/dashboard/history?executionId=${live.executionId}`} className="shrink-0 font-medium hover:underline hover:underline-offset-4">
+                    <Link href={runHref(live.executionId, "jobs")} className="shrink-0 font-medium hover:underline hover:underline-offset-4">
                         Open the run
                     </Link>
                 )}

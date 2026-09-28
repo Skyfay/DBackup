@@ -693,16 +693,15 @@ If the new adapter requires browser-based OAuth (e.g., Google Drive, Dropbox, On
 | 13 | `src/app/api/adapters/<name>/auth/route.ts` | OAuth authorization URL generation endpoint |
 | 14 | `src/app/api/adapters/<name>/callback/route.ts` | OAuth callback - exchange code for tokens, store refresh token encrypted |
 | 15 | `src/components/adapter/oauth-authorization.tsx` | An entry in `PROVIDERS` with the drive's name, whose sign-in page opens and the segment of its routes. An adapter whose primary credential is `OAUTH` gets the authorization box and the Location folder field on its own. |
-| 16 | `src/components/adapter/cloud-folder-field.tsx` | Render the provider's folder browser, if it has one |
+| 16 | `src/components/adapter/cloud-folder-field.tsx` | An entry in `DRIVES` with the provider's name and the body key of its browse route, if it has one. The field opens the shared `FolderPickerDialog` with it. |
 | 17 | `src/lib/crypto.ts` | Add OAuth secret fields to `SENSITIVE_KEYS` (e.g., `clientSecret`, `refreshToken`) |
-| 18 | `src/app/api/system/filesystem/<name>/route.ts` | Folder browse API (if provider supports folder selection) |
-| 19 | `src/components/adapter/<name>-folder-browser.tsx` | Folder browser dialog (if provider supports folder selection) |
+| 18 | `src/app/api/system/filesystem/<name>/route.ts` | Folder browse API (if provider supports folder selection). It answers with `data.entries` of `{ name, path }`. A drive that keeps its folder by ID, like Google Drive, also answers `trail: true` with the folders from the top down to it. |
 
 **Reference implementations**: See the Google Drive, Dropbox, and OneDrive adapters for complete examples of this pattern:
 - Storage adapters: `src/lib/adapters/storage/google-drive.ts`, `src/lib/adapters/storage/dropbox.ts`, `src/lib/adapters/storage/onedrive.ts`
 - OAuth routes: `src/app/api/adapters/google-drive/`, `src/app/api/adapters/dropbox/`, and `src/app/api/adapters/onedrive/` (each with `auth/` + `callback/`)
 - OAuth authorization: `src/components/adapter/oauth-authorization.tsx`, one component for all three providers
-- Folder browsers: `src/components/adapter/google-drive-folder-browser.tsx`, `src/components/adapter/dropbox-folder-browser.tsx`, `src/components/adapter/onedrive-folder-browser.tsx`
+- Folder browser: `src/components/adapter/cloud-folder-field.tsx`, which lists each drive through its browse API in the shared `FolderPickerDialog`
 - Folder browse APIs: `src/app/api/system/filesystem/google-drive/route.ts`, `src/app/api/system/filesystem/dropbox/route.ts`, `src/app/api/system/filesystem/onedrive/route.ts`
 
 ## Related Documentation

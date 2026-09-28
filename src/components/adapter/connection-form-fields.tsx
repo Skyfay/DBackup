@@ -27,10 +27,12 @@ interface FieldProps {
     /** Replaces the schema's description. An empty string shows none. */
     description?: string;
     sshCredentialId?: string | null;
+    /** A button beside the field that opens a browser, see SchemaField. */
+    browse?: { label: string; disabled?: boolean; onOpen: () => void };
 }
 
 /** A config field as the adapter's schema describes it, left out when the schema has no such key. */
-export function ConfigField({ adapter, fieldKey, label, description, sshCredentialId }: FieldProps) {
+export function ConfigField({ adapter, fieldKey, label, description, sshCredentialId, browse }: FieldProps) {
     const shape = adapter.configSchema.shape as Record<string, never>;
     if (!(fieldKey in shape) || credentialManagedKeys(adapter).has(fieldKey)) return null;
     return (
@@ -43,6 +45,7 @@ export function ConfigField({ adapter, fieldKey, label, description, sshCredenti
             description={description}
             descriptionBelow
             sshCredentialId={sshCredentialId}
+            browse={browse}
         />
     );
 }

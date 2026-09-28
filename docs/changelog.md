@@ -31,6 +31,7 @@ All notable changes to DBackup are documented here.
 - **vault**: A new key offers its recovery kit right away, and Import key reads a key from the files of a recovery kit. The Vault marks keys that were never in a kit and backups that name a key it does not have.
 - **templates**: The Templates page lists retention policies, file names, schedule presets, notifications and exclude patterns as tables with the jobs, destinations and folders that use each template, its default and what it does. A row opens its details in a side panel and its actions with a right click, and a phone gets cards.
 - **templates**: Editing a retention policy shows what the next run at each of its destinations removes with the change, and a new default names the destinations it reaches first. The exclude preset dialog lists what a preset skips and checks a path against it, and deleting a template names what depends on it.
+- **connections**: The folder of an S3, SFTP, FTP, WebDAV, SMB or Rsync connection can be picked in a browser of its folders, before the connection is saved. The folder button opens once the connection and its login are filled in.
 
 ### 🐛 Bug Fixes
 
@@ -67,6 +68,7 @@ All notable changes to DBackup are documented here.
 - **templates**: Someone who may only read templates no longer sees the buttons to add, change or delete them.
 - **templates**: The exclude groups of DBackup skip folders like node_modules, .git, __pycache__ or .Spotlight-V100 at any depth of a backed up folder, where they matched only at its top or, for the macOS folders, nowhere. An incremental job with such a preset starts a new full backup on its next run.
 - **Rsync**: A directory source over rsync copies exactly the files its backup lists and reports what the exclude patterns kept out, like the other adapters. Rsync read the patterns by its own rules before, skipped files in a nested folder or in a folder named like a file pattern, and the run failed on hashing a file that never arrived.
+- **Rsync**: The folder tree of an rsync directory source lists the folders of servers without GNU find, like macOS or a NAS with BusyBox, where it stayed empty.
 
 ### 🔒 Security
 
@@ -94,6 +96,7 @@ All notable changes to DBackup are documented here.
 - **connections**: The login field lists every saved login with its description and where it is in use, and puts the logins that other connections of the same kind already use first. The credentials API returns those connection types as `usedBy` with `includeCounts=true`.
 - **vault**: A new credential profile starts with a list of what can be saved and the services that use each kind, while the New button of a login field opens the form for its kind right away. Every secret field has its own button to show what was typed, and an SSH login picks how it signs in and where its key comes from on cards.
 - **connections**: The file browser of a path field starts where the field points and shows the path as clickable parts with a filter, the size and date of every entry and a badge on the files the field takes. Hidden files stay out until asked for, and every entry can be reached with the keyboard.
+- **connections**: The folder button of a Google Drive, Dropbox or OneDrive connection opens the same folder browser as the other connections. Google Drive opens it at the whole path of the folder in the field instead of only its name.
 - **setup**: The Quick Setup is one page with its parts one under the other and the backup they add up to beside them, which fills in as each part is done. Every part takes a connection or key you have or adds one with the dialogs of the Connections page, and the job picks its schedule and its databases on cards.
 - **jobs**: The form for adding and editing a job lists its parts on the left, marks the ones that are done or still miss something, and shows one part at a time. Connections, schedule presets, encryption keys and notification templates are picked from searchable lists that also make a new one.
 - **jobs**: The schedule of a job and of a schedule preset is picked as hourly, daily, weekly or monthly, with several times a day, several weekdays and the last day of the month, or as cron. It shows the next runs and warns with a free time to use when runs would wait because the queue has no slot left.
@@ -136,6 +139,7 @@ All notable changes to DBackup are documented here.
 - **vault**: Importing a key the Vault already holds is refused with the name of the key that has it.
 - **api**: The new `GET /api/vault/credentials` returns every credential profile with the connections that use it, and `GET /api/vault/keys` every encryption key with its jobs, its backups per destination and its last recovery kit.
 - **api**: The new `GET /api/templates` returns every template with the jobs, destinations and folders that use it.
+- **api**: The new `POST /api/adapters/browse-location` lists the folders of a storage connection from the values of its form, for the folder button of the connection form.
 
 ### 🗑️ Removed
 
@@ -170,6 +174,7 @@ All notable changes to DBackup are documented here.
 - **docs**: The encryption and credential profile guides describe the new Vault page, the Key ID, the recovery kit of a key and why a key in use cannot be deleted. The adapter guides find the Vault in the sidebar instead of under Settings.
 - **docs**: The template guide describes the new Templates page, what a change of a retention policy removes, the exclude presets and what happens to the jobs and folders of a deleted template.
 - **docs**: The file backup and template guides say that the exclude groups of DBackup skip their folders at any depth.
+- **docs**: The S3, SFTP, FTP, WebDAV, SMB and Rsync guides name the folder button of the Location part, and the API reference lists `POST /api/adapters/browse-location`.
 
 ### 🧪 Tests
 

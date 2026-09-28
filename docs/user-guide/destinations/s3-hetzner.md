@@ -14,7 +14,7 @@ Hetzner Object Storage requires a [Credential Profile](/user-guide/security/cred
 | **Region** | Hetzner data center region | `fsn1` | ✅ |
 | **Bucket** | Bucket name | - | ✅ |
 | **Login** | `ACCESS_KEY` credential profile (Access Key + Secret Key) | - | ✅ |
-| **Folder** | Folder path within the bucket | - | ✅ |
+| **Folder** | Folder path within the bucket. The folder button beside it browses the bucket once the connection and its login are filled in | - | ✅ |
 | **Parts at once** | Upload parts sent simultaneously ([details](/user-guide/destinations/#upload-performance-s3)) | `8` | ❌ |
 | **Max part size (MB)** | Upper bound on the size of each upload part | `8` | ❌ |
 
@@ -35,7 +35,7 @@ Hetzner Object Storage requires a [Credential Profile](/user-guide/security/cred
 3. **Create an `ACCESS_KEY` credential profile** in **Vault → Credentials** with those keys ([guide](/user-guide/security/credential-profiles))
 4. Go to **Connections** → **Backup Destinations** → **Add New** → **Hetzner Object Storage**
 5. Select your **Region**, enter the Bucket name, then pick the credential profile under **Login**
-6. Enter a **Folder** in the **Location** part (required - e.g. `backups` or `dbackup/prod`)
+6. Enter a **Folder** in the **Location** part (required - e.g. `backups` or `dbackup/prod`), or pick it with the folder button (📂)
 6. Click **Test connection** to verify the connection
 
 ::: warning Folder Required

@@ -11,7 +11,7 @@ import { DIALOG_SURFACE, DialogHead, dialogNoteClass } from "@/components/ui/con
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
-interface BrowseEntry {
+export interface BrowseEntry {
     name: string;
     /** Opaque identity for the next browse call - a path for most adapters, an ID for Google Drive. */
     path: string;
@@ -24,9 +24,13 @@ interface Crumb {
     browsePath: string;
 }
 
-type Level = { entries: BrowseEntry[]; unsupported: boolean } | { error: string };
+/** One level of folders, or why it could not be listed. */
+export type FolderLevel = { entries: BrowseEntry[]; unsupported: boolean } | { error: string };
 
-async function listLevel(configId: string, browsePath: string): Promise<Level> {
+/** Lists the folders of one level: "" for the top, then the path an entry of the level above gives. */
+export type FolderLister = (browsePath: string) => Promise<FolderLevel>;
+
+async function listLevel(configId: string, browsePath: string): Promise<FolderLevel> {
     try {
         const res = await fetch(`/api/adapters/${configId}/browse?path=${encodeURIComponent(browsePath)}`);
         const body = await res.json();
@@ -41,10 +45,19 @@ interface FolderPickerDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     /** Storage adapter config to browse. */
-    configId: string;
+    configId?: string;
+    /** Lists the folders another way, like those of a connection that is not saved yet. */
+    list?: FolderLister;
     configName: string;
+    /** The head, "Pick the folder to restore into" unless told otherwise. */
+    title?: string;
     /** The path in the field. The picker opens at the deepest folder of it that exists. */
     initialPath?: string;
+    /**
+     * The folders from the top down to where the picker opens, for a field that holds an ID the
+     * walk by the names of `initialPath` cannot follow. Opens at the top when it finds nothing.
+     */
+    locate?: () => Promise<BrowseEntry[]>;
     /**
      * This adapter has nothing below its root, so there is no folder to descend into and no
      * path to assemble - a Docker volume is picked whole or not at all.
@@ -52,13 +65,17 @@ interface FolderPickerDialogProps {
     flat?: boolean;
     /** What one item is called, singular. Wording only. */
     itemNoun?: string;
-    /** Called with the chosen folder path, relative to the adapter's root. */
-    onSelect: (path: string) => void;
+    /**
+     * Called with the chosen folder path, relative to the adapter's root, and what the browse API
+     * knows that folder by: the same path for most adapters, the folder ID for Google Drive.
+     */
+    onSelect: (path: string, browsePath: string) => void;
 }
 
 /**
- * The folder a restore goes into, on the directory source it goes to. The same browser as a path
- * field, with the folders of the source instead of the disk of the server.
+ * The folder a restore goes into, on the directory source it goes to, or the folder of a storage
+ * connection while it is added. The same browser as a path field, with the folders of the storage
+ * instead of the disk of the server.
  *
  * The returned path is the names on the way joined with "/". For path-based adapters that is
  * identical to the real relative path, for ID-based adapters (Google Drive) it is the name path,
@@ -75,7 +92,8 @@ export function FolderPickerDialog(props: FolderPickerDialogProps) {
     );
 }
 
-function FolderPickerBody({ onOpenChange, configId, configName, initialPath = "", flat = false, itemNoun = "folder", onSelect }: FolderPickerDialogProps) {
+function FolderPickerBody({ onOpenChange, configId, list, configName, title, initialPath = "", locate, flat = false, itemNoun = "folder", onSelect }: FolderPickerDialogProps) {
+    const lister: FolderLister = list ?? ((browsePath) => listLevel(configId ?? "", browsePath));
     const [stack, setStack] = useState<Crumb[]>([]);
     const [entries, setEntries] = useState<BrowseEntry[]>([]);
     const [loading, setLoading] = useState(true);
@@ -97,7 +115,7 @@ function FolderPickerBody({ onOpenChange, configId, configName, initialPath = ""
     /** Lists a level and goes there, or stays where it is and says why not. */
     const go = async (crumbs: Crumb[]) => {
         setLoading(true);
-        const level = await listLevel(configId, crumbs.at(-1)?.browsePath ?? "");
+        const level = await lister(crumbs.at(-1)?.browsePath ?? "");
         if ("error" in level) toast.error(level.error);
         else show(crumbs, level.entries);
         setLoading(false);
@@ -107,7 +125,7 @@ function FolderPickerBody({ onOpenChange, configId, configName, initialPath = ""
     // cannot open a path in one step. A target the restore creates stops the walk where it ends.
     useEffect(() => {
         const walk = async () => {
-            const root = await listLevel(configId, "");
+            const root = await lister("");
             if ("error" in root || root.unsupported) {
                 setProblem("error" in root ? root.error : `${configName} cannot list its folders. Type the path in the field instead.`);
                 setLoading(false);
@@ -116,13 +134,24 @@ function FolderPickerBody({ onOpenChange, configId, configName, initialPath = ""
             const names = initialPath.split("/").filter(Boolean);
             let crumbs: Crumb[] = [];
             let level = root.entries;
-            for (const name of flat ? [] : names) {
-                const entry = level.find((candidate) => candidate.name === name);
-                if (!entry) break;
-                const next = await listLevel(configId, entry.path);
-                if ("error" in next) break;
-                crumbs = [...crumbs, { name, browsePath: entry.path }];
-                level = next.entries;
+            if (locate) {
+                // The field holds an ID, and the adapter says where that folder is, so it opens at once.
+                const trail = await locate().catch((): BrowseEntry[] => []);
+                const deepest = trail.at(-1);
+                const next = deepest && (await lister(deepest.path));
+                if (next && !("error" in next)) {
+                    crumbs = trail.map((entry) => ({ name: entry.name, browsePath: entry.path }));
+                    level = next.entries;
+                }
+            } else {
+                for (const name of flat ? [] : names) {
+                    const entry = level.find((candidate) => candidate.name === name);
+                    if (!entry) break;
+                    const next = await lister(entry.path);
+                    if ("error" in next) break;
+                    crumbs = [...crumbs, { name, browsePath: entry.path }];
+                    level = next.entries;
+                }
             }
             show(crumbs, level);
             if (flat) setPicked(level.find((entry) => entry.path === names[0])?.path ?? null);
@@ -147,7 +176,7 @@ function FolderPickerBody({ onOpenChange, configId, configName, initialPath = ""
     const here = "/" + stack.map((crumb) => crumb.name).join("/");
     const value = !arrived ? null : flat ? picked : here;
     const use = (path: string) => {
-        onSelect(path);
+        onSelect(path, flat ? path : (stack.at(-1)?.browsePath ?? ""));
         onOpenChange(false);
     };
     const open = (path: string) => {
@@ -160,7 +189,7 @@ function FolderPickerBody({ onOpenChange, configId, configName, initialPath = ""
     return (
         <>
             <DialogHead tone="pick" icon={flat ? HardDrive : FolderOpen} className="px-5 py-4">
-                <DialogTitle className="text-base">Pick the {itemNoun} to restore into</DialogTitle>
+                <DialogTitle className="text-base">{title ?? `Pick the ${itemNoun} to restore into`}</DialogTitle>
                 <DialogDescription className={dialogNoteClass("pick")}>{flat ? `${configName} · a ${itemNoun} is restored whole` : configName}</DialogDescription>
             </DialogHead>
 

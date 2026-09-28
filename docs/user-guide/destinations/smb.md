@@ -15,7 +15,7 @@ SMB requires a [Credential Profile](/user-guide/security/credential-profiles) of
 | **Login** | `USERNAME_PASSWORD` credential profile (username + password) | - | ❌ |
 | **Domain** | Windows domain / workgroup | - | ❌ |
 | **Highest SMB version** | Highest SMB protocol version to use | `SMB3` | ❌ |
-| **Folder** | Subfolder within the share | - | ❌ |
+| **Folder** | Subfolder within the share. The folder button beside it browses the share once the connection and its login are filled in | - | ❌ |
 
 ### Protocol Versions
 
@@ -34,7 +34,7 @@ SMB requires a [Credential Profile](/user-guide/security/credential-profiles) of
 5. Enter the **Address** in UNC format: `//hostname-or-ip/sharename`
 6. Pick the credential profile under **Login** (or leave empty for anonymous access)
 7. (Optional) Set **Domain** if authenticating against a Windows domain
-8. (Optional) Set a **Folder** in the **Location** part for a subfolder within the share
+8. (Optional) Set a **Folder** in the **Location** part for a subfolder within the share, or pick it with the folder button (📂)
 9. Click **Test connection** to verify the connection
 
 ::: tip NAS Devices

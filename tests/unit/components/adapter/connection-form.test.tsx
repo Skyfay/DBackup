@@ -18,8 +18,19 @@ function adapter(id: string): AdapterDefinition {
 
 const json = (body: unknown, ok = true) => Promise.resolve({ ok, json: () => Promise.resolve(body) } as Response);
 
-const mockFetch = vi.fn((url: string, _init?: RequestInit) => {
+/** The folders of the bucket the location browser lists, by the path it asks for. */
+const BUCKET: Record<string, { name: string; path: string }[]> = {
+    "": [{ name: "backups", path: "backups" }, { name: "media", path: "media" }],
+    backups: [{ name: "prod", path: "backups/prod" }],
+    "backups/prod": [],
+};
+
+const mockFetch = vi.fn((url: string, init?: RequestInit) => {
     if (url.startsWith("/api/credentials")) return json({ success: true, data: [] });
+    if (url === "/api/adapters/browse-location") {
+        const { path } = JSON.parse(String(init?.body));
+        return json({ success: true, data: { path, entries: BUCKET[path] ?? [] } });
+    }
     if (url === "/api/adapters/test-connection") return json({ success: false, message: "Access denied for user 'backup'" });
     if (url === "/api/adapters") return json({ success: true, id: "new-id" });
     return json({ success: false, error: `Unexpected ${url}` }, false);
@@ -141,6 +152,39 @@ describe("connection form", () => {
         expect(body).toMatchObject({ type: "storage", storageRole: "DESTINATION", config: { region: "eu-central-1", bucket: "backups" } });
         // Integrity checks are on unless switched off, which the API reads as skipVerification.
         expect(body.metadata).toEqual({ healthNotificationsDisabled: false, skipVerification: false });
+    });
+
+    it("browses the folders of a server before the connection is saved and takes the picked one", async () => {
+        const user = userEvent.setup();
+        renderForm("ftp", vi.fn(), STORAGE_ROLES.DESTINATION);
+
+        // An FTP server takes an anonymous login, so where it is suffices to browse it.
+        await user.type(screen.getByLabelText("Name"), "Archive");
+        await user.type(screen.getByLabelText("Host"), "ftp.local");
+        await user.click(screen.getByRole("tab", { name: /Location/ }));
+        await user.click(screen.getByRole("button", { name: "Browse the folders" }));
+
+        const picker = await screen.findByRole("dialog", { name: "Pick the folder" });
+        expect(within(picker).getByText(/^Archive · /)).toBeInTheDocument();
+        await user.click((await within(picker).findAllByRole("button", { name: "backups" })).find((button) => button.hasAttribute("data-entry"))!);
+        await user.click((await within(picker).findAllByRole("button", { name: "prod" })).find((button) => button.hasAttribute("data-entry"))!);
+        await user.click(within(picker).getByRole("button", { name: "Use this folder" }));
+
+        // A server path is written from the top, with its leading slash.
+        expect(screen.getByLabelText("Folder")).toHaveValue("/backups/prod");
+        const [, init] = mockFetch.mock.calls.find(([url]) => url === "/api/adapters/browse-location")!;
+        expect(JSON.parse(String(init?.body))).toMatchObject({ adapterId: "ftp", config: { host: "ftp.local" }, path: "" });
+    });
+
+    it("keeps the folder browser of an SFTP server off until it has its host and login", async () => {
+        const user = userEvent.setup();
+        renderForm("sftp", vi.fn(), STORAGE_ROLES.DESTINATION);
+
+        await user.type(screen.getByLabelText("Host"), "nas.local");
+        await user.click(screen.getByRole("tab", { name: /Location/ }));
+
+        expect(screen.getByRole("button", { name: "Browse the folders" })).toBeDisabled();
+        expect(screen.getByRole("tabpanel", { name: /Location/ })).toHaveTextContent("Fill in the connection and its login to browse the folders.");
     });
 
     it("opens the message of an email channel when it has no recipient yet", async () => {

@@ -827,16 +827,18 @@ export const RsyncAdapter: StorageAdapter = {
 
             const startDir = path.posix.join(config.pathPrefix, subPath);
             const safeStartDir = shellEscapeSingleQuote(startDir);
+            // Whole paths rather than GNU find's -printf, which the BSD find of macOS lacks, and
+            // which left the list empty there. The last part of each path is the name.
             const output = await execSSH(
                 config,
-                `find '${safeStartDir}' -mindepth 1 -maxdepth 1 -type d -printf '%f\\n' 2>/dev/null`,
+                `find '${safeStartDir}' -mindepth 1 -maxdepth 1 -type d 2>/dev/null`,
                 keyFile
             );
 
             if (!output) return [];
             return output
                 .split("\n")
-                .map((name) => name.trim())
+                .map((line) => path.posix.basename(line.replace(/\r$/, "")))
                 .filter(Boolean)
                 .map((name) => ({ name, path: subPath ? `${subPath}/${name}` : name }));
         } catch (error: unknown) {

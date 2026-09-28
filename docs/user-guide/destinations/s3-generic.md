@@ -16,7 +16,7 @@ S3-Compatible Storage requires a [Credential Profile](/user-guide/security/crede
 | **Bucket** | Bucket name | - | ✅ |
 | **Login** | `ACCESS_KEY` credential profile (Access Key ID + Secret Access Key) | - | ✅ |
 | **Path-style URLs** | Use path-style URLs (`endpoint/bucket`) instead of virtual-hosted | `false` | ❌ |
-| **Folder** | Folder path within the bucket | - | ❌ |
+| **Folder** | Folder path within the bucket. The folder button beside it browses the bucket once the connection and its login are filled in | - | ❌ |
 | **Parts at once** | Upload parts sent simultaneously ([details](/user-guide/destinations/#upload-performance-s3)) | `8` | ❌ |
 | **Max part size (MB)** | Upper bound on the size of each upload part | `8` | ❌ |
 
@@ -32,7 +32,7 @@ Enable this for providers that don't support virtual-hosted-style URLs (e.g. Min
 4. Go to **Connections** → **Backup Destinations** → **Add New** → **S3-Compatible**
 5. Enter the **Endpoint** URL and Bucket, then pick the credential profile under **Login**
 6. Turn on **Path-style URLs** in the **Options** part if your provider needs it
-7. (Optional) Set a **Folder** in the **Location** part for organizing backups
+7. (Optional) Set a **Folder** in the **Location** part for organizing backups, or pick it with the folder button (📂)
 8. Click **Test connection** to verify the connection
 
 <details>

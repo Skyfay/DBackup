@@ -81,6 +81,7 @@ For the full endpoint documentation with request/response schemas, examples, and
 | Dashboard | `GET /api/dashboard/stats`, `GET /api/dashboard/calendar` | Overview statistics and calendar heatmap |
 | Adapters | `GET/POST/PUT/DELETE /api/adapters` | Sources, destinations & notifications |
 | Connection Testing | `POST /api/adapters/test-connection` | Test adapter connections |
+| Folder Browsing | `POST /api/adapters/browse-location` | List the folders of a storage connection from the values of its form |
 | Backups page | `GET/POST/DELETE /api/storage/:id/*` | Browse, download, delete, restore backups |
 | Backups across destinations | `GET /api/storage/explorer`, `GET /api/storage/explorer/runs`, `GET /api/storage/explorer/execution?path=`, `GET /api/storage/explorer/backup?path=` | Every job and destination with its backup counts, every backup with its copies at every destination, the run that made a backup, and one backup by the path its run recorded |
 | Databases | `GET /api/databases`, `POST /api/databases/read`, `GET /api/databases/runs?from=&until=[&errors=1]` | Every database of every server with the jobs that back it up, reading them from the servers now, and the runs and version changes of a time span for the Database Explorer, with the last error of each failed run on `errors=1`. A run names its databases by an index into `names`, which lists each set once |

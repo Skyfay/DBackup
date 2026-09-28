@@ -14,7 +14,7 @@ Amazon S3 requires a [Credential Profile](/user-guide/security/credential-profil
 | **Region** | AWS region (e.g. `us-east-1`, `eu-central-1`) | `us-east-1` | ✅ |
 | **Bucket** | S3 bucket name | - | ✅ |
 | **Login** | `ACCESS_KEY` credential profile (Access Key ID + Secret Access Key) | - | ✅ |
-| **Folder** | Folder path within the bucket | - | ❌ |
+| **Folder** | Folder path within the bucket. The folder button beside it browses the bucket once the connection and its login are filled in | - | ❌ |
 | **Parts at once** | Upload parts sent simultaneously ([details](/user-guide/destinations/#upload-performance-s3)) | `8` | ❌ |
 | **Max part size (MB)** | Upper bound on the size of each upload part | `8` | ❌ |
 | **Storage class** | S3 storage class for uploaded objects | `STANDARD` | ❌ |
@@ -42,7 +42,7 @@ Objects stored in `GLACIER` or `DEEP_ARCHIVE` are archived and cannot be downloa
 3. **Create an `ACCESS_KEY` credential profile** in **Vault → Credentials** with the Access Key ID and Secret Access Key ([guide](/user-guide/security/credential-profiles))
 4. Go to **Connections** → **Backup Destinations** → **Add New** → **Amazon S3**
 5. Enter your Region and Bucket, then pick the credential profile under **Login**
-6. (Optional) Set a **Folder** in the **Location** part to organize backups in a subfolder
+6. (Optional) Set a **Folder** in the **Location** part to organize backups in a subfolder, or pick it with the folder button (📂)
 7. (Optional) Select a **Storage class** for cost optimization
 8. Click **Test connection** to verify the connection
 

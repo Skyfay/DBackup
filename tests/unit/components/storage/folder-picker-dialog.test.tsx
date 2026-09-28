@@ -47,7 +47,7 @@ describe("picking the folder a restore goes into", () => {
         expect(await row("html")).toBeInTheDocument();
 
         await user.click(screen.getByRole("button", { name: "Use this folder" }));
-        expect(props.onSelect).toHaveBeenCalledWith("/srv/www");
+        expect(props.onSelect).toHaveBeenCalledWith("/srv/www", "srv/www");
     });
 
     it("goes into a folder with a click and back up with a part of the path, hidden folders left out", async () => {
@@ -79,7 +79,7 @@ describe("picking the folder a restore goes into", () => {
         await user.click(part("Backups"));
         expect(await picked("/Backups")).toBeInTheDocument();
         await user.click(screen.getByRole("button", { name: "Use this folder" }));
-        expect(props.onSelect).toHaveBeenCalledWith("/Backups");
+        expect(props.onSelect).toHaveBeenCalledWith("/Backups", "1AbC");
     });
 
     it("stays where it is when a folder cannot be opened", async () => {
@@ -118,6 +118,56 @@ describe("picking the Docker volume a restore goes into", () => {
         await user.click(await row("app_data"));
         expect(await picked("app_data")).toBeInTheDocument();
         await user.click(screen.getByRole("button", { name: "Use this volume" }));
-        expect(props.onSelect).toHaveBeenCalledWith("app_data");
+        expect(props.onSelect).toHaveBeenCalledWith("app_data", "app_data");
+    });
+});
+
+describe("picking the folder of a connection that is not saved yet", () => {
+    beforeEach(() => vi.clearAllMocks());
+
+    it("lists through the lister it is given, under its own title", async () => {
+        const user = userEvent.setup();
+        const fetchSpy = vi.fn();
+        vi.stubGlobal("fetch", fetchSpy);
+        const list = vi.fn(async (path: string) => ({ entries: NAS[path] ?? [], unsupported: false }));
+        const onSelect = vi.fn();
+
+        render(<FolderPickerDialog open onOpenChange={vi.fn()} list={list} configName="Office NAS · SFTP" title="Pick the folder" initialPath="/srv" onSelect={onSelect} />);
+
+        expect(await screen.findByRole("dialog", { name: "Pick the folder" })).toBeInTheDocument();
+        expect(await picked("/srv")).toBeInTheDocument();
+        await user.click(await row("www"));
+        await user.click(screen.getByRole("button", { name: "Use this folder" }));
+
+        expect(onSelect).toHaveBeenCalledWith("/srv/www", "srv/www");
+        expect(list).toHaveBeenCalledWith("");
+        expect(list).toHaveBeenCalledWith("srv");
+        expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it("opens at once where the adapter says a folder held by ID is, and hands back its ID", async () => {
+        const user = userEvent.setup();
+        const drive: Tree = { "": [{ name: "Backups", path: "1AbC" }], "1AbC": [{ name: "Restores", path: "9XyZ" }], "9XyZ": [] };
+        const list = vi.fn(async (path: string) => ({ entries: drive[path] ?? [], unsupported: false }));
+        const locate = vi.fn(async () => [{ name: "Backups", path: "1AbC" }, { name: "Restores", path: "9XyZ" }]);
+        const onSelect = vi.fn();
+
+        render(<FolderPickerDialog open onOpenChange={vi.fn()} list={list} locate={locate} configName="Google Drive" onSelect={onSelect} />);
+
+        expect(await picked("/Backups/Restores")).toBeInTheDocument();
+        expect(list).not.toHaveBeenCalledWith("1AbC");
+        await user.click(screen.getByRole("button", { name: "Use this folder" }));
+        expect(onSelect).toHaveBeenCalledWith("/Backups/Restores", "9XyZ");
+    });
+
+    it("opens at the top when the folder held by ID is gone", async () => {
+        const list = vi.fn(async (path: string) => (path === "" ? { entries: [{ name: "Backups", path: "1AbC" }], unsupported: false } : { error: "File not found" }));
+        const locate = vi.fn(async () => [{ name: "Old", path: "gone" }]);
+
+        render(<FolderPickerDialog open onOpenChange={vi.fn()} list={list} locate={locate} configName="Google Drive" onSelect={vi.fn()} />);
+
+        expect(await picked("/")).toBeInTheDocument();
+        expect(await row("Backups")).toBeInTheDocument();
+        expect(toast.error).not.toHaveBeenCalled();
     });
 });

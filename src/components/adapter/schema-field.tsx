@@ -48,6 +48,8 @@ interface SchemaFieldProps {
     description?: string;
     /** Shows the description under the field instead of behind an info icon. */
     descriptionBelow?: boolean;
+    /** A button beside the field that opens a browser of its own, like the folders of a storage. */
+    browse?: { label: string; disabled?: boolean; onOpen: () => void };
 }
 
 export function SchemaField({
@@ -59,6 +61,7 @@ export function SchemaField({
     label: labelOverride,
     description: descriptionOverride,
     descriptionBelow = false,
+    browse,
 }: SchemaFieldProps) {
     const { control } = useFormContext();
 
@@ -216,6 +219,11 @@ export function SchemaField({
                                         }}
                                     />
                                 </FormControl>
+                                {browse && (
+                                    <Button type="button" variant="outline" size="icon" onClick={browse.onOpen} disabled={browse.disabled} title={browse.label} aria-label={browse.label}>
+                                        <FolderOpen className="h-4 w-4" />
+                                    </Button>
+                                )}
                                 {isPathField && (
                                     <>
                                         <Button

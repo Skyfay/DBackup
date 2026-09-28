@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { google } from "googleapis";
+import { google, type drive_v3 } from "googleapis";
 import { checkPermission } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getDecryptedCredentialData } from "@/services/auth/credential-service";
@@ -9,13 +9,34 @@ import { wrapError } from "@/lib/logging/errors";
 
 const log = logger.child({ route: "system/filesystem/google-drive" });
 
+/** Deeper than any folder someone picks, so a loop in the parents cannot walk forever. */
+const MAX_TRAIL = 64;
+
+/**
+ * The folders from the top of My Drive down to `folderId`, walked up by parent. The walk ends at
+ * My Drive, or at a folder shared from another drive whose parent the account cannot read.
+ */
+async function trailOf(drive: drive_v3.Drive, folderId: string): Promise<Array<{ name: string; path: string }>> {
+    const top = (await drive.files.get({ fileId: "root", fields: "id" })).data.id;
+    const trail: Array<{ name: string; path: string }> = [];
+    let id: string | undefined = folderId;
+    while (id && id !== "root" && id !== top && trail.length < MAX_TRAIL) {
+        const folder: drive_v3.Schema$File | null = await drive.files.get({ fileId: id, fields: "id, name, parents" }).then((res) => res.data, () => null);
+        if (!folder) break;
+        trail.unshift({ name: folder.name || "Untitled", path: folder.id || id });
+        id = folder.parents?.[0];
+    }
+    return trail;
+}
+
 /**
  * POST /api/system/filesystem/google-drive
  * Browse Google Drive folders for the folder picker.
  *
  * Body: {
  *   credentialId: string, // OAUTH credential profile id
- *   folderId?: string     // Folder to list (undefined = root)
+ *   folderId?: string,    // Folder to list (undefined = root)
+ *   trail?: boolean       // Return the folders from the top down to folderId instead of listing it
  * }
  *
  * Credentials are resolved server-side from the OAUTH credential profile - they
@@ -23,6 +44,8 @@ const log = logger.child({ route: "system/filesystem/google-drive" });
  *
  * Returns the same shape as the local/remote filesystem API:
  * { success, data: { currentPath, parentPath, entries: [{ name, type, path }] } }
+ * or, with `trail`, { success, data: { trail: [{ name, path }] } }, which is where the picker
+ * opens for a connection that holds a folder.
  *
  * For Google Drive, "path" is the folder ID (not a filesystem path).
  */
@@ -31,7 +54,7 @@ export async function POST(req: NextRequest) {
         await checkPermission(PERMISSIONS.DESTINATIONS.READ);
 
         const body = await req.json();
-        const { credentialId, folderId } = body;
+        const { credentialId, folderId, trail } = body;
 
         if (!credentialId) {
             return NextResponse.json({ success: false, error: "Missing credentialId" }, { status: 400 });
@@ -53,6 +76,10 @@ export async function POST(req: NextRequest) {
         oauth2Client.setCredentials({ refresh_token: config.refreshToken });
 
         const drive = google.drive({ version: "v3", auth: oauth2Client });
+
+        if (trail === true) {
+            return NextResponse.json({ success: true, data: { trail: await trailOf(drive, typeof folderId === "string" && folderId ? folderId : "root") } });
+        }
 
         const parentId = folderId || "root";
 

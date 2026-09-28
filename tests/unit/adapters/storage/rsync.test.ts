@@ -716,6 +716,33 @@ describe("RsyncAdapter", () => {
         });
     });
 
+    // ===== browseDirectories() =====
+
+    describe("browseDirectories()", () => {
+        /** The command the listing ran over SSH, the last argument handed to ssh. */
+        const listingCommand = () => String(mockExecFileCb.mock.calls.at(-1)![1].at(-1));
+
+        it("lists the folders with a find that GNU, BSD and BusyBox all know", async () => {
+            // Whole paths come back, since -printf is GNU only: the find of macOS and BusyBox refuse it.
+            sshSucceeds("/srv/backups\n/srv/space dir\n/srv/.cache");
+
+            const entries = await RsyncAdapter.browseDirectories!({ ...agentConfig, pathPrefix: "/" }, "srv");
+
+            expect(entries).toEqual([
+                { name: "backups", path: "srv/backups" },
+                { name: "space dir", path: "srv/space dir" },
+                { name: ".cache", path: "srv/.cache" },
+            ]);
+            expect(listingCommand()).toBe("find '/srv' -mindepth 1 -maxdepth 1 -type d 2>/dev/null");
+        });
+
+        it("answers an empty folder with no entries", async () => {
+            sshSucceeds("");
+
+            expect(await RsyncAdapter.browseDirectories!(agentConfig, "")).toEqual([]);
+        });
+    });
+
     // ===== openSession() =====
 
     describe("openSession() connection reuse", () => {

@@ -5,10 +5,12 @@ import { useFormContext } from "react-hook-form";
 import { TriangleAlert } from "lucide-react";
 import type { AdapterDefinition } from "@/lib/adapters/definitions";
 import { STORAGE_ROLES, supportsStorageRole, type StorageRole } from "@/lib/core/storage-roles";
+import { locationBrowseOf } from "@/lib/adapters/location-browse";
 import { CloudFolderField } from "./cloud-folder-field";
 import { ConfigField, ConfigSwitches, HostPortFields, LoginField, NameField, isBooleanSchema } from "./connection-form-fields";
 import type { SectionId } from "./connection-form-layout";
 import { ChoiceCards, ModeChoice, type ModeOption } from "./connection-mode-choice";
+import { LocationFolderField } from "./location-folder-field";
 import { OAuthAuthorization } from "./oauth-authorization";
 import { SwitchList, SwitchRow } from "./setting-switches";
 import { SnapshotSwitch } from "./snapshot-switch";
@@ -131,6 +133,7 @@ function ConnectionPart(props: ConnectionSectionProps) {
 function LocationPart(props: ConnectionSectionProps) {
     const { adapter, storageRole } = props;
     const storageClass = useFormContext().watch("config.storageClass");
+    const browse = locationBrowseOf(adapter.id);
     const archived = storageClass === "GLACIER" || storageClass === "DEEP_ARCHIVE";
 
     return (
@@ -140,6 +143,15 @@ function LocationPart(props: ConnectionSectionProps) {
                     adapterId={adapter.id}
                     authorized={props.authorized}
                     credentialId={props.primaryCredentialId ?? undefined}
+                    description={folderNote(storageRole)}
+                />
+            ) : browse ? (
+                <LocationFolderField
+                    adapter={adapter}
+                    browse={browse}
+                    configId={props.configId}
+                    primaryCredentialId={props.primaryCredentialId}
+                    label={LABELS.pathPrefix}
                     description={folderNote(storageRole)}
                 />
             ) : (

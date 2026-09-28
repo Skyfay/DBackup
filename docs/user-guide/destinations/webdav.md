@@ -13,7 +13,7 @@ WebDAV requires a [Credential Profile](/user-guide/security/credential-profiles)
 | **Name** | Friendly name for this destination | - | ✅ |
 | **URL** | WebDAV endpoint URL | - | ✅ |
 | **Login** | `USERNAME_PASSWORD` credential profile (username + password or app password) | - | ✅ |
-| **Folder** | Subfolder path on the server | - | ❌ |
+| **Folder** | Subfolder path on the server. The folder button beside it browses the folders below the URL once the connection and its login are filled in | - | ❌ |
 
 ## Setup Guide
 
@@ -21,7 +21,7 @@ WebDAV requires a [Credential Profile](/user-guide/security/credential-profiles)
 2. Obtain the WebDAV URL from your provider (see examples below)
 3. Go to **Connections** → **Backup Destinations** → **Add New** → **WebDAV**
 4. Enter the **URL** and pick the credential profile under **Login**
-5. (Optional) Set a **Folder** in the **Location** part to organize backups in a subfolder
+5. (Optional) Set a **Folder** in the **Location** part to organize backups in a subfolder, or pick it with the folder button (📂)
 6. Click **Test connection** to verify the connection
 
 <details>

@@ -29,6 +29,8 @@ export interface ConnectionMetadata {
 /** What every part of the form gets to work with, whatever it shows. */
 export interface ConnectionSectionProps {
     adapter: AdapterDefinition;
+    /** The saved connection being edited, none while one is added. */
+    configId?: string;
     primaryCredentialId: string | null;
     onPrimaryChange: (id: string | null) => void;
     sshCredentialId: string | null;
@@ -226,6 +228,7 @@ export function useConnectionForm({ adapter, initialData, defaultRole, lockRole 
 
     const sectionProps: ConnectionSectionProps = {
         adapter,
+        configId: initialData?.id,
         primaryCredentialId,
         onPrimaryChange: setPrimaryCredentialId,
         sshCredentialId,

@@ -14,7 +14,7 @@ SFTP requires a [Credential Profile](/user-guide/security/credential-profiles) o
 | **Host** | Hostname or IP of the SFTP server | - | ✅ |
 | **Port** | SSH port | `22` | ❌ |
 | **Login** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
-| **Folder** | Remote directory for backups | - | ❌ |
+| **Folder** | Remote directory for backups. The folder button beside it browses the server from its top once the connection and its login are filled in | - | ❌ |
 
 ### Authentication Methods (via `SSH_KEY` profile)
 
@@ -38,7 +38,7 @@ Select the auth type when creating the `SSH_KEY` credential profile in the Vault
    ```
 4. Go to **Connections** → **Backup Destinations** → **Add New** → **SFTP**
 5. Enter Host and pick the credential profile under **Login**
-6. (Optional) Set a **Folder** in the **Location** part to the remote backup directory (e.g. `/home/dbackup/backups`)
+6. (Optional) Set a **Folder** in the **Location** part to the remote backup directory (e.g. `/home/dbackup/backups`), or pick it with the folder button (📂)
 7. Click **Test connection** to verify the connection
 
 ::: tip Private Key Format

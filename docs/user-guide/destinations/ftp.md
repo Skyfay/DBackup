@@ -15,7 +15,7 @@ FTP requires a [Credential Profile](/user-guide/security/credential-profiles) of
 | **Port** | FTP port | `21` | ❌ |
 | **Login** | `USERNAME_PASSWORD` credential profile (username + password) | - | ❌ |
 | **TLS** | Enable explicit FTPS (FTP over TLS) | `false` | ❌ |
-| **Folder** | Remote directory for backups | - | ❌ |
+| **Folder** | Remote directory for backups. The folder button beside it browses the server from its top once the connection and its login are filled in | - | ❌ |
 
 ## Setup Guide
 
@@ -25,7 +25,7 @@ FTP requires a [Credential Profile](/user-guide/security/credential-profiles) of
 4. Go to **Connections** → **Backup Destinations** → **Add New** → **FTP**
 5. Enter Host and pick the credential profile under **Login**
 6. Enable **TLS** if your server supports FTPS (recommended)
-7. (Optional) Set a **Folder** in the **Location** part to specify the remote directory
+7. (Optional) Set a **Folder** in the **Location** part to specify the remote directory, or pick it with the folder button (📂)
 8. Click **Test connection** to verify the connection
 
 ::: warning Security

@@ -23,7 +23,7 @@ Rsync requires a [Credential Profile](/user-guide/security/credential-profiles) 
 | **Host** | Hostname or IP of the remote server | - | ✅ |
 | **Port** | SSH port | `22` | ❌ |
 | **Login** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
-| **Folder** | Remote directory for backups | - | ✅ |
+| **Folder** | Remote directory for backups. The folder button beside it browses the server from its top once the connection and its login are filled in | - | ✅ |
 | **Options** | Additional rsync flags (e.g. `--bwlimit=1000`) | - | ❌ |
 
 ### Authentication Methods (via `SSH_KEY` profile)
@@ -46,7 +46,7 @@ Rsync requires a [Credential Profile](/user-guide/security/credential-profiles) 
    ```
 4. Go to **Connections** → **Backup Destinations** → **Add New** → **Rsync**
 5. Enter Host and pick the credential profile under **Login**
-6. Set the **Folder** in the **Location** part to the remote directory (e.g. `/backups/dbackup`)
+6. Set the **Folder** in the **Location** part to the remote directory (e.g. `/backups/dbackup`), or pick it with the folder button (📂)
 7. (Optional) Add custom **Options** for bandwidth limiting or other flags
 8. Click **Test connection** to verify the connection
 

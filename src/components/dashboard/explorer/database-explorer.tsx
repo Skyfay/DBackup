@@ -170,120 +170,123 @@ export function DatabaseExplorer({ initialView, ...access }: DatabaseExplorerPro
     const keyStores = [...new Set(data.databases.filter((database) => database.kind === "instance").map((database) => serversById.get(database.serverId)?.adapterId ?? ""))]
         .map((adapterId) => kindNames.get(adapterId) ?? adapterId);
 
+    // The day beside the timeline docks beside the whole card, tabs and numbers included, from xl up.
+    const dayBeside = tab === "databases" && !neverRead && dayPanel && docked;
+
     return (
-        <div className="space-y-4 md:space-y-6">
-            <ExplorerTabs tab={tab} databases={data.databases.length} servers={data.servers.length} onTab={setTab}>
-                <ServerFreshness servers={data.servers} onReadNow={read} />
-                {coverage && tab === "databases" && (
-                    // Hidden by CSS rather than by the measured screen, so it does not pop in after loading.
-                    <div className="hidden md:block">
-                        <ViewSwitch value={view} onChange={changeView} views={VIEWS} />
-                    </div>
-                )}
-            </ExplorerTabs>
-
-            {tab === "servers" ? (
-                <ServersTab overview={data} canOpenBackups={canOpenBackups} cards={isMobile} />
-            ) : neverRead ? (
-                <DatabasesEmpty title="The servers have not been read yet">
-                    DBackup reads the databases of every server once an hour.{" "}
-                    <Button variant="link" className="h-auto p-0" onClick={() => void read()}>Read them now</Button>
-                </DatabasesEmpty>
-            ) : (
-                <>
-                    <ExplorerStrip
-                        cells={[
-                            { label: "Databases", value: summary.databases.toLocaleString(), extra: `on ${count(summary.servers, "server")}` },
-                            {
-                                label: "Stored",
-                                value: storedValue,
-                                unit: storedUnit,
-                                extra: summary.unsized > 0 ? `${count(summary.unsized, "database")} without a size` : summary.biggest ? `${summary.biggest.name} is ${formatBytes(summary.biggest.sizeInBytes ?? 0)} of it` : undefined,
-                            },
-                            { label: "Tables", value: summary.tables.toLocaleString(), extra: keyStores.length > 0 ? `the keys of ${keyStores.join(" and ")} aside` : "as the servers list them" },
-                            coverage
-                                ? { label: "Backed up", value: summary.backedUp.toLocaleString(), unit: `of ${summary.databases.toLocaleString()}`, extra: `by ${count(data.jobs.filter((job) => job.enabled).length, "job")}` }
-                                : { label: "Servers", value: summary.servers.toLocaleString(), extra: "database connections" },
-                            coverage
-                                ? {
-                                    label: "In no job",
-                                    value: summary.noJob.toLocaleString(),
-                                    tone: summary.noJob > 0 ? "warning" : undefined,
-                                    extra: summary.noJob > 0 ? `${formatBytes(summary.noJobSize)} no job backs up` : "every database is in a job",
-                                }
-                                : { label: "Read", value: oldestRead ? <RelativeTime date={oldestRead} /> : "-", extra: "from the servers, the oldest list" },
-                        ]}
-                    />
-
-                    <div className={cn(dayPanel && docked && "flex items-start gap-4 md:gap-6")}>
-                        <div className="min-w-0 flex-1">
-                            <DataTable
-                                variant="card"
-                                columns={columns}
-                                data={data.databases}
-                                searchKey="database"
-                                searchPlaceholder="Search databases"
-                                filterableColumns={filterableColumns}
-                                initialColumnVisibility={{ server: false, engine: false, job: false, state: false }}
-                                columnFilters={filters}
-                                onColumnFiltersChange={setFilters}
-                                sorting={sorting}
-                                onSortingChange={setSorting}
-                                onRefresh={overview.reload}
-                                isLoading={overview.reloading}
-                                getRowId={(database) => database.key}
-                                onRowClick={open}
-                                view={shownView === "cards" ? "cards" : "table"}
-                                renderCard={(row) => (
-                                    <DatabaseCard
-                                        database={row.original}
-                                        server={serversById.get(row.original.serverId)}
-                                        jobsById={jobsById}
-                                        coverage={coverage}
-                                        href={databaseHref(row.original)}
-                                        actions={<BackupRowMenu name={row.original.name} groups={groupsFor(row.original)} />}
-                                    />
-                                )}
-                                renderRowMenu={(database) => (
-                                    <BackupContextMenu
-                                        tile={<DestinationTile destination={{ adapterId: serversById.get(database.serverId)?.adapterId ?? "" }} />}
-                                        title={database.name}
-                                        note={database.kind === "instance" ? engineOf(serversById.get(database.serverId)) : `${serversById.get(database.serverId)?.name ?? ""} · ${engineOf(serversById.get(database.serverId))}`}
-                                        groups={groupsFor(database)}
-                                        bulk={null}
-                                    />
-                                )}
-                                aboveRows={shownView === "timeline"
-                                    ? (rows) => (
-                                        <DatabasesTimeline
-                                            databases={rows.map((row) => row.original)}
-                                            servers={data.servers}
-                                            jobs={data.jobs}
-                                            picked={pick}
-                                            onPick={(key, day) => setPick(pick?.key === key && pick.day === day ? null : { key, day, run: null })}
-                                        />
-                                    )
-                                    : undefined}
-                                hideRows={shownView === "timeline"}
-                            />
+        <div className={cn(dayBeside && "flex items-start gap-4 md:gap-6")}>
+            <div className="min-w-0 flex-1 space-y-4 md:space-y-0">
+                <ExplorerTabs tab={tab} databases={data.databases.length} servers={data.servers.length} onTab={setTab}>
+                    <ServerFreshness servers={data.servers} onReadNow={read} />
+                    {coverage && tab === "databases" && (
+                        // Hidden by CSS rather than by the measured screen, so it does not pop in after loading.
+                        <div className="hidden md:block">
+                            <ViewSwitch value={view} onChange={changeView} views={VIEWS} />
                         </div>
-                        {dayPanel && docked && (
-                            // Stays in view while the timeline scrolls, as high as the window below the header.
-                            <aside aria-label="Backups of the day" className="sticky top-6 h-[calc(100svh-6.75rem)] w-[30rem] shrink-0 2xl:w-[34rem]">
-                                {dayPanel("docked")}
-                            </aside>
-                        )}
-                    </div>
-                    {dayPanel && !docked && (
-                        <Sheet open onOpenChange={(next) => !next && setPick(null)}>
-                            <SheetContent side="right" showCloseButton={false} aria-describedby={undefined} className="w-full gap-0 p-0 sm:max-w-xl">
-                                <SheetTitle className="sr-only">Backups of the day</SheetTitle>
-                                {dayPanel("sheet")}
-                            </SheetContent>
-                        </Sheet>
                     )}
+                </ExplorerTabs>
 
-                </>
+                {tab === "servers" ? (
+                    <ServersTab overview={data} canOpenBackups={canOpenBackups} cards={isMobile} />
+                ) : neverRead ? (
+                    <DatabasesEmpty joined title="The servers have not been read yet">
+                        DBackup reads the databases of every server once an hour.{" "}
+                        <Button variant="link" className="h-auto p-0" onClick={() => void read()}>Read them now</Button>
+                    </DatabasesEmpty>
+                ) : (
+                    <>
+                        <ExplorerStrip
+                            joined
+                            cells={[
+                                { label: "Databases", value: summary.databases.toLocaleString(), extra: `on ${count(summary.servers, "server")}` },
+                                {
+                                    label: "Stored",
+                                    value: storedValue,
+                                    unit: storedUnit,
+                                    extra: summary.unsized > 0 ? `${count(summary.unsized, "database")} without a size` : summary.biggest ? `${summary.biggest.name} is ${formatBytes(summary.biggest.sizeInBytes ?? 0)} of it` : undefined,
+                                },
+                                { label: "Tables", value: summary.tables.toLocaleString(), extra: keyStores.length > 0 ? `the keys of ${keyStores.join(" and ")} aside` : "as the servers list them" },
+                                coverage
+                                    ? { label: "Backed up", value: summary.backedUp.toLocaleString(), unit: `of ${summary.databases.toLocaleString()}`, extra: `by ${count(data.jobs.filter((job) => job.enabled).length, "job")}` }
+                                    : { label: "Servers", value: summary.servers.toLocaleString(), extra: "database connections" },
+                                coverage
+                                    ? {
+                                        label: "In no job",
+                                        value: summary.noJob.toLocaleString(),
+                                        tone: summary.noJob > 0 ? "warning" : undefined,
+                                        extra: summary.noJob > 0 ? `${formatBytes(summary.noJobSize)} no job backs up` : "every database is in a job",
+                                    }
+                                    : { label: "Read", value: oldestRead ? <RelativeTime date={oldestRead} /> : "-", extra: "from the servers, the oldest list" },
+                            ]}
+                        />
+
+                        <DataTable
+                            variant="card"
+                            joined
+                            columns={columns}
+                            data={data.databases}
+                            searchKey="database"
+                            searchPlaceholder="Search databases"
+                            filterableColumns={filterableColumns}
+                            initialColumnVisibility={{ server: false, engine: false, job: false, state: false }}
+                            columnFilters={filters}
+                            onColumnFiltersChange={setFilters}
+                            sorting={sorting}
+                            onSortingChange={setSorting}
+                            onRefresh={overview.reload}
+                            isLoading={overview.reloading}
+                            getRowId={(database) => database.key}
+                            onRowClick={open}
+                            view={shownView === "cards" ? "cards" : "table"}
+                            renderCard={(row) => (
+                                <DatabaseCard
+                                    database={row.original}
+                                    server={serversById.get(row.original.serverId)}
+                                    jobsById={jobsById}
+                                    coverage={coverage}
+                                    href={databaseHref(row.original)}
+                                    actions={<BackupRowMenu name={row.original.name} groups={groupsFor(row.original)} />}
+                                />
+                            )}
+                            renderRowMenu={(database) => (
+                                <BackupContextMenu
+                                    tile={<DestinationTile destination={{ adapterId: serversById.get(database.serverId)?.adapterId ?? "" }} />}
+                                    title={database.name}
+                                    note={database.kind === "instance" ? engineOf(serversById.get(database.serverId)) : `${serversById.get(database.serverId)?.name ?? ""} · ${engineOf(serversById.get(database.serverId))}`}
+                                    groups={groupsFor(database)}
+                                    bulk={null}
+                                />
+                            )}
+                            aboveRows={shownView === "timeline"
+                                ? (rows) => (
+                                    <DatabasesTimeline
+                                        databases={rows.map((row) => row.original)}
+                                        servers={data.servers}
+                                        jobs={data.jobs}
+                                        picked={pick}
+                                        onPick={(key, day) => setPick(pick?.key === key && pick.day === day ? null : { key, day, run: null })}
+                                    />
+                                )
+                                : undefined}
+                            hideRows={shownView === "timeline"}
+                        />
+                        {dayPanel && !docked && (
+                            <Sheet open onOpenChange={(next) => !next && setPick(null)}>
+                                <SheetContent side="right" showCloseButton={false} aria-describedby={undefined} className="w-full gap-0 p-0 sm:max-w-xl">
+                                    <SheetTitle className="sr-only">Backups of the day</SheetTitle>
+                                    {dayPanel("sheet")}
+                                </SheetContent>
+                            </Sheet>
+                        )}
+
+                    </>
+                )}
+            </div>
+            {dayBeside && (
+                // Stays in view while the timeline scrolls, as high as the window below the header.
+                <aside aria-label="Backups of the day" className="sticky top-6 h-[calc(100svh-6.75rem)] w-[30rem] shrink-0 2xl:w-[34rem]">
+                    {dayPanel("docked")}
+                </aside>
             )}
         </div>
     );

@@ -89,10 +89,11 @@ export function NotificationsTab({ cards }: { cards: boolean }) {
     const all = Object.values(statuses).reduce((sum, count) => sum + count, 0);
 
     return (
-        <div className="space-y-4 md:space-y-6">
+        <div className="space-y-4 md:space-y-0">
             <NotificationsStrip stats={page?.stats ?? null} />
             <DataTable
                 variant="card"
+                joined
                 columns={columns}
                 data={list.rows}
                 searchKey="title"

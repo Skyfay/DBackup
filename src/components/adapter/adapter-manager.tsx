@@ -12,6 +12,7 @@ import { Activity, AlertTriangle, ArrowLeftRight, FolderOpen, ListChecks } from 
 import Link from "next/link";
 import { ADAPTER_DEFINITIONS, AdapterDefinition } from "@/lib/adapters/definitions";
 import { Skeleton } from "@/components/ui/skeleton";
+import { JOIN_END } from "@/components/ui/page-head";
 import { DataTable } from "@/components/ui/data-table";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -292,11 +293,12 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
     const afterSave = () => { setIsDialogOpen(false); setSelectedAdapterForNew(null); afterChange(); };
 
     return (
-        <div className="space-y-4">
-            <CredentialUpgradeBanner configs={configs} />
+        <div className="flex flex-col gap-4 md:gap-0">
+            {/* From md up the list joins the tabs above it into one card, so the banner moves under it. */}
+            <CredentialUpgradeBanner configs={configs} className="md:order-last md:mt-6" />
 
             {!hasLoaded || !view ? (
-                <div className="space-y-3 rounded-xl border bg-card p-4 shadow-sm" aria-busy="true">
+                <div className={cn("space-y-3 rounded-xl border bg-card p-4 shadow-sm", JOIN_END)} aria-busy="true">
                     <span className="sr-only">Loading connections</span>
                     <div className="flex gap-2">
                         <Skeleton className="h-8 w-60" />
@@ -309,6 +311,7 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
             ) : (
                 <DataTable
                     variant="card"
+                    joined
                     columns={columns}
                     data={visibleConfigs}
                     searchKey="name"
@@ -471,14 +474,14 @@ function cloneCopy({ name, role }: { name: string; role?: StorageRole }) {
  * credential profiles rollout to guide users through reassigning their
  * credentials. By this point all active installs should have migrated.
  */
-function CredentialUpgradeBanner({ configs }: { configs: AdapterConfig[] }) {
+function CredentialUpgradeBanner({ configs, className }: { configs: AdapterConfig[]; className?: string }) {
     const affected = configs.filter(
         (c) => (c.lastStatus === "OFFLINE" || c.lastStatus === "DEGRADED") && c.lastError === "No credential profile assigned"
     );
     if (affected.length === 0) return null;
 
     return (
-        <Alert variant="destructive">
+        <Alert variant="destructive" className={className}>
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>Credential profiles required</AlertTitle>
             <AlertDescription>

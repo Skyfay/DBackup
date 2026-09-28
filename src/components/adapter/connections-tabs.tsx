@@ -9,7 +9,8 @@ import { AdapterManager, type AdapterManagerHandle } from "@/components/adapter/
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageHead } from "@/components/ui/page-head";
+import { TabCount, Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ViewSwitch } from "@/components/ui/view-switch";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
@@ -49,11 +50,6 @@ interface ConnectionsTabsProps {
     initialView: ViewMode;
 }
 
-function Count({ value }: { value: number | undefined }) {
-    if (value === undefined) return null;
-    return <span className="text-xs font-normal text-muted-foreground tabular-nums">{value}</span>;
-}
-
 /** One list with its name and how many connections it holds. */
 function tabLabel(tab: ConnectionTab, counts: ConnectionCounts) {
     const count = {
@@ -65,7 +61,7 @@ function tabLabel(tab: ConnectionTab, counts: ConnectionCounts) {
     return (
         <span className="flex items-center gap-2">
             {TAB_NAMES[tab]}
-            <Count value={count} />
+            {count !== undefined && <TabCount value={count} />}
         </span>
     );
 }
@@ -136,8 +132,8 @@ export function ConnectionsTabs({ permissions, counts, layouts, initialView }: C
     });
 
     return (
-        <Tabs value={active} onValueChange={onTabChange} className="w-full gap-4">
-            <div className="flex items-center gap-2 md:gap-3">
+        <Tabs value={active} onValueChange={onTabChange} className="w-full gap-4 md:gap-0">
+            <PageHead>
                 {/* A phone picks the list from a menu, four tabs never fit next to the Add button.
                     Both are hidden by CSS rather than by the measured screen, so neither pops in. */}
                 <div className="min-w-0 flex-1 md:hidden">
@@ -154,9 +150,9 @@ export function ConnectionsTabs({ permissions, counts, layouts, initialView }: C
                         </SelectContent>
                     </Select>
                 </div>
-                {/* From a tablet up they stay tabs, and scroll sideways when they outgrow the row. */}
+                {/* From a tablet up they stay tabs, head the card of the list, and scroll sideways when they outgrow it. */}
                 <ScrollArea horizontal className="hidden min-w-0 md:block">
-                    <TabsList>
+                    <TabsList variant="page">
                         {visible.map((tab) => (
                             <TabsTrigger key={tab} value={tab}>
                                 {tabLabel(tab, counts)}
@@ -176,7 +172,7 @@ export function ConnectionsTabs({ permissions, counts, layouts, initialView }: C
                         </Button>
                     )}
                 </div>
-            </div>
+            </PageHead>
 
             {canViewDatabases && (
                 <TabsContent value={CONNECTION_TABS.DATABASES}>

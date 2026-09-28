@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageHead } from "@/components/ui/page-head";
+import { TabCount, Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useIsMobileState } from "@/hooks/use-mobile";
 import { NotificationsTab } from "./notifications-tab";
 import { RunsTab, type RunsAccess } from "./runs-tab";
@@ -32,19 +33,21 @@ export function HistoryClient({ access }: { access: RunsAccess }) {
     const setTab = (next: HistoryTab) => router.replace(next === "notifications" ? "/dashboard/history?tab=notifications" : "/dashboard/history", { scroll: false });
 
     return (
-        <div className="space-y-4 md:space-y-6">
-            <Tabs value={tab} onValueChange={(value) => setTab(value as HistoryTab)}>
-                <TabsList aria-label="Show">
-                    {([["runs", "Runs", counts?.runs], ["notifications", "Notifications", counts?.notifications]] as const).map(([value, label, total]) => (
-                        <TabsTrigger key={value} value={value}>
-                            <span className="flex items-center gap-2">
-                                {label}
-                                {total !== undefined && <span className="text-xs font-normal text-muted-foreground tabular-nums">{total.toLocaleString()}</span>}
-                            </span>
-                        </TabsTrigger>
-                    ))}
-                </TabsList>
-            </Tabs>
+        <div className="space-y-4 md:space-y-0">
+            <PageHead>
+                <Tabs value={tab} onValueChange={(value) => setTab(value as HistoryTab)}>
+                    <TabsList variant="page" aria-label="Show">
+                        {([["runs", "Runs", counts?.runs], ["notifications", "Notifications", counts?.notifications]] as const).map(([value, label, total]) => (
+                            <TabsTrigger key={value} value={value}>
+                                <span className="flex items-center gap-2">
+                                    {label}
+                                    {total !== undefined && <TabCount value={total} />}
+                                </span>
+                            </TabsTrigger>
+                        ))}
+                    </TabsList>
+                </Tabs>
+            </PageHead>
             {/* Waits for the measured screen, so a phone never flashes the table before its cards. */}
             {isMobile === undefined ? null : tab === "runs" ? <RunsTab cards={isMobile} access={access} /> : <NotificationsTab cards={isMobile} />}
         </div>

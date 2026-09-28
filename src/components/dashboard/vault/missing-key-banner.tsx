@@ -12,7 +12,7 @@ import { count } from "./vault-format";
  * Backups that name a key the Vault does not have, with the way to bring the key back. Folded to
  * two lines like every banner about problems, the destinations sit behind Show details.
  */
-export function MissingKeyBanner({ model, onImport }: { model: VaultKeysModel; onImport?: () => void }) {
+export function MissingKeyBanner({ model, onImport, className }: { model: VaultKeysModel; onImport?: () => void; className?: string }) {
     const [expanded, setExpanded] = useState(false);
     const detailsId = useId();
     const { missing } = model.stats;
@@ -21,7 +21,7 @@ export function MissingKeyBanner({ model, onImport }: { model: VaultKeysModel; o
     const where = several ? count(missing.destinations.length, "destination") : missing.destinations[0].name;
 
     return (
-        <div className="relative overflow-hidden rounded-xl border border-warning/30 bg-warning/5 p-4 pl-5 shadow-sm md:pl-6">
+        <div className={cn("relative overflow-hidden rounded-xl border border-warning/30 bg-warning/5 p-4 pl-5 shadow-sm md:pl-6", className)}>
             <span className="absolute inset-y-0 left-0 w-1 bg-warning" aria-hidden="true" />
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
                 <div className="flex min-w-0 flex-1 items-start gap-3">

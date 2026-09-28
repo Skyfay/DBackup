@@ -97,10 +97,11 @@ export function RunsTab({ cards, access }: { cards: boolean; access: RunsAccess 
         : QUICK_STATUSES[value].reduce((sum, key) => sum + (status[key] ?? 0), 0);
 
     return (
-        <div className="space-y-4 md:space-y-6">
+        <div className="space-y-4 md:space-y-0">
             <RunsStrip stats={page?.stats ?? null} />
             <DataTable
                 variant="card"
+                joined
                 columns={columns}
                 data={list.rows}
                 searchKey="run"

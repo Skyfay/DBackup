@@ -87,8 +87,9 @@ export function ServersTab({ overview, canOpenBackups, cards }: ServersTabProps)
 
     const behind = summary.behind[0];
     return (
-        <div className="space-y-4 md:space-y-6">
+        <div className="space-y-4 md:space-y-0">
             <ExplorerStrip
+                joined
                 cells={[
                     { label: "Servers", value: summary.servers.toLocaleString(), extra: `on ${count(summary.engines, "engine")}` },
                     { label: "Databases", value: summary.databases.toLocaleString(), extra: coverage ? `${summary.covered.toLocaleString()} in a job` : "as the servers list them" },
@@ -113,6 +114,7 @@ export function ServersTab({ overview, canOpenBackups, cards }: ServersTabProps)
 
             <DataTable
                 variant="card"
+                joined
                 columns={columns}
                 data={shown}
                 searchKey="server"

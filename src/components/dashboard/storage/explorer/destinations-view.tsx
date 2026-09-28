@@ -173,8 +173,9 @@ export function DestinationsView(props: DestinationsViewProps) {
     const [storedValue, storedUnit] = formatBytes(summary.size, 1).split(" ");
 
     return (
-        <div className="space-y-4 md:space-y-6">
+        <div className="space-y-4 md:space-y-0">
             <ExplorerStrip
+                joined
                 cells={[
                     { label: "Destinations", value: summary.destinations.toLocaleString(), extra: `${summary.answering} answer right now` },
                     { label: "Stored", value: storedValue, unit: storedUnit, extra: `at ${count(summary.destinations, "destination")}` },
@@ -192,6 +193,7 @@ export function DestinationsView(props: DestinationsViewProps) {
 
             <DataTable
                 variant="card"
+                joined
                 columns={columns}
                 data={destinations}
                 searchKey="destination"
@@ -240,7 +242,8 @@ export function DestinationsView(props: DestinationsViewProps) {
             {alertsOf && <DestinationAlertsDialog destination={alertsOf} open onOpenChange={(open) => !open && setAlertsOf(null)} onSaved={onChanged} />}
 
             {pickedDestination && (
-                <div ref={detailsRef} className="scroll-mt-4">
+                // Its own card under the one of the tabs and the list, which have no gap between them from md up.
+                <div ref={detailsRef} className="scroll-mt-4 md:mt-6">
                     {runs ? (
                         <DestinationDetails
                             key={pickedDestination.id}

@@ -106,7 +106,7 @@ export function NotificationTab({ ref, model, isLoading, refresh, afterChange, c
     };
 
     return (
-        <div className="space-y-4 md:space-y-6">
+        <div className="space-y-4 md:space-y-0">
             <NotificationStrip model={model} />
 
             <TemplateTable

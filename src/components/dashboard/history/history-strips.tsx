@@ -13,7 +13,7 @@ export function RunsStrip({ stats }: { stats: RunStats | null }) {
         : [stats.running[0] && `${stats.running[0]} runs`, stats.queued[0] && `${stats.queued[0]} waits`].filter(Boolean).join(", ");
     const share = stats && stats.total > 0 ? Math.round((stats.succeeded / stats.total) * 1000) / 10 : null;
     return (
-        <ExplorerStrip
+        <ExplorerStrip joined
             cells={[
                 { label: "Runs", value: stats ? stats.total.toLocaleString() : "-", extra: "in the last 30 days" },
                 { label: "Succeeded", value: share !== null ? share.toLocaleString() : "-", unit: share !== null ? "%" : undefined, extra: stats ? `${stats.succeeded.toLocaleString()} of ${stats.total.toLocaleString()}` : " " },
@@ -38,7 +38,7 @@ export function RunsStrip({ stats }: { stats: RunStats | null }) {
 /** The numbers above the notifications, over the last 30 days. */
 export function NotificationsStrip({ stats }: { stats: NotificationStats | null }) {
     return (
-        <ExplorerStrip
+        <ExplorerStrip joined
             cells={[
                 { label: "Sent", value: stats ? stats.sent.toLocaleString() : "-", extra: "in the last 30 days" },
                 {

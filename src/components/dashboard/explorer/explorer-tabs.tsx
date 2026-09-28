@@ -1,10 +1,11 @@
 "use client";
 
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageHead } from "@/components/ui/page-head";
+import { TabCount, Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export type ExplorerTab = "databases" | "servers";
 
-/** The tabs of the Database Explorer with how many each lists, and on the right what goes with them. */
+/** The tabs of the Database Explorer with how many each lists, and on the right what goes with them. From md up they head the card of the list. */
 export function ExplorerTabs({ tab, databases, servers, onTab, children }: {
     tab: ExplorerTab;
     databases: number;
@@ -13,20 +14,20 @@ export function ExplorerTabs({ tab, databases, servers, onTab, children }: {
     children?: React.ReactNode;
 }) {
     return (
-        <div className="flex flex-wrap items-center gap-2 md:gap-3">
+        <PageHead className="flex-wrap">
             <Tabs value={tab} onValueChange={(value) => onTab(value as ExplorerTab)}>
-                <TabsList aria-label="Show">
+                <TabsList variant="page" aria-label="Show">
                     {([["databases", "Databases", databases], ["servers", "Servers", servers]] as const).map(([value, label, total]) => (
                         <TabsTrigger key={value} value={value}>
                             <span className="flex items-center gap-2">
                                 {label}
-                                <span className="text-xs font-normal text-muted-foreground tabular-nums">{total.toLocaleString()}</span>
+                                <TabCount value={total} />
                             </span>
                         </TabsTrigger>
                     ))}
                 </TabsList>
             </Tabs>
             <div className="ml-auto flex shrink-0 items-center gap-2">{children}</div>
-        </div>
+        </PageHead>
     );
 }

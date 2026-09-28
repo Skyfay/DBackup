@@ -28,7 +28,7 @@ export function RetentionStrip({ model }: { model: Model }) {
     const builtIn = rows?.filter((row) => row.isSystem).length ?? 0;
     const keepAll = (rows ?? []).filter((row) => row.config.mode === "NONE").reduce((sum, row) => sum + row.uses.length, 0) + (!fallback && totals ? totals.followDefault : 0);
     return (
-        <ExplorerStrip
+        <ExplorerStrip joined
             cells={[
                 { label: "Policies", value: rows ? rows.length.toLocaleString() : "-", extra: rows ? `${builtIn} built in, ${rows.length - builtIn} of yours` : " " },
                 {
@@ -61,7 +61,7 @@ export function NamingStrip({ model }: { model: Model }) {
         return model.jobs.filter((job) => job.enabled && !job.incremental && patterns.has(job.id) && firstNameClash(patterns.get(job.id)!, job.schedule, model.timezone) !== null);
     }, [model]);
     return (
-        <ExplorerStrip
+        <ExplorerStrip joined
             cells={[
                 { label: "Templates", value: rows ? rows.length.toLocaleString() : "-", extra: rows ? `${rows.filter((row) => row.isSystem).length} built in` : " " },
                 {
@@ -98,7 +98,7 @@ export function ScheduleStrip({ model }: { model: Model }) {
     }, [model]);
     const busiest = [...(rows ?? [])].sort((a, b) => b.jobIds.length - a.jobIds.length)[0];
     return (
-        <ExplorerStrip
+        <ExplorerStrip joined
             cells={[
                 { label: "Presets", value: rows ? rows.length.toLocaleString() : "-", extra: "schedules jobs can follow" },
                 { label: "Jobs", value: model ? `${following} of ${jobs}` : "-", extra: model ? `follow a preset, ${jobs - following} their own schedule` : " " },
@@ -121,7 +121,7 @@ export function NotificationStrip({ model }: { model: Model }) {
     const channels = new Map((rows ?? []).flatMap((row) => row.channels.map((channel) => [channel.configId, channel.config.name] as const)));
     const hearing = new Set((rows ?? []).flatMap((row) => row.jobIds)).size;
     return (
-        <ExplorerStrip
+        <ExplorerStrip joined
             cells={[
                 { label: "Templates", value: rows ? rows.length.toLocaleString() : "-", extra: rows ? `over ${count(channels.size, "channel")}` : " " },
                 { label: "Default", value: rows ? (fallback?.name ?? "None") : "-", extra: fallback ? "new jobs start with it" : "new jobs start without one" },
@@ -140,7 +140,7 @@ export function ExcludeStrip({ model }: { model: Model }) {
     const patterns = new Set((rows ?? []).flatMap((row) => resolveExcludePatterns(row)));
     const groups = new Set((rows ?? []).flatMap((row) => row.groups));
     return (
-        <ExplorerStrip
+        <ExplorerStrip joined
             cells={[
                 { label: "Presets", value: rows ? rows.length.toLocaleString() : "-", extra: rows ? `${rows.filter((row) => row.isSystem).length} built in` : " " },
                 {

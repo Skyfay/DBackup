@@ -91,7 +91,7 @@ export function NamingTab({ ref, model, isLoading, refresh, afterChange, cards, 
     };
 
     return (
-        <div className="space-y-4 md:space-y-6">
+        <div className="space-y-4 md:space-y-0">
             <NamingStrip model={model} />
 
             <TemplateTable

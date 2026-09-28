@@ -8,8 +8,9 @@ import { count } from "@/components/dashboard/storage/explorer/explorer-format";
 import { DestinationTile } from "@/components/dashboard/storage/explorer/explorer-cells";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
 import type { DataTableFilterableColumn } from "@/components/ui/data-table";
+import { JOIN_END } from "@/components/ui/page-head";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatBytes } from "@/lib/utils";
+import { cn, formatBytes } from "@/lib/utils";
 import type { DatabaseOverview, ExplorerDatabase, ExplorerDbJob, ExplorerServer } from "@/services/databases/database-explorer-types";
 import { JobsCell, engineOf, holdsOf, subOf } from "./database-columns";
 import type { DatabaseState } from "./database-model";
@@ -146,9 +147,9 @@ export function DatabasesSkeleton() {
 }
 
 /** What the page shows when it has nothing to list or could not load it. */
-export function DatabasesEmpty({ title, children }: { title: string; children: React.ReactNode }) {
+export function DatabasesEmpty({ title, children, joined = false }: { title: string; children: React.ReactNode; joined?: boolean }) {
     return (
-        <div className="rounded-xl border border-dashed bg-card px-4 py-16 text-center shadow-sm">
+        <div className={cn("rounded-xl border border-dashed bg-card px-4 py-16 text-center shadow-sm", joined && `md:border-solid ${JOIN_END}`)}>
             <Database className="mx-auto mb-4 size-10 text-muted-foreground/40" aria-hidden="true" />
             <p className="font-medium">{title}</p>
             <div className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">{children}</div>

@@ -91,7 +91,7 @@ export function RetentionTab({ ref, model, isLoading, refresh, afterChange, card
     };
 
     return (
-        <div className="space-y-4 md:space-y-6">
+        <div className="space-y-4 md:space-y-0">
             <RetentionStrip model={model} />
 
             <TemplateTable

@@ -209,8 +209,9 @@ export function BackupsList({
     const newestJob = summary.newest ? jobsByKey.get(summary.newest.jobKey) : undefined;
 
     return (
-        <div className="space-y-4 md:space-y-6">
+        <div className="space-y-4 md:space-y-0">
             <ExplorerStrip
+                joined
                 cells={[
                     {
                         label: "Backups",
@@ -247,6 +248,7 @@ export function BackupsList({
 
             <DataTable
                 variant="card"
+                joined
                 columns={columns}
                 data={timeline.data}
                 searchKey="backup"

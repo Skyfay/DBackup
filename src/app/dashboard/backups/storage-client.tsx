@@ -16,7 +16,8 @@ import { useBackupDetails } from "@/components/dashboard/storage/explorer/use-ba
 import { useExplorerAddress, type ExplorerTab } from "@/components/dashboard/storage/explorer/use-explorer-address";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageHead } from "@/components/ui/page-head";
+import { TabCount, Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ViewSwitch } from "@/components/ui/view-switch";
 import { useIsMobileState } from "@/hooks/use-mobile";
 import { useTableLayout } from "@/hooks/use-table-layout";
@@ -177,8 +178,8 @@ export function StorageClient({
     }
 
     return (
-        <div className="space-y-4 md:space-y-6">
-            <div className="flex flex-wrap items-center gap-2 md:gap-3">
+        <div className="space-y-4 md:space-y-0">
+            <PageHead className="flex-wrap">
                 <Tabs
                     value={pageTab}
                     onValueChange={(next) => {
@@ -188,17 +189,17 @@ export function StorageClient({
                             : { tab: "destinations", destination: null, job: null, at: null, by: null });
                     }}
                 >
-                    <TabsList aria-label="Show">
+                    <TabsList variant="page" aria-label="Show">
                         <TabsTrigger value="backups">
                             <span className="flex items-center gap-2">
                                 Backups
-                                <span className="text-xs font-normal text-muted-foreground tabular-nums">{backupCount.toLocaleString()}</span>
+                                <TabCount value={backupCount} />
                             </span>
                         </TabsTrigger>
                         <TabsTrigger value="destinations">
                             <span className="flex items-center gap-2">
                                 Destinations
-                                <span className="text-xs font-normal text-muted-foreground tabular-nums">{destinations.length}</span>
+                                <TabCount value={destinations.length} />
                             </span>
                         </TabsTrigger>
                     </TabsList>
@@ -210,11 +211,11 @@ export function StorageClient({
                         <ViewSwitch value={views[pageTab]} onChange={changeView} views={VIEWS} />
                     </div>
                 </div>
-            </div>
+            </PageHead>
 
             {pageTab === "backups" && (
                 backups.loading || !backups.data || !shownView ? (
-                    backups.error ? <ExplorerEmpty title="The backups could not be loaded">{backups.error}</ExplorerEmpty> : <ExplorerSkeleton />
+                    backups.error ? <ExplorerEmpty joined title="The backups could not be loaded">{backups.error}</ExplorerEmpty> : <ExplorerSkeleton joined />
                 ) : (
                     <BackupsList
                         runs={backups.data.runs}
@@ -240,9 +241,9 @@ export function StorageClient({
 
             {pageTab === "destinations" && (
                 destinations.length === 0 ? (
-                    <ExplorerEmpty title="No destinations yet">Add a destination on the Connections page, then it shows here with its backups.</ExplorerEmpty>
+                    <ExplorerEmpty joined title="No destinations yet">Add a destination on the Connections page, then it shows here with its backups.</ExplorerEmpty>
                 ) : !shownView ? (
-                    <ExplorerSkeleton />
+                    <ExplorerSkeleton joined />
                 ) : (
                     <DestinationsView
                         destinations={destinations}

@@ -5,7 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Download, Import, MoreHorizontal, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageHead } from "@/components/ui/page-head";
+import { TabCount, Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useIsMobileState } from "@/hooks/use-mobile";
 import type { TablePreferences } from "@/lib/core/table-preferences";
 import { CredentialsTab, type CredentialsAccess, type CredentialsTabHandle } from "./credentials-tab";
@@ -28,8 +29,7 @@ interface VaultClientProps {
 }
 
 function Count({ value }: { value: number | undefined }) {
-    if (value === undefined) return null;
-    return <span className="text-xs font-normal text-muted-foreground tabular-nums">{value.toLocaleString()}</span>;
+    return value === undefined ? null : <TabCount value={value} />;
 }
 
 /**
@@ -56,9 +56,9 @@ export function VaultClient({ access, counts, layouts }: VaultClientProps) {
     }, [router, searchParams]);
 
     return (
-        <Tabs value={active} onValueChange={setTab} className="w-full gap-4 md:gap-6">
-            <div className="flex items-center gap-2 md:gap-3">
-                <TabsList aria-label="Show">
+        <Tabs value={active} onValueChange={setTab} className="w-full gap-4 md:gap-0">
+            <PageHead>
+                <TabsList variant="page" aria-label="Show">
                     {access.canReadCredentials && (
                         <TabsTrigger value="credentials">
                             <span className="flex items-center gap-2">Credentials<Count value={counts.credentials} /></span>
@@ -112,7 +112,7 @@ export function VaultClient({ access, counts, layouts }: VaultClientProps) {
                         </>
                     )}
                 </div>
-            </div>
+            </PageHead>
 
             {/* Waits for the measured screen, so a phone never flashes the table before its cards. */}
             {isMobile !== undefined && (

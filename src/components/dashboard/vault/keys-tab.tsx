@@ -7,11 +7,13 @@ import { bulkDeleteEncryptionProfiles } from "@/app/actions/backup/encryption";
 import { BackupContextMenu, BackupRowMenu } from "@/components/dashboard/storage/explorer/backup-menus";
 import { EncryptionKeyDialog } from "@/components/settings/encryption-key-dialog";
 import { DataTable, type BulkAction } from "@/components/ui/data-table";
+import { JOIN_END } from "@/components/ui/page-head";
 import { QuickFilter } from "@/components/ui/quick-filter";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTableLayout } from "@/hooks/use-table-layout";
 import { unwrapBulkAction } from "@/lib/bulk-request";
 import type { TablePreferences } from "@/lib/core/table-preferences";
+import { cn } from "@/lib/utils";
 import { isKeyInUse, type VaultKey, type VaultKeysModel } from "@/services/vault/vault-types";
 import { EditKeyDialog } from "./edit-key-dialog";
 import { ImportKeyDialog } from "./import-key-dialog";
@@ -142,12 +144,13 @@ export function KeysTab({ ref, cards, canManage, initialLayout }: KeysTabProps) 
     const shown = details ? keys.find((key) => key.id === details.id) ?? null : null;
 
     return (
-        <div className="space-y-4 md:space-y-6">
+        <div className="flex flex-col gap-4 md:gap-0">
             <KeysStrip model={model} />
-            {model && <MissingKeyBanner model={model} onImport={canManage ? () => setImporting(true) : undefined} />}
+            {/* From md up the numbers and the list join the tabs above them into one card, so the banner moves under it. */}
+            {model && <MissingKeyBanner model={model} onImport={canManage ? () => setImporting(true) : undefined} className="md:order-last md:mt-6" />}
 
             {!model ? (
-                <div className="space-y-3 rounded-xl border bg-card p-4 shadow-sm" aria-busy="true">
+                <div className={cn("space-y-3 rounded-xl border bg-card p-4 shadow-sm", JOIN_END)} aria-busy="true">
                     <span className="sr-only">Loading encryption keys</span>
                     <div className="flex gap-2">
                         <Skeleton className="h-8 w-60" />
@@ -158,6 +161,7 @@ export function KeysTab({ ref, cards, canManage, initialLayout }: KeysTabProps) 
             ) : (
                 <DataTable
                     variant="card"
+                    joined
                     columns={columns}
                     data={rows}
                     searchKey="name"

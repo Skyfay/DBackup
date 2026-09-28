@@ -17,7 +17,7 @@ export function CredentialsStrip({ model }: { model: VaultCredentialsModel | nul
     const stats = model?.stats;
     const attention = model?.profiles.filter((profile) => profile.attention) ?? [];
     return (
-        <ExplorerStrip
+        <ExplorerStrip joined
             cells={[
                 {
                     label: "Profiles",
@@ -51,7 +51,7 @@ export function KeysStrip({ model }: { model: VaultKeysModel | null }) {
     const users = stats ? [...(stats.jobs > 0 ? [count(stats.jobs, "job")] : []), ...(configBackup ? ["the config backup"] : [])] : [];
     const clear = stats ? stats.backups - stats.encrypted : 0;
     return (
-        <ExplorerStrip
+        <ExplorerStrip joined
             cells={[
                 {
                     label: "Keys",

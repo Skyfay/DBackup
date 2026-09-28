@@ -7,11 +7,13 @@ import { BackupContextMenu, BackupRowMenu } from "@/components/dashboard/storage
 import { CredentialProfileDialog, type CredentialProfileSummary } from "@/components/settings/credential-profile-dialog";
 import { CREDENTIAL_TYPE_INFO } from "@/components/settings/credential-types";
 import { DataTable, type BulkAction } from "@/components/ui/data-table";
+import { JOIN_END } from "@/components/ui/page-head";
 import { QuickFilter } from "@/components/ui/quick-filter";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTableLayout } from "@/hooks/use-table-layout";
 import { requestBulk } from "@/lib/bulk-request";
 import type { TablePreferences } from "@/lib/core/table-preferences";
+import { cn } from "@/lib/utils";
 import type { VaultCredential, VaultCredentialsModel } from "@/services/vault/vault-types";
 import { credentialActions, type CredentialActionHandlers } from "./credential-actions";
 import { CredentialCard } from "./credential-card";
@@ -122,11 +124,11 @@ export function CredentialsTab({ ref, cards, access, initialLayout }: Credential
     const shown = details ? profiles.find((profile) => profile.id === details.id) ?? null : null;
 
     return (
-        <div className="space-y-4 md:space-y-6">
+        <div className="space-y-4 md:space-y-0">
             <CredentialsStrip model={model} />
 
             {!model ? (
-                <div className="space-y-3 rounded-xl border bg-card p-4 shadow-sm" aria-busy="true">
+                <div className={cn("space-y-3 rounded-xl border bg-card p-4 shadow-sm", JOIN_END)} aria-busy="true">
                     <span className="sr-only">Loading credential profiles</span>
                     <div className="flex gap-2">
                         <Skeleton className="h-8 w-60" />
@@ -137,6 +139,7 @@ export function CredentialsTab({ ref, cards, access, initialLayout }: Credential
             ) : (
                 <DataTable
                     variant="card"
+                    joined
                     columns={columns}
                     data={rows}
                     searchKey="name"

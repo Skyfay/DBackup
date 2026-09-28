@@ -4,9 +4,10 @@ import { useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { PageHead } from "@/components/ui/page-head";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TabCount, Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useIsMobileState } from "@/hooks/use-mobile";
 import type { TablePreferences } from "@/lib/core/table-preferences";
 import type { TemplateCounts } from "@/services/templates/templates-types";
@@ -50,10 +51,6 @@ interface TemplatesClientProps {
     canManage: boolean;
 }
 
-function Count({ value }: { value: number }) {
-    return <span className="text-xs font-normal text-muted-foreground tabular-nums">{value.toLocaleString()}</span>;
-}
-
 /**
  * The Templates page: retention policies, file names, schedule presets, notifications and exclude
  * patterns, each a list with what uses every template. The tab lives in the address, New beside
@@ -86,8 +83,8 @@ export function TemplatesClient({ counts, layouts, canManage }: TemplatesClientP
         : counts;
 
     return (
-        <Tabs value={active} onValueChange={setTab} className="w-full gap-4 md:gap-6">
-            <div className="flex items-center gap-2 md:gap-3">
+        <Tabs value={active} onValueChange={setTab} className="w-full gap-4 md:gap-0">
+            <PageHead>
                 {/* A phone picks the list from a menu, five tabs never fit next to New. Both are hidden
                     by CSS rather than by the measured screen, so neither pops in. */}
                 <div className="min-w-0 flex-1 md:hidden">
@@ -98,18 +95,18 @@ export function TemplatesClient({ counts, layouts, canManage }: TemplatesClientP
                         <SelectContent>
                             {TEMPLATE_TABS.map((tab) => (
                                 <SelectItem key={tab} value={tab}>
-                                    <span className="flex items-center gap-2">{LABELS[tab]}<Count value={live[tab]} /></span>
+                                    <span className="flex items-center gap-2">{LABELS[tab]}<TabCount value={live[tab]} /></span>
                                 </SelectItem>
                             ))}
                         </SelectContent>
                     </Select>
                 </div>
-                {/* From a tablet up they stay tabs, and scroll sideways when they outgrow the row. */}
+                {/* From a tablet up they stay tabs, head the card of the list, and scroll sideways when they outgrow it. */}
                 <ScrollArea horizontal className="hidden min-w-0 md:block">
-                    <TabsList aria-label="Show">
+                    <TabsList variant="page" aria-label="Show">
                         {TEMPLATE_TABS.map((tab) => (
                             <TabsTrigger key={tab} value={tab}>
-                                <span className="flex items-center gap-2">{LABELS[tab]}<Count value={live[tab]} /></span>
+                                <span className="flex items-center gap-2">{LABELS[tab]}<TabCount value={live[tab]} /></span>
                             </TabsTrigger>
                         ))}
                     </TabsList>
@@ -120,7 +117,7 @@ export function TemplatesClient({ counts, layouts, canManage }: TemplatesClientP
                         <span className="hidden sm:inline">{NEW[active]}</span>
                     </Button>
                 )}
-            </div>
+            </PageHead>
 
             {/* Waits for the measured screen, so a phone never flashes the table before its cards. */}
             {isMobile !== undefined &&

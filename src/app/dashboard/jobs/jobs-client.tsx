@@ -26,7 +26,8 @@ import { DIALOG_SURFACE } from "@/components/ui/confirm-dialog";
 import { DataTable } from "@/components/ui/data-table";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { JOIN_END, PageHead } from "@/components/ui/page-head";
+import { TabCount, Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ViewSwitch } from "@/components/ui/view-switch";
 import { useIsMobileState } from "@/hooks/use-mobile";
 import { useTableLayout } from "@/hooks/use-table-layout";
@@ -57,7 +58,7 @@ const VIEWS: ViewMode[] = ["table", "cards"];
 
 function LoadingList() {
     return (
-        <div className="space-y-3 rounded-xl border bg-card p-4 shadow-sm" aria-busy="true">
+        <div className={cn("space-y-3 rounded-xl border bg-card p-4 shadow-sm", JOIN_END)} aria-busy="true">
             <span className="sr-only">Loading jobs</span>
             <div className="flex gap-2">
                 <Skeleton className="h-8 w-60" />
@@ -72,7 +73,7 @@ function LoadingList() {
 
 function NoJobs({ onCreate }: { onCreate?: () => void }) {
     return (
-        <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed px-4 py-14 text-center">
+        <div className={cn("flex flex-col items-center gap-3 rounded-xl border border-dashed px-4 py-14 text-center md:border-solid md:bg-card", JOIN_END)}>
             <span className="flex size-10 items-center justify-center rounded-lg bg-muted">
                 <CalendarClock className="size-5 text-muted-foreground" />
             </span>
@@ -200,16 +201,16 @@ export function JobsClient({
     const directorySourceOptions = useMemo(() => destinations.filter((option) => option.storageRole === STORAGE_ROLES.SOURCE), [destinations]);
 
     return (
-        <div className="space-y-4">
+        <div className="space-y-4 md:space-y-0">
             {/* One tab for the one list, so the row reads like the Connections page, whose tabs switch
                 between kinds of connections. The filters of the list sit beside its search. */}
-            <div className="flex items-center gap-2 md:gap-3">
+            <PageHead>
                 <Tabs value="jobs">
-                    <TabsList aria-label="Job list">
+                    <TabsList variant="page" aria-label="Job list">
                         <TabsTrigger value="jobs">
                             <span className="flex items-center gap-2">
                                 Jobs
-                                {hasLoaded && <span className="text-xs font-normal text-muted-foreground tabular-nums">{jobs.length}</span>}
+                                {hasLoaded && <TabCount value={jobs.length} />}
                             </span>
                         </TabsTrigger>
                     </TabsList>
@@ -226,7 +227,7 @@ export function JobsClient({
                         </Button>
                     )}
                 </div>
-            </div>
+            </PageHead>
 
             {!hasLoaded || !shownView ? (
                 <LoadingList />
@@ -235,6 +236,7 @@ export function JobsClient({
             ) : (
                 <DataTable
                     variant="card"
+                    joined
                     columns={columns}
                     data={visibleJobs}
                     searchKey="name"

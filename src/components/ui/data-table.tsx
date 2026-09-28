@@ -38,6 +38,7 @@ import { DataTableColumnSettings } from "./data-table-column-settings";
 import { useColumnLayout, type ColumnLayoutOption } from "./use-column-layout";
 import { useTableDefaults } from "./table-defaults";
 import { isPlainClick, toggleOnClick } from "./row-click";
+import { JOIN_END } from "./page-head";
 import { cn } from "@/lib/utils";
 import type { BulkAction, DataTableFilterableColumn, DataTableFilterOption, RowMenuBulk } from "./data-table-types";
 
@@ -77,6 +78,8 @@ interface DataTableProps<TData, TValue> {
 
     /** "card" draws the table as one panel with its toolbar inside, the look of the redesigned pages. */
     variant?: "default" | "card";
+    /** From md up the card goes on from a `PageHead` above it, square on top. In the cards and split views that is the card of the toolbar. */
+    joined?: boolean;
     /**
      * Turns on the Columns menu: switch columns on and off, move them, pick a row height. The
      * rows per page are kept with it. Feed it from `useTableLayout`, which saves the layout to
@@ -148,6 +151,7 @@ export function DataTable<TData, TValue>({
     bulkActions = [],
     onBulkActionComplete,
     variant = "default",
+    joined = false,
     columnLayout,
     toolbarExtra,
     toolbarNote,
@@ -431,7 +435,7 @@ export function DataTable<TData, TValue>({
     if (card && view === "split" && renderSplit) {
         return (
             <div className="min-w-0 space-y-4">
-                <div className="rounded-xl border bg-card text-card-foreground shadow-sm">{toolbar}</div>
+                <div className={cn("rounded-xl border bg-card text-card-foreground shadow-sm", joined && JOIN_END)}>{toolbar}</div>
                 {renderSplit(table.getPrePaginationRowModel().rows)}
                 {bulkDialogs}
             </div>
@@ -442,7 +446,7 @@ export function DataTable<TData, TValue>({
         const rows = table.getRowModel().rows;
         return (
             <div className="min-w-0 space-y-4">
-                <div className="rounded-xl border bg-card text-card-foreground shadow-sm">
+                <div className={cn("rounded-xl border bg-card text-card-foreground shadow-sm", joined && JOIN_END)}>
                     {toolbar}
                     {toolbarNote}
                 </div>
@@ -469,7 +473,7 @@ export function DataTable<TData, TValue>({
 
     if (card) {
         return (
-            <div className="min-w-0 overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm">
+            <div className={cn("min-w-0 overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm", joined && JOIN_END)}>
                 {/* The bulk bar lies over the toolbar while rows are selected, so nothing below moves. */}
                 <div className="relative">
                     {toolbar}

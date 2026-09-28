@@ -3,9 +3,11 @@
 import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { DataTable, type BulkAction, type DataTableFilterableColumn, type RowMenuBulk } from "@/components/ui/data-table";
+import { JOIN_END } from "@/components/ui/page-head";
 import { QuickFilter } from "@/components/ui/quick-filter";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { ColumnLayoutOption } from "@/components/ui/use-column-layout";
+import { cn } from "@/lib/utils";
 import { matchesQuick, quickOptions, type TemplateQuick } from "./template-format";
 
 interface TemplateTableProps<T extends { id: string }> {
@@ -58,7 +60,7 @@ export function TemplateTable<T extends { id: string }>({
 
     if (!rows) {
         return (
-            <div className="space-y-3 rounded-xl border bg-card p-4 shadow-sm" aria-busy="true">
+            <div className={cn("space-y-3 rounded-xl border bg-card p-4 shadow-sm", JOIN_END)} aria-busy="true">
                 <span className="sr-only">{loadingLabel}</span>
                 <div className="flex gap-2">
                     <Skeleton className="h-8 w-60" />
@@ -72,6 +74,7 @@ export function TemplateTable<T extends { id: string }>({
     return (
         <DataTable
             variant="card"
+            joined
             columns={columns}
             data={shown}
             searchKey="name"

@@ -58,14 +58,14 @@ export function NameCell({ adapterId, name, kind, compact, onOpen }: NameCellPro
                         type="button"
                         onClick={onOpen}
                         title={name}
-                        className="block max-w-full truncate rounded-sm text-left font-medium outline-none hover:underline hover:underline-offset-4 focus-visible:ring-2 focus-visible:ring-ring/50"
+                        className={cn("block max-w-full truncate rounded-sm text-left font-medium outline-none hover:underline hover:underline-offset-4 focus-visible:ring-2 focus-visible:ring-ring/50", compact && "shrink-0")}
                     >
                         {name}
                     </button>
                 ) : (
-                    <div className="truncate font-medium" title={name}>{name}</div>
+                    <div className={cn("max-w-full truncate font-medium", compact && "shrink-0")} title={name}>{name}</div>
                 )}
-                <div className="truncate text-xs text-muted-foreground">{kind}</div>
+                <div className="min-w-0 truncate text-xs text-muted-foreground">{kind}</div>
             </div>
         </div>
     );

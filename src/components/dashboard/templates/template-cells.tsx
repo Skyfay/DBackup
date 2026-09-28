@@ -129,7 +129,8 @@ export function NameCell({ kind, name, sub, badges, compact = false, onOpen }: N
         <div className="flex min-w-0 items-center gap-3">
             <KindTile kind={kind} size={compact ? "sm" : "md"} />
             <div className={cn("min-w-0 max-w-80", compact && "flex items-baseline gap-2")}>
-                <div className="flex min-w-0 items-center gap-2">
+                {/* On one line the name keeps its room and the line about it gives way first. */}
+                <div className={cn("flex min-w-0 items-center gap-2", compact && "max-w-full shrink-0")}>
                     <button
                         type="button"
                         onClick={onOpen}
@@ -140,7 +141,7 @@ export function NameCell({ kind, name, sub, badges, compact = false, onOpen }: N
                     </button>
                     {badges}
                 </div>
-                <div className="truncate text-xs text-muted-foreground">{sub}</div>
+                <div className="min-w-0 truncate text-xs text-muted-foreground">{sub}</div>
             </div>
         </div>
     );

@@ -34,15 +34,16 @@ export function JobNameCell({ job, compact, onOpen }: { job: JobListItem; compac
                     title={job.name}
                     className={cn(
                         "block max-w-full truncate rounded-sm text-left font-medium outline-none hover:underline hover:underline-offset-4 focus-visible:ring-2 focus-visible:ring-ring/50",
+                        compact && "shrink-0",
                         !job.enabled && "text-muted-foreground"
                     )}
                 >
                     {job.name}
                 </button>
             ) : (
-                <div className={cn("truncate font-medium", !job.enabled && "text-muted-foreground")} title={job.name}>{job.name}</div>
+                <div className={cn("max-w-full truncate font-medium", compact && "shrink-0", !job.enabled && "text-muted-foreground")} title={job.name}>{job.name}</div>
             )}
-            <ScheduleText job={job} className="block" />
+            <ScheduleText job={job} className="block min-w-0" />
         </div>
     );
 }

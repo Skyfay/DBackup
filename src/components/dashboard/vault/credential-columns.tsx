@@ -31,11 +31,11 @@ function ProfileCell({ profile, compact, onOpen }: { profile: VaultCredential; c
                     type="button"
                     onClick={() => onOpen(profile)}
                     title={profile.name}
-                    className="block max-w-full truncate rounded-sm text-left font-medium outline-none hover:underline hover:underline-offset-4 focus-visible:ring-2 focus-visible:ring-ring/50"
+                    className={cn("block max-w-full truncate rounded-sm text-left font-medium outline-none hover:underline hover:underline-offset-4 focus-visible:ring-2 focus-visible:ring-ring/50", compact && "shrink-0")}
                 >
                     {profile.name}
                 </button>
-                <div className="truncate text-xs text-muted-foreground">{profile.description || CREDENTIAL_TYPE_INFO[profile.type].title}</div>
+                <div className="min-w-0 truncate text-xs text-muted-foreground">{profile.description || CREDENTIAL_TYPE_INFO[profile.type].title}</div>
             </div>
         </div>
     );

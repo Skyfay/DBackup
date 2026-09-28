@@ -34,7 +34,8 @@ function TierRow({ label, sub, value, min, was, onChange }: TierRowProps) {
         <div className="flex items-center gap-3 px-3 py-2">
             <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium">{label}</p>
-                <p className="truncate text-xs text-muted-foreground">
+                {/* Wraps on a phone, where a cut would hide what the number was before. */}
+                <p className="text-xs text-muted-foreground">
                     {sub}
                     {changed && `, was ${was}`}
                 </p>

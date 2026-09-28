@@ -80,8 +80,9 @@ function PolicyForm({ policy, onSuccess }: PolicyFormProps) {
         setIsSaving(false);
     };
 
+    // min-w-0, since a cell of the grid in the edit dialog grows with its widest line otherwise.
     const fields = (
-        <div className="space-y-5">
+        <div className="min-w-0 space-y-5">
             <div className="space-y-2">
                 <Label htmlFor={nameId}>Name</Label>
                 <Input

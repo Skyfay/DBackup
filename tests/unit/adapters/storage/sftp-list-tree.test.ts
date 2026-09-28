@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { SFTPAdapter, endSftpClient, connectSFTP } from "@/lib/adapters/storage/sftp";
 import { toRelativePath } from "@/lib/adapters/storage/common/download-directory";
+import { resolveExcludePatterns } from "@/lib/exclude-groups";
 
 const { mockSftpConnect, mockSftpEnd, mockSftpList, mockSftpExists, mockDestroy, rawSftpChannel } = vi.hoisted(() => ({
     mockSftpConnect: vi.fn().mockResolvedValue(undefined),
@@ -75,6 +76,41 @@ describe("SFTPAdapter.listTree", () => {
         expect(result.pruned).toEqual([{ path: "node_modules", pattern: "node_modules/**" }]);
         // The saving is the listing that never happened, not a filter applied afterwards.
         expect(mockSftpList).not.toHaveBeenCalledWith("node_modules");
+    });
+
+    it("never reads a nested folder a group of DBackup names", async () => {
+        serveTree({
+            ".": [dir("app"), file("README.md")],
+            "app": [file("index.js"), dir("node_modules"), dir(".git")],
+            "app/node_modules": [dir("react")],
+            "app/node_modules/react": [file("index.js")],
+            "app/.git": [file("HEAD")],
+        });
+
+        const result = await SFTPAdapter.listTree!(config, "", { excludePatterns: resolveExcludePatterns({ groups: ["dev", "vcs"] }) });
+
+        expect(result.files.map((f) => f.path).sort()).toEqual(["README.md", "app/index.js"]);
+        expect(result.pruned).toEqual([
+            { path: "app/node_modules", pattern: "**/node_modules/**" },
+            { path: "app/.git", pattern: "**/.git/**" },
+        ]);
+        expect(mockSftpList).not.toHaveBeenCalledWith("app/node_modules");
+        expect(mockSftpList).not.toHaveBeenCalledWith("app/.git");
+    });
+
+    it("walks a nested folder a pattern only names at the top", async () => {
+        // A pattern with a slash matches from the top of the folder, the rule users write by.
+        serveTree({
+            ".": [dir("app")],
+            "app": [dir("node_modules")],
+            "app/node_modules": [file("x.js")],
+        });
+
+        const result = await SFTPAdapter.listTree!(config, "", { excludePatterns: ["node_modules/**"] });
+
+        expect(mockSftpList).toHaveBeenCalledWith("app/node_modules");
+        expect(result.files.map((f) => f.path)).toEqual(["app/node_modules/x.js"]);
+        expect(result.pruned).toEqual([]);
     });
 
     it("still descends where a pattern only excludes some files", async () => {

@@ -1,6 +1,6 @@
 import prisma from "@/lib/prisma";
 import type { RetentionConfiguration } from "@/lib/core/retention";
-import { parseJsonStringArray } from "@/lib/exclude-groups";
+import { currentGroupPattern, parseJsonStringArray } from "@/lib/exclude-groups";
 import { readPolicy } from "@/services/storage/explorer-plan";
 import type {
     ExcludeFolder,
@@ -180,7 +180,8 @@ export function buildTemplatesModel(records: TemplateRecords): TemplatesModel {
             ...stamped(preset),
             patterns: parseJsonStringArray(preset.patterns),
             groups: parseJsonStringArray(preset.groups),
-            excludedGroupPatterns: parseJsonStringArray(preset.excludedGroupPatterns),
+            // An opt-out stored before a group folder matched at any depth still names that folder.
+            excludedGroupPatterns: parseJsonStringArray(preset.excludedGroupPatterns).map(currentGroupPattern),
             isDefault: preset.isDefault,
             isSystem: preset.isSystem,
             folders: presetFolders.get(preset.id) ?? [],

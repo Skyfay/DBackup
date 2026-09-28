@@ -14,6 +14,7 @@ import {
     downloadDirectoryGeneric,
     toRelativePath,
 } from "@/lib/adapters/storage/common/download-directory";
+import { resolveExcludePatterns } from "@/lib/exclude-groups";
 import { matchesAnyExcludePattern } from "@/lib/exclude-patterns";
 import type { StorageAdapter, FileInfo } from "@/lib/core/interfaces";
 
@@ -56,6 +57,13 @@ describe("matchesAnyExcludePattern", () => {
 
     it("matches dotfiles", () => {
         expect(matchesAnyExcludePattern(".git/HEAD", [".git/**"])).toBe(true);
+    });
+
+    it("matches a pattern starting with **/ at any depth, the top included", () => {
+        expect(matchesAnyExcludePattern("node_modules/pkg/index.js", ["**/node_modules/**"])).toBe(true);
+        expect(matchesAnyExcludePattern("apps/web/node_modules/pkg/index.js", ["**/node_modules/**"])).toBe(true);
+        expect(matchesAnyExcludePattern("apps/web/.git/objects/ab/cdef", ["**/.git/**"])).toBe(true);
+        expect(matchesAnyExcludePattern("apps/web/src/node_modules_helper.js", ["**/node_modules/**"])).toBe(false);
     });
 
     it("ignores blank patterns", () => {
@@ -130,6 +138,21 @@ describe("downloadDirectoryGeneric", () => {
         // The per-pattern breakdown rides along as details, which the log viewer expands.
         expect(summary![3]).toContain("node_modules/**");
         expect(summary![3]).toContain("*.tmp");
+    });
+
+    it("leaves out a nested node_modules and .git when a preset follows the groups of DBackup", async () => {
+        const files = [
+            makeFile("Job/app/src/index.ts", 100),
+            makeFile("Job/app/node_modules/react/index.js", 500),
+            makeFile("Job/libs/ui/node_modules/.bin/tsc", 50),
+            makeFile("Job/libs/ui/.git/HEAD", 20),
+        ];
+        const adapter = makeAdapter(files);
+
+        const result = await downloadDirectoryGeneric(adapter, {}, "Job", "/local/job", resolveExcludePatterns({ groups: ["dev", "vcs"] }));
+
+        expect(result.entries.map((e) => e.relativePath)).toEqual(["app/src/index.ts"]);
+        expect(adapter.download).toHaveBeenCalledTimes(1);
     });
 
     it("says nothing about exclusions when no file was excluded", async () => {

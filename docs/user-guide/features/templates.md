@@ -92,6 +92,8 @@ To use one, pick it under **Add a template** in the **Notifications** part of a 
 
 An exclude preset names what the backup of a folder skips. It follows groups of DBackup, like macOS clutter or Development artifacts, and adds patterns of its own, one a line. A group is referenced, not copied, so a group extended in a later release reaches every preset that follows it. A click on a pattern of a group leaves it out of the preset.
 
+A group writes a folder as `**/node_modules/**` and skips it at any depth. A pattern of your own with a slash matches from the top of the folder, so write the `**/` in front for the same, see [exclude patterns](/user-guide/features/file-backups#exclude-patterns-and-why-they-are-worth-setting).
+
 Beside the form the dialog lists every pattern the preset skips. **Check a path** takes a path inside the folder and says whether the backup skips it and which pattern does.
 
 **Default for new folders** makes a new folder of a job start with the preset. Several presets can be the default at once, and their patterns add up.

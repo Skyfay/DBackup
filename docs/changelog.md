@@ -65,6 +65,7 @@ All notable changes to DBackup are documented here.
 - **templates**: Deleting an exclude pattern preset says that its folders lose its patterns and lists them. The old dialog said they keep them.
 - **templates**: A deleted schedule preset hands its schedule to the jobs that followed it, and the scheduler picks them up at once. They ran on an older copy of the schedule before, and only after the next refresh of the scheduler.
 - **templates**: Someone who may only read templates no longer sees the buttons to add, change or delete them.
+- **templates**: The exclude groups of DBackup skip folders like node_modules, .git, __pycache__ or .Spotlight-V100 at any depth of a backed up folder, where they matched only at its top or, for the macOS folders, nowhere. An incremental job with such a preset starts a new full backup on its next run.
 
 ### 🔒 Security
 
@@ -167,6 +168,7 @@ All notable changes to DBackup are documented here.
 - **docs**: A new History guide describes the list of runs, the page of a run with its summary, log, problems and live state, and the notifications. The job, data retention, logging and API guides follow it.
 - **docs**: The encryption and credential profile guides describe the new Vault page, the Key ID, the recovery kit of a key and why a key in use cannot be deleted. The adapter guides find the Vault in the sidebar instead of under Settings.
 - **docs**: The template guide describes the new Templates page, what a change of a retention policy removes, the exclude presets and what happens to the jobs and folders of a deleted template.
+- **docs**: The file backup and template guides say that the exclude groups of DBackup skip their folders at any depth.
 
 ### 🧪 Tests
 

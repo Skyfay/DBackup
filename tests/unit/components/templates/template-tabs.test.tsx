@@ -207,13 +207,13 @@ describe("ExcludePatternPresetDialog", () => {
         );
 
         const field = screen.getByLabelText("Check a path");
-        await user.type(field, "node_modules/react/index.js");
+        await user.type(field, "apps/web/node_modules/react/index.js");
         let verdict = screen.getByRole("status");
         expect(within(verdict).getByText("Skipped")).toBeInTheDocument();
-        expect(within(verdict).getByText("node_modules/**")).toBeInTheDocument();
+        expect(within(verdict).getByText("**/node_modules/**")).toBeInTheDocument();
         expect(verdict).toHaveTextContent("of Development artifacts");
 
-        // The preset leaves dist/** of its group out.
+        // The preset left dist/** of its group out, stored in the form the group had then.
         await user.clear(field);
         await user.type(field, "dist/app.js");
         expect(within(screen.getByRole("status")).getByText("Backed up")).toBeInTheDocument();

@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
-import { EXCLUDE_GROUPS, parseJsonStringArray } from "@/lib/exclude-groups";
+import { currentGroupPattern, EXCLUDE_GROUPS, parseJsonStringArray } from "@/lib/exclude-groups";
 import { matchesExcludePattern } from "@/lib/exclude-patterns";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
@@ -113,7 +113,8 @@ function PresetForm({ preset, usedBy, onSuccess }: PresetFormProps) {
     const [ownText, setOwnText] = useState(() => listOf(preset?.patterns).join("\n"));
     // Curated groups, referenced rather than copied, so a group extended in a later release reaches the preset.
     const [groups, setGroups] = useState<string[]>(() => listOf(preset?.groups));
-    const [optedOut, setOptedOut] = useState<string[]>(() => listOf(preset?.excludedGroupPatterns));
+    // An opt-out stored before a group folder matched at any depth still names that folder.
+    const [optedOut, setOptedOut] = useState<string[]>(() => listOf(preset?.excludedGroupPatterns).map(currentGroupPattern));
     const [nameMissing, setNameMissing] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const nameId = useId();

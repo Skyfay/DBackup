@@ -96,6 +96,16 @@ export const safePathRegex = /^[^\0]+$/;
 export const safePath = (description: string) =>
     z.string().min(1, `${description} is required`).regex(safePathRegex, "Path contains invalid characters");
 
+// A part of a path that a URL resolves like "." or "..", also written with %2e.
+const DOT_SEGMENT = /^(?:\.|%2e){1,2}$/i;
+
+// Validation: The folder of a cloud drive as its browse route takes it, "" for the top. The
+// OneDrive route puts it into a URL, where a ".." part would step out of the drive's root.
+export const cloudFolderPath = z
+    .string()
+    .max(4096)
+    .refine((value) => !value.includes("\0") && !value.split(/[/\\]/).some((part) => DOT_SEGMENT.test(part)), "Invalid folder path");
+
 // Validation: Binary paths must not contain shell metacharacters beyond basic path chars
 export const safeBinaryPath = z.string().regex(
     /^[a-zA-Z0-9/_\-.]+$/,

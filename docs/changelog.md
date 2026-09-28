@@ -74,6 +74,8 @@ All notable changes to DBackup are documented here.
 
 - **connections**: The health check history of a connection needs the read permission of its kind, like its details. Reading sources or destinations was enough for every kind before.
 - **connections**: The file browser of a path field no longer follows a link into a system folder it keeps out, like /proc or /System.
+- **connections**: The folder browser of a Google Drive connection only takes folder IDs made of letters, digits, hyphens and underscores, so a crafted ID can no longer widen its list of folders to every file of the drive. The folder browsers of Dropbox and OneDrive turn down a path with a `..` part.
+- **connections**: The folder browsers of Google Drive, Dropbox and OneDrive in the connection form need the right to change destinations and answer 403 without it. Reading destinations was enough to list the folders of any authorized drive before.
 - **vault**: The Vault no longer sends the stored key of an encryption profile to the browser when it lists, creates, imports or renames profiles, not even in its encrypted form.
 - **jobs**: The job list no longer returns the stored configs of the connections a job uses, only their name, type and health. Reading jobs was enough to get them before.
 - **templates**: The notification templates and the Templates page no longer send the stored configs of notification channels to the browser, only the name and type of each channel. Reading jobs or templates was enough to get them before, without the right to read notification channels.

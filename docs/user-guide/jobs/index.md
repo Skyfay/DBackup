@@ -320,32 +320,15 @@ Temp files are stored locally during processing:
 
 ## Templates
 
-The **Administration → Templates** page provides three reusable template types that keep job configuration consistent across your setup:
+The **Administration → Templates** page holds what jobs share: retention policies, file names, schedule presets, notification templates and exclude patterns, each with the jobs that use it. See [Templates](/user-guide/features/templates).
 
-### Retention Policies
-
-Named retention rules assignable per destination. Each policy defines Simple (keep N backups) or Smart (GFS - Grandfather-Father-Son rotation: daily, weekly, monthly, yearly buckets) behavior.
-
-- One policy can be marked as the **system default** - it applies automatically to any destination without an explicit assignment
-- Assign via the Retention Policy picker inside the job's destination row
-
-### Naming Templates
-
-Custom backup filename patterns saved as named templates. Supports all tokens listed in [Filename Pattern](#filename-pattern) above.
-
-- One template can be set as the **system default**
-- Override per job under **File names** in the **Advanced** part of the job, which warns when two runs would get the same name
-
-### Schedule Presets
-
-Named schedules that jobs follow. When a preset changes, every job that follows it runs on the new schedule without being edited.
-
-- Pick **A schedule preset** under **When it runs** in the **Basics** part of the job
-- **New preset** adds one from there, and **Edit** on a preset changes it for every job that follows it
+- A destination without a policy of its own follows the **default retention policy**, and a job without a file name template of its own the **default template**
+- A job follows its schedule preset and its notification templates, so a change of one reaches every job that uses it
+- A new job starts with the default notification template, a new folder with the default exclude presets
 
 ## Next Steps
 
 - [Scheduling](/user-guide/jobs/scheduling) - Configure when jobs run
 - [Retention Policies](/user-guide/jobs/retention) - Automatic cleanup
 - [Encryption](/user-guide/security/encryption) - Secure your backups
-- [Templates](/user-guide/features/templates) - Retention Policies, Naming Templates, Schedule Presets
+- [Templates](/user-guide/features/templates) - Retention policies, file names, schedule presets, notifications and exclude patterns

@@ -203,6 +203,13 @@ describe("NamingTemplateService", () => {
         data: { isDefault: false },
       });
     });
+
+    it("refuses to leave the jobs without a default template", async () => {
+      prismaMock.namingTemplate.findUnique.mockResolvedValue(makeTemplate({ isDefault: true, isSystem: true }) as any);
+
+      await expect(updateNamingTemplate("tpl-1", { isDefault: false })).rejects.toThrow("Make another template the default instead");
+      expect(prismaMock.namingTemplate.update).not.toHaveBeenCalled();
+    });
   });
 
   // ── Delete ───────────────────────────────────────────────────

@@ -19,8 +19,11 @@ const DEFAULT_SCHEDULE = "0 3 * * *";
 /** Leaves room for the head and the foot on a short screen. */
 const BODY_SCROLL = "min-h-0 flex-1 *:data-[slot=scroll-area-viewport]:max-h-[calc(95dvh-9.5rem)] [&>[data-slot=scroll-area-viewport]>div]:block!";
 
+/** A preset as the dialog edits it, from the Templates page or from the job form. */
+export type EditablePreset = Pick<SchedulePreset, "id" | "name" | "description" | "schedule">;
+
 interface PresetFormProps {
-    preset?: SchedulePreset;
+    preset?: EditablePreset;
     /** The job the preset is made for, left out of the jobs its schedule could meet. */
     jobId?: string;
     onSuccess: (preset: SchedulePreset) => void;
@@ -121,7 +124,7 @@ function PresetForm({ preset, jobId, onSuccess }: PresetFormProps) {
 interface SchedulePresetDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    preset?: SchedulePreset;
+    preset?: EditablePreset;
     /** The job the dialog was opened for, from the job form. */
     jobId?: string;
     onSuccess: (preset: SchedulePreset) => void;

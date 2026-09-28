@@ -20,6 +20,7 @@ The UI is redesigned page by page. Shadcn stays, the new look comes from tokens 
 | History, runs and notifications, and the page of a run | `src/app/dashboard/history/`, `src/components/dashboard/history/`, with its data from `src/services/history/`. A run opens as the page `history/run/`. |
 | Restore page | `src/app/dashboard/backups/restore/`, `src/components/dashboard/storage/restore/`. The Redis and Valkey guide is `redis-guide.tsx`. The key dialog and the file tree of a folder still have the old look. |
 | Vault, credential profiles and encryption keys | `src/app/dashboard/vault/`, `src/components/dashboard/vault/`, with its data from `src/services/vault/`. New key stays in `settings/encryption-key-dialog.tsx`, which the job form shares. |
+| Templates, all five kinds | `src/app/dashboard/templates/`, `src/components/dashboard/templates/`, with its data from `templates-model.ts` in `src/services/templates/`. Their dialogs stay in `src/components/settings/templates/`, which the job form shares. |
 
 Every other page still has the old look. Do not copy patterns from it, copy them from the Overview widgets. Add a row here when a page is done.
 
@@ -178,6 +179,8 @@ Every other page still has the old look. Do not copy patterns from it, copy them
 - A setting is a sentence that is true when its switch is on, like "Health alerts". A flag stored the other way round, like `healthNotificationsDisabled`, is turned around in the form and stored unchanged. Switches that belong together share one `SwitchList` frame.
 - A secret shown in the clear, like a revealed key or login, opens a dialog in the `warning` tone whose note says it was written to the audit log, with each value in mono and its own Copy. The request goes out from the click that opens it, never from an effect, so a remount does not reveal it twice. See `key-reveal-dialog.tsx` and `RevealSecretDialog` in `credential-dialogs.tsx`.
 - A delete that other records still depend on, like a key a job encrypts with or a login connections use, is refused by the service, and its dialog names what holds it with a link to each and keeps the button off. A delete that loses something no other record names, like the backups of a key, lists them and waits for a checkbox. See `key-delete-dialog.tsx`.
+- A delete that changes what other records do, like the folders of an exclude preset or the jobs of a schedule preset, goes on and says in its description what happens to them, with a link to each. See `template-delete-dialogs.tsx`.
+- A change that many records follow and that removes something at each, like a retention policy, shows beside its form what the next runs remove at every one of them. The records and what they hold load once when the dialog opens and the numbers are worked out in the browser, so they follow every click. See `retention-consequences.tsx`.
 - The records a dialog is about go into a `DialogItemList` with icon, name and a short fact. Rows a bulk action leaves out come from its `ineligible` check and get a list of their own under "Will not be deleted" with the reason, so the confirmation says beforehand what happens. See `deleteBlocker` in `connection-bulk-actions.ts`.
 
 ## Live data

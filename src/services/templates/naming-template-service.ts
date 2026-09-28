@@ -68,6 +68,10 @@ export async function updateNamingTemplate(
   if (template.isSystem && (input.name !== undefined || input.pattern !== undefined || input.description !== undefined)) {
     throw new ServiceError("NamingTemplateService", "updateNamingTemplate", "System templates cannot be modified.");
   }
+  // There is always a default, which every job without a template of its own is named by.
+  if (input.isDefault === false && template.isDefault) {
+    throw new ServiceError("NamingTemplateService", "updateNamingTemplate", `"${template.name}" is the default template. Make another template the default instead.`);
+  }
 
   if (input.name && input.name !== template.name) {
     const existing = await prisma.namingTemplate.findUnique({

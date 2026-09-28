@@ -23,7 +23,7 @@ import { toast } from "sonner";
 import { ExcludePatternPreset } from "@prisma/client";
 import { getExcludePatternPresets } from "@/app/actions/templates";
 import { resolveExcludePatterns } from "@/lib/exclude-groups";
-import { ExcludePatternPresetDialog } from "@/components/settings/templates/exclude-pattern-preset-list";
+import { ExcludePatternPresetDialog } from "@/components/settings/templates/exclude-pattern-preset-dialog";
 
 function parsePatterns(patterns: string): string[] {
   try {

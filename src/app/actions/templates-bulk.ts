@@ -13,7 +13,9 @@ import * as excludePatternPresetService from "@/services/templates/exclude-patte
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { BulkIdsSchema } from "@/lib/core/bulk-schema";
-import { getErrorMessage } from "@/lib/logging/errors";
+import { getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { logger } from "@/lib/logging/logger";
+import { scheduler } from "@/lib/server/scheduler";
 import type { BulkResult } from "@/lib/core/bulk";
 
 /**
@@ -24,7 +26,9 @@ import type { BulkResult } from "@/lib/core/bulk";
  * here carries its own permission check, which is what the permissions audit walks for.
  */
 
-const TEMPLATE_PATHS = ["/dashboard/vault", "/dashboard/jobs", "/dashboard/connections"];
+const log = logger.child({ action: "templates-bulk" });
+
+const TEMPLATE_PATHS = ["/dashboard/templates", "/dashboard/jobs", "/dashboard/connections"];
 
 /**
  * Shared body for the five actions below.
@@ -81,7 +85,12 @@ export async function bulkDeleteNamingTemplates(ids: string[]) {
 
 export async function bulkDeleteSchedulePresets(ids: string[]) {
     await checkPermission(PERMISSIONS.TEMPLATES.WRITE);
-    return runTemplateBulkDelete("SchedulePreset", ids, schedulePresetService.deleteSchedulePresetMany);
+    const result = await runTemplateBulkDelete("SchedulePreset", ids, schedulePresetService.deleteSchedulePresetMany);
+    // The jobs that followed a deleted preset run on the copy of its schedule they got now.
+    if (result.success && result.data.succeeded.length > 0) {
+        scheduler.refresh().catch((error: unknown) => log.error("Scheduler refresh failed after deleting presets", {}, wrapError(error)));
+    }
+    return result;
 }
 
 export async function bulkDeleteNotificationTemplates(ids: string[]) {

@@ -18,7 +18,6 @@ import {
   createRetentionPolicy,
   updateRetentionPolicy,
   setDefaultRetentionPolicy,
-  unsetDefaultRetentionPolicy,
   deleteRetentionPolicy,
   parseRetentionPolicyConfig,
 } from "@/services/templates/retention-policy-service";
@@ -31,6 +30,7 @@ const makePolicy = (overrides: object = {}) => ({
   description: null,
   config: JSON.stringify({ mode: "SIMPLE", simple: { keepCount: 7 } }),
   isDefault: false,
+  isSystem: false,
   jobDestinations: [],
   adapterConfigs: [],
   createdAt: new Date(),
@@ -268,19 +268,6 @@ describe("RetentionPolicyService", () => {
     });
   });
 
-  describe("unsetDefaultRetentionPolicy", () => {
-    it("clears the default flag from all policies", async () => {
-      prismaMock.retentionPolicy.updateMany.mockResolvedValue({ count: 1 });
-
-      await unsetDefaultRetentionPolicy();
-
-      expect(prismaMock.retentionPolicy.updateMany).toHaveBeenCalledWith({
-        where: { isDefault: true },
-        data: { isDefault: false },
-      });
-    });
-  });
-
   // ── Delete ───────────────────────────────────────────────────
 
   describe("deleteRetentionPolicy", () => {
@@ -316,6 +303,39 @@ describe("RetentionPolicyService", () => {
       await expect(deleteRetentionPolicy("pol-1")).rejects.toBeInstanceOf(
         ServiceError
       );
+    });
+
+    it("names the destinations and the connections that still hold a policy", async () => {
+      prismaMock.retentionPolicy.findUnique.mockResolvedValue(
+        makePolicy({ jobDestinations: [{ id: "d1" }, { id: "d2" }], adapterConfigs: [{ id: "c1" }] }) as any
+      );
+
+      await expect(deleteRetentionPolicy("pol-1")).rejects.toThrow(
+        '"Keep 7" is still used by 2 destinations of jobs and 1 connection that starts new jobs with it.'
+      );
+    });
+
+    it("keeps the default policy, since the destinations following it would silently keep every backup", async () => {
+      prismaMock.retentionPolicy.findUnique.mockResolvedValue(makePolicy({ isDefault: true }) as any);
+
+      await expect(deleteRetentionPolicy("pol-1")).rejects.toThrow("Make another policy the default first");
+      expect(prismaMock.retentionPolicy.delete).not.toHaveBeenCalled();
+    });
+
+    it("keeps a built-in policy, which can only be edited", async () => {
+      prismaMock.retentionPolicy.findUnique.mockResolvedValue(makePolicy({ isSystem: true }) as any);
+
+      await expect(deleteRetentionPolicy("pol-1")).rejects.toThrow("It can be edited but not deleted");
+      expect(prismaMock.retentionPolicy.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("unsetting the default", () => {
+    it("refuses to leave the default without a successor", async () => {
+      prismaMock.retentionPolicy.findUnique.mockResolvedValue(makePolicy({ isDefault: true }) as any);
+
+      await expect(updateRetentionPolicy("pol-1", { isDefault: false })).rejects.toThrow("Make another policy the default instead");
+      expect(prismaMock.retentionPolicy.update).not.toHaveBeenCalled();
     });
   });
 

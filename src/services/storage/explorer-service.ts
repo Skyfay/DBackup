@@ -16,6 +16,11 @@ const EXECUTION_LOOKUP_SLICE = 400;
 const HEALTH_STATUSES: HealthStatus[] = ["ONLINE", "DEGRADED", "OFFLINE"];
 const WEEK_MS = 7 * 86_400_000;
 
+/** Every backup of every job, newest first. */
+function newestFirst(model: ExplorerModel): ExplorerBackups["runs"] {
+    return [...model.runs.values()].flat().sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+}
+
 interface Loaded {
     destinations: ExplorerDestination[];
     model: ExplorerModel;
@@ -197,8 +202,13 @@ export class StorageExplorerService {
     /** Every backup of every job, newest first, each with its copies at every destination. */
     async getBackups(): Promise<ExplorerBackups> {
         const { model } = await this.load();
-        const runs = [...model.runs.values()].flat().sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
-        return { runs };
+        return { runs: newestFirst(model) };
+    }
+
+    /** The same with every destination and when it was listed, from one read of the cache. */
+    async getBackupsWithDestinations(): Promise<ExplorerBackups & { destinations: ExplorerDestination[] }> {
+        const { destinations, model } = await this.load();
+        return { runs: newestFirst(model), destinations };
     }
 
     /**

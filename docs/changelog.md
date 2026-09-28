@@ -29,6 +29,8 @@ All notable changes to DBackup are documented here.
 - **history**: A run opens as a page of its own from every link to it, with a way back to where it was opened, its steps next to their usual time, a summary of what each step did and its log with each problem told once in plain words. A live run fills a row for the database it dumps and the copy it uploads, and an integrity check or a verification lists every copy it checked.
 - **vault**: The Vault lists credential profiles with the connections that log in with each, and encryption keys with a Key ID, the jobs that use them, the backups they protect at each destination and their last recovery kit. A row opens its details in a side panel and its actions with a right click, and a phone gets cards.
 - **vault**: A new key offers its recovery kit right away, and Import key reads a key from the files of a recovery kit. The Vault marks keys that were never in a kit and backups that name a key it does not have.
+- **templates**: The Templates page lists retention policies, file names, schedule presets, notifications and exclude patterns as tables with the jobs, destinations and folders that use each template, its default and what it does. A row opens its details in a side panel and its actions with a right click, and a phone gets cards.
+- **templates**: Editing a retention policy shows what the next run at each of its destinations removes with the change, and a new default names the destinations it reaches first. The exclude preset dialog lists what a preset skips and checks a path against it, and deleting a template names what depends on it.
 
 ### 🐛 Bug Fixes
 
@@ -58,6 +60,11 @@ All notable changes to DBackup are documented here.
 - **storage**: A download link for a server showed wget and curl with the same link, so whichever ran second failed. The dialog shows one command at a time, and a download that broke off can run again with the same link.
 - **jobs**: A finished backup no longer loses the list of its databases and destinations to the last write of its log.
 - **vault**: Deleting an encryption key that a job or the config backup still encrypts with is refused. The job stored its next backups unencrypted without a word before.
+- **templates**: The default retention policy can no longer be deleted or unset, and the built-in policies can no longer be deleted. Every destination that followed the default kept all its backups without a word afterwards.
+- **templates**: The default file name template can no longer be unset, only replaced by another one. Jobs without a template of their own fell back to a pattern the Templates page did not show.
+- **templates**: Deleting an exclude pattern preset says that its folders lose its patterns and lists them. The old dialog said they keep them.
+- **templates**: A deleted schedule preset hands its schedule to the jobs that followed it, and the scheduler picks them up at once. They ran on an older copy of the schedule before, and only after the next refresh of the scheduler.
+- **templates**: Someone who may only read templates no longer sees the buttons to add, change or delete them.
 
 ### 🔒 Security
 
@@ -126,6 +133,7 @@ All notable changes to DBackup are documented here.
 - **api**: The new `GET /api/databases/servers` returns every database server with its address, response time and kept backups and the newer backup of its engine it is behind, and `GET /api/databases/servers/{id}` one server with its uptime. `GET /api/databases/servers/{id}/versions?page=&size=` returns the versions a server ran a page at a time with the backups made and kept on each.
 - **vault**: Importing a key the Vault already holds is refused with the name of the key that has it.
 - **api**: The new `GET /api/vault/credentials` returns every credential profile with the connections that use it, and `GET /api/vault/keys` every encryption key with its jobs, its backups per destination and its last recovery kit.
+- **api**: The new `GET /api/templates` returns every template with the jobs, destinations and folders that use it.
 
 ### 🗑️ Removed
 
@@ -158,11 +166,12 @@ All notable changes to DBackup are documented here.
 - **docs**: The Database Explorer guide describes the list of databases, its timeline, the page of a database, the Servers tab with the page of a server and what shows for a login that may only back up.
 - **docs**: A new History guide describes the list of runs, the page of a run with its summary, log, problems and live state, and the notifications. The job, data retention, logging and API guides follow it.
 - **docs**: The encryption and credential profile guides describe the new Vault page, the Key ID, the recovery kit of a key and why a key in use cannot be deleted. The adapter guides find the Vault in the sidebar instead of under Settings.
+- **docs**: The template guide describes the new Templates page, what a change of a retention policy removes, the exclude presets and what happens to the jobs and folders of a deleted template.
 
 ### 🧪 Tests
 
 - **tests**: The test that generates an SSH key no longer fails at random during a full run, where the busy crypto thread pool made it slower than the default timeout.
-- **tests**: The palette color guard allows 23 colors without a dark variant, down from 37.
+- **tests**: The palette color guard allows 16 colors without a dark variant, down from 37.
 
 ### 🐳 Docker
 

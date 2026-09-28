@@ -38,8 +38,11 @@ function Example({ name }: { name: string }) {
     );
 }
 
+/** A template as the dialog edits it, from the Templates page or from the picker of the job form. */
+export type EditableNamingTemplate = Pick<NamingTemplate, "id" | "name" | "description" | "pattern">;
+
 interface TemplateFormProps {
-    template?: NamingTemplate;
+    template?: EditableNamingTemplate;
     onSuccess: (template: NamingTemplate) => void;
 }
 
@@ -206,7 +209,7 @@ function TemplateForm({ template, onSuccess }: TemplateFormProps) {
 interface NamingTemplateDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    template?: NamingTemplate;
+    template?: EditableNamingTemplate;
     onSuccess: (template: NamingTemplate) => void;
 }
 

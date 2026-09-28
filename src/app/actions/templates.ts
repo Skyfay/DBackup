@@ -66,7 +66,7 @@ export async function createRetentionPolicy(input: {
         policy.id
       );
     }
-    revalidatePath("/dashboard/vault");
+    revalidatePath("/dashboard/templates");
     revalidatePath("/dashboard/jobs");
     revalidatePath("/dashboard/connections");
     return { success: true as const, data: policy };
@@ -100,7 +100,7 @@ export async function updateRetentionPolicy(
         id
       );
     }
-    revalidatePath("/dashboard/vault");
+    revalidatePath("/dashboard/templates");
     revalidatePath("/dashboard/jobs");
     revalidatePath("/dashboard/connections");
     return { success: true as const, data: policy };
@@ -127,7 +127,7 @@ export async function deleteRetentionPolicy(id: string) {
         id
       );
     }
-    revalidatePath("/dashboard/vault");
+    revalidatePath("/dashboard/templates");
     revalidatePath("/dashboard/jobs");
     revalidatePath("/dashboard/connections");
     return { success: true as const };
@@ -154,26 +154,9 @@ export async function setDefaultRetentionPolicy(id: string) {
         id
       );
     }
-    revalidatePath("/dashboard/vault");
+    revalidatePath("/dashboard/templates");
     revalidatePath("/dashboard/jobs");
     return { success: true as const, data: policy };
-  } catch (e: unknown) {
-    return { success: false as const, error: getErrorMessage(e) };
-  }
-}
-
-export async function unsetDefaultRetentionPolicy() {
-  const headersList = await headers();
-  const session = await auth.api.getSession({ headers: headersList });
-  if (!session) return { success: false as const, error: "Unauthorized" };
-
-  await checkPermission(PERMISSIONS.TEMPLATES.WRITE);
-
-  try {
-    await retentionPolicyService.unsetDefaultRetentionPolicy();
-    revalidatePath("/dashboard/vault");
-    revalidatePath("/dashboard/jobs");
-    return { success: true as const };
   } catch (e: unknown) {
     return { success: false as const, error: getErrorMessage(e) };
   }
@@ -228,7 +211,7 @@ export async function createNamingTemplate(input: {
         template.id
       );
     }
-    revalidatePath("/dashboard/vault");
+    revalidatePath("/dashboard/templates");
     revalidatePath("/dashboard/jobs");
     return { success: true as const, data: template };
   } catch (e: unknown) {
@@ -262,7 +245,7 @@ export async function updateNamingTemplate(
         id
       );
     }
-    revalidatePath("/dashboard/vault");
+    revalidatePath("/dashboard/templates");
     revalidatePath("/dashboard/jobs");
     return { success: true as const, data: template };
   } catch (e: unknown) {
@@ -288,7 +271,7 @@ export async function deleteNamingTemplate(id: string) {
         id
       );
     }
-    revalidatePath("/dashboard/vault");
+    revalidatePath("/dashboard/templates");
     revalidatePath("/dashboard/jobs");
     return { success: true as const };
   } catch (e: unknown) {
@@ -344,7 +327,7 @@ export async function createSchedulePreset(input: {
         preset.id
       );
     }
-    revalidatePath("/dashboard/vault");
+    revalidatePath("/dashboard/templates");
     revalidatePath("/dashboard/jobs");
     return { success: true as const, data: preset };
   } catch (e: unknown) {
@@ -377,7 +360,7 @@ export async function updateSchedulePreset(
         id
       );
     }
-    revalidatePath("/dashboard/vault");
+    revalidatePath("/dashboard/templates");
     revalidatePath("/dashboard/jobs");
     // Trigger scheduler refresh so all jobs linked to this preset pick up the new schedule immediately
     const log = logger.child({ action: "updateSchedulePreset" });
@@ -406,8 +389,11 @@ export async function deleteSchedulePreset(id: string) {
         id
       );
     }
-    revalidatePath("/dashboard/vault");
+    revalidatePath("/dashboard/templates");
     revalidatePath("/dashboard/jobs");
+    // The jobs that followed the preset run on the copy of its schedule they got now.
+    const log = logger.child({ action: "deleteSchedulePreset" });
+    scheduler.refresh().catch((e) => log.error("Scheduler refresh failed after preset delete", { presetId: id }, e));
     return { success: true as const };
   } catch (e: unknown) {
     return { success: false as const, error: getErrorMessage(e) };

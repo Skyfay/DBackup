@@ -183,12 +183,30 @@ describe("SchedulePresetService", () => {
         makePreset() as any
       );
       prismaMock.schedulePreset.delete.mockResolvedValue(makePreset() as any);
+      prismaMock.job.updateMany.mockResolvedValue({ count: 0 });
+      prismaMock.$transaction.mockImplementation((async (operations: Promise<unknown>[]) => Promise.all(operations)) as any);
 
       await deleteSchedulePreset("pre-1");
 
       expect(prismaMock.schedulePreset.delete).toHaveBeenCalledWith({
         where: { id: "pre-1" },
       });
+    });
+
+    it("hands the current schedule of the preset to the jobs that follow it, in the same transaction", async () => {
+      // A job holds the schedule it had when it picked the preset, which a later change of the preset never updated.
+      prismaMock.schedulePreset.findUnique.mockResolvedValue(makePreset({ schedule: "0 4 * * *" }) as any);
+      prismaMock.schedulePreset.delete.mockResolvedValue(makePreset() as any);
+      prismaMock.job.updateMany.mockResolvedValue({ count: 3 });
+      prismaMock.$transaction.mockImplementation((async (operations: Promise<unknown>[]) => Promise.all(operations)) as any);
+
+      await deleteSchedulePreset("pre-1");
+
+      expect(prismaMock.job.updateMany).toHaveBeenCalledWith({
+        where: { schedulePresetId: "pre-1" },
+        data: { schedule: "0 4 * * *", schedulePresetId: null },
+      });
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
     });
 
     it("throws NotFoundError when preset does not exist", async () => {

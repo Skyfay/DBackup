@@ -76,12 +76,20 @@ export async function updateSchedulePreset(
   return updated;
 }
 
+/**
+ * Deletes a preset. The jobs that follow it keep running at its time on their own: its schedule is
+ * written into each of them first, since the copy a job holds may be older than the last change of
+ * the preset, which never reached the job itself. The caller refreshes the scheduler.
+ */
 export async function deleteSchedulePreset(id: string) {
   const preset = await prisma.schedulePreset.findUnique({ where: { id } });
   if (!preset) throw new NotFoundError("SchedulePreset", id);
 
-  await prisma.schedulePreset.delete({ where: { id } });
-  log.info("Schedule preset deleted", { id });
+  const [followers] = await prisma.$transaction([
+    prisma.job.updateMany({ where: { schedulePresetId: id }, data: { schedule: preset.schedule, schedulePresetId: null } }),
+    prisma.schedulePreset.delete({ where: { id } }),
+  ]);
+  log.info("Schedule preset deleted", { id, jobs: followers.count });
 }
 
 /**

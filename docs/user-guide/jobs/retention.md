@@ -29,7 +29,7 @@ Retention is configured **individually for each destination** within a job. This
 In the **Destinations** part of the job form, every destination row has its own retention policy picker:
 1. Open the **Destinations** part of the job
 2. Pick a policy on each destination, or **Default policy** for the one marked as the system default
-3. Policies are created under **Administration → Templates → Retention Policies**, where their mode (Simple or Smart) is set
+3. Policies are created under **Administration → Templates → Retention policies**, where what they keep is set: everything, the last few or a smart rotation
 4. Each destination keeps its backups by its own policy
 
 ## Simple Retention

@@ -34,7 +34,7 @@ src/services/
   notifications/ notification-log-service.ts, system-notification-service.ts
   system/        healthcheck-service.ts, system-task-service.ts, update-service.ts, db-version-service.ts, certificate-service.ts
   config/        config-service.ts, export.ts, import.ts, parse.ts, restore-pipeline.ts
-  templates/     naming-template-service.ts, notification-template-service.ts, retention-policy-service.ts, schedule-preset-service.ts
+  templates/     naming-template-service.ts, notification-template-service.ts, retention-policy-service.ts, schedule-preset-service.ts, exclude-pattern-preset-service.ts, templates-model.ts (Templates page model), retention-targets.ts and retention-preview.ts (what a retention change removes)
   user/          user-service.ts
   dashboard/     overview-service.ts (page model), aggregates.ts (cached history), health.ts, trends.ts, cache.ts
   audit-service.ts, dashboard-service.ts   (flat, no subdirectory)

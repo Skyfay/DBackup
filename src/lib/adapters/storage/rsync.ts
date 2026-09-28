@@ -13,6 +13,7 @@ import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { toRelativePath } from "./common/download-directory";
 import { matchesAnyExcludePattern } from "@/lib/exclude-patterns";
+import { formatExcludeSummary, summariseExcluded } from "@/lib/exclude-summary";
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -69,6 +70,17 @@ function sanitizeError(error: unknown): string {
 async function writeTempKey(privateKey: string): Promise<string> {
     const tmpFile = path.join(os.tmpdir(), `rsync-key-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     await fs.writeFile(tmpFile, privateKey, { mode: 0o600 });
+    return tmpFile;
+}
+
+/**
+ * Writes the relative paths a directory download transfers to a temporary file for
+ * `--files-from`, each ended by a NUL for `--from0`, since a file name may hold a newline.
+ * Returns the path to the temp file. Caller must delete it after use.
+ */
+async function writeFileList(relativePaths: string[]): Promise<string> {
+    const tmpFile = path.join(os.tmpdir(), `rsync-files-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    await fs.writeFile(tmpFile, relativePaths.map((relativePath) => `${relativePath}\0`).join(""), { mode: 0o600 });
     return tmpFile;
 }
 
@@ -602,10 +614,10 @@ export const RsyncAdapter: StorageAdapter = {
     /**
      * Native directory download: unlike upload/download (single file each), this syncs an
      * entire remote directory tree in one native `rsync -a` transfer, preserving rsync's
-     * delta-transfer advantage (kept for directory-source (JobSource) backups). Exclude
-     * patterns map to rsync's native --exclude flag, so excluded files are never transferred
-     * at all. The file index (for the manifest's Tier-A searchable listing) comes from the
-     * existing recursive list() (a fast SSH `find`), not parsed from rsync's own output.
+     * delta-transfer advantage (kept for directory-source (JobSource) backups). The file
+     * index (for the manifest's Tier-A searchable listing) comes from the existing recursive
+     * listing (a fast SSH `find`), filtered by the exclude patterns like every other adapter,
+     * and the transfer takes exactly that list, so excluded files are never transferred at all.
      */
     async downloadDirectory(
         config: RsyncConfig,
@@ -616,6 +628,7 @@ export const RsyncAdapter: StorageAdapter = {
         onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void
     ): Promise<DirectoryDownloadResult> {
         let keyFile: string | undefined;
+        let listFile: string | undefined;
         try {
             if (config.authType === "privateKey" && config.privateKey) {
                 keyFile = await writeTempKey(config.privateKey);
@@ -635,14 +648,23 @@ export const RsyncAdapter: StorageAdapter = {
                 );
             }
 
-            const entries: DirectoryFileEntry[] = allFiles
-                .map((f) => ({
-                    relativePath: toRelativePath(f.path, remotePath),
-                    size: f.size,
-                    lastModified: f.lastModified,
-                    ...(f.linkTarget !== undefined ? { linkTarget: f.linkTarget } : {}),
-                }))
-                .filter((e) => !matchesAnyExcludePattern(e.relativePath, excludePatterns));
+            const listed: DirectoryFileEntry[] = allFiles.map((f) => ({
+                relativePath: toRelativePath(f.path, remotePath),
+                size: f.size,
+                lastModified: f.lastModified,
+                ...(f.linkTarget !== undefined ? { linkTarget: f.linkTarget } : {}),
+            }));
+            const entries = listed.filter((e) => !matchesAnyExcludePattern(e.relativePath, excludePatterns));
+
+            // Excluding files silently is the one thing a backup must not do. Reported per pattern
+            // rather than per file, like the other adapters, so a node_modules does not write tens
+            // of thousands of paths into the execution log on every run.
+            if (entries.length < listed.length && onLog) {
+                const kept = new Set(entries.map((e) => e.relativePath));
+                const excluded = listed.filter((e) => !kept.has(e.relativePath)).map((e) => ({ path: e.relativePath, size: e.size }));
+                const { message, details } = formatExcludeSummary(summariseExcluded(excluded, excludePatterns ?? [], []));
+                onLog(message, "info", "storage", details);
+            }
 
             const totalBytes = entries.reduce((sum, e) => sum + e.size, 0);
             const totalFiles = entries.length;
@@ -660,9 +682,16 @@ export const RsyncAdapter: StorageAdapter = {
             // Without it the transfer still reports progress, just per file rather than as one
             // figure for the whole directory - `--progress` is set either way.
             if (await supportsInfoProgress()) rsync.set("info", "progress2");
-            if (excludePatterns && excludePatterns.length > 0) {
-                rsync.exclude(excludePatterns);
-            }
+
+            // The transfer takes exactly the files of the index. rsync's own --exclude reads the
+            // same patterns by other rules: an unanchored pattern with a slash matches at any
+            // depth, and a slash-free one also matches a folder and drops it whole. The index
+            // then named files that never arrived, and hashing them failed the run. With
+            // --files-from, -a copies links as links and does not recurse, and rsync 2.6.9,
+            // rsync 3 and Apple's openrsync all read the list, NUL-separated with --from0.
+            listFile = await writeFileList(entries.map((e) => e.relativePath));
+            rsync.set("files-from", listFile);
+            rsync.set("from0");
 
             // Trailing slash: sync the directory's CONTENTS into localPath, not the directory itself
             const source = `${buildRemotePath(config, remotePath)}/`;
@@ -703,6 +732,7 @@ export const RsyncAdapter: StorageAdapter = {
             throw error;
         } finally {
             if (keyFile) await fs.unlink(keyFile).catch(() => {});
+            if (listFile) await fs.unlink(listFile).catch(() => {});
         }
     },
 

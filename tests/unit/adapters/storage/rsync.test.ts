@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // --- Hoisted mocks ---
 // child_process functions use callbacks, so promisify works when the mock calls its callback
-const { mockExecCb, mockExecFileCb, mockRsyncExecute, mockFsWriteFile, mockFsUnlink, mockFsMkdir, mockFsReadFile, mockRsyncShell, mockRsyncSet, mockRsyncFlags } = vi.hoisted(() => ({
+const { mockExecCb, mockExecFileCb, mockRsyncExecute, mockFsWriteFile, mockFsUnlink, mockFsMkdir, mockFsReadFile, mockRsyncShell, mockRsyncSet, mockRsyncFlags, mockRsyncExclude } = vi.hoisted(() => ({
     mockExecCb: vi.fn(),
     mockExecFileCb: vi.fn(),
     mockRsyncExecute: vi.fn(),
@@ -15,6 +15,7 @@ const { mockExecCb, mockExecFileCb, mockRsyncExecute, mockFsWriteFile, mockFsUnl
     mockRsyncShell: vi.fn(),
     mockRsyncSet: vi.fn(),
     mockRsyncFlags: vi.fn(),
+    mockRsyncExclude: vi.fn(),
 }));
 
 // child_process mock - exec/execFile call their last-arg callback so promisify works
@@ -33,7 +34,7 @@ vi.mock("rsync", () => {
         env() { return this; }
         source() { return this; }
         destination() { return this; }
-        exclude() { return this; }
+        exclude(...args: unknown[]) { mockRsyncExclude(...args); return this; }
         execute = mockRsyncExecute;
     }
     return { default: MockRsync };
@@ -68,6 +69,7 @@ vi.mock("@/lib/logging/errors", () => ({
 }));
 
 // Import AFTER mocks so promisify captures the mock functions
+import { Minimatch } from "minimatch";
 import { RsyncAdapter } from "@/lib/adapters/storage/rsync";
 
 // --- Helpers for default behaviors ---
@@ -621,6 +623,96 @@ describe("RsyncAdapter", () => {
             rsyncFails("rsync connection reset");
 
             await expect(RsyncAdapter.downloadDirectory!(agentConfig, "Job", "/local/job")).rejects.toThrow();
+        });
+    });
+
+    // ===== downloadDirectory() and what the transfer takes =====
+
+    describe("downloadDirectory() transfers what the index lists", () => {
+        /** One line of the remote `find`, as the listing parses it. */
+        const found = (relativePath: string, size = 10) => `/backups/Job/${relativePath}\t${size}\t1700000000.0\tf\t`;
+
+        /**
+         * rsync's own --exclude rules, for the shapes used here (man rsync, INCLUDE/EXCLUDE
+         * PATTERN RULES), checked against rsync 3.4.3: an unanchored pattern with a slash
+         * matches at every depth, and a slash-free one matches every part of a path, folders
+         * included, which drops the whole folder. The index uses other rules, which is the bug.
+         */
+        function rsyncExcludes(relativePath: string, pattern: string): boolean {
+            const parts = relativePath.split("/");
+            const glob = new Minimatch(pattern, { dot: true });
+            if (!pattern.includes("/")) return parts.some((part) => glob.match(part));
+            return parts.some((_, index) => glob.match(parts.slice(index).join("/")));
+        }
+
+        /** What rsync copies for the options the adapter set: the list it was handed, or everything its excludes leave. */
+        function copiedBy(listed: string[]): string[] {
+            const fromList = mockRsyncSet.mock.calls.find(([option]) => option === "files-from")?.[1] as string | undefined;
+            if (fromList) {
+                const written = mockFsWriteFile.mock.calls.find(([file]) => file === fromList)?.[1] as string;
+                return written.split("\0").filter(Boolean);
+            }
+            const patterns = mockRsyncExclude.mock.calls.flatMap(([value]) => (Array.isArray(value) ? value : [value])) as string[];
+            return listed.filter((relativePath) => !patterns.some((pattern) => rsyncExcludes(relativePath, pattern)));
+        }
+
+        it("copies every file the index keeps, also where rsync would read the patterns otherwise", async () => {
+            const listed = ["app/index.js", "app/node_modules/react/index.js", "node_modules/top.js", "foo.log/notes.txt", "app.log"];
+            sshSucceeds(listed.map((relativePath) => found(relativePath)).join("\n"));
+
+            const result = await RsyncAdapter.downloadDirectory!(agentConfig, "Job", "/local/job", ["node_modules/**", "*.log"]);
+
+            // The index follows the rule every other adapter uses: node_modules/** only at the
+            // top, *.log only on file names. A nested node_modules and a folder named foo.log stay.
+            const indexed = result.entries.map((entry) => entry.relativePath).sort();
+            expect(indexed).toEqual(["app/index.js", "app/node_modules/react/index.js", "foo.log/notes.txt"]);
+            // Every file of the index has to arrive, or hashing it fails the run with ENOENT.
+            expect(copiedBy(listed).sort()).toEqual(indexed);
+        });
+
+        it("hands rsync the list separated by NUL, so no file name can break it", async () => {
+            // Spaces and glob characters stay literal in a list, where a pattern would read them.
+            sshSucceeds([found("a.txt"), found("odd dir/[weird]*.txt")].join("\n"));
+
+            await RsyncAdapter.downloadDirectory!(agentConfig, "Job", "/local/job", ["*.tmp"]);
+
+            const fromList = mockRsyncSet.mock.calls.find(([option]) => option === "files-from")?.[1];
+            expect(fromList).toMatch(/^\/tmp\/rsync-files-/);
+            expect(mockRsyncSet).toHaveBeenCalledWith("from0");
+            expect(mockFsWriteFile).toHaveBeenCalledWith(fromList, "a.txt\0odd dir/[weird]*.txt\0", { mode: 0o600 });
+            // rsync's own excludes would read the patterns by other rules, so none are passed.
+            expect(mockRsyncExclude).not.toHaveBeenCalled();
+        });
+
+        it("removes the list after the transfer", async () => {
+            sshSucceeds(found("a.txt"));
+
+            await RsyncAdapter.downloadDirectory!(agentConfig, "Job", "/local/job");
+
+            const fromList = mockRsyncSet.mock.calls.find(([option]) => option === "files-from")?.[1];
+            expect(mockFsUnlink).toHaveBeenCalledWith(fromList);
+        });
+
+        it("removes the list when rsync fails too", async () => {
+            sshSucceeds(found("a.txt"));
+            rsyncFails("connection reset");
+
+            await expect(RsyncAdapter.downloadDirectory!(agentConfig, "Job", "/local/job")).rejects.toThrow();
+
+            const fromList = mockRsyncSet.mock.calls.find(([option]) => option === "files-from")?.[1];
+            expect(mockFsUnlink).toHaveBeenCalledWith(fromList);
+        });
+
+        it("reports what the patterns kept out, like the other adapters", async () => {
+            sshSucceeds([found("keep.txt"), found("node_modules/a.js", 500), found("cache.tmp", 50)].join("\n"));
+            const onLog = vi.fn();
+
+            await RsyncAdapter.downloadDirectory!(agentConfig, "Job", "/local/job", ["node_modules/**", "*.tmp"], undefined, onLog);
+
+            const summary = onLog.mock.calls.find(([message]) => String(message).includes("skipped by exclude patterns"));
+            expect(summary, "expected a summary line").toBeTruthy();
+            expect(summary![0]).toContain("2 file(s)");
+            expect(summary![3]).toContain("node_modules/**");
         });
     });
 

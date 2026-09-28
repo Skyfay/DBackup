@@ -66,6 +66,7 @@ All notable changes to DBackup are documented here.
 - **templates**: A deleted schedule preset hands its schedule to the jobs that followed it, and the scheduler picks them up at once. They ran on an older copy of the schedule before, and only after the next refresh of the scheduler.
 - **templates**: Someone who may only read templates no longer sees the buttons to add, change or delete them.
 - **templates**: The exclude groups of DBackup skip folders like node_modules, .git, __pycache__ or .Spotlight-V100 at any depth of a backed up folder, where they matched only at its top or, for the macOS folders, nowhere. An incremental job with such a preset starts a new full backup on its next run.
+- **Rsync**: A directory source over rsync copies exactly the files its backup lists and reports what the exclude patterns kept out, like the other adapters. Rsync read the patterns by its own rules before, skipped files in a nested folder or in a folder named like a file pattern, and the run failed on hashing a file that never arrived.
 
 ### 🔒 Security
 

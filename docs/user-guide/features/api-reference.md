@@ -27,7 +27,7 @@ Used automatically when logged in via the web UI. Session cookies are sent with 
 
 ### API Key Authentication (Programmatic)
 
-For scripts, CI/CD pipelines, and external integrations. Create an API key under **Access Management → API Keys**.
+For scripts, CI/CD pipelines, and external integrations. Create an API key under **Users & Groups → API keys**.
 
 ```
 Authorization: Bearer dbackup_your_api_key

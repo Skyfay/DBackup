@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import { checkPermission, getCurrentUserWithGroup } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { userService } from "@/services/user/user-service";
-import { authService } from "@/services/auth/auth-service";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { logger } from "@/lib/logging/logger";
@@ -12,15 +11,35 @@ import { wrapError, getErrorMessage } from "@/lib/logging/errors";
 import { notify } from "@/services/notifications/system-notification-service";
 import { NOTIFICATION_EVENTS } from "@/lib/notifications";
 import { BulkIdsSchema } from "@/lib/core/bulk-schema";
+import { z } from "zod";
 
 const log = logger.child({ action: "user" });
 
-export async function createUser(data: { name: string; email: string; password: string }) {
+const CreateUserSchema = z.object({
+    name: z.string().trim().min(2, "Name must be at least 2 characters.").max(100),
+    email: z.string().trim().email("Invalid email address."),
+    password: z.string().min(8, "Password must be at least 8 characters.").max(128, "Password can have at most 128 characters."),
+    /** The group the user starts in, none for a user who sees nothing until someone picks one. */
+    groupId: z.string().min(1).nullable(),
+});
+
+export type CreateUserInput = z.input<typeof CreateUserSchema>;
+
+export async function createUser(input: CreateUserInput) {
     await checkPermission(PERMISSIONS.USERS.WRITE);
+    const parsed = CreateUserSchema.safeParse(input);
+    if (!parsed.success) {
+        return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid request" };
+    }
+    const data = parsed.data;
     const currentUser = await getCurrentUserWithGroup();
 
+    if (await userService.isSuperAdminGroup(data.groupId) && currentUser?.group?.name !== "SuperAdmin") {
+        return { success: false, error: "Only a SuperAdmin can make someone a SuperAdmin." };
+    }
+
     try {
-        const result = await authService.createUser(data);
+        const user = await userService.createUser(data);
         revalidatePath("/dashboard/users");
 
         if (currentUser) {
@@ -28,8 +47,8 @@ export async function createUser(data: { name: string; email: string; password: 
                 currentUser.id,
                 AUDIT_ACTIONS.CREATE,
                 AUDIT_RESOURCES.USER,
-                { name: data.name, email: data.email },
-                result.user.id
+                { name: data.name, email: data.email, groupId: data.groupId },
+                user.id
             );
         }
 
@@ -44,15 +63,10 @@ export async function createUser(data: { name: string; email: string; password: 
             },
         }).catch(() => {});
 
-        return { success: true };
+        return { success: true, data: { id: user.id } };
     } catch (error: unknown) {
         return { success: false, error: getErrorMessage(error) };
     }
-}
-
-export async function getUsers() {
-    await checkPermission(PERMISSIONS.USERS.READ);
-    return await userService.getUsers();
 }
 
 export async function updateUserGroup(userId: string, groupId: string | null) {
@@ -65,11 +79,12 @@ export async function updateUserGroup(userId: string, groupId: string | null) {
     }
 
     // Only SuperAdmins can assign users to the SuperAdmin group
-    if (groupId && groupId !== "none") {
-        const targetGroup = await (await import("@/lib/prisma")).default.group.findUnique({ where: { id: groupId } });
-        if (targetGroup?.name === "SuperAdmin" && currentUser?.group?.name !== "SuperAdmin") {
-            return { success: false, error: "Only SuperAdmin users can assign the SuperAdmin group." };
-        }
+    const actorSuperAdmin = currentUser?.group?.name === "SuperAdmin";
+    if (await userService.isSuperAdminGroup(groupId) && !actorSuperAdmin) {
+        return { success: false, error: "Only a SuperAdmin can make someone a SuperAdmin." };
+    }
+    if (!actorSuperAdmin && await userService.isSuperAdmin(userId)) {
+        return { success: false, error: "Only a SuperAdmin can change the group of a SuperAdmin." };
     }
 
     try {
@@ -93,21 +108,17 @@ export async function updateUserGroup(userId: string, groupId: string | null) {
     }
 }
 
-export async function resetUserTwoFactor(userId: string) {
-    await checkPermission(PERMISSIONS.USERS.WRITE);
-
-    try {
-        await userService.resetTwoFactor(userId);
-        return { success: true };
-    } catch (error: unknown) {
-        log.error("Failed to reset 2FA", { userId }, wrapError(error));
-        return { success: false, error: getErrorMessage(error) || "Failed to reset 2FA" };
-    }
-}
-
 export async function deleteUser(userId: string) {
     await checkPermission(PERMISSIONS.USERS.WRITE);
     const currentUser = await getCurrentUserWithGroup();
+
+    // Refused here and not only left out of the menus, like in the bulk delete.
+    if (currentUser?.id === userId) {
+        return { success: false, error: "You cannot delete your own account." };
+    }
+    if (currentUser?.group?.name !== "SuperAdmin" && await userService.isSuperAdmin(userId)) {
+        return { success: false, error: "Only a SuperAdmin can delete a SuperAdmin." };
+    }
 
     try {
         await userService.deleteUser(userId);
@@ -330,15 +341,20 @@ export async function bulkDeleteUsers(userIds: string[]) {
     }
 
     try {
-        const deletable = parsed.data.filter((id) => id !== currentUser?.id);
+        // Someone who is no SuperAdmin cannot delete one, so those are reported instead of sent.
+        const guarded = currentUser?.group?.name === "SuperAdmin" ? [] : await userService.superAdminsAmong(parsed.data);
+        const deletable = parsed.data.filter((id) => id !== currentUser?.id && !guarded.some((user) => user.id === id));
         const result = await userService.deleteUsers(deletable);
 
-        if (deletable.length !== parsed.data.length) {
+        if (currentUser && parsed.data.includes(currentUser.id)) {
             result.failed.push({
-                id: currentUser!.id,
-                name: currentUser!.name || currentUser!.email,
+                id: currentUser.id,
+                name: currentUser.name || currentUser.email,
                 error: "You cannot delete your own account.",
             });
+        }
+        for (const user of guarded) {
+            if (user.id !== currentUser?.id) result.failed.push({ id: user.id, name: user.name, error: "Only a SuperAdmin can delete a SuperAdmin." });
         }
 
         revalidatePath("/dashboard/users");

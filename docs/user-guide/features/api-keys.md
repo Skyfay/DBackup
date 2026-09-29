@@ -16,7 +16,7 @@ API keys provide a secure alternative to session-based authentication for progra
 
 ## Creating an API Key
 
-1. Navigate to **Access Management → API Keys** tab
+1. Navigate to **Users & Groups → API keys** tab
 2. Click **Create API Key**
 3. Fill in the form:
 

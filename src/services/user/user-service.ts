@@ -1,35 +1,62 @@
 import prisma from "@/lib/prisma";
-import { AUDIT_ACTIONS } from "@/lib/core/audit-types";
 import { runBulk, type BulkResult } from "@/lib/core/bulk";
+import { ValidationError } from "@/lib/logging/errors";
+import { authService } from "@/services/auth/auth-service";
+import { SUPER_ADMIN_GROUP } from "./users-model";
 
 export const userService = {
   /**
-   * Get all users with their associated group and last login time.
-   * ordered by creation date desc
+   * Creates a user with their password and the group they start in. Better Auth signs a new user
+   * in while creating them, on the server where no browser gets the session, so that session is
+   * removed again instead of staying open until it runs out.
    */
-  async getUsers() {
-    const users = await prisma.user.findMany({
-      orderBy: {
-        createdAt: "desc",
-      },
-      include: {
-        group: true,
-        auditLogs: {
-          where: { action: AUDIT_ACTIONS.LOGIN },
-          orderBy: { createdAt: 'desc' },
-          take: 1,
-          select: { createdAt: true }
-        }
-      },
-    });
+  async createUser(data: { name: string; email: string; password: string; groupId: string | null }) {
+    if (data.groupId && !(await prisma.group.findUnique({ where: { id: data.groupId }, select: { id: true } }))) {
+      throw new ValidationError("The group no longer exists.");
+    }
+    const result = await authService.createUser(data);
+    await prisma.$transaction([
+      prisma.session.deleteMany({ where: { userId: result.user.id } }),
+      ...(data.groupId ? [prisma.user.update({ where: { id: result.user.id }, data: { groupId: data.groupId } })] : []),
+    ]);
+    return result.user;
+  },
 
-    return users.map(user => {
-      const { auditLogs, ...rest } = user;
-      return {
-        ...rest,
-        lastLogin: auditLogs[0]?.createdAt || null
-      };
+  /** Whether the group with this id is the SuperAdmin group, which only a SuperAdmin may give. */
+  async isSuperAdminGroup(groupId: string | null) {
+    if (!groupId || groupId === "none") return false;
+    const group = await prisma.group.findUnique({ where: { id: groupId }, select: { name: true } });
+    return group?.name === SUPER_ADMIN_GROUP;
+  },
+
+  /** Whether the user is in the SuperAdmin group. */
+  async isSuperAdmin(userId: string) {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { group: { select: { name: true } } } });
+    return user?.group?.name === SUPER_ADMIN_GROUP;
+  },
+
+  /** The users among these ids who are in the SuperAdmin group, with the name to report them by. */
+  async superAdminsAmong(userIds: string[]) {
+    const users = await prisma.user.findMany({
+      where: { id: { in: userIds }, group: { name: SUPER_ADMIN_GROUP } },
+      select: { id: true, name: true, email: true },
     });
+    return users.map((user) => ({ id: user.id, name: user.name || user.email }));
+  },
+
+  /** Ends one session of a user. False when the user holds no such session. */
+  async revokeSession(userId: string, sessionId: string) {
+    const { count } = await prisma.session.deleteMany({ where: { id: sessionId, userId } });
+    return count > 0;
+  },
+
+  /**
+   * Ends every session of a user but the one to keep, which is the viewer's own when someone
+   * signs themselves out everywhere else. Returns how many ended.
+   */
+  async revokeSessions(userId: string, keepSessionId: string | null = null) {
+    const { count } = await prisma.session.deleteMany({ where: { userId, ...(keepSessionId ? { id: { not: keepSessionId } } : {}) } });
+    return count;
   },
 
   /**

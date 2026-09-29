@@ -16,7 +16,7 @@ All API calls require an [API Key](/user-guide/features/api-keys) with appropria
 
 ### 1. Create an API Key
 
-Navigate to **Access Management → API Keys** and create a key with at least these permissions:
+Navigate to **Users & Groups → API keys** and create a key with at least these permissions:
 
 - `jobs:execute` - Trigger backup jobs
 - `history:read` - Poll execution status
@@ -571,7 +571,7 @@ API requests are subject to the same rate limits as the web interface:
 
 ### 403 Forbidden
 - The key is valid but lacks the required permission
-- Add the missing permission under **Access Management → API Keys**
+- Add the missing permission under **Users & Groups → API keys**
 
 ### Job not starting (Pending)
 - The job may be queued due to the **max concurrent jobs** setting

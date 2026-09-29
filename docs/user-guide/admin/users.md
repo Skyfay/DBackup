@@ -1,14 +1,6 @@
 # User Management
 
-Manage user accounts in DBackup.
-
-## Overview
-
-DBackup supports multiple users with role-based access control:
-- Multiple user accounts
-- Group-based permissions
-- SSO/OIDC integration
-- Two-factor authentication
+Manage the people who sign in to DBackup, how they sign in and what their group lets them do.
 
 ## First User
 
@@ -22,63 +14,86 @@ The first user to sign up becomes the administrator:
 Self-registration is only available for the first user. Additional users must be created by an admin.
 :::
 
-## Managing Users
+## The Users Tab
 
-### View Users
+Go to **Users & Groups** in the sidebar. The **Users** tab lists every user:
 
-1. Go to **Users** in the sidebar
-2. See all user accounts
-3. View status, groups, 2FA status
+| Column | Shows |
+| :--- | :--- |
+| **User** | Name and email. Your own row is marked **You** |
+| **Group** | The group of the user, or **No group** in amber |
+| **Signs in with** | Password, passkeys and the SSO providers linked to the account |
+| **2FA** | **App** or **Passkey** when DBackup asks for a second factor, **Via SSO** for a user who only signs in through SSO, **Off** otherwise |
+| **Last sign-in** | When and with which browser, from the audit log and the sessions |
+| **Sessions** | Browsers signed in as the user right now |
+| **API keys** | Keys the user owns |
 
-### Create User
+The numbers above the list count the users without a group, the users who sign in with a password alone, who signed in during the last 30 days and the open sessions. The quick filters **No second factor** and **No group** find the users that need a look. On a phone the users show as cards.
 
-1. Click **Add User**
-2. Enter:
-   - Email address
-   - Name
-   - Password
-   - Group assignment
-3. Save
+## Create a User
 
-### Edit User
+1. Click **New user**
+2. Enter the name and the email
+3. Enter a password, or click **Generate** for one of 16 characters, which then shows so you can hand it on
+4. Pick the group. Each card says what the group lets its members do
+5. Click **Create user**
 
-1. Click on a user
-2. Modify:
-   - Name
-   - Email
-   - Group assignment
-3. Save
+The user can sign in right away and changes the password under **Profile → Security**.
 
-### Delete User
-
-1. Click user's menu (⋮)
-2. Select **Delete**
-3. Confirm deletion
-
-::: danger Cannot Undo
-User deletion is permanent. The user loses access immediately.
+::: info No group and SuperAdmin
+**No group** creates a user who signs in but sees and does nothing until someone picks a group. Only a SuperAdmin can make someone a SuperAdmin.
 :::
 
-## User Properties
+## The Details of a User
 
-| Property | Description |
-| :--- | :--- |
-| **Email** | Login identifier, must be unique |
-| **Name** | Display name |
-| **Password** | Login password |
-| **Group** | Permission group |
-| **2FA Status** | Whether TOTP is enabled |
-| **Created** | Account creation date |
-| **Last Login** | Most recent login |
+A click on a user opens a panel:
+
+- **Access** says in words what the group lets the user see, do and change, and how many of the 39 permissions that is
+- **Signs in with** lists the password with the date it was set, the authenticator app, the passkeys and the linked SSO providers
+- **Sessions** lists the browsers signed in as the user, with the address and when each signed in
+- **API keys** lists the keys the user owns, whether they work and when they were last used
+- **Activity** shows the newest entries of the audit log written by the user
+
+**Edit**, the menu beside it and the right click on a row offer the actions below.
+
+## Admin Actions
+
+All of them need the permission to manage users and are written to the audit log.
+
+### Set a New Password
+
+1. Click **Set a new one** in the panel, or **Set a new password** in the menu
+2. Enter a password or click **Generate**
+3. Leave **Sign them out everywhere** on, so the old password stops working at once
+4. Click **Set password**
+
+A user who signs in only through SSO gets a password as a second way in. Your own password changes under **Profile → Security**, which asks for the current one. Only a SuperAdmin sets the password of a SuperAdmin.
+
+### Reset 2FA
+
+**Reset 2FA** removes the authenticator app and the passkey as second factor after asking. The user signs in with the password alone until they set up a second factor again under **Profile → Security**.
+
+### Sign Out
+
+**Sign out** in the panel ends one session, **Sign out everywhere** ends all of them. On your own account it reads **Sign out other sessions** and keeps the browser you use. API keys keep working.
+
+### Change the Group
+
+Click **Edit** or **Change group** and pick another card. Permissions change with the next request of the user. Nobody changes their own group, and only a SuperAdmin moves a SuperAdmin into another group.
+
+### Delete a User
+
+Click **Delete** in the menu of the user and confirm. Their sessions end at once and their API keys are deleted with them, while the audit log keeps what they did. Tick several rows to delete them together.
+
+::: danger Cannot Undo
+Deleting a user is permanent. Your own account, the last SuperAdmin and the last account cannot be deleted, and only a SuperAdmin deletes a SuperAdmin.
+:::
 
 ## Authentication
 
 ### Password Login
 
-Standard email/password authentication:
-- Passwords are hashed with bcrypt
-- No password complexity requirements enforced
-- Users can change their own passwords
+Passwords are hashed by Better Auth with scrypt and need at least 8 characters, with no other rules. Users change their own under **Profile → Security**.
 
 ### Two-Factor Authentication (2FA)
 
@@ -97,74 +112,15 @@ Hardware security key or biometric:
 3. Follow browser prompts
 4. Name the passkey
 
+A passkey can also serve as the second factor after the password.
+
 ### SSO/OIDC
 
 See [SSO/OIDC](/user-guide/admin/sso) for enterprise authentication.
 
-## Admin Actions
-
-### Reset 2FA
-
-If user loses their 2FA device:
-1. Admin edits user
-2. Click **Reset 2FA**
-3. User can re-enroll
-
-### Reset Password
-
-1. Admin edits user
-2. Click **Reset Password**
-3. Enter new password
-4. User can change after login
-
-### Change Group
-
-1. Admin edits user
-2. Select different group
-3. Permissions change immediately
-
-## User Profiles
-
-Users can manage their own:
-- Display name
-- Email (if permitted)
-- Password
-- 2FA settings
-- Passkeys
-- Avatar
-
-Located in **Profile** section after clicking user avatar.
-
-## Audit Logging
-
-User actions are logged:
-- Login attempts
-- Permission changes
-- Account modifications
-
-View in **Settings** → **Audit Log**.
-
-## Best Practices
-
-### Account Security
-
-1. **Enable 2FA** for all users
-2. **Use strong passwords**
-3. **Limit admin accounts**
-4. **Regular access reviews**
-
-### Permissions
-
-1. **Least privilege** - Give minimum needed
-2. **Group-based** - Avoid individual permissions
-3. **Document access** - Know who has what
-
-### Offboarding
-
-When users leave:
-1. Delete or disable account
-2. Review their group's access
-3. Rotate shared secrets if needed
+::: tip Keep access tight
+Give each person their own account, put them in the smallest group that covers their work and check the **No second factor** filter from time to time.
+:::
 
 ## Troubleshooting
 
@@ -172,9 +128,8 @@ When users leave:
 
 **Check**:
 1. Email is correct
-2. Password is correct
+2. Password is correct, or set a new one for the user
 3. 2FA code is current (30-second window)
-4. Account isn't disabled
 
 ### 2FA Not Working
 
@@ -185,15 +140,12 @@ When users leave:
 
 **Solutions**:
 1. Check device time is synced
-2. Admin can reset 2FA
-3. Use recovery code
+2. Use a recovery code
+3. An admin resets 2FA from the details of the user
 
-### Permissions Not Working
+### A User Sees Nothing
 
-**Check**:
-1. User is in correct group
-2. Group has required permission
-3. Cache might need refresh (re-login)
+The user has no group. Open the user and click **Change group**.
 
 ## Next Steps
 

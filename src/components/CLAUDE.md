@@ -126,7 +126,7 @@ Use `AlertDialog`, never `Dialog`, and never `window.confirm()` or `alert()`. Th
 
 ## 4. Tables
 
-Use `DataTable` from `@/components/ui/data-table` for any list of records. It handles sorting, pagination, and faceted filters. Reference: `src/components/audit/audit-table.tsx`, `src/app/dashboard/users/user-table.tsx`.
+Use `DataTable` from `@/components/ui/data-table` for any list of records. It handles sorting, pagination, and faceted filters. Reference: `src/components/dashboard/users/users-tab.tsx` with `user-columns.tsx`, and `src/components/dashboard/vault/credentials-tab.tsx`.
 
 - Define columns as `ColumnDef[]` outside the render path where possible.
 - Row actions go in a `DropdownMenu` triggered by `<Button variant="ghost" className="h-8 w-8 p-0">` with `<MoreHorizontal className="h-4 w-4" />` and an `<span className="sr-only">Open menu</span>`.
@@ -250,7 +250,7 @@ Never log whole session, user, or config objects. Log the specific field (`{ use
 | Raw `overflow-y-auto` instead of ScrollArea | Fails the build |
 | Locale date formatting | Fails the build |
 | `max-h` on the ScrollArea root | Baseline of 4, fails if it grows |
-| Palette color with no `dark:` variant | Baseline of 16, fails if it grows |
+| Palette color with no `dark:` variant | Baseline of 15, fails if it grows |
 | `info` blue outside the running status, raw `data-tone` attribute | Fails the build |
 
 Baselines may only be lowered. Fix violations, drop the number, and the guard locks the win in. Everything else in this guide is on you.

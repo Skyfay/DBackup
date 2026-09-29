@@ -32,6 +32,8 @@ All notable changes to DBackup are documented here.
 - **templates**: The Templates page lists retention policies, file names, schedule presets, notifications and exclude patterns as tables with the jobs, destinations and folders that use each template, its default and what it does. A row opens its details in a side panel and its actions with a right click, and a phone gets cards.
 - **templates**: Editing a retention policy shows what the next run at each of its destinations removes with the change, and a new default names the destinations it reaches first. The exclude preset dialog lists what a preset skips and checks a path against it, and deleting a template names what depends on it.
 - **connections**: The folder of an S3, SFTP, FTP, WebDAV, SMB or Rsync connection can be picked in a browser of its folders, before the connection is saved. The folder button opens once the connection and its login are filled in.
+- **users**: The Users tab lists every user with how they sign in, their second factor, their last sign-in and their open sessions, with the users without a group or with a password alone above the list. A row opens a panel with what their group lets them do in words, their ways to sign in, their sessions, their API keys and their latest activity, and a phone gets cards.
+- **users**: Admins set a new password for a user and end the sessions of a user one by one or all at once. A new password signs the user out everywhere unless that is turned off.
 
 ### 🐛 Bug Fixes
 
@@ -69,6 +71,11 @@ All notable changes to DBackup are documented here.
 - **templates**: The exclude groups of DBackup skip folders like node_modules, .git, __pycache__ or .Spotlight-V100 at any depth of a backed up folder, where they matched only at its top or, for the macOS folders, nowhere. An incremental job with such a preset starts a new full backup on its next run.
 - **Rsync**: A directory source over rsync copies exactly the files its backup lists and reports what the exclude patterns kept out, like the other adapters. Rsync read the patterns by its own rules before, skipped files in a nested folder or in a folder named like a file pattern, and the run failed on hashing a file that never arrived.
 - **Rsync**: The folder tree of an rsync directory source lists the folders of servers without GNU find, like macOS or a NAS with BusyBox, where it stayed empty.
+- **users**: New user asks for the group, so a new user no longer signs in to a page that shows nothing until someone edits them.
+- **users**: Deleting a single user asks first, and the own account can no longer be deleted from its row.
+- **users**: Reset 2FA asks first and is written to the audit log.
+- **users**: A user created on the Users page no longer starts with an open session that nobody signed in with.
+- **auth**: The sessions of the profile name an iPhone as iOS instead of macOS.
 
 ### 🔒 Security
 
@@ -81,6 +88,7 @@ All notable changes to DBackup are documented here.
 - **templates**: The notification templates and the Templates page no longer send the stored configs of notification channels to the browser, only the name and type of each channel. Reading jobs or templates was enough to get them before, without the right to read notification channels.
 - **jobs**: Creating, changing and cloning a job no longer answers with the stored configs of its connections, only their name and type. Changing jobs was enough to get them before.
 - **vault**: Revealing an encryption key is written to the audit log, like a revealed credential.
+- **users**: Only a SuperAdmin can move a SuperAdmin into another group or delete one. Anyone who may change users could do both before.
 
 ### 🎨 Improvements
 
@@ -142,6 +150,8 @@ All notable changes to DBackup are documented here.
 - **api**: The new `GET /api/vault/credentials` returns every credential profile with the connections that use it, and `GET /api/vault/keys` every encryption key with its jobs, its backups per destination and its last recovery kit.
 - **api**: The new `GET /api/templates` returns every template with the jobs, destinations and folders that use it.
 - **api**: The new `POST /api/adapters/browse-location` lists the folders of a storage connection from the values of its form, for the folder button of the connection form.
+- **ui**: The Access Management page is called Users & Groups like its entry in the sidebar, and its SSO / OIDC tab is called Sign-in.
+- **api**: The new `GET /api/users` returns every user with how they sign in, their group, their open sessions and the numbers of the Users tab, and `GET /api/users/{id}` one user with their sessions, passkeys, API keys and latest activity.
 
 ### 🗑️ Removed
 
@@ -177,11 +187,12 @@ All notable changes to DBackup are documented here.
 - **docs**: The template guide describes the new Templates page, what a change of a retention policy removes, the exclude presets and what happens to the jobs and folders of a deleted template.
 - **docs**: The file backup and template guides say that the exclude groups of DBackup skip their folders at any depth.
 - **docs**: The S3, SFTP, FTP, WebDAV, SMB and Rsync guides name the folder button of the Location part, and the API reference lists `POST /api/adapters/browse-location`.
+- **docs**: The user guide describes the new Users tab, the details of a user, New user with its group and how an admin sets a password, resets 2FA and signs a user out. The API key and webhook guides find the keys under Users & Groups.
 
 ### 🧪 Tests
 
 - **tests**: The test that generates an SSH key no longer fails at random during a full run, where the busy crypto thread pool made it slower than the default timeout.
-- **tests**: The palette color guard allows 16 colors without a dark variant, down from 37.
+- **tests**: The palette color guard allows 15 colors without a dark variant, down from 37.
 
 ### 🐳 Docker
 

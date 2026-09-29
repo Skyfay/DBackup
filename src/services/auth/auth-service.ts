@@ -1,4 +1,5 @@
 import { auth } from "@/lib/auth";
+import { ValidationError } from "@/lib/logging/errors";
 
 export const authService = {
   /**
@@ -33,6 +34,26 @@ export const authService = {
         }
       }
       throw new Error(errorMessage);
+    }
+  },
+
+  /**
+   * Sets a new password for a user, the way the admin plugin of Better Auth does it: the hash
+   * goes into the credential account, which is created for a user who signed in without one.
+   * The limits are the ones sign-up checks.
+   */
+  async setPassword(userId: string, password: string) {
+    const ctx = await auth.$context;
+    const { minPasswordLength, maxPasswordLength } = ctx.password.config;
+    if (password.length < minPasswordLength) throw new ValidationError(`The password needs at least ${minPasswordLength} characters.`);
+    if (password.length > maxPasswordLength) throw new ValidationError(`The password can have at most ${maxPasswordLength} characters.`);
+
+    const hash = await ctx.password.hash(password);
+    const accounts = await ctx.internalAdapter.findAccounts(userId);
+    if (accounts.some((account) => account.providerId === "credential")) {
+      await ctx.internalAdapter.updatePassword(userId, hash);
+    } else {
+      await ctx.internalAdapter.createAccount({ userId, providerId: "credential", accountId: userId, password: hash });
     }
   },
 };

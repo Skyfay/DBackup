@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { Icon, type IconifyIcon } from "@iconify/react"
 import { authClient } from "@/lib/auth/client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -9,6 +8,8 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, Globe, Trash2, LogOut } from "lucide-react"
 import { toast } from "sonner"
 import { DateDisplay } from "@/components/utils/date-display"
+import { BrowserIcon, OsIcon } from "@/components/auth/device-icons"
+import { formatIpAddress, parseUserAgent } from "@/lib/core/user-agent"
 import {
     AlertDialog,
     AlertDialogAction,
@@ -20,29 +21,6 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 
-// Browser icons (bundled, offline-capable)
-import chromeIcon from "@iconify-icons/logos/chrome"
-import braveIcon from "@iconify-icons/logos/brave"
-import firefoxIcon from "@iconify-icons/logos/firefox"
-import safariIcon from "@iconify-icons/logos/safari"
-import edgeIcon from "@iconify-icons/logos/microsoft-edge"
-import operaIcon from "@iconify-icons/logos/opera"
-import vivaldiIcon from "@iconify-icons/logos/vivaldi-icon"
-import arcIcon from "@iconify-icons/simple-icons/arc"
-import torIcon from "@iconify-icons/simple-icons/torbrowser"
-
-// OS icons
-import appleIcon from "@iconify-icons/logos/apple"
-import windowsIcon from "@iconify-icons/logos/microsoft-windows-icon"
-import linuxIcon from "@iconify-icons/logos/linux-tux"
-import androidIcon from "@iconify-icons/logos/android-icon"
-
-// Fallback icons (MDI)
-import monitorIcon from "@iconify-icons/mdi/monitor"
-import cellphoneIcon from "@iconify-icons/mdi/cellphone"
-import tabletIcon from "@iconify-icons/mdi/tablet"
-import webIcon from "@iconify-icons/mdi/web"
-
 interface SessionInfo {
     id: string
     token: string
@@ -51,108 +29,6 @@ interface SessionInfo {
     expiresAt: Date
     ipAddress: string | null
     userAgent: string | null
-}
-
-type BrowserName = "Chrome" | "Brave" | "Firefox" | "Safari" | "Edge" | "Opera" | "Vivaldi" | "Arc" | "Tor Browser" | "Internet Explorer" | "Unknown"
-type OsName = "Windows" | "macOS" | "Linux" | "Android" | "iOS" | "Chrome OS" | "Unknown"
-
-const BROWSER_ICONS: Record<string, { icon: IconifyIcon; color?: string }> = {
-    "Chrome": { icon: chromeIcon },
-    "Brave": { icon: braveIcon },
-    "Firefox": { icon: firefoxIcon },
-    "Safari": { icon: safariIcon },
-    "Edge": { icon: edgeIcon },
-    "Opera": { icon: operaIcon },
-    "Vivaldi": { icon: vivaldiIcon },
-    "Arc": { icon: arcIcon, color: "#0085FF" },
-    "Tor Browser": { icon: torIcon, color: "#7D4698" },
-}
-
-const OS_ICONS: Record<string, { icon: IconifyIcon; color?: string; darkInvert?: boolean }> = {
-    "macOS": { icon: appleIcon, darkInvert: true },
-    "iOS": { icon: appleIcon, darkInvert: true },
-    "Windows": { icon: windowsIcon },
-    "Linux": { icon: linuxIcon },
-    "Android": { icon: androidIcon },
-}
-
-const DEVICE_ICONS: Record<string, IconifyIcon> = {
-    "desktop": monitorIcon,
-    "mobile": cellphoneIcon,
-    "tablet": tabletIcon,
-}
-
-function parseUserAgent(ua: string | null): { browser: BrowserName; os: OsName; device: "desktop" | "mobile" | "tablet" } {
-    if (!ua) return { browser: "Unknown", os: "Unknown", device: "desktop" }
-
-    // Detect OS
-    let os: OsName = "Unknown"
-    if (ua.includes("Windows")) os = "Windows"
-    else if (ua.includes("Mac OS X") || ua.includes("Macintosh")) os = "macOS"
-    else if (ua.includes("CrOS")) os = "Chrome OS"
-    else if (ua.includes("Android")) os = "Android"
-    else if (ua.includes("iPhone") || ua.includes("iPad")) os = "iOS"
-    else if (ua.includes("Linux")) os = "Linux"
-
-    // Detect Browser - order matters: specific browsers before generic Chrome/Safari
-    let browser: BrowserName = "Unknown"
-    if (ua.includes("Firefox/")) browser = "Firefox"
-    else if (ua.includes("Edg/")) browser = "Edge"
-    else if (ua.includes("OPR/") || ua.includes("Opera")) browser = "Opera"
-    else if (ua.includes("Vivaldi/")) browser = "Vivaldi"
-    else if (ua.includes("Brave")) browser = "Brave"
-    else if (ua.includes("Arc/")) browser = "Arc"
-    else if (ua.includes("Tor Browser") || ua.includes("TorBrowser")) browser = "Tor Browser"
-    else if (ua.includes("Chrome/") && ua.includes("Safari/")) browser = "Chrome"
-    else if (ua.includes("Safari/") && !ua.includes("Chrome")) browser = "Safari"
-    else if (ua.includes("Trident/") || ua.includes("MSIE")) browser = "Internet Explorer"
-
-    // Detect Device Type
-    let device: "desktop" | "mobile" | "tablet" = "desktop"
-    if (ua.includes("iPad") || ua.includes("Tablet")) device = "tablet"
-    else if (ua.includes("Mobile") || ua.includes("iPhone") || (ua.includes("Android") && !ua.includes("Tablet"))) device = "mobile"
-
-    return { browser, os, device }
-}
-
-function formatIpAddress(ip: string | null): string {
-    if (!ip) return ""
-    // Detect all-zeros IPv6 (expanded form from Better Auth)
-    if (/^0{1,4}(:0{1,4}){7}$/.test(ip) || ip === "::") return "localhost"
-    // Detect IPv6 loopback ::1
-    if (/^0{1,4}(:0{1,4}){6}:0{0,3}1$/.test(ip) || ip === "::1") return "localhost"
-    // Compress standard IPv6 for display (remove leading zeros in groups, collapse longest :: run)
-    if (ip.includes(":") && !ip.includes(".")) {
-        const groups = ip.split(":").map(g => g.replace(/^0+/, "") || "0")
-        return groups.join(":").replace(/(?:^|:)0(?::0)*(?::|$)/, "::")
-    }
-    return ip
-}
-
-function BrowserIcon({ browser, device }: { browser: BrowserName; device: "desktop" | "mobile" | "tablet" }) {
-    const browserEntry = BROWSER_ICONS[browser]
-    if (browserEntry) {
-        return (
-            <Icon
-                icon={browserEntry.icon}
-                className="h-5 w-5"
-                {...(browserEntry.color ? { style: { color: browserEntry.color } } : {})}
-            />
-        )
-    }
-    // Fallback: device-type icon
-    return <Icon icon={DEVICE_ICONS[device] ?? webIcon} className="h-5 w-5 text-muted-foreground" />
-}
-
-function OsIcon({ os }: { os: OsName }) {
-    const osEntry = OS_ICONS[os]
-    if (!osEntry) return null
-    return (
-        <Icon
-            icon={osEntry.icon}
-            className={`h-3.5 w-3.5${osEntry.darkInvert ? " dark:invert" : ""}`}
-            {...(osEntry.color ? { style: { color: osEntry.color } } : {})}        />
-    )
 }
 
 export function SessionsForm() {

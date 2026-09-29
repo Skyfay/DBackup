@@ -10,8 +10,8 @@ export const JOIN_END = "md:rounded-t-none md:border-t-0";
 /**
  * The row on top of a page with lists: its tabs on the left, what belongs to the open list on the
  * right. On a phone it stays a row above the list. From md up it is the head of the card of the
- * list, with the line under the open tab on its rule, and the part after it joins it without a
- * gap, see `JOIN_MIDDLE` and `JOIN_END`. Its tabs take `variant="page"`.
+ * list, a line under it, and the part after it joins it without a gap, see `JOIN_MIDDLE` and
+ * `JOIN_END`. Its tabs take `variant="page"`.
  */
 export function PageHead({ className, children }: { className?: string; children: React.ReactNode }) {
     return (

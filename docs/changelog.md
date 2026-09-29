@@ -34,6 +34,8 @@ All notable changes to DBackup are documented here.
 - **connections**: The folder of an S3, SFTP, FTP, WebDAV, SMB or Rsync connection can be picked in a browser of its folders, before the connection is saved. The folder button opens once the connection and its login are filled in.
 - **users**: The Users tab lists every user with how they sign in, their second factor, their last sign-in and their open sessions, with the users without a group or with a password alone above the list. A row opens a panel with what their group lets them do in words, their ways to sign in, their sessions, their API keys and their latest activity, and a phone gets cards.
 - **users**: Admins set a new password for a user and end the sessions of a user one by one or all at once. A new password signs the user out everywhere unless that is turned off.
+- **users**: The Groups tab lists every group with what its members may do in one sentence, its members and its share of the permissions, as a table or as cards. A group opens a panel with its level in every area, its members to move and its changes from the audit log.
+- **users**: New group starts from a template, a copy of a group or nothing, and every group is edited area by area with a level and the single permissions below it, each with a sentence.
 
 ### 🐛 Bug Fixes
 
@@ -76,6 +78,8 @@ All notable changes to DBackup are documented here.
 - **users**: Reset 2FA asks first and is written to the audit log.
 - **users**: A user created on the Users page no longer starts with an open session that nobody signed in with.
 - **auth**: The sessions of the profile name an iPhone as iOS instead of macOS.
+- **users**: Deleting a group with members asks which group they move to, where they lost all access without a word before. Deleting several groups leaves out the ones with members instead of claiming to keep them.
+- **users**: Deleting a single group asks first.
 
 ### 🔒 Security
 
@@ -130,6 +134,7 @@ All notable changes to DBackup are documented here.
 - **storage**: **Verify integrity** opens a dialog with every copy of a backup, its last check and whether the destination checks it without a download, and verifies one copy or all of them. The copies without a download go first, and the dialog shows each copy while it is checked, the bytes of a download included.
 - **docker**: The volume picker of a job lists the volumes by Compose stack with the containers that mount each one, whether they run and where, and shows beside them which containers the job stops in which order. Anonymous volumes go by their container, and the ones no container mounts stay hidden until asked for.
 - **storage**: Ticked destinations on the Backups page can be checked or get their alerts changed together, where every alert stays as each destination has it until it is set for all of them. A list under each alert shows what changes at each destination, and a storage limit that would fire right away is marked.
+- **users**: Editing a group writes what changed to the audit log instead of its whole list of permissions, and a group keeps only permissions DBackup knows.
 
 ### 🔄 Changed
 
@@ -152,6 +157,7 @@ All notable changes to DBackup are documented here.
 - **api**: The new `POST /api/adapters/browse-location` lists the folders of a storage connection from the values of its form, for the folder button of the connection form.
 - **ui**: The Access Management page is called Users & Groups like its entry in the sidebar, and its SSO / OIDC tab is called Sign-in.
 - **api**: The new `GET /api/users` returns every user with how they sign in, their group, their open sessions and the numbers of the Users tab, and `GET /api/users/{id}` one user with their sessions, passkeys, API keys and latest activity.
+- **api**: The new `GET /api/groups` returns every group with its members, what the audit log knows about it and the numbers of the Groups tab, and `GET /api/groups/{id}` the changes of one group.
 
 ### 🗑️ Removed
 
@@ -188,11 +194,12 @@ All notable changes to DBackup are documented here.
 - **docs**: The file backup and template guides say that the exclude groups of DBackup skip their folders at any depth.
 - **docs**: The S3, SFTP, FTP, WebDAV, SMB and Rsync guides name the folder button of the Location part, and the API reference lists `POST /api/adapters/browse-location`.
 - **docs**: The user guide describes the new Users tab, the details of a user, New user with its group and how an admin sets a password, resets 2FA and signs a user out. The API key and webhook guides find the keys under Users & Groups.
+- **docs**: The groups guide describes the Groups tab, the areas and levels of the permissions, the templates of a new group and how a delete moves the members.
 
 ### 🧪 Tests
 
 - **tests**: The test that generates an SSH key no longer fails at random during a full run, where the busy crypto thread pool made it slower than the default timeout.
-- **tests**: The palette color guard allows 15 colors without a dark variant, down from 37.
+- **tests**: The palette color guard allows 15 colors without a dark variant, down from 37, and the guard for a height on the root of a scroll area allows 2, down from 3.
 
 ### 🐳 Docker
 

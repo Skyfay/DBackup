@@ -144,6 +144,8 @@ export interface ConfirmDialogProps {
     onConfirm: () => void;
     /** What the action touches, usually a DialogItemList. */
     children?: React.ReactNode;
+    /** A wider dialog for a body with a choice, like `sm:max-w-xl`. */
+    className?: string;
 }
 
 /**
@@ -165,6 +167,7 @@ export function ConfirmDialog({
     disabled = false,
     onConfirm,
     children,
+    className,
 }: ConfirmDialogProps) {
     const tone: Tone = toneOverride ?? (destructive ? "destructive" : "neutral");
     // Screen readers announce the note, or the description when there is no note.
@@ -173,7 +176,7 @@ export function ConfirmDialog({
     return (
         <AlertDialog open={open} onOpenChange={(next) => !isPending && onOpenChange(next)}>
             {/* The tone reaches the confirm button too, so a warning asks with an amber one. */}
-            <AlertDialogContent tone={tone} className={DIALOG_SURFACE} {...(!note && !description ? { "aria-describedby": undefined } : {})}>
+            <AlertDialogContent tone={tone} className={cn(DIALOG_SURFACE, className)} {...(!note && !description ? { "aria-describedby": undefined } : {})}>
                 <DialogHead tone={tone} icon={icon ?? (tone === "destructive" || tone === "warning" ? AlertTriangle : Info)}>
                     <AlertDialogTitle className="text-base">{title}</AlertDialogTitle>
                     {note && <AlertDialogDescription className={dialogNoteClass(tone)}>{note}</AlertDialogDescription>}

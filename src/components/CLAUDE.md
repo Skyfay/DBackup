@@ -26,7 +26,7 @@ This is the part that silently fails. `ScrollArea` renders a Radix Root wrapping
 
 `*:data-[slot=scroll-area-viewport]:` is the canonical selector - it matches the `data-slot` our wrapper sets in `ui/scroll-area.tsx`. A few older files use `*:data-radix-scroll-area-viewport:`. Both work at runtime, but do not copy the old form into new code.
 
-Four files still set `max-h` on the root. `tests/unit/lint-guards/design-system.test.ts` holds that count as a baseline and fails the build if it grows, so new code cannot add to it.
+Two files still set `max-h` on the root. `tests/unit/lint-guards/design-system.test.ts` holds that count as a baseline and fails the build if it grows, so new code cannot add to it.
 
 ### Long text inside
 
@@ -249,7 +249,7 @@ Never log whole session, user, or config objects. Log the specific field (`{ use
 | :--- | :--- |
 | Raw `overflow-y-auto` instead of ScrollArea | Fails the build |
 | Locale date formatting | Fails the build |
-| `max-h` on the ScrollArea root | Baseline of 4, fails if it grows |
+| `max-h` on the ScrollArea root | Baseline of 2, fails if it grows |
 | Palette color with no `dark:` variant | Baseline of 15, fails if it grows |
 | `info` blue outside the running status, raw `data-tone` attribute | Fails the build |
 

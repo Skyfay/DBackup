@@ -1,337 +1,127 @@
 # Groups & Permissions
 
-Configure role-based access control (RBAC) for users.
+Decide what people may see and do in DBackup through the group they are in.
 
 ## Overview
 
-DBackup uses a group-based permission system:
-- **Groups** contain sets of permissions
-- **Users** are assigned to groups
-- Users inherit all permissions from their group
+- A **group** holds a set of permissions
+- Every **user** is in one group, or in none
+- A user may do exactly what the permissions of their group allow, there are no deny rules
 
-## Permission Model
+The built-in **SuperAdmin** group passes every check. It cannot be edited or deleted, and only a SuperAdmin can make someone a SuperAdmin.
 
-```
-User → Group → Permissions
-                  │
-                  ├── sources:read
-                  ├── sources:write
-                  ├── jobs:execute
-                  └── ...
-```
-
-### No Group = No Access
-
-Users without a group have **no permissions** by default:
-- Cannot view any resources
-- Cannot perform any actions
-- Only access their profile
-
-## Managing Groups
-
-### View Groups
-
-1. Go to **Users** → **Groups** tab
-2. See all defined groups
-3. View permission counts
-
-### Create Group
-
-1. Click **Create Group**
-2. Enter group name
-3. Select permissions
-4. Save
-
-### Edit Group
-
-1. Click on a group
-2. Modify permissions
-3. Save
-
-Changes apply immediately to all members.
-
-### Delete Group
-
-1. Click group's menu (⋮)
-2. Select **Delete**
-3. Confirm
-
-::: warning Members Lose Access
-Users in deleted group lose all permissions until reassigned.
+::: warning No Group = No Access
+A user without a group signs in but sees and does nothing until someone picks a group. The Users tab counts them above the list.
 :::
 
-## Permission Reference
+## The Groups Tab
 
-### Users & Groups
+Go to **Users & Groups → Groups**. Each group shows what its members may do in one sentence, its members, how many of the 39 permissions it holds and when it last changed. The numbers above the list name the groups that may delete backups or reveal secrets and the groups nobody is in.
 
-| Permission | Description |
+The switch beside the tabs shows the groups as a table or as cards with a bar of the level of every area. Phones always get the cards.
+
+A click on a group opens its details: what its members may do in words, the level of every area, the members, and its changes from the audit log. With the right to change users, **Move** sends a member to another group and **Add people** moves people into this one.
+
+## Areas and Levels
+
+The permissions are grouped into areas, and each area has a level:
+
+| Level | Means |
 | :--- | :--- |
-| `users:read` | View user list and details |
-| `users:write` | Create, edit, delete users |
-| `groups:read` | View groups and permissions |
-| `groups:write` | Create, edit, delete groups |
+| **None** | The area stays hidden |
+| **See** | Look, never change |
+| **Use** | Run, browse, download or restore as well |
+| **Change** | Add, edit and delete as well |
+| **Full** | The rest too, like deleting backups or revealing secrets |
 
-### Database Sources
+Not every area has every level. A group whose permissions match no level of an area shows **Custom** there.
 
-| Permission | Description |
-| :--- | :--- |
-| `sources:view` | View configured sources |
-| `sources:read` | Browse Database Explorer (tables and data) |
-| `sources:write` | Add, edit, delete sources |
+| Area | See | Use | Change | Full |
+| :--- | :--- | :--- | :--- | :--- |
+| **Connections** | `sources:view`, `destinations:read`, `notifications:read` | + `sources:read` | + `sources:write`, `destinations:write`, `notifications:write` | |
+| **Jobs** | `jobs:read` | + `jobs:execute` | + `jobs:write` | |
+| **Backups** | `storage:read` | + `storage:download`, `storage:restore` | | + `storage:delete` |
+| **History** | `history:read` | | | |
+| **Templates** | `templates:read` | | + `templates:write` | |
+| **Vault** | `vault:read`, `credentials:read` | | + `vault:write`, `credentials:write` | + `credentials:delete`, `credentials:reveal` |
+| **Users** | `users:read`, `groups:read` | | + `users:write`, `groups:write` | |
+| **API keys** | `api-keys:read` | | + `api-keys:write` | |
+| **Audit log** | `audit:read` | | | |
+| **Settings** | `settings:read` | | + `settings:write` | |
+| **Own profile** | | | `profile:update_name`, `profile:update_email`, `profile:update_password`, `profile:manage_2fa`, `profile:manage_passkeys`, `profile:manage_sso` | |
 
-### Storage Destinations
+`dashboard:read` belongs to History but stands beside its levels. It lets an API key read the totals of the overview through `GET /api/dashboard/stats` without access to jobs, history or storage. The overview page itself needs no permission.
 
-| Permission | Description |
-| :--- | :--- |
-| `destinations:read` | View configured destinations |
-| `destinations:write` | Add, edit, delete destinations |
+`sources:read` browses the tables and rows of a database in the Database Explorer, `credentials:reveal` shows the secret of a saved login and is written to the audit log.
 
-### Backup Jobs
+## Create a Group
 
-| Permission | Description |
-| :--- | :--- |
-| `jobs:read` | View backup jobs |
-| `jobs:write` | Create, edit, delete jobs |
-| `jobs:execute` | Manually run jobs |
+**New group** takes two steps.
 
-### Storage & History
+**Step 1 of 2** picks what the group starts with:
 
-| Permission | Description |
-| :--- | :--- |
-| `storage:read` | Access Backups page |
-| `storage:download` | Download backup files |
-| `storage:restore` | Restore from backups |
-| `storage:delete` | Delete backup files |
-| `history:read` | View execution history |
+- **Custom** starts with no permission, you pick every one yourself
+- A **template** fills the permissions for a common kind of work
+- **Copy a group** starts from the permissions of a group you have
 
-### Dashboard
+| Template | Group name | Starts with |
+| :--- | :--- | :--- |
+| **Viewer** | Viewers | Sees everything, changes nothing, never a secret |
+| **Operator** | Operators | Runs jobs, downloads and restores backups, changes nothing |
+| **Backup admin** | Backup admins | Everything about connections, jobs and backups, nothing about people or settings |
+| **Auditor** | Auditors | Reads the audit log, the history, the users and the settings |
+| **User admin** | User admins | Manages users, groups and API keys, nothing about backups |
 
-| Permission | Description |
-| :--- | :--- |
-| `dashboard:read` | Read the overview statistics through the API (`GET /api/dashboard/stats`) |
+Every template gives the members their own profile. **Change start** in the next step goes back to this choice.
 
-The dashboard overview page itself needs no permission. `dashboard:read` exists so an API key for a homepage widget can read the totals without access to jobs, history, or storage.
+**Step 2 of 2** is the editor, the same one **Edit** opens:
 
-### Notifications
+1. Enter the name, which no other group may have
+2. Pick an area on the left, a list on a phone
+3. Set its level, or tick single permissions below it. A permission that needs another ticks it along, like **Restore** with **See the backups**
+4. Click **Create group** or **Save changes**
 
-| Permission | Description |
-| :--- | :--- |
-| `notifications:read` | View notification configs |
-| `notifications:write` | Manage notification configs |
+The foot names every area whose level changes. Members get a change with their next click, and the audit log keeps what changed rather than the whole list.
 
-### User Profile
+**Duplicate** opens the editor with a copy of a group and nobody in it.
 
-| Permission | Description |
-| :--- | :--- |
-| `profile:update_name` | Change own display name |
-| `profile:update_email` | Change own email |
-| `profile:update_password` | Change own password |
-| `profile:manage_2fa` | Enable/disable 2FA |
-| `profile:manage_passkeys` | Add/remove passkeys |
+## Delete a Group
 
-### Credentials
+**Delete** asks first. A group with members asks which group they move to, or **No group**, and the button waits for the pick. Nobody loses access by surprise, and the audit log keeps the group and who was in it.
 
-| Permission | Description |
-| :--- | :--- |
-| `credentials:read` | View credential profiles |
-| `credentials:write` | Create and edit credential profiles |
-| `credentials:delete` | Delete credential profiles |
-| `credentials:reveal` | View decrypted credential secrets |
+Several empty groups can be ticked and deleted together. A group with members is left out of that and deleted on its own. You cannot delete the group you are in.
 
-### API Keys
-
-| Permission | Description |
-| :--- | :--- |
-| `api-keys:read` | View API keys |
-| `api-keys:write` | Create, delete, and rotate API keys |
-
-### Templates
-
-| Permission | Description |
-| :--- | :--- |
-| `templates:read` | View naming and retention templates |
-| `templates:write` | Create, edit, and delete templates |
-
-### System
-
-| Permission | Description |
-| :--- | :--- |
-| `vault:read` | View encryption profiles |
-| `vault:write` | Manage encryption profiles |
-| `settings:read` | View system settings |
-| `settings:write` | Modify system settings |
-| `audit:read` | View audit logs |
-
-## Recommended Groups
-
-### Administrator
-
-Full access to everything:
-- All permissions enabled
-- Typically for IT/DevOps leads
-
-### Operator
-
-Can run and monitor backups:
-```
-sources:view
-destinations:read
-jobs:read
-jobs:execute
-storage:read
-storage:download
-storage:restore
-history:read
-notifications:read
-profile:*
-```
-
-### Viewer
-
-Read-only access:
-```
-sources:view
-destinations:read
-jobs:read
-storage:read
-history:read
-```
-
-### Developer
-
-Access to test/staging resources:
-```
-sources:view
-sources:read
-jobs:read
-jobs:execute
-storage:read
-storage:download
-history:read
-profile:*
-```
-
-## Permission Inheritance
-
-Permissions are **additive**:
-- User gets all permissions in their group
-- No permission = denied
-- No negative permissions (deny rules)
-
-### Example
-
-```
-"Backup Operator" group has:
-├── jobs:read      ✓ Can view jobs
-├── jobs:execute   ✓ Can run jobs
-└── (no jobs:write)
-                   ✗ Cannot edit jobs
-```
-
-## Best Practices
-
-### Least Privilege
-
-Give minimum permissions needed:
-1. Start with viewer role
-2. Add only what's required
-3. Review regularly
-
-### Group Naming
-
-Clear, descriptive names:
-- ✅ "Backup Operators"
-- ✅ "Database Admins"
-- ❌ "Group 1"
-- ❌ "Users"
-
-### Separation of Duties
-
-Split critical functions:
-- Backup execution: Operators
-- Job configuration: Admins
-- Key management: Security team
-
-### Regular Audits
-
-Periodically review:
-1. Who has access to what
-2. Unused permissions
-3. Group memberships
-4. Access to sensitive operations
-
-## UI Behavior
-
-### Missing Permissions
-
-When user lacks permission:
-- UI elements are hidden
-- Direct URLs return 403
-- Actions are blocked
-
-### Permission Check Flow
-
-```
-User Action → Check Permission → Allow/Deny
-                   │
-              getUserPermissions()
-                   │
-              Group.permissions[]
-```
+::: tip Keep groups small
+Start from the template closest to the work, lower what it does not need, and name the group after the work, like "Backup Operators". The **Can delete backups** and **Can reveal secrets** numbers above the list show where the sensitive permissions are.
+:::
 
 ## Troubleshooting
 
-### User Can't Access Feature
+### A User Sees Nothing
 
-**Check**:
-1. User is in a group
-2. Group has required permission
-3. Permission name is correct
-4. User logged in recently (session might be stale)
+The user has no group. Open the user on the Users tab and click **Change group**, or use **Add people** on a group.
 
-### Permission Changes Not Applied
+### A Button Is Missing
 
-**Try**:
-1. User logs out and back in
-2. Clear browser cache
-3. Verify group changes saved
+The group of the user lacks the permission. Open the group and check the level of the area in its details.
 
-### Need Different Access Levels
+### An Area Shows Custom
 
-**Consider**:
-1. Create new group with specific permissions
-2. Don't modify existing groups that work
-3. Use meaningful group names
+The group holds a mix of permissions no level has, often from before levels existed. Pick a level to tidy it up, or leave it as it is.
 
 ## API Reference
 
-### Permission Format
-
-```
-{resource}:{action}
-
-Examples:
-- sources:read
-- jobs:write
-- storage:delete
-```
-
-### Group Structure
+Permissions are strings in the form `{resource}:{action}`, like `jobs:execute`. A group stores them as a list:
 
 ```json
 {
   "id": "uuid",
   "name": "Backup Operators",
-  "permissions": [
-    "sources:read",
-    "destinations:read",
-    "jobs:read",
-    "jobs:execute",
-    "storage:read",
-    "history:read"
-  ]
+  "permissions": ["sources:view", "destinations:read", "jobs:read", "jobs:execute", "storage:read", "history:read"]
 }
 ```
+
+API keys hold a list in the same form, picked when the key is created.
 
 ## Next Steps
 

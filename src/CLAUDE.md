@@ -35,7 +35,7 @@ src/services/
   system/        healthcheck-service.ts, system-task-service.ts, update-service.ts, db-version-service.ts, certificate-service.ts
   config/        config-service.ts, export.ts, import.ts, parse.ts, restore-pipeline.ts
   templates/     naming-template-service.ts, notification-template-service.ts, retention-policy-service.ts, schedule-preset-service.ts, exclude-pattern-preset-service.ts, templates-model.ts (Templates page model), retention-targets.ts and retention-preview.ts (what a retention change removes)
-  user/          user-service.ts, users-model.ts (Users tab page model), user-details.ts (the panel of a user), preference-service.ts
+  user/          user-service.ts, users-model.ts (Users tab page model), user-details.ts (the panel of a user), group-service.ts, groups-model.ts (Groups tab page model), group-details.ts (the history of a group), preference-service.ts
   dashboard/     overview-service.ts (page model), aggregates.ts (cached history), health.ts, trends.ts, cache.ts
   audit-service.ts, dashboard-service.ts   (flat, no subdirectory)
 ```

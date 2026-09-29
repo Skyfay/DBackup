@@ -232,7 +232,7 @@ describe("ScrollArea max-height placement", () => {
      *
      * Canonical form: *:data-[slot=scroll-area-viewport]:max-h-[...]
      */
-    const BASELINE = 3;
+    const BASELINE = 2;
 
     it("should not add new ScrollAreas with max-h on the root", () => {
         const violations = scan(collectTsx(SRC_DIR), (line) => {

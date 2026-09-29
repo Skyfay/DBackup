@@ -1,21 +1,19 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
-import { getGroups } from "@/app/actions/auth/group";
 import { getSsoProviders } from "@/app/actions/auth/oidc";
 import { getApiKeys } from "@/app/actions/auth/api-key";
-import { GroupTable } from "./group-table";
-import { CreateGroupDialog } from "./create-group-dialog";
 import { AddSsoProviderDialog } from "@/components/oidc/add-sso-provider-dialog";
 import { SsoProviderList } from "@/components/oidc/sso-provider-list";
 import { CreateApiKeyDialog } from "@/components/api-keys/create-api-key-dialog";
 import { ApiKeyTable } from "@/components/api-keys/api-key-table";
 import { AuditTable } from "@/components/audit/audit-table";
+import { GROUPS_PAGE_ID, GROUPS_TABLE_ID } from "@/components/dashboard/groups/groups-tables";
 import { UsersClient, type LegacyTabs } from "@/components/dashboard/users/users-client";
 import { USERS_TABLE_ID, type UsersPageCounts } from "@/components/dashboard/users/users-tables";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCurrentUserWithGroup, getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { getTablePreferences } from "@/services/user/preference-service";
+import { getTablePreferences, getViewMode } from "@/services/user/preference-service";
 import { getUsersPageCounts } from "@/services/user/users-model";
 
 /** The old look of a tab that has not been redesigned yet: a card with a title, a line and one button. */
@@ -38,7 +36,7 @@ function LegacyCard({ title, description, action, children }: { title: string; d
 
 /**
  * Users & Groups: the users with how they sign in, the groups, the API keys, the audit log and
- * the ways to sign in. The users load in the browser, the other tabs still load here.
+ * the ways to sign in. The users and the groups load in the browser, the other tabs still load here.
  */
 export default async function UsersPage() {
     const [permissions, user] = await Promise.all([getUserPermissions(), getCurrentUserWithGroup()]);
@@ -52,10 +50,10 @@ export default async function UsersPage() {
     const canReadSettings = can(PERMISSIONS.SETTINGS.READ);
     if (!canReadUsers && !canReadGroups && !canReadAudit && !canReadApiKeys) redirect("/dashboard");
 
-    const [counts, layouts, groups, ssoProviders, apiKeys] = await Promise.all([
+    const [counts, layouts, groupsView, ssoProviders, apiKeys] = await Promise.all([
         getUsersPageCounts(),
-        getTablePreferences(user.id, [USERS_TABLE_ID]),
-        canReadGroups ? getGroups() : Promise.resolve([]),
+        getTablePreferences(user.id, [USERS_TABLE_ID, GROUPS_TABLE_ID]),
+        getViewMode(user.id, GROUPS_PAGE_ID),
         canReadSettings ? getSsoProviders() : Promise.resolve([]),
         canReadApiKeys ? getApiKeys() : Promise.resolve([]),
     ]);
@@ -69,11 +67,6 @@ export default async function UsersPage() {
     };
 
     const legacy: LegacyTabs = {
-        groups: canReadGroups ? (
-            <LegacyCard title="Groups" description="Manage permission groups." action={can(PERMISSIONS.GROUPS.WRITE) && <CreateGroupDialog />}>
-                <GroupTable data={groups} canManage={can(PERMISSIONS.GROUPS.WRITE)} />
-            </LegacyCard>
-        ) : undefined,
         apikeys: canReadApiKeys ? (
             <LegacyCard
                 title="API Keys"
@@ -103,8 +96,11 @@ export default async function UsersPage() {
                 <UsersClient
                     canReadUsers={canReadUsers}
                     canManageUsers={can(PERMISSIONS.USERS.WRITE)}
+                    canReadGroups={canReadGroups}
+                    canManageGroups={can(PERMISSIONS.GROUPS.WRITE)}
                     counts={visibleCounts}
                     layouts={layouts}
+                    groupsView={groupsView ?? "table"}
                     legacy={legacy}
                 />
             </Suspense>

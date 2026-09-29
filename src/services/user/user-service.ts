@@ -35,6 +35,16 @@ export const userService = {
     return user?.group?.name === SUPER_ADMIN_GROUP;
   },
 
+  /**
+   * Moves users into a group, or into none. Each goes through `updateUserGroup`, so the last
+   * SuperAdmin keeps the group.
+   */
+  async moveUsers(userIds: string[], groupId: string | null): Promise<BulkResult> {
+    const users = await prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true, email: true } });
+    const names = new Map(users.map((user) => [user.id, user.name || user.email]));
+    return runBulk(userIds, (id) => this.updateUserGroup(id, groupId ?? "none").then(() => undefined), (id) => names.get(id));
+  },
+
   /** The users among these ids who are in the SuperAdmin group, with the name to report them by. */
   async superAdminsAmong(userIds: string[]) {
     const users = await prisma.user.findMany({

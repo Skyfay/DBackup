@@ -70,7 +70,7 @@ export async function recordSignIn(ctx: SignInHookContext): Promise<void> {
             created.user.id,
             AUDIT_ACTIONS.LOGIN,
             AUDIT_RESOURCES.AUTH,
-            { method, ...(providerId ? { provider: provider?.name ?? providerId } : {}) },
+            { method, ...(providerId ? { provider: provider?.name ?? providerId, providerId } : {}) },
             undefined,
             { ipAddress: created.session.ipAddress ?? request.ipAddress, userAgent: created.session.userAgent ?? request.userAgent }
         );

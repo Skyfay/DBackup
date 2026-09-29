@@ -9,15 +9,18 @@ import { getOIDCAdapter } from "./oidc-registry";
  * every field of the provider type that is a password, is written as changed without its values.
  */
 
-/** A provider as read from the database, with its client id and secret in plain text. */
-export type ProviderState = Pick<SsoProvider, "adapterId" | "adapterConfig" | "providerId" | "domain" | "clientId" | "clientSecret" | "allowProvisioning">;
+/** A provider as read from the database, with its client id and secret in plain text and the name of its group. */
+export type ProviderState = Pick<SsoProvider, "adapterId" | "adapterConfig" | "providerId" | "domain" | "clientId" | "clientSecret" | "allowProvisioning"> & {
+    groupName?: string | null;
+};
 
 const FIELDS: Record<string, AuditField> = {
     providerId: { label: "Provider ID" },
     domain: { label: "Email domain" },
     clientId: { label: "Client ID" },
     clientSecret: { label: "Client secret", secret: true },
-    allowProvisioning: { label: "Auto-provisioning" },
+    allowProvisioning: { label: "Adds new people" },
+    group: { label: "Group of new people" },
 };
 
 /** A secret as something to compare, never as its value. */
@@ -43,6 +46,7 @@ export function ssoProviderChanges(before: ProviderState, after: ProviderState):
         clientId: provider.clientId,
         clientSecret: secretMark(provider.clientSecret),
         allowProvisioning: provider.allowProvisioning,
+        group: provider.groupName ?? null,
     });
     const from = values(before);
     const to = values(after);

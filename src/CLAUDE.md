@@ -26,7 +26,7 @@ src/services/
   backup/        backup-service.ts (runJob), retention-service.ts (GFS), encryption-service.ts, integrity-service.ts
   restore/       restore-service.ts, preflight.ts, pipeline.ts, smart-recovery.ts, types.ts
   auth/          auth-service.ts, api-key-service.ts, credential-service.ts, api-keys-model.ts (API keys tab page model), api-key-details.ts (the panel of a key)
-  sso/           oidc-provider-service.ts, oidc-registry.ts
+  sso/           oidc-provider-service.ts, oidc-registry.ts, oidc-discovery.ts (the endpoints of a provider), sso-providers-model.ts (Sign-in tab page model)
   storage/       storage-service.ts, verification-service.ts, storage-alert-service.ts
   databases/     database-list-service.ts (cached database lists), database-explorer-service.ts (Database Explorer page model)
   history/       run-list-service.ts (the runs of the History page), run-detail-service.ts (the page of a run), run-steps.ts, run-summary.ts, run-dumps.ts, run-checks.ts, run-problems.ts, known-problems.ts
@@ -265,7 +265,11 @@ Reusable named credential sets encrypted with the system key. Types: `USERNAME_P
 ```
 src/lib/adapters/oidc/                    Provider adapters
 src/services/sso/oidc-provider-service.ts CRUD for SSO providers
-src/services/sso/oidc-registry.ts         Runtime registration for better-auth
+src/services/sso/oidc-registry.ts         The adapters the dialogs offer
+src/services/sso/oidc-discovery.ts        Checks the fields of a type and reads its endpoints
+src/lib/auth/sso-guard.ts                 Refuses a provider that is off and unwanted sign-ups, places new people in a group
 ```
 
-Providers: `authentik.ts`, `pocket-id.ts`, `keycloak.ts`, `generic.ts`. A new provider implements the `OIDCAdapter` interface with `inputs` (form fields), `inputSchema` (Zod), and `getEndpoints()`, then registers in the OIDC adapter index. The `SsoProvider` model stores encrypted `clientId` / `clientSecret`, endpoints, and a domain for email-based matching.
+Run `ls src/lib/adapters/oidc/` for the providers. A new provider implements the `OIDCAdapter` interface with `inputs` (form fields), `inputSchema` (Zod), and `getEndpoints()`, calls `validateOutboundUrl` before it fetches, registers in `OIDC_ADAPTERS`, and gets a logo in `src/components/oidc/provider-logos.ts`. The `SsoProvider` model stores encrypted `clientId` / `clientSecret`, endpoints, a domain for email-based matching and the group of new people.
+
+The Prisma client decrypts `clientId`, `clientSecret` and `oidcConfig` on every read of `ssoProvider`, so a whole row holds the secret in plain text. A read whose result leaves the server selects its fields like `PROVIDER_SELECT` in `sso-providers-model.ts`, and never `clientSecret` or `oidcConfig`. Whatever the browser sends to better-auth, like `requestSignUp`, is checked against the saved provider in `sso-guard.ts`. See `docs/developer-guide/advanced/sso.md`.

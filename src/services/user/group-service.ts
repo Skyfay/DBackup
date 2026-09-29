@@ -68,8 +68,10 @@ export const groupService = {
             throw new ValidationError("The group for the members no longer exists.");
         }
 
+        // A sign-in provider that adds new people to the group adds them where its members go.
         const [moved] = await prisma.$transaction([
             prisma.user.updateMany({ where: { groupId: id }, data: { groupId: moveTo } }),
+            prisma.ssoProvider.updateMany({ where: { defaultGroupId: id }, data: { defaultGroupId: moveTo } }),
             prisma.group.delete({ where: { id } }),
         ]);
         return { name: group.name, moved: moved.count };
@@ -89,8 +91,12 @@ export const groupService = {
             async (id) => {
                 if (!names.has(id)) throw new Error("The group no longer exists.");
                 if (names.get(id) === SUPER_ADMIN_GROUP) throw new Error("The SuperAdmin group cannot be deleted.");
-                const { count } = await prisma.group.deleteMany({ where: { id, users: { none: {} } } });
-                if (count === 0) throw new Error("People are in it. Delete it on its own to move them to another group.");
+                await prisma.$transaction(async (tx) => {
+                    const { count } = await tx.group.deleteMany({ where: { id, users: { none: {} } } });
+                    if (count === 0) throw new Error("People are in it. Delete it on its own to move them to another group.");
+                    // A sign-in provider that added new people to it adds them without a group from now on.
+                    await tx.ssoProvider.updateMany({ where: { defaultGroupId: id }, data: { defaultGroupId: null } });
+                });
             },
             (id) => names.get(id)
         );

@@ -410,6 +410,7 @@ model SsoProvider {
   name           String   // Display Name e.g. "Corporate Login"
   enabled        Boolean  @default(true)
   allowProvisioning Boolean @default(true) // Whether to create new users automatically
+  defaultGroupId String? // The group a user the provider creates starts in, none leaves them without a group
 
   userId         String? // Optional: If linked to a specific user (Account Linking) logic, usually null for global SSO
 

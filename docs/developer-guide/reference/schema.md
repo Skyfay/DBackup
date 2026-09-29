@@ -465,7 +465,7 @@ model Verification {
 
 ### SsoProvider
 
-Stores OIDC / SAML provider configuration. `clientId` and `clientSecret` are encrypted before storage.
+Stores OIDC / SAML provider configuration. `clientId` and `clientSecret` are encrypted before storage, and the Prisma client decrypts them on every read, so a read that leaves the server selects its fields. See [SSO / OIDC](/developer-guide/advanced/sso).
 
 ```prisma
 model SsoProvider {
@@ -496,6 +496,7 @@ model SsoProvider {
   name                  String             // Display name
   enabled               Boolean  @default(true)
   allowProvisioning     Boolean  @default(true) // Auto-create new users on first SSO login
+  defaultGroupId        String?            // The group they start in, null for none
 
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt

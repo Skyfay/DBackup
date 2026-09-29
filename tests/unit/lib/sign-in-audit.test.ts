@@ -41,7 +41,7 @@ describe("sign-ins in the audit log, written by the server", () => {
     it("writes a sign-in through single sign-on with the name of the provider", async () => {
         await recordSignIn({ path: "/sso/callback/:providerId", params: { providerId: "authentik-417" }, headers, context: { newSession: session() } });
 
-        expect(mocks.log).toHaveBeenCalledWith("tom", "LOGIN", "AUTH", { method: "sso", provider: "Authentik" }, undefined, {
+        expect(mocks.log).toHaveBeenCalledWith("tom", "LOGIN", "AUTH", { method: "sso", provider: "Authentik", providerId: "authentik-417" }, undefined, {
             ipAddress: "198.51.100.23",
             userAgent: "Mozilla/5.0 Firefox/131.0",
         });

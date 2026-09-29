@@ -11,6 +11,8 @@ import { AuditTab, type AuditTabHandle } from "@/components/dashboard/audit/audi
 import { AUDIT_PAGE_ID } from "@/components/dashboard/audit/audit-tables";
 import { GroupsTab, type GroupsTabHandle } from "@/components/dashboard/groups/groups-tab";
 import { GROUPS_PAGE_ID, GROUPS_TABLE_ID } from "@/components/dashboard/groups/groups-tables";
+import { SignInTab, type SignInTabHandle } from "@/components/dashboard/sign-in/sign-in-tab";
+import { SIGN_IN_PAGE_ID, SIGN_IN_TABLE_ID } from "@/components/dashboard/sign-in/sign-in-tables";
 import { Button } from "@/components/ui/button";
 import { PageHead } from "@/components/ui/page-head";
 import { PageTabs } from "@/components/ui/page-tabs";
@@ -21,15 +23,10 @@ import type { TablePreferences, ViewMode } from "@/lib/core/table-preferences";
 import { UsersTab, type UsersTabHandle } from "./users-tab";
 import { USERS_TABLE_ID, type UsersPageCounts, type UsersPageTab } from "./users-tables";
 
-/** The tabs that still have their old look, rendered by the page on the server. */
-export type LegacyTabs = Partial<Record<Exclude<UsersPageTab, "users" | "groups" | "apikeys" | "audit">, React.ReactNode>>;
-
-const LEGACY_ORDER = ["sso"] as const;
-
 /** The audit log shows as a list or with the timeline above it, a phone gets cards. */
 const AUDIT_VIEWS: ViewMode[] = ["table", "timeline"];
 
-/** The groups and the API keys show as a table or as cards, the cards on a phone. */
+/** The groups, the API keys and the sign-in providers show as a table or as cards, the cards on a phone. */
 const LIST_VIEWS: ViewMode[] = ["table", "cards"];
 
 const listView = (view: ViewMode | null) => (view === "cards" ? "cards" : "table");
@@ -52,6 +49,9 @@ interface UsersClientProps {
     /** May open the runs an API key started. */
     canOpenRuns: boolean;
     canReadAudit: boolean;
+    /** May see the sign-in providers, which the settings permissions decide. */
+    canReadSignIn: boolean;
+    canManageSignIn: boolean;
     counts: UsersPageCounts;
     layouts: Record<string, TablePreferences>;
     /** The view of the groups this user picked last. */
@@ -60,7 +60,8 @@ interface UsersClientProps {
     apiKeysView: ViewMode;
     /** The view of the audit log this user picked last. */
     auditView: ViewMode;
-    legacy: LegacyTabs;
+    /** The view of the sign-in providers this user picked last. */
+    signInView: ViewMode;
 }
 
 /**
@@ -69,7 +70,7 @@ interface UsersClientProps {
  * phone gets cards.
  */
 export function UsersClient(props: UsersClientProps) {
-    const { canReadUsers, canManageUsers, canReadGroups, canManageGroups, canReadApiKeys, canManageApiKeys, canOpenRuns, canReadAudit, counts, layouts, legacy } = props;
+    const { canReadUsers, canManageUsers, canReadGroups, canManageGroups, canReadApiKeys, canManageApiKeys, canOpenRuns, canReadAudit, canReadSignIn, canManageSignIn, counts, layouts } = props;
     const router = useRouter();
     const searchParams = useSearchParams();
     const isMobile = useIsMobileState();
@@ -77,16 +78,18 @@ export function UsersClient(props: UsersClientProps) {
     const groups = useRef<GroupsTabHandle>(null);
     const apiKeys = useRef<ApiKeysTabHandle>(null);
     const audit = useRef<AuditTabHandle>(null);
+    const signIn = useRef<SignInTabHandle>(null);
     const [auditView, setAuditView] = useState<"table" | "timeline">(props.auditView === "timeline" ? "timeline" : "table");
     const [groupView, setGroupView] = useState<"table" | "cards">(listView(props.groupsView));
     const [keyView, setKeyView] = useState<"table" | "cards">(listView(props.apiKeysView));
+    const [signInView, setSignInView] = useState<"table" | "cards">(listView(props.signInView));
 
     const tabs: UsersPageTab[] = [
         ...(canReadUsers ? ["users" as const] : []),
         ...(canReadGroups ? ["groups" as const] : []),
         ...(canReadApiKeys ? ["apikeys" as const] : []),
         ...(canReadAudit ? ["audit" as const] : []),
-        ...LEGACY_ORDER.filter((tab) => legacy[tab]),
+        ...(canReadSignIn ? ["sso" as const] : []),
     ];
     const requested = searchParams.get("tab") as UsersPageTab | null;
     const active = requested && tabs.includes(requested) ? requested : tabs[0];
@@ -115,6 +118,11 @@ export function UsersClient(props: UsersClientProps) {
     const changeKeyView = useCallback((next: ViewMode) => {
         setKeyView(listView(next));
         saveView(API_KEYS_PAGE_ID, listView(next));
+    }, [saveView]);
+
+    const changeSignInView = useCallback((next: ViewMode) => {
+        setSignInView(listView(next));
+        saveView(SIGN_IN_PAGE_ID, listView(next));
     }, [saveView]);
 
     const changeAuditView = useCallback((next: ViewMode) => {
@@ -163,6 +171,19 @@ export function UsersClient(props: UsersClientProps) {
                                 <Download />
                                 <span className="hidden sm:inline">Export CSV</span>
                             </Button>
+                        </>
+                    )}
+                    {active === "sso" && (
+                        <>
+                            <div className="hidden md:block">
+                                <ViewSwitch value={signInView} onChange={changeSignInView} views={LIST_VIEWS} />
+                            </div>
+                            {canManageSignIn && (
+                                <Button tone="create" onClick={() => signIn.current?.openCreate()} aria-label="New provider">
+                                    <Plus />
+                                    <span className="hidden sm:inline">New provider</span>
+                                </Button>
+                            )}
                         </>
                     )}
                     {active === "apikeys" && (
@@ -222,12 +243,18 @@ export function UsersClient(props: UsersClientProps) {
                     )}
                 </TabsContent>
             )}
-            {LEGACY_ORDER.map((tab) => legacy[tab] && (
-                <TabsContent key={tab} value={tab}>
-                    {/* These tabs keep their old card until they get their own design, which goes on from the head from md up. */}
-                    <div className="md:*:rounded-t-none md:*:border-t-0">{legacy[tab]}</div>
+            {canReadSignIn && (
+                <TabsContent value="sso">
+                    {isMobile !== undefined && (
+                        <SignInTab
+                            ref={signIn}
+                            view={isMobile ? "cards" : signInView}
+                            canManage={canManageSignIn}
+                            initialLayout={layouts[SIGN_IN_TABLE_ID] ?? null}
+                        />
+                    )}
                 </TabsContent>
-            ))}
+            )}
         </Tabs>
     );
 }

@@ -12,6 +12,12 @@ describe("an entry of the audit log as a sentence", () => {
         expect(auditSentence(entry("LOGOUT", "AUTH"))).toBe("Signed out");
     });
 
+    it("says someone signed up through a provider, and the group it put them in", () => {
+        expect(auditSentence(entry("CREATE", "USER", { name: "Tom Weber", via: "sso", provider: "Authentik", group: "Operators" }))).toBe("Signed up through Authentik into the group Operators");
+        expect(auditSentence(entry("CREATE", "USER", { name: "Tom Weber", via: "sso", provider: "Pocket ID" }))).toBe("Signed up through Pocket ID");
+        expect(auditSentence(entry("CREATE", "USER", { name: "Tom Weber" }))).toBe("Created the user Tom Weber");
+    });
+
     it("names the account a failed sign-in tried and marks it as failed", () => {
         const failed = describeEntry(entry("LOGIN_FAILED", "AUTH", { email: "admin@example.ch", reason: "unknown_email" }));
 

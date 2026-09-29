@@ -174,7 +174,7 @@ Prefer a `Badge` variant or the status tokens (`success`, `warning`, `destructiv
 
 `lucide-react` is the default (117 import sites). Standard sizes: `h-4 w-4` inline with text, `h-5 w-5` for standalone buttons, `h-3 w-3` inside badges.
 
-`@iconify/react` is used only for brand and product logos (adapter icons, OIDC providers) via `@iconify-icons/simple-icons`, `-logos`, and `-mdi`. New adapters register their icon in `src/components/adapter/utils.ts` (`ADAPTER_ICON_MAP`), otherwise the UI falls back to a generic icon.
+`@iconify/react` is used only for brand and product logos via `@iconify-icons/simple-icons`, `-logos`, and `-mdi`. New adapters register their icon in `src/components/adapter/utils.ts` (`ADAPTER_ICON_MAP`), otherwise the UI falls back to a generic icon. The logos of the sign-in providers are local data in `src/components/oidc/provider-logos.ts`, taken from selfh.st/icons and Simple Icons, since the installed icon sets lack most of them. `ProviderLogo` and `ProviderTile` draw them, and the ones with a dark variant swap by CSS.
 
 ---
 
@@ -250,7 +250,7 @@ Never log whole session, user, or config objects. Log the specific field (`{ use
 | Raw `overflow-y-auto` instead of ScrollArea | Fails the build |
 | Locale date formatting | Fails the build |
 | `max-h` on the ScrollArea root | Baseline of 2, fails if it grows |
-| Palette color with no `dark:` variant | Baseline of 13, fails if it grows |
+| Palette color with no `dark:` variant | Baseline of 11, fails if it grows |
 | `info` blue outside the running status, raw `data-tone` attribute | Fails the build |
 
 Baselines may only be lowered. Fix violations, drop the number, and the guard locks the win in. Everything else in this guide is on you.

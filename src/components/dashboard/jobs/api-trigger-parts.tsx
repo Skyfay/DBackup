@@ -37,7 +37,8 @@ const STATUSES = [
     { status: "Cancelled", meaning: "stopped by hand" },
 ];
 
-function CopyButton({ value, label }: { value: string; label: string }) {
+/** An icon button that copies a value, with a check once it did. `label` names the value for screen readers. */
+export function CopyButton({ value, label }: { value: string; label: string }) {
     const [copied, setCopied] = useState(false);
     const copy = async () => {
         await navigator.clipboard.writeText(value);

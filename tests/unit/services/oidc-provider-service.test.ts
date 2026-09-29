@@ -38,16 +38,23 @@ const mockProvider = {
 };
 
 describe('OidcProviderService', () => {
-    describe('getProviders()', () => {
-        it('returns all providers ordered by createdAt desc', async () => {
-            prismaMock.ssoProvider.findMany.mockResolvedValue([mockProvider] as any);
+    describe('getAuditState()', () => {
+        it('adds the name of the group new people start in', async () => {
+            prismaMock.ssoProvider.findUnique.mockResolvedValue({ ...mockProvider, defaultGroupId: 'group-1' } as any);
+            prismaMock.group.findUnique.mockResolvedValue({ name: 'Operators' } as any);
 
-            const result = await OidcProviderService.getProviders();
+            const result = await OidcProviderService.getAuditState('prov-1');
 
-            expect(prismaMock.ssoProvider.findMany).toHaveBeenCalledWith({
-                orderBy: { createdAt: 'desc' },
-            });
-            expect(result).toEqual([mockProvider]);
+            expect(result?.groupName).toBe('Operators');
+            expect(prismaMock.group.findUnique).toHaveBeenCalledWith({ where: { id: 'group-1' }, select: { name: true } });
+        });
+
+        it('has no group name for a provider without a group, and nothing for an unknown one', async () => {
+            prismaMock.ssoProvider.findUnique.mockResolvedValueOnce({ ...mockProvider, defaultGroupId: null } as any).mockResolvedValueOnce(null);
+
+            expect((await OidcProviderService.getAuditState('prov-1'))?.groupName).toBeNull();
+            expect(await OidcProviderService.getAuditState('missing')).toBeNull();
+            expect(prismaMock.group.findUnique).not.toHaveBeenCalled();
         });
     });
 
@@ -169,6 +176,36 @@ describe('OidcProviderService', () => {
             await expect(
                 OidcProviderService.updateProvider('missing', { name: 'Updated' })
             ).rejects.toThrow('Provider not found');
+        });
+
+        it('keeps the saved client secret when none is given, inside the config better-auth reads too', async () => {
+            // The extension of the client decrypts the secret on read.
+            prismaMock.ssoProvider.findUnique.mockResolvedValue({ ...mockProvider, clientSecret: 'saved-secret' } as any);
+            prismaMock.ssoProvider.update.mockResolvedValue(mockProvider as any);
+
+            await OidcProviderService.updateProvider('prov-1', { clientId: 'client-id', authorizationEndpoint: 'https://auth.example.com/authorize' });
+
+            const callData = prismaMock.ssoProvider.update.mock.calls[0][0].data;
+            expect(callData.clientSecret).toBeUndefined();
+            expect(JSON.parse(callData.oidcConfig as string).clientSecret).toBe('encrypted:saved-secret');
+        });
+
+        it('never writes a provider ID, which is part of the callback URL and of every link', async () => {
+            prismaMock.ssoProvider.findUnique.mockResolvedValue(mockProvider as any);
+            prismaMock.ssoProvider.update.mockResolvedValue(mockProvider as any);
+
+            await OidcProviderService.updateProvider('prov-1', { name: 'Renamed', providerId: 'other-id' } as never);
+
+            expect(prismaMock.ssoProvider.update.mock.calls[0][0].data).not.toHaveProperty('providerId', 'other-id');
+        });
+
+        it('writes the group new people start in', async () => {
+            prismaMock.ssoProvider.findUnique.mockResolvedValue(mockProvider as any);
+            prismaMock.ssoProvider.update.mockResolvedValue(mockProvider as any);
+
+            await OidcProviderService.updateProvider('prov-1', { defaultGroupId: 'group-1' });
+
+            expect(prismaMock.ssoProvider.update.mock.calls[0][0].data.defaultGroupId).toBe('group-1');
         });
 
         it('updates non-OIDC fields without regenerating oidcConfig', async () => {

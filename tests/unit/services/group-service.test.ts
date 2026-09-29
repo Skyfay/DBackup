@@ -4,7 +4,11 @@ const mocks = vi.hoisted(() => ({
     prisma: {
         group: { findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), deleteMany: vi.fn() },
         user: { updateMany: vi.fn() },
-        $transaction: vi.fn(async (operations: Promise<unknown>[]) => Promise.all(operations)),
+        ssoProvider: { updateMany: vi.fn() },
+        // A list of queries, or a function that gets the client, like Prisma.
+        $transaction: vi.fn(async (operations: Promise<unknown>[] | ((tx: unknown) => Promise<unknown>)): Promise<unknown> =>
+            typeof operations === "function" ? operations(mocks.prisma) : Promise.all(operations)
+        ),
     },
 }));
 
@@ -69,6 +73,16 @@ describe("making, changing and deleting groups", () => {
         expect(mocks.prisma.group.delete).toHaveBeenCalledWith({ where: { id: "g-ops" } });
     });
 
+    it("sends the new people of a sign-in provider where the members go", async () => {
+        mocks.prisma.group.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => ({ id: where.id, name: where.id === "g-ops" ? "Operators" : "Viewers" }));
+
+        await groupService.delete("g-ops", "g-view");
+        await groupService.delete("g-ops", null);
+
+        expect(mocks.prisma.ssoProvider.updateMany).toHaveBeenNthCalledWith(1, { where: { defaultGroupId: "g-ops" }, data: { defaultGroupId: "g-view" } });
+        expect(mocks.prisma.ssoProvider.updateMany).toHaveBeenNthCalledWith(2, { where: { defaultGroupId: "g-ops" }, data: { defaultGroupId: null } });
+    });
+
     it("refuses to move the members into the group that is deleted, or into one that is gone", async () => {
         mocks.prisma.group.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => (where.id === "g-ops" ? { id: "g-ops", name: "Operators" } : null));
 
@@ -93,5 +107,8 @@ describe("making, changing and deleting groups", () => {
             ["g-super", "The SuperAdmin group cannot be deleted."],
         ]);
         expect(mocks.prisma.group.deleteMany).toHaveBeenCalledWith({ where: { id: "g-empty", users: { none: {} } } });
+        // Only the group that went is cleared as the group of new people of a provider.
+        expect(mocks.prisma.ssoProvider.updateMany).toHaveBeenCalledTimes(1);
+        expect(mocks.prisma.ssoProvider.updateMany).toHaveBeenCalledWith({ where: { defaultGroupId: "g-empty" }, data: { defaultGroupId: null } });
     });
 });

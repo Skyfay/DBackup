@@ -48,7 +48,7 @@ The view switch shows the timeline above the list: a row per person and API key,
 
 | Area | Entries |
 | :--- | :--- |
-| Sign-in | Sign-ins with a password, a passkey, a second factor or single sign-on, sign-outs, failed password sign-ins, linked and unlinked sign-in accounts, sign-in providers |
+| Sign-in | Sign-ins with a password, a passkey, a second factor or single sign-on, sign-ups through a sign-in provider, sign-outs, failed password sign-ins, linked and unlinked sign-in accounts, sign-in providers |
 | Connections | Created, changed, cloned and deleted connections, storage alerts |
 | Jobs | Created, changed, cloned and deleted jobs, runs started by hand or through the API, cancelled runs |
 | Backups | Downloads, download links, restores, restored files, locked and deleted backups |

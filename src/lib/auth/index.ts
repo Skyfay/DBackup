@@ -7,6 +7,7 @@ import { passkey } from "@better-auth/passkey";
 import { sso } from "@better-auth/sso";
 import { shouldBlockBrowserEmailAuth } from "@/lib/auth/env-flags";
 import { recordSignIn, recordSignOut } from "@/lib/auth/sign-in-audit";
+import { placeSsoUser, refuseDisabledProvider, refuseSsoSignUp } from "@/lib/auth/sso-guard";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 
@@ -126,7 +127,8 @@ function getTrustedProviders(): string[] {
  * `auth.api.signUpEmail()` behind the admin Users page.
  *
  * The decision itself lives in `shouldBlockBrowserEmailAuth` so it can be tested
- * without standing up better-auth. It also writes a sign-out to the audit log.
+ * without standing up better-auth. It also refuses a sign-in provider that is off and
+ * writes a sign-out to the audit log.
  */
 const beforeAuth = createAuthMiddleware(async (ctx) => {
     if (shouldBlockBrowserEmailAuth(ctx.path, Boolean(ctx.request))) {
@@ -135,6 +137,8 @@ const beforeAuth = createAuthMiddleware(async (ctx) => {
             message: "Password sign-in is disabled. Use single sign-on or a passkey.",
         });
     }
+    // A provider that is off signs nobody in, not only on the login page.
+    await refuseDisabledProvider(ctx, (url) => ctx.redirect(url));
     // A sign-out is written before it runs, while the session to end is still there.
     if (ctx.path === "/sign-out") {
         try {
@@ -242,7 +246,9 @@ export const auth = betterAuth({
     databaseHooks: {
         user: {
             create: {
-                before: async (user) => {
+                before: async (user, context) => {
+                    // The browser asks better-auth to add someone new, the provider decides.
+                    await refuseSsoSignUp(context);
                     // Email verification is not used as a feature anywhere in DBackup
                     // (no verification emails are sent, no login gating on this flag).
                     // Its only remaining effect is better-auth's SSO account-linking check
@@ -254,6 +260,13 @@ export const auth = betterAuth({
                             emailVerified: true,
                         },
                     };
+                },
+                after: async (user, context) => {
+                    try {
+                        await placeSsoUser(user, context);
+                    } catch (error) {
+                        log.warn("Putting a new user of a sign-in provider into its group failed", { userId: user.id }, wrapError(error));
+                    }
                 },
             },
         },
@@ -304,9 +317,9 @@ export const auth = betterAuth({
             // Trust email verification status from IdP
             // This allows automatic user creation without domain matching
             trustEmailVerified: true,
-            // Disable automatic user creation by default.
-            // Each provider can enable it via allowProvisioning flag,
-            // which is passed as requestSignUp from the client.
+            // Disable automatic user creation by default. The login page asks for it with
+            // requestSignUp when a provider adds new people, and refuseSsoSignUp checks the
+            // provider itself, since the browser can ask for anything.
             disableImplicitSignUp: true,
         })
     ]

@@ -148,6 +148,17 @@ function describe(entry: AuditEntryText, target: string | null): Omit<EntryDescr
             return { parts: [plain("Exported "), ...it], glyph: "download" };
         }
         case A.CREATE: {
+            if (entry.resource === R.USER && details.via === "sso") {
+                const provider = text(details.provider);
+                const group = text(details.group);
+                return {
+                    parts: [
+                        ...(provider ? [plain("Signed up through "), strong(provider)] : [plain("Signed up through single sign-on")]),
+                        ...(group ? [plain(" into the group "), strong(group)] : []),
+                    ],
+                    glyph: "plus",
+                };
+            }
             const from = text(details.clonedFromName);
             return { parts: [plain("Created "), ...it, ...(from ? [plain(" as a copy of "), strong(from)] : [])], glyph: from ? "copy" : "plus" };
         }

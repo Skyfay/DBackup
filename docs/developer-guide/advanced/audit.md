@@ -47,7 +47,7 @@ await auditService.logFor(ctx, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.JOB, { name
 - The service reads the address and the browser from the request it runs in and snapshots the names of the user and the key. Callers never pass them. Outside a request, like in a scheduled task, they stay empty.
 - `log` never throws. A failed write is logged, the action goes on.
 
-Sign-ins, failed sign-ins and sign-outs are written by the server around the endpoints of better-auth, in `src/lib/auth/sign-in-audit.ts`: the `after` hook turns a new session into `LOGIN` with its method (`password`, `passkey`, `two-factor`, `sso` with the provider) and a turned down password into `LOGIN_FAILED`, the `before` hook of `/sign-out` writes `LOGOUT`. A password sign-in of someone with a second factor is written by the second step.
+Sign-ins, failed sign-ins and sign-outs are written by the server around the endpoints of better-auth, in `src/lib/auth/sign-in-audit.ts`: the `after` hook turns a new session into `LOGIN` with its method (`password`, `passkey`, `two-factor`, `sso` with the name of the provider in `provider` and its ID in `providerId`) and a turned down password into `LOGIN_FAILED`, the `before` hook of `/sign-out` writes `LOGOUT`. A password sign-in of someone with a second factor is written by the second step. Someone a sign-in provider adds is written as `CREATE USER` with `via: "sso"`, the provider and the group it put them in, by `placeSsoUser` in `src/lib/auth/sso-guard.ts`.
 
 ### Details
 

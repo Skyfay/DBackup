@@ -35,7 +35,9 @@ src/services/
 │   └── types.ts               # RestoreInput, RestoreResult interfaces
 ├── sso/
 │   ├── oidc-provider-service.ts # SSO provider CRUD
-│   └── oidc-registry.ts         # Runtime provider registration for better-auth
+│   ├── oidc-registry.ts         # The provider types the dialogs offer
+│   ├── oidc-discovery.ts        # Reads the endpoints of a provider from its fields
+│   └── sso-providers-model.ts   # The Sign-in tab, never the client secret
 ├── storage/
 │   ├── storage-alert-service.ts # Per-destination usage and missing-backup alerts
 │   ├── storage-service.ts       # Storage listing and deletion

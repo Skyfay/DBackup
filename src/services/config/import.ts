@@ -371,6 +371,11 @@ export async function importConfiguration(
           } catch { /* parse error, keep as-is */ }
         }
 
+        // The group new people start in may have been merged into a group of the same name.
+        if (providerData.defaultGroupId && groupIdMap.has(providerData.defaultGroupId)) {
+          providerData.defaultGroupId = groupIdMap.get(providerData.defaultGroupId)!;
+        }
+
         // Check if a provider with the same providerId but different ID exists
         const existingSso = await tx.ssoProvider.findUnique({ where: { providerId: providerData.providerId } });
         if (existingSso && existingSso.id !== providerData.id) {

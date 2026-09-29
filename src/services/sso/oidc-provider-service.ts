@@ -8,6 +8,8 @@ export interface CreateSsoProviderInput {
     providerId: string;
     enabled?: boolean; // Default true
     allowProvisioning?: boolean;
+    /** The group someone the provider adds starts in, null for none. */
+    defaultGroupId?: string | null;
     domain?: string | null; // Email domain for SSO matching (e.g., "example.com")
     adapterConfig?: string; // JSON string of the raw adapter configuration
 
@@ -36,16 +38,29 @@ export interface UpdateSsoProviderInput extends Partial<CreateSsoProviderInput> 
 
 export class OidcProviderService {
 
-    static async getProviders() {
-        return prisma.ssoProvider.findMany({
-            orderBy: { createdAt: "desc" }
-        });
-    }
-
+    /** A provider with its client ID and secret in plain text, for the server only. */
     static async getProviderById(id: string) {
         return prisma.ssoProvider.findUnique({
             where: { id }
         });
+    }
+
+    /**
+     * A provider as the audit log compares it before and after a change: in plain text, so a new
+     * secret shows as changed, with the name of the group of new people. The secret is never written.
+     */
+    static async getAuditState(id: string) {
+        const provider = await prisma.ssoProvider.findUnique({ where: { id } });
+        if (!provider) return null;
+        const group = provider.defaultGroupId
+            ? await prisma.group.findUnique({ where: { id: provider.defaultGroupId }, select: { name: true } })
+            : null;
+        return { ...provider, groupName: group?.name ?? null };
+    }
+
+    /** A group new people of a provider could start in, with what it may do. */
+    static async getGroup(id: string) {
+        return prisma.group.findUnique({ where: { id }, select: { id: true, name: true, permissions: true } });
     }
 
     static async getEnabledProviders() {
@@ -101,6 +116,7 @@ export class OidcProviderService {
                 providerId: data.providerId,
                 enabled: data.enabled ?? true,
                 allowProvisioning: data.allowProvisioning ?? true,
+                defaultGroupId: data.defaultGroupId ?? null,
                 domain: data.domain, // Required by better-auth SSO plugin
                 adapterConfig: data.adapterConfig,
 
@@ -118,7 +134,7 @@ export class OidcProviderService {
         });
     }
 
-    static async updateProvider(id: string, data: Partial<CreateSsoProviderInput>) {
+    static async updateProvider(id: string, data: Partial<Omit<CreateSsoProviderInput, "providerId">>) {
         let oidcConfigUpdate: string | undefined = undefined;
 
         // If we have critical OIDC params or type OIDC, let's reconstruct config
@@ -170,10 +186,11 @@ export class OidcProviderService {
             where: { id },
             data: {
                 name: data.name,
-                providerId: data.providerId,
+                // The provider ID is part of the callback URL and of every link, so it never changes.
                 domain: data.domain,
                 enabled: data.enabled,
                 allowProvisioning: data.allowProvisioning,
+                defaultGroupId: data.defaultGroupId,
                 adapterConfig: data.adapterConfig,
 
                 clientId: encryptedClientId,
@@ -191,51 +208,11 @@ export class OidcProviderService {
     }
 
     /**
-     * Reports who would be affected by deleting a provider, before the delete
-     * actually happens: how many users are linked to it, and which of those
-     * have no other login method (no password, no other SSO account) and
-     * would therefore be completely locked out. Used to warn an admin before
-     * they confirm OidcProviderService.deleteProvider().
-     */
-    static async getDeletionImpact(id: string) {
-        const provider = await prisma.ssoProvider.findUnique({ where: { id } });
-        if (!provider) {
-            return { totalAffectedUsers: 0, usersWithNoOtherLogin: [] as { id: string; name: string; email: string }[] };
-        }
-
-        const linkedAccounts = await prisma.account.findMany({
-            where: { providerId: provider.providerId },
-            select: { userId: true },
-        });
-        const affectedUserIds = linkedAccounts.map((a) => a.userId);
-        if (affectedUserIds.length === 0) {
-            return { totalAffectedUsers: 0, usersWithNoOtherLogin: [] as { id: string; name: string; email: string }[] };
-        }
-
-        // Users whose ONLY account row is this provider's - deleting it would leave them with zero.
-        const accountCounts = await prisma.account.groupBy({
-            by: ["userId"],
-            where: { userId: { in: affectedUserIds } },
-            _count: { id: true },
-        });
-        const lockedOutUserIds = accountCounts.filter((c) => c._count.id <= 1).map((c) => c.userId);
-
-        const usersWithNoOtherLogin = lockedOutUserIds.length > 0
-            ? await prisma.user.findMany({
-                where: { id: { in: lockedOutUserIds } },
-                select: { id: true, name: true, email: true },
-            })
-            : [];
-
-        return { totalAffectedUsers: affectedUserIds.length, usersWithNoOtherLogin };
-    }
-
-    /**
      * Deletes a provider and any accounts users have linked to it.
      *
-     * providerId normally gets a random per-creation suffix (see
-     * add-sso-provider-dialog.tsx), but that field is editable - an admin can
-     * manually reuse an old providerId for a brand new provider. We cascade
+     * providerId gets a random suffix when a provider is created and never
+     * changes after that, but an admin can pick an old providerId for a brand
+     * new provider. We cascade
      * the delete regardless: a removed provider should never leave old links
      * that could silently reactivate under a reused id without a fresh SSO
      * login re-verifying the connection. Affected users just re-link the

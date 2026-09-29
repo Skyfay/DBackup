@@ -1,224 +1,108 @@
 # SSO / OIDC Integration
 
-This document describes the OpenID Connect (OIDC) implementation for Single Sign-On (SSO) support.
+Single sign-on runs on the **SSO plugin of better-auth**, which speaks the protocol. DBackup adds adapters that turn a few fields into the endpoints of a provider, stores the providers, and decides on the server who may sign in through which one.
 
-## Architecture
+## Where It Lives
 
-We leverage the **`better-auth` SSO Plugin** to handle the protocol complexity, while implementing an **Adapter Pattern** to support various providers (Authelia, Authentik, PocketID, Keycloak, Generic).
-
-### The Adapter Concept
-
-Since `better-auth` handles the raw OIDC protocol, our "Adapters" serve as **Configuration Generators**:
-
-```
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  OIDC Adapter   │────▶│  SsoProvider     │────▶│  Better-Auth    │
-│  (Config Gen)   │     │  (Database)      │     │  (Protocol)     │
-└─────────────────┘     └──────────────────┘     └─────────────────┘
-```
-
-An adapter (e.g., `AuthentikAdapter`) provides:
-1. **Metadata**: Name, Icon, Description
-2. **Input Fields**: What the admin needs to enter
-3. **Endpoint Generation**: Calculates OAuth endpoints from base URL
-4. **Default Mapping**: How to map provider's user response to our User model
-
-### Supported Providers
-
-| Provider | Adapter ID | Auto-Discovery |
-|----------|-----------|----------------|
-| Authelia | `authelia` | Yes (from Base URL) |
-| Authentik | `authentik` | Yes (from Base URL) |
-| PocketID | `pocket-id` | Yes (from Base URL) |
-| Keycloak | `keycloak` | Yes (from Realm URL) |
-| Generic | `generic` | Manual endpoints |
+| File | Does |
+| :--- | :--- |
+| `src/lib/core/oidc-adapter.ts` | The `OIDCAdapter` interface |
+| `src/lib/adapters/oidc/` | One adapter per provider type: `authelia`, `authentik`, `keycloak`, `pocket-id`, `generic` |
+| `src/services/sso/oidc-registry.ts` | `OIDC_ADAPTERS`, the list the dialogs offer |
+| `src/services/sso/oidc-discovery.ts` | `discoverEndpoints`: checks the fields of a type and reads its endpoints |
+| `src/services/sso/oidc-provider-service.ts` | Creates, changes, switches and deletes providers, encrypting the credentials |
+| `src/services/sso/sso-providers-model.ts` | The Sign-in tab of Users & Groups, never the client secret |
+| `src/lib/auth/sso-guard.ts` | The hooks that refuse a provider that is off, refuse unwanted sign-ups and place new people in a group |
+| `src/components/oidc/provider-logos.ts` | The logos of the provider types |
 
 ## Database Schema
 
 ```prisma
 model SsoProvider {
-  id             String   @id @default(cuid())
-  providerId     String   @unique          // e.g. "authentik-main"
-  type           String   @default("oidc") // "oidc" | "saml"
-
-  // Domain matching for email-based auto-redirect
-  domain         String?                   // e.g. "company.com"
-  domainVerified Boolean  @default(false)  // Required by better-auth for trusted provider status
-
-  // Managed by better-auth (complete OIDC config as JSON)
-  oidcConfig     String?
-  samlConfig     String?
-
-  // Legacy/UI-sync fields (kept in sync with oidcConfig)
+  id                String   @id @default(cuid())
+  providerId        String   @unique  // The end of the callback URL, never changes
+  type              String   @default("oidc")
+  domain            String?  // An email of this domain goes straight to it from the login page
+  domainVerified    Boolean  @default(false)
+  oidcConfig        String?  // What better-auth reads, with the encrypted credentials inside
+  samlConfig        String?
   issuer                String?
   authorizationEndpoint String?
   tokenEndpoint         String?
   userInfoEndpoint      String?
   jwksEndpoint          String?
-
-  // Credentials (encrypted at rest)
-  clientId       String?
-  clientSecret   String?
-
-  // DBackup-specific
-  adapterId      String             // e.g. "authentik" | "pocket-id" | "keycloak" | "generic"
-  adapterConfig  String?            // JSON: raw adapter inputs (e.g. { url, realm })
-  name           String             // Display name e.g. "Corporate Login"
-  enabled        Boolean  @default(true)
-  allowProvisioning Boolean @default(true) // Auto-create new users on first SSO login
-
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  clientId          String?  // Encrypted
+  clientSecret      String?  // Encrypted
+  adapterId         String   // The provider type
+  adapterConfig     String?  // JSON of the fields of the type, like { baseUrl, realm }
+  name              String
+  enabled           Boolean  @default(true)
+  allowProvisioning Boolean  @default(true)  // Adds someone new on their first sign-in
+  defaultGroupId    String?  // The group they start in, null for none
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 }
 ```
 
-## User Lifecycle
+`defaultGroupId` has no foreign key. Deleting a group moves it to the group its members move to, or clears it, in `group-service.ts`, and a group that is gone anyway leaves new people without one.
 
-### Account Linking (Existing Users)
+### The client secret
 
-If a user logs in via OIDC and the email matches an existing account:
-1. Verify email is confirmed on both sides
-2. Link the SSO identity to the existing account
-3. User can now login via password OR SSO
+The credentials are encrypted with `ENCRYPTION_KEY`, and the extension of the Prisma client in `src/lib/prisma.ts` decrypts `clientId`, `clientSecret` and the credentials inside `oidcConfig` on **every read**, so better-auth gets them in plain text. A whole row is therefore a secret. Anything that leaves the server selects its fields, like `PROVIDER_SELECT` of the tab, and never `clientSecret` or `oidcConfig`. Edit keeps the saved secret when the field stays empty.
 
-### Auto-Provisioning (New Users)
+## Signing In
 
-If enabled in settings, a new user is created upon successful OIDC login:
-- **Default Permissions**: New users get NO permissions (Zero-Trust)
-- **Default Group**: Can be configured in System Settings
-- **Email Verification**: Trusted if provider verifies emails
+1. The login page posts `/api/auth/sign-in/sso` with the provider ID and `requestSignUp` set to `allowProvisioning` of the provider.
+2. better-auth sends the browser to the provider, which returns it to `/api/auth/sso/callback/{providerId}`. `BETTER_AUTH_URL` is the start of that URL.
+3. better-auth reads the user info. An account linked before signs in. An existing user of the same email is linked, since every provider that is on is a trusted provider (`loadTrustedProviders` in `src/lib/auth/index.ts`). Anyone else is added or turned away.
 
-```typescript
-// System setting
-const autoProvision = await getSystemSetting('sso.autoProvisionUsers', false);
-const defaultGroupId = await getSystemSetting('sso.defaultGroupId', null);
-```
+The hooks in `sso-guard.ts` decide what the browser cannot:
+
+| Hook | Refuses or does |
+| :--- | :--- |
+| `refuseDisabledProvider`, before every endpoint | Starting a sign-in through a provider that is off, and its callback, which goes back to the login page. Hiding it on the login page is not enough, the endpoints are public |
+| `refuseSsoSignUp`, before a user is created | Someone new through a provider that is off or does not add new people, whatever `requestSignUp` said |
+| `placeSsoUser`, after a user is created | Puts them into `defaultGroupId` and writes `CREATE USER` with `via: "sso"` to the audit log |
+
+The sign-in itself is written as `LOGIN` with `method: "sso"`, the provider name and its ID, see [Audit Log](/developer-guide/advanced/audit).
+
+## Changing Providers
+
+`GET /api/sso-providers` needs `settings:read` and returns the tab: every provider with its linked people and the ways they have in besides it, the numbers, and for someone with `settings:write` the groups new people can start in.
+
+The Server Actions in `src/app/actions/auth/oidc.ts` need `settings:write`:
+
+| Action | Does |
+| :--- | :--- |
+| `checkSsoConnection` | Reads the endpoints of a type from its fields, for the dialog and the panel |
+| `createSsoProvider` | Reads the endpoints, then saves the provider |
+| `updateSsoProvider` | The same without the type and the provider ID, which stay. An empty secret keeps the saved one |
+| `toggleSsoProvider`, `deleteSsoProvider` | Switches a provider, deletes it with every link to it |
+
+Whoever controls a provider can add people through it, so a provider never sends new people into a group that may do more than the group of the caller, and only a SuperAdmin picks the SuperAdmin group. A group that stays as it was is not checked again. The rule is `groupLockReason` in `sso-providers-types.ts`, which the dialog uses too.
 
 ## Implementing an Adapter
-
-### Adapter Interface
-
-**Location**: `src/lib/adapters/oidc/index.ts`
 
 ```typescript
 export interface OIDCAdapter {
   id: string;
   name: string;
   description: string;
-  icon: string;
-
-  // Form fields for admin configuration
-  inputs: AdapterInputField[];
-
-  // Zod schema for validation
-  inputSchema: ZodSchema;
-
-  // Generate OIDC endpoints from user input
-  getEndpoints(config: Record<string, string>): OIDCEndpoints;
-}
-
-interface OIDCEndpoints {
-  issuer: string;
-  authorizationEndpoint: string;
-  tokenEndpoint: string;
-  userInfoEndpoint: string;
-  jwksEndpoint?: string;
+  /** The fields the dialog asks for */
+  inputs: OIDCInput[];
+  inputSchema: z.ZodObject<any>;
+  /** The endpoints from the fields, usually read from the discovery document */
+  getEndpoints: (config: Record<string, any>) => Promise<OIDCEndpoints> | OIDCEndpoints;
 }
 ```
 
-### Example: Authentik Adapter
+1. Add the adapter to `src/lib/adapters/oidc/` and to `OIDC_ADAPTERS`.
+2. Call `validateOutboundUrl` before every `fetch`, it keeps the discovery away from cloud metadata endpoints.
+3. Return `discoveryEndpoint` too. better-auth calls it in the callback, and providers like Authentik keep it at an unusual path.
+4. Add its logo to `provider-logos.ts` and its line and setup steps to `src/components/dashboard/sign-in/sign-in-adapters.ts`.
 
-```typescript
-// src/lib/adapters/oidc/authentik.ts
-export const AuthentikAdapter: OIDCAdapter = {
-  id: 'authentik',
-  name: 'Authentik',
-  description: 'Self-hosted identity provider',
-  icon: '/icons/authentik.svg',
+`discoverEndpoints` runs the schema, calls `getEndpoints`, and refuses a provider without authorization, token or user info endpoint, or one reached over HTTPS that names them over plain HTTP.
 
-  inputs: [
-    {
-      name: 'baseUrl',
-      label: 'Authentik URL',
-      type: 'url',
-      placeholder: 'https://auth.example.com',
-      required: true,
-    },
-    {
-      name: 'applicationSlug',
-      label: 'Application Slug',
-      type: 'text',
-      placeholder: 'dbackup',
-      required: true,
-    },
-  ],
+## Testing Locally
 
-  inputSchema: z.object({
-    baseUrl: z.string().url(),
-    applicationSlug: z.string().min(1),
-  }),
-
-  getEndpoints(config) {
-    const base = config.baseUrl.replace(/\/$/, '');
-    const slug = config.applicationSlug;
-
-    return {
-      issuer: `${base}/application/o/${slug}/`,
-      authorizationEndpoint: `${base}/application/o/authorize/`,
-      tokenEndpoint: `${base}/application/o/token/`,
-      userInfoEndpoint: `${base}/application/o/userinfo/`,
-      jwksEndpoint: `${base}/application/o/${slug}/jwks/`,
-    };
-  },
-};
-```
-
-## Security Considerations
-
-### HTTPS Enforcement
-
-The OIDC client enforces HTTPS for all provider endpoints:
-
-```typescript
-if (!endpoint.startsWith('https://')) {
-  throw new Error('OIDC endpoints must use HTTPS');
-}
-```
-
-### Secret Storage
-
-Client secrets are encrypted at rest using the system `ENCRYPTION_KEY`:
-
-```typescript
-// On save
-const encryptedSecret = encrypt(clientSecret);
-
-// On use
-const clientSecret = decrypt(provider.clientSecret);
-```
-
-### Domain Verification
-
-When domain-based SSO redirect is enabled, verify the user's email domain matches:
-
-```typescript
-const emailDomain = email.split('@')[1];
-const provider = await findProviderByDomain(emailDomain);
-```
-
-## Testing SSO
-
-### Local Development
-
-1. Use a local Authentik/Keycloak instance (Docker)
-2. Configure callback URL: `http://localhost:3000/api/auth/callback/oidc`
-3. Use HTTP for local testing (HTTPS check is relaxed in development)
-
-### Common Issues
-
-| Issue | Solution |
-|-------|----------|
-| Redirect URI mismatch | Check callback URL in provider settings |
-| Invalid client credentials | Verify client ID and secret |
-| CORS errors | Configure allowed origins in provider |
-| Token expired | Check server time synchronization |
+Run a provider in Docker, like Pocket ID or Keycloak, and use `http://localhost:3000/api/auth/sso/callback/{providerId}` as its redirect URI. The panel of the provider shows the exact URL with Copy.

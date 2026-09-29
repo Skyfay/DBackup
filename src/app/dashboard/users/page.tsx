@@ -1,40 +1,19 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
-import { getSsoProviders } from "@/app/actions/auth/oidc";
-import { AddSsoProviderDialog } from "@/components/oidc/add-sso-provider-dialog";
-import { SsoProviderList } from "@/components/oidc/sso-provider-list";
 import { API_KEYS_PAGE_ID, API_KEYS_TABLE_ID } from "@/components/dashboard/api-keys/api-keys-tables";
 import { AUDIT_PAGE_ID } from "@/components/dashboard/audit/audit-tables";
 import { GROUPS_PAGE_ID, GROUPS_TABLE_ID } from "@/components/dashboard/groups/groups-tables";
-import { UsersClient, type LegacyTabs } from "@/components/dashboard/users/users-client";
+import { SIGN_IN_PAGE_ID, SIGN_IN_TABLE_ID } from "@/components/dashboard/sign-in/sign-in-tables";
+import { UsersClient } from "@/components/dashboard/users/users-client";
 import { USERS_TABLE_ID, type UsersPageCounts } from "@/components/dashboard/users/users-tables";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCurrentUserWithGroup, getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getTablePreferences, getViewMode } from "@/services/user/preference-service";
 import { getUsersPageCounts } from "@/services/user/users-model";
 
-/** The old look of a tab that has not been redesigned yet: a card with a title, a line and one button. */
-function LegacyCard({ title, description, action, children }: { title: string; description: string; action?: React.ReactNode; children: React.ReactNode }) {
-    return (
-        <Card>
-            <CardHeader>
-                <div className="flex items-center justify-between gap-4">
-                    <div>
-                        <CardTitle>{title}</CardTitle>
-                        <CardDescription>{description}</CardDescription>
-                    </div>
-                    {action}
-                </div>
-            </CardHeader>
-            <CardContent>{children}</CardContent>
-        </Card>
-    );
-}
-
 /**
  * Users & Groups: the users with how they sign in, the groups, the API keys, the audit log and
- * the ways to sign in. Every tab but Sign-in loads in the browser, Sign-in still loads here.
+ * the ways to sign in. Every tab loads in the browser, the page only decides which ones show.
  */
 export default async function UsersPage() {
     const [permissions, user] = await Promise.all([getUserPermissions(), getCurrentUserWithGroup()]);
@@ -48,13 +27,13 @@ export default async function UsersPage() {
     const canReadSettings = can(PERMISSIONS.SETTINGS.READ);
     if (!canReadUsers && !canReadGroups && !canReadAudit && !canReadApiKeys) redirect("/dashboard");
 
-    const [counts, layouts, groupsView, apiKeysView, auditView, ssoProviders] = await Promise.all([
+    const [counts, layouts, groupsView, apiKeysView, auditView, signInView] = await Promise.all([
         getUsersPageCounts(),
-        getTablePreferences(user.id, [USERS_TABLE_ID, GROUPS_TABLE_ID, API_KEYS_TABLE_ID]),
+        getTablePreferences(user.id, [USERS_TABLE_ID, GROUPS_TABLE_ID, API_KEYS_TABLE_ID, SIGN_IN_TABLE_ID]),
         getViewMode(user.id, GROUPS_PAGE_ID),
         getViewMode(user.id, API_KEYS_PAGE_ID),
         getViewMode(user.id, AUDIT_PAGE_ID),
-        canReadSettings ? getSsoProviders() : Promise.resolve([]),
+        getViewMode(user.id, SIGN_IN_PAGE_ID),
     ]);
 
     // The count of a tab the viewer cannot open stays out, so the page never hints at it.
@@ -63,14 +42,6 @@ export default async function UsersPage() {
         groups: canReadGroups ? counts.groups : undefined,
         apikeys: canReadApiKeys ? counts.apikeys : undefined,
         sso: canReadSettings ? counts.sso : undefined,
-    };
-
-    const legacy: LegacyTabs = {
-        sso: canReadSettings ? (
-            <LegacyCard title="Single Sign-On" description="Manage OpenID Connect providers." action={can(PERMISSIONS.SETTINGS.WRITE) && <AddSsoProviderDialog />}>
-                <SsoProviderList providers={ssoProviders} />
-            </LegacyCard>
-        ) : undefined,
     };
 
     return (
@@ -87,12 +58,14 @@ export default async function UsersPage() {
                     canManageApiKeys={can(PERMISSIONS.API_KEYS.WRITE)}
                     canOpenRuns={can(PERMISSIONS.HISTORY.READ)}
                     canReadAudit={canReadAudit}
+                    canReadSignIn={canReadSettings}
+                    canManageSignIn={can(PERMISSIONS.SETTINGS.WRITE)}
                     counts={visibleCounts}
                     layouts={layouts}
                     groupsView={groupsView ?? "table"}
                     apiKeysView={apiKeysView ?? "table"}
                     auditView={auditView ?? "table"}
-                    legacy={legacy}
+                    signInView={signInView ?? "table"}
                 />
             </Suspense>
         </div>

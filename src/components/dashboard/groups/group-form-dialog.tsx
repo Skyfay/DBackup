@@ -5,7 +5,7 @@ import { Loader2, Pencil, Plus, Users } from "lucide-react";
 import { toast } from "sonner";
 import { createGroup, updateGroup } from "@/app/actions/auth/group";
 import { Button } from "@/components/ui/button";
-import { DIALOG_FOOTER, DIALOG_SURFACE, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
+import { DIALOG_FOOTER, DIALOG_SURFACE, DialogBackButton, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -168,9 +168,9 @@ function EditorForm({ mode, start, groups, onBack, onClose, onSaved, onSavingCha
                 tone={tone}
                 icon={group ? Pencil : Plus}
                 action={onBack && (
-                    <Button type="button" variant="outline" size="sm" onClick={onBack} disabled={saving}>
+                    <DialogBackButton onClick={onBack} disabled={saving}>
                         Change start
-                    </Button>
+                    </DialogBackButton>
                 )}
             >
                 <DialogTitle className="truncate text-base">{group ? `Edit ${group.name}` : "New group"}</DialogTitle>

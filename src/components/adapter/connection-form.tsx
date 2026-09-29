@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import {
-    Activity, ChevronLeft, CircleCheck, Container, Database, FileDown, FileText, Folder, Gauge, List, Loader2, MessageSquare, Pencil,
+    Activity, CircleCheck, Container, Database, FileDown, FileText, Folder, Gauge, List, Loader2, MessageSquare, Pencil,
     Plug, Plus, Send, SlidersHorizontal, SquareTerminal, TriangleAlert, Zap, type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog, DIALOG_FOOTER, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
+import { ConfirmDialog, DIALOG_FOOTER, DialogBackButton, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
 import { DialogClose, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Form } from "@/components/ui/form";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -173,14 +173,7 @@ export function ConnectionForm({
                         <DialogHead
                             tone={tone}
                             icon={initialData ? Pencil : Plus}
-                            action={
-                                onBack && (
-                                    <Button type="button" variant="outline" size="sm" onClick={onBack}>
-                                        <ChevronLeft />
-                                        Change type
-                                    </Button>
-                                )
-                            }
+                            action={onBack && <DialogBackButton onClick={onBack}>Change type</DialogBackButton>}
                         >
                             <DialogTitle className="text-base">{title}</DialogTitle>
                             <DialogDescription className={cn(dialogNoteClass(tone), "truncate")}>{note}</DialogDescription>

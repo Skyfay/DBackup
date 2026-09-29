@@ -8,7 +8,7 @@ import { SwitchList, SwitchRow } from "@/components/adapter/setting-switches";
 import { NO_GROUP } from "@/components/dashboard/users/user-columns";
 import { GroupPicker } from "@/components/dashboard/users/user-group-picker";
 import { Button } from "@/components/ui/button";
-import { DIALOG_FOOTER, DIALOG_SURFACE, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
+import { DIALOG_FOOTER, DIALOG_SURFACE, DialogBackButton, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -178,9 +178,9 @@ function Editor({ mode, adapterId, model, onBack, onClose, onSavingChange, onSav
                 tone={tone}
                 icon={provider ? Pencil : Plus}
                 action={onBack && (
-                    <Button type="button" variant="outline" size="sm" onClick={onBack} disabled={saving}>
+                    <DialogBackButton onClick={onBack} disabled={saving}>
                         Change provider
-                    </Button>
+                    </DialogBackButton>
                 )}
             >
                 <DialogTitle className="truncate text-base">{provider ? `Edit ${provider.name}` : "New sign-in provider"}</DialogTitle>

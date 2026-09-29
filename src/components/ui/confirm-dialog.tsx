@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, Info, Loader2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Info, Loader2 } from "lucide-react";
 import {
     AlertDialog,
     AlertDialogCancel,
@@ -58,6 +58,20 @@ export function DialogHead({ tone, icon: Icon, className, action, children }: Di
             <div className="grid min-w-0 flex-1 gap-0.5">{children}</div>
             {action && <div className="shrink-0">{action}</div>}
         </div>
+    );
+}
+
+/**
+ * The way back to the first step of a dialog in two steps, like Change type, for the `action` of
+ * its `DialogHead`. Its arrow takes the tone of the head, and a frame with a light tint in it
+ * shows only on hover, so the head stays calm.
+ */
+export function DialogBackButton({ children, ...props }: React.ComponentProps<typeof Button>) {
+    return (
+        <Button type="button" variant="ghost-tone" size="sm" {...props}>
+            <ArrowLeft />
+            {children}
+        </Button>
     );
 }
 

@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useId, useState } from "react";
-import { ChevronLeft, KeyRound, Loader2, Lock, Pencil } from "lucide-react";
+import { KeyRound, Loader2, Lock, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { DIALOG_FOOTER, DIALOG_SURFACE, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
+import { DIALOG_FOOTER, DIALOG_SURFACE, DialogBackButton, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -229,14 +229,7 @@ export function CredentialProfileDialog({ open, onOpenChange, editProfile, force
                             tone={isEdit ? "edit" : "create"}
                             icon={isEdit ? Pencil : info.icon}
                             className="px-5 py-4"
-                            action={
-                                fromVault && (
-                                    <Button type="button" variant="outline" size="sm" onClick={() => setStep("type")}>
-                                        <ChevronLeft />
-                                        Change type
-                                    </Button>
-                                )
-                            }
+                            action={fromVault && <DialogBackButton onClick={() => setStep("type")}>Change type</DialogBackButton>}
                         >
                             <DialogTitle className="text-base">{isEdit ? `Edit ${noun}` : `New ${noun}`}</DialogTitle>
                             <DialogDescription className={cn(dialogNoteClass(isEdit ? "edit" : "create"), "truncate")}>{note}</DialogDescription>

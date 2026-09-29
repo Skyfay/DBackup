@@ -8,7 +8,7 @@ import { TOTAL_PERMISSIONS } from "@/components/dashboard/groups/group-cells";
 import { NameField } from "@/components/dashboard/groups/group-form-dialog";
 import { PermissionEditor } from "@/components/permissions/permission-editor";
 import { Button } from "@/components/ui/button";
-import { DIALOG_FOOTER, DIALOG_SURFACE, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
+import { DIALOG_FOOTER, DIALOG_SURFACE, DialogBackButton, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { apiKeyTemplate, type ApiKeyTemplate } from "@/lib/auth/api-key-templates";
 import { useDateFormatter } from "@/hooks/use-date-formatter";
@@ -223,9 +223,9 @@ function EditorForm({ mode, start, presetName, keys, viewerPermissions, onBack, 
                 tone={tone}
                 icon={key ? Pencil : Plus}
                 action={onBack && (
-                    <Button type="button" variant="outline" size="sm" onClick={onBack} disabled={saving}>
+                    <DialogBackButton onClick={onBack} disabled={saving}>
                         Change task
-                    </Button>
+                    </DialogBackButton>
                 )}
             >
                 <DialogTitle className="truncate text-base">{key ? `Edit ${key.name}` : "New API key"}</DialogTitle>

@@ -3,8 +3,8 @@ import { redirect } from "next/navigation";
 import { getSsoProviders } from "@/app/actions/auth/oidc";
 import { AddSsoProviderDialog } from "@/components/oidc/add-sso-provider-dialog";
 import { SsoProviderList } from "@/components/oidc/sso-provider-list";
-import { AuditTable } from "@/components/audit/audit-table";
 import { API_KEYS_PAGE_ID, API_KEYS_TABLE_ID } from "@/components/dashboard/api-keys/api-keys-tables";
+import { AUDIT_PAGE_ID } from "@/components/dashboard/audit/audit-tables";
 import { GROUPS_PAGE_ID, GROUPS_TABLE_ID } from "@/components/dashboard/groups/groups-tables";
 import { UsersClient, type LegacyTabs } from "@/components/dashboard/users/users-client";
 import { USERS_TABLE_ID, type UsersPageCounts } from "@/components/dashboard/users/users-tables";
@@ -34,8 +34,7 @@ function LegacyCard({ title, description, action, children }: { title: string; d
 
 /**
  * Users & Groups: the users with how they sign in, the groups, the API keys, the audit log and
- * the ways to sign in. The users, the groups and the API keys load in the browser, the other tabs
- * still load here.
+ * the ways to sign in. Every tab but Sign-in loads in the browser, Sign-in still loads here.
  */
 export default async function UsersPage() {
     const [permissions, user] = await Promise.all([getUserPermissions(), getCurrentUserWithGroup()]);
@@ -49,11 +48,12 @@ export default async function UsersPage() {
     const canReadSettings = can(PERMISSIONS.SETTINGS.READ);
     if (!canReadUsers && !canReadGroups && !canReadAudit && !canReadApiKeys) redirect("/dashboard");
 
-    const [counts, layouts, groupsView, apiKeysView, ssoProviders] = await Promise.all([
+    const [counts, layouts, groupsView, apiKeysView, auditView, ssoProviders] = await Promise.all([
         getUsersPageCounts(),
         getTablePreferences(user.id, [USERS_TABLE_ID, GROUPS_TABLE_ID, API_KEYS_TABLE_ID]),
         getViewMode(user.id, GROUPS_PAGE_ID),
         getViewMode(user.id, API_KEYS_PAGE_ID),
+        getViewMode(user.id, AUDIT_PAGE_ID),
         canReadSettings ? getSsoProviders() : Promise.resolve([]),
     ]);
 
@@ -66,11 +66,6 @@ export default async function UsersPage() {
     };
 
     const legacy: LegacyTabs = {
-        audit: canReadAudit ? (
-            <LegacyCard title="Audit Logs" description="View system activity and user actions.">
-                <AuditTable />
-            </LegacyCard>
-        ) : undefined,
         sso: canReadSettings ? (
             <LegacyCard title="Single Sign-On" description="Manage OpenID Connect providers." action={can(PERMISSIONS.SETTINGS.WRITE) && <AddSsoProviderDialog />}>
                 <SsoProviderList providers={ssoProviders} />
@@ -91,10 +86,12 @@ export default async function UsersPage() {
                     canReadApiKeys={canReadApiKeys}
                     canManageApiKeys={can(PERMISSIONS.API_KEYS.WRITE)}
                     canOpenRuns={can(PERMISSIONS.HISTORY.READ)}
+                    canReadAudit={canReadAudit}
                     counts={visibleCounts}
                     layouts={layouts}
                     groupsView={groupsView ?? "table"}
                     apiKeysView={apiKeysView ?? "table"}
+                    auditView={auditView ?? "table"}
                     legacy={legacy}
                 />
             </Suspense>

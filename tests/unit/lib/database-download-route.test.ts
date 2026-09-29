@@ -20,7 +20,7 @@ vi.mock("@/services/system/database-service", () => ({
 
 const mockAuditLog = vi.fn();
 vi.mock("@/services/audit-service", () => ({
-    auditService: { log: (...args: unknown[]) => mockAuditLog(...args) },
+    auditService: { logFor: (...args: unknown[]) => mockAuditLog(...args) },
 }));
 
 const mockStream = vi.fn();
@@ -122,7 +122,7 @@ describe("Database download route", () => {
 
         expect(prepared.status).toBe(200);
         expect(data.fileName).toBe("dbackup-database_2026-09-16_12-00-00.db");
-        expect(mockAuditLog).toHaveBeenCalledWith("admin-1", "EXPORT", "SYSTEM", expect.objectContaining({ action: "database_download" }));
+        expect(mockAuditLog).toHaveBeenCalledWith(superAdmin, "EXPORT", "SYSTEM", expect.objectContaining({ action: "database_download" }));
 
         // Another SuperAdmin cannot redeem the token.
         mockGetAuthContext.mockResolvedValue({ ...superAdmin, userId: "admin-3" });

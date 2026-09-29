@@ -133,9 +133,10 @@ export async function setDefaultRetentionPolicy(id: string) {
 /**
  * Deletes a policy nothing depends on. A built-in one stays, it can be edited instead. The default
  * stays too, since every destination without a policy of its own follows it and would silently
- * keep every backup once it is gone. Another policy has to become the default first.
+ * keep every backup once it is gone. Another policy has to become the default first. Returns the
+ * name the policy had, for the audit log.
  */
-export async function deleteRetentionPolicy(id: string) {
+export async function deleteRetentionPolicy(id: string): Promise<{ name: string }> {
   const policy = await prisma.retentionPolicy.findUnique({
     where: { id },
     include: {
@@ -163,6 +164,7 @@ export async function deleteRetentionPolicy(id: string) {
 
   await prisma.retentionPolicy.delete({ where: { id } });
   log.info("Retention policy deleted", { id });
+  return { name: policy.name };
 }
 
 export function parseRetentionPolicyConfig(

@@ -5,6 +5,7 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { headers } from "next/headers";
 import { scheduler } from "@/lib/server/scheduler";
 import { auditService } from "@/services/audit-service";
+import { taskChanges, taskName, taskSnapshot } from "@/services/system/system-task-audit";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
@@ -70,6 +71,8 @@ export async function POST(req: NextRequest) {
          return NextResponse.json({ error: "Missing taskId" }, { status: 400 });
     }
 
+    const before = await taskSnapshot(taskId);
+
     if (schedule !== undefined) {
         await systemTaskService.setTaskConfig(taskId, schedule);
     }
@@ -85,11 +88,19 @@ export async function POST(req: NextRequest) {
     // Refresh scheduler
     scheduler.refresh().catch((e) => log.error("Scheduler refresh failed after system task update", {}, wrapError(e)));
 
-    await auditService.log(
-        ctx.userId,
+    const after = await taskSnapshot(taskId);
+    // Switching a task on or off alone reads as that, anything else as a change with its values.
+    const switchedOnly = enabled !== undefined && schedule === undefined && runOnStartup === undefined;
+    await auditService.logFor(
+        ctx,
         AUDIT_ACTIONS.UPDATE,
         AUDIT_RESOURCES.SYSTEM,
-        { task: taskId, schedule, runOnStartup, enabled },
+        {
+            task: after.name,
+            name: after.name,
+            ...(typeof enabled === "boolean" ? { enabled } : {}),
+            ...(switchedOnly ? {} : { changes: taskChanges(before, after) }),
+        },
         taskId
     );
 
@@ -111,11 +122,12 @@ export async function PUT(req: NextRequest) {
 
     const executionId = await systemTaskService.runTask(taskId, "Manual", user?.name ?? "Manual");
 
-    await auditService.log(
-        ctx.userId,
+    const name = taskName(taskId);
+    await auditService.logFor(
+        ctx,
         AUDIT_ACTIONS.EXECUTE,
         AUDIT_RESOURCES.SYSTEM,
-        { task: taskId },
+        { task: name, name },
         taskId
     );
 

@@ -15,6 +15,7 @@ import { wrapError, getErrorMessage, ValidationError, NotFoundError, ConflictErr
 import { registerAdapters } from "@/lib/adapters";
 import { validateCredentialAssignments } from "@/lib/adapters/credential-validation";
 import { deleteAdapter } from "@/services/adapters/adapter-service";
+import { connectionChanges } from "@/services/adapters/adapter-audit";
 
 registerAdapters();
 
@@ -43,15 +44,13 @@ export async function DELETE(
 
         const deletedAdapter = await deleteAdapter(params.id);
 
-        if (ctx) {
-            await auditService.log(
-                ctx.userId,
-                AUDIT_ACTIONS.DELETE,
-                AUDIT_RESOURCES.ADAPTER,
-                { name: deletedAdapter.name },
-                params.id
-            );
-        }
+        await auditService.logFor(
+            ctx,
+            AUDIT_ACTIONS.DELETE,
+            AUDIT_RESOURCES.ADAPTER,
+            { name: deletedAdapter.name },
+            params.id
+        );
 
         return NextResponse.json({ success: true });
     } catch (error: unknown) {
@@ -81,7 +80,11 @@ export async function PUT(
         // RBAC: Check permission based on adapter type
         const existingAdapter = await prisma.adapterConfig.findUnique({
             where: { id: params.id },
-            select: { type: true, adapterId: true, lastError: true, config: true, storageRole: true }
+            select: {
+                type: true, adapterId: true, lastError: true, config: true, storageRole: true,
+                // What the audit entry compares the edit with.
+                name: true, primaryCredentialId: true, sshCredentialId: true, metadata: true,
+            }
         });
         if (!existingAdapter) {
             return NextResponse.json({ success: false, error: "Adapter not found" }, { status: 404 });
@@ -130,9 +133,10 @@ export async function PUT(
         // Kept in scope for the snapshot check below, which has to probe with the real
         // secrets rather than the redacted ones the form submits.
         let mergedPlainConfig: Record<string, unknown> | undefined;
+        // The config as it was, which the audit entry compares the merged one with.
+        let existingDecrypted: unknown = {};
         if (config !== undefined) {
             const incomingConfig = typeof config === 'string' ? JSON.parse(config) : config;
-            let existingDecrypted: unknown = {};
             try {
                 existingDecrypted = decryptConfig(JSON.parse(existingAdapter.config));
             } catch (e) {
@@ -222,15 +226,24 @@ export async function PUT(
             }
         });
 
-        if (ctx) {
-            await auditService.log(
-                ctx.userId,
-                AUDIT_ACTIONS.UPDATE,
-                AUDIT_RESOURCES.ADAPTER,
-                { name },
-                updatedAdapter.id
-            );
-        }
+        // Secrets are compared, never written: a changed one is only marked as changed.
+        const changes = await connectionChanges(
+            existingAdapter.type,
+            existingAdapter,
+            updatedAdapter,
+            mergedPlainConfig !== undefined ? { before: existingDecrypted, after: mergedPlainConfig } : undefined
+        );
+        await auditService.logFor(
+            ctx,
+            AUDIT_ACTIONS.UPDATE,
+            AUDIT_RESOURCES.ADAPTER,
+            {
+                name: updatedAdapter.name,
+                ...(existingAdapter.name !== updatedAdapter.name ? { renamedFrom: existingAdapter.name } : {}),
+                changes,
+            },
+            updatedAdapter.id
+        );
 
         return NextResponse.json(toAdapterListItem(updatedAdapter));
     } catch (_error) {

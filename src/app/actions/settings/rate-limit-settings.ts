@@ -9,6 +9,9 @@ import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { RATE_LIMIT_KEYS, RATE_LIMIT_DEFAULTS } from "@/lib/rate-limit";
 import { reloadRateLimits } from "@/lib/rate-limit/server";
+import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
+import { auditService } from "@/services/audit-service";
+import { rateLimitSettings, settingsChanges, SETTINGS_AREAS } from "@/services/system/settings-audit";
 
 const log = logger.child({ action: "rate-limit-settings" });
 
@@ -24,7 +27,7 @@ const rateLimitSchema = z.object({
 export type RateLimitFormData = z.infer<typeof rateLimitSchema>;
 
 export async function updateRateLimitSettings(data: RateLimitFormData) {
-    await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
 
     const result = rateLimitSchema.safeParse(data);
     if (!result.success) {
@@ -32,6 +35,7 @@ export async function updateRateLimitSettings(data: RateLimitFormData) {
     }
 
     try {
+        const before = await rateLimitSettings();
         const entries: { key: string; value: string; description: string }[] = [
             { key: RATE_LIMIT_KEYS.authPoints, value: String(result.data.authPoints), description: "Auth rate limit: max requests" },
             { key: RATE_LIMIT_KEYS.authDuration, value: String(result.data.authDuration), description: "Auth rate limit: window in seconds" },
@@ -60,6 +64,11 @@ export async function updateRateLimitSettings(data: RateLimitFormData) {
             mutation: `${result.data.mutationPoints}/${result.data.mutationDuration}s`,
         });
 
+        const changes = settingsChanges(before, await rateLimitSettings());
+        if (changes.length > 0) {
+            await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SYSTEM, { area: SETTINGS_AREAS.RATE_LIMITS, changes });
+        }
+
         revalidatePath("/dashboard/settings");
         return { success: true };
     } catch (error: unknown) {
@@ -69,9 +78,10 @@ export async function updateRateLimitSettings(data: RateLimitFormData) {
 }
 
 export async function resetRateLimitSettings() {
-    await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
 
     try {
+        const before = await rateLimitSettings();
         const entries: { key: string; value: string; description: string }[] = [
             { key: RATE_LIMIT_KEYS.authPoints, value: String(RATE_LIMIT_DEFAULTS.auth.points), description: "Auth rate limit: max requests" },
             { key: RATE_LIMIT_KEYS.authDuration, value: String(RATE_LIMIT_DEFAULTS.auth.duration), description: "Auth rate limit: window in seconds" },
@@ -94,6 +104,12 @@ export async function resetRateLimitSettings() {
         await reloadRateLimits();
 
         log.info("Rate limit settings reset to defaults");
+
+        const changes = settingsChanges(before, await rateLimitSettings());
+        if (changes.length > 0) {
+            await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SYSTEM, { area: SETTINGS_AREAS.RATE_LIMITS, action: "reset", changes });
+        }
+
         revalidatePath("/dashboard/settings");
         return { success: true };
     } catch (error: unknown) {

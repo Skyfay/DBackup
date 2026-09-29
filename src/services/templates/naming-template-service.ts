@@ -103,7 +103,8 @@ export async function updateNamingTemplate(
   return updated;
 }
 
-export async function deleteNamingTemplate(id: string) {
+/** Deletes a template nothing depends on. Returns the name it had, for the audit log. */
+export async function deleteNamingTemplate(id: string): Promise<{ name: string }> {
   const template = await prisma.namingTemplate.findUnique({
     where: { id },
     include: { jobs: { select: { id: true } } },
@@ -121,6 +122,7 @@ export async function deleteNamingTemplate(id: string) {
 
   await prisma.namingTemplate.delete({ where: { id } });
   log.info("Naming template deleted", { id });
+  return { name: template.name };
 }
 
 /**

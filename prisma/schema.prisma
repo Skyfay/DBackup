@@ -453,8 +453,14 @@ model AuditLog {
   userId      String?  // Nullable because some actions might be system actions or deleted users
   user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-  action      String   // ENUM-like string: "LOGIN", "CREATE", "UPDATE", "DELETE"
-  resource    String   // ENUM-like string: "USER", "JOB", "SOURCE", "DESTINATION", "SETTINGS"
+  // The name of the user when the entry was written, so it stays after the user is deleted
+  actorName   String?
+  // The API key the request came with, and its name at the time
+  apiKeyId    String?
+  apiKeyName  String?
+
+  action      String   // ENUM-like string: "LOGIN", "LOGIN_FAILED", "CREATE", "UPDATE", "DELETE", "RESTORE", ...
+  resource    String   // ENUM-like string: "USER", "JOB", "BACKUP", "SYSTEM", ...
   resourceId  String?  // The ID of the affected object
 
   details     String?  // JSON string storing changes (diff) or connection info
@@ -465,6 +471,7 @@ model AuditLog {
 
   @@index([userId])
   @@index([resource])
+  @@index([action])
   @@index([createdAt])
 }
 

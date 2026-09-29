@@ -1,25 +1,24 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Loader2, Pencil, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { createUser, updateUser, updateUserGroup } from "@/app/actions/auth/user";
-import { ChoiceCards, type ModeOption } from "@/components/adapter/connection-mode-choice";
 import { Button } from "@/components/ui/button";
 import { DIALOG_FOOTER, DIALOG_SURFACE, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { accessLine, summarizeAccess } from "@/lib/auth/access-summary";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { cn } from "@/lib/utils";
 import type { UserRow, UsersGroup } from "@/services/user/users-types";
 import { NO_GROUP } from "./user-columns";
+import { GroupPicker } from "./user-group-picker";
 import { PasswordField } from "./user-password-field";
 
 const log = logger.child({ component: "user-dialog" });
@@ -39,30 +38,6 @@ function schemaFor(creating: boolean) {
 }
 
 type Values = z.infer<ReturnType<typeof schemaFor>>;
-
-const NO_GROUP_OPTION: ModeOption = {
-    value: NO_GROUP,
-    title: "No group",
-    description: "Signs in, but sees and does nothing until someone picks a group",
-};
-
-/**
- * The groups as cards, each with what it lets its members do. The SuperAdmin group shows only to
- * a SuperAdmin, or on a user who is in it already, and only a SuperAdmin can pick it.
- */
-function groupOptions(groups: UsersGroup[], viewerSuperAdmin: boolean, current: string): ModeOption[] {
-    return [
-        ...groups
-            .filter((group) => !group.superAdmin || viewerSuperAdmin || group.id === current)
-            .map((group) => ({
-                value: group.id,
-                title: group.name,
-                description: accessLine(summarizeAccess(group.permissions, group.superAdmin)),
-                disabled: group.superAdmin && !viewerSuperAdmin,
-            })),
-        NO_GROUP_OPTION,
-    ];
-}
 
 interface UserDialogProps {
     open: boolean;
@@ -88,7 +63,6 @@ export function UserDialog({ open, user, groups, viewerSuperAdmin, onOpenChange,
         if (open) form.reset({ name: user?.name ?? "", email: user?.email ?? "", password: "", groupId: currentGroup });
     }, [open, user, currentGroup, form]);
 
-    const options = useMemo(() => groupOptions(groups, viewerSuperAdmin, currentGroup), [groups, viewerSuperAdmin, currentGroup]);
     // Nobody changes their own group, and only a SuperAdmin moves a SuperAdmin.
     const groupLocked = user ? (user.isYou ? "Another admin changes your own group." : user.superAdmin && !viewerSuperAdmin ? "Only a SuperAdmin can change the group of a SuperAdmin." : null) : null;
     const saving = form.formState.isSubmitting;
@@ -200,7 +174,15 @@ export function UserDialog({ open, user, groups, viewerSuperAdmin, onOpenChange,
                                         <FormItem>
                                             <FormLabel>Group</FormLabel>
                                             <FormControl>
-                                                <ChoiceCards value={field.value} onValueChange={field.onChange} options={options} disabled={groupLocked !== null} aria-label="Group" />
+                                                <GroupPicker
+                                                    groups={groups}
+                                                    viewerSuperAdmin={viewerSuperAdmin}
+                                                    value={field.value}
+                                                    onChange={field.onChange}
+                                                    disabled={groupLocked !== null}
+                                                    onBlur={field.onBlur}
+                                                    ref={field.ref}
+                                                />
                                             </FormControl>
                                             {groupLocked ? (
                                                 <FormDescription>{groupLocked}</FormDescription>

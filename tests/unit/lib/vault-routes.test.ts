@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     getSession: vi.fn(),
     auditLog: vi.fn(),
     getDecryptedMasterKey: vi.fn(),
+    getEncryptionProfile: vi.fn(),
     findProfileByKey: vi.fn(),
 }));
 
@@ -32,6 +33,7 @@ vi.mock("@/services/vault/vault-credentials", () => ({ getVaultCredentials: (...
 vi.mock("@/services/audit-service", () => ({ auditService: { log: (...args: unknown[]) => mocks.auditLog(...args) } }));
 vi.mock("@/services/backup/encryption-service", () => ({
     getDecryptedMasterKey: (...args: unknown[]) => mocks.getDecryptedMasterKey(...args),
+    getEncryptionProfile: (...args: unknown[]) => mocks.getEncryptionProfile(...args),
     findProfileByKey: (...args: unknown[]) => mocks.findProfileByKey(...args),
 }));
 
@@ -90,8 +92,9 @@ describe("the key actions", () => {
         mocks.getSession.mockResolvedValue({ user: { id: "u1" } });
     });
 
-    it("writes the reveal of a key to the audit log before the key leaves", async () => {
+    it("writes the reveal of a key to the audit log before the key leaves, naming the key", async () => {
         const order: string[] = [];
+        mocks.getEncryptionProfile.mockResolvedValue({ id: "production", name: "Production" });
         mocks.auditLog.mockImplementation(async () => { order.push("audit"); });
         mocks.getDecryptedMasterKey.mockImplementation(async () => { order.push("key"); return "ab".repeat(32); });
 
@@ -99,8 +102,18 @@ describe("the key actions", () => {
 
         expect(result).toEqual({ success: true, data: "ab".repeat(32) });
         expect(mocks.checkPermission).toHaveBeenCalledWith(PERMISSIONS.VAULT.WRITE);
-        expect(mocks.auditLog).toHaveBeenCalledWith("u1", "EXPORT", "VAULT", { action: "reveal_key" }, "production");
+        expect(mocks.auditLog).toHaveBeenCalledWith("u1", "EXPORT", "VAULT", { action: "reveal_key", name: "Production" }, "production");
         expect(order).toEqual(["audit", "key"]);
+    });
+
+    it("reveals nothing and writes nothing for a key that is gone", async () => {
+        mocks.getEncryptionProfile.mockResolvedValue(null);
+
+        const result = await revealMasterKey("gone");
+
+        expect(result.success).toBe(false);
+        expect(mocks.auditLog).not.toHaveBeenCalled();
+        expect(mocks.getDecryptedMasterKey).not.toHaveBeenCalled();
     });
 
     it("inspects a key only with the right to write to the Vault and names its Key ID", async () => {

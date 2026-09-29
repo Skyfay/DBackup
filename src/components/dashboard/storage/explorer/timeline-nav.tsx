@@ -31,6 +31,10 @@ interface TimelineNavProps {
     pickedDay: DayKey | null;
     /** Days with a failed check or a missed run, marked in the calendar. */
     problems: Date[];
+    /** What the calendar marks, below it. Left out, it names a failed check or a missed run. */
+    problemLabel?: string;
+    /** The view may go past today into the planned days. Off for a timeline of what already happened. */
+    future?: boolean;
     onToday: () => void;
     onBack: () => void;
     onForward: () => void;
@@ -42,7 +46,7 @@ interface TimelineNavProps {
  * calendar to jump to a day, and on. At today the arrow on the right adds the next days instead,
  * and Today comes back from the past.
  */
-export function TimelineNav({ days, today, last, ahead, ready, pickedDay, problems, onToday, onBack, onForward, onJump }: TimelineNavProps) {
+export function TimelineNav({ days, today, last, ahead, ready, pickedDay, problems, problemLabel = "A failed check or a missed run", future = true, onToday, onBack, onForward, onJump }: TimelineNavProps) {
     const format = useTimelineFormat();
     const [open, setOpen] = useState(false);
     const atToday = !ahead && last === today;
@@ -83,12 +87,12 @@ export function TimelineNav({ days, today, last, ahead, ready, pickedDay, proble
                     />
                     <div className="flex items-center gap-2 border-t bg-page/60 px-3 py-2 text-xs text-muted-foreground">
                         <span className="size-1.5 shrink-0 rounded-full bg-destructive" aria-hidden="true" />
-                        A failed check or a missed run
+                        {problemLabel}
                         <span className="ml-auto pl-3">The tint is the view</span>
                     </div>
                 </PopoverContent>
             </Popover>
-            {atToday ? (
+            {atToday && future ? (
                 <Tooltip>
                     <TooltipTrigger asChild>
                         <Button variant="outline" size="icon" className="size-8" aria-label={`Show the next ${AHEAD} days`} onClick={onForward} disabled={!ready}>
@@ -101,7 +105,7 @@ export function TimelineNav({ days, today, last, ahead, ready, pickedDay, proble
                     </TooltipContent>
                 </Tooltip>
             ) : (
-                <Button variant="outline" size="icon" className="size-8" aria-label="Later days" onClick={onForward} disabled={ahead || !ready}>
+                <Button variant="outline" size="icon" className="size-8" aria-label="Later days" onClick={onForward} disabled={ahead || !ready || atToday}>
                     <ChevronRight />
                 </Button>
             )}

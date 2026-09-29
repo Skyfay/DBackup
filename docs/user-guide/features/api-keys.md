@@ -84,7 +84,7 @@ curl -X POST "https://backup.example.com/api/jobs/JOB_ID/run" \
 
 The **Audit log** records who created, edited, rotated, enabled, disabled or deleted a key. An edit lists the permissions it added and removed, a new key the task it started from.
 
-A job started with a key writes an audit entry with the key, and History shows the key as **Started by** of the run. Other requests made with a key are not logged one by one.
+A request made with a key that changes something, starts a job or downloads a backup writes an entry that names the key and its owner, and History shows the key as **Started by** of a run it started. Requests that only read are not logged. See [Audit Log](/user-guide/admin/audit-log).
 
 ::: tip
 Give each script its own key with the task it needs. A key that leaks then does only that, and you can rotate it without touching the others.

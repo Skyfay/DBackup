@@ -23,7 +23,6 @@ import { Loader2, Fingerprint, AlertCircle } from "lucide-react"
 import { formatTwoFactorCode } from "@/lib/utils"
 import { getOidcProviderIcon } from "@/components/oidc/provider-icon"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { logLoginSuccess } from "@/app/actions/audit/audit-log"
 import { logger } from "@/lib/logging/logger"
 import { wrapError } from "@/lib/logging/errors"
 
@@ -162,7 +161,6 @@ export function LoginForm({ allowSignUp = true, ssoProviders = [], errorCode, di
             const result = await signIn.passkey({
                 fetchOptions: {
                     onSuccess: async () => {
-                        await logLoginSuccess().catch(e => log.error("Audit log for login failed", {}, wrapError(e)));
                         toast.success("Login successful")
                         router.push("/dashboard")
                     }
@@ -195,8 +193,7 @@ export function LoginForm({ allowSignUp = true, ssoProviders = [], errorCode, di
                   code: totpCode,
                   fetchOptions: {
                       onSuccess: async () => {
-                           await logLoginSuccess().catch(e => log.error("Audit log for login failed", {}, wrapError(e)));
-                           router.push("/dashboard")
+                              router.push("/dashboard")
                            toast.success("Login successful")
                       },
                       onError: (ctx) => {
@@ -210,8 +207,7 @@ export function LoginForm({ allowSignUp = true, ssoProviders = [], errorCode, di
                   code: totpCode,
                   fetchOptions: {
                       onSuccess: async () => {
-                           await logLoginSuccess().catch(e => log.error("Audit log for login failed", {}, wrapError(e)));
-                           router.push("/dashboard")
+                              router.push("/dashboard")
                            toast.success("Login successful")
                       },
                       onError: (ctx) => {
@@ -266,7 +262,6 @@ export function LoginForm({ allowSignUp = true, ssoProviders = [], errorCode, di
                  setLoading(false)
                  return
                }
-               await logLoginSuccess().catch(e => log.error("Audit log for login failed", {}, wrapError(e)));
               router.push("/dashboard")
             },
             onError: (ctx) => {

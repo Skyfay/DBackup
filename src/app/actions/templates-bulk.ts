@@ -11,6 +11,7 @@ import * as schedulePresetService from "@/services/templates/schedule-preset-ser
 import * as notificationTemplateService from "@/services/templates/notification-template-service";
 import * as excludePatternPresetService from "@/services/templates/exclude-pattern-preset-service";
 import { auditService } from "@/services/audit-service";
+import { templateNames, type TemplateType } from "@/services/templates/template-audit";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { BulkIdsSchema } from "@/lib/core/bulk-schema";
 import { getErrorMessage, wrapError } from "@/lib/logging/errors";
@@ -37,7 +38,7 @@ const TEMPLATE_PATHS = ["/dashboard/templates", "/dashboard/jobs", "/dashboard/c
  * themselves valid Server Actions.
  */
 async function runTemplateBulkDelete(
-    templateType: string,
+    templateType: TemplateType,
     ids: string[],
     deleteMany: (ids: string[]) => Promise<BulkResult>
 ) {
@@ -48,6 +49,8 @@ async function runTemplateBulkDelete(
     if (!parsed.success) return { success: false as const, error: "Invalid request" };
 
     try {
+        // Read first, the templates are gone afterwards.
+        const names = await templateNames(templateType, parsed.data);
         const result = await deleteMany(parsed.data);
 
         if (session.user) {
@@ -61,6 +64,7 @@ async function runTemplateBulkDelete(
                     requested: parsed.data.length,
                     succeeded: result.succeeded.length,
                     failed: result.failed.length,
+                    names: result.succeeded.flatMap((id) => names.get(id) ?? []),
                 }
             );
         }

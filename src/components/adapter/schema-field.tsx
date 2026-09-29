@@ -28,6 +28,7 @@ import {
     TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
+import { configFieldLabel } from "@/lib/adapters/field-label";
 import { FolderOpen } from "lucide-react";
 import { PLACEHOLDERS } from "./form-constants";
 import { useSecretStatus } from "./secret-status-context";
@@ -76,25 +77,7 @@ export function SchemaField({
         unwrappedShape = (unwrappedShape as any)._def.innerType;
     }
 
-    let label = fieldKey.charAt(0).toUpperCase() + fieldKey.slice(1);
-    label = label.replace(/([A-Z])/g, ' $1').trim();
-    if (fieldKey === 'disableSsl') label = "Disable SSL";
-    if (fieldKey === 'uri') label = "URI";
-    if (fieldKey === 'tls') label = "Encryption";
-    if (fieldKey === 'trustServerCertificate') label = "Trust Server Certificate";
-    if (fieldKey === 'backupPath') label = "Backup Path (Server)";
-    if (fieldKey === 'localBackupPath') label = "Backup Path (Local)";
-    if (fieldKey === 'fileTransferMode') label = "File Transfer Mode";
-    if (fieldKey === 'requestTimeout') label = "Request Timeout (ms)";
-    if (fieldKey === 'sshHost') label = "SSH Host";
-    if (fieldKey === 'sshPort') label = "SSH Port";
-    if (fieldKey === 'sshUsername') label = "SSH Username";
-    if (fieldKey === 'sshAuthType') label = "SSH Auth Method";
-    if (fieldKey === 'sshPassword') label = "SSH Password";
-    if (fieldKey === 'sshPrivateKey') label = "SSH Private Key";
-    if (fieldKey === 'sshPassphrase') label = "SSH Key Passphrase";
-    if (fieldKey === 'jurisdiction') label = "Bucket Jurisdiction";
-    if (labelOverride) label = labelOverride;
+    const label = labelOverride || configFieldLabel(fieldKey);
 
     const isBoolean = unwrappedShape instanceof z.ZodBoolean || (unwrappedShape as any)._def?.typeName === "ZodBoolean";
     const isEnum = unwrappedShape instanceof z.ZodEnum || (unwrappedShape as any)._def?.typeName === "ZodEnum";

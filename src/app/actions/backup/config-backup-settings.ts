@@ -8,6 +8,9 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { scheduler } from "@/lib/server/scheduler";
+import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
+import { auditService } from "@/services/audit-service";
+import { configBackupSettings, settingsChanges, SETTINGS_AREAS } from "@/services/system/settings-audit";
 
 const log = logger.child({ action: "config-backup-settings" });
 
@@ -22,7 +25,7 @@ const configBackupSchema = z.object({
 });
 
 export async function updateConfigBackupSettings(data: z.infer<typeof configBackupSchema>) {
-    await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
 
     const result = configBackupSchema.safeParse(data);
     if (!result.success) {
@@ -34,6 +37,7 @@ export async function updateConfigBackupSettings(data: z.infer<typeof configBack
     }
 
     try {
+        const before = await configBackupSettings();
         await prisma.$transaction([
             prisma.systemSetting.upsert({
                 where: { key: "config.backup.enabled" },
@@ -73,6 +77,11 @@ export async function updateConfigBackupSettings(data: z.infer<typeof configBack
                 create: { key: "config.backup.includeStatistics", value: String(result.data.includeStatistics) },
             }),
         ]);
+
+        const changes = settingsChanges(before, await configBackupSettings());
+        if (changes.length > 0) {
+            await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SYSTEM, { area: SETTINGS_AREAS.CONFIG_BACKUP, changes });
+        }
 
         // Refresh scheduler so enabling/disabling takes effect immediately without a restart
         scheduler.refresh().catch((e) => log.error("Scheduler refresh failed after config backup settings update", {}, wrapError(e)));

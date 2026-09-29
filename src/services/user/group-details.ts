@@ -64,14 +64,14 @@ export async function getGroupDetails(groupId: string): Promise<GroupDetails | n
             where: { resource: AUDIT_RESOURCES.GROUP, resourceId: groupId, action: { in: [AUDIT_ACTIONS.CREATE, AUDIT_ACTIONS.UPDATE] } },
             orderBy: { createdAt: "desc" },
             take: HISTORY_LIMIT,
-            select: { id: true, action: true, createdAt: true, details: true, user: { select: { name: true } } },
+            select: { id: true, action: true, createdAt: true, details: true, actorName: true, user: { select: { name: true } } },
         }),
         // A change of the group of a user names the group in its details.
         prisma.auditLog.findMany({
             where: { resource: AUDIT_RESOURCES.USER, action: AUDIT_ACTIONS.UPDATE, details: { contains: groupId } },
             orderBy: { createdAt: "desc" },
             take: HISTORY_LIMIT,
-            select: { id: true, createdAt: true, details: true, resourceId: true, user: { select: { name: true } } },
+            select: { id: true, createdAt: true, details: true, resourceId: true, actorName: true, user: { select: { name: true } } },
         }),
         getDataRetentionValues(),
     ]);
@@ -85,7 +85,7 @@ export async function getGroupDetails(groupId: string): Promise<GroupDetails | n
         ...entries.map((entry) => ({
             id: entry.id,
             at: entry.createdAt.toISOString(),
-            by: entry.user?.name ?? null,
+            by: entry.user?.name ?? entry.actorName ?? null,
             text: groupEntryText(entry.action, entry.details),
             kind: entry.action === AUDIT_ACTIONS.CREATE ? ("create" as const) : ("update" as const),
         })),
@@ -94,7 +94,7 @@ export async function getGroupDetails(groupId: string): Promise<GroupDetails | n
             .map((move) => ({
                 id: move.id,
                 at: move.createdAt.toISOString(),
-                by: move.user?.name ?? null,
+                by: move.user?.name ?? move.actorName ?? null,
                 text: `moved ${(move.resourceId && names.get(move.resourceId)) || "a user who is gone"} in`,
                 kind: "member" as const,
             })),

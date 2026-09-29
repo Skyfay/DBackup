@@ -128,7 +128,7 @@ export async function getEncryptionProfile(id: string): Promise<EncryptionProfil
  * Updates the name and description of an encryption profile. The key itself never changes.
  *
  * Renaming is safe for existing backups because they record the profile id, not its name.
- * Returns the previous name so callers can record the rename.
+ * Returns the previous name and description so callers can record what changed.
  */
 export async function updateEncryptionProfile(
   id: string,
@@ -161,7 +161,7 @@ export async function updateEncryptionProfile(
     select: summaryFields,
   });
 
-  return { profile, previousName: existing.name };
+  return { profile, previousName: existing.name, previousDescription: existing.description };
 }
 
 /**

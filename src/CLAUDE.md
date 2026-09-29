@@ -37,6 +37,7 @@ src/services/
   templates/     naming-template-service.ts, notification-template-service.ts, retention-policy-service.ts, schedule-preset-service.ts, exclude-pattern-preset-service.ts, templates-model.ts (Templates page model), retention-targets.ts and retention-preview.ts (what a retention change removes)
   user/          user-service.ts, users-model.ts (Users tab page model), user-details.ts (the panel of a user), group-service.ts, groups-model.ts (Groups tab page model), group-details.ts (the history of a group), preference-service.ts
   dashboard/     overview-service.ts (page model), aggregates.ts (cached history), health.ts, trends.ts, cache.ts
+  audit/         the Audit log tab: audit-list-service.ts (page, filters, numbers), audit-details.ts, audit-timeline.ts, audit-export.ts (CSV)
   audit-service.ts, dashboard-service.ts   (flat, no subdirectory)
 ```
 
@@ -78,6 +79,16 @@ Rules:
 - Intentionally public routes (health check, auth callbacks, OAuth redirects) need an explicit comment saying why.
 
 Permission categories: `USERS`, `GROUPS`, `SOURCES`, `DESTINATIONS`, `JOBS`, `STORAGE`, `HISTORY`, `DASHBOARD`, `AUDIT`, `NOTIFICATIONS`, `VAULT`, `PROFILE`, `SETTINGS`, `API_KEYS`. Storage has extra verbs (`DOWNLOAD`, `RESTORE`, `DELETE`), jobs have `EXECUTE`.
+
+## Audit log
+
+Every Server Action and API route that changes something, runs something, restores or hands out data writes an entry once it succeeded: `auditService.log(user.id, ...)` in an action, `auditService.logFor(ctx, ...)` in a route, which records the API key of the request. The service reads the address and browser of the request and keeps the name of the user, so callers never pass them.
+
+- Every entry names its record in `details.name` (a backup: `file`, `destination`), read before a delete.
+- An update keeps `changes` from `diffFields` in `src/lib/core/audit-diff.ts`, before and after as a person reads them. A secret is a field with `secret: true`, never a value.
+- Sign-ins, failed sign-ins and sign-outs are written by the better-auth hooks in `src/lib/auth/sign-in-audit.ts`, never by the browser.
+
+The sentence the Audit log tab shows comes from `describeEntry` in `src/lib/core/audit-sentence.ts`, which lists the details keys it reads. See `docs/developer-guide/advanced/audit.md`.
 
 ## Validation
 

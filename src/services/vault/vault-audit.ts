@@ -23,9 +23,11 @@ interface Row {
     resourceId: string | null;
     details: string | null;
     user: { name: string } | null;
+    /** The name the user had when the entry was written, kept after the user is deleted. */
+    actorName?: string | null;
 }
 
-const ROW = { createdAt: true, resourceId: true, details: true, user: { select: { name: true } } } as const;
+const ROW = { createdAt: true, resourceId: true, details: true, actorName: true, user: { select: { name: true } } } as const;
 
 function detailsOf(row: Row): Record<string, unknown> {
     if (!row.details) return {};
@@ -37,7 +39,7 @@ function detailsOf(row: Row): Record<string, unknown> {
     }
 }
 
-const actorOf = (row: Row): VaultActor => ({ at: row.createdAt.toISOString(), by: row.user?.name ?? null });
+const actorOf = (row: Row): VaultActor => ({ at: row.createdAt.toISOString(), by: row.user?.name ?? row.actorName ?? null });
 
 /** The last time something happened to each entry and how often, from rows that are newest first. */
 export interface Tally {
@@ -86,11 +88,11 @@ export async function keyAudit(ids: string[]): Promise<KeyAudit> {
             take: EXPORT_LIMIT,
             select: ROW,
         }),
-        // A key is logged as a system entry, from the time before the Vault had a resource of its own.
+        // Keys are Vault entries, the older ones were moved there from the system entries by a migration.
         ids.length === 0
             ? Promise.resolve([] as Row[])
             : prisma.auditLog.findMany({
-                  where: { action: AUDIT_ACTIONS.CREATE, resource: AUDIT_RESOURCES.SYSTEM, resourceId: { in: ids } },
+                  where: { action: AUDIT_ACTIONS.CREATE, resource: AUDIT_RESOURCES.VAULT, resourceId: { in: ids } },
                   orderBy: { createdAt: "asc" },
                   select: ROW,
               }),

@@ -5,6 +5,9 @@ import { checkPermission, getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { OidcProviderService } from "@/services/sso/oidc-provider-service";
 import { getOIDCAdapter } from "@/services/sso/oidc-registry";
+import { ssoProviderChanges } from "@/services/sso/oidc-audit";
+import { auditService } from "@/services/audit-service";
+import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { revalidatePath } from "next/cache";
 import { logger } from "@/lib/logging/logger";
 import { wrapError, getErrorMessage } from "@/lib/logging/errors";
@@ -43,7 +46,7 @@ export async function getSsoProviders() {
 }
 
 export async function createSsoProvider(input: z.infer<typeof createProviderSchema>) {
-    await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
 
     const validation = createProviderSchema.safeParse(input);
     if (!validation.success) {
@@ -99,7 +102,7 @@ export async function createSsoProvider(input: z.infer<typeof createProviderSche
 
     // 4. Create in DB
     try {
-        await OidcProviderService.createProvider({
+        const provider = await OidcProviderService.createProvider({
             name,
             adapterId,
             type: "oidc",
@@ -119,6 +122,14 @@ export async function createSsoProvider(input: z.infer<typeof createProviderSche
             discoveryEndpoint: endpoints.discoveryEndpoint
         });
 
+        await auditService.log(
+            user.id,
+            AUDIT_ACTIONS.CREATE,
+            AUDIT_RESOURCES.SSO_PROVIDER,
+            { name: provider.name, adapterId: provider.adapterId, providerId: provider.providerId },
+            provider.id
+        );
+
         revalidatePath("/dashboard/users");
         return { success: true };
     } catch (error: unknown) {
@@ -128,7 +139,7 @@ export async function createSsoProvider(input: z.infer<typeof createProviderSche
 }
 
 export async function updateSsoProvider(input: z.infer<typeof updateProviderSchema>) {
-    await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
 
     const validation = updateProviderSchema.safeParse(input);
     if (!validation.success) {
@@ -182,6 +193,8 @@ export async function updateSsoProvider(input: z.infer<typeof updateProviderSche
 
     // 4. Update in DB
     try {
+        // Read with the secrets in plain text, so a new client secret shows as changed. It is never written.
+        const before = await OidcProviderService.getProviderById(id);
         await OidcProviderService.updateProvider(id, {
             name,
             providerId,
@@ -199,6 +212,21 @@ export async function updateSsoProvider(input: z.infer<typeof updateProviderSche
             discoveryEndpoint: endpoints.discoveryEndpoint
         });
 
+        const after = await OidcProviderService.getProviderById(id);
+        if (before && after) {
+            await auditService.log(
+                user.id,
+                AUDIT_ACTIONS.UPDATE,
+                AUDIT_RESOURCES.SSO_PROVIDER,
+                {
+                    name: after.name,
+                    ...(before.name !== after.name ? { renamedFrom: before.name } : {}),
+                    changes: ssoProviderChanges(before, after),
+                },
+                id
+            );
+        }
+
         revalidatePath("/dashboard/users");
         return { success: true };
     } catch (error: unknown) {
@@ -214,9 +242,10 @@ export async function getSsoProviderDeletionImpact(id: string) {
 }
 
 export async function deleteSsoProvider(id: string) {
-    await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
     try {
-        await OidcProviderService.deleteProvider(id);
+        const deleted = await OidcProviderService.deleteProvider(id);
+        await auditService.log(user.id, AUDIT_ACTIONS.DELETE, AUDIT_RESOURCES.SSO_PROVIDER, { name: deleted.name, providerId: deleted.providerId }, id);
         revalidatePath("/admin/settings");
         return { success: true };
     } catch (error: unknown) {
@@ -225,9 +254,10 @@ export async function deleteSsoProvider(id: string) {
 }
 
 export async function toggleSsoProvider(id: string, enabled: boolean) {
-    await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
     try {
-        await OidcProviderService.toggleProvider(id, enabled);
+        const provider = await OidcProviderService.toggleProvider(id, enabled);
+        await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SSO_PROVIDER, { name: provider.name, enabled: provider.enabled }, id);
         revalidatePath("/admin/settings");
         return { success: true };
     } catch (error: unknown) {

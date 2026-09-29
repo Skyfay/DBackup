@@ -177,15 +177,13 @@ export async function POST(req: NextRequest) {
             },
         });
 
-        if (ctx) {
-            await auditService.log(
-                ctx.userId,
-                AUDIT_ACTIONS.CREATE,
-                AUDIT_RESOURCES.ADAPTER,
-                { name, type, adapterId },
-                newAdapter.id
-            );
-        }
+        await auditService.logFor(
+            ctx,
+            AUDIT_ACTIONS.CREATE,
+            AUDIT_RESOURCES.ADAPTER,
+            { name, type, adapterId },
+            newAdapter.id
+        );
 
         return NextResponse.json(toAdapterListItem(newAdapter), { status: 201 });
     } catch (error: unknown) {

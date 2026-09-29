@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
     planFileRestore: vi.fn(),
     planArchiveDownload: vi.fn(),
     generateSelectionDownloadToken: vi.fn(),
+    restoreFilesToStorage: vi.fn(),
+    auditLogFor: vi.fn(),
 }));
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
@@ -21,8 +23,12 @@ vi.mock("@/lib/auth/access-control", () => ({
         if (!permissions.some((permission) => mocks.permissions.includes(permission))) throw new PermissionError(permissions.join(" or "));
     },
 }));
-vi.mock("@/services/audit-service", () => ({ auditService: { log: vi.fn() } }));
-vi.mock("@/services/restore/file-restore", () => ({ planFileRestore: mocks.planFileRestore, restoreFilesToStorage: vi.fn() }));
+vi.mock("@/services/audit-service", () => ({ auditService: { log: vi.fn(), logFor: mocks.auditLogFor } }));
+vi.mock("@/services/storage/backup-audit", () => ({
+    backupAuditDetails: async (_destinationId: string, file: string) => ({ file, destination: "NAS", job: "Media" }),
+    fileRestoreTarget: async () => ({ target: "Local files", targetPath: "/restore" }),
+}));
+vi.mock("@/services/restore/file-restore", () => ({ planFileRestore: mocks.planFileRestore, restoreFilesToStorage: mocks.restoreFilesToStorage }));
 vi.mock("@/services/restore/archive-download", () => ({ planArchiveDownload: mocks.planArchiveDownload, openArchiveDownload: vi.fn() }));
 vi.mock("@/lib/auth/download-tokens", () => ({ generateSelectionDownloadToken: mocks.generateSelectionDownloadToken, consumeSelectionDownloadToken: vi.fn() }));
 
@@ -57,6 +63,22 @@ describe("POST /api/storage/[id]/restore-files", () => {
         expect(response.ok).toBe(false);
         expect(mocks.planArchiveDownload).not.toHaveBeenCalled();
         expect(mocks.generateSelectionDownloadToken).not.toHaveBeenCalled();
+    });
+
+    it("notes files written back into storage as a restore of the backup, with where they went", async () => {
+        mocks.permissions = ["storage:restore"];
+        mocks.restoreFilesToStorage.mockResolvedValue({ restored: 11, failed: [{ path: "a.txt", error: "denied" }], totalBytes: 1024 });
+
+        const response = await post({ ...PICK, target: { kind: "storage", configId: "local", basePath: "/restore" } });
+
+        expect(response.status).toBe(200);
+        expect(mocks.auditLogFor).toHaveBeenCalledWith(
+            expect.objectContaining({ userId: "u1" }),
+            "RESTORE",
+            "BACKUP",
+            { action: "file_restore", file: "Media/backup.tar", destination: "NAS", job: "Media", target: "Local files", targetPath: "/restore", restored: 11, failed: 1 },
+            "nas"
+        );
     });
 
     it("counts a pick for someone who may only download, and for nobody without either", async () => {

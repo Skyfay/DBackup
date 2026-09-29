@@ -6,6 +6,7 @@ import { registerAdapters } from "@/lib/adapters";
 import { getAuthContext, checkPermissionWithContext, checkAnyPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { auditService } from "@/services/audit-service";
+import { backupAuditDetails, fileRestoreTarget } from "@/services/storage/backup-audit";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { planFileRestore, restoreFilesToStorage, FileRestoreInput } from "@/services/restore/file-restore";
 import { openArchiveDownload, planArchiveDownload, type ArchiveDownload } from "@/services/restore/archive-download";
@@ -129,9 +130,9 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         if (target.kind === "download") {
             const download = await openArchiveDownload(input);
 
-            await auditService.log(
-                ctx.userId, AUDIT_ACTIONS.EXPORT, AUDIT_RESOURCES.DESTINATION,
-                { action: "file_restore_download", file, selections, databases }, id
+            await auditService.logFor(
+                ctx, AUDIT_ACTIONS.EXPORT, AUDIT_RESOURCES.BACKUP,
+                { action: "file_restore_download", ...(await backupAuditDetails(id, file)), selections, databases }, id
             );
 
             return downloadResponse(download);
@@ -139,9 +140,10 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
 
         const result = await restoreFilesToStorage(input);
 
-        await auditService.log(
-            ctx.userId, AUDIT_ACTIONS.EXECUTE, AUDIT_RESOURCES.DESTINATION,
-            { action: "file_restore", file, target: target.kind, restored: result.restored, failed: result.failed.length }, id
+        const [backup, into] = await Promise.all([backupAuditDetails(id, file), fileRestoreTarget(target)]);
+        await auditService.logFor(
+            ctx, AUDIT_ACTIONS.RESTORE, AUDIT_RESOURCES.BACKUP,
+            { action: "file_restore", ...backup, ...into, restored: result.restored, failed: result.failed.length }, id
         );
 
         return NextResponse.json({
@@ -197,9 +199,15 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
                 : {}),
         });
 
-        await auditService.log(
-            ctx.userId, AUDIT_ACTIONS.EXPORT, AUDIT_RESOURCES.DESTINATION,
-            { action: "file_restore_download", file: claim.file, selections: claim.selection.selections, databases: claim.selection.databases }, id
+        await auditService.logFor(
+            ctx, AUDIT_ACTIONS.EXPORT, AUDIT_RESOURCES.BACKUP,
+            {
+                action: "file_restore_download",
+                ...(await backupAuditDetails(id, claim.file)),
+                selections: claim.selection.selections,
+                databases: claim.selection.databases,
+            },
+            id
         );
 
         // The name the prepare step promised, so the browser saves what the user was shown.

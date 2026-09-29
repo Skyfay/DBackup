@@ -35,7 +35,7 @@ The numbers above the list count the users without a group, the users who sign i
 1. Click **New user**
 2. Enter the name and the email
 3. Enter a password, or click **Generate** for one of 16 characters, which then shows so you can hand it on
-4. Pick the group. Each card says what the group lets its members do
+4. Pick the group from the list. Each row says what the group lets its members do, and the search finds a group by its name or by those words
 5. Click **Create user**
 
 The user can sign in right away and changes the password under **Profile → Security**.
@@ -83,7 +83,7 @@ Click **Edit** or **Change group** and pick another card. Permissions change wit
 
 ### Delete a User
 
-Click **Delete** in the menu of the user and confirm. Their sessions end at once and their API keys are deleted with them, while the audit log keeps what they did. Tick several rows to delete them together.
+Click **Delete** in the menu of the user and confirm. Their sessions end at once and their API keys are deleted with them, while the audit log keeps what they did under their name. Tick several rows to delete them together.
 
 ::: danger Cannot Undo
 Deleting a user is permanent. Your own account, the last SuperAdmin and the last account cannot be deleted, and only a SuperAdmin deletes a SuperAdmin.

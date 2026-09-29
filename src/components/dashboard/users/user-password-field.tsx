@@ -19,45 +19,45 @@ interface PasswordFieldProps extends Omit<React.ComponentProps<typeof Input>, "t
     onChange: (value: string) => void;
 }
 
-/** A password with Show and Generate. A generated password shows at once, so it can be handed on. */
+/** A password with Show inside the field and Generate beside it. A generated password shows at once, so it can be handed on. */
 export function PasswordField({ value, onChange, className, ...props }: PasswordFieldProps) {
     const [visible, setVisible] = useState(false);
     return (
-        <div className="relative">
-            <Input
-                {...props}
-                type={visible ? "text" : "password"}
-                value={value}
-                onChange={(event) => onChange(event.target.value)}
-                autoComplete="new-password"
-                spellCheck={false}
-                className={cn("pr-36", visible && value && "font-mono", className)}
-            />
-            <div className="absolute inset-y-0 right-1 flex items-center gap-1">
-                <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="size-7"
-                    onClick={() => setVisible((current) => !current)}
-                    aria-label={visible ? "Hide the password" : "Show the password"}
-                >
-                    {visible ? <EyeOff /> : <Eye />}
-                </Button>
-                <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-7 gap-1.5 px-2 text-xs"
-                    onClick={() => {
-                        onChange(generatePassword());
-                        setVisible(true);
-                    }}
-                >
-                    <RefreshCw className="size-3.5" />
-                    Generate
-                </Button>
+        <div className="flex items-center gap-2">
+            <div className="relative min-w-0 flex-1">
+                <Input
+                    {...props}
+                    type={visible ? "text" : "password"}
+                    value={value}
+                    onChange={(event) => onChange(event.target.value)}
+                    autoComplete="new-password"
+                    spellCheck={false}
+                    className={cn("pr-10", visible && value && "font-mono", className)}
+                />
+                <div className="absolute inset-y-0 right-1 flex items-center">
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-7"
+                        onClick={() => setVisible((current) => !current)}
+                        aria-label={visible ? "Hide the password" : "Show the password"}
+                    >
+                        {visible ? <EyeOff /> : <Eye />}
+                    </Button>
+                </div>
             </div>
+            <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                    onChange(generatePassword());
+                    setVisible(true);
+                }}
+            >
+                <RefreshCw />
+                Generate
+            </Button>
         </div>
     );
 }

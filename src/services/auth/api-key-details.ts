@@ -42,7 +42,7 @@ export async function getApiKeyDetails(id: string): Promise<ApiKeyDetails | null
             where: { resource: AUDIT_RESOURCES.API_KEY, resourceId: id, action: { in: [AUDIT_ACTIONS.CREATE, AUDIT_ACTIONS.UPDATE] } },
             orderBy: { createdAt: "desc" },
             take: 50,
-            select: { action: true, createdAt: true, details: true, user: { select: { name: true } } },
+            select: { action: true, createdAt: true, details: true, actorName: true, user: { select: { name: true } } },
         }),
         getDataRetentionValues(),
     ]);
@@ -59,7 +59,8 @@ export async function getApiKeyDetails(id: string): Promise<ApiKeyDetails | null
 
     const made = audit.find((entry) => entry.action === AUDIT_ACTIONS.CREATE);
     const rotated = audit.find((entry) => entry.action === AUDIT_ACTIONS.UPDATE && entry.details?.includes('"action":"rotate"'));
-    const actor = (entry: typeof made) => (entry ? { at: entry.createdAt.toISOString(), by: entry.user?.name ?? null } : null);
+    // The name kept on the entry names who did it after that user is deleted.
+    const actor = (entry: typeof made) => (entry ? { at: entry.createdAt.toISOString(), by: entry.user?.name ?? entry.actorName ?? null } : null);
 
     return {
         id,

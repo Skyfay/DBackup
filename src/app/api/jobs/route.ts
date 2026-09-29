@@ -6,6 +6,8 @@ import { jobService } from "@/services/jobs/job-service";
 import { logger } from "@/lib/logging/logger";
 import { PermissionError, wrapError } from "@/lib/logging/errors";
 import { getJobList } from "@/services/jobs/job-list-service";
+import { auditService } from "@/services/audit-service";
+import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 
 const log = logger.child({ route: "jobs" });
 
@@ -79,6 +81,8 @@ export async function POST(req: NextRequest) {
             fullEveryDays: fullEveryDays ?? 7,
             verifyByHash: verifyByHash ?? false,
         });
+
+        await auditService.logFor(ctx, AUDIT_ACTIONS.CREATE, AUDIT_RESOURCES.JOB, { name: newJob.name }, newJob.id);
 
         return NextResponse.json(newJob, { status: 201 });
     } catch (error: unknown) {

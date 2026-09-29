@@ -60,8 +60,8 @@ export async function POST(req: NextRequest) {
         const deleting = action === "delete";
         const result = deleting ? await deleteAdapters(ids) : await updateAdapterFlags(ids, FLAG_ACTIONS[action]);
 
-        await auditService.log(
-            ctx.userId,
+        await auditService.logFor(
+            ctx,
             deleting ? AUDIT_ACTIONS.DELETE : AUDIT_ACTIONS.UPDATE,
             AUDIT_RESOURCES.ADAPTER,
             {

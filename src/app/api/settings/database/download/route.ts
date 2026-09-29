@@ -51,8 +51,8 @@ export async function POST() {
     try {
         const snapshot = await createDatabaseSnapshot();
 
-        await auditService.log(
-            ctx.userId,
+        await auditService.logFor(
+            ctx,
             AUDIT_ACTIONS.EXPORT,
             AUDIT_RESOURCES.SYSTEM,
             { action: "database_download", sizeBytes: snapshot.sizeBytes }

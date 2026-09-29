@@ -10,6 +10,9 @@ import { wrapError } from "@/lib/logging/errors";
 import { scheduler } from "@/lib/server/scheduler";
 import { isValidTimezone } from "@/lib/utils";
 import { STUCK_TIMEOUT_SETTING } from "@/services/system/stuck-execution-service";
+import { generalSettings, settingsChanges, SETTINGS_AREAS } from "@/services/system/settings-audit";
+import { auditService } from "@/services/audit-service";
+import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 
 const log = logger.child({ action: "settings" });
 
@@ -30,7 +33,7 @@ const settingsSchema = z.object({
 });
 
 export async function updateSystemSettings(data: z.infer<typeof settingsSchema>) {
-    await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
 
     const result = settingsSchema.safeParse(data);
     if (!result.success) {
@@ -38,6 +41,8 @@ export async function updateSystemSettings(data: z.infer<typeof settingsSchema>)
     }
 
     try {
+        const before = await generalSettings();
+
         await prisma.systemSetting.upsert({
             where: { key: "maxConcurrentJobs" },
             update: { value: String(result.data.maxConcurrentJobs) },
@@ -117,6 +122,12 @@ export async function updateSystemSettings(data: z.infer<typeof settingsSchema>)
                 update: { value: result.data.instanceName },
                 create: { key: "general.instanceName", value: result.data.instanceName, description: "Custom instance name shown in the browser tab title" },
             });
+        }
+
+        // The form saves every field at once, the entry keeps the ones that changed.
+        const changes = settingsChanges(before, await generalSettings());
+        if (changes.length > 0) {
+            await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SYSTEM, { area: SETTINGS_AREAS.GENERAL, changes });
         }
 
         revalidatePath("/dashboard/settings");

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import * as credentialService from "@/services/auth/credential-service";
+import { credentialChanges, credentialName, credentialSnapshot } from "@/services/auth/credential-audit";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { ConflictError, NotFoundError, ValidationError, wrapError } from "@/lib/logging/errors";
@@ -71,13 +72,19 @@ export async function PUT(
             );
         }
 
+        const before = await credentialSnapshot(id);
         const profile = await credentialService.updateCredentialProfile(id, parsed.data);
 
-        await auditService.log(
-            ctx.userId,
+        // Secrets are compared, never written: a changed one is only marked as changed.
+        await auditService.logFor(
+            ctx,
             AUDIT_ACTIONS.UPDATE,
             AUDIT_RESOURCES.CREDENTIAL,
-            { fields: Object.keys(parsed.data) },
+            {
+                name: profile.name,
+                ...(before && before.name !== profile.name ? { renamedFrom: before.name } : {}),
+                changes: credentialChanges(before, await credentialSnapshot(id)),
+            },
             id
         );
 
@@ -98,13 +105,15 @@ export async function DELETE(
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.CREDENTIALS.DELETE);
 
+        // Read first, the profile is gone afterwards.
+        const name = await credentialName(id);
         await credentialService.deleteCredentialProfile(id);
 
-        await auditService.log(
-            ctx.userId,
+        await auditService.logFor(
+            ctx,
             AUDIT_ACTIONS.DELETE,
             AUDIT_RESOURCES.CREDENTIAL,
-            {},
+            { name },
             id
         );
 

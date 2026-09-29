@@ -569,16 +569,19 @@ model DbVersionHistory {
 
 ### AuditLog
 
-Tracks user and system actions for compliance.
+Tracks user and system actions for compliance. See [Audit Log System](/developer-guide/advanced/audit).
 
 ```prisma
 model AuditLog {
   id         String   @id @default(uuid())
-  userId     String?             // Nullable for system actions or deleted users
-  action     String              // "LOGIN" | "CREATE" | "UPDATE" | "DELETE"
-  resource   String              // "USER" | "JOB" | "SOURCE" | "DESTINATION" | "SETTINGS" | etc.
+  userId     String?             // Null for a failed sign-in or a user deleted before names were kept
+  actorName  String?             // The name of the user when the entry was written
+  apiKeyId   String?             // The API key the request came with
+  apiKeyName String?             // Its name at the time
+  action     String              // "LOGIN" | "LOGIN_FAILED" | "CREATE" | "UPDATE" | "RESTORE" | etc.
+  resource   String              // "USER" | "JOB" | "BACKUP" | "SYSTEM" | etc.
   resourceId String?
-  details    String?             // JSON: action details / diff
+  details    String?             // JSON: name, changes before and after, variant
   ipAddress  String?
   userAgent  String?
   createdAt  DateTime @default(now())
@@ -587,6 +590,7 @@ model AuditLog {
 
   @@index([userId])
   @@index([resource])
+  @@index([action])
   @@index([createdAt])
 }
 ```

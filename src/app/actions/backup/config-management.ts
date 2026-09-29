@@ -11,6 +11,9 @@ import path from "path";
 import { logger } from "@/lib/logging/logger";
 import { EncryptionKeyRequiredError, wrapError, getErrorMessage } from "@/lib/logging/errors";
 import { getProfileMasterKey } from "@/services/backup/encryption-service";
+import { connectionName } from "@/services/adapters/adapter-audit";
+import { auditService } from "@/services/audit-service";
+import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 
 const log = logger.child({ action: "config-management" });
 const configService = new ConfigService();
@@ -19,11 +22,12 @@ const configService = new ConfigService();
  * Trigger the Automated Config Backup Logic Manually
  */
 export async function triggerManualConfigBackupAction() {
-    await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
     try {
         // Trigger the runner async (fire & forget from UI perspective, but we await completion to inform user)
         // Actually, runConfigBackup is async.
         await runConfigBackup();
+        await auditService.log(user.id, AUDIT_ACTIONS.EXECUTE, AUDIT_RESOURCES.SYSTEM, { action: "config_backup" });
         return { success: true };
     } catch (e: unknown) {
         log.error("Manual config backup failed", {}, wrapError(e));
@@ -36,7 +40,7 @@ export async function triggerManualConfigBackupAction() {
  * Supports JSON, GZIP, and Encrypted (.enc) backups (requires .meta.json sidecar).
  */
 export async function uploadAndRestoreConfigAction(formData: FormData) {
-    await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
 
     const backupFile = formData.get("backupFile") as File;
     const metaFile = formData.get("metaFile") as File | null;
@@ -81,6 +85,7 @@ export async function uploadAndRestoreConfigAction(formData: FormData) {
         // 4. Import
         await configService.import(configData, strategy);
 
+        await auditService.log(user.id, AUDIT_ACTIONS.RESTORE, AUDIT_RESOURCES.SYSTEM, { action: "config_restore", file: backupFile.name });
         return { success: true };
     } catch (e: unknown) {
         // Same contract as the API routes: a missing key is answerable, so it comes back as
@@ -111,10 +116,16 @@ export async function restoreFromStorageAction(
     decryptionProfileId?: string,
     options?: RestoreOptions
 ) {
-    await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
 
     try {
         const executionId = await configService.restoreFromStorage(storageConfigId, file, decryptionProfileId, options);
+        // Written once the restore started, it runs on in the background.
+        await auditService.log(user.id, AUDIT_ACTIONS.RESTORE, AUDIT_RESOURCES.SYSTEM, {
+            action: "config_restore",
+            file,
+            destination: await connectionName(storageConfigId),
+        });
         return { success: true, executionId };
     } catch (error: unknown) {
         log.error("Restore from storage error", {}, wrapError(error));

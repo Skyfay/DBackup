@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
     deleteJobs: vi.fn(),
     setJobsEnabled: vi.fn(),
     auditLog: vi.fn(),
+    auditLogFor: vi.fn(),
+    destinationAuditName: vi.fn(),
     deleteAdapters: vi.fn(),
     updateAdapterFlags: vi.fn(),
     getAdapterTypes: vi.fn(),
@@ -33,7 +35,14 @@ vi.mock("@/services/jobs/job-service", () => ({
 }));
 
 vi.mock("@/services/audit-service", () => ({
-    auditService: { log: (...args: unknown[]) => mocks.auditLog(...args) },
+    auditService: {
+        log: (...args: unknown[]) => mocks.auditLog(...args),
+        logFor: (...args: unknown[]) => mocks.auditLogFor(...args),
+    },
+}));
+
+vi.mock("@/services/storage/backup-audit", () => ({
+    destinationAuditName: (...args: unknown[]) => mocks.destinationAuditName(...args),
 }));
 
 vi.mock("@/services/adapters/adapter-service", () => ({
@@ -68,7 +77,7 @@ describe("POST /api/jobs/bulk", () => {
         mocks.checkPermissionWithContext.mockReset();
         mocks.deleteJobs.mockReset();
         mocks.setJobsEnabled.mockReset();
-        mocks.auditLog.mockReset().mockResolvedValue(undefined);
+        mocks.auditLogFor.mockReset().mockResolvedValue(undefined);
         mocks.headers.mockResolvedValue(new Headers());
         mocks.deleteJobs.mockResolvedValue({ succeeded: ["a"], failed: [] });
         mocks.setJobsEnabled.mockResolvedValue({ succeeded: ["a"], failed: [] });
@@ -156,11 +165,11 @@ describe("POST /api/jobs/bulk", () => {
 
         await bulkJobs(request({ action: "delete", ids: ["a", "b", "c"] }));
 
-        expect(mocks.auditLog).toHaveBeenCalledTimes(1);
-        expect(mocks.auditLog).toHaveBeenCalledWith(
-            "u1",
+        expect(mocks.auditLogFor).toHaveBeenCalledTimes(1);
+        expect(mocks.auditLogFor).toHaveBeenCalledWith(
+            expect.objectContaining({ userId: "u1" }),
             "DELETE",
-            expect.any(String),
+            "JOB",
             expect.objectContaining({ bulk: true, requested: 3, succeeded: 3 })
         );
     });
@@ -252,8 +261,8 @@ describe("POST /api/adapters/bulk", () => {
         expect(res.status).toBe(200);
         expect(mocks.updateAdapterFlags).toHaveBeenCalledWith(["a", "b"], { isRestoreExcluded: true });
         expect(mocks.deleteAdapters).not.toHaveBeenCalled();
-        expect(mocks.auditLog).toHaveBeenCalledWith(
-            "u1",
+        expect(mocks.auditLogFor).toHaveBeenCalledWith(
+            expect.objectContaining({ userId: "u1" }),
             "UPDATE",
             expect.any(String),
             expect.objectContaining({ bulk: true, change: "exclude-from-restore", succeeded: 2 })
@@ -268,7 +277,8 @@ describe("POST /api/storage/[id]/files/bulk", () => {
         mocks.checkPermissionWithContext.mockReset();
         mocks.deleteBackupsBulk.mockReset().mockResolvedValue({ succeeded: ["a"], failed: [] });
         mocks.setBackupsLocked.mockReset().mockResolvedValue({ succeeded: ["a"], failed: [] });
-        mocks.auditLog.mockReset().mockResolvedValue(undefined);
+        mocks.auditLogFor.mockReset().mockResolvedValue(undefined);
+        mocks.destinationAuditName.mockReset().mockResolvedValue("NAS");
         mocks.headers.mockResolvedValue(new Headers());
     });
 
@@ -291,6 +301,22 @@ describe("POST /api/storage/[id]/files/bulk", () => {
 
         expect(res.status).toBe(403);
         expect(mocks.deleteBackupsBulk).not.toHaveBeenCalled();
+    });
+
+    it("writes one entry about the backups of the batch, naming the destination they lie at", async () => {
+        mocks.getAuthContext.mockResolvedValue(authed());
+        mocks.setBackupsLocked.mockResolvedValue({ succeeded: ["a"], failed: [{ id: "b", error: "gone" }] });
+
+        await bulkFiles(request({ action: "lock", paths: ["a", "b"] }), storageParams);
+
+        expect(mocks.auditLogFor).toHaveBeenCalledTimes(1);
+        expect(mocks.auditLogFor).toHaveBeenCalledWith(
+            expect.objectContaining({ userId: "u1" }),
+            "UPDATE",
+            "BACKUP",
+            { bulk: true, action: "lock", requested: 2, succeeded: 1, failed: 1, destination: "NAS" },
+            "dest-1"
+        );
     });
 
     it("guards lock and unlock with the same permission as delete", async () => {

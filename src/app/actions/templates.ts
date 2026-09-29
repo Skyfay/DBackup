@@ -10,6 +10,7 @@ import * as schedulePresetService from "@/services/templates/schedule-preset-ser
 import * as notificationTemplateService from "@/services/templates/notification-template-service";
 import * as excludePatternPresetService from "@/services/templates/exclude-pattern-preset-service";
 import type { NotificationTemplateChannelInput } from "@/services/templates/notification-template-service";
+import { defaultNotificationTemplate, templateSnapshot, templateUpdate } from "@/services/templates/template-audit";
 import { revalidatePath } from "next/cache";
 import { scheduler } from "@/lib/server/scheduler";
 import { logger } from "@/lib/logging/logger";
@@ -90,13 +91,14 @@ export async function updateRetentionPolicy(
   await checkPermission(PERMISSIONS.TEMPLATES.WRITE);
 
   try {
+    const before = await templateSnapshot("RetentionPolicy", id);
     const policy = await retentionPolicyService.updateRetentionPolicy(id, input);
     if (session.user) {
       await auditService.log(
         session.user.id,
         AUDIT_ACTIONS.UPDATE,
         AUDIT_RESOURCES.TEMPLATE,
-        { type: "RetentionPolicy" },
+        templateUpdate("RetentionPolicy", before, await templateSnapshot("RetentionPolicy", id)),
         id
       );
     }
@@ -117,13 +119,13 @@ export async function deleteRetentionPolicy(id: string) {
   await checkPermission(PERMISSIONS.TEMPLATES.WRITE);
 
   try {
-    await retentionPolicyService.deleteRetentionPolicy(id);
+    const deleted = await retentionPolicyService.deleteRetentionPolicy(id);
     if (session.user) {
       await auditService.log(
         session.user.id,
         AUDIT_ACTIONS.DELETE,
         AUDIT_RESOURCES.TEMPLATE,
-        { type: "RetentionPolicy" },
+        { type: "RetentionPolicy", name: deleted.name },
         id
       );
     }
@@ -150,7 +152,7 @@ export async function setDefaultRetentionPolicy(id: string) {
         session.user.id,
         AUDIT_ACTIONS.UPDATE,
         AUDIT_RESOURCES.TEMPLATE,
-        { type: "RetentionPolicy", action: "setDefault" },
+        { type: "RetentionPolicy", action: "setDefault", name: policy.name },
         id
       );
     }
@@ -235,13 +237,14 @@ export async function updateNamingTemplate(
   await checkPermission(PERMISSIONS.TEMPLATES.WRITE);
 
   try {
+    const before = await templateSnapshot("NamingTemplate", id);
     const template = await namingTemplateService.updateNamingTemplate(id, input);
     if (session.user) {
       await auditService.log(
         session.user.id,
         AUDIT_ACTIONS.UPDATE,
         AUDIT_RESOURCES.TEMPLATE,
-        { type: "NamingTemplate" },
+        templateUpdate("NamingTemplate", before, await templateSnapshot("NamingTemplate", id)),
         id
       );
     }
@@ -261,13 +264,13 @@ export async function deleteNamingTemplate(id: string) {
   await checkPermission(PERMISSIONS.TEMPLATES.WRITE);
 
   try {
-    await namingTemplateService.deleteNamingTemplate(id);
+    const deleted = await namingTemplateService.deleteNamingTemplate(id);
     if (session.user) {
       await auditService.log(
         session.user.id,
         AUDIT_ACTIONS.DELETE,
         AUDIT_RESOURCES.TEMPLATE,
-        { type: "NamingTemplate" },
+        { type: "NamingTemplate", name: deleted.name },
         id
       );
     }
@@ -350,13 +353,14 @@ export async function updateSchedulePreset(
   await checkPermission(PERMISSIONS.TEMPLATES.WRITE);
 
   try {
+    const before = await templateSnapshot("SchedulePreset", id);
     const preset = await schedulePresetService.updateSchedulePreset(id, input);
     if (session.user) {
       await auditService.log(
         session.user.id,
         AUDIT_ACTIONS.UPDATE,
         AUDIT_RESOURCES.TEMPLATE,
-        { type: "SchedulePreset" },
+        templateUpdate("SchedulePreset", before, await templateSnapshot("SchedulePreset", id)),
         id
       );
     }
@@ -379,13 +383,13 @@ export async function deleteSchedulePreset(id: string) {
   await checkPermission(PERMISSIONS.TEMPLATES.WRITE);
 
   try {
-    await schedulePresetService.deleteSchedulePreset(id);
+    const deleted = await schedulePresetService.deleteSchedulePreset(id);
     if (session.user) {
       await auditService.log(
         session.user.id,
         AUDIT_ACTIONS.DELETE,
         AUDIT_RESOURCES.TEMPLATE,
-        { type: "SchedulePreset" },
+        { type: "SchedulePreset", name: deleted.name },
         id
       );
     }
@@ -473,13 +477,14 @@ export async function updateNotificationTemplate(
   await checkPermission(PERMISSIONS.TEMPLATES.WRITE);
 
   try {
+    const before = await templateSnapshot("NotificationTemplate", id);
     const template = await notificationTemplateService.updateNotificationTemplate(id, input);
     if (session.user) {
       await auditService.log(
         session.user.id,
         AUDIT_ACTIONS.UPDATE,
         AUDIT_RESOURCES.TEMPLATE,
-        { type: "NotificationTemplate" },
+        templateUpdate("NotificationTemplate", before, await templateSnapshot("NotificationTemplate", id)),
         id
       );
     }
@@ -499,13 +504,13 @@ export async function deleteNotificationTemplate(id: string) {
   await checkPermission(PERMISSIONS.TEMPLATES.WRITE);
 
   try {
-    await notificationTemplateService.deleteNotificationTemplate(id);
+    const deleted = await notificationTemplateService.deleteNotificationTemplate(id);
     if (session.user) {
       await auditService.log(
         session.user.id,
         AUDIT_ACTIONS.DELETE,
         AUDIT_RESOURCES.TEMPLATE,
-        { type: "NotificationTemplate" },
+        { type: "NotificationTemplate", name: deleted.name },
         id
       );
     }
@@ -526,6 +531,15 @@ export async function setDefaultNotificationTemplate(id: string) {
 
   try {
     const template = await notificationTemplateService.setDefaultNotificationTemplate(id);
+    if (session.user) {
+      await auditService.log(
+        session.user.id,
+        AUDIT_ACTIONS.UPDATE,
+        AUDIT_RESOURCES.TEMPLATE,
+        { type: "NotificationTemplate", action: "setDefault", name: template.name },
+        id
+      );
+    }
     revalidatePath("/dashboard/templates");
     return { success: true as const, data: template };
   } catch (e: unknown) {
@@ -541,7 +555,18 @@ export async function unsetDefaultNotificationTemplate() {
   await checkPermission(PERMISSIONS.TEMPLATES.WRITE);
 
   try {
+    // Read first, afterwards no template is the default.
+    const previous = await defaultNotificationTemplate();
     await notificationTemplateService.unsetDefaultNotificationTemplate();
+    if (session.user && previous) {
+      await auditService.log(
+        session.user.id,
+        AUDIT_ACTIONS.UPDATE,
+        AUDIT_RESOURCES.TEMPLATE,
+        { type: "NotificationTemplate", name: previous.name, changes: [{ field: "Default", from: "On", to: "Off" }] },
+        previous.id
+      );
+    }
     revalidatePath("/dashboard/templates");
     return { success: true as const };
   } catch (e: unknown) {
@@ -625,13 +650,14 @@ export async function updateExcludePatternPreset(
   await checkPermission(PERMISSIONS.TEMPLATES.WRITE);
 
   try {
+    const before = await templateSnapshot("ExcludePatternPreset", id);
     const preset = await excludePatternPresetService.updateExcludePatternPreset(id, input);
     if (session.user) {
       await auditService.log(
         session.user.id,
         AUDIT_ACTIONS.UPDATE,
         AUDIT_RESOURCES.TEMPLATE,
-        { type: "ExcludePatternPreset" },
+        templateUpdate("ExcludePatternPreset", before, await templateSnapshot("ExcludePatternPreset", id)),
         id
       );
     }
@@ -651,13 +677,13 @@ export async function deleteExcludePatternPreset(id: string) {
   await checkPermission(PERMISSIONS.TEMPLATES.WRITE);
 
   try {
-    await excludePatternPresetService.deleteExcludePatternPreset(id);
+    const deleted = await excludePatternPresetService.deleteExcludePatternPreset(id);
     if (session.user) {
       await auditService.log(
         session.user.id,
         AUDIT_ACTIONS.DELETE,
         AUDIT_RESOURCES.TEMPLATE,
-        { type: "ExcludePatternPreset" },
+        { type: "ExcludePatternPreset", name: deleted.name },
         id
       );
     }

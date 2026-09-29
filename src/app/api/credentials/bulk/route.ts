@@ -39,8 +39,8 @@ export async function POST(req: NextRequest) {
 
         const result = await credentialService.deleteCredentialProfiles(parsed.data.ids);
 
-        await auditService.log(
-            ctx.userId,
+        await auditService.logFor(
+            ctx,
             AUDIT_ACTIONS.DELETE,
             AUDIT_RESOURCES.CREDENTIAL,
             {

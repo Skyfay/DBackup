@@ -2,11 +2,13 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Plus } from "lucide-react";
+import { Download, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { saveViewLayout } from "@/app/actions/auth/table-preferences";
 import { ApiKeysTab, type ApiKeysTabHandle } from "@/components/dashboard/api-keys/api-keys-tab";
 import { API_KEYS_PAGE_ID, API_KEYS_TABLE_ID } from "@/components/dashboard/api-keys/api-keys-tables";
+import { AuditTab, type AuditTabHandle } from "@/components/dashboard/audit/audit-tab";
+import { AUDIT_PAGE_ID } from "@/components/dashboard/audit/audit-tables";
 import { GroupsTab, type GroupsTabHandle } from "@/components/dashboard/groups/groups-tab";
 import { GROUPS_PAGE_ID, GROUPS_TABLE_ID } from "@/components/dashboard/groups/groups-tables";
 import { Button } from "@/components/ui/button";
@@ -20,9 +22,12 @@ import { UsersTab, type UsersTabHandle } from "./users-tab";
 import { USERS_TABLE_ID, type UsersPageCounts, type UsersPageTab } from "./users-tables";
 
 /** The tabs that still have their old look, rendered by the page on the server. */
-export type LegacyTabs = Partial<Record<Exclude<UsersPageTab, "users" | "groups" | "apikeys">, React.ReactNode>>;
+export type LegacyTabs = Partial<Record<Exclude<UsersPageTab, "users" | "groups" | "apikeys" | "audit">, React.ReactNode>>;
 
-const LEGACY_ORDER = ["audit", "sso"] as const;
+const LEGACY_ORDER = ["sso"] as const;
+
+/** The audit log shows as a list or with the timeline above it, a phone gets cards. */
+const AUDIT_VIEWS: ViewMode[] = ["table", "timeline"];
 
 /** The groups and the API keys show as a table or as cards, the cards on a phone. */
 const LIST_VIEWS: ViewMode[] = ["table", "cards"];
@@ -46,12 +51,15 @@ interface UsersClientProps {
     canManageApiKeys: boolean;
     /** May open the runs an API key started. */
     canOpenRuns: boolean;
+    canReadAudit: boolean;
     counts: UsersPageCounts;
     layouts: Record<string, TablePreferences>;
     /** The view of the groups this user picked last. */
     groupsView: ViewMode;
     /** The view of the API keys this user picked last. */
     apiKeysView: ViewMode;
+    /** The view of the audit log this user picked last. */
+    auditView: ViewMode;
     legacy: LegacyTabs;
 }
 
@@ -61,13 +69,15 @@ interface UsersClientProps {
  * phone gets cards.
  */
 export function UsersClient(props: UsersClientProps) {
-    const { canReadUsers, canManageUsers, canReadGroups, canManageGroups, canReadApiKeys, canManageApiKeys, canOpenRuns, counts, layouts, legacy } = props;
+    const { canReadUsers, canManageUsers, canReadGroups, canManageGroups, canReadApiKeys, canManageApiKeys, canOpenRuns, canReadAudit, counts, layouts, legacy } = props;
     const router = useRouter();
     const searchParams = useSearchParams();
     const isMobile = useIsMobileState();
     const users = useRef<UsersTabHandle>(null);
     const groups = useRef<GroupsTabHandle>(null);
     const apiKeys = useRef<ApiKeysTabHandle>(null);
+    const audit = useRef<AuditTabHandle>(null);
+    const [auditView, setAuditView] = useState<"table" | "timeline">(props.auditView === "timeline" ? "timeline" : "table");
     const [groupView, setGroupView] = useState<"table" | "cards">(listView(props.groupsView));
     const [keyView, setKeyView] = useState<"table" | "cards">(listView(props.apiKeysView));
 
@@ -75,6 +85,7 @@ export function UsersClient(props: UsersClientProps) {
         ...(canReadUsers ? ["users" as const] : []),
         ...(canReadGroups ? ["groups" as const] : []),
         ...(canReadApiKeys ? ["apikeys" as const] : []),
+        ...(canReadAudit ? ["audit" as const] : []),
         ...LEGACY_ORDER.filter((tab) => legacy[tab]),
     ];
     const requested = searchParams.get("tab") as UsersPageTab | null;
@@ -106,6 +117,12 @@ export function UsersClient(props: UsersClientProps) {
         saveView(API_KEYS_PAGE_ID, listView(next));
     }, [saveView]);
 
+    const changeAuditView = useCallback((next: ViewMode) => {
+        const view = next === "timeline" ? "timeline" : "table";
+        setAuditView(view);
+        saveView(AUDIT_PAGE_ID, view);
+    }, [saveView]);
+
     return (
         <Tabs value={active} onValueChange={setTab} className="w-full gap-4 md:gap-0">
             <PageHead>
@@ -135,6 +152,17 @@ export function UsersClient(props: UsersClientProps) {
                                     <span className="hidden sm:inline">New group</span>
                                 </Button>
                             )}
+                        </>
+                    )}
+                    {active === "audit" && (
+                        <>
+                            <div className="hidden md:block">
+                                <ViewSwitch value={auditView} onChange={changeAuditView} views={AUDIT_VIEWS} />
+                            </div>
+                            <Button variant="outline" onClick={() => audit.current?.exportCsv()} aria-label="Export CSV">
+                                <Download />
+                                <span className="hidden sm:inline">Export CSV</span>
+                            </Button>
                         </>
                     )}
                     {active === "apikeys" && (
@@ -184,6 +212,13 @@ export function UsersClient(props: UsersClientProps) {
                             canOpenRuns={canOpenRuns}
                             initialLayout={layouts[API_KEYS_TABLE_ID] ?? null}
                         />
+                    )}
+                </TabsContent>
+            )}
+            {canReadAudit && (
+                <TabsContent value="audit">
+                    {isMobile !== undefined && (
+                        <AuditTab ref={audit} view={auditView} cards={isMobile} canSignOut={canManageUsers} />
                     )}
                 </TabsContent>
             )}

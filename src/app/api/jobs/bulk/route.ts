@@ -51,8 +51,8 @@ export async function POST(req: NextRequest) {
 
         // One audit entry for the batch. N entries would bury the signal that actually
         // matters, that somebody removed nine jobs in a single gesture.
-        await auditService.log(
-            ctx.userId,
+        await auditService.logFor(
+            ctx,
             action === "delete" ? AUDIT_ACTIONS.DELETE : AUDIT_ACTIONS.UPDATE,
             AUDIT_RESOURCES.JOB,
             {

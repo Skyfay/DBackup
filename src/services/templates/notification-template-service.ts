@@ -187,7 +187,8 @@ export async function unsetDefaultNotificationTemplate() {
   log.info("Default notification template cleared");
 }
 
-export async function deleteNotificationTemplate(id: string) {
+/** Deletes a template no job uses. Returns the name it had, for the audit log. */
+export async function deleteNotificationTemplate(id: string): Promise<{ name: string }> {
   const template = await prisma.notificationTemplate.findUnique({
     where: { id },
     include: { jobs: { select: { id: true } } },
@@ -212,6 +213,7 @@ export async function deleteNotificationTemplate(id: string) {
   await prisma.notificationTemplate.delete({ where: { id } });
   invalidateDashboardCache();
   log.info("Notification template deleted", { id });
+  return { name: template.name };
 }
 
 /**

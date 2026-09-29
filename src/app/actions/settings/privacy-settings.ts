@@ -7,6 +7,9 @@ import { checkPermission } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
+import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
+import { auditService } from "@/services/audit-service";
+import { privacySettings, settingsChanges, SETTINGS_AREAS } from "@/services/system/settings-audit";
 
 const log = logger.child({ action: "privacy-settings" });
 
@@ -15,7 +18,7 @@ const privacySettingsSchema = z.object({
 });
 
 export async function updatePrivacySettings(data: z.infer<typeof privacySettingsSchema>) {
-    await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
 
     const result = privacySettingsSchema.safeParse(data);
     if (!result.success) {
@@ -23,11 +26,16 @@ export async function updatePrivacySettings(data: z.infer<typeof privacySettings
     }
 
     try {
+        const before = await privacySettings();
         await prisma.systemSetting.upsert({
             where: { key: "privacy.includeActorInMetadata" },
             update: { value: String(result.data.includeActorInMetadata) },
             create: { key: "privacy.includeActorInMetadata", value: String(result.data.includeActorInMetadata) },
         });
+        const changes = settingsChanges(before, await privacySettings());
+        if (changes.length > 0) {
+            await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SYSTEM, { area: SETTINGS_AREAS.PRIVACY, changes });
+        }
 
         log.info("Privacy settings updated", { includeActorInMetadata: result.data.includeActorInMetadata });
         revalidatePath("/dashboard/settings");

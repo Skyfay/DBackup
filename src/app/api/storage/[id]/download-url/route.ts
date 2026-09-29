@@ -7,6 +7,9 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { generateLinkToken, linkStatus } from "@/lib/auth/download-tokens";
 import { keyRequiredResponse } from "@/lib/server/key-required-response";
 import { planArchiveDownload } from "@/services/restore/archive-download";
+import { auditService } from "@/services/audit-service";
+import { backupAuditDetails } from "@/services/storage/backup-audit";
+import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { logger } from "@/lib/logging/logger";
 import { PermissionError, getErrorMessage, wrapError } from "@/lib/logging/errors";
 
@@ -66,6 +69,15 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
 
         const { token, expiresAt } = generateLinkToken({ storageId: id, file, userId: ctx.userId, decrypt: pick ? true : decrypt, database, pick });
         const url = `${req.headers.get("origin") || ""}/api/storage/public-download?token=${token}`;
+
+        const dumps = databases ?? (database ? [database] : undefined);
+        await auditService.logFor(
+            ctx,
+            AUDIT_ACTIONS.EXPORT,
+            AUDIT_RESOURCES.BACKUP,
+            { action: "download_link_created", ...(await backupAuditDetails(id, file)), ...(dumps ? { databases: dumps } : {}) },
+            id
+        );
 
         return NextResponse.json({
             success: true,

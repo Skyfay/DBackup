@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { jobService } from "@/services/jobs/job-service";
+import { jobAuditSnapshot, jobChangeDetails } from "@/services/jobs/job-audit";
+import { auditService } from "@/services/audit-service";
+import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 
@@ -17,7 +20,9 @@ export async function DELETE(
 
     const params = await props.params;
     try {
-        await jobService.deleteJob(params.id);
+        // The deleted row still names the job, which is all the entry needs of it.
+        const deleted = await jobService.deleteJob(params.id);
+        await auditService.logFor(ctx, AUDIT_ACTIONS.DELETE, AUDIT_RESOURCES.JOB, { name: deleted.name }, params.id);
         return NextResponse.json({ success: true });
     } catch (_error) {
         return NextResponse.json({ error: "Failed to delete job" }, { status: 500 });
@@ -40,6 +45,7 @@ export async function PUT(
         const body = await req.json();
         const { name, schedule, sourceId, databases, destinations, sources, notificationIds, notificationTemplateIds, enabled, encryptionProfileId, compression, pgCompression, notificationEvents, namingTemplateId, schedulePresetId, skipVerification, backupMode, fullEveryDays, verifyByHash } = body;
 
+        const before = await jobAuditSnapshot(params.id);
         const updatedJob = await jobService.updateJob(params.id, {
             name,
             schedule,
@@ -75,6 +81,15 @@ export async function PUT(
             fullEveryDays: fullEveryDays !== undefined ? fullEveryDays : undefined,
             verifyByHash: verifyByHash !== undefined ? verifyByHash : undefined,
         });
+
+        const after = await jobAuditSnapshot(params.id);
+        await auditService.logFor(
+            ctx,
+            AUDIT_ACTIONS.UPDATE,
+            AUDIT_RESOURCES.JOB,
+            { ...(before && after ? jobChangeDetails(before, after) : { name: updatedJob.name }) },
+            params.id
+        );
 
         return NextResponse.json(updatedJob);
     } catch (error: unknown) {

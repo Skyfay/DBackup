@@ -39,8 +39,8 @@ export async function GET(request: NextRequest) {
         return new NextResponse("No encryption profiles selected", { status: 400 });
     }
 
-    await auditService.log(
-        ctx.userId,
+    await auditService.logFor(
+        ctx,
         AUDIT_ACTIONS.EXPORT,
         AUDIT_RESOURCES.VAULT,
         { action: VAULT_AUDIT.KIT, profileIds: ids },

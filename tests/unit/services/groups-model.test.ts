@@ -61,6 +61,14 @@ describe("the groups of the Groups tab", () => {
         expect(operators?.changed).toEqual({ at: "2026-09-28T10:00:00.000Z", by: "Manu" });
     });
 
+    it("names who changed a group by the name kept on the entry once that user is deleted", () => {
+        const operators = build({
+            audit: [{ resourceId: "g-ops", action: "UPDATE", createdAt: at("2026-09-28T10:00:00Z"), user: null, actorName: "Ada" }],
+        }).groups.find((group) => group.id === "g-ops");
+
+        expect(operators?.changed).toEqual({ at: "2026-09-28T10:00:00.000Z", by: "Ada" });
+    });
+
     it("counts who may delete backups or reveal secrets, and the empty groups", () => {
         const { stats } = build();
 

@@ -6,8 +6,13 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { BULK_REQUEST_LIMIT } from "@/lib/core/bulk";
-import { saveAlertConfig } from "@/services/storage/storage-alert-service";
+import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
+import { auditService } from "@/services/audit-service";
+import { getAlertConfig, saveAlertConfig } from "@/services/storage/storage-alert-service";
 import { applyAlertChanges } from "@/services/storage/storage-alert-changes";
+import { alertChanges } from "@/services/storage/storage-alert-audit";
+import { connectionName } from "@/services/adapters/adapter-audit";
+import { SETTINGS_AREAS } from "@/services/system/settings-audit";
 
 const log = logger.child({ action: "storage-alerts" });
 
@@ -50,7 +55,7 @@ export async function updateStorageAlertSettings(
   configId: string,
   data: z.infer<typeof alertConfigSchema>
 ) {
-  await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+  const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
 
   const result = alertConfigSchema.safeParse(data);
   if (!result.success) {
@@ -58,7 +63,18 @@ export async function updateStorageAlertSettings(
   }
 
   try {
+    const before = await getAlertConfig(configId);
     await saveAlertConfig(configId, result.data);
+    const changes = alertChanges(before, result.data);
+    if (changes.length > 0) {
+      await auditService.log(
+        user.id,
+        AUDIT_ACTIONS.UPDATE,
+        AUDIT_RESOURCES.ADAPTER,
+        { name: await connectionName(configId), area: SETTINGS_AREAS.STORAGE_ALERTS, changes },
+        configId
+      );
+    }
     return { success: true };
   } catch (error: unknown) {
     log.error(
@@ -75,7 +91,7 @@ export async function updateStorageAlertSettings(
 
 /** Changes the alerts of several destinations at once. Only the alerts that were set change. */
 export async function updateStorageAlertsOfMany(configIds: string[], changes: z.input<typeof alertChangesSchema>["changes"]) {
-  await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+  const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
 
   const result = alertChangesSchema.safeParse({ configIds, changes });
   if (!result.success) {
@@ -83,7 +99,15 @@ export async function updateStorageAlertsOfMany(configIds: string[], changes: z.
   }
 
   try {
-    return { success: true, data: await applyAlertChanges(result.data.configIds, result.data.changes) };
+    const data = await applyAlertChanges(result.data.configIds, result.data.changes);
+    await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.ADAPTER, {
+      area: SETTINGS_AREAS.STORAGE_ALERTS,
+      bulk: true,
+      requested: result.data.configIds.length,
+      succeeded: data.succeeded.length,
+      failed: data.failed.length,
+    });
+    return { success: true, data };
   } catch (error: unknown) {
     log.error("Failed to update the alerts of several destinations", { count: configIds.length }, wrapError(error));
     return { success: false, error: "Failed to update storage alert settings" };

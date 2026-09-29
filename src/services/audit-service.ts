@@ -1,46 +1,72 @@
+import { headers } from "next/headers";
 import prisma from "@/lib/prisma";
-import { Prisma } from "@prisma/client";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
+import { clientAddress } from "@/lib/core/client-address";
+import type { AuthContext } from "@/lib/auth/access-control";
 
 const log = logger.child({ service: "AuditService" });
 
-export interface AuditLogFilter {
-  page?: number;
-  limit?: number;
-  userId?: string;
-  action?: string;
-  resource?: string;
-  startDate?: Date;
-  endDate?: Date;
-  search?: string;
+/**
+ * Where an entry comes from beyond the user: the API key the request came with, and the address
+ * and browser of the request. Left out, the address and the browser are read from the request
+ * the entry is written in, and stay empty outside one, like in a scheduled task.
+ */
+export interface AuditOrigin {
+  apiKeyId?: string | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
 }
+
+/** The address and browser of the request being handled, nothing outside a request. */
+async function requestOrigin(): Promise<{ ipAddress: string | null; userAgent: string | null }> {
+  try {
+    const list = await headers();
+    return { ipAddress: clientAddress(list), userAgent: list.get("user-agent") };
+  } catch {
+    return { ipAddress: null, userAgent: null };
+  }
+}
+
+const text = (value: unknown): string | null => (typeof value === "string" && value.trim() ? value : null);
 
 export class AuditService {
   /**
-   * Create a new audit log entry
+   * Writes an entry. It keeps the name of the user and of the API key as they are now, so the
+   * entry still names them after they are deleted or renamed. Never throws: a failed write is
+   * logged, the action it records goes on.
    */
   async log(
     userId: string | null,
     action: string,
     resource: string,
-    details?: Record<string, any>,
-    resourceId?: string
+    details?: Record<string, unknown>,
+    resourceId?: string,
+    origin: AuditOrigin = {}
   ) {
     try {
-      // Extract common metadata if present in details to populate specific columns
-      const ipAddress = details?.ipAddress as string | undefined;
-      const userAgent = details?.userAgent as string | undefined;
+      const fromRequest = origin.ipAddress === undefined || origin.userAgent === undefined ? await requestOrigin() : null;
+      const ipAddress = origin.ipAddress ?? text(details?.ipAddress) ?? fromRequest?.ipAddress ?? null;
+      const userAgent = origin.userAgent ?? text(details?.userAgent) ?? fromRequest?.userAgent ?? null;
+      const apiKeyId = origin.apiKeyId ?? null;
+
+      const [user, apiKey] = await Promise.all([
+        userId ? prisma.user.findUnique({ where: { id: userId }, select: { name: true } }) : null,
+        apiKeyId ? prisma.apiKey.findUnique({ where: { id: apiKeyId }, select: { name: true } }) : null,
+      ]);
 
       await prisma.auditLog.create({
         data: {
           userId,
+          actorName: user?.name ?? null,
+          apiKeyId,
+          apiKeyName: apiKey?.name ?? null,
           action,
           resource,
           resourceId,
           details: details ? JSON.stringify(details) : undefined,
           ipAddress,
-          userAgent
+          userAgent,
         },
       });
     } catch (error) {
@@ -50,114 +76,19 @@ export class AuditService {
   }
 
   /**
-   * Retrieve paginated audit logs
+   * Writes an entry for the caller of an API route, naming the API key when the request came with
+   * one. The key acts as its owner, so the entry belongs to the owner too.
    */
-  async getLogs(filter: AuditLogFilter = {}) {
-    const { page = 1, limit = 20, userId, action, resource, startDate, endDate, search } = filter;
-    const skip = (page - 1) * limit;
-
-    const where: Prisma.AuditLogWhereInput = {};
-
-    if (userId) where.userId = userId;
-    if (action) where.action = action;
-    if (resource) where.resource = resource;
-
-    if (search) {
-        where.OR = [
-            { resourceId: { contains: search } },
-            // Note: Searching detail JSON string is database dependant.
-            // For reliable search we stick to resourceId and user info if we can JOIN filter (Prisma supports relation filters)
-            { user: { name: { contains: search } } },
-            { user: { email: { contains: search } } }
-        ];
-    }
-
-    if (startDate || endDate) {
-      where.createdAt = {};
-      if (startDate) where.createdAt.gte = startDate;
-      if (endDate) where.createdAt.lte = endDate;
-    }
-
-    // Execute query and count in parallel
-    const [logs, total] = await Promise.all([
-      prisma.auditLog.findMany({
-        where,
-        take: limit,
-        skip,
-        orderBy: { createdAt: "desc" },
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              image: true,
-            },
-          },
-        },
-      }),
-      prisma.auditLog.count({ where }),
-    ]);
-
-    return {
-      logs,
-      pagination: {
-        total,
-        pages: Math.ceil(total / limit),
-        page,
-        limit,
-      },
-    };
-  }
-
-  /**
-   * Get distinct values and counts for filters based on current selection
-   */
-  async getFilterStats(filter: Omit<AuditLogFilter, "page" | "limit"> = {}) {
-     const { userId, startDate, endDate, search } = filter;
-
-     // Base where clause (common filters)
-     const baseWhere: Prisma.AuditLogWhereInput = {};
-     if (userId) baseWhere.userId = userId;
-     if (search) {
-        baseWhere.OR = [
-            { resourceId: { contains: search } },
-            { user: { name: { contains: search } } },
-            { user: { email: { contains: search } } }
-        ];
-     }
-     if (startDate || endDate) {
-        baseWhere.createdAt = {};
-        if (startDate) baseWhere.createdAt.gte = startDate;
-        if (endDate) baseWhere.createdAt.lte = endDate;
-     }
-
-     // 1. Get Actions (filtered by Resource if set)
-     const actionWhere = { ...baseWhere };
-     if (filter.resource) actionWhere.resource = filter.resource;
-     // Add search filter if present (assuming we add search later)
-
-     // 2. Get Resources (filtered by Action if set)
-     const resourceWhere = { ...baseWhere };
-     if (filter.action) resourceWhere.action = filter.action;
-
-     const [actions, resources] = await Promise.all([
-       prisma.auditLog.groupBy({
-         by: ['action'],
-         where: actionWhere,
-         _count: { action: true },
-       }),
-       prisma.auditLog.groupBy({
-         by: ['resource'],
-         where: resourceWhere,
-         _count: { resource: true },
-       }),
-     ]);
-
-    return {
-        actions: actions.map(a => ({ value: a.action, count: a._count.action })),
-        resources: resources.map(r => ({ value: r.resource, count: r._count.resource }))
-    };
+  async logFor(
+    ctx: Pick<AuthContext, "userId" | "authMethod" | "apiKeyId">,
+    action: string,
+    resource: string,
+    details?: Record<string, unknown>,
+    resourceId?: string
+  ) {
+    return this.log(ctx.userId, action, resource, details, resourceId, {
+      apiKeyId: ctx.authMethod === "apikey" ? ctx.apiKeyId ?? null : null,
+    });
   }
 
   /**

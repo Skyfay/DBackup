@@ -4,6 +4,7 @@ import { registerAdapters } from "@/lib/adapters";
 import { storageService } from "@/services/storage/storage-service";
 import { openArchiveDownload } from "@/services/restore/archive-download";
 import { auditService } from "@/services/audit-service";
+import { backupAuditDetails } from "@/services/storage/backup-audit";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { claimLinkToken, markTokenUsed, releaseLinkToken } from "@/lib/auth/download-tokens";
 import path from "path";
@@ -63,12 +64,19 @@ export async function GET(req: NextRequest) {
         claimed = token;
 
         const from = requesterOf(req);
+        const userAgent = req.headers.get("user-agent");
         const { storageId, file, decrypt, database, pick, createdBy } = tokenData;
         const fetched = () => {
             markTokenUsed(token, from);
             if (createdBy) {
-                void auditService.log(createdBy, AUDIT_ACTIONS.EXPORT, AUDIT_RESOURCES.DESTINATION,
-                    { action: "download_link", file, databases: pick?.databases, selections: pick?.selections, from }, storageId);
+                // The entry belongs to the maker of the link and says where it was fetched from. It is
+                // written after the response went out, so the address and browser are handed over.
+                void backupAuditDetails(storageId, file).then((backup) => auditService.log(
+                    createdBy, AUDIT_ACTIONS.EXPORT, AUDIT_RESOURCES.BACKUP,
+                    { action: "download_link", ...backup, databases: pick?.databases ?? (database ? [database] : undefined), selections: pick?.selections, from },
+                    storageId,
+                    { ipAddress: from ?? null, userAgent }
+                ));
             }
         };
 

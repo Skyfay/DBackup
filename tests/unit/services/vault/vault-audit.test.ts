@@ -30,6 +30,26 @@ describe("keyAudit", () => {
         expect(audit.created.get("production")).toEqual({ at: "2026-03-14T10:00:00.000Z", by: "Manu" });
     });
 
+    it("finds who made a key among the entries of the Vault", async () => {
+        prismaMock.auditLog.findMany.mockResolvedValueOnce([] as never).mockResolvedValueOnce([] as never);
+
+        await keyAudit(["production"]);
+
+        expect(prismaMock.auditLog.findMany).toHaveBeenNthCalledWith(2, expect.objectContaining({
+            where: { action: "CREATE", resource: "VAULT", resourceId: { in: ["production"] } },
+        }));
+    });
+
+    it("names who made a key by the name kept on the entry once that user is deleted", async () => {
+        prismaMock.auditLog.findMany
+            .mockResolvedValueOnce([] as never)
+            .mockResolvedValueOnce([{ ...row("2026-03-14T10:00:00Z", { type: "EncryptionProfile" }, "production", null), actorName: "Lena" }] as never);
+
+        const audit = await keyAudit(["production"]);
+
+        expect(audit.created.get("production")).toEqual({ at: "2026-03-14T10:00:00.000Z", by: "Lena" });
+    });
+
     it("asks for no creator when there are no keys", async () => {
         prismaMock.auditLog.findMany.mockResolvedValueOnce([] as never);
 
@@ -57,6 +77,16 @@ describe("credentialAudit", () => {
         expect(audit.changed.get("skynas")).toEqual({ at: "2026-09-02T10:00:00.000Z", by: "Anna" });
         expect(audit.created.get("skynas")).toEqual({ at: "2026-06-26T10:00:00.000Z", by: "Manu" });
         expect(audit.revealRows).toEqual([{ at: "2026-09-24T10:00:00.000Z", by: "Manu", profileId: "skynas" }]);
+    });
+
+    it("keeps the name of whoever revealed a secret after that user is deleted", async () => {
+        prismaMock.auditLog.findMany.mockResolvedValueOnce([
+            { ...row("2026-09-24T10:00:00Z", { action: "reveal", name: "SkyNas" }, "skynas", null, "EXPORT"), actorName: "Anna" },
+        ] as never);
+
+        const audit = await credentialAudit(["skynas"]);
+
+        expect(audit.revealRows).toEqual([{ at: "2026-09-24T10:00:00.000Z", by: "Anna", profileId: "skynas" }]);
     });
 
     it("reads nothing without profiles", async () => {

@@ -28,6 +28,8 @@ export interface GroupAuditRow {
     action: string;
     createdAt: Date;
     user: { name: string } | null;
+    /** The name the user had when the entry was written, kept after the user is deleted. */
+    actorName?: string | null;
 }
 
 interface BuildInput {
@@ -41,7 +43,7 @@ interface BuildInput {
     withPeople: boolean;
 }
 
-const actorOf = (row: GroupAuditRow): GroupActor => ({ at: row.createdAt.toISOString(), by: row.user?.name ?? null });
+const actorOf = (row: GroupAuditRow): GroupActor => ({ at: row.createdAt.toISOString(), by: row.user?.name ?? row.actorName ?? null });
 
 /** The Groups tab: every group with its members and what the audit log knows, and the numbers above the list. */
 export function buildGroupsModel({ groups, people, audit, viewerId, viewerSuperAdmin, withPeople }: BuildInput): GroupsModel {
@@ -107,7 +109,7 @@ export async function getGroupsModel(viewerId: string | null, viewerSuperAdmin: 
             where: { resource: AUDIT_RESOURCES.GROUP, action: { in: [AUDIT_ACTIONS.CREATE, AUDIT_ACTIONS.UPDATE] } },
             orderBy: { createdAt: "desc" },
             take: AUDIT_LIMIT,
-            select: { resourceId: true, action: true, createdAt: true, user: { select: { name: true } } },
+            select: { resourceId: true, action: true, createdAt: true, actorName: true, user: { select: { name: true } } },
         }),
     ]);
     return buildGroupsModel({ groups, people, audit, viewerId, viewerSuperAdmin, withPeople });

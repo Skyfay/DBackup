@@ -6,7 +6,8 @@ The Service Layer contains all business logic in DBackup. Server Actions and API
 
 ```
 src/services/
-├── audit-service.ts           # Audit log recording & queries (flat, no subdirectory)
+├── audit-service.ts           # Writes audit log entries (flat, no subdirectory)
+├── audit/                     # The Audit log tab: list, filters, details, timeline, CSV
 ├── dashboard-service.ts       # Dashboard aggregations (flat, no subdirectory)
 ├── auth/
 │   ├── api-key-service.ts     # API key CRUD and validation

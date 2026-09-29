@@ -12,6 +12,10 @@ import {
   getAvailableChannels,
 } from "@/services/notifications/system-notification-service";
 import { EVENT_DEFINITIONS } from "@/lib/notifications/events";
+import { notificationSettingsChanges } from "@/services/notifications/notification-settings-audit";
+import { SETTINGS_AREAS } from "@/services/system/settings-audit";
+import { auditService } from "@/services/audit-service";
+import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 
 const log = logger.child({ action: "notification-settings" });
 
@@ -58,7 +62,7 @@ export async function getNotificationSettings() {
 export async function updateNotificationSettings(
   data: z.infer<typeof configSchema>
 ) {
-  await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+  const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
 
   const result = configSchema.safeParse(data);
   if (!result.success) {
@@ -66,7 +70,12 @@ export async function updateNotificationSettings(
   }
 
   try {
+    const before = await getNotificationConfig();
     await saveNotificationConfig(result.data);
+    const changes = await notificationSettingsChanges(before, result.data);
+    if (changes.length > 0) {
+      await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SYSTEM, { area: SETTINGS_AREAS.NOTIFICATIONS, changes });
+    }
     revalidatePath("/dashboard/settings");
     return { success: true };
   } catch (error: unknown) {

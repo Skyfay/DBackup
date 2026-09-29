@@ -1,35 +1,62 @@
 import { describe, expect, it } from "vitest";
-import { auditSentence } from "@/lib/core/audit-sentence";
+import { auditSentence, describeEntry } from "@/lib/core/audit-sentence";
 
 const entry = (action: string, resource: string, details?: Record<string, unknown>) => ({ action, resource, details: details ? JSON.stringify(details) : null });
 
 describe("an entry of the audit log as a sentence", () => {
-    it("says a sign-in and a sign-out plainly", () => {
+    it("says how someone signed in, and through which provider", () => {
         expect(auditSentence(entry("LOGIN", "AUTH", { method: "web-ui" }))).toBe("Signed in");
+        expect(auditSentence(entry("LOGIN", "AUTH", { method: "passkey" }))).toBe("Signed in with a passkey");
+        expect(auditSentence(entry("LOGIN", "AUTH", { method: "two-factor" }))).toBe("Signed in with a password and a second factor");
+        expect(auditSentence(entry("LOGIN", "AUTH", { method: "sso", provider: "Authentik" }))).toBe("Signed in through Authentik");
         expect(auditSentence(entry("LOGOUT", "AUTH"))).toBe("Signed out");
     });
 
-    it("names what was made or deleted when the entry holds its name", () => {
-        expect(auditSentence(entry("CREATE", "ADAPTER", { name: "db-prod", type: "database" }))).toBe("Created the connection db-prod");
-        expect(auditSentence(entry("DELETE", "API_KEY"))).toBe("Deleted an API key");
+    it("names the account a failed sign-in tried and marks it as failed", () => {
+        const failed = describeEntry(entry("LOGIN_FAILED", "AUTH", { email: "admin@example.ch", reason: "unknown_email" }));
+
+        expect(failed.parts).toEqual([{ text: "A sign-in as " }, { text: "admin@example.ch", strong: true }, { text: " failed" }]);
+        expect(failed.kind).toBe("failed");
     });
 
-    it("tells the kinds of templates apart", () => {
+    it("names what was made or deleted in bold when the entry holds its name", () => {
+        expect(describeEntry(entry("CREATE", "ADAPTER", { name: "db-prod" })).parts).toEqual([{ text: "Created " }, { text: "the connection " }, { text: "db-prod", strong: true }]);
+        expect(auditSentence(entry("DELETE", "API_KEY"))).toBe("Deleted an API key");
+        expect(auditSentence(entry("CREATE", "JOB", { name: "Shop copy", clonedFromName: "Shop nightly" }))).toBe("Created the job Shop copy as a copy of Shop nightly");
+    });
+
+    it("takes the name of the record from the caller when the entry did not keep it", () => {
+        expect(auditSentence(entry("EXECUTE", "JOB", { executionId: "e1", trigger: "manual" }))).toBe("Started a job");
+        expect(auditSentence(entry("EXECUTE", "JOB", { executionId: "e1" }), "Shop nightly")).toBe("Started the job Shop nightly");
+        expect(auditSentence(entry("UPDATE", "USER", { change: "Password Set" }), "Lena Graf")).toBe("Set a new password for Lena Graf");
+        expect(auditSentence(entry("UPDATE", "USER", { change: "Sessions Revoked", count: 2 }), "Lena Graf")).toBe("Signed out Lena Graf everywhere");
+    });
+
+    it("tells the kinds of templates apart and counts a bulk action", () => {
         expect(auditSentence(entry("CREATE", "TEMPLATE", { type: "RetentionPolicy", name: "Keep 30" }))).toBe("Created the retention policy Keep 30");
+        expect(auditSentence(entry("DELETE", "TEMPLATE", { type: "RetentionPolicy", bulk: true, succeeded: 3 }))).toBe("Deleted 3 retention policies");
         expect(auditSentence(entry("DELETE", "TEMPLATE", { type: "RetentionPolicy", bulk: true }))).toBe("Deleted several retention policies");
     });
 
-    it("says what happened to a user", () => {
-        expect(auditSentence(entry("UPDATE", "USER", { change: "Password Set" }))).toBe("Set a new password for a user");
-        expect(auditSentence(entry("UPDATE", "USER", { change: "Two-Factor Reset" }))).toBe("Reset the second factor of a user");
-        expect(auditSentence(entry("UPDATE", "USER", { name: "Lena Graf" }))).toBe("Changed the user Lena Graf");
+    it("tells restores, downloads and reveals apart, all of them sensitive", () => {
+        const restore = describeEntry(entry("RESTORE", "BACKUP", { action: "restore", file: "shop/2026-09-29.tar.gz", target: "db-prod" }));
+        expect(restore.parts.map((part) => part.text).join("")).toBe("Restored 2026-09-29.tar.gz into db-prod");
+        expect(restore.kind).toBe("sensitive");
+
+        expect(auditSentence(entry("EXPORT", "BACKUP", { action: "download_link", file: "a.tar" }))).toBe("Downloaded a.tar through a link");
+        expect(auditSentence(entry("EXPORT", "BACKUP", { action: "download_link_created", file: "shop/a.tar" }))).toBe("Made a download link for a.tar");
+        expect(auditSentence(entry("EXPORT", "VAULT", { action: "recovery_kit_download" }))).toBe("Downloaded a recovery kit");
+        expect(auditSentence(entry("EXPORT", "CREDENTIAL", { action: "reveal", name: "S3 Hetzner" }))).toBe("Revealed the secret of S3 Hetzner");
+        expect(auditSentence(entry("EXPORT", "CREDENTIAL"))).toBe("Revealed a secret");
+        expect(auditSentence(entry("RESTORE", "SYSTEM", { action: "config_restore", file: "config/2026-09-28.tar.gz.enc" }))).toBe("Restored the configuration from 2026-09-28.tar.gz.enc");
     });
 
-    it("tells runs, downloads and reveals apart", () => {
-        expect(auditSentence(entry("EXECUTE", "JOB", { executionId: "e1", trigger: "manual" }))).toBe("Ran a job");
-        expect(auditSentence(entry("EXPORT", "DESTINATION", { action: "download_link", file: "a.tar" }))).toBe("Downloaded a backup");
-        expect(auditSentence(entry("EXPORT", "VAULT", { action: "recovery_kit_download" }))).toBe("Downloaded a recovery kit");
-        expect(auditSentence(entry("EXPORT", "CREDENTIAL"))).toBe("Revealed a secret");
+    it("says what a change of state was", () => {
+        expect(auditSentence(entry("UPDATE", "API_KEY", { name: "CI pipeline", action: "rotate" }))).toBe("Rotated the API key CI pipeline");
+        expect(auditSentence(entry("UPDATE", "API_KEY", { name: "CI pipeline", enabled: false }))).toBe("Disabled the API key CI pipeline");
+        expect(auditSentence(entry("UPDATE", "BACKUP", { action: "lock", file: "shop/a.tar" }))).toBe("Locked the backup a.tar");
+        expect(auditSentence(entry("UPDATE", "JOB", { action: "cancel", name: "Shop nightly" }))).toBe("Cancelled a run of the job Shop nightly");
+        expect(auditSentence(entry("UPDATE", "SYSTEM", { area: "Data retention", changes: [] }))).toBe("Changed the settings of Data retention");
     });
 
     it("stays general for details it cannot read", () => {

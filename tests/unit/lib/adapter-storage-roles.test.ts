@@ -25,7 +25,7 @@ vi.mock("@/lib/auth/access-control", () => ({
 
 vi.mock("next/headers", () => ({ headers: vi.fn().mockResolvedValue({}) }));
 vi.mock("@/lib/adapters", () => ({ registerAdapters: vi.fn() }));
-vi.mock("@/services/audit-service", () => ({ auditService: { log: vi.fn() } }));
+vi.mock("@/services/audit-service", () => ({ auditService: { log: vi.fn(), logFor: vi.fn() } }));
 vi.mock("@/lib/core/audit-types", () => ({ AUDIT_ACTIONS: {}, AUDIT_RESOURCES: {} }));
 vi.mock("@/lib/adapters/credential-validation", () => ({ validateCredentialAssignments: vi.fn() }));
 

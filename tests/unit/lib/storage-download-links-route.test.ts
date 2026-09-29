@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
     userId: "u1",
     planArchiveDownload: vi.fn(),
     openArchiveDownload: vi.fn(),
+    auditLog: vi.fn(),
+    auditLogFor: vi.fn(),
 }));
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
@@ -18,7 +20,10 @@ vi.mock("@/lib/auth/access-control", () => ({
         if (!mocks.permissions.includes(permission)) throw new PermissionError(permission);
     },
 }));
-vi.mock("@/services/audit-service", () => ({ auditService: { log: vi.fn() } }));
+vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.auditLog, logFor: mocks.auditLogFor } }));
+vi.mock("@/services/storage/backup-audit", () => ({
+    backupAuditDetails: async (_destinationId: string, file: string) => ({ file, destination: "NAS", job: "Shop" }),
+}));
 vi.mock("@/services/storage/storage-service", () => ({ storageService: { downloadFile: vi.fn() } }));
 vi.mock("@/services/restore/archive-download", () => ({ planArchiveDownload: mocks.planArchiveDownload, openArchiveDownload: mocks.openArchiveDownload }));
 
@@ -30,7 +35,7 @@ const makeLink = (body: unknown) => POST(
     { params: Promise.resolve({ id: "nas" }) }
 );
 const statusOf = (token: string) => GET(new NextRequest(`http://dbackup.test/api/storage/nas/download-url?token=${token}`), { params: Promise.resolve({ id: "nas" }) });
-const fetchLink = (url: string) => FETCH(new NextRequest(url, { headers: { "x-forwarded-for": "10.0.0.5, 172.17.0.1" } }));
+const fetchLink = (url: string) => FETCH(new NextRequest(url, { headers: { "x-forwarded-for": "10.0.0.5, 172.17.0.1", "user-agent": "curl/8.7.1" } }));
 
 describe("download links for a pick", () => {
     beforeEach(() => {
@@ -66,6 +71,29 @@ describe("download links for a pick", () => {
         const status = (await (await statusOf(data.token)).json()).data;
         expect(status).toMatchObject({ state: "fetched", fetchedFrom: "10.0.0.5" });
         expect((await fetchLink(data.url)).status).toBe(401);
+    });
+
+    it("notes the link as made by its maker, and its download as fetched from the host that ran the command", async () => {
+        const { data } = await (await makeLink({ file: "Shop/backup.tar", databases: ["billing"] })).json();
+
+        expect(mocks.auditLogFor).toHaveBeenCalledWith(
+            expect.objectContaining({ userId: "u1" }),
+            "EXPORT",
+            "BACKUP",
+            { action: "download_link_created", file: "Shop/backup.tar", destination: "NAS", job: "Shop", databases: ["billing"] },
+            "nas"
+        );
+
+        await (await fetchLink(data.url)).text();
+
+        await vi.waitFor(() => expect(mocks.auditLog).toHaveBeenCalledWith(
+            "u1",
+            "EXPORT",
+            "BACKUP",
+            expect.objectContaining({ action: "download_link", file: "Shop/backup.tar", destination: "NAS", databases: ["billing"], from: "10.0.0.5" }),
+            "nas",
+            { ipAddress: "10.0.0.5", userAgent: "curl/8.7.1" }
+        ));
     });
 
     it("lets the command run again after a transfer that broke off", async () => {

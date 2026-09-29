@@ -1,11 +1,16 @@
 import { betterAuth } from "better-auth";
-import { APIError, createAuthMiddleware } from "better-auth/api";
+import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import prisma from "@/lib/prisma";
 import { twoFactor } from "better-auth/plugins";
 import { passkey } from "@better-auth/passkey";
 import { sso } from "@better-auth/sso";
 import { shouldBlockBrowserEmailAuth } from "@/lib/auth/env-flags";
+import { recordSignIn, recordSignOut } from "@/lib/auth/sign-in-audit";
+import { logger } from "@/lib/logging/logger";
+import { wrapError } from "@/lib/logging/errors";
+
+const log = logger.child({ module: "Auth" });
 
 // Default session duration: 7 days (in seconds)
 const DEFAULT_SESSION_DURATION = 3600 * 24 * 7;
@@ -121,15 +126,32 @@ function getTrustedProviders(): string[] {
  * `auth.api.signUpEmail()` behind the admin Users page.
  *
  * The decision itself lives in `shouldBlockBrowserEmailAuth` so it can be tested
- * without standing up better-auth.
+ * without standing up better-auth. It also writes a sign-out to the audit log.
  */
-const blockEmailLogin = createAuthMiddleware(async (ctx) => {
-    if (!shouldBlockBrowserEmailAuth(ctx.path, Boolean(ctx.request))) return;
+const beforeAuth = createAuthMiddleware(async (ctx) => {
+    if (shouldBlockBrowserEmailAuth(ctx.path, Boolean(ctx.request))) {
+        throw new APIError("FORBIDDEN", {
+            code: "EMAIL_LOGIN_DISABLED",
+            message: "Password sign-in is disabled. Use single sign-on or a passkey.",
+        });
+    }
+    // A sign-out is written before it runs, while the session to end is still there.
+    if (ctx.path === "/sign-out") {
+        try {
+            await recordSignOut(ctx, await getSessionFromCtx(ctx));
+        } catch (error) {
+            log.warn("Writing a sign-out to the audit log failed", {}, wrapError(error));
+        }
+    }
+});
 
-    throw new APIError("FORBIDDEN", {
-        code: "EMAIL_LOGIN_DISABLED",
-        message: "Password sign-in is disabled. Use single sign-on or a passkey.",
-    });
+/** Sign-ins and failed sign-ins in the audit log, whichever way someone signed in. */
+const afterAuth = createAuthMiddleware(async (ctx) => {
+    try {
+        await recordSignIn(ctx);
+    } catch (error) {
+        log.warn("Writing a sign-in to the audit log failed", {}, wrapError(error));
+    }
 });
 
 export const auth = betterAuth({
@@ -214,7 +236,8 @@ export const auth = betterAuth({
         freshAge: 0,
     },
     hooks: {
-        before: blockEmailLogin,
+        before: beforeAuth,
+        after: afterAuth,
     },
     databaseHooks: {
         user: {

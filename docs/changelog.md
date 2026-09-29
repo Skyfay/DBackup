@@ -38,6 +38,8 @@ All notable changes to DBackup are documented here.
 - **users**: New group starts from a template, a copy of a group or nothing, and every group is edited area by area with a level and the single permissions below it, each with a sentence.
 - **users**: The API keys tab lists every key with its owner, what it may do in one sentence, its state, its last use and when it runs out, as a table or as cards. A key opens a panel with its permissions by area, the runs it started and a first request to try it.
 - **users**: New API key starts from a common task like CI/CD, monitoring or a dashboard widget, from a copy of a key or from nothing. The name, the end and the permissions of a key can be edited later without a new secret.
+- **users**: The Audit log tab lists every entry as a sentence with who did it, the area, the browser and the address, filtered by person, API key, area, action and period, and marks a sign-in from a new place. An entry opens with what changed before and after, the earlier entries of its record, and for a sign-in everything done in that session.
+- **users**: A timeline above the audit log shows who did how much on which day, and Export CSV downloads the entries its filters keep.
 
 ### 🐛 Bug Fixes
 
@@ -83,6 +85,9 @@ All notable changes to DBackup are documented here.
 - **users**: Deleting a group with members asks which group they move to, where they lost all access without a word before. Deleting several groups leaves out the ones with members instead of claiming to keep them.
 - **users**: Deleting a single group asks first.
 - **auth**: A rotated API key shows the first eight characters of its secret in the list like a new one, instead of four.
+- **auth**: A sign-in through single sign-on is written to the audit log, where only password and passkey sign-ins showed before.
+- **users**: The filters of the audit log keep every picked value instead of only the first, and its search finds the names in the entries, like a job or a backup.
+- **users**: Deleting a user keeps their name in their audit log entries, which showed System/Deleted before.
 
 ### 🔒 Security
 
@@ -98,6 +103,8 @@ All notable changes to DBackup are documented here.
 - **users**: Only a SuperAdmin can move a SuperAdmin into another group or delete one. Anyone who may change users could do both before.
 - **auth**: An API key never uses more than the group of its owner may do, checked at every request, and loses what the group loses. Anyone who may change API keys could give a key any permission before, like changing users.
 - **auth**: Rotating the API key of someone else needs a group that may do everything the key may do, since the new secret hands out its permissions.
+- **audit**: Changing, deleting and cloning a job, restoring a database, downloading or deleting a single backup, cancelling a run, the settings, the config import, sign-in providers, sign-outs and failed sign-ins are written to the audit log. None of them left an entry before.
+- **auth**: The browser no longer writes its own sign-in to the audit log, which let any signed-in user add sign-ins at will.
 
 ### 🎨 Improvements
 
@@ -141,6 +148,7 @@ All notable changes to DBackup are documented here.
 - **storage**: Ticked destinations on the Backups page can be checked or get their alerts changed together, where every alert stays as each destination has it until it is set for all of them. A list under each alert shows what changes at each destination, and a storage limit that would fire right away is marked.
 - **users**: Editing a group writes what changed to the audit log instead of its whole list of permissions, and a group keeps only permissions DBackup knows.
 - **auth**: Creating an API key writes its permissions, its end and its task to the audit log instead of a count, and an edit writes what it added and removed.
+- **audit**: Every entry of the audit log keeps the address and browser of its request and names the API key it came with. A change keeps what each field was before and after, a secret only that it changed.
 
 ### 🔄 Changed
 
@@ -166,6 +174,7 @@ All notable changes to DBackup are documented here.
 - **api**: The new `GET /api/groups` returns every group with its members, what the audit log knows about it and the numbers of the Groups tab, and `GET /api/groups/{id}` the changes of one group.
 - **auth**: A new API key runs out after 90 days unless another end is picked, and two keys can no longer share a name.
 - **api**: The new `GET /api/api-keys` returns every key with its owner, what it may do right now and the numbers of the API keys tab, and `GET /api/api-keys/{id}` the runs one key started.
+- **api**: The new `GET /api/audit`, `/api/audit/{id}`, `/api/audit/timeline` and `/api/audit/export` return the audit log a page at a time, one entry, the entries per person and day, and the filtered entries as CSV.
 
 ### 🗑️ Removed
 
@@ -204,6 +213,7 @@ All notable changes to DBackup are documented here.
 - **docs**: The user guide describes the new Users tab, the details of a user, New user with its group and how an admin sets a password, resets 2FA and signs a user out. The API key and webhook guides find the keys under Users & Groups.
 - **docs**: The groups guide describes the Groups tab, the areas and levels of the permissions, the templates of a new group and how a delete moves the members.
 - **docs**: The API key guide describes the API keys tab, the tasks of New API key, the end after 90 days and why a key never does more than its owner. It no longer lists a `storage:write` permission or claims that the audit log names the key of every request.
+- **docs**: A new Audit Log guide describes the tab, its filters, the timeline, the export and what is recorded. The developer guide describes how an entry is written, and the API key and user guides point to it.
 
 ### 🧪 Tests
 

@@ -10,7 +10,9 @@ const mocks = vi.hoisted(() => ({
     getRetentionTargets: vi.fn(),
     deleteSchedulePreset: vi.fn(),
     deleteSchedulePresetMany: vi.fn(),
+    templateNames: vi.fn(),
     refresh: vi.fn(),
+    audit: vi.fn(),
 }));
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
@@ -24,7 +26,8 @@ vi.mock("@/lib/auth/access-control", () => ({
     getUserPermissions: vi.fn(async () => []),
 }));
 vi.mock("@/lib/auth", () => ({ auth: { api: { getSession: (...args: unknown[]) => mocks.getSession(...args) } } }));
-vi.mock("@/services/audit-service", () => ({ auditService: { log: vi.fn() } }));
+vi.mock("@/services/audit-service", () => ({ auditService: { log: (...args: unknown[]) => mocks.audit(...args) } }));
+vi.mock("@/services/templates/template-audit", () => ({ templateNames: (...args: unknown[]) => mocks.templateNames(...args) }));
 vi.mock("@/lib/server/scheduler", () => ({ scheduler: { refresh: (...args: unknown[]) => mocks.refresh(...args) } }));
 vi.mock("@/services/templates/templates-model", () => ({ getTemplatesModel: (...args: unknown[]) => mocks.getTemplatesModel(...args) }));
 vi.mock("@/services/templates/retention-targets", () => ({ getRetentionTargets: (...args: unknown[]) => mocks.getRetentionTargets(...args) }));
@@ -93,14 +96,23 @@ describe("deleting schedule presets", () => {
     });
 
     it("tells the scheduler at once, so the jobs that followed the preset run on their own copy", async () => {
-        mocks.deleteSchedulePreset.mockResolvedValue(undefined);
+        mocks.deleteSchedulePreset.mockResolvedValue({ name: "Daily at 3 AM" });
 
         expect(await deleteSchedulePreset("3am")).toEqual({ success: true });
         expect(mocks.checkPermission).toHaveBeenCalledWith(PERMISSIONS.TEMPLATES.WRITE);
         expect(mocks.refresh).toHaveBeenCalledTimes(1);
     });
 
+    it("names the deleted preset in the audit log", async () => {
+        mocks.deleteSchedulePreset.mockResolvedValue({ name: "Daily at 3 AM" });
+
+        await deleteSchedulePreset("3am");
+
+        expect(mocks.audit).toHaveBeenCalledWith("u1", "DELETE", "TEMPLATE", { type: "SchedulePreset", name: "Daily at 3 AM" }, "3am");
+    });
+
     it("tells the scheduler once after a bulk delete that removed a preset", async () => {
+        mocks.templateNames.mockResolvedValue(new Map([["3am", "Daily at 3 AM"], ["hourly", "Hourly"]]));
         mocks.deleteSchedulePresetMany.mockResolvedValue({ succeeded: ["3am", "hourly"], failed: [] });
 
         await bulkDeleteSchedulePresets(["3am", "hourly"]);
@@ -108,7 +120,25 @@ describe("deleting schedule presets", () => {
         expect(mocks.refresh).toHaveBeenCalledTimes(1);
     });
 
+    it("names the presets a bulk delete removed, read before they were gone", async () => {
+        mocks.templateNames.mockResolvedValue(new Map([["3am", "Daily at 3 AM"], ["hourly", "Hourly"]]));
+        mocks.deleteSchedulePresetMany.mockResolvedValue({ succeeded: ["3am"], failed: [{ id: "hourly", name: "Hourly", error: "In use" }] });
+
+        await bulkDeleteSchedulePresets(["3am", "hourly"]);
+
+        expect(mocks.templateNames).toHaveBeenCalledWith("SchedulePreset", ["3am", "hourly"]);
+        expect(mocks.audit).toHaveBeenCalledWith("u1", "DELETE", "TEMPLATE", {
+            type: "SchedulePreset",
+            bulk: true,
+            requested: 2,
+            succeeded: 1,
+            failed: 1,
+            names: ["Daily at 3 AM"],
+        });
+    });
+
     it("leaves the scheduler alone when nothing was deleted", async () => {
+        mocks.templateNames.mockResolvedValue(new Map([["3am", "Daily at 3 AM"]]));
         mocks.deleteSchedulePresetMany.mockResolvedValue({ succeeded: [], failed: [{ id: "3am", name: "Daily at 3 AM", error: "Not found" }] });
 
         await bulkDeleteSchedulePresets(["3am"]);

@@ -53,7 +53,7 @@ With **Add new people on their first sign-in**, someone the provider knows gets 
 
 A provider never sends new people into a group that may do more than the group of the person who sets it up, and only a SuperAdmin picks the SuperAdmin group. Whoever controls a provider can add people through it, so it gets no more than its admin has.
 
-Without it only people who already have an account in DBackup sign in through the provider. Their account is linked by its email on their first sign-in, and someone new is turned away.
+Without it only people who already have an account in DBackup sign in through the provider. Their account is linked by its email on their first sign-in, when the provider marks the email as verified, and someone new is turned away.
 
 Deleting a group moves the new people of its providers where its members go, or leaves them without a group.
 

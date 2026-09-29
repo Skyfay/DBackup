@@ -174,7 +174,7 @@ Prefer a `Badge` variant or the status tokens (`success`, `warning`, `destructiv
 
 `lucide-react` is the default (117 import sites). Standard sizes: `h-4 w-4` inline with text, `h-5 w-5` for standalone buttons, `h-3 w-3` inside badges.
 
-`@iconify/react` is used only for brand and product logos via `@iconify-icons/simple-icons`, `-logos`, and `-mdi`. New adapters register their icon in `src/components/adapter/utils.ts` (`ADAPTER_ICON_MAP`), otherwise the UI falls back to a generic icon. The logos of the sign-in providers are local data in `src/components/oidc/provider-logos.ts`, taken from selfh.st/icons and Simple Icons, since the installed icon sets lack most of them. `ProviderLogo` and `ProviderTile` draw them, and the ones with a dark variant swap by CSS.
+`@iconify/react` is used only for brand and product logos via `@iconify-icons/simple-icons`, `-logos`, and `-mdi`. New adapters register their icon in `src/components/adapter/utils.ts` (`ADAPTER_ICON_MAP`), otherwise the UI falls back to a generic icon. The logos of the sign-in providers are local data in `src/components/oidc/provider-logos.ts`, taken from selfh.st/icons and Simple Icons, since the installed icon sets lack most of them. They keep their brand colors in both themes like the adapter logos, and Pocket ID, which has none, takes the color of the text. `ProviderLogo` and `ProviderTile` draw them.
 
 ---
 

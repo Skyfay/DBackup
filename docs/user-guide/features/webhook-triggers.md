@@ -16,7 +16,7 @@ All API calls require an [API Key](/user-guide/features/api-keys) with appropria
 
 ### 1. Create an API Key
 
-Navigate to **Users & Groups → API keys** and create a key with at least these permissions:
+Navigate to **Users & Groups → API keys**, click **New API key** and pick **Run jobs from CI/CD**. The key gets exactly these permissions:
 
 - `jobs:execute` - Trigger backup jobs
 - `history:read` - Poll execution status
@@ -109,7 +109,7 @@ curl "https://your-instance.com/api/executions/EXECUTION_ID?includeLogs=true" \
 | **Scripts** | cURL, Bash, Python, TypeScript and Go, with the address and the job filled in |
 | **Pipelines** | GitHub Actions, GitLab CI and Azure DevOps with the `skyfay/dbackup:ci` image, and an Ansible playbook |
 
-For a user who may manage API keys, **Create key** in the Setup makes a key with `jobs:execute` and `history:read`. The new key shows once and fills into every example until the dialog closes. Until then the examples carry the placeholder `dbackup_YOUR_API_KEY`, marked in amber, and the pipelines list the two secrets they read with their values.
+For a user who may manage API keys, **Create key** in the Setup opens the editor of New API key with the Run jobs from CI/CD task, which holds `jobs:execute` and `history:read`. The new key shows once and fills into every example until the dialog closes. Until then the examples carry the placeholder `dbackup_YOUR_API_KEY`, marked in amber, and the pipelines list the two secrets they read with their values.
 
 The scripts end with exit code 0 after `Success`, 2 after `Partial` and 1 after `Failed` or `Cancelled`, so whatever runs them can tell the outcomes apart.
 
@@ -572,6 +572,7 @@ API requests are subject to the same rate limits as the web interface:
 ### 403 Forbidden
 - The key is valid but lacks the required permission
 - Add the missing permission under **Users & Groups → API keys**
+- The group of the key's owner lacks it. A key never uses more than its owner may do, its panel lists such permissions as paused
 
 ### Job not starting (Pending)
 - The job may be queued due to the **max concurrent jobs** setting

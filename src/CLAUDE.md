@@ -25,7 +25,7 @@ src/services/
   jobs/          job-service.ts
   backup/        backup-service.ts (runJob), retention-service.ts (GFS), encryption-service.ts, integrity-service.ts
   restore/       restore-service.ts, preflight.ts, pipeline.ts, smart-recovery.ts, types.ts
-  auth/          auth-service.ts, api-key-service.ts, credential-service.ts
+  auth/          auth-service.ts, api-key-service.ts, credential-service.ts, api-keys-model.ts (API keys tab page model), api-key-details.ts (the panel of a key)
   sso/           oidc-provider-service.ts, oidc-registry.ts
   storage/       storage-service.ts, verification-service.ts, storage-alert-service.ts
   databases/     database-list-service.ts (cached database lists), database-explorer-service.ts (Database Explorer page model)

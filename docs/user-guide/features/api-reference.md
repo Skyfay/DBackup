@@ -33,7 +33,7 @@ For scripts, CI/CD pipelines, and external integrations. Create an API key under
 Authorization: Bearer dbackup_your_api_key
 ```
 
-> **Note:** API keys do not inherit SuperAdmin privileges. Only explicitly assigned permissions are available.
+> **Note:** API keys do not inherit SuperAdmin privileges. Only explicitly assigned permissions are available, and never more than the group of the key's owner allows.
 
 ### Error Responses
 

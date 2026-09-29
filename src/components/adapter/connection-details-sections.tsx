@@ -180,11 +180,11 @@ export function UsageList({ usage, counts, canViewHistory }: UsageListProps) {
     );
 }
 
-/** Label and value pairs, two columns wide on larger screens. */
-export function FactList({ facts }: { facts: { label: string; value: React.ReactNode }[] }) {
+/** Label and value pairs, two columns wide on larger screens unless `columns` is 1. */
+export function FactList({ facts, columns = 2 }: { facts: { label: string; value: React.ReactNode }[]; columns?: 1 | 2 }) {
     if (facts.length === 0) return <Muted>Nothing to show.</Muted>;
     return (
-        <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
+        <dl className={cn("grid grid-cols-1 gap-x-6", columns === 2 && "sm:grid-cols-2")}>
             {facts.map((fact) => (
                 <div key={fact.label} className="flex min-w-0 items-baseline justify-between gap-3 border-b py-2 text-sm">
                     <dt className="shrink-0 text-muted-foreground">{fact.label}</dt>

@@ -6,11 +6,16 @@ import { PermissionsProvider } from "@/components/permissions/permissions-contex
 import { PERMISSIONS } from "@/lib/auth/permissions";
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock("@/lib/auth/client", () => ({
+    useSession: () => ({ data: { user: { timezone: "UTC", dateFormat: "yyyy-MM-dd", timeFormat: "HH:mm" } } }),
+}));
 
-const actions = vi.hoisted(() => ({ createApiKey: vi.fn() }));
+const actions = vi.hoisted(() => ({ createApiKey: vi.fn(), updateApiKey: vi.fn() }));
 vi.mock("@/app/actions/auth/api-key", () => actions);
 
-function renderDialog(permissions: string[] = [PERMISSIONS.API_KEYS.READ, PERMISSIONS.API_KEYS.WRITE]) {
+const WITH_KEYS = [PERMISSIONS.API_KEYS.READ, PERMISSIONS.API_KEYS.WRITE, PERMISSIONS.JOBS.EXECUTE, PERMISSIONS.HISTORY.READ];
+
+function renderDialog(permissions: string[] = WITH_KEYS) {
     render(
         <PermissionsProvider permissions={permissions}>
             <ApiTriggerDialog jobId="job-42" jobName="Shop nightly" open onOpenChange={vi.fn()} />
@@ -24,6 +29,12 @@ describe("API trigger dialog", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         actions.createApiKey.mockResolvedValue({ success: true, data: { apiKey: { id: "key-1" }, rawKey: "dbackup_made_in_setup" } });
+        // The keys there are, so the name of the new one stays free.
+        vi.stubGlobal("fetch", vi.fn(async (url: string) =>
+            url === "/api/api-keys"
+                ? new Response(JSON.stringify({ success: true, data: { keys: [], stats: {}, viewer: { id: "u1", superAdmin: false, permissions: WITH_KEYS } } }))
+                : new Response(JSON.stringify({ success: false }), { status: 404 }),
+        ));
     });
 
     it("lists Overview and Setup first, then the scripts and the pipelines", () => {
@@ -40,16 +51,23 @@ describe("API trigger dialog", () => {
 
         await user.click(tab(/^Setup/));
         await user.click(screen.getByRole("button", { name: "Create key" }));
-        const form = await screen.findByRole("dialog", { name: "Create API Key" });
+        // The editor of New API key opens on the task of a CI/CD pipeline, without the first step.
+        const form = await screen.findByRole("dialog", { name: "New API key" });
         expect(within(form).getByLabelText("Name")).toHaveValue("API trigger for Shop nightly");
-        expect(within(form).getByRole("checkbox", { name: "Execute Jobs Manually" })).toBeChecked();
-        expect(within(form).getByRole("checkbox", { name: "View Execution History" })).toBeChecked();
-        await user.click(within(form).getByRole("button", { name: "Create Key" }));
+        expect(within(form).getByText(/^2 of \d+ permissions · runs out/)).toBeInTheDocument();
+        expect(within(form).queryByRole("button", { name: "Change task" })).not.toBeInTheDocument();
+        await user.click(within(form).getByRole("button", { name: "Create key" }));
 
         await waitFor(() =>
-            expect(actions.createApiKey).toHaveBeenCalledWith({ name: "API trigger for Shop nightly", permissions: ["jobs:execute", "history:read"], expiresAt: null }),
+            expect(actions.createApiKey).toHaveBeenCalledWith({
+                name: "API trigger for Shop nightly",
+                permissions: ["jobs:execute", "history:read"],
+                expiresAt: expect.any(String),
+                template: "ci",
+            }),
         );
         expect(await screen.findByText("Key API trigger for Shop nightly created")).toBeInTheDocument();
+        expect(screen.getByText("Sees the history. Runs jobs. Changes nothing.")).toBeInTheDocument();
         // The key itself, and in the cURL of the second step.
         expect(screen.getAllByText("dbackup_made_in_setup").length).toBeGreaterThanOrEqual(2);
         expect(screen.queryByText("dbackup_YOUR_API_KEY")).not.toBeInTheDocument();

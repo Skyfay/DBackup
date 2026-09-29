@@ -1,12 +1,10 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getSsoProviders } from "@/app/actions/auth/oidc";
-import { getApiKeys } from "@/app/actions/auth/api-key";
 import { AddSsoProviderDialog } from "@/components/oidc/add-sso-provider-dialog";
 import { SsoProviderList } from "@/components/oidc/sso-provider-list";
-import { CreateApiKeyDialog } from "@/components/api-keys/create-api-key-dialog";
-import { ApiKeyTable } from "@/components/api-keys/api-key-table";
 import { AuditTable } from "@/components/audit/audit-table";
+import { API_KEYS_PAGE_ID, API_KEYS_TABLE_ID } from "@/components/dashboard/api-keys/api-keys-tables";
 import { GROUPS_PAGE_ID, GROUPS_TABLE_ID } from "@/components/dashboard/groups/groups-tables";
 import { UsersClient, type LegacyTabs } from "@/components/dashboard/users/users-client";
 import { USERS_TABLE_ID, type UsersPageCounts } from "@/components/dashboard/users/users-tables";
@@ -36,7 +34,8 @@ function LegacyCard({ title, description, action, children }: { title: string; d
 
 /**
  * Users & Groups: the users with how they sign in, the groups, the API keys, the audit log and
- * the ways to sign in. The users and the groups load in the browser, the other tabs still load here.
+ * the ways to sign in. The users, the groups and the API keys load in the browser, the other tabs
+ * still load here.
  */
 export default async function UsersPage() {
     const [permissions, user] = await Promise.all([getUserPermissions(), getCurrentUserWithGroup()]);
@@ -50,12 +49,12 @@ export default async function UsersPage() {
     const canReadSettings = can(PERMISSIONS.SETTINGS.READ);
     if (!canReadUsers && !canReadGroups && !canReadAudit && !canReadApiKeys) redirect("/dashboard");
 
-    const [counts, layouts, groupsView, ssoProviders, apiKeys] = await Promise.all([
+    const [counts, layouts, groupsView, apiKeysView, ssoProviders] = await Promise.all([
         getUsersPageCounts(),
-        getTablePreferences(user.id, [USERS_TABLE_ID, GROUPS_TABLE_ID]),
+        getTablePreferences(user.id, [USERS_TABLE_ID, GROUPS_TABLE_ID, API_KEYS_TABLE_ID]),
         getViewMode(user.id, GROUPS_PAGE_ID),
+        getViewMode(user.id, API_KEYS_PAGE_ID),
         canReadSettings ? getSsoProviders() : Promise.resolve([]),
-        canReadApiKeys ? getApiKeys() : Promise.resolve([]),
     ]);
 
     // The count of a tab the viewer cannot open stays out, so the page never hints at it.
@@ -67,15 +66,6 @@ export default async function UsersPage() {
     };
 
     const legacy: LegacyTabs = {
-        apikeys: canReadApiKeys ? (
-            <LegacyCard
-                title="API Keys"
-                description="Create and manage API keys for external integrations and automation."
-                action={can(PERMISSIONS.API_KEYS.WRITE) && <CreateApiKeyDialog />}
-            >
-                <ApiKeyTable data={apiKeys} canManage={can(PERMISSIONS.API_KEYS.WRITE)} />
-            </LegacyCard>
-        ) : undefined,
         audit: canReadAudit ? (
             <LegacyCard title="Audit Logs" description="View system activity and user actions.">
                 <AuditTable />
@@ -98,9 +88,13 @@ export default async function UsersPage() {
                     canManageUsers={can(PERMISSIONS.USERS.WRITE)}
                     canReadGroups={canReadGroups}
                     canManageGroups={can(PERMISSIONS.GROUPS.WRITE)}
+                    canReadApiKeys={canReadApiKeys}
+                    canManageApiKeys={can(PERMISSIONS.API_KEYS.WRITE)}
+                    canOpenRuns={can(PERMISSIONS.HISTORY.READ)}
                     counts={visibleCounts}
                     layouts={layouts}
                     groupsView={groupsView ?? "table"}
+                    apiKeysView={apiKeysView ?? "table"}
                     legacy={legacy}
                 />
             </Suspense>

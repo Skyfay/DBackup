@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { saveViewLayout } from "@/app/actions/auth/table-preferences";
+import { ApiKeysTab, type ApiKeysTabHandle } from "@/components/dashboard/api-keys/api-keys-tab";
+import { API_KEYS_PAGE_ID, API_KEYS_TABLE_ID } from "@/components/dashboard/api-keys/api-keys-tables";
 import { GroupsTab, type GroupsTabHandle } from "@/components/dashboard/groups/groups-tab";
 import { GROUPS_PAGE_ID, GROUPS_TABLE_ID } from "@/components/dashboard/groups/groups-tables";
 import { Button } from "@/components/ui/button";
@@ -18,12 +20,14 @@ import { UsersTab, type UsersTabHandle } from "./users-tab";
 import { USERS_TABLE_ID, type UsersPageCounts, type UsersPageTab } from "./users-tables";
 
 /** The tabs that still have their old look, rendered by the page on the server. */
-export type LegacyTabs = Partial<Record<Exclude<UsersPageTab, "users" | "groups">, React.ReactNode>>;
+export type LegacyTabs = Partial<Record<Exclude<UsersPageTab, "users" | "groups" | "apikeys">, React.ReactNode>>;
 
-const LEGACY_ORDER = ["apikeys", "audit", "sso"] as const;
+const LEGACY_ORDER = ["audit", "sso"] as const;
 
-/** The groups show as a table or as cards, the cards on a phone. */
-const GROUP_VIEWS: ViewMode[] = ["table", "cards"];
+/** The groups and the API keys show as a table or as cards, the cards on a phone. */
+const LIST_VIEWS: ViewMode[] = ["table", "cards"];
+
+const listView = (view: ViewMode | null) => (view === "cards" ? "cards" : "table");
 
 const LABELS: Record<UsersPageTab, string> = {
     users: "Users",
@@ -38,10 +42,16 @@ interface UsersClientProps {
     canManageUsers: boolean;
     canReadGroups: boolean;
     canManageGroups: boolean;
+    canReadApiKeys: boolean;
+    canManageApiKeys: boolean;
+    /** May open the runs an API key started. */
+    canOpenRuns: boolean;
     counts: UsersPageCounts;
     layouts: Record<string, TablePreferences>;
     /** The view of the groups this user picked last. */
     groupsView: ViewMode;
+    /** The view of the API keys this user picked last. */
+    apiKeysView: ViewMode;
     legacy: LegacyTabs;
 }
 
@@ -50,17 +60,21 @@ interface UsersClientProps {
  * sign in. The tab lives in the address, the buttons beside the tabs belong to the open one, and a
  * phone gets cards.
  */
-export function UsersClient({ canReadUsers, canManageUsers, canReadGroups, canManageGroups, counts, layouts, groupsView, legacy }: UsersClientProps) {
+export function UsersClient(props: UsersClientProps) {
+    const { canReadUsers, canManageUsers, canReadGroups, canManageGroups, canReadApiKeys, canManageApiKeys, canOpenRuns, counts, layouts, legacy } = props;
     const router = useRouter();
     const searchParams = useSearchParams();
     const isMobile = useIsMobileState();
     const users = useRef<UsersTabHandle>(null);
     const groups = useRef<GroupsTabHandle>(null);
-    const [groupView, setGroupView] = useState<"table" | "cards">(groupsView === "cards" ? "cards" : "table");
+    const apiKeys = useRef<ApiKeysTabHandle>(null);
+    const [groupView, setGroupView] = useState<"table" | "cards">(listView(props.groupsView));
+    const [keyView, setKeyView] = useState<"table" | "cards">(listView(props.apiKeysView));
 
     const tabs: UsersPageTab[] = [
         ...(canReadUsers ? ["users" as const] : []),
         ...(canReadGroups ? ["groups" as const] : []),
+        ...(canReadApiKeys ? ["apikeys" as const] : []),
         ...LEGACY_ORDER.filter((tab) => legacy[tab]),
     ];
     const requested = searchParams.get("tab") as UsersPageTab | null;
@@ -73,16 +87,24 @@ export function UsersClient({ canReadUsers, canManageUsers, canReadGroups, canMa
         router.replace(`?${next.toString()}`, { scroll: false });
     }, [router, searchParams]);
 
-    const changeGroupView = useCallback((next: ViewMode) => {
-        const view = next === "cards" ? "cards" : "table";
-        setGroupView(view);
-        saveViewLayout(GROUPS_PAGE_ID, view)
+    const saveView = useCallback((pageId: string, view: ViewMode) => {
+        saveViewLayout(pageId, view)
             .then((result) => result.success)
             .catch(() => false)
             .then((saved) => {
                 if (!saved) toast.error("Your view could not be saved.");
             });
     }, []);
+
+    const changeGroupView = useCallback((next: ViewMode) => {
+        setGroupView(listView(next));
+        saveView(GROUPS_PAGE_ID, listView(next));
+    }, [saveView]);
+
+    const changeKeyView = useCallback((next: ViewMode) => {
+        setKeyView(listView(next));
+        saveView(API_KEYS_PAGE_ID, listView(next));
+    }, [saveView]);
 
     return (
         <Tabs value={active} onValueChange={setTab} className="w-full gap-4 md:gap-0">
@@ -105,12 +127,25 @@ export function UsersClient({ canReadUsers, canManageUsers, canReadGroups, canMa
                         <>
                             {/* A phone always gets the cards, so it gets no switch. Hidden by CSS, so it never pops in. */}
                             <div className="hidden md:block">
-                                <ViewSwitch value={groupView} onChange={changeGroupView} views={GROUP_VIEWS} />
+                                <ViewSwitch value={groupView} onChange={changeGroupView} views={LIST_VIEWS} />
                             </div>
                             {canManageGroups && (
                                 <Button tone="create" onClick={() => groups.current?.openCreate()} aria-label="New group">
                                     <Plus />
                                     <span className="hidden sm:inline">New group</span>
+                                </Button>
+                            )}
+                        </>
+                    )}
+                    {active === "apikeys" && (
+                        <>
+                            <div className="hidden md:block">
+                                <ViewSwitch value={keyView} onChange={changeKeyView} views={LIST_VIEWS} />
+                            </div>
+                            {canManageApiKeys && (
+                                <Button tone="create" onClick={() => apiKeys.current?.openCreate()} aria-label="New API key">
+                                    <Plus />
+                                    <span className="hidden sm:inline">New API key</span>
                                 </Button>
                             )}
                         </>
@@ -135,6 +170,19 @@ export function UsersClient({ canReadUsers, canManageUsers, canReadGroups, canMa
                             canManage={canManageGroups}
                             canMove={canManageUsers}
                             initialLayout={layouts[GROUPS_TABLE_ID] ?? null}
+                        />
+                    )}
+                </TabsContent>
+            )}
+            {canReadApiKeys && (
+                <TabsContent value="apikeys">
+                    {isMobile !== undefined && (
+                        <ApiKeysTab
+                            ref={apiKeys}
+                            view={isMobile ? "cards" : keyView}
+                            canManage={canManageApiKeys}
+                            canOpenRuns={canOpenRuns}
+                            initialLayout={layouts[API_KEYS_TABLE_ID] ?? null}
                         />
                     )}
                 </TabsContent>

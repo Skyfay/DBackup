@@ -3,20 +3,27 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight, Check, Copy, KeyRound, Plus } from "lucide-react";
-import { CreateApiKeyDialog } from "@/components/api-keys/create-api-key-dialog";
+import { ApiKeyFormDialog } from "@/components/dashboard/api-keys/api-key-form-dialog";
 import { ExecutionStatusBadge } from "@/components/dashboard/widgets/execution-status";
-import { useCan } from "@/components/permissions/permissions-context";
+import { useCan, useViewerPermissions } from "@/components/permissions/permissions-context";
 import { Button } from "@/components/ui/button";
 import { CodeBlock, MarkedText, type CodeMark } from "@/components/ui/code-block";
-import { PERMISSIONS } from "@/lib/auth/permissions";
+import { usePageModel } from "@/hooks/use-page-model";
+import { accessSentences, summarizeAccess } from "@/lib/auth/access-summary";
+import { AVAILABLE_PERMISSIONS, PERMISSIONS } from "@/lib/auth/permissions";
 import { cn } from "@/lib/utils";
+import type { ApiKeysModel } from "@/services/auth/api-keys-types";
 import { PIPELINE_SECRETS, RESPONSE_EXAMPLES, TRIGGER_PERMISSIONS, curlTrigger, statusUrl, triggerUrl, type TriggerExample, type TriggerTarget } from "./api-trigger-examples";
 
 /** A key made in the dialog. It lives only as long as the dialog is open. */
 export interface CreatedKey {
     name: string;
     key: string;
+    /** What it may do, as it was saved. */
+    permissions: string[];
 }
+
+const ALL_PERMISSIONS = AVAILABLE_PERMISSIONS.map((permission) => permission.id);
 
 /** Where the API Keys tab of Access Management opens. */
 export const API_KEYS_HREF = "/dashboard/users?tab=apikeys";
@@ -187,13 +194,16 @@ interface SetupPartProps {
 export function SetupPart({ target, mark, jobName, created, onCreated, icon }: SetupPartProps) {
     const canCreate = useCan(PERMISSIONS.API_KEYS.WRITE);
     const canSeeKeys = useCan(PERMISSIONS.API_KEYS.READ);
+    const viewerPermissions = useViewerPermissions() ?? ALL_PERMISSIONS;
     const [creating, setCreating] = useState(false);
+    // The keys there are keep the name of the new one free, so the dialog waits for them.
+    const { model: keys } = usePageModel<ApiKeysModel>(creating && canSeeKeys ? "/api/api-keys" : null, "The API keys could not be loaded.");
 
     return (
         <>
             <ol className="grid gap-6">
                 {created ? (
-                    <Step number={1} done title={`Key ${created.name} created`} text="It may start jobs and read their runs, nothing else.">
+                    <Step number={1} done title={`Key ${created.name} created`} text={accessSentences(summarizeAccess(created.permissions)).join(" ")}>
                         <div className="overflow-hidden rounded-lg border border-success/35 bg-success/5">
                             <div className="flex min-w-0 items-center gap-3 py-1.5 pr-1.5 pl-3">
                                 <span className="min-w-0 flex-1 truncate font-mono text-xs text-success">{created.key}</span>
@@ -249,11 +259,14 @@ export function SetupPart({ target, mark, jobName, created, onCreated, icon }: S
                 </Step>
             </ol>
             {canCreate && (
-                <CreateApiKeyDialog
-                    open={creating}
+                <ApiKeyFormDialog
+                    open={creating && (!canSeeKeys || keys !== null)}
+                    mode={{ kind: "create" }}
+                    keys={keys?.keys ?? []}
+                    viewerPermissions={viewerPermissions}
                     onOpenChange={setCreating}
-                    defaults={{ name: `API trigger for ${jobName}`, permissions: TRIGGER_PERMISSIONS }}
-                    onCreated={({ name, rawKey }) => onCreated({ name, key: rawKey })}
+                    preset={{ templateId: "ci", name: `API trigger for ${jobName}` }}
+                    onCreated={(key) => onCreated({ name: key.name, key: key.rawKey, permissions: key.permissions })}
                 />
             )}
         </>

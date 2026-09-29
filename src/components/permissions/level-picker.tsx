@@ -8,6 +8,8 @@ interface LevelPickerProps {
     value: AreaLevel;
     onChange: (level: Level) => void;
     disabled?: boolean;
+    /** Why a level cannot be picked, like a permission in it that may not be given, or null. */
+    blocked?: (level: Level) => string | null;
     className?: string;
 }
 
@@ -16,12 +18,13 @@ interface LevelPickerProps {
  * stays in its place as a hyphen, so the levels line up from area to area. The picked one takes the
  * tone of the dialog, and none is picked while the permissions match no level.
  */
-export function LevelPicker({ area, value, onChange, disabled = false, className }: LevelPickerProps) {
+export function LevelPicker({ area, value, onChange, disabled = false, blocked, className }: LevelPickerProps) {
     const offered = levelsOf(area);
     return (
         <div role="radiogroup" aria-label={`Level of ${area.label}`} className={cn("inline-flex shrink-0 rounded-lg bg-muted p-0.5", className)}>
             {LEVELS.map((level) => {
                 const available = offered.includes(level);
+                const reason = available && level !== "none" ? blocked?.(level) ?? null : null;
                 const on = level === value;
                 return (
                     <button
@@ -30,12 +33,13 @@ export function LevelPicker({ area, value, onChange, disabled = false, className
                         role="radio"
                         aria-checked={on}
                         aria-label={available ? LEVEL_LABELS[level] : `${LEVEL_LABELS[level]}, which ${area.label} does not have`}
-                        disabled={disabled || !available}
+                        title={reason ?? undefined}
+                        disabled={disabled || !available || reason !== null}
                         onClick={() => onChange(level)}
                         className={cn(
                             "h-7 min-w-11 flex-1 rounded-md px-2 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-tone-ring/50 sm:min-w-14 sm:flex-none",
                             on ? "bg-tone-control text-tone-control-foreground shadow-xs" : "text-muted-foreground hover:text-foreground",
-                            !available && "cursor-default text-muted-foreground/40 hover:text-muted-foreground/40",
+                            (!available || reason !== null) && "cursor-default text-muted-foreground/40 hover:text-muted-foreground/40",
                         )}
                     >
                         {available ? LEVEL_LABELS[level] : "-"}

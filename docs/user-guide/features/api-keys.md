@@ -1,130 +1,97 @@
 # API Keys
 
-Manage API keys to authenticate external tools, scripts, and CI/CD pipelines with the DBackup API.
+API keys let scripts, CI/CD pipelines and monitoring tools call the DBackup API without a browser session.
 
 ## Overview
 
-API keys provide a secure alternative to session-based authentication for programmatic access. Each key:
+- A key starts with `dbackup_`, followed by 60 hex characters. DBackup stores only a scrypt hash of it and shows the key once, right after it was created or rotated.
+- A key **acts as its owner**, the user who created it. It never gets more than the group of its owner may do, checked at every request.
+- A new key **runs out after 90 days** unless you pick another end or Never.
+- A key can be disabled and enabled again, rotated to a new secret, or deleted.
 
-- Has a unique prefix (`dbackup_`) for easy identification
-- Is scoped to specific **permissions** (same RBAC model as groups)
-- Can optionally have an **expiration date**
-- Can be **enabled/disabled** without deletion
-- Supports **rotation** for key cycling
+## The API Keys Tab
 
-> **Security**: API keys are stored as SHA-256 hashes. The raw key is only shown once - immediately after creation or rotation.
+**Users & Groups → API keys** lists every key. The strip above the list counts the keys and names the ones that run out within two weeks, were never used, may do more than read, and who owns them.
 
-## Creating an API Key
+- Search finds a key by its name or by the start of its secret, like `dbackup_4f1a9c0e`.
+- **All**, **Active**, **Runs out soon**, **Disabled** and **Expired** filter by state, **Owner** by the user who created it. **Runs out soon** is marked amber while a key runs out within two weeks.
+- The view switch shows the keys as a table or as cards. A phone always gets the cards.
+- A key that runs out within two weeks is marked amber, an expired one red.
 
-1. Navigate to **Users & Groups → API keys** tab
-2. Click **Create API Key**
-3. Fill in the form:
+Click a key to open its panel: what it may do in words and by area, when it was last used and runs out, whose permissions it uses, when it was last rotated, the last runs it started and a first request with the key read from `$DBACKUP_KEY`.
 
-| Field | Required | Description |
+## Create an API Key
+
+1. Open **Users & Groups → API keys** and click **New API key**
+2. Pick what the key is for (step 1 of 2):
+   - **Custom** starts with no permission
+   - A **task** starts with exactly the permissions its calls need, see below
+   - **Copy a key** starts with what an existing key may do
+3. In step 2, set the **Name**, when it **Runs out** (Never, 30d, 90d, 1y or a date) and its permissions area by area
+4. Click **Create key**
+5. **Copy the key.** DBackup shows it only this once, with a first request to try it
+
+A key gets exactly what is ticked. Unlike a group, ticking a permission does not tick what it needs in the web interface, since a script calls the API directly. Every key needs at least one permission, and two keys never share a name, since a run names the key that started it.
+
+For a script that starts one job, the **Setup** of the job's API trigger dialog opens the same editor with the CI/CD task and fills the new key into its examples. See [Webhook Triggers](/user-guide/features/webhook-triggers#the-api-trigger-dialog).
+
+### Tasks
+
+| Task | Permissions | Made for |
 | :--- | :--- | :--- |
-| **Name** | Yes | Descriptive label (e.g., "CI/CD Pipeline", "Monitoring Script") |
-| **Expiration Date** | No | Optional expiry date. Leave empty for a key that never expires. |
-| **Permissions** | Yes | Select at least one permission the key should have. |
+| **Run jobs from CI/CD** | `jobs:execute`, `history:read` | `POST /api/jobs/{id}/run`, then polling the run |
+| **Dashboard widget** | `dashboard:read` | `GET /api/dashboard/stats` for Homepage, Homarr or Grafana |
+| **Monitoring** | `jobs:read`, `storage:read`, `history:read` | `GET /api/history/runs` for Uptime Kuma or a script |
+| **Download backups** | `destinations:read`, `storage:read`, `storage:download` | `POST /api/storage/{id}/download-url` |
+| **Restore from a script** | `sources:view`, `storage:read`, `storage:restore`, `history:read` | `POST /api/storage/{id}/restore` |
+| **Read only** | `sources:view`, `destinations:read`, `notifications:read`, `jobs:read`, `storage:read`, `history:read`, `dashboard:read`, `templates:read` | Every list, nothing that changes a thing |
 
-4. Click **Create Key**
-5. **Copy the key immediately** - it won't be shown again
+A task the group of your account does not allow shows why and cannot be picked.
 
-For a script that starts one job, the **Setup** of that job's API trigger dialog creates a key with `jobs:execute` and `history:read` in one step and fills it into its examples. See [Webhook Triggers](/user-guide/features/webhook-triggers#the-api-trigger-dialog).
+## What a Key May Do
 
-### Recommended Permission Sets
+- **Never more than its owner.** The permissions of a key are cut to what the group of its owner may do at every request. A key of a SuperAdmin can hold any permission, a key of a user without a group can do nothing.
+- **It follows the group.** When the group of the owner loses a permission, the key loses it too. The panel lists it as paused, and the key may use it again once the group allows it.
+- **Nobody hands out more than they may do.** Creating a key or giving an existing one a new permission needs your own group to allow it too. What a key holds already stays when someone else edits its name or end.
+- **No SuperAdmin bypass.** A key only ever uses the permissions it holds, even when its owner is a SuperAdmin.
 
-| Use Case | Permissions |
-| :--- | :--- |
-| Trigger backups only | `jobs:execute` |
-| Trigger + monitor | `jobs:execute`, `history:read` |
-| Full automation | `jobs:read`, `jobs:execute`, `history:read`, `storage:read` |
-| Read-only monitoring | `jobs:read`, `history:read` |
-| Dashboard widget (statistics only) | `dashboard:read` |
+## Manage Keys
 
-## Managing API Keys
+Every action sits in the menu at the end of a row, in the right click menu and in the panel of a key.
 
-### Enable / Disable
+- **Edit** changes the name, the end and the permissions. The secret stays, so scripts keep working, and the change applies to the next request.
+- **Rotate** gives the key a new secret and shows it once. The old secret stops working at once. The dialog warns when the key was used within the last hour. Only the owner, or someone whose group may do everything the key may do, can rotate a key, since the new secret hands out its permissions.
+- **Disable** and **Enable** switch a key off and on. An expired key cannot be enabled, edit it to give it a new end.
+- **Delete** removes a key for good. The runs it started stay in History.
 
-Temporarily disable a key without deleting it:
-- Open the **actions menu** (⋯) on the key row
-- Select **Disable** or **Enable**
-
-Disabled keys will receive a `401 Unauthorized` response.
-
-### Rotate Key
-
-Generate a new secret while keeping the same name, permissions, and settings:
-1. Open the **actions menu** (⋯) on the key row
-2. Select **Rotate Key**
-3. Copy the new key immediately
-
-The old key becomes invalid immediately.
-
-### Delete Key
-
-Permanently remove a key:
-1. Open the **actions menu** (⋯) on the key row
-2. Select **Delete**
-3. Confirm the deletion
+Select several keys in the table to enable, disable or delete them together.
 
 ## Authentication
 
-Include the API key in the `Authorization` header:
-
-```
-Authorization: Bearer dbackup_your_api_key_here
-```
-
-### Example Request
+Send the key in the `Authorization` header:
 
 ```bash
-curl -X POST "https://your-instance.com/api/jobs/JOB_ID/run" \
-  -H "Authorization: Bearer dbackup_abc123..."
+curl -X POST "https://backup.example.com/api/jobs/JOB_ID/run" \
+  -H "Authorization: Bearer $DBACKUP_KEY"
 ```
-
-### Error Responses
 
 | Status | Reason |
 | :--- | :--- |
-| `401 Unauthorized` | Invalid, disabled, or expired key |
-| `403 Forbidden` | Key lacks required permission |
-
-## Permissions Reference
-
-API keys use the same permission system as user groups. The key can only perform actions allowed by its assigned permissions:
-
-| Permission | Description |
-| :--- | :--- |
-| `jobs:read` | List and view backup jobs |
-| `jobs:write` | Create, edit, delete jobs |
-| `jobs:execute` | Trigger backup jobs |
-| `history:read` | View execution history and poll status |
-| `dashboard:read` | Read dashboard statistics (totals only) |
-| `sources:read` | List database sources |
-| `destinations:read` | List storage destinations |
-| `storage:read` | Browse stored backups |
-| `storage:write` | Delete stored backups |
-| `notifications:read` | List notification channels |
-| `vault:read` | List encryption profiles |
-
-> **Note**: Unlike user sessions, API keys do **not** inherit SuperAdmin privileges. They can only use explicitly assigned permissions.
+| `401 Unauthorized` | Unknown, disabled or expired key |
+| `403 Forbidden` | The key, or the group of its owner, lacks the permission |
 
 ## Audit Trail
 
-All API key operations are logged in the **Audit Log**:
+The **Audit log** records who created, edited, rotated, enabled, disabled or deleted a key. An edit lists the permissions it added and removed, a new key the task it started from.
 
-- Key creation, deletion, rotation
-- Enable/disable toggles
-- Permission changes
-- API requests made with the key (logged as `trigger: "api"`)
+A job started with a key writes an audit entry with the key, and History shows the key as **Started by** of the run. Other requests made with a key are not logged one by one.
 
-The audit log records which API key was used for each request, enabling full traceability.
+::: tip
+Give each script its own key with the task it needs. A key that leaks then does only that, and you can rotate it without touching the others.
+:::
 
-## Best Practices
+## Next Steps
 
-1. **Least privilege**: Only assign permissions the key actually needs
-2. **Set expiration dates** for temporary or CI/CD keys
-3. **Use descriptive names** to identify the key's purpose
-4. **Rotate keys regularly** - especially after team changes
-5. **Monitor the audit log** for unexpected API key usage
-6. **Disable before deleting** if you want to test the impact first
+- [Groups & Permissions](/user-guide/admin/permissions) - every permission by area
+- [Webhook Triggers](/user-guide/features/webhook-triggers) - start a job from a script
+- [API Reference](/user-guide/features/api-reference) - the endpoints a key can call

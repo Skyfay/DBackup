@@ -24,6 +24,8 @@ export interface PermissionInfo {
     description: string;
     /** Ticked with it, since it does nothing without them. */
     needs?: Permission[];
+    /** How a sentence names it, when the label alone does not read as what it lets one do. */
+    phrase?: string;
 }
 
 export interface PermissionArea {
@@ -79,9 +81,9 @@ export const PERMISSION_AREAS: PermissionArea[] = [
         summary: "Use: download and restore · Full: delete too",
         permissions: [
             { id: P.STORAGE.READ, label: "See the backups", description: "The Backups page, the backups of a job and their details" },
-            { id: P.STORAGE.DOWNLOAD, label: "Download", description: "A backup as a file, or a link for a server", needs: [P.STORAGE.READ] },
-            { id: P.STORAGE.RESTORE, label: "Restore", description: "A backup into a database, a server or a folder", needs: [P.STORAGE.READ] },
-            { id: P.STORAGE.DELETE, label: "Delete", description: "Backups and their copies at a destination, locked ones stay", needs: [P.STORAGE.READ] },
+            { id: P.STORAGE.DOWNLOAD, label: "Download", description: "A backup as a file, or a link for a server", needs: [P.STORAGE.READ], phrase: "download backups" },
+            { id: P.STORAGE.RESTORE, label: "Restore", description: "A backup into a database, a server or a folder", needs: [P.STORAGE.READ], phrase: "restore backups" },
+            { id: P.STORAGE.DELETE, label: "Delete", description: "Backups and their copies at a destination, locked ones stay", needs: [P.STORAGE.READ], phrase: "delete backups" },
         ],
         levels: {
             see: [P.STORAGE.READ],
@@ -95,7 +97,7 @@ export const PERMISSION_AREAS: PermissionArea[] = [
         summary: "See: runs and their logs",
         permissions: [
             { id: P.HISTORY.READ, label: "See the history", description: "Backups, restores and system tasks with their logs" },
-            { id: P.DASHBOARD.READ, label: "Dashboard numbers through the API", description: "The statistics of the dashboard for scripts and monitoring" },
+            { id: P.DASHBOARD.READ, label: "Dashboard numbers through the API", description: "The statistics of the dashboard for scripts and monitoring", phrase: "read the dashboard numbers through the API" },
         ],
         levels: { see: [P.HISTORY.READ] },
     },
@@ -194,6 +196,13 @@ const INFO = new Map(PERMISSION_AREAS.flatMap((area) => area.permissions.map((pe
 
 export function permissionInfo(id: string): PermissionInfo | undefined {
     return INFO.get(id as Permission)?.permission;
+}
+
+/** A permission inside a sentence, like "run jobs" or "delete backups". */
+export function permissionPhrase(id: string): string {
+    const info = permissionInfo(id);
+    if (!info) return id;
+    return info.phrase ?? info.label.charAt(0).toLowerCase() + info.label.slice(1);
 }
 
 export function areaOf(id: string): PermissionArea | undefined {

@@ -1,12 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Loader2, Pencil, Plus } from "lucide-react";
+import { useEffect, useId, useMemo, useState } from "react";
+import { Loader2, Pencil, Plus, Users } from "lucide-react";
 import { toast } from "sonner";
 import { createGroup, updateGroup } from "@/app/actions/auth/group";
 import { Button } from "@/components/ui/button";
 import { DIALOG_FOOTER, DIALOG_SURFACE, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { PermissionEditor } from "@/components/permissions/permission-editor";
+import { listed } from "@/components/dashboard/users/user-strip";
 import { freeGroupName } from "@/lib/auth/group-templates";
 import { areaChanges, describeChange, knownPermissions } from "@/lib/auth/permission-areas";
 import { AVAILABLE_PERMISSIONS } from "@/lib/auth/permissions";
@@ -15,7 +19,6 @@ import { logger } from "@/lib/logging/logger";
 import { cn } from "@/lib/utils";
 import type { GroupRow } from "@/services/user/groups-types";
 import { TOTAL_PERMISSIONS } from "./group-cells";
-import { GroupEditor } from "./group-editor";
 import { GroupStart, type GroupStartChoice } from "./group-start";
 
 const log = logger.child({ component: "group-form-dialog" });
@@ -177,16 +180,29 @@ function EditorForm({ mode, start, groups, onBack, onClose, onSaved, onSavingCha
             {/* A phone gives the editor all the height the head and the foot leave. From sm up it keeps one
                 height, so switching areas does not make the dialog jump. */}
             <div className="flex min-h-0 flex-1 flex-col sm:h-[min(38rem,calc(95dvh-9.5rem))] sm:flex-none">
-                <GroupEditor
-                    name={name}
-                    onNameChange={(next) => {
-                        setName(next);
-                        setProblem(null);
-                    }}
-                    nameError={problem}
+                <PermissionEditor
+                    fields={
+                        <NameField
+                            value={name}
+                            onChange={(next) => {
+                                setName(next);
+                                setProblem(null);
+                            }}
+                            error={problem}
+                            placeholder="Like Operators"
+                        />
+                    }
                     held={held}
                     onHeldChange={setHeld}
-                    memberNames={members.map((member) => member.name)}
+                    changedAreas={group ? new Set(changes.map((change) => change.area.id)) : undefined}
+                    note={members.length > 0 && (
+                        <div className="flex gap-2.5 rounded-lg border bg-muted/30 p-3 text-xs">
+                            <Users className="mt-px size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                            <span>
+                                {listed(members.map((member) => member.name))} {members.length === 1 ? "gets" : "get"} every change with their next click.
+                            </span>
+                        </div>
+                    )}
                 />
             </div>
 
@@ -204,5 +220,26 @@ function EditorForm({ mode, start, groups, onBack, onClose, onSaved, onSavingCha
                 </div>
             </div>
         </form>
+    );
+}
+
+/** The name of what the editor makes, the field above its areas. */
+export function NameField({ value, onChange, error, placeholder }: { value: string; onChange: (value: string) => void; error: string | null; placeholder: string }) {
+    const id = useId();
+    return (
+        <div className="space-y-2">
+            <Label htmlFor={id}>Name</Label>
+            <Input
+                id={id}
+                value={value}
+                onChange={(event) => onChange(event.target.value)}
+                maxLength={100}
+                autoComplete="off"
+                placeholder={placeholder}
+                aria-invalid={error ? true : undefined}
+                aria-describedby={error ? `${id}-message` : undefined}
+            />
+            {error && <p id={`${id}-message`} className="text-sm text-destructive">{error}</p>}
+        </div>
     );
 }

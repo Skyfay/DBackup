@@ -19,3 +19,8 @@ export function useCan(permission: Permission): boolean {
     const permissions = useContext(PermissionsContext);
     return permissions === null || permissions.includes(permission);
 }
+
+/** Every permission of the viewer, like the most a key they make may get. Null outside the dashboard, where nothing is hidden. */
+export function useViewerPermissions(): readonly string[] | null {
+    return useContext(PermissionsContext);
+}

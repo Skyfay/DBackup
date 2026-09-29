@@ -3,12 +3,15 @@ import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logging/logger";
 import { ApiKeyError, NotFoundError, wrapError } from "@/lib/logging/errors";
 import { Permission } from "@/lib/auth/permissions";
+import { capToOwner } from "@/lib/auth/owner-permissions";
 import { runBulk, type BulkResult } from "@/lib/core/bulk";
 
 const log = logger.child({ service: "ApiKeyService" });
 
 const API_KEY_PREFIX = "dbackup_";
-const KEY_BYTE_LENGTH = 30; // 30 bytes = 40 hex chars
+const KEY_BYTE_LENGTH = 30; // 30 bytes = 60 hex chars
+/** What the list shows of a key: "dbackup_" and its first 8 hex characters. */
+const PREFIX_LENGTH = 16;
 const SCRYPT_SALT = "dbackup-api-key-scrypt-v1";
 const SCRYPT_KEYLEN = 32;
 const SCRYPT_OPTIONS = { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
@@ -69,7 +72,7 @@ export class ApiKeyService {
   async create(input: CreateApiKeyInput): Promise<{ apiKey: ApiKeyListItem; rawKey: string }> {
     const rawKey = generateRawKey();
     const hashed = hashKey(rawKey);
-    const prefix = rawKey.substring(0, 16); // "dbackup_" + 8 hex chars
+    const prefix = rawKey.substring(0, PREFIX_LENGTH);
 
     const record = await prisma.apiKey.create({
       data: {
@@ -246,7 +249,8 @@ export class ApiKeyService {
 
     const rawKey = generateRawKey();
     const hashed = hashKey(rawKey);
-    const prefix = rawKey.substring(0, 12);
+    // The same length as a new key, the list tells keys apart by it.
+    const prefix = rawKey.substring(0, PREFIX_LENGTH);
 
     const record = await prisma.apiKey.update({
       where: { id },
@@ -276,36 +280,46 @@ export class ApiKeyService {
   }
 
   /**
-   * Update the permissions of an API key
+   * Whether another key has this name already, in any case. Runs name the key they came from by
+   * its name, so two keys never share one.
    */
-  async updatePermissions(id: string, permissions: Permission[]): Promise<ApiKeyListItem> {
+  async nameTaken(name: string, exceptId?: string): Promise<boolean> {
+    const keys = await prisma.apiKey.findMany({ where: exceptId ? { id: { not: exceptId } } : {}, select: { name: true } });
+    const wanted = name.trim().toLowerCase();
+    return keys.some((key) => key.name.trim().toLowerCase() === wanted);
+  }
+
+  /** The owner of a key with their group, which decides the most the key may get, and what the key holds. */
+  async ownerOf(id: string) {
+    const record = await prisma.apiKey.findUnique({
+      where: { id },
+      select: { userId: true, name: true, permissions: true, user: { select: { group: { select: { name: true, permissions: true } } } } },
+    });
+    if (!record) {
+      throw new NotFoundError("ApiKey", id);
+    }
+    return { ownerId: record.userId, name: record.name, permissions: JSON.parse(record.permissions) as string[], group: record.user.group };
+  }
+
+  /**
+   * Changes the name, the permissions and the end of a key, and says what they were before. The
+   * secret stays, so scripts that use it keep working.
+   */
+  async update(id: string, input: { name: string; permissions: Permission[]; expiresAt: Date | null }) {
     const existing = await prisma.apiKey.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundError("ApiKey", id);
     }
 
-    const record = await prisma.apiKey.update({
+    await prisma.apiKey.update({
       where: { id },
-      data: { permissions: JSON.stringify(permissions) },
-      include: {
-        user: { select: { name: true, email: true } },
-      },
+      data: { name: input.name, permissions: JSON.stringify(input.permissions), expiresAt: input.expiresAt },
     });
-
-    log.info("API key permissions updated", { apiKeyId: id });
+    log.info("API key updated", { apiKeyId: id });
 
     return {
-      id: record.id,
-      name: record.name,
-      prefix: record.prefix,
-      permissions: JSON.parse(record.permissions) as string[],
-      userId: record.userId,
-      userName: record.user.name,
-      userEmail: record.user.email,
-      expiresAt: record.expiresAt,
-      lastUsedAt: record.lastUsedAt,
-      enabled: record.enabled,
-      createdAt: record.createdAt,
+      before: { name: existing.name, permissions: JSON.parse(existing.permissions) as string[], expiresAt: existing.expiresAt },
+      after: input,
     };
   }
 
@@ -321,8 +335,11 @@ export class ApiKeyService {
 
     const hashed = hashKey(rawKey);
 
+    // The group of the owner decides the most the key may do, at every request.
+    const withOwner = { user: { select: { group: { select: { name: true, permissions: true } } } } } as const;
     let record = await prisma.apiKey.findUnique({
       where: { hashedKey: hashed },
+      include: withOwner,
     });
 
     // Fallback: try legacy SHA-256 hash for keys created before v1.4.2
@@ -330,6 +347,7 @@ export class ApiKeyService {
       const legacyHashed = hashKeyLegacy(rawKey);
       record = await prisma.apiKey.findUnique({
         where: { hashedKey: legacyHashed },
+        include: withOwner,
       });
 
       if (record) {
@@ -366,10 +384,11 @@ export class ApiKeyService {
         log.error("Failed to update lastUsedAt for API key", { apiKeyId: record.id }, wrapError(err));
       });
 
+    // A permission the group of the owner no longer has stays stored but does nothing.
     return {
       id: record.id,
       userId: record.userId,
-      permissions: JSON.parse(record.permissions) as string[],
+      permissions: capToOwner(JSON.parse(record.permissions) as string[], record.user?.group),
     };
   }
 }

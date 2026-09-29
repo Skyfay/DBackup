@@ -75,7 +75,11 @@ export function groupColumns({ onOpen, renderActions }: ColumnOptions): ColumnDe
             id: "access",
             header: "What members may do",
             enableSorting: false,
-            cell: ({ row }) => <div className="max-w-md min-w-0 text-sm">{groupLine(row.original)}</div>,
+            // A cell never wraps, so a long line is cut off here and shown in full on hover.
+            cell: ({ row }) => {
+                const line = groupLine(row.original);
+                return <div className="max-w-md min-w-0 truncate text-sm" title={line}>{line}</div>;
+            },
         },
         {
             id: "members",

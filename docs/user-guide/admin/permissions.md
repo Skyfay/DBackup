@@ -121,7 +121,7 @@ Permissions are strings in the form `{resource}:{action}`, like `jobs:execute`. 
 }
 ```
 
-API keys hold a list in the same form, picked when the key is created.
+API keys hold a list in the same form and never use more than the group of their owner allows. See [API Keys](/user-guide/features/api-keys#what-a-key-may-do).
 
 ## Next Steps
 

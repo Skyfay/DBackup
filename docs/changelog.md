@@ -36,6 +36,8 @@ All notable changes to DBackup are documented here.
 - **users**: Admins set a new password for a user and end the sessions of a user one by one or all at once. A new password signs the user out everywhere unless that is turned off.
 - **users**: The Groups tab lists every group with what its members may do in one sentence, its members and its share of the permissions, as a table or as cards. A group opens a panel with its level in every area, its members to move and its changes from the audit log.
 - **users**: New group starts from a template, a copy of a group or nothing, and every group is edited area by area with a level and the single permissions below it, each with a sentence.
+- **users**: The API keys tab lists every key with its owner, what it may do in one sentence, its state, its last use and when it runs out, as a table or as cards. A key opens a panel with its permissions by area, the runs it started and a first request to try it.
+- **users**: New API key starts from a common task like CI/CD, monitoring or a dashboard widget, from a copy of a key or from nothing. The name, the end and the permissions of a key can be edited later without a new secret.
 
 ### 🐛 Bug Fixes
 
@@ -80,6 +82,7 @@ All notable changes to DBackup are documented here.
 - **auth**: The sessions of the profile name an iPhone as iOS instead of macOS.
 - **users**: Deleting a group with members asks which group they move to, where they lost all access without a word before. Deleting several groups leaves out the ones with members instead of claiming to keep them.
 - **users**: Deleting a single group asks first.
+- **auth**: A rotated API key shows the first eight characters of its secret in the list like a new one, instead of four.
 
 ### 🔒 Security
 
@@ -93,6 +96,8 @@ All notable changes to DBackup are documented here.
 - **jobs**: Creating, changing and cloning a job no longer answers with the stored configs of its connections, only their name and type. Changing jobs was enough to get them before.
 - **vault**: Revealing an encryption key is written to the audit log, like a revealed credential.
 - **users**: Only a SuperAdmin can move a SuperAdmin into another group or delete one. Anyone who may change users could do both before.
+- **auth**: An API key never uses more than the group of its owner may do, checked at every request, and loses what the group loses. Anyone who may change API keys could give a key any permission before, like changing users.
+- **auth**: Rotating the API key of someone else needs a group that may do everything the key may do, since the new secret hands out its permissions.
 
 ### 🎨 Improvements
 
@@ -135,6 +140,7 @@ All notable changes to DBackup are documented here.
 - **docker**: The volume picker of a job lists the volumes by Compose stack with the containers that mount each one, whether they run and where, and shows beside them which containers the job stops in which order. Anonymous volumes go by their container, and the ones no container mounts stay hidden until asked for.
 - **storage**: Ticked destinations on the Backups page can be checked or get their alerts changed together, where every alert stays as each destination has it until it is set for all of them. A list under each alert shows what changes at each destination, and a storage limit that would fire right away is marked.
 - **users**: Editing a group writes what changed to the audit log instead of its whole list of permissions, and a group keeps only permissions DBackup knows.
+- **auth**: Creating an API key writes its permissions, its end and its task to the audit log instead of a count, and an edit writes what it added and removed.
 
 ### 🔄 Changed
 
@@ -158,6 +164,8 @@ All notable changes to DBackup are documented here.
 - **ui**: The Access Management page is called Users & Groups like its entry in the sidebar, and its SSO / OIDC tab is called Sign-in.
 - **api**: The new `GET /api/users` returns every user with how they sign in, their group, their open sessions and the numbers of the Users tab, and `GET /api/users/{id}` one user with their sessions, passkeys, API keys and latest activity.
 - **api**: The new `GET /api/groups` returns every group with its members, what the audit log knows about it and the numbers of the Groups tab, and `GET /api/groups/{id}` the changes of one group.
+- **auth**: A new API key runs out after 90 days unless another end is picked, and two keys can no longer share a name.
+- **api**: The new `GET /api/api-keys` returns every key with its owner, what it may do right now and the numbers of the API keys tab, and `GET /api/api-keys/{id}` the runs one key started.
 
 ### 🗑️ Removed
 
@@ -195,11 +203,12 @@ All notable changes to DBackup are documented here.
 - **docs**: The S3, SFTP, FTP, WebDAV, SMB and Rsync guides name the folder button of the Location part, and the API reference lists `POST /api/adapters/browse-location`.
 - **docs**: The user guide describes the new Users tab, the details of a user, New user with its group and how an admin sets a password, resets 2FA and signs a user out. The API key and webhook guides find the keys under Users & Groups.
 - **docs**: The groups guide describes the Groups tab, the areas and levels of the permissions, the templates of a new group and how a delete moves the members.
+- **docs**: The API key guide describes the API keys tab, the tasks of New API key, the end after 90 days and why a key never does more than its owner. It no longer lists a `storage:write` permission or claims that the audit log names the key of every request.
 
 ### 🧪 Tests
 
 - **tests**: The test that generates an SSH key no longer fails at random during a full run, where the busy crypto thread pool made it slower than the default timeout.
-- **tests**: The palette color guard allows 15 colors without a dark variant, down from 37, and the guard for a height on the root of a scroll area allows 2, down from 3.
+- **tests**: The palette color guard allows 13 colors without a dark variant, down from 37, and the guard for a height on the root of a scroll area allows 2, down from 3.
 
 ### 🐳 Docker
 

@@ -21,10 +21,15 @@ const log = logger.child({ action: "notification-settings" });
 
 // ── Validation Schemas ─────────────────────────────────────────
 
+/** At most a year between two reminders. */
+const MAX_REMINDER_HOURS = 24 * 365;
+
 const eventSettingSchema = z.object({
   enabled: z.boolean(),
   channels: z.array(z.string()).nullable(),
   notifyUser: z.enum(["none", "also", "only"]).optional(),
+  // 0 turns the reminder off, null keeps the default of the event.
+  reminderIntervalHours: z.number().int().min(0).max(MAX_REMINDER_HOURS).nullable().optional(),
 });
 
 const configSchema = z.object({

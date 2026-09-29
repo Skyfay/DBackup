@@ -88,6 +88,7 @@ All notable changes to DBackup are documented here.
 - **auth**: A sign-in through single sign-on is written to the audit log, where only password and passkey sign-ins showed before.
 - **users**: The filters of the audit log keep every picked value instead of only the first, and its search finds the names in the entries, like a job or a backup.
 - **users**: Deleting a user keeps their name in their audit log entries, which showed System/Deleted before.
+- **notifications**: The reminder interval picked for a system notification is saved. Every save dropped it before, so reminders kept the default of 24 hours and could not be turned off.
 
 ### 🔒 Security
 

@@ -5,6 +5,7 @@ import { changeSummary } from "@/lib/core/audit-changes";
 import { describeEntry } from "@/lib/core/audit-sentence";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { describeAgent, parseUserAgent } from "@/lib/core/user-agent";
+import { SUPER_ADMIN_GROUP } from "@/services/user/users-model";
 import type { AuditActor, AuditLine, AuditRow } from "./audit-types";
 
 /** What a row of the list reads of an entry. */
@@ -40,18 +41,26 @@ export function parseDetails(details: string | null): Record<string, unknown> {
 export function actorOf(record: Pick<AuditRecord, "userId" | "actorName" | "apiKeyId" | "apiKeyName" | "action" | "details" | "user">): AuditActor {
     const person = record.user?.name ?? record.actorName;
     if (record.apiKeyId) {
-        return { kind: "key", key: `key:${record.apiKeyId}`, name: record.apiKeyName ?? "API key", sub: person ? `API key of ${person}` : "API key", image: null, deleted: false };
+        return { kind: "key", key: `key:${record.apiKeyId}`, name: record.apiKeyName ?? "API key", sub: person ? `API key of ${person}` : "API key", image: null, deleted: false, superAdmin: false };
     }
     if (record.userId) {
-        return { kind: "person", key: `user:${record.userId}`, name: person ?? "Unknown", sub: record.user?.group?.name ?? (record.user ? "No group" : null), image: record.user?.image ?? null, deleted: false };
+        return {
+            kind: "person",
+            key: `user:${record.userId}`,
+            name: person ?? "Unknown",
+            sub: record.user?.group?.name ?? (record.user ? "No group" : null),
+            image: record.user?.image ?? null,
+            deleted: false,
+            superAdmin: record.user?.group?.name === SUPER_ADMIN_GROUP,
+        };
     }
     if (record.actorName) {
-        return { kind: "person", key: `deleted:${record.actorName}`, name: record.actorName, sub: "Deleted since", image: null, deleted: true };
+        return { kind: "person", key: `deleted:${record.actorName}`, name: record.actorName, sub: "Deleted since", image: null, deleted: true, superAdmin: false };
     }
     const email = parseDetails(record.details).email;
     return record.action === AUDIT_ACTIONS.LOGIN_FAILED
-        ? { kind: "unknown", key: "unknown", name: "Unknown", sub: typeof email === "string" ? email : null, image: null, deleted: false }
-        : { kind: "unknown", key: "unknown", name: "Deleted user", sub: "before names were kept", image: null, deleted: true };
+        ? { kind: "unknown", key: "unknown", name: "Unknown", sub: typeof email === "string" ? email : null, image: null, deleted: false, superAdmin: false }
+        : { kind: "unknown", key: "unknown", name: "Deleted user", sub: "before names were kept", image: null, deleted: true, superAdmin: false };
 }
 
 /** The browser and system, like "Firefox on macOS", or the tool, like "curl/8.5.0". */

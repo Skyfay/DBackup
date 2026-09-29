@@ -60,6 +60,8 @@ interface AuditTabProps {
     cards: boolean;
     /** May sign people out from the panel of a sign-in. */
     canSignOut: boolean;
+    /** Only a SuperAdmin signs out a SuperAdmin. */
+    viewerSuperAdmin: boolean;
 }
 
 /**
@@ -67,7 +69,7 @@ interface AuditTabProps {
  * the area and where from, a page at a time from the server. A click opens what changed and the
  * entries around it, the timeline above the list shows who did what by day and picks the entries.
  */
-export function AuditTab({ ref, view, cards, canSignOut }: AuditTabProps) {
+export function AuditTab({ ref, view, cards, canSignOut, viewerSuperAdmin }: AuditTabProps) {
     const format = useTimelineFormat();
     const { timezone } = useDateFormatter();
     const [quick, setQuick] = useState<AuditQuick>("all");
@@ -210,6 +212,7 @@ export function AuditTab({ ref, view, cards, canSignOut }: AuditTabProps) {
                     setDetails((current) => current && { ...current, open: false });
                 }}
                 canSignOut={canSignOut}
+                viewerSuperAdmin={viewerSuperAdmin}
             />
         </div>
     );

@@ -18,6 +18,8 @@ export interface AuditActor {
     image: string | null;
     /** The person was deleted since, the name is the one the entry kept. */
     deleted: boolean;
+    /** A person in the SuperAdmin group now, whom only a SuperAdmin signs out. */
+    superAdmin: boolean;
 }
 
 export interface AuditRow {

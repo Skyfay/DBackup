@@ -36,6 +36,8 @@ interface AuditDetailsProps {
     onRecord: (row: AuditRow) => void;
     /** May sign people out, which changes users. */
     canSignOut: boolean;
+    /** Only a SuperAdmin signs out a SuperAdmin, so anyone else gets no Sign out everywhere for one. */
+    viewerSuperAdmin: boolean;
 }
 
 /** Everything about one entry in a panel from the right: what changed, who did it from where, and the entries around it. */
@@ -50,7 +52,7 @@ export function AuditDetails(props: AuditDetailsProps) {
     );
 }
 
-function Content({ row, onRecord, canSignOut }: AuditDetailsProps & { row: AuditRow }) {
+function Content({ row, onRecord, canSignOut, viewerSuperAdmin }: AuditDetailsProps & { row: AuditRow }) {
     const { model } = usePageModel<AuditDetailsModel>(`/api/audit/${encodeURIComponent(row.id)}`, "The entry could not be loaded.");
     const details = model?.id === row.id ? model : null;
     const { formatDate } = useDateFormatter();
@@ -103,7 +105,7 @@ function Content({ row, onRecord, canSignOut }: AuditDetailsProps & { row: Audit
                             Every entry of this record
                         </Button>
                     )}
-                    {isSignIn && canSignOut && userId && (
+                    {isSignIn && canSignOut && userId && (viewerSuperAdmin || !row.actor.superAdmin) && (
                         <Button variant="ghost-destructive" size="sm" onClick={() => setAsking(true)}>
                             <LogOut />
                             Sign out everywhere

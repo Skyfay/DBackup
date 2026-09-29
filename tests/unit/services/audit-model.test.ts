@@ -73,6 +73,16 @@ describe("who an entry came from", () => {
         });
     });
 
+    it("marks a person of the SuperAdmin group, whom only a SuperAdmin signs out from the panel", () => {
+        const signIn = { ...base, action: "LOGIN", userId: "manu" };
+
+        expect(actorOf({ ...signIn, user: { name: "Manu", image: null, group: { name: "SuperAdmin" } } })).toMatchObject({ kind: "person", sub: "SuperAdmin", superAdmin: true });
+        expect(actorOf({ ...signIn, user: { name: "Lena Graf", image: null, group: { name: "Operators" } } })).toMatchObject({ superAdmin: false });
+        // The key of a SuperAdmin is no SuperAdmin, and neither is a deleted person.
+        expect(actorOf({ ...base, userId: "manu", apiKeyId: "key-1", apiKeyName: "CI pipeline", user: { name: "Manu", image: null, group: { name: "SuperAdmin" } } })).toMatchObject({ superAdmin: false });
+        expect(actorOf({ ...base, actorName: "Kim Frei" })).toMatchObject({ superAdmin: false });
+    });
+
     it("keeps the name of a person who was deleted since", () => {
         expect(actorOf({ ...base, actorName: "Kim Frei" })).toMatchObject({ kind: "person", key: "deleted:Kim Frei", name: "Kim Frei", deleted: true });
     });

@@ -33,7 +33,7 @@ A click opens the entry in a panel:
 - **What changed** lists every field before and after. A group or an API key shows the level of each area with the permissions it added or removed. A secret shows that it changed, never its value.
 - **Who** names the person with the sign-in the change came from, or the API key and its owner.
 - **Earlier entries of this record** lists what happened to the same record before, and **Every entry of this record** narrows the list to it.
-- A sign-in shows its address, its browser, when the session ended and everything the person did until then. **Sign out everywhere** ends every session of that person, for someone who may manage users.
+- A sign-in shows its address, its browser, when the session ended and everything the person did until then. **Sign out everywhere** ends every session of that person, for someone who may manage users. A SuperAdmin is signed out only by a SuperAdmin, so anyone else gets no button on their sign-ins.
 - **Stored details** shows the entry as it was written.
 
 ### The Timeline

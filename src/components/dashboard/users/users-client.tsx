@@ -51,8 +51,8 @@ interface UsersClientProps {
     canReadAudit: boolean;
     /** May see the sign-in providers, which reading the settings allows. */
     canReadSignIn: boolean;
-    /** Only a SuperAdmin changes the sign-in providers. */
-    canManageSignIn: boolean;
+    /** Only a SuperAdmin changes the sign-in providers and signs out a SuperAdmin. */
+    viewerSuperAdmin: boolean;
     counts: UsersPageCounts;
     layouts: Record<string, TablePreferences>;
     /** The view of the groups this user picked last. */
@@ -71,7 +71,7 @@ interface UsersClientProps {
  * phone gets cards.
  */
 export function UsersClient(props: UsersClientProps) {
-    const { canReadUsers, canManageUsers, canReadGroups, canManageGroups, canReadApiKeys, canManageApiKeys, canOpenRuns, canReadAudit, canReadSignIn, canManageSignIn, counts, layouts } = props;
+    const { canReadUsers, canManageUsers, canReadGroups, canManageGroups, canReadApiKeys, canManageApiKeys, canOpenRuns, canReadAudit, canReadSignIn, viewerSuperAdmin, counts, layouts } = props;
     const router = useRouter();
     const searchParams = useSearchParams();
     const isMobile = useIsMobileState();
@@ -179,7 +179,7 @@ export function UsersClient(props: UsersClientProps) {
                             <div className="hidden md:block">
                                 <ViewSwitch value={signInView} onChange={changeSignInView} views={LIST_VIEWS} />
                             </div>
-                            {canManageSignIn && (
+                            {viewerSuperAdmin && (
                                 <Button tone="create" onClick={() => signIn.current?.openCreate()} aria-label="New provider">
                                     <Plus />
                                     <span className="hidden sm:inline">New provider</span>
@@ -240,7 +240,7 @@ export function UsersClient(props: UsersClientProps) {
             {canReadAudit && (
                 <TabsContent value="audit">
                     {isMobile !== undefined && (
-                        <AuditTab ref={audit} view={auditView} cards={isMobile} canSignOut={canManageUsers} />
+                        <AuditTab ref={audit} view={auditView} cards={isMobile} canSignOut={canManageUsers} viewerSuperAdmin={viewerSuperAdmin} />
                     )}
                 </TabsContent>
             )}
@@ -250,7 +250,7 @@ export function UsersClient(props: UsersClientProps) {
                         <SignInTab
                             ref={signIn}
                             view={isMobile ? "cards" : signInView}
-                            canManage={canManageSignIn}
+                            canManage={viewerSuperAdmin}
                             initialLayout={layouts[SIGN_IN_TABLE_ID] ?? null}
                         />
                     )}

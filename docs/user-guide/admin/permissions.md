@@ -10,6 +10,16 @@ Decide what people may see and do in DBackup through the group they are in.
 
 The built-in **SuperAdmin** group passes every check. It cannot be edited or deleted, and only a SuperAdmin can make someone a SuperAdmin.
 
+### What Only a SuperAdmin Does
+
+Some tasks decide who is a SuperAdmin or who signs in as whom, so no permission is enough for them:
+
+- Make someone a SuperAdmin, and change the group of a SuperAdmin, set their password, reset their second factor, sign them out or delete them
+- Add, change, switch and delete sign-in providers, see [SSO / OIDC](/user-guide/admin/sso)
+- Restore a configuration backup, which brings back users and groups
+
+Nobody changes or deletes the group they are in, since that would hand them any permission.
+
 ::: warning No Group = No Access
 A user without a group signs in but sees and does nothing until someone picks a group. The Users tab counts them above the list.
 :::
@@ -83,7 +93,7 @@ Every template gives the members their own profile. **Change start** in the next
 
 The foot names every area whose level changes. Members get a change with their next click, and the audit log keeps what changed rather than the whole list.
 
-**Duplicate** opens the editor with a copy of a group and nobody in it.
+**Duplicate** opens the editor with a copy of a group and nobody in it. The group you are in has no **Edit**, another admin changes it.
 
 ## Delete a Group
 
@@ -103,7 +113,7 @@ The user has no group. Open the user on the Users tab and click **Change group**
 
 ### A Button Is Missing
 
-The group of the user lacks the permission. Open the group and check the level of the area in its details.
+The group of the user lacks the permission. Open the group and check the level of the area in its details. Some tasks are for a SuperAdmin only whatever the group holds, see [What Only a SuperAdmin Does](#what-only-a-superadmin-does).
 
 ### An Area Shows Custom
 

@@ -73,7 +73,7 @@ export function UsersTab({ ref, cards, canManage, initialLayout }: UsersTabProps
     }, [refresh, router]);
 
     const viewerSuperAdmin = model?.viewerSuperAdmin ?? false;
-    // Only a SuperAdmin sets the password of a SuperAdmin or deletes one.
+    // Only a SuperAdmin sets the password of a SuperAdmin, resets their second factor, signs them out or deletes one.
     const guarded = useCallback((user: UserRow) => user.superAdmin && !viewerSuperAdmin, [viewerSuperAdmin]);
 
     const handlers = useMemo<UserActionHandlers>(() => canManage ? {
@@ -86,7 +86,7 @@ export function UsersTab({ ref, cards, canManage, initialLayout }: UsersTabProps
 
     /** The handlers for one user, without what the viewer may not do to them. */
     const handlersFor = useCallback((user: UserRow): UserActionHandlers => guarded(user)
-        ? { ...handlers, onPassword: undefined, onDelete: undefined }
+        ? { ...handlers, onPassword: undefined, onResetTwoFactor: undefined, onSignOut: undefined, onDelete: undefined }
         : handlers, [handlers, guarded]);
 
     const open = useCallback((user: UserRow) => setDetails({ id: user.id, open: true }), []);

@@ -80,6 +80,15 @@ Rules:
 
 Permission categories: `USERS`, `GROUPS`, `SOURCES`, `DESTINATIONS`, `JOBS`, `STORAGE`, `HISTORY`, `DASHBOARD`, `AUDIT`, `NOTIFICATIONS`, `VAULT`, `PROFILE`, `SETTINGS`, `API_KEYS`. Storage has extra verbs (`DOWNLOAD`, `RESTORE`, `DELETE`), jobs have `EXECUTE`.
 
+### SuperAdmin only
+
+No permission is enough for what decides who is a SuperAdmin or who signs in as whom. These actions check their permission first, then refuse anyone whose group is not SuperAdmin:
+
+- Making someone a SuperAdmin, and changing the group, the password, the second factor or the sessions of a SuperAdmin or deleting one (`actions/auth/user.ts`, `user-security.ts`, `group.ts`).
+- Sign-in providers (`actions/auth/oidc.ts`) and the configuration restore (`actions/backup/config-management.ts`).
+
+Nobody changes or deletes the group they are in, and an API key never gets more than its owner holds. A new action of this kind follows the same pattern and gets a guard test.
+
 ## Audit log
 
 Every Server Action and API route that changes something, runs something, restores or hands out data writes an entry once it succeeded: `auditService.log(user.id, ...)` in an action, `auditService.logFor(ctx, ...)` in a route, which records the API key of the request. The service reads the address and browser of the request and keeps the name of the user, so callers never pass them.

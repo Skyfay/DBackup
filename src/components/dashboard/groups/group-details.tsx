@@ -15,6 +15,7 @@ import { accessSentences, summarizeAccess } from "@/lib/auth/access-summary";
 import { LEVEL_LABELS, levelOf, rankOf, SUMMARY_AREAS } from "@/lib/auth/permission-areas";
 import { cn } from "@/lib/utils";
 import type { GroupDetails as GroupDetailsModel, GroupHistoryEntry, GroupMember, GroupRow } from "@/services/user/groups-types";
+import { isEditable, isOwnGroup } from "./group-actions";
 import { countWord, GroupTile, LevelDots, permissionCount, TOTAL_PERMISSIONS } from "./group-cells";
 import { MadeText } from "./group-columns";
 
@@ -78,7 +79,7 @@ function Content({ group, onEdit, onDuplicate, onMove, onAddPeople, groupsMenu, 
                 </div>
                 {(onEdit || onDuplicate || groupsMenu.length > 0) && (
                     <div className="flex flex-wrap items-center gap-2">
-                        {onEdit && !group.superAdmin && (
+                        {onEdit && isEditable(group) && (
                             <Button variant="outline" size="sm" onClick={() => onEdit(group)}>
                                 <Pencil />
                                 Edit
@@ -104,7 +105,10 @@ function Content({ group, onEdit, onDuplicate, onMove, onAddPeople, groupsMenu, 
                         </p>
                     </Section>
 
-                    <Section title="By area" aside={onEdit && !group.superAdmin ? "Edit to change" : undefined}>
+                    <Section
+                        title="By area"
+                        aside={!onEdit || group.superAdmin ? undefined : isOwnGroup(group) ? "You are in it, another admin changes it" : "Edit to change"}
+                    >
                         <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
                             {SUMMARY_AREAS.map((area) => {
                                 const level = group.superAdmin ? "full" : levelOf(area, held);

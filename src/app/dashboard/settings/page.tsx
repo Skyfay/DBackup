@@ -188,6 +188,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
                 </TabsContent>
                 <TabsContent value="config" className="space-y-4">
                     <ConfigBackupSettings
+                        canRestore={isSuperAdmin}
                         initialSettings={configBackupSettings}
                         storageAdapters={filteredStorageAdapters}
                         encryptionProfiles={encryptionProfiles}

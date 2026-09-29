@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRightToLine, Fingerprint, LogIn } from "lucide-react";
+import { ArrowRightToLine, Fingerprint, Lock, LogIn } from "lucide-react";
 import { ExplorerStrip } from "@/components/dashboard/storage/explorer/explorer-strip";
 import { listed } from "@/components/dashboard/users/user-strip";
 import { listWords } from "@/lib/auth/access-summary";
@@ -53,8 +53,11 @@ export function SignInStrip({ model }: { model: SsoProvidersModel | null }) {
     );
 }
 
-/** What else decides how people sign in, under the list: passkeys, the login page and the automatic redirect. */
-export function SignInFoot({ model }: { model: SsoProvidersModel }) {
+/**
+ * What else decides how people sign in, under the list: passkeys, the login page and the
+ * automatic redirect, and for someone who is no SuperAdmin why nothing can be changed.
+ */
+export function SignInFoot({ model, canManage }: { model: SsoProvidersModel; canManage: boolean }) {
     const on = model.providers.filter((provider) => provider.enabled).map((provider) => provider.name);
     const target = model.autoRedirect ? model.providers.find((provider) => provider.providerId === model.autoRedirect) : undefined;
     const redirect = !model.autoRedirect
@@ -68,6 +71,7 @@ export function SignInFoot({ model }: { model: SsoProvidersModel }) {
         { icon: Fingerprint, text: model.passkeys ? "Passkeys on" : "Passkeys off in the settings" },
         { icon: LogIn, text: on.length > 0 ? `The login page shows ${listWords(on)}` : "The login page shows no provider" },
         { icon: ArrowRightToLine, text: redirect },
+        ...(canManage ? [] : [{ icon: Lock, text: "Only a SuperAdmin adds and changes providers" }]),
     ];
     return (
         <ul className="flex flex-wrap gap-x-5 gap-y-1.5 px-1 pt-1 text-xs text-muted-foreground md:pt-3">

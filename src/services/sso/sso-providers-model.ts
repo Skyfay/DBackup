@@ -144,15 +144,15 @@ interface BuildInput {
     passkeys: boolean;
     autoRedirect: string | null;
     callbackBase: string;
-    /** Who looks, when they may change the providers. */
-    manager: { superAdmin: boolean; permissions: string[] } | null;
+    /** Whether the viewer changes the providers, which only a SuperAdmin does. */
+    canManage: boolean;
 }
 
 const byNewestSignIn = (a: SsoPerson, b: SsoPerson) => (b.lastSignInAt ?? "").localeCompare(a.lastSignInAt ?? "") || a.name.localeCompare(b.name);
 
 /** The Sign-in tab: every provider with who is linked through it, and the numbers above the list. */
 export function buildSsoProvidersModel(input: BuildInput): SsoProvidersModel {
-    const { providers, people, groups, signIns, passwordSignIn, passkeys, autoRedirect, callbackBase, manager } = input;
+    const { providers, people, groups, signIns, passwordSignIn, passkeys, autoRedirect, callbackBase, canManage } = input;
     const ways: SignInWays = { passwordSignIn, passkeys, enabled: new Map(providers.filter((provider) => provider.enabled).map((provider) => [provider.providerId, provider.name])) };
     const groupById = new Map(groups.map((group) => [group.id, group]));
 
@@ -223,7 +223,7 @@ export function buildSsoProvidersModel(input: BuildInput): SsoProvidersModel {
         autoRedirect,
         callbackBase,
         adapters: OIDC_ADAPTERS.map((adapter) => ({ id: adapter.id, name: adapter.name, inputs: adapter.inputs })),
-        manage: manager
+        manage: canManage
             ? {
                   groups: groups.map((group) => ({
                       id: group.id,
@@ -232,15 +232,13 @@ export function buildSsoProvidersModel(input: BuildInput): SsoProvidersModel {
                       permissions: groupPermissions(group),
                       members: group._count.users,
                   })),
-                  superAdmin: manager.superAdmin,
-                  permissions: manager.permissions,
               }
             : null,
     };
 }
 
 /** Loads the Sign-in tab. The client secret never leaves the database. */
-export async function getSsoProvidersModel(manager: BuildInput["manager"]): Promise<SsoProvidersModel> {
+export async function getSsoProvidersModel(canManage: boolean): Promise<SsoProvidersModel> {
     const since = new Date(Date.now() - SIGN_IN_WINDOW_MS);
     const [providers, groups, signIns, passkeySetting] = await Promise.all([
         prisma.ssoProvider.findMany({ select: PROVIDER_SELECT }),
@@ -272,6 +270,6 @@ export async function getSsoProvidersModel(manager: BuildInput["manager"]): Prom
         passkeys: passkeySetting?.value !== "true",
         autoRedirect: getOidcAutoRedirectProviderId(),
         callbackBase: ssoCallbackBase(),
-        manager,
+        canManage,
     });
 }

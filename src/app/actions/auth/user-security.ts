@@ -28,6 +28,11 @@ const PasswordSchema = z.object({
     signOut: z.boolean(),
 });
 
+/** Whether the user is a SuperAdmin whom the caller, who is none, may not touch. */
+async function guardsSuperAdmin(userId: string, caller: { group: { name: string } | null } | null): Promise<boolean> {
+    return caller?.group?.name !== "SuperAdmin" && (await userService.isSuperAdmin(userId));
+}
+
 /** The session of whoever calls, which signing out someone's sessions never ends. */
 async function viewerSessionId(): Promise<string | null> {
     try {
@@ -72,12 +77,19 @@ export async function setUserPassword(userId: string, input: z.input<typeof Pass
     }
 }
 
-/** Removes the authenticator app and the passkey as second factor, so the user can set one up again. */
+/**
+ * Removes the authenticator app and the passkey as second factor, so the user can set one up
+ * again. Only a SuperAdmin does it for a SuperAdmin, like setting their password.
+ */
 export async function resetUserTwoFactor(userId: string) {
     await checkPermission(PERMISSIONS.USERS.WRITE);
     const id = IdSchema.safeParse(userId);
     if (!id.success) return { success: false, error: "Invalid request" };
     const currentUser = await getCurrentUserWithGroup();
+
+    if (await guardsSuperAdmin(id.data, currentUser)) {
+        return { success: false, error: "Only a SuperAdmin can reset the second factor of a SuperAdmin." };
+    }
 
     try {
         await userService.resetTwoFactor(id.data);
@@ -92,13 +104,20 @@ export async function resetUserTwoFactor(userId: string) {
     }
 }
 
-/** Ends one session of a user. The session the caller uses is refused, the menu signs out of that one. */
+/**
+ * Ends one session of a user. The session the caller uses is refused, the menu signs out of that
+ * one. Only a SuperAdmin signs out a SuperAdmin.
+ */
 export async function revokeUserSession(userId: string, sessionId: string) {
     await checkPermission(PERMISSIONS.USERS.WRITE);
     const id = IdSchema.safeParse(userId);
     const session = IdSchema.safeParse(sessionId);
     if (!id.success || !session.success) return { success: false, error: "Invalid request" };
     const currentUser = await getCurrentUserWithGroup();
+
+    if (await guardsSuperAdmin(id.data, currentUser)) {
+        return { success: false, error: "Only a SuperAdmin can sign out a SuperAdmin." };
+    }
 
     if (session.data === (await viewerSessionId())) {
         return { success: false, error: "This is the session you are using. Sign out from the menu instead." };
@@ -118,12 +137,19 @@ export async function revokeUserSession(userId: string, sessionId: string) {
     }
 }
 
-/** Ends every session of a user. For the caller's own account the session they use stays. */
+/**
+ * Ends every session of a user. For the caller's own account the session they use stays. Only a
+ * SuperAdmin signs out a SuperAdmin.
+ */
 export async function revokeUserSessions(userId: string) {
     await checkPermission(PERMISSIONS.USERS.WRITE);
     const id = IdSchema.safeParse(userId);
     if (!id.success) return { success: false, error: "Invalid request" };
     const currentUser = await getCurrentUserWithGroup();
+
+    if (await guardsSuperAdmin(id.data, currentUser)) {
+        return { success: false, error: "Only a SuperAdmin can sign out a SuperAdmin." };
+    }
 
     try {
         const keep = currentUser?.id === id.data ? await viewerSessionId() : null;

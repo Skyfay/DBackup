@@ -68,9 +68,9 @@ The sign-in itself is written as `LOGIN` with `method: "sso"`, the provider name
 
 ## Changing Providers
 
-`GET /api/sso-providers` needs `settings:read` and returns the tab: every provider with its linked people and the ways they have in besides it, the numbers, and for someone with `settings:write` the groups new people can start in.
+`GET /api/sso-providers` needs `settings:read` and returns the tab: every provider with its linked people and the ways they have in besides it, the numbers, and for a SuperAdmin the groups new people can start in.
 
-The Server Actions in `src/app/actions/auth/oidc.ts` need `settings:write`:
+The Server Actions in `src/app/actions/auth/oidc.ts` check `settings:write` first and then refuse anyone who is no SuperAdmin:
 
 | Action | Does |
 | :--- | :--- |
@@ -79,7 +79,7 @@ The Server Actions in `src/app/actions/auth/oidc.ts` need `settings:write`:
 | `updateSsoProvider` | The same without the type and the provider ID, which stay. An empty secret keeps the saved one |
 | `toggleSsoProvider`, `deleteSsoProvider` | Switches a provider, deletes it with every link to it |
 
-Whoever controls a provider can add people through it, so a provider never sends new people into a group that may do more than the group of the caller, and only a SuperAdmin picks the SuperAdmin group. A group that stays as it was is not checked again. The rule is `groupLockReason` in `sso-providers-types.ts`, which the dialog uses too.
+Whoever controls a provider signs in as any user whose email it names, and skips their second factor, so no permission is enough to change one. The configuration restore in `src/app/actions/backup/config-management.ts` is for a SuperAdmin only for the same reason, it writes users and groups from a file.
 
 ## Implementing an Adapter
 

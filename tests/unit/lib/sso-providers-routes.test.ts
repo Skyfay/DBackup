@@ -15,13 +15,13 @@ vi.mock("@/lib/auth/access-control", () => ({
     checkPermissionWithContext: (ctx: { permissions: string[] }, permission: string) => {
         if (!ctx.permissions.includes(permission)) throw new PermissionError(permission);
     },
-    hasPermissionWithContext: (ctx: { permissions: string[] }, permission: string) => ctx.permissions.includes(permission),
 }));
 vi.mock("@/services/sso/sso-providers-model", () => ({ getSsoProvidersModel: (...args: unknown[]) => mocks.getModel(...args) }));
 
 import { GET } from "@/app/api/sso-providers/route";
 
 const signedIn = (...permissions: string[]) => mocks.getAuthContext.mockResolvedValue({ userId: "lena", permissions, isSuperAdmin: false });
+const signedInAsSuperAdmin = () => mocks.getAuthContext.mockResolvedValue({ userId: "root", permissions: [PERMISSIONS.SETTINGS.READ], isSuperAdmin: true });
 
 describe("GET /api/sso-providers", () => {
     beforeEach(() => {
@@ -41,13 +41,13 @@ describe("GET /api/sso-providers", () => {
         expect(mocks.getModel).not.toHaveBeenCalled();
     });
 
-    it("hands the groups only to someone who may change the providers", async () => {
-        signedIn(PERMISSIONS.SETTINGS.READ);
-        expect((await GET()).status).toBe(200);
-        expect(mocks.getModel).toHaveBeenLastCalledWith(null);
-
+    it("hands the groups only to a SuperAdmin, who alone changes the providers", async () => {
         signedIn(PERMISSIONS.SETTINGS.READ, PERMISSIONS.SETTINGS.WRITE);
+        expect((await GET()).status).toBe(200);
+        expect(mocks.getModel).toHaveBeenLastCalledWith(false);
+
+        signedInAsSuperAdmin();
         await GET();
-        expect(mocks.getModel).toHaveBeenLastCalledWith({ superAdmin: false, permissions: [PERMISSIONS.SETTINGS.READ, PERMISSIONS.SETTINGS.WRITE] });
+        expect(mocks.getModel).toHaveBeenLastCalledWith(true);
     });
 });

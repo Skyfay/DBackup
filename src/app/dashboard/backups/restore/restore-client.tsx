@@ -35,6 +35,8 @@ interface RestoreClientProps {
     canManageVault?: boolean;
     /** Whether this user may download backups, which offers each database as a dump. */
     canDownload?: boolean;
+    /** Only a SuperAdmin restores a config backup, since it brings back users and groups. */
+    canRestoreConfig?: boolean;
 }
 
 /**
@@ -42,7 +44,7 @@ interface RestoreClientProps {
  * both, first the databases, then the files. Each shows as rows beside what is there now, or as
  * lines from the backup to where it goes. The bar at the foot says what happens and starts it.
  */
-export function RestoreClient({ canManageVault = false, canDownload = false }: RestoreClientProps) {
+export function RestoreClient({ canManageVault = false, canDownload = false, canRestoreConfig = false }: RestoreClientProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const file = useMemo(() => decodeUrlPayload<FileInfo>(searchParams.get("file")), [searchParams]);
@@ -134,7 +136,7 @@ export function RestoreClient({ canManageVault = false, canDownload = false }: R
     if (isRedis) {
         body = <RedisGuide file={file} destinationId={destinationId} engine={type === "valkey" ? "Valkey" : "Redis"} canDownload={canDownload} />;
     } else if (isSystem) {
-        body = <SystemRestore file={file} destinationId={destinationId} onCancel={back} />;
+        body = <SystemRestore file={file} destinationId={destinationId} canRestore={canRestoreConfig} onCancel={back} />;
     } else {
         body = (
             <>

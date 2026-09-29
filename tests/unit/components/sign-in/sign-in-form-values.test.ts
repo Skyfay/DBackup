@@ -4,7 +4,6 @@ vi.mock("@/components/dashboard/users/user-columns", () => ({ NO_GROUP: "none" }
 
 const { changedFrom, configOf, groupIdOf, initialValues, problemOf } = await import("@/components/dashboard/sign-in/sign-in-form-values");
 const { freeProviderId } = await import("@/components/dashboard/sign-in/sign-in-adapters");
-const { groupLockReason } = await import("@/services/sso/sso-providers-types");
 
 const INPUTS = [
     { name: "baseUrl", label: "Pocket ID URL", type: "url" as const, required: true },
@@ -49,14 +48,5 @@ describe("the form of a sign-in provider", () => {
     it("saves the fields trimmed without the empty ones, and the group as the actions take it", () => {
         expect(configOf({ config: { baseUrl: " https://id.example.ch ", note: " " } } as never, INPUTS)).toEqual({ baseUrl: "https://id.example.ch" });
         expect([groupIdOf(""), groupIdOf("none"), groupIdOf("g-1")]).toEqual([undefined, null, "g-1"]);
-    });
-
-    it("locks a group that may do more than the viewer, and the SuperAdmin group for anyone else", () => {
-        const viewer = { superAdmin: false, permissions: ["jobs:read", "settings:write"] };
-
-        expect(groupLockReason({ superAdmin: false, permissions: ["jobs:read"] }, viewer)).toBeNull();
-        expect(groupLockReason({ superAdmin: false, permissions: ["jobs:read", "users:write"] }, viewer)).toContain("more than your group");
-        expect(groupLockReason({ superAdmin: true, permissions: [] }, viewer)).toContain("Only a SuperAdmin");
-        expect(groupLockReason({ superAdmin: true, permissions: [] }, { superAdmin: true, permissions: [] })).toBeNull();
     });
 });

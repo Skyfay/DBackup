@@ -34,7 +34,7 @@ export interface SignInTabHandle {
 interface SignInTabProps {
     ref?: Ref<SignInTabHandle>;
     view: "table" | "cards";
-    /** May add, change, switch and delete providers. */
+    /** May add, change, switch and delete providers, which only a SuperAdmin does. */
     canManage: boolean;
     initialLayout: TablePreferences | null;
 }
@@ -140,7 +140,7 @@ export function SignInTab({ ref, view, canManage, initialLayout }: SignInTabProp
                 />
             )}
 
-            {model && <SignInFoot model={model} />}
+            {model && <SignInFoot model={model} canManage={canManage} />}
 
             {model && (
                 <SignInDetails

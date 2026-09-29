@@ -49,8 +49,9 @@ interface UsersClientProps {
     /** May open the runs an API key started. */
     canOpenRuns: boolean;
     canReadAudit: boolean;
-    /** May see the sign-in providers, which the settings permissions decide. */
+    /** May see the sign-in providers, which reading the settings allows. */
     canReadSignIn: boolean;
+    /** Only a SuperAdmin changes the sign-in providers. */
     canManageSignIn: boolean;
     counts: UsersPageCounts;
     layouts: Record<string, TablePreferences>;

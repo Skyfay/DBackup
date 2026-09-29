@@ -115,6 +115,10 @@ All notable changes to DBackup are documented here.
 - **SSO**: A disabled sign-in provider signs nobody in. It was only left off the login page before, so a crafted request still signed in through it.
 - **SSO**: A sign-in provider adds someone new only when it is set to. The browser decided it before, so a crafted request added people through any provider.
 - **SSO**: The Keycloak provider checks its URL before it reads the configuration, like the other providers, which keeps it away from cloud metadata endpoints.
+- **SSO**: Only a SuperAdmin adds, changes, switches and deletes sign-in providers. The right to change the settings was enough before, and a provider signs in as anyone whose email it names.
+- **settings**: Only a SuperAdmin restores a configuration backup, which brings back users and groups. The right to change the settings was enough before.
+- **users**: Only a SuperAdmin resets the second factor of a SuperAdmin or signs them out.
+- **users**: Nobody changes the group they are in. Anyone who may change groups could give their own group every permission before.
 
 ### 🎨 Improvements
 
@@ -227,6 +231,7 @@ All notable changes to DBackup are documented here.
 - **docs**: The API key guide describes the API keys tab, the tasks of New API key, the end after 90 days and why a key never does more than its owner. It no longer lists a `storage:write` permission or claims that the audit log names the key of every request.
 - **docs**: A new Audit Log guide describes the tab, its filters, the timeline, the export and what is recorded. The developer guide describes how an entry is written, and the API key and user guides point to it.
 - **docs**: The SSO guide describes the Sign-in tab, New provider, Disable and Delete and the group of new people, and no longer claims that a provider takes several email domains. The developer guide describes how the server decides who signs in through which provider.
+- **docs**: The groups guide lists what only a SuperAdmin does, and the config backup guide says who restores a configuration and where.
 
 ### 🧪 Tests
 

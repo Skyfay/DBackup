@@ -48,8 +48,8 @@ vi.mock("@/services/sso/oidc-registry", () => ({
 
 const { checkSsoConnection, createSsoProvider, deleteSsoProvider, toggleSsoProvider, updateSsoProvider } = await import("@/app/actions/auth/oidc");
 
-const OPERATOR = { id: "admin", group: { name: "Operators", permissions: JSON.stringify(["settings:read", "settings:write", "jobs:read"]) } };
-const SUPER_ADMIN = { id: "root", group: { name: "SuperAdmin", permissions: "[]" } };
+const SUPER_ADMIN = { id: "admin", group: { name: "SuperAdmin", permissions: "[]" } };
+const SETTINGS_ADMIN = { id: "lena", group: { name: "Settings", permissions: JSON.stringify(["settings:read", "settings:write"]) } };
 
 const PROVIDER = {
     id: "sso-1",
@@ -98,7 +98,7 @@ const create = (defaultGroupId: string | null) => ({
 describe("the actions of sign-in providers", () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.caller.mockReturnValue(OPERATOR);
+        mocks.caller.mockReturnValue(SUPER_ADMIN);
         mocks.discover.mockImplementation(async (_adapterId: string, config: Record<string, unknown>) => ({ ok: true, endpoints: ENDPOINTS, config }));
     });
 
@@ -153,37 +153,39 @@ describe("the actions of sign-in providers", () => {
         expect(mocks.audit.mock.calls[0][3].changes).toEqual([{ field: "Group of new people", from: null, to: "Viewers" }]);
     });
 
-    it("refuses a group that may do more than the group of the caller", async () => {
-        mocks.getAuditState.mockResolvedValue(PROVIDER);
-        mocks.getGroup.mockResolvedValue({ id: "group-2", name: "Admins", permissions: JSON.stringify(["jobs:read", "users:write"]) });
+    it("lets only a SuperAdmin add, change, check, switch or delete a provider, whatever settings permission someone has", async () => {
+        mocks.caller.mockReturnValue(SETTINGS_ADMIN);
+        const refused = { success: false, error: "Only a SuperAdmin adds and changes sign-in providers." };
 
-        const result = await updateSsoProvider(edit({ defaultGroupId: "group-2" }));
+        expect(await createSsoProvider(create(null))).toEqual(refused);
+        expect(await updateSsoProvider(edit({ name: "Staff login" }))).toEqual(refused);
+        expect(await checkSsoConnection({ adapterId: "keycloak", adapterConfig: { baseUrl: "https://auth.example.com", realm: "staff" } })).toEqual(refused);
+        expect(await toggleSsoProvider("sso-1", false)).toEqual(refused);
+        expect(await deleteSsoProvider("sso-1")).toEqual(refused);
 
-        expect(result.success).toBe(false);
-        expect(result.error).toContain("more than your group");
-        expect(mocks.updateProvider).not.toHaveBeenCalled();
+        for (const mock of [mocks.createProvider, mocks.updateProvider, mocks.toggleProvider, mocks.deleteProvider, mocks.discover, mocks.audit]) {
+            expect(mock).not.toHaveBeenCalled();
+        }
     });
 
-    it("lets only a SuperAdmin send new people into the SuperAdmin group", async () => {
+    it("sends new people into any group a SuperAdmin picks, the SuperAdmin group too", async () => {
         mocks.getGroup.mockResolvedValue({ id: "group-0", name: "SuperAdmin", permissions: "[]" });
-
-        const refused = await createSsoProvider(create("group-0"));
-        expect(refused).toEqual({ success: false, error: "Only a SuperAdmin may send new people into the SuperAdmin group." });
-        expect(mocks.createProvider).not.toHaveBeenCalled();
-
-        mocks.caller.mockReturnValue(SUPER_ADMIN);
         mocks.createProvider.mockResolvedValue({ id: "sso-2", name: "Pocket ID", adapterId: "pocket-id", providerId: "pocket-id" });
         mocks.getAuditState.mockResolvedValue({ groupName: "SuperAdmin" });
 
         expect(await createSsoProvider(create("group-0"))).toEqual({ success: true, data: { id: "sso-2" } });
-        expect(mocks.audit).toHaveBeenCalledWith("root", "CREATE", "SSO_PROVIDER", { name: "Pocket ID", adapterId: "pocket-id", providerId: "pocket-id", group: "SuperAdmin" }, "sso-2");
+        expect(mocks.audit).toHaveBeenCalledWith("admin", "CREATE", "SSO_PROVIDER", { name: "Pocket ID", adapterId: "pocket-id", providerId: "pocket-id", group: "SuperAdmin" }, "sso-2");
     });
 
-    it("keeps a group that stays as it was, even one beyond the caller", async () => {
+    it("refuses a group that is gone, but keeps one that stays as it was", async () => {
+        mocks.getGroup.mockResolvedValue(null);
         mocks.getAuditState.mockResolvedValue({ ...PROVIDER, defaultGroupId: "group-2", groupName: "Admins" });
 
+        expect(await updateSsoProvider(edit({ defaultGroupId: "group-gone" }))).toEqual({ success: false, error: "The group no longer exists." });
+        expect(mocks.updateProvider).not.toHaveBeenCalled();
+
         expect(await updateSsoProvider(edit({ defaultGroupId: "group-2", name: "Staff login" }))).toEqual({ success: true });
-        expect(mocks.getGroup).not.toHaveBeenCalled();
+        expect(mocks.getGroup).toHaveBeenCalledTimes(1);
     });
 
     it("refuses to save a provider that cannot be reached", async () => {

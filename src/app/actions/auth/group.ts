@@ -53,13 +53,20 @@ export async function createGroup(input: GroupFormValues) {
     }
 }
 
-/** Saves a group. The audit log gets what changed, not the whole list of permissions. */
+/**
+ * Saves a group. The audit log gets what changed, not the whole list of permissions. Nobody
+ * changes the group they are in, since that would hand them any permission.
+ */
 export async function updateGroup(id: string, input: GroupFormValues) {
     await checkPermission(PERMISSIONS.GROUPS.WRITE);
     const groupId = IdSchema.safeParse(id);
     const parsed = GroupSchema.safeParse(input);
     if (!groupId.success || !parsed.success) return { success: false, error: parsed.error?.issues[0]?.message ?? "Invalid request" };
     const currentUser = await getCurrentUserWithGroup();
+
+    if (currentUser?.groupId === groupId.data) {
+        return { success: false, error: "You are in this group. Another admin changes it." };
+    }
 
     try {
         const change = await groupService.update(groupId.data, parsed.data);

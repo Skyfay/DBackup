@@ -1,10 +1,10 @@
-import { getUserPermissions } from "@/lib/auth/access-control";
+import { getCurrentUserWithGroup, getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { redirect } from "next/navigation";
 import { RestoreClient } from "./restore-client";
 
 export default async function RestorePage() {
-    const permissions = await getUserPermissions();
+    const [permissions, user] = await Promise.all([getUserPermissions(), getCurrentUserWithGroup()]);
     const canRestore = permissions.includes(PERMISSIONS.STORAGE.RESTORE);
 
     if (!canRestore) {
@@ -17,6 +17,7 @@ export default async function RestorePage() {
         <RestoreClient
             canManageVault={permissions.includes(PERMISSIONS.VAULT.WRITE)}
             canDownload={permissions.includes(PERMISSIONS.STORAGE.DOWNLOAD)}
+            canRestoreConfig={user?.group?.name === "SuperAdmin"}
         />
     );
 }

@@ -24,11 +24,19 @@ const PARTS: { key: keyof RestoreOptions; title: string; description: string }[]
     { key: "statistics", title: "Statistics and history", description: "Past runs and the storage history" },
 ];
 
+interface SystemRestoreProps {
+    file: FileInfo;
+    destinationId: string;
+    /** Only a SuperAdmin restores a configuration, since it could make anyone a SuperAdmin. */
+    canRestore: boolean;
+    onCancel: () => void;
+}
+
 /**
  * A config backup of DBackup itself comes back as a whole or in parts, picked with switches. It
  * replaces what is set up here, so it asks with a red confirmation first.
  */
-export function SystemRestore({ file, destinationId, onCancel }: { file: FileInfo; destinationId: string; onCancel: () => void }) {
+export function SystemRestore({ file, destinationId, canRestore, onCancel }: SystemRestoreProps) {
     const router = useRouter();
     const { autoRedirectOnJobStart } = useUserPreferences();
     const [options, setOptions] = useState<RestoreOptions>({ settings: true, adapters: true, jobs: true, users: true, sso: true, profiles: true, statistics: false });
@@ -70,7 +78,7 @@ export function SystemRestore({ file, destinationId, onCancel }: { file: FileInf
             <RestoreBar
                 title={`Restores ${picked.length} of ${PARTS.length} parts of the configuration`}
                 detail={picked.length > 0 ? picked.map((part) => part.title).join(", ") : ""}
-                blocker={picked.length === 0 ? "Pick a part of the configuration to restore" : null}
+                blocker={!canRestore ? "Only a SuperAdmin restores the configuration" : picked.length === 0 ? "Pick a part of the configuration to restore" : null}
                 onCancel={onCancel}
                 action={{ label: "Restore the configuration", onClick: () => setConfirming(true), pending: restoring, tone: "destructive" }}
             />

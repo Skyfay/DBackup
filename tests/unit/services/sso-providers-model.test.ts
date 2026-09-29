@@ -53,7 +53,7 @@ const build = (overrides: Partial<Parameters<typeof buildSsoProvidersModel>[0]> 
         passkeys: true,
         autoRedirect: null,
         callbackBase: "https://backup.example.ch/api/auth/sso/callback/",
-        manager: null,
+        canManage: false,
         ...overrides,
     });
 
@@ -107,14 +107,10 @@ describe("the Sign-in tab", () => {
         expect(model.providers.map((entry) => entry.group)).toEqual([{ id: "g-ops", name: "Operators" }, null]);
     });
 
-    it("hands out the groups and what the viewer may do only to someone who may change the providers", () => {
+    it("hands out the groups only to someone who may change the providers", () => {
         expect(build().manage).toBeNull();
-
-        const manage = build({ manager: { superAdmin: false, permissions: ["settings:write"] } }).manage;
-        expect(manage).toEqual({
+        expect(build({ canManage: true }).manage).toEqual({
             groups: [{ id: "g-ops", name: "Operators", superAdmin: false, permissions: ["jobs:read"], members: 3 }],
-            superAdmin: false,
-            permissions: ["settings:write"],
         });
     });
 

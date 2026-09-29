@@ -16,7 +16,11 @@ The four named providers read their endpoints from the OpenID configuration of t
 
 ## The Sign-in Tab
 
-Open **Users & Groups → Sign-in**. Seeing it needs `settings:read`, adding and changing providers needs `settings:write`.
+Open **Users & Groups → Sign-in**. Seeing it needs `settings:read`. Only a SuperAdmin adds, changes, switches and deletes providers.
+
+::: warning A provider holds the keys to every account
+A provider that names the email of a user in DBackup signs in as that user, and DBackup asks no second factor after a sign-in through a provider. That is why only a SuperAdmin adds or changes one. Add only providers you run or trust.
+:::
 
 The strip above the list shows how many providers are on, how many people are linked through them, who has no password or passkey and signs in only through a provider, the sign-ins of the last 30 days, and whether password sign-in is on. The line under the list says whether passkeys are on, which providers the login page shows, and where `OIDC_AUTO_REDIRECT` sends it.
 
@@ -50,8 +54,6 @@ The callback URL starts with `BETTER_AUTH_URL`. Set it to the address people ope
 ## New People
 
 With **Add new people on their first sign-in**, someone the provider knows gets an account in DBackup when they first sign in, in the group picked for the provider. The audit log says so, like "Signed up through Authentik into the group Operators". With **No group** they sign in but see nothing until someone picks a group for them.
-
-A provider never sends new people into a group that may do more than the group of the person who sets it up, and only a SuperAdmin picks the SuperAdmin group. Whoever controls a provider can add people through it, so it gets no more than its admin has.
 
 Without it only people who already have an account in DBackup sign in through the provider. Their account is linked by its email on their first sign-in, when the provider marks the email as verified, and someone new is turned away.
 

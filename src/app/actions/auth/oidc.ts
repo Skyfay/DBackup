@@ -3,7 +3,6 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { checkPermission, getUserPermissions } from "@/lib/auth/access-control";
-import { groupPermissions, type OwnerGroup } from "@/lib/auth/owner-permissions";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { getErrorMessage, wrapError } from "@/lib/logging/errors";
@@ -12,7 +11,6 @@ import { auditService } from "@/services/audit-service";
 import { ssoProviderChanges } from "@/services/sso/oidc-audit";
 import { discoverEndpoints } from "@/services/sso/oidc-discovery";
 import { OidcProviderService } from "@/services/sso/oidc-provider-service";
-import { groupLockReason } from "@/services/sso/sso-providers-types";
 import { SUPER_ADMIN_GROUP } from "@/services/user/users-model";
 
 const log = logger.child({ action: "oidc" });
@@ -56,19 +54,17 @@ export type UpdateSsoProviderInput = z.input<typeof updateProviderSchema>;
 const firstIssue = (error: z.ZodError) => error.issues[0]?.message ?? "Invalid request";
 
 /**
- * Why the caller may not send the new people of a provider into a group, or null when they may.
- * Whoever controls a provider can add people through it, so nobody sends them into a group that
- * may do more than their own. A group that stays as it was is not checked again.
+ * Whoever controls a sign-in provider signs in as anyone whose email it names, and the second
+ * factor is not asked after it. So only a SuperAdmin adds, changes, switches and deletes one.
  */
-async function groupRefusal(groupId: string | null | undefined, current: string | null, caller: OwnerGroup | null): Promise<string | null> {
+const ONLY_SUPER_ADMIN = { success: false as const, error: "Only a SuperAdmin adds and changes sign-in providers." };
+
+const isSuperAdmin = (user: { group: { name: string } | null }) => user.group?.name === SUPER_ADMIN_GROUP;
+
+/** The group new people start in, when it changes, has to exist still. */
+async function missingGroup(groupId: string | null | undefined, current: string | null): Promise<string | null> {
     if (!groupId || groupId === current) return null;
-    const group = await OidcProviderService.getGroup(groupId);
-    if (!group) return "The group no longer exists.";
-    const reason = groupLockReason(
-        { superAdmin: group.name === SUPER_ADMIN_GROUP, permissions: groupPermissions(group) },
-        { superAdmin: caller?.name === SUPER_ADMIN_GROUP, permissions: groupPermissions(caller) }
-    );
-    return reason ? `${reason}.` : null;
+    return (await OidcProviderService.getGroup(groupId)) ? null : "The group no longer exists.";
 }
 
 // --- Actions ---
@@ -81,7 +77,8 @@ export async function getPublicSsoProviders() {
 
 /** Reads the endpoints of a provider from its fields, for the check in its dialog and in its panel. */
 export async function checkSsoConnection(input: z.input<typeof checkSchema>) {
-    await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    if (!isSuperAdmin(user)) return ONLY_SUPER_ADMIN;
     const parsed = checkSchema.safeParse(input);
     if (!parsed.success) return { success: false, error: firstIssue(parsed.error) };
 
@@ -96,12 +93,13 @@ export async function checkSsoConnection(input: z.input<typeof checkSchema>) {
 
 export async function createSsoProvider(input: CreateSsoProviderInput) {
     const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    if (!isSuperAdmin(user)) return ONLY_SUPER_ADMIN;
     const parsed = createProviderSchema.safeParse(input);
     if (!parsed.success) return { success: false, error: firstIssue(parsed.error) };
     const { name, adapterId, providerId, domain, clientId, clientSecret, adapterConfig, allowProvisioning, defaultGroupId } = parsed.data;
 
-    const refused = await groupRefusal(defaultGroupId, null, user.group);
-    if (refused) return { success: false, error: refused };
+    const missing = await missingGroup(defaultGroupId, null);
+    if (missing) return { success: false, error: missing };
 
     const found = await discoverEndpoints(adapterId, adapterConfig);
     if (!found.ok) return { success: false, error: found.error };
@@ -146,6 +144,7 @@ export async function createSsoProvider(input: CreateSsoProviderInput) {
 
 export async function updateSsoProvider(input: UpdateSsoProviderInput) {
     const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    if (!isSuperAdmin(user)) return ONLY_SUPER_ADMIN;
     const parsed = updateProviderSchema.safeParse(input);
     if (!parsed.success) return { success: false, error: firstIssue(parsed.error) };
     const { id, name, domain, clientId, clientSecret, adapterConfig, allowProvisioning, defaultGroupId } = parsed.data;
@@ -154,8 +153,8 @@ export async function updateSsoProvider(input: UpdateSsoProviderInput) {
     const before = await OidcProviderService.getAuditState(id);
     if (!before) return { success: false, error: "The provider no longer exists." };
 
-    const refused = await groupRefusal(defaultGroupId, before.defaultGroupId, user.group);
-    if (refused) return { success: false, error: refused };
+    const missing = await missingGroup(defaultGroupId, before.defaultGroupId);
+    if (missing) return { success: false, error: missing };
 
     const found = await discoverEndpoints(before.adapterId, adapterConfig);
     if (!found.ok) return { success: false, error: found.error };
@@ -203,6 +202,7 @@ export async function updateSsoProvider(input: UpdateSsoProviderInput) {
 
 export async function deleteSsoProvider(id: string) {
     const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    if (!isSuperAdmin(user)) return ONLY_SUPER_ADMIN;
     try {
         const deleted = await OidcProviderService.deleteProvider(id);
         await auditService.log(user.id, AUDIT_ACTIONS.DELETE, AUDIT_RESOURCES.SSO_PROVIDER, { name: deleted.name, providerId: deleted.providerId }, id);
@@ -215,6 +215,7 @@ export async function deleteSsoProvider(id: string) {
 
 export async function toggleSsoProvider(id: string, enabled: boolean) {
     const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    if (!isSuperAdmin(user)) return ONLY_SUPER_ADMIN;
     try {
         const provider = await OidcProviderService.toggleProvider(id, enabled);
         await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SSO_PROVIDER, { name: provider.name, enabled: provider.enabled }, id);

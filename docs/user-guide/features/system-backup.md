@@ -109,31 +109,27 @@ config_backup_2024-01-15T12-00-00.json.gz.enc.meta.json
 
 ## Restore Process
 
-### From UI (Online Restore)
+Only a SuperAdmin restores a configuration, since it brings back users, groups and sign-in providers.
 
-When you have working DBackup instance:
+### From a Destination (Online Restore)
 
-1. Go to **Settings** → **System Config**
-2. Click **Restore from Storage**
-3. Select backup file
-4. Configure options:
-   - Overwrite vs Merge
-   - What to restore
-5. Execute restore
+When you have a working DBackup instance:
+
+1. Open **Backups** and find the config backup
+2. Click **Restore**
+3. Pick the parts that come back
+4. Click **Restore the configuration** and confirm
 
 ### Offline Restore (Disaster Recovery)
 
 When starting fresh:
 
-1. Install new DBackup instance
-2. Go to **Settings** → **System Config**
-3. Click **Offline Restore**
-4. Upload backup file (+ meta.json if encrypted)
-5. If encrypted:
-   - Import encryption key first, OR
-   - Provide key during restore
-6. Execute restore
-7. All configs restored
+1. Install a new DBackup instance and create the first user, who becomes the SuperAdmin
+2. Go to **Settings → Configuration Backup**
+3. Click **Upload & Restore...**
+4. Upload the backup file, and its `.meta.json` if it is encrypted
+5. For an encrypted backup DBackup looks for the key itself. Import the key first, or give it when asked
+6. Click **Restore & Overwrite**
 
 ## Restore Strategy
 

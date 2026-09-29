@@ -146,6 +146,10 @@ interface ExportOptions {
 
 ## Security Considerations
 
+### Who Restores
+
+A restore writes users, groups, API keys and sign-in providers from the file, so it could make anyone a SuperAdmin. `uploadAndRestoreConfigAction` and `restoreFromStorageAction` in `src/app/actions/backup/config-management.ts` check `settings:write` first and then refuse anyone who is no SuperAdmin. Taking a config backup stays with `settings:write`.
+
 ### Secret Export Requirements
 
 If `includeSecrets = true`:

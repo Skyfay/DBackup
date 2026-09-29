@@ -15,7 +15,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { cn } from "@/lib/utils";
-import { callbackUrl, groupLockReason, type SsoProvidersModel } from "@/services/sso/sso-providers-types";
+import { callbackUrl, type SsoProvidersModel } from "@/services/sso/sso-providers-types";
 import { adapterCopy, GENERIC_ADAPTER } from "./sign-in-adapters";
 import { FoundMark, OptionalMark, ProviderField, SavedSecretField } from "./sign-in-fields";
 import { changedFrom, configOf, groupIdOf, initialValues, problemOf, type SignInFormMode, type SignInProblem, type SignInValues } from "./sign-in-form-values";
@@ -96,13 +96,7 @@ function Editor({ mode, adapterId, model, onBack, onClose, onSavingChange, onSav
     const groupFieldId = useId();
 
     const takenIds = useMemo(() => model.providers.filter((entry) => entry.id !== provider?.id).map((entry) => entry.providerId), [model, provider]);
-    const manage = model.manage;
-    // Nobody sends new people into a group that may do more than their own. The saved one stays in the list.
-    const groups = useMemo(
-        () => (manage ? manage.groups.filter((group) => group.id === initial.groupId || !groupLockReason(group, manage)) : []),
-        [manage, initial.groupId]
-    );
-    const hidden = (manage?.groups.length ?? 0) > groups.length;
+    const groups = model.manage?.groups ?? [];
 
     const set = <K extends keyof SignInValues>(key: K, value: SignInValues[K]) => {
         setValues((current) => ({ ...current, [key]: value }));
@@ -259,13 +253,13 @@ function Editor({ mode, adapterId, model, onBack, onClose, onSavingChange, onSav
                         {values.allowProvisioning && (
                             <div className="space-y-2">
                                 <Label htmlFor={groupFieldId}>Group of new people</Label>
-                                <GroupPicker id={groupFieldId} groups={groups} viewerSuperAdmin={manage?.superAdmin ?? false} value={values.groupId} onChange={(id) => set("groupId", id)} />
+                                {/* Only a SuperAdmin changes providers, so every group can be picked. */}
+                                <GroupPicker id={groupFieldId} groups={groups} viewerSuperAdmin value={values.groupId} onChange={(id) => set("groupId", id)} />
                                 {errorOf("group") ? (
                                     <p className="text-xs text-destructive">{errorOf("group")}</p>
                                 ) : (
                                     <p className={cn("text-xs", noGroup ? "text-warning" : "text-muted-foreground")}>
                                         {noGroup ? "They sign in, but see and do nothing until someone picks a group." : "They sign in at once and do what the group allows."}
-                                        {hidden && " Groups that may do more than yours are not listed."}
                                     </p>
                                 )}
                             </div>

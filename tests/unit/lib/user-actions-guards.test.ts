@@ -37,7 +37,7 @@ vi.mock("@/services/audit-service", () => ({ auditService: { log: mocks.audit } 
 vi.mock("@/services/notifications/system-notification-service", () => ({ notify: vi.fn(async () => undefined) }));
 
 const { bulkDeleteUsers, createUser, deleteUser, updateUserGroup } = await import("@/app/actions/auth/user");
-const { revokeUserSession, setUserPassword } = await import("@/app/actions/auth/user-security");
+const { resetUserTwoFactor, revokeUserSession, revokeUserSessions, setUserPassword } = await import("@/app/actions/auth/user-security");
 
 const ADMIN = { id: "admin", name: "Ada", email: "ada@example.ch", group: { name: "Admins" } };
 const SUPER = { id: "root", name: "Root", email: "root@example.ch", group: { name: "SuperAdmin" } };
@@ -134,6 +134,23 @@ describe("what an admin may do to other users", () => {
 
         expect((await setUserPassword("root-2", { password: "a new password", signOut: false })).success).toBe(true);
         expect(mocks.setPassword).toHaveBeenCalledWith("root-2", "a new password");
+    });
+
+    it("lets only a SuperAdmin reset the second factor of a SuperAdmin or sign them out", async () => {
+        mocks.service.isSuperAdmin.mockResolvedValue(true);
+
+        expect(await resetUserTwoFactor("root-2")).toEqual({ success: false, error: "Only a SuperAdmin can reset the second factor of a SuperAdmin." });
+        expect(await revokeUserSessions("root-2")).toEqual({ success: false, error: "Only a SuperAdmin can sign out a SuperAdmin." });
+        expect(await revokeUserSession("root-2", "s-root")).toEqual({ success: false, error: "Only a SuperAdmin can sign out a SuperAdmin." });
+        expect(mocks.service.resetTwoFactor).not.toHaveBeenCalled();
+        expect(mocks.service.revokeSessions).not.toHaveBeenCalled();
+        expect(mocks.service.revokeSession).not.toHaveBeenCalled();
+
+        mocks.viewer = SUPER;
+        mocks.service.revokeSession.mockResolvedValue(true);
+        expect(await resetUserTwoFactor("root-2")).toEqual({ success: true });
+        expect(await revokeUserSessions("root-2")).toEqual({ success: true, data: { count: 2 } });
+        expect(await revokeUserSession("root-2", "s-root")).toEqual({ success: true });
     });
 
     it("never ends the session the admin is using", async () => {

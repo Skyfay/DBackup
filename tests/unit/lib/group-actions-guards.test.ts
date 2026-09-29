@@ -3,7 +3,7 @@ import { PermissionError } from "@/lib/logging/errors";
 
 const mocks = vi.hoisted(() => ({
     denied: new Set<string>(),
-    viewer: { id: "admin", name: "Ada", email: "ada@example.ch", group: { name: "Admins" } } as { id: string; name: string; email: string; group: { name: string } | null },
+    viewer: { id: "admin", name: "Ada", email: "ada@example.ch", group: { name: "Admins" }, groupId: "g-admins" } as { id: string; name: string; email: string; group: { name: string } | null; groupId: string | null },
     groups: { create: vi.fn(), update: vi.fn(), delete: vi.fn(), deleteMany: vi.fn(), membership: vi.fn() },
     users: { isSuperAdminGroup: vi.fn(), superAdminsAmong: vi.fn(), moveUsers: vi.fn() },
     audit: vi.fn(),
@@ -26,7 +26,7 @@ describe("what may be done to groups and their people", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.denied = new Set();
-        mocks.viewer = { id: "admin", name: "Ada", email: "ada@example.ch", group: { name: "Admins" } };
+        mocks.viewer = { id: "admin", name: "Ada", email: "ada@example.ch", group: { name: "Admins" }, groupId: "g-admins" };
         mocks.groups.membership.mockResolvedValue({ exists: true, superAdmin: false, members: 2, includes: false });
         mocks.groups.delete.mockResolvedValue({ name: "Operators", moved: 2 });
         mocks.users.isSuperAdminGroup.mockResolvedValue(false);
@@ -47,6 +47,15 @@ describe("what may be done to groups and their people", () => {
 
         expect(await updateGroup("g-ops", { name: "Ops", permissions: ["storage:read", "storage:download"] })).toEqual({ success: true });
         expect(mocks.audit).toHaveBeenCalledWith("admin", "UPDATE", "GROUP", change, "g-ops");
+    });
+
+    it("never changes the group of the one who changes it, which would hand them any permission", async () => {
+        expect(await updateGroup("g-admins", { name: "Admins", permissions: ["settings:write", "users:write"] })).toEqual({
+            success: false,
+            error: "You are in this group. Another admin changes it.",
+        });
+        expect(mocks.groups.update).not.toHaveBeenCalled();
+        expect(mocks.audit).not.toHaveBeenCalled();
     });
 
     it("deletes a group and moves its members to the picked one", async () => {

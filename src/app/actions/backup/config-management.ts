@@ -19,6 +19,12 @@ const log = logger.child({ action: "config-management" });
 const configService = new ConfigService();
 
 /**
+ * A restore writes users, groups and sign-in providers from a file, so it could make anyone a
+ * SuperAdmin. Only a SuperAdmin restores a configuration.
+ */
+const ONLY_SUPER_ADMIN = { success: false as const, error: "Only a SuperAdmin restores a configuration backup." };
+
+/**
  * Trigger the Automated Config Backup Logic Manually
  */
 export async function triggerManualConfigBackupAction() {
@@ -41,6 +47,7 @@ export async function triggerManualConfigBackupAction() {
  */
 export async function uploadAndRestoreConfigAction(formData: FormData) {
     const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    if (user.group?.name !== "SuperAdmin") return ONLY_SUPER_ADMIN;
 
     const backupFile = formData.get("backupFile") as File;
     const metaFile = formData.get("metaFile") as File | null;
@@ -117,6 +124,7 @@ export async function restoreFromStorageAction(
     options?: RestoreOptions
 ) {
     const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+    if (user.group?.name !== "SuperAdmin") return ONLY_SUPER_ADMIN;
 
     try {
         const executionId = await configService.restoreFromStorage(storageConfigId, file, decryptionProfileId, options);

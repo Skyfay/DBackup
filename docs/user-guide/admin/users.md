@@ -71,11 +71,11 @@ A user who signs in only through SSO gets a password as a second way in. Your ow
 
 ### Reset 2FA
 
-**Reset 2FA** removes the authenticator app and the passkey as second factor after asking. The user signs in with the password alone until they set up a second factor again under **Profile → Security**.
+**Reset 2FA** removes the authenticator app and the passkey as second factor after asking. The user signs in with the password alone until they set up a second factor again under **Profile → Security**. Only a SuperAdmin resets the second factor of a SuperAdmin.
 
 ### Sign Out
 
-**Sign out** in the panel ends one session, **Sign out everywhere** ends all of them. On your own account it reads **Sign out other sessions** and keeps the browser you use. API keys keep working.
+**Sign out** in the panel ends one session, **Sign out everywhere** ends all of them. On your own account it reads **Sign out other sessions** and keeps the browser you use. API keys keep working. Only a SuperAdmin signs out a SuperAdmin.
 
 ### Change the Group
 

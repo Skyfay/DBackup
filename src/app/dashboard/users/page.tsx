@@ -59,7 +59,7 @@ export default async function UsersPage() {
                     canOpenRuns={can(PERMISSIONS.HISTORY.READ)}
                     canReadAudit={canReadAudit}
                     canReadSignIn={canReadSettings}
-                    canManageSignIn={can(PERMISSIONS.SETTINGS.WRITE)}
+                    canManageSignIn={user.group?.name === "SuperAdmin"}
                     counts={visibleCounts}
                     layouts={layouts}
                     groupsView={groupsView ?? "table"}

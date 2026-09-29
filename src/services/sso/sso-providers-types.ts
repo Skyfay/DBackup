@@ -96,17 +96,9 @@ export interface SsoProvidersModel {
     /** Every callback URL starts with this, the address of DBackup better-auth knows. */
     callbackBase: string;
     adapters: SsoAdapterOption[];
-    /** For someone who may change the providers: the groups, and what they may do themselves. */
-    manage: { groups: SsoGroupOption[]; superAdmin: boolean; permissions: string[] } | null;
+    /** For a SuperAdmin, the only one who changes the providers: the groups new people can start in. */
+    manage: { groups: SsoGroupOption[] } | null;
 }
 
 /** The address a provider sends people back to after they signed in. */
 export const callbackUrl = (base: string, providerId: string) => `${base}${providerId}`;
-
-/** Why someone may not send the new people of a provider into a group, or null when they may. */
-export function groupLockReason(group: Pick<SsoGroupOption, "superAdmin" | "permissions">, viewer: { superAdmin: boolean; permissions: readonly string[] }): string | null {
-    if (viewer.superAdmin) return null;
-    if (group.superAdmin) return "Only a SuperAdmin may send new people into the SuperAdmin group";
-    const held = new Set(viewer.permissions);
-    return group.permissions.every((permission) => held.has(permission)) ? null : "It may do more than your group, so you cannot send new people into it";
-}

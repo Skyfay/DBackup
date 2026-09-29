@@ -57,9 +57,11 @@ interface ConfigBackupSettingsProps {
     };
     storageAdapters: { id: string, name: string }[];
     encryptionProfiles: { id: string, name: string }[];
+    /** Only a SuperAdmin restores a configuration, since it brings back users and groups. */
+    canRestore: boolean;
 }
 
-export function ConfigBackupSettings({ initialSettings, storageAdapters, encryptionProfiles }: ConfigBackupSettingsProps) {
+export function ConfigBackupSettings({ initialSettings, storageAdapters, encryptionProfiles, canRestore }: ConfigBackupSettingsProps) {
     const form = useForm<z.infer<typeof formSchema>>({
         resolver: zodResolver(formSchema) as any,
         defaultValues: {
@@ -377,6 +379,12 @@ export function ConfigBackupSettings({ initialSettings, storageAdapters, encrypt
                                 </span>
                             </p>
 
+                            {!canRestore ? (
+                                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                                    <LockKeyhole className="h-4 w-4 shrink-0" />
+                                    Only a SuperAdmin restores a configuration, since it brings back users, groups and sign-in providers.
+                                </p>
+                            ) : (
                             <Dialog open={isRestoreOpen} onOpenChange={setIsRestoreOpen}>
                                 <DialogTrigger asChild>
                                     <Button variant="outline" size="sm" className="w-full md:w-auto">
@@ -424,6 +432,7 @@ export function ConfigBackupSettings({ initialSettings, storageAdapters, encrypt
                                     </form>
                                 </DialogContent>
                             </Dialog>
+                            )}
                         </div>
                     </div>
                 </CardContent>

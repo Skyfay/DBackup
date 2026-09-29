@@ -17,7 +17,8 @@ import { useExplorerAddress, type ExplorerTab } from "@/components/dashboard/sto
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHead } from "@/components/ui/page-head";
-import { TabCount, Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageTabs } from "@/components/ui/page-tabs";
+import { Tabs } from "@/components/ui/tabs";
 import { ViewSwitch } from "@/components/ui/view-switch";
 import { useIsMobileState } from "@/hooks/use-mobile";
 import { useTableLayout } from "@/hooks/use-table-layout";
@@ -147,6 +148,12 @@ export function StorageClient({
 
     const backupCount = jobs.reduce((sum, entry) => sum + entry.runs, 0);
     const detailsRun = details.run;
+    const changeTab = (next: string) => {
+        details.reset();
+        setParams(next === "backups"
+            ? { tab: null, destination: null }
+            : { tab: "destinations", destination: null, job: null, at: null, by: null });
+    };
 
     if (index.loading) {
         return (
@@ -179,30 +186,17 @@ export function StorageClient({
 
     return (
         <div className="space-y-4 md:space-y-0">
-            <PageHead className="flex-wrap">
-                <Tabs
-                    value={pageTab}
-                    onValueChange={(next) => {
-                        details.reset();
-                        setParams(next === "backups"
-                            ? { tab: null, destination: null }
-                            : { tab: "destinations", destination: null, job: null, at: null, by: null });
-                    }}
-                >
-                    <TabsList variant="page" aria-label="Show">
-                        <TabsTrigger value="backups">
-                            <span className="flex items-center gap-2">
-                                Backups
-                                <TabCount value={backupCount} />
-                            </span>
-                        </TabsTrigger>
-                        <TabsTrigger value="destinations">
-                            <span className="flex items-center gap-2">
-                                Destinations
-                                <TabCount value={destinations.length} />
-                            </span>
-                        </TabsTrigger>
-                    </TabsList>
+            <PageHead>
+                <Tabs value={pageTab} onValueChange={changeTab} className="min-w-0 flex-1">
+                    <PageTabs
+                        tabs={[
+                            { value: "backups", label: "Backups", count: backupCount },
+                            { value: "destinations", label: "Destinations", count: destinations.length },
+                        ]}
+                        value={pageTab}
+                        onValueChange={changeTab}
+                        label="Backup list"
+                    />
                 </Tabs>
                 <div className="ml-auto flex shrink-0 items-center gap-2">
                     <FreshnessButton destinations={freshnessList} onCheckNow={() => check(freshnessList, "The destinations could not be checked")} />

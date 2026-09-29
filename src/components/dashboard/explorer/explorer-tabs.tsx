@@ -1,7 +1,8 @@
 "use client";
 
 import { PageHead } from "@/components/ui/page-head";
-import { TabCount, Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageTabs } from "@/components/ui/page-tabs";
+import { Tabs } from "@/components/ui/tabs";
 
 export type ExplorerTab = "databases" | "servers";
 
@@ -14,18 +15,14 @@ export function ExplorerTabs({ tab, databases, servers, onTab, children }: {
     children?: React.ReactNode;
 }) {
     return (
-        <PageHead className="flex-wrap">
-            <Tabs value={tab} onValueChange={(value) => onTab(value as ExplorerTab)}>
-                <TabsList variant="page" aria-label="Show">
-                    {([["databases", "Databases", databases], ["servers", "Servers", servers]] as const).map(([value, label, total]) => (
-                        <TabsTrigger key={value} value={value}>
-                            <span className="flex items-center gap-2">
-                                {label}
-                                <TabCount value={total} />
-                            </span>
-                        </TabsTrigger>
-                    ))}
-                </TabsList>
+        <PageHead>
+            <Tabs value={tab} onValueChange={(value) => onTab(value as ExplorerTab)} className="min-w-0 flex-1">
+                <PageTabs
+                    tabs={[{ value: "databases", label: "Databases", count: databases }, { value: "servers", label: "Servers", count: servers }]}
+                    value={tab}
+                    onValueChange={(value) => onTab(value as ExplorerTab)}
+                    label="Explorer list"
+                />
             </Tabs>
             <div className="ml-auto flex shrink-0 items-center gap-2">{children}</div>
         </PageHead>

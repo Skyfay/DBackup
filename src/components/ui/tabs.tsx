@@ -19,9 +19,9 @@ function Tabs({
 }
 
 /**
- * "segmented" is the switch of a view or a range. "page" switches the lists of a page: the same
- * switch on a phone, and from md up, where it heads the card of the list in a `PageHead`, text
- * with the open tab on a filled pill, like the open entry of the sidebar.
+ * "segmented" is the switch of a view or a range. "page" switches the lists of a page from md up,
+ * where it heads the card of the list in a `PageHead`: text with the open tab on a filled pill, like
+ * the open entry of the sidebar. A phone picks the list from a `Select` instead, see `PageTabs`.
  */
 type TabsVariant = "segmented" | "page"
 

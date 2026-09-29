@@ -27,7 +27,8 @@ import { DataTable } from "@/components/ui/data-table";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { JOIN_END, PageHead } from "@/components/ui/page-head";
-import { TabCount, Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageTabs } from "@/components/ui/page-tabs";
+import { Tabs } from "@/components/ui/tabs";
 import { ViewSwitch } from "@/components/ui/view-switch";
 import { useIsMobileState } from "@/hooks/use-mobile";
 import { useTableLayout } from "@/hooks/use-table-layout";
@@ -205,15 +206,8 @@ export function JobsClient({
             {/* One tab for the one list, so the row reads like the Connections page, whose tabs switch
                 between kinds of connections. The filters of the list sit beside its search. */}
             <PageHead>
-                <Tabs value="jobs">
-                    <TabsList variant="page" aria-label="Job list">
-                        <TabsTrigger value="jobs">
-                            <span className="flex items-center gap-2">
-                                Jobs
-                                {hasLoaded && <TabCount value={jobs.length} />}
-                            </span>
-                        </TabsTrigger>
-                    </TabsList>
+                <Tabs value="jobs" className="min-w-0 flex-1">
+                    <PageTabs tabs={[{ value: "jobs", label: "Jobs", count: hasLoaded ? jobs.length : undefined }]} value="jobs" onValueChange={() => undefined} label="Job list" />
                 </Tabs>
                 <div className="ml-auto flex shrink-0 items-center gap-2">
                     {/* Hidden by CSS rather than by the measured screen, so it never pops in after loading. */}

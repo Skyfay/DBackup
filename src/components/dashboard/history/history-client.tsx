@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { PageHead } from "@/components/ui/page-head";
-import { TabCount, Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageTabs } from "@/components/ui/page-tabs";
+import { Tabs } from "@/components/ui/tabs";
 import { useIsMobileState } from "@/hooks/use-mobile";
 import { NotificationsTab } from "./notifications-tab";
 import { RunsTab, type RunsAccess } from "./runs-tab";
@@ -35,17 +36,13 @@ export function HistoryClient({ access }: { access: RunsAccess }) {
     return (
         <div className="space-y-4 md:space-y-0">
             <PageHead>
-                <Tabs value={tab} onValueChange={(value) => setTab(value as HistoryTab)}>
-                    <TabsList variant="page" aria-label="Show">
-                        {([["runs", "Runs", counts?.runs], ["notifications", "Notifications", counts?.notifications]] as const).map(([value, label, total]) => (
-                            <TabsTrigger key={value} value={value}>
-                                <span className="flex items-center gap-2">
-                                    {label}
-                                    {total !== undefined && <TabCount value={total} />}
-                                </span>
-                            </TabsTrigger>
-                        ))}
-                    </TabsList>
+                <Tabs value={tab} onValueChange={(value) => setTab(value as HistoryTab)} className="min-w-0 flex-1">
+                    <PageTabs
+                        tabs={[{ value: "runs", label: "Runs", count: counts?.runs }, { value: "notifications", label: "Notifications", count: counts?.notifications }]}
+                        value={tab}
+                        onValueChange={(value) => setTab(value as HistoryTab)}
+                        label="History list"
+                    />
                 </Tabs>
             </PageHead>
             {/* Waits for the measured screen, so a phone never flashes the table before its cards. */}

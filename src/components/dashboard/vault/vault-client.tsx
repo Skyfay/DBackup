@@ -6,7 +6,8 @@ import { Download, Import, MoreHorizontal, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { PageHead } from "@/components/ui/page-head";
-import { TabCount, Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageTabs } from "@/components/ui/page-tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { useIsMobileState } from "@/hooks/use-mobile";
 import type { TablePreferences } from "@/lib/core/table-preferences";
 import { CredentialsTab, type CredentialsAccess, type CredentialsTabHandle } from "./credentials-tab";
@@ -26,10 +27,6 @@ interface VaultClientProps {
     access: VaultAccess;
     counts: VaultCounts;
     layouts: Record<string, TablePreferences>;
-}
-
-function Count({ value }: { value: number | undefined }) {
-    return value === undefined ? null : <TabCount value={value} />;
 }
 
 /**
@@ -58,16 +55,15 @@ export function VaultClient({ access, counts, layouts }: VaultClientProps) {
     return (
         <Tabs value={active} onValueChange={setTab} className="w-full gap-4 md:gap-0">
             <PageHead>
-                <TabsList variant="page" aria-label="Show">
-                    {access.canReadCredentials && (
-                        <TabsTrigger value="credentials">
-                            <span className="flex items-center gap-2">Credentials<Count value={counts.credentials} /></span>
-                        </TabsTrigger>
-                    )}
-                    <TabsTrigger value="encryption">
-                        <span className="flex items-center gap-2">Encryption<Count value={counts.keys} /></span>
-                    </TabsTrigger>
-                </TabsList>
+                <PageTabs
+                    tabs={[
+                        ...(access.canReadCredentials ? [{ value: "credentials", label: "Credentials", count: counts.credentials }] : []),
+                        { value: "encryption", label: "Encryption", count: counts.keys },
+                    ]}
+                    value={active}
+                    onValueChange={setTab}
+                    label="Vault list"
+                />
 
                 <div className="ml-auto flex shrink-0 items-center gap-2">
                     {active === "credentials" && access.canWrite && (

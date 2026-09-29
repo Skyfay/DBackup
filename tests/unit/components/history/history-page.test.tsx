@@ -40,7 +40,8 @@ describe("the History page", () => {
         expect(within(offsite).getByText("1 of 2 copies")).toBeInTheDocument();
         expect(within(offsite).getByText("Schedule")).toBeInTheDocument();
         expect(screen.getByText("Integrity check")).toBeInTheDocument();
-        expect(await screen.findByText("1,284")).toBeInTheDocument();
+        // The count of the tab, which a phone shows in the list picker of the page as well.
+        expect(await screen.findByRole("tab", { name: "Runs 1,284" })).toBeInTheDocument();
     });
 
     it("puts the filters beside the search and the quick filters after them, like every table", async () => {

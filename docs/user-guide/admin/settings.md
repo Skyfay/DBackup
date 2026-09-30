@@ -99,6 +99,6 @@ How many requests one address may make in a time window. See [Rate Limits](/user
 ## Who May Change What
 
 - `settings:read` shows the page, `settings:write` changes it, starts the system tasks, sends test notifications and optimizes the database.
-- **Add a channel** under Notifications also needs `notifications:write`.
+- **New channel** under Notifications also needs `notifications:write`.
 - Only a SuperAdmin restores a configuration backup and downloads the database, see [Groups & Permissions](/user-guide/admin/permissions).
 - Every change writes an entry to the [Audit Log](/user-guide/admin/audit-log) with the values before and after.

@@ -35,7 +35,7 @@ src/services/
   system/        healthcheck-service.ts, system-task-service.ts (with -definitions, -runs, -settings), update-service.ts, db-version-service.ts, certificate-service.ts, settings-model.ts (Settings page model), system-settings-service.ts (General, Sign-in, Privacy), rate-limit-settings-service.ts, data-retention-service.ts, database-service.ts
   config/        database-copy.ts (the copy the backup uploads), copy-inspect.ts, copy-rekey.ts, open-backup.ts, pending-restores.ts, restore-staging.ts and restore-flow.ts (its restore), import.ts with import-context.ts and one import-*.ts per part (JSON files of older versions), config-service.ts, parse.ts, restore-pipeline.ts, config-backup-settings.ts (the Configuration backup part)
   templates/     naming-template-service.ts, notification-template-service.ts, retention-policy-service.ts, schedule-preset-service.ts, exclude-pattern-preset-service.ts, templates-model.ts (Templates page model), retention-targets.ts and retention-preview.ts (what a retention change removes)
-  user/          user-service.ts, users-model.ts (Users tab page model), user-details.ts (the panel of a user), group-service.ts, groups-model.ts (Groups tab page model), group-details.ts (the history of a group), preference-service.ts
+  user/          user-service.ts, users-model.ts (Users tab page model), user-details.ts (the panel of a user), group-service.ts, groups-model.ts (Groups tab page model), group-details.ts (the history of a group), preference-service.ts (table layouts, views and the colors of the tasks), profile-model.ts (Profile page model)
   trash/         Recently deleted: trash-snapshot.ts (keepInTrash, the snapshot a delete keeps), trash-restore.ts, trash-service.ts (list, restore, purge, cleanup)
   dashboard/     overview-service.ts (page model), aggregates.ts (cached history), health.ts, trends.ts, cache.ts
   audit/         the Audit log tab: audit-list-service.ts (page, filters, numbers), audit-details.ts, audit-timeline.ts, audit-export.ts (CSV)
@@ -89,6 +89,10 @@ No permission is enough for what decides who is a SuperAdmin or who signs in as 
 - Sign-in providers (`actions/auth/oidc.ts`) and the configuration restore (`actions/backup/config-management.ts` and the routes under `api/settings/config-backup/restore`, which also refuse API keys). The routes under `api/setup/restore` answer only while no account exists.
 
 Nobody changes or deletes the group they are in, and an API key never gets more than its owner holds. A new action of this kind follows the same pattern and gets a guard test.
+
+### The own profile
+
+The `profile:*` permissions decide what someone changes of their own account, on the server as well as on the page. The actions in `actions/auth/profile.ts` check the permission of each field that changes, `updateOwnPassword`, `togglePasskeyTwoFactor` and the SSO link actions check theirs, and `src/lib/auth/profile-guard.ts` refuses the better-auth endpoints the browser calls itself, like `/two-factor/enable` or `/passkey/delete-passkey`, from `beforeAuth` in `src/lib/auth/index.ts`. A new better-auth endpoint that changes the profile goes into `PROFILE_ENDPOINTS`.
 
 ## Audit log
 

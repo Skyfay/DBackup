@@ -169,7 +169,7 @@ export function DataTableColumnSettings({
                 )}
                 <div className="-mx-2 mt-1.5 border-t" />
                 <Link
-                    href="/dashboard/profile?tab=preferences"
+                    href="/dashboard/profile?part=tables"
                     className="block rounded-sm px-2 pt-2 pb-1 text-xs text-muted-foreground outline-none hover:text-foreground hover:underline hover:underline-offset-4 focus-visible:ring-2 focus-visible:ring-ring/50"
                 >
                     Rows per page and row height of every table in your profile

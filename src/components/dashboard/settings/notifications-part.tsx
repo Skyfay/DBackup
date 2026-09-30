@@ -199,9 +199,9 @@ export function NotificationsPart({ model, openEventId, onOpened }: { model: Not
             part="notifications"
             flush
             action={canAddChannel && (
-                <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
+                <Button tone="create" size="sm" onClick={() => setAdding(true)}>
                     <Plus />
-                    Add a channel
+                    New channel
                 </Button>
             )}
         >

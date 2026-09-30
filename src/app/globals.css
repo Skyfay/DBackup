@@ -36,6 +36,7 @@
   --color-border: var(--border);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-text: var(--destructive-text);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -77,6 +78,7 @@
   --accent: oklch(0.934 0.004 286);
   --accent-foreground: oklch(0.21 0.006 285.9);
   --destructive: oklch(0.577 0.245 27.325); /* Red */
+  --destructive-text: oklch(0.505 0.213 27.518); /* red-700, the red of text on a red tint, where the red above misses 4.5:1 */
   --success: oklch(0.527 0.137 150.1); /* #15803d, readable as text on white and on the page */
   --info: oklch(0.546 0.215 262.9); /* #2563eb, running */
   --warning: oklch(0.555 0.146 49); /* #b45309, partial */
@@ -133,6 +135,7 @@
   --accent: oklch(0.266 0.006 286);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.659 0.19 22.2); /* #f0555a */
+  --destructive-text: var(--destructive);
   --success: oklch(0.773 0.153 163.2); /* #34d399 */
   --info: oklch(0.714 0.143 254.6); /* #60a5fa */
   --warning: oklch(0.837 0.164 84.4); /* #fbbf24 */

@@ -19,7 +19,7 @@ import { RetentionPart } from "./retention-part";
 import { SettingsFrameContext } from "./settings-frame";
 import { searchSettings, settingsIndex, type SettingEntry } from "./settings-index";
 import { SettingsNav, SettingsPhoneList, SettingsSearchField } from "./settings-nav";
-import { partFromAddress, partOf, type SettingsPartId } from "./settings-parts";
+import { SETTINGS_GROUPS, partFromAddress, partOf, type SettingsPartId } from "./settings-parts";
 import { SettingsResults } from "./settings-search";
 import { SettingsSkeleton } from "./settings-skeleton";
 import { partStates } from "./settings-states";
@@ -52,9 +52,9 @@ export function SettingsClient({ model, viewerName }: SettingsClientProps) {
     const [openTaskId, setOpenTaskId] = useState<string | null>(null);
     const [openEventId, setOpenEventId] = useState<string | null>(null);
     const [leaving, setLeaving] = useState<(() => void) | null>(null);
-    const dirty = useRef(new Set<SettingsPartId>());
+    const dirty = useRef(new Set<string>());
 
-    const setDirty = useCallback((part: SettingsPartId, isDirty: boolean) => {
+    const setDirty = useCallback((part: string, isDirty: boolean) => {
         if (isDirty) dirty.current.add(part);
         else dirty.current.delete(part);
     }, []);
@@ -148,7 +148,7 @@ export function SettingsClient({ model, viewerName }: SettingsClientProps) {
                 searching || !addressed ? (
                     <div className="space-y-4">
                         <SettingsSearchField value={term} onChange={setTerm} />
-                        {searching ? <div className="overflow-clip rounded-xl border bg-card shadow-sm">{results}</div> : <SettingsPhoneList states={states} onOpen={open} />}
+                        {searching ? <div className="overflow-clip rounded-xl border bg-card shadow-sm">{results}</div> : <SettingsPhoneList groups={SETTINGS_GROUPS} states={states} onOpen={open} />}
                     </div>
                 ) : (
                     <div className="space-y-3">
@@ -164,7 +164,7 @@ export function SettingsClient({ model, viewerName }: SettingsClientProps) {
                 <div className="flex min-h-[calc(100svh-6.75rem)] min-w-0 overflow-clip rounded-xl border bg-card text-card-foreground shadow-sm">
                     <div className="shrink-0 border-r">
                         <div className="sticky top-4">
-                            <SettingsNav current={current} states={states} term={term} onTermChange={setTerm} counts={searching ? search.counts : null} onOpen={open} />
+                            <SettingsNav groups={SETTINGS_GROUPS} label="Settings" current={current} states={states} term={term} onTermChange={setTerm} counts={searching ? search.counts : null} onOpen={open} />
                         </div>
                     </div>
                     <div className="flex min-w-0 flex-1 flex-col">{searching ? results : part}</div>

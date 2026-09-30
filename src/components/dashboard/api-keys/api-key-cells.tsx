@@ -66,7 +66,7 @@ export function OwnerCell({ apiKey }: { apiKey: ApiKeyRow }) {
 
 /** Enabled in green, running out soon in amber, expired in red, disabled in gray. */
 export function StateBadge({ apiKey, now }: { apiKey: ApiKeyRow; now: number }) {
-    if (apiKey.state === "expired") return <Badge variant="outline" className="border-destructive/30 bg-destructive/10 text-red-700 dark:text-destructive">Expired</Badge>;
+    if (apiKey.state === "expired") return <Badge variant="outline" className="border-destructive/30 bg-destructive/10 text-destructive-text">Expired</Badge>;
     if (apiKey.state === "disabled") return <Badge variant="secondary" className="text-muted-foreground">Disabled</Badge>;
     if (apiKey.expiresAt && runsOutSoon(apiKey, now)) {
         return (

@@ -1,20 +1,26 @@
 "use client";
 
-import { ChevronRight, Search, X } from "lucide-react";
+import { ChevronRight, Search, X, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { SETTINGS_GROUPS, type SettingsPartId } from "./settings-parts";
 import type { PartState } from "./settings-states";
+
+/** A group of parts on the left of a page of settings, like System on the Settings page or You on the Profile. */
+export interface NavGroup<Id extends string> {
+    label: string;
+    parts: { id: Id; label: string; icon: LucideIcon }[];
+}
 
 interface SearchFieldProps {
     value: string;
     onChange: (value: string) => void;
     className?: string;
+    placeholder?: string;
 }
 
-/** The search of the Settings page, above its parts. */
-export function SettingsSearchField({ value, onChange, className }: SearchFieldProps) {
+/** The search of a page of settings, above its parts. */
+export function SettingsSearchField({ value, onChange, className, placeholder = "Search settings" }: SearchFieldProps) {
     return (
         <div className={cn("relative", className)}>
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
@@ -25,8 +31,8 @@ export function SettingsSearchField({ value, onChange, className }: SearchFieldP
                 onKeyDown={(event) => {
                     if (event.key === "Escape") onChange("");
                 }}
-                placeholder="Search settings"
-                aria-label="Search settings"
+                placeholder={placeholder}
+                aria-label={placeholder}
                 className="h-9 w-full pr-8 pl-8 [&::-webkit-search-cancel-button]:hidden"
             />
             {value && (
@@ -47,22 +53,26 @@ function StateText({ state }: { state: PartState }) {
     );
 }
 
-interface SettingsNavProps {
-    current: SettingsPartId | null;
-    states: Partial<Record<SettingsPartId, PartState>>;
+interface SettingsNavProps<Id extends string> {
+    groups: NavGroup<Id>[];
+    /** What the navigation is called for a screen reader, like Settings or Profile. */
+    label: string;
+    searchPlaceholder?: string;
+    current: Id | null;
+    states: Partial<Record<Id, PartState>>;
     term: string;
     onTermChange: (term: string) => void;
     /** Hits per part while searching. A part without one is dimmed. */
-    counts: Partial<Record<SettingsPartId, number>> | null;
-    onOpen: (part: SettingsPartId) => void;
+    counts: Partial<Record<Id, number>> | null;
+    onOpen: (part: Id) => void;
 }
 
 /** The parts on the left from md up, grouped, each with its icon and its state. */
-export function SettingsNav({ current, states, term, onTermChange, counts, onOpen }: SettingsNavProps) {
+export function SettingsNav<Id extends string>({ groups, label, searchPlaceholder, current, states, term, onTermChange, counts, onOpen }: SettingsNavProps<Id>) {
     return (
-        <nav aria-label="Settings" className="w-64 shrink-0 p-3 lg:w-72">
-            <SettingsSearchField value={term} onChange={onTermChange} />
-            {SETTINGS_GROUPS.map((group) => (
+        <nav aria-label={label} className="w-64 shrink-0 p-3 lg:w-72">
+            <SettingsSearchField value={term} onChange={onTermChange} placeholder={searchPlaceholder} />
+            {groups.map((group) => (
                 <div key={group.label} className="mt-4">
                     <p className="px-2.5 pb-1.5 text-xs font-medium text-muted-foreground">{group.label}</p>
                     <ul className="grid gap-0.5">
@@ -97,11 +107,17 @@ export function SettingsNav({ current, states, term, onTermChange, counts, onOpe
     );
 }
 
+interface PhoneListProps<Id extends string> {
+    groups: NavGroup<Id>[];
+    states: Partial<Record<Id, PartState>>;
+    onOpen: (part: Id) => void;
+}
+
 /** The parts on a phone: a list per group, each part with its state, which opens as a page of its own. */
-export function SettingsPhoneList({ states, onOpen }: { states: Partial<Record<SettingsPartId, PartState>>; onOpen: (part: SettingsPartId) => void }) {
+export function SettingsPhoneList<Id extends string>({ groups, states, onOpen }: PhoneListProps<Id>) {
     return (
         <div className="space-y-4">
-            {SETTINGS_GROUPS.map((group) => (
+            {groups.map((group) => (
                 <div key={group.label}>
                     <p className="px-1 pb-1.5 text-xs font-medium text-muted-foreground">{group.label}</p>
                     <ul className="divide-y overflow-hidden rounded-xl border bg-card shadow-sm">

@@ -50,6 +50,8 @@ All notable changes to DBackup are documented here.
 - **settings**: The system notifications are a list with the channels, the reminder and a switch of each event, and an event opens an Edit dialog with a test. Ticked events go on, off or to other channels together, and an event that goes nowhere shows in amber.
 - **config**: The configuration backup is a copy of the whole database, so it brings back every template, the folders of file jobs, second factors and passkeys, and whatever a later version adds. A restore shows what the backup holds first, then replaces the database and restarts DBackup.
 - **config**: A new DBackup restores a configuration backup on its sign-up page with the key from its recovery kit, and needs neither the old ENCRYPTION_KEY nor the old BETTER_AUTH_SECRET.
+- **profile**: The Profile page is built like Settings, with its parts on the left, their states and a search, and says what your group lets you do. Passkeys can be renamed, and the authenticator app makes new backup codes.
+- **profile**: **Colors** sets the color of every task, like Add, Edit, Delete and Warning, from a set like Colorblind friendly or one of your own, and shows it before it is saved. The colors are yours alone and reach every page.
 - **settings**: Deleted encryption keys, saved logins, connections, jobs and users wait under **Settings → Recently deleted** for 30 days, where someone who may change the settings restores them with everything that belonged to them or deletes them for good. Only they can skip it with **Delete it permanently now**, and the message after a delete offers Undo.
 
 
@@ -123,6 +125,7 @@ All notable changes to DBackup are documented here.
 
 ### 🔒 Security
 
+- **profile**: What a group may change of the own profile now holds on the server too, the name, the email, the password, the second factor, the passkeys and the linked sign-in providers. Before, only the page hid the buttons.
 - **connections**: The health check history of a connection needs the read permission of its kind, like its details. Reading sources or destinations was enough for every kind before.
 - **connections**: The file browser of a path field no longer follows a link into a system folder it keeps out, like /proc or /System.
 - **connections**: The folder browser of a Google Drive connection only takes folder IDs made of letters, digits, hyphens and underscores, so a crafted ID can no longer widen its list of folders to every file of the drive. The folder browsers of Dropbox and OneDrive turn down a path with a `..` part.
@@ -269,18 +272,20 @@ All notable changes to DBackup are documented here.
 - **docs**: A new Settings guide describes the parts of the page, the search, the save bar and every system task with what it follows. The guides for data retention, rate limits, the configuration backup and time zones use the new names.
 - **docs**: The notification and settings guides describe the list of system notifications, its Edit dialog, the actions for several events and the default reminder of each event. The developer guide names the new actions and where a new event gets its test data.
 - **docs**: The system backup guide describes the copy of the database, its restore with a restart, the restore on the sign-up page and the way back to the database before it. The developer guide describes the copy, its checks, the new encryption of its secrets and the swap at the next start.
+- **docs**: The profile guide describes the new page with its parts and the colors of the tasks, and the developer guide how a color of a person reaches every page.
 - **docs**: A new Recently Deleted guide describes what a delete keeps, the list, a restore and who sees what. The key, credential profile, user, job, data retention and API guides say where a delete goes, and the developer guide describes the snapshot of a delete.
 
 
 ### 🧪 Tests
 
 - **tests**: The test that generates an SSH key no longer fails at random during a full run, where the busy crypto thread pool made it slower than the default timeout.
-- **tests**: The palette color guard allows 11 colors without a dark variant, down from 37, and the guard for a height on the root of a scroll area allows 2, down from 3.
+- **tests**: The palette color guard allows 7 colors without a dark variant, down from 37, and the guard for a height on the root of a scroll area allows 2, down from 3.
 - **tests**: New tests cover the permission check of every save on the Settings page, the settings the system tasks follow and the fixes of the certificate, the scheduler and the rate limits.
 - **tests**: New tests cover saving the system notifications, their tests and a storage alert whose reminder is off.
 - **tests**: New tests cover a configuration restore onto a new instance, the upload of Restore from a file and a failed system task that reports a system error.
 - **tests**: New tests run the copy of the database, its checks, the new encryption of its secrets and its swap before the start against real SQLite files.
 - **tests**: New tests cover Recently deleted, from the rights of each record and the delete routes to a delete and restore against a real SQLite file.
+- **tests**: New tests cover the colors of the tasks, the actions of the profile and what a group may change of it, also where the browser calls better-auth itself.
 
 
 ### 🔧 CI/CD

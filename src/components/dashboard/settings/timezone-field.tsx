@@ -14,7 +14,8 @@ export function zoneName(zone: string): string {
     return parts.length > 2 ? `${city}, ${parts.slice(1, -1).join(", ")}` : city;
 }
 
-const entryOf = (zone: string): PickEntry => ({
+/** A zone as a row of the pick list, with its offset from UTC. */
+export const zoneEntry = (zone: string): PickEntry => ({
     id: zone,
     value: zone,
     name: zoneName(zone),
@@ -23,19 +24,21 @@ const entryOf = (zone: string): PickEntry => ({
     editable: false,
 });
 
-/** The zones by the region they start with, the one in use on top. */
-export function zoneGroups(zones: string[], current: string): PickGroup[] {
+/** The zones by the region they start with, like Europe or America. */
+export function regionGroups(zones: string[]): PickGroup[] {
     const regions = new Map<string, string[]>();
     for (const zone of zones) {
         const region = zone.includes("/") ? zone.split("/")[0] : "Other";
         regions.set(region, [...(regions.get(region) ?? []), zone]);
     }
-    return [
-        { heading: "In use", entries: [entryOf(current)] },
-        ...[...regions.entries()]
-            .sort(([a], [b]) => (a === "Other" ? 1 : b === "Other" ? -1 : a.localeCompare(b)))
-            .map(([heading, entries]) => ({ heading, entries: entries.map(entryOf) })),
-    ];
+    return [...regions.entries()]
+        .sort(([a], [b]) => (a === "Other" ? 1 : b === "Other" ? -1 : a.localeCompare(b)))
+        .map(([heading, entries]) => ({ heading, entries: entries.map(zoneEntry) }));
+}
+
+/** The zones by the region they start with, the one in use on top. */
+export function zoneGroups(zones: string[], current: string): PickGroup[] {
+    return [{ heading: "In use", entries: [zoneEntry(current)] }, ...regionGroups(zones)];
 }
 
 interface TimezoneFieldProps {

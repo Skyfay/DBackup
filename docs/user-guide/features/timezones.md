@@ -118,5 +118,5 @@ Changing the scheduler timezone immediately reschedules all jobs. A job that was
 ## Next Steps
 
 - [Scheduling](../jobs/scheduling.md) - Cron expression format and common schedule examples
-- [Profile Settings](./profile-settings.md) - How to change your display timezone, date format, and time format
+- [Profile](./profile-settings.md#dates-and-times) - How to change your display timezone, date format, and time format
 - [System Tasks](../admin/settings.md#system-tasks) - Built-in scheduled maintenance tasks

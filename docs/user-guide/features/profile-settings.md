@@ -1,82 +1,73 @@
-# Profile & Settings
+# Profile
 
-The Profile page allows you to manage your personal account settings, appearance preferences, and security options.
+The Profile page holds everything about you: your account, how you sign in, your sessions, and how DBackup looks and behaves for you.
 
-## Accessing Your Profile
+## The Page
 
-Click on your avatar in the sidebar, then select **Profile** from the menu.
+Click your avatar at the foot of the sidebar, then **Profile**. The page is built like [Settings](/user-guide/admin/settings): its parts on the left in three groups, each with its state, like **2FA off** in amber or how many sessions are open, and a search above them that finds a setting by the start of its words. A change waits in the bar at the foot of the part until **Save changes**, and leaving a part with changes asks first. A phone lists the parts and opens each on its own.
 
-## Tabs Overview
+| Group | Part | What it holds |
+| :--- | :--- | :--- |
+| You | **Account** | Your picture, your name, your email and what your group lets you do |
+| You | **Security** | Your password, the authenticator app, your passkeys and the sign-in providers linked to you |
+| You | **Sessions** | Every browser you are signed in with |
+| Look | **Appearance** | Light, dark or the theme of your system |
+| Look | **Colors** | The color of every task, see [Colors](#colors) |
+| Look | **Dates and times** | Your time zone and how dates and times read |
+| Look | **Tables** | The rows per page and the row height every table starts with |
+| Behavior | **Runs** | Whether the page of a run opens after **Run now** |
 
-### Profile Tab
+Your group decides what you may change of your own profile, like your name, your email or your passkeys. What it does not allow stays visible without its buttons, and the server refuses it too.
 
-Configure your personal information:
+## Account
 
-- **Avatar**: Upload or remove your profile picture
-- **Name**: Your display name shown throughout the application
-- **Email**: The email address used for sign-in
-- **Timezone**: Your local timezone for displaying dates and times
-- **Date Format**: Choose between localized, medium, long, ISO, or European date formats
-- **Time Format**: Choose between 12-hour or 24-hour time display
+**Upload a picture** and **Remove** apply at once. The name shows in the audit log, in Recently deleted and as who started a run, and you sign in with the email. **Your access** says in a few sentences what your group lets you do.
 
-::: tip
-Changes to name, email, timezone, and date/time formats require clicking the "Save Changes" button.
-:::
+## Security
 
-### Appearance Tab
+- **Password**: **Change password** asks for the one you have now and the new one twice, at least 8 characters.
+- **Authenticator app**: **Turn on** asks for your password, shows a code to scan or a key to enter by hand, checks the first code from the app and ends with backup codes. Each backup code signs you in once when the phone is gone. **New backup codes** replaces them, **Turn off** asks for your password.
+- **A passkey counts as the second factor**: after the password DBackup asks for a passkey instead of a code. It needs a passkey, and the authenticator app off.
+- **Passkeys**: **Add a passkey** names it, then your browser asks for it. Each passkey can be renamed and deleted. Deleting the last one turns off the passkey as second factor.
+- **Sign-in providers**: the single sign-on accounts linked to you, each with **Unlink**, and the providers you can link with **Link**. The only way you sign in cannot be unlinked.
 
-Customize the look and feel of the application:
+Without a password, when you sign in with a passkey or a provider only, no second factor applies.
 
-- **Theme**: Choose between Light, Dark, or System (follows your OS preference)
+## Sessions
 
-Theme changes are applied immediately.
+Every browser signed in as you, with its browser, system, address, when it signed in and when it was last active, this browser on top. **Sign out** ends one, **Sign out the others** every one but this browser. A browser you do not know? Sign it out, then change your password.
 
-### Preferences Tab
+## Appearance
 
-Configure application behavior:
+**Light**, **Dark** or **System**, which follows the theme of your system. It applies at once and stays in this browser.
 
-#### Auto-Redirect on Job Start
+## Colors
 
-When enabled (default), starting a backup or restore job will automatically:
-1. Navigate you to the History page
-2. Open the live execution view for the running job
+Every task has a color across DBackup: blue adds, violet edits, turquoise picks, fuchsia filters, amber warns, red deletes and green says all is well. **Colors** changes them for you alone.
 
-If you prefer to stay on the current page when starting jobs, you can disable this option.
-
-#### Tables
-
-**Rows per page** and **Row height** set how every table starts, from 10 to 100 rows and comfortable or compact.
-
-A table with a **Columns** menu, like on the Connections, Jobs and Backups pages, keeps the rows per page and the row height you pick there instead. **Reset** in its **Columns** menu brings it back to the ones of your profile.
+1. **Start from** a set: **Default**, **Colorblind friendly**, where Delete and Success are never red and green, or **Soft**.
+2. Change a task with the button of its row, which shows its shade in the light and in the dark theme. The picker offers 16 colors or **Your own** as `#rrggbb`, and says how well each shade reads on white and in the dark theme. The dark shade of your own color is worked out for you.
+3. **How it looks** shows a row menu, three dialogs, the buttons, the states of a run and a filter in your colors before you save.
+4. **Save changes** puts them on every page. **Reset to default** goes back to the colors DBackup ships with.
 
 ::: info
-Preference toggles are saved immediately when changed-no save button required.
+Warning, Delete and Success also color the states of a run: partial, failed and completed. Running stays blue, whatever color Add has.
 :::
 
-### Security Tab
+## Dates and Times
 
-Manage your account security:
+**Time zone** is the clock every date and time follows for you. **This browser** follows the zone the browser is in, like on a trip. **Date** and **Time** show each format with the time of now. The schedules of the jobs follow the time zone under **Settings → General**, not this one.
 
-- **Change Password**: Update your account password (if using local authentication)
-- **Two-Factor Authentication (2FA)**: Enable TOTP-based 2FA using an authenticator app. During setup, the QR code dialog includes a **"Can't scan? Copy the secret key"** button - click it to copy the raw TOTP secret and enter it manually in your authenticator app if the camera scanner is not available.
-- **Passkeys/WebAuthn**: Register hardware security keys or platform authenticators
+## Tables
 
-### Sessions Tab
+**Rows per page** and **Row height** set how every table starts, from 10 to 100 rows and comfortable or compact. A table with a **Columns** menu keeps what you pick there until its **Reset**.
 
-View and manage all your active login sessions:
+## Runs
 
-- **Session List**: Each active session shows the browser name with a brand icon (Chrome, Firefox, Safari, Edge, Brave, Opera, Vivaldi, Arc, Tor), the operating system with an OS icon, and the device type
-- **IP Address**: The IP address of each session is displayed. On localhost, the IPv6 loopback address is shown as "localhost"
-- **Timestamps**: "Created" shows when the session was started, "Last seen" shows the most recent activity
-- **Current Session Badge**: Your current session is marked with a "Current" badge and cannot be revoked
-- **Revoke Session**: Click the trash icon on any other session to revoke it - this forces an immediate sign-out on that device
-- **Revoke All Others**: Use the "Revoke All Others" button to sign out all devices except your current one. A confirmation dialog prevents accidental logouts
-
-::: tip
-If you suspect unauthorized access to your account, use "Revoke All Others" to immediately sign out all other devices, then change your password in the Security tab.
-:::
+**Open the run** opens the page of a run with its live log after **Run now**. Off, a message says it started and the page stays.
 
 ## Related
 
-- [Getting Started](/user-guide/getting-started)
-- [Encryption Vault](/user-guide/security/encryption)
+- [Settings](/user-guide/admin/settings)
+- [Groups & Permissions](/user-guide/admin/permissions)
+- [SSO / OIDC](/user-guide/admin/sso)

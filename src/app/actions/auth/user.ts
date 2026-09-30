@@ -151,9 +151,11 @@ export async function togglePasskeyTwoFactor(userId: string, enabled: boolean) {
     const currentUser = await getCurrentUserWithGroup();
     if (!currentUser) throw new Error("Unauthorized");
 
-    // Allow user to edit their own settings, otherwise require permission
+    // Allow user to edit their own settings, as far as their group allows, otherwise require permission
     if (currentUser.id !== userId) {
         await checkPermission(PERMISSIONS.USERS.WRITE);
+    } else if (!(await hasPermission(PERMISSIONS.PROFILE.MANAGE_PASSKEYS))) {
+        return { success: false, error: "Your group may not change your passkeys." };
     }
 
     try {
@@ -174,6 +176,9 @@ import prisma from "@/lib/prisma";
 export async function updateOwnPassword(currentPassword: string, newPassword: string) {
     const currentUser = await getCurrentUserWithGroup();
     if (!currentUser) throw new Error("Unauthorized");
+    if (!(await hasPermission(PERMISSIONS.PROFILE.UPDATE_PASSWORD))) {
+        return { success: false, error: "Your group may not change your password." };
+    }
 
     // 1. Verify user has a credential account
     const account = await prisma.account.findFirst({
@@ -248,6 +253,14 @@ export async function updateUser(userId: string, data: { name?: string; email?: 
     // Allow user to edit their own profile, otherwise require permission
     if (currentUser.id !== userId) {
         await checkPermission(PERMISSIONS.USERS.WRITE);
+    } else if (!(await hasPermission(PERMISSIONS.USERS.WRITE))) {
+        // Someone who may not change users changes their own name and email only as far as their group allows.
+        if (data.name !== undefined && data.name !== currentUser.name && !(await hasPermission(PERMISSIONS.PROFILE.UPDATE_NAME))) {
+            return { success: false, error: "Your group may not change your name." };
+        }
+        if (data.email !== undefined && data.email !== currentUser.email && !(await hasPermission(PERMISSIONS.PROFILE.UPDATE_EMAIL))) {
+            return { success: false, error: "Your group may not change your email." };
+        }
     }
 
     try {

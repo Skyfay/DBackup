@@ -10,6 +10,7 @@ import {
     type TablePreferences,
     type ViewMode,
 } from "@/lib/core/table-preferences";
+import { DEFAULT_TASK_COLORS, TaskColorsSchema, type TaskColors } from "@/lib/core/task-colors";
 
 const log = logger.child({ service: "PreferenceService" });
 
@@ -17,6 +18,7 @@ const TABLE_PREFIX = "table:";
 const VIEW_PREFIX = "view:";
 /** Outside the table prefix, which any table id could reach. */
 const TABLE_DEFAULTS_KEY = "defaults:tables";
+const TASK_COLORS_KEY = "appearance:colors";
 
 /**
  * The saved layouts of several tables, keyed by table id.
@@ -124,4 +126,40 @@ function parseJson(value: string): unknown {
     } catch {
         return null;
     }
+}
+
+/**
+ * The colors of the tasks a user picked, or the default. A value that no longer validates or can
+ * not be read gives the default, like the table defaults, so a page never fails over a color.
+ */
+export async function getTaskColors(userId: string): Promise<TaskColors> {
+    try {
+        const row = await prisma.userPreference.findUnique({
+            where: { userId_key: { userId, key: TASK_COLORS_KEY } },
+            select: { value: true },
+        });
+        if (!row) return DEFAULT_TASK_COLORS;
+        const parsed = TaskColorsSchema.safeParse(parseJson(row.value));
+        if (parsed.success) return parsed.data;
+        log.warn("Ignoring invalid task colors", { userId });
+    } catch (error) {
+        log.warn("Could not read the task colors", { userId }, wrapError(error));
+    }
+    return DEFAULT_TASK_COLORS;
+}
+
+/** Stores the colors of a user. The default is stored as nothing, so a later default follows. */
+export async function setTaskColors(userId: string, colors: TaskColors): Promise<void> {
+    const parsed = TaskColorsSchema.parse(colors);
+    const isDefault = (Object.keys(DEFAULT_TASK_COLORS) as (keyof TaskColors)[]).every((key) => parsed[key] === DEFAULT_TASK_COLORS[key]);
+    if (isDefault) {
+        await prisma.userPreference.deleteMany({ where: { userId, key: TASK_COLORS_KEY } });
+        return;
+    }
+    const value = JSON.stringify(parsed);
+    await prisma.userPreference.upsert({
+        where: { userId_key: { userId, key: TASK_COLORS_KEY } },
+        create: { userId, key: TASK_COLORS_KEY, value },
+        update: { value },
+    });
 }

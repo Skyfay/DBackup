@@ -95,3 +95,16 @@ The task colors are CSS variables in `src/app/globals.css`, one per theme, each 
 ```
 
 Changing a task color means changing these values and nothing else, since no component names a task color. The quiet gray of switches and checkboxes outside a task is `--control-neutral` in the same file. A foreground has to keep a contrast of 4.5:1 against its color. That is why light mode uses the darker shades with white text and dark mode the lighter shades with dark text.
+
+Red text on a light red tint, like the note of a delete dialog or a soft Delete button, misses 4.5:1 with `--destructive` and uses `--destructive-text` instead, a darker red in light mode and `--destructive` itself in dark mode. Use `text-destructive-text` there, never a palette red like `text-red-700`, so the color a person picks for Delete reaches it too.
+
+## Colors per Person
+
+A person picks the color of each task under **Profile → Colors**, stored as the user preference `appearance:colors`. `src/lib/core/task-colors.ts` holds the families with their shade for each theme, the presets and the schema:
+
+- A task is a family, like `orange`, or an own `#rrggbb`, whose dark shade `darkShadeOf` works out in OKLCH. `foregroundOf` picks white or dark text, whichever reads better.
+- `taskColorCss` turns a choice into CSS for `:root` and `.dark`, only for the tasks that differ from the default. The dashboard layout puts it on every page in a `<style>` right after the stylesheet, so the variables of `globals.css` are overridden without a flash. The default adds nothing.
+- `taskColorVars` gives the same variables for one theme. The Colors part sets them on the frame of its preview, so the real components inside show a choice before it is saved.
+- The schema lets only the names of the families and `#rrggbb` through, which is what keeps anything else out of the CSS.
+
+The families `blue`, `violet`, `cyan`, `fuchsia`, `amber`, `red` and `green` are exactly the values of `globals.css`. Changing a default color means changing it in both places. Warning, Delete and Success also color the run statuses, and `--info` stays out of it, so a running run stays blue.

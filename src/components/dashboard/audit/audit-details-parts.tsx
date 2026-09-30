@@ -37,7 +37,7 @@ function Chip({ sign, children }: { sign: "+" | "-"; children: React.ReactNode }
         <span
             className={cn(
                 "inline-flex h-6 items-center rounded-md px-2 text-xs font-medium whitespace-nowrap",
-                sign === "+" ? "bg-success/10 text-success" : "bg-destructive/10 text-red-700 dark:text-destructive"
+                sign === "+" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive-text"
             )}
         >
             {sign} {children}

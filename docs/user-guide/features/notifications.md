@@ -83,7 +83,7 @@ System notifications cover events beyond individual backup jobs: sign-ins, resto
 
 Each row shows where the event goes: the logos and names of its channels marked **default** or **own**, **Off**, or **Nowhere yet** in amber for an event that is on without a channel to go to. The **Notifications** entry in the list of parts shows how many events are on, or in amber how many go nowhere.
 
-**Add a channel** in the head of the part adds a notification channel without leaving Settings.
+**New channel** in the head of the part adds a notification channel without leaving Settings.
 
 ### Available Events
 

@@ -25,10 +25,11 @@ function headClasses(tone: Tone): { head: string; tile: string } {
         : { head: "border-tone/20 bg-tone/5 dark:bg-tone/10", tile: "bg-tone/12 text-tone" };
 }
 
-// The note under the title is in the tone. Red misses 4.5:1 on the tint in light mode and gets a
-// darker red there, and the tones that report no action keep the muted gray.
+// The note under the title is in the tone. Red misses 4.5:1 on the tint in light mode and gets the
+// darker `--destructive-text` there, which follows the color a person picked for Delete, and the
+// tones that report no action keep the muted gray.
 const NOTES: Partial<Record<Tone, string>> = {
-    destructive: "text-red-700 dark:text-destructive",
+    destructive: "text-destructive-text",
     success: "text-muted-foreground",
     neutral: "text-muted-foreground",
 };
@@ -135,7 +136,7 @@ function DialogItem({ item }: { item: DialogListItem }) {
 
 // A tinted red instead of a filled one. The text is darker in light mode for the same reason as the note.
 const SOFT_DESTRUCTIVE =
-    "border border-destructive/25 bg-destructive/10 text-red-700 hover:bg-destructive/15 dark:bg-destructive/15 dark:text-destructive dark:hover:bg-destructive/25";
+    "border border-destructive/25 bg-destructive/10 text-destructive-text hover:bg-destructive/15 dark:bg-destructive/15 dark:hover:bg-destructive/25";
 
 export interface ConfirmDialogProps {
     open: boolean;

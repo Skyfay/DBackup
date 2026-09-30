@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { prismaMock } from "@/lib/testing/prisma-mock";
 import {
-    getTableDefaults, getTablePreferences, getViewMode, resetTablePreferences, saveTablePreferences, saveViewMode, setTableDefaults,
+    getTableDefaults, getTablePreferences, getTaskColors, getViewMode, resetTablePreferences, saveTablePreferences, saveViewMode, setTableDefaults, setTaskColors,
 } from "@/services/user/preference-service";
+import { DEFAULT_TASK_COLORS } from "@/lib/core/task-colors";
 
 const layout = { order: ["status", "host"], hidden: ["host"], density: "compact" as const };
 
@@ -104,5 +105,30 @@ describe("getTableDefaults and setTableDefaults", () => {
         }));
 
         await expect(setTableDefaults("user-1", { pageSize: 5000, density: "compact" })).rejects.toThrow();
+    });
+});
+
+describe("the colors of the tasks of a user", () => {
+    it("reads a saved choice and falls back to the default for one that no longer validates", async () => {
+        const mine = { ...DEFAULT_TASK_COLORS, destructive: "orange" };
+        prismaMock.userPreference.findUnique.mockResolvedValueOnce({ value: JSON.stringify(mine) } as never);
+        await expect(getTaskColors("user-1")).resolves.toEqual(mine);
+
+        prismaMock.userPreference.findUnique.mockResolvedValueOnce({ value: JSON.stringify({ ...mine, pick: "gold" }) } as never);
+        await expect(getTaskColors("user-1")).resolves.toEqual(DEFAULT_TASK_COLORS);
+
+        prismaMock.userPreference.findUnique.mockRejectedValueOnce(new Error("no such table: UserPreference"));
+        await expect(getTaskColors("user-1")).resolves.toEqual(DEFAULT_TASK_COLORS);
+    });
+
+    it("stores a choice of its own and forgets the default, so a later default reaches the user", async () => {
+        await setTaskColors("user-1", { ...DEFAULT_TASK_COLORS, success: "teal" });
+        expect(prismaMock.userPreference.upsert).toHaveBeenCalledWith(expect.objectContaining({
+            where: { userId_key: { userId: "user-1", key: "appearance:colors" } },
+            update: { value: JSON.stringify({ ...DEFAULT_TASK_COLORS, success: "teal" }) },
+        }));
+
+        await setTaskColors("user-1", DEFAULT_TASK_COLORS);
+        expect(prismaMock.userPreference.deleteMany).toHaveBeenCalledWith({ where: { userId: "user-1", key: "appearance:colors" } });
     });
 });

@@ -1,13 +1,17 @@
 "use client";
 
-import { ArrowRight, SearchX } from "lucide-react";
+import { ArrowRight, SearchX, type LucideIcon } from "lucide-react";
 import { wordsOf, type SettingEntry, type SettingsSearch } from "./settings-index";
-import { partOf } from "./settings-parts";
+import { partOf, type SettingsPartId } from "./settings-parts";
 
-interface SettingsResultsProps {
+interface SettingsResultsProps<Id extends string> {
     term: string;
-    search: SettingsSearch;
-    onPick: (entry: SettingEntry) => void;
+    search: SettingsSearch<Id>;
+    onPick: (entry: SettingEntry<Id>) => void;
+    /** The name and icon of a part, those of the Settings page when left out. */
+    describe?: (part: Id) => { label: string; icon: LucideIcon };
+    /** What holds nothing, like "the settings" or "your profile". */
+    where?: string;
 }
 
 /** A text with each word of the search marked where it starts a word, the way the search found it. */
@@ -28,7 +32,7 @@ function Marked({ text, term }: { text: string; term: string }) {
 }
 
 /** What the search found, a row per setting with its part above it. A click opens the part and marks the setting. */
-export function SettingsResults({ term, search, onPick }: SettingsResultsProps) {
+export function SettingsResults<Id extends string = SettingsPartId>({ term, search, onPick, describe, where = "the settings" }: SettingsResultsProps<Id>) {
     const parts = Object.keys(search.counts).length;
     const count = search.hits.length;
     return (
@@ -44,12 +48,12 @@ export function SettingsResults({ term, search, onPick }: SettingsResultsProps) 
             {count === 0 ? (
                 <div className="flex flex-col items-center gap-2 px-6 py-12 text-center text-sm text-muted-foreground">
                     <SearchX className="size-6" aria-hidden="true" />
-                    Nothing in the settings holds these words.
+                    Nothing in {where} holds these words.
                 </div>
             ) : (
                 <ul className="m-4 max-w-3xl divide-y overflow-hidden rounded-xl border md:m-6">
                     {search.hits.map((entry) => {
-                        const part = partOf(entry.part);
+                        const part = describe ? describe(entry.part) : partOf(entry.part as SettingsPartId);
                         return (
                             <li key={entry.id}>
                                 <button type="button" onClick={() => onPick(entry)} className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50">

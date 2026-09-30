@@ -14,21 +14,31 @@ import { partOf, type SettingsPartId } from "./settings-parts";
 
 const log = logger.child({ component: "settings-frame" });
 
-/** What the page tells its parts: whether the viewer may change anything, and where unsaved changes go. */
+/**
+ * What the page tells its parts: whether the viewer may change anything, where unsaved changes go
+ * and what each part is called. Settings and Profile both build on it, each with its own parts.
+ */
 interface SettingsFrameContextValue {
     readOnly: boolean;
     /** A part reports whether it holds changes that are not saved, so leaving it asks first. */
-    setDirty: (part: SettingsPartId, dirty: boolean) => void;
+    setDirty: (part: string, dirty: boolean) => void;
+    /** The title and the line of a part. */
+    describe?: (part: string) => { label: string; description: string };
 }
 
 export const SettingsFrameContext = createContext<SettingsFrameContextValue>({ readOnly: false, setDirty: () => {} });
+
+/** The title and the line of a part, from the page it sits on, the Settings page by default. */
+function useDescribe(): (part: string) => { label: string; description: string } {
+    return useSettingsFrame().describe ?? ((part) => partOf(part as SettingsPartId));
+}
 
 export function useSettingsFrame(): SettingsFrameContextValue {
     return useContext(SettingsFrameContext);
 }
 
 interface PartFrameProps {
-    part: SettingsPartId;
+    part: string;
     /** Buttons on the right of the head, like Back up now. */
     action?: React.ReactNode;
     /** The body fills the pane without padding, like a table. */
@@ -39,7 +49,7 @@ interface PartFrameProps {
 /** The open part: its title and line on top, a note for a viewer who may only read, then its body. */
 export function PartFrame({ part, action, flush = false, children }: PartFrameProps) {
     const { readOnly } = useSettingsFrame();
-    const { label, description } = partOf(part);
+    const { label, description } = useDescribe()(part);
     return (
         <section aria-labelledby={`settings-${part}`} className="min-w-0 flex-1">
             <div className="flex flex-col gap-3 border-b px-4 py-4 sm:flex-row sm:items-start md:px-6 md:py-5">
@@ -130,7 +140,7 @@ export function SaveBar({ changes, saving, onDiscard, onSave }: SaveBarProps) {
  * page learns about unsaved changes. `saved` from the server replaces the values once they are
  * saved, never while someone is editing.
  */
-export function usePartValues<T extends object>(part: SettingsPartId, saved: T) {
+export function usePartValues<T extends object>(part: string, saved: T) {
     const { setDirty } = useSettingsFrame();
     const [base, setBase] = useState(saved);
     const [values, setValues] = useState(saved);
@@ -168,8 +178,9 @@ export function usePartValues<T extends object>(part: SettingsPartId, saved: T) 
  * Saves a part with its action: one toast for the save, the page loaded again, and a problem of
  * a field kept, so the field can show it.
  */
-export function usePartSave(part: SettingsPartId) {
+export function usePartSave(part: string) {
     const router = useRouter();
+    const describe = useDescribe();
     const [saving, setSaving] = useState(false);
     const [problem, setProblem] = useState<{ field?: string; message: string } | null>(null);
 
@@ -184,7 +195,7 @@ export function usePartSave(part: SettingsPartId) {
                 return;
             }
             onSaved();
-            toast.success(`${partOf(part).label} saved`);
+            toast.success(`${describe(part).label} saved`);
             router.refresh();
         } catch (error: unknown) {
             // Without the right to change the settings the actions throw instead of answering.

@@ -163,7 +163,7 @@ export function SessionsSection({ user, details, onSignOutAll, onChanged }: Sess
     const [ending, setEnding] = useState<string | null>(null);
     const others = details?.sessions.filter((session) => !session.current).length ?? 0;
     const aside = onSignOutAll && others > 0 && (
-        <button type="button" onClick={onSignOutAll} className="rounded-sm text-xs font-medium text-red-700 outline-none hover:underline hover:underline-offset-4 focus-visible:ring-2 focus-visible:ring-ring/50 dark:text-destructive">
+        <button type="button" onClick={onSignOutAll} className="rounded-sm text-xs font-medium text-destructive-text outline-none hover:underline hover:underline-offset-4 focus-visible:ring-2 focus-visible:ring-ring/50">
             {user.isYou ? "Sign out other sessions" : "Sign out everywhere"}
         </button>
     );

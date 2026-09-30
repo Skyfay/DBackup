@@ -1,5 +1,6 @@
 import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
+import { PROFILE_CHANGE_REFUSED, profilePermissionFor, userHolds } from "@/lib/auth/profile-guard";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import prisma from "@/lib/prisma";
 import { twoFactor } from "better-auth/plugins";
@@ -127,8 +128,9 @@ function getTrustedProviders(): string[] {
  * `auth.api.signUpEmail()` behind the admin Users page.
  *
  * The decision itself lives in `shouldBlockBrowserEmailAuth` so it can be tested
- * without standing up better-auth. It also refuses a sign-in provider that is off and
- * writes a sign-out to the audit log.
+ * without standing up better-auth. It also refuses a sign-in provider that is off, keeps
+ * the own profile to what the group allows (`profile-guard.ts`) and writes a sign-out to
+ * the audit log.
  */
 const beforeAuth = createAuthMiddleware(async (ctx) => {
     if (shouldBlockBrowserEmailAuth(ctx.path, Boolean(ctx.request))) {
@@ -139,6 +141,14 @@ const beforeAuth = createAuthMiddleware(async (ctx) => {
     }
     // A provider that is off signs nobody in, not only on the login page.
     await refuseDisabledProvider(ctx, (url) => ctx.redirect(url));
+    // The own profile follows the group, also where the browser calls better-auth itself.
+    const needed = profilePermissionFor(ctx.path, Boolean(ctx.request));
+    if (needed) {
+        const session = await getSessionFromCtx(ctx);
+        if (session && !(await userHolds(session.user.id, needed))) {
+            throw new APIError("FORBIDDEN", { code: "PROFILE_PERMISSION", message: PROFILE_CHANGE_REFUSED });
+        }
+    }
     // A sign-out is written before it runs, while the session to end is still there.
     if (ctx.path === "/sign-out") {
         try {

@@ -6,8 +6,8 @@ import { SETTINGS_PARTS, type SettingsPartId } from "./settings-parts";
  * its part and marks the row whose `data-setting` is its id, a task opens its Edit dialog.
  */
 
-export interface SettingEntry {
-    part: SettingsPartId;
+export interface SettingEntry<Id extends string = SettingsPartId> {
+    part: Id;
     /** `data-setting` of its row, `task:<id>` for a task, `event:<id>` for a notification event, or the id of the part for the part itself. */
     id: string;
     label: string;
@@ -57,10 +57,10 @@ export function settingsIndex(tasks: Named[], events: Named[] = []): SettingEntr
     ];
 }
 
-export interface SettingsSearch {
-    hits: SettingEntry[];
+export interface SettingsSearch<Id extends string = SettingsPartId> {
+    hits: SettingEntry<Id>[];
     /** Hits per part, for the navigation. */
-    counts: Partial<Record<SettingsPartId, number>>;
+    counts: Partial<Record<Id, number>>;
 }
 
 /** The words of a text or a search, in lower case. */
@@ -72,11 +72,15 @@ export function wordsOf(text: string): string[] {
  * The entries in whose name or line every word of the search starts a word, regardless of case,
  * in the order of the page. Starts only, so backup finds backups but not every DBackup.
  */
-export function searchSettings(index: SettingEntry[], term: string): SettingsSearch {
+export function searchSettings<Id extends string = SettingsPartId>(
+    index: SettingEntry<Id>[],
+    term: string,
+    parts: readonly Id[] = SETTINGS_PARTS.map((part) => part.id) as readonly string[] as readonly Id[]
+): SettingsSearch<Id> {
     const terms = wordsOf(term);
-    const counts: Partial<Record<SettingsPartId, number>> = {};
+    const counts: Partial<Record<Id, number>> = {};
     if (terms.length === 0) return { hits: [], counts };
-    const order = new Map(SETTINGS_PARTS.map((part, position) => [part.id, position]));
+    const order = new Map(parts.map((part, position) => [part, position]));
     const hits = index
         .filter((entry) => {
             const words = wordsOf(`${entry.label} ${entry.text}`);

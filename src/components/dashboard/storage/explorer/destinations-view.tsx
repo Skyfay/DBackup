@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SortingState } from "@tanstack/react-table";
-import { ArrowRight, Bell, PanelBottomClose, PanelBottomOpen, RefreshCw } from "lucide-react";
+import { Archive, ArrowRight, Bell, HardDrive, Layers, PanelBottomClose, PanelBottomOpen, RefreshCw, TrendingUp } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { kindNames } from "@/components/adapter/connection-columns";
 import { signedBytes } from "@/components/dashboard/widgets/storage-history-data";
@@ -177,12 +177,13 @@ export function DestinationsView(props: DestinationsViewProps) {
             <ExplorerStrip
                 joined
                 cells={[
-                    { label: "Destinations", value: summary.destinations.toLocaleString(), extra: `${summary.answering} answer right now` },
-                    { label: "Stored", value: storedValue, unit: storedUnit, extra: `at ${count(summary.destinations, "destination")}` },
-                    { label: "Last 7 days", value: summary.growth === null ? "-" : signedBytes(summary.growth), extra: summary.growth === null ? "not measured a week ago" : "grown by" },
-                    { label: "Backups", value: summary.backups.toLocaleString(), extra: "copies at every destination" },
+                    { label: "Destinations", icon: HardDrive, value: summary.destinations.toLocaleString(), extra: `${summary.answering} answer right now` },
+                    { label: "Stored", icon: Layers, value: storedValue, unit: storedUnit, extra: `at ${count(summary.destinations, "destination")}` },
+                    { label: "Last 7 days", icon: TrendingUp, value: summary.growth === null ? "-" : signedBytes(summary.growth), extra: summary.growth === null ? "not measured a week ago" : "grown by" },
+                    { label: "Backups", icon: Archive, value: summary.backups.toLocaleString(), extra: "copies at every destination" },
                     {
                         label: "Alerts",
+                        icon: Bell,
                         value: summary.alerts.length.toLocaleString(),
                         unit: "active",
                         tone: summary.alerts.length > 0 ? "warning" : undefined,

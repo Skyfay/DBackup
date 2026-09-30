@@ -67,8 +67,10 @@ export function PageTabs({ tabs, value, onValueChange, label }: PageTabsProps) {
             <ScrollArea horizontal className="hidden min-w-0 md:block">
                 <TabsList variant="page" aria-label={label}>
                     {tabs.map((tab) => {
+                        // The tooltip writes its own data-state onto the tab it wraps, which the pill of the
+                        // open tab reads, so the tab states its own and wins over the one of the tooltip.
                         const trigger = (
-                            <TabsTrigger key={tab.value} value={tab.value}>
+                            <TabsTrigger key={tab.value} value={tab.value} data-state={tab.value === value ? "active" : "inactive"}>
                                 <TabName tab={tab} />
                             </TabsTrigger>
                         );

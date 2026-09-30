@@ -24,6 +24,7 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { CloneDialog } from "@/components/ui/clone-dialog";
 import { useTableLayout } from "@/hooks/use-table-layout";
 import { connectionColumns, type ConnectionKind } from "./connection-columns";
+import { ConnectionStrip } from "./connection-strip";
 import { ConnectionRowActions } from "./connection-row-actions";
 import { ConnectionContextMenu } from "./connection-context-menu";
 import type { ConnectionActionHandlers } from "./connection-actions";
@@ -311,51 +312,54 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                     ))}
                 </div>
             ) : (
-                <DataTable
-                    variant="card"
-                    joined
-                    columns={columns}
-                    data={visibleConfigs}
-                    searchKey="name"
-                    searchPlaceholder={`Search ${SEARCH_NOUNS[kind]}`}
-                    onRefresh={fetchConfigs}
-                    isLoading={isLoading}
-                    filterableColumns={typeFilterColumns}
-                    toolbarExtra={
-                        <ConnectionStatusFilter
-                            value={statusFilter}
-                            onChange={setStatusFilter}
-                            configs={configs}
-                            withHealth={type !== "notification"}
-                        />
-                    }
-                    // Selecting for bulk actions is a table thing. Cards keep to one connection at a time.
-                    enableRowSelection={canManage && view === "table"}
-                    // Load-bearing here: this list is re-fetched by a poll every
-                    // 10 seconds, and index-keyed selection would jump each time.
-                    getRowId={(config) => config.id}
-                    bulkActions={bulkActions}
-                    onBulkActionComplete={afterChange}
-                    columnLayout={layout}
-                    onRowClick={openDetails}
-                    view={view}
-                    renderCard={(row) => <ConnectionCard row={row} onOpen={openDetails} />}
-                    renderRowMenu={(config, bulk) => (
-                        <ConnectionContextMenu config={config} bulk={bulk} {...rowHandlers(config)} />
-                    )}
-                    renderSplit={(rows) => (
-                        <ConnectionSplitView
-                            configs={rows.map((row) => row.original)}
-                            withHealth={type !== "notification"}
-                            selectedId={splitId}
-                            onSelect={setSplitId}
-                            renderPanel={(config) => (
-                                <ConnectionDetailsContent key={config.id} variant="inline" config={config} {...detailProps(config)} />
-                            )}
-                            renderMenu={(config) => <ConnectionContextMenu config={config} bulk={null} {...rowHandlers(config)} />}
-                        />
-                    )}
-                />
+                <>
+                    {configs.length > 0 && <ConnectionStrip kind={kind} configs={configs} />}
+                    <DataTable
+                        variant="card"
+                        joined
+                        columns={columns}
+                        data={visibleConfigs}
+                        searchKey="name"
+                        searchPlaceholder={`Search ${SEARCH_NOUNS[kind]}`}
+                        onRefresh={fetchConfigs}
+                        isLoading={isLoading}
+                        filterableColumns={typeFilterColumns}
+                        toolbarExtra={
+                            <ConnectionStatusFilter
+                                value={statusFilter}
+                                onChange={setStatusFilter}
+                                configs={configs}
+                                withHealth={type !== "notification"}
+                            />
+                        }
+                        // Selecting for bulk actions is a table thing. Cards keep to one connection at a time.
+                        enableRowSelection={canManage && view === "table"}
+                        // Load-bearing here: this list is re-fetched by a poll every
+                        // 10 seconds, and index-keyed selection would jump each time.
+                        getRowId={(config) => config.id}
+                        bulkActions={bulkActions}
+                        onBulkActionComplete={afterChange}
+                        columnLayout={layout}
+                        onRowClick={openDetails}
+                        view={view}
+                        renderCard={(row) => <ConnectionCard row={row} onOpen={openDetails} />}
+                        renderRowMenu={(config, bulk) => (
+                            <ConnectionContextMenu config={config} bulk={bulk} {...rowHandlers(config)} />
+                        )}
+                        renderSplit={(rows) => (
+                            <ConnectionSplitView
+                                configs={rows.map((row) => row.original)}
+                                withHealth={type !== "notification"}
+                                selectedId={splitId}
+                                onSelect={setSplitId}
+                                renderPanel={(config) => (
+                                    <ConnectionDetailsContent key={config.id} variant="inline" config={config} {...detailProps(config)} />
+                                )}
+                                renderMenu={(config) => <ConnectionContextMenu config={config} bulk={null} {...rowHandlers(config)} />}
+                            />
+                        )}
+                    />
+                </>
             )}
 
             <ConnectionDetailsSheet

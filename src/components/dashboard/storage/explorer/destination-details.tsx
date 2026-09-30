@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, ArrowUpRight, Pencil, RefreshCw, X } from "lucide-react";
+import { Archive, ArrowRight, ArrowUpRight, Clock, Layers, List, Pencil, RefreshCw, TrendingUp, X } from "lucide-react";
 import { kindNames } from "@/components/adapter/connection-columns";
 import { IssueBanner } from "@/components/adapter/connection-details-sections";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
@@ -101,6 +101,7 @@ export function DestinationDetails({ destination, runs, jobs, destinations, canD
                 cells={[
                     {
                         label: "Stored",
+                        icon: Layers,
                         value: size,
                         unit,
                         extra: share !== null ? `${Math.round(share * 100)} % of ${formatBytes(destination.alerts.storageLimit.bytes)}` : "no limit set",
@@ -108,17 +109,20 @@ export function DestinationDetails({ destination, runs, jobs, destinations, canD
                     },
                     {
                         label: "Last 7 days",
+                        icon: TrendingUp,
                         value: destination.growth === null ? "-" : destination.growth === 0 ? "No change" : signedBytes(destination.growth),
                         extra: destination.growth === null ? "not measured a week ago" : "grown by",
                     },
-                    { label: "Backups", value: destination.count.toLocaleString(), extra: `of ${count(entries.length, "job")}` },
+                    { label: "Backups", icon: Archive, value: destination.count.toLocaleString(), extra: `of ${count(entries.length, "job")}` },
                     {
                         label: "Newest",
+                        icon: Clock,
                         value: newest?.newest ? <RelativeTime date={newest.newest} /> : "-",
                         extra: newest ? newest.job.name : undefined,
                     },
                     {
                         label: "List",
+                        icon: List,
                         value: behind ? "Old" : destination.listedAt ? <RelativeTime date={destination.listedAt} /> : "-",
                         tone: behind ? "warning" : undefined,
                         extra: destination.listError ? "the last listing failed" : "compared with the storage",

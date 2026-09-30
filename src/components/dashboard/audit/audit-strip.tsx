@@ -1,5 +1,6 @@
 "use client";
 
+import { LogIn, Pencil, ScrollText, ShieldAlert, ShieldX } from "lucide-react";
 import { formatDistanceToNowStrict } from "date-fns";
 import { ExplorerStrip } from "@/components/dashboard/storage/explorer/explorer-strip";
 import { listWords } from "@/lib/auth/access-summary";
@@ -22,11 +23,13 @@ export function AuditStrip({ stats }: { stats: AuditStats | null }) {
             cells={[
                 {
                     label: "Entries",
+                    icon: ScrollText,
                     value: stats ? stats.entries.toLocaleString() : "-",
                     extra: stats ? `in the last ${stats.days} days, kept ${stats.keptDays} days` : " ",
                 },
                 {
                     label: "Sign-ins",
+                    icon: LogIn,
                     value: stats ? stats.signIns.count.toLocaleString() : "-",
                     extra: stats
                         ? `by ${many(stats.signIns.people, "person", "people")}${stats.signIns.newPlaces > 0 ? `, ${stats.signIns.newPlaces} from a new place` : ""}`
@@ -34,17 +37,20 @@ export function AuditStrip({ stats }: { stats: AuditStats | null }) {
                 },
                 {
                     label: "Changes",
+                    icon: Pencil,
                     value: stats ? stats.changes.count.toLocaleString() : "-",
                     extra: stats ? (stats.changes.areas.length > 0 ? `most to ${listWords(stats.changes.areas)}` : "nothing changed") : " ",
                 },
                 {
                     label: "Sensitive",
+                    icon: ShieldAlert,
                     value: stats ? stats.sensitive.count.toLocaleString() : "-",
                     tone: stats && stats.sensitive.count > 0 ? "warning" : undefined,
                     extra: stats ? (sensitive.length > 0 ? sensitive.join(", ") : "no secret revealed, nothing downloaded") : " ",
                 },
                 {
                     label: "Failed sign-ins",
+                    icon: ShieldX,
                     value: stats ? stats.failed.count.toLocaleString() : "-",
                     tone: stats && stats.failed.count > 0 ? "warning" : undefined,
                     extra: stats

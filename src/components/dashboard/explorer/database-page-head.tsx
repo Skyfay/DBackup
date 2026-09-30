@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, CalendarClock, Database } from "lucide-react";
+import { Archive, ArrowLeft, ArrowRight, CalendarClock, Database, Hash, Layers, RefreshCw, Server, Table2, Tag } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { kindNames } from "@/components/adapter/connection-columns";
 import { count } from "@/components/dashboard/storage/explorer/explorer-format";
@@ -141,12 +141,12 @@ export function DatabaseStrip({ database, server, jobs, coverage, jobsById }: {
     const total = database.logical.length + database.emptyLogical;
     const holds: StripCell[] = database.kind === "instance"
         ? [
-            { label: "Databases", value: total.toLocaleString(), extra: `${database.logical.length.toLocaleString()} hold keys` },
-            { label: "Keys", value: (database.keyCount ?? 0).toLocaleString(), extra: server.readAt ? <>counted <RelativeTime date={server.readAt} /></> : "not counted yet" },
+            { label: "Databases", icon: Database, value: total.toLocaleString(), extra: `${database.logical.length.toLocaleString()} hold keys` },
+            { label: "Keys", icon: Hash, value: (database.keyCount ?? 0).toLocaleString(), extra: server.readAt ? <>counted <RelativeTime date={server.readAt} /></> : "not counted yet" },
         ]
         : [
-            { label: "Tables", value: database.tableCount === null ? "-" : database.tableCount.toLocaleString(), extra: database.tableCount === null ? "not told by the server" : "as the server lists them" },
-            { label: "Size", value: size, unit, extra: database.sizeInBytes === null ? "not told by the server" : `on ${server.name}` },
+            { label: "Tables", icon: Table2, value: database.tableCount === null ? "-" : database.tableCount.toLocaleString(), extra: database.tableCount === null ? "not told by the server" : "as the server lists them" },
+            { label: "Size", icon: Layers, value: size, unit, extra: database.sizeInBytes === null ? "not told by the server" : `on ${server.name}` },
         ];
 
     return (
@@ -156,21 +156,24 @@ export function DatabaseStrip({ database, server, jobs, coverage, jobsById }: {
                 coverage
                     ? {
                         label: "Backed up by",
+                        icon: CalendarClock,
                         value: jobs.length === 0 ? "No job" : jobs.length.toLocaleString(),
                         unit: jobs.length > 0 ? (jobs.length === 1 ? "job" : "jobs") : undefined,
                         tone: jobs.length === 0 ? "warning" : undefined,
                         extra: jobs.length === 0 ? "nothing backs it up" : jobs.map((job) => job.name).join(", "),
                     }
-                    : { label: "Server", value: server.name, extra: engineOf(server) },
+                    : { label: "Server", icon: Server, value: server.name, extra: engineOf(server) },
                 coverage
                     ? {
                         label: "Last backup",
+                        icon: Archive,
                         value: last ? <RelativeTime date={last.at} /> : "-",
                         extra: last ? `${jobsById.get(last.jobId)?.name ?? "A deleted job"}${last.size !== null ? `, ${formatBytes(last.size)}` : ""}` : jobs.length > 0 ? "no run yet" : "never",
                     }
-                    : { label: "Read", value: server.readAt ? <RelativeTime date={server.readAt} /> : "-", extra: "from the server" },
+                    : { label: "Read", icon: RefreshCw, value: server.readAt ? <RelativeTime date={server.readAt} /> : "-", extra: "from the server" },
                 {
                     label: "Version",
+                    icon: Tag,
                     value: server.version ?? "-",
                     extra: server.previousVersion && server.versionSince
                         ? <>{server.previousVersion} before, since <DateDisplay date={server.versionSince} format="P" /></>

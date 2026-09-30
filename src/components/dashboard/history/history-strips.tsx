@@ -1,5 +1,6 @@
 "use client";
 
+import { CircleCheck, CircleX, LoaderCircle, MessageSquare, ScrollText, Send, TriangleAlert, Zap } from "lucide-react";
 import { ExplorerStrip } from "@/components/dashboard/storage/explorer/explorer-strip";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
 import type { NotificationStats } from "@/services/notifications/notification-log-service";
@@ -15,21 +16,23 @@ export function RunsStrip({ stats }: { stats: RunStats | null }) {
     return (
         <ExplorerStrip joined
             cells={[
-                { label: "Runs", value: stats ? stats.total.toLocaleString() : "-", extra: "in the last 30 days" },
-                { label: "Succeeded", value: share !== null ? share.toLocaleString() : "-", unit: share !== null ? "%" : undefined, extra: stats ? `${stats.succeeded.toLocaleString()} of ${stats.total.toLocaleString()}` : " " },
+                { label: "Runs", icon: ScrollText, value: stats ? stats.total.toLocaleString() : "-", extra: "in the last 30 days" },
+                { label: "Succeeded", icon: CircleCheck, value: share !== null ? share.toLocaleString() : "-", unit: share !== null ? "%" : undefined, tone: share === 100 ? "success" : undefined, extra: stats ? `${stats.succeeded.toLocaleString()} of ${stats.total.toLocaleString()}` : " " },
                 {
                     label: "Failed",
+                    icon: CircleX,
                     value: stats ? stats.failed.toLocaleString() : "-",
                     tone: stats && stats.failed > 0 ? "destructive" : undefined,
                     extra: stats?.lastFailed ? <>the last <RelativeTime date={stats.lastFailed.at} />, {stats.lastFailed.name}</> : "none in 30 days",
                 },
                 {
                     label: "Partial",
+                    icon: TriangleAlert,
                     value: stats ? stats.partial.toLocaleString() : "-",
                     tone: stats && stats.partial > 0 ? "warning" : undefined,
                     extra: stats?.lastPartial ? `a copy is missing, the last ${stats.lastPartial.name}` : "every copy stored",
                 },
-                { label: "Running", value: live.toLocaleString(), extra: liveText },
+                { label: "Running", icon: LoaderCircle, value: live.toLocaleString(), extra: liveText },
             ]}
         />
     );
@@ -40,15 +43,16 @@ export function NotificationsStrip({ stats }: { stats: NotificationStats | null 
     return (
         <ExplorerStrip joined
             cells={[
-                { label: "Sent", value: stats ? stats.sent.toLocaleString() : "-", extra: "in the last 30 days" },
+                { label: "Sent", icon: Send, value: stats ? stats.sent.toLocaleString() : "-", extra: "in the last 30 days" },
                 {
                     label: "Failed",
+                    icon: CircleX,
                     value: stats ? stats.failed.toLocaleString() : "-",
                     tone: stats && stats.failed > 0 ? "destructive" : undefined,
                     extra: stats?.lastFailed ? <>the last to {stats.lastFailed.channelName}, <RelativeTime date={stats.lastFailed.at} /></> : "every message went out",
                 },
-                { label: "Channels", value: stats ? stats.channels.length.toLocaleString() : "-", extra: stats && stats.channels.length > 0 ? stats.channels.join(", ") : "none sent in 30 days" },
-                { label: "Events", value: stats ? stats.events.toLocaleString() : "-", extra: "kinds of message sent" },
+                { label: "Channels", icon: MessageSquare, value: stats ? stats.channels.length.toLocaleString() : "-", extra: stats && stats.channels.length > 0 ? stats.channels.join(", ") : "none sent in 30 days" },
+                { label: "Events", icon: Zap, value: stats ? stats.events.toLocaleString() : "-", extra: "kinds of message sent" },
             ]}
         />
     );

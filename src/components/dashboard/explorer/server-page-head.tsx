@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, ArrowUpRight, Server } from "lucide-react";
+import { Activity, Archive, ArrowLeft, ArrowRight, ArrowUpRight, Database, Hash, Layers, Server, Tag } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { kindNames } from "@/components/adapter/connection-columns";
 import { count } from "@/components/dashboard/storage/explorer/explorer-format";
@@ -135,31 +135,34 @@ export function ServerStrip({ server, details, databases, coverage }: {
     const [value, unit] = sized.length > 0 ? formatBytes(size, 1).split(" ") : ["-", undefined];
     const covered = databases.filter((database) => database.jobIds.length > 0).length;
     const holds: StripCell = instance
-        ? { label: "Keys", value: compactCount(instance.keyCount ?? 0), extra: `in ${instance.logical.length} of ${instance.logical.length + instance.emptyLogical} databases` }
-        : { label: "Databases", value: databases.length.toLocaleString(), extra: coverage ? `${covered.toLocaleString()} in a job` : "as the server lists them" };
+        ? { label: "Keys", icon: Hash, value: compactCount(instance.keyCount ?? 0), extra: `in ${instance.logical.length} of ${instance.logical.length + instance.emptyLogical} databases` }
+        : { label: "Databases", icon: Database, value: databases.length.toLocaleString(), extra: coverage ? `${covered.toLocaleString()} in a job` : "as the server lists them" };
 
     return (
         <ExplorerStrip
             cells={[
                 {
                     label: "Version",
+                    icon: Tag,
                     value: server.version ?? "-",
                     extra: server.versionSince
                         ? <>since <DateDisplay date={server.versionSince} format="P" />{server.previousVersion ? `, ${server.previousVersion} before` : ""}</>
                         : "no change seen",
                 },
                 holds,
-                { label: "Stored", value, unit, extra: sized.length === 0 ? "not told to this login" : `in ${count(sized.length, "database")}` },
+                { label: "Stored", icon: Layers, value, unit, extra: sized.length === 0 ? "not told to this login" : `in ${count(sized.length, "database")}` },
                 details?.keptBackups != null
                     ? {
                         label: "Backups",
+                        icon: Archive,
                         value: details.keptBackups.toLocaleString(),
                         unit: "kept",
                         extra: details.lastBackupAt ? <>the last <RelativeTime date={details.lastBackupAt} /></> : "no job backs it up",
                     }
-                    : { label: "Backups", value: "-", extra: details ? "needs the permission to see backups" : " " },
+                    : { label: "Backups", icon: Archive, value: "-", extra: details ? "needs the permission to see backups" : " " },
                 {
                     label: "Online",
+                    icon: Activity,
                     value: details?.uptime != null ? details.uptime.toLocaleString() : "-",
                     unit: details?.uptime != null ? "%" : undefined,
                     tone: details?.uptime != null && details.uptime < 99 ? "warning" : undefined,

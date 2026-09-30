@@ -65,7 +65,7 @@ Every other page still has the old look. Do not copy patterns from it, copy them
 - Numbers use the Geist sans font with `tabular-nums`. `font-mono` is for code, hashes and log output, never for values or labels.
 - A headline value is `text-2xl font-semibold tracking-tight tabular-nums md:text-3xl`, with the unit split off in `text-sm text-muted-foreground` via `formatBytes(x, 1).split(" ")`. See `kpi-cards.tsx`.
 - A change always carries its sign, `+` or `-`. A size change stays `text-muted-foreground`. Only a change that is good or bad in itself, like the success rate, gets `text-success` or `text-destructive`.
-- Secondary counts go into a strip: `grid gap-px overflow-hidden rounded-xl border bg-border` with `bg-card` cells, so the 1px gaps draw the dividers. See `stats-strip.tsx`.
+- The numbers of a list or a record go into `ExplorerStrip` (`storage/explorer/explorer-strip.tsx`): a tile per number with the icon of what it counts, the number with its unit and the label, and what it means in a sentence (`extra`) on hover from md up and under the label on a phone. In the card of a list (`joined`) the tiles sit a shade above the card without a border (`bg-foreground/4`), on the page they are cards. The icon tile takes the tone of a number that needs a look, red or amber, and green only for a share with nothing failed. Every list with tabs has one, Jobs and Connections included, whose numbers come from the list itself (`jobs-strip.tsx`, `connection-strip.tsx`).
 - Relative times use `RelativeTime` from `widgets/relative-time.tsx`, absolute ones `DateDisplay`.
 - UI text follows the doc typography: no em or en dashes. Short facts are joined with a middle dot, like "Storage history · last scanned 5 minutes ago".
 

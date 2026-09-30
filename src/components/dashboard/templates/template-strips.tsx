@@ -1,5 +1,6 @@
 "use client";
 
+import { Asterisk, CalendarClock, CircleDashed, Clock, Copy, FileText, Folder, HardDrive, Infinity as InfinityIcon, MessageSquare, Star, Timer, TrendingUp } from "lucide-react";
 import { useMemo } from "react";
 import { ExplorerStrip } from "@/components/dashboard/storage/explorer/explorer-strip";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
@@ -15,6 +16,7 @@ function unusedCell<T extends { name: string }>(rows: T[] | undefined, inUse: (r
     const unused = rows?.filter((row) => !inUse(row)) ?? [];
     return {
         label: "Unused",
+        icon: CircleDashed,
         value: rows ? unused.length.toLocaleString() : "-",
         extra: unused.length > 0 ? listed(unused.map((row) => row.name)) : `every ${noun} is in use`,
     };
@@ -30,19 +32,21 @@ export function RetentionStrip({ model }: { model: Model }) {
     return (
         <ExplorerStrip joined
             cells={[
-                { label: "Policies", value: rows ? rows.length.toLocaleString() : "-", extra: rows ? `${builtIn} built in, ${rows.length - builtIn} of yours` : " " },
+                { label: "Policies", icon: Timer, value: rows ? rows.length.toLocaleString() : "-", extra: rows ? `${builtIn} built in, ${rows.length - builtIn} of yours` : " " },
                 {
                     label: "Default",
+                    icon: Star,
                     value: rows ? (fallback?.name ?? "None") : "-",
                     tone: rows && !fallback && (totals?.followDefault ?? 0) > 0 ? "warning" : undefined,
                     extra: !totals ? " " : fallback ? `${count(totals.followDefault, "destination")} ${totals.followDefault === 1 ? "follows" : "follow"} it` : "destinations without a policy keep every backup",
                 },
                 {
                     label: "Destinations",
+                    icon: HardDrive,
                     value: totals ? totals.destinations.toLocaleString() : "-",
                     extra: totals ? [`${totals.picked} picked a policy`, `${totals.followDefault} follow the default`, ...(totals.own > 0 ? [`${totals.own} their own`] : [])].join(", ") : " ",
                 },
-                { label: "Keep everything", value: rows ? keepAll.toLocaleString() : "-", extra: keepAll > 0 ? "destinations never remove a backup" : "every destination removes old backups" },
+                { label: "Keep everything", icon: InfinityIcon, value: rows ? keepAll.toLocaleString() : "-", extra: keepAll > 0 ? "destinations never remove a backup" : "every destination removes old backups" },
                 unusedCell(rows, (row) => row.uses.length + row.prefills.length > 0, "policy"),
             ]}
         />
@@ -58,15 +62,17 @@ export function NamingStrip({ model }: { model: Model }) {
     return (
         <ExplorerStrip joined
             cells={[
-                { label: "Templates", value: rows ? rows.length.toLocaleString() : "-", extra: rows ? `${rows.filter((row) => row.isSystem).length} built in` : " " },
+                { label: "Templates", icon: FileText, value: rows ? rows.length.toLocaleString() : "-", extra: rows ? `${rows.filter((row) => row.isSystem).length} built in` : " " },
                 {
                     label: "Default",
+                    icon: Star,
                     value: rows ? (fallback?.name ?? "None") : "-",
                     extra: totals ? `${count(totals.followDefault, "job")} without ${totals.followDefault === 1 ? "its" : "their"} own ${totals.followDefault === 1 ? "follows" : "follow"} it` : " ",
                 },
-                { label: "Jobs", value: totals ? totals.jobs.toLocaleString() : "-", extra: totals ? `${totals.picked} picked a template, ${totals.followDefault} follow the default` : " " },
+                { label: "Jobs", icon: CalendarClock, value: totals ? totals.jobs.toLocaleString() : "-", extra: totals ? `${totals.picked} picked a template, ${totals.followDefault} follow the default` : " " },
                 {
                     label: "Names repeat",
+                    icon: Copy,
                     value: model ? clashing.length.toLocaleString() : "-",
                     tone: clashing.length > 0 ? "warning" : undefined,
                     extra: clashing.length > 0 ? `${listed(clashing.map((job) => job.name))}, runs replace each other` : "every run gets a name of its own",
@@ -95,11 +101,12 @@ export function ScheduleStrip({ model }: { model: Model }) {
     return (
         <ExplorerStrip joined
             cells={[
-                { label: "Presets", value: rows ? rows.length.toLocaleString() : "-", extra: "schedules jobs can follow" },
-                { label: "Jobs", value: model ? `${following} of ${jobs}` : "-", extra: model ? `follow a preset, ${jobs - following} their own schedule` : " " },
-                { label: "Next start", value: next ? <RelativeTime date={next.at} /> : "-", extra: next ? next.row.name : "no job follows a preset" },
+                { label: "Presets", icon: CalendarClock, value: rows ? rows.length.toLocaleString() : "-", extra: "schedules jobs can follow" },
+                { label: "Jobs", icon: CalendarClock, value: model ? `${following} of ${jobs}` : "-", extra: model ? `follow a preset, ${jobs - following} their own schedule` : " " },
+                { label: "Next start", icon: Clock, value: next ? <RelativeTime date={next.at} /> : "-", extra: next ? next.row.name : "no job follows a preset" },
                 {
                     label: "Most jobs",
+                    icon: TrendingUp,
                     value: busiest && busiest.jobIds.length > 0 ? busiest.jobIds.length.toLocaleString() : "-",
                     extra: busiest && busiest.jobIds.length > 0 ? `start with ${busiest.name}` : "no job follows a preset",
                 },
@@ -118,10 +125,10 @@ export function NotificationStrip({ model }: { model: Model }) {
     return (
         <ExplorerStrip joined
             cells={[
-                { label: "Templates", value: rows ? rows.length.toLocaleString() : "-", extra: rows ? `over ${count(channels.size, "channel")}` : " " },
-                { label: "Default", value: rows ? (fallback?.name ?? "None") : "-", extra: fallback ? "new jobs start with it" : "new jobs start without one" },
-                { label: "Jobs", value: model ? `${hearing} of ${model.jobs.length}` : "-", extra: "hear about their runs through one" },
-                { label: "Channels", value: rows ? channels.size.toLocaleString() : "-", extra: channels.size > 0 ? listed([...channels.values()]) : "no template sends yet" },
+                { label: "Templates", icon: FileText, value: rows ? rows.length.toLocaleString() : "-", extra: rows ? `over ${count(channels.size, "channel")}` : " " },
+                { label: "Default", icon: Star, value: rows ? (fallback?.name ?? "None") : "-", extra: fallback ? "new jobs start with it" : "new jobs start without one" },
+                { label: "Jobs", icon: CalendarClock, value: model ? `${hearing} of ${model.jobs.length}` : "-", extra: "hear about their runs through one" },
+                { label: "Channels", icon: MessageSquare, value: rows ? channels.size.toLocaleString() : "-", extra: channels.size > 0 ? listed([...channels.values()]) : "no template sends yet" },
                 unusedCell(rows, (row) => row.jobIds.length > 0, "template"),
             ]}
         />
@@ -137,14 +144,15 @@ export function ExcludeStrip({ model }: { model: Model }) {
     return (
         <ExplorerStrip joined
             cells={[
-                { label: "Presets", value: rows ? rows.length.toLocaleString() : "-", extra: rows ? `${rows.filter((row) => row.isSystem).length} built in` : " " },
+                { label: "Presets", icon: CalendarClock, value: rows ? rows.length.toLocaleString() : "-", extra: rows ? `${rows.filter((row) => row.isSystem).length} built in` : " " },
                 {
                     label: "Default",
+                    icon: Star,
                     value: rows ? (defaults.length === 1 ? defaults[0].name : defaults.length.toLocaleString()) : "-",
                     extra: defaults.length === 0 ? "new folders start without one" : defaults.length === 1 ? "new folders start with it" : `new folders start with ${listed(defaults.map((row) => row.name))}`,
                 },
-                { label: "Folders", value: model ? `${model.folders.withPreset} of ${model.folders.total}` : "-", extra: "skip what a preset names" },
-                { label: "Patterns", value: rows ? patterns.size.toLocaleString() : "-", extra: `from ${count(groups.size, "group")} of DBackup and their own` },
+                { label: "Folders", icon: Folder, value: model ? `${model.folders.withPreset} of ${model.folders.total}` : "-", extra: "skip what a preset names" },
+                { label: "Patterns", icon: Asterisk, value: rows ? patterns.size.toLocaleString() : "-", extra: `from ${count(groups.size, "group")} of DBackup and their own` },
                 unusedCell(rows, (row) => row.folders.length > 0, "preset"),
             ]}
         />

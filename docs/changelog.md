@@ -57,6 +57,7 @@ All notable changes to DBackup are documented here.
 - **settings**: Deleted encryption keys, saved logins, connections, jobs and users wait under **Settings → Recently deleted** for 30 days, where someone who may change the settings restores them with everything that belonged to them or deletes them for good. Only they can skip it with **Delete it permanently now**, and the message after a delete offers Undo.
 - **settings**: The new system task **Optimize the database** gives the unused space of the database back to the disk on the first of every month, once at least a fifth of it is unused. Runs that would start meanwhile wait until it is done.
 - **ui**: The tabs of every page show an icon, and a dot in amber or red while their list holds something to fix, like a connection that does not answer or a job whose last run failed. What it is shows on hover.
+- **ui**: The numbers above every list are tiles with an icon, and what each means shows on hover. Jobs and Connections have them too, with how the latest runs went, what answers and how fast.
 
 
 ### 🐛 Bug Fixes

@@ -17,6 +17,7 @@ import { JobForm } from "@/components/dashboard/jobs/job-form";
 import type { AdapterOption, EncryptionOption } from "@/components/dashboard/jobs/job-form-schema";
 import { JobContextMenu, JobRowActions } from "@/components/dashboard/jobs/job-menus";
 import { jobsAttention, matchesJobFilter, type JobFilter } from "@/components/dashboard/jobs/job-status";
+import { JobsStrip } from "@/components/dashboard/jobs/jobs-strip";
 import { JobStatusFilter } from "@/components/dashboard/jobs/job-status-filter";
 import { JOBS_PAGE_ID, JOBS_TABLE_ID } from "@/components/dashboard/jobs/job-tables";
 import { useJobList } from "@/components/dashboard/jobs/use-job-list";
@@ -230,30 +231,33 @@ export function JobsClient({
             ) : jobs.length === 0 ? (
                 <NoJobs onCreate={canManage ? () => openForm(null) : undefined} />
             ) : (
-                <DataTable
-                    variant="card"
-                    joined
-                    columns={columns}
-                    data={visibleJobs}
-                    searchKey="name"
-                    searchPlaceholder="Search jobs"
-                    toolbarExtra={<JobStatusFilter value={filter} onChange={setFilter} jobs={jobs} />}
-                    onRefresh={refresh}
-                    isLoading={isLoading}
-                    // Selecting for bulk actions is a table thing. Cards keep to one job at a time.
-                    enableRowSelection={canManage && shownView === "table"}
-                    // Load-bearing here: the list is fetched again every few seconds while a job runs.
-                    getRowId={(job) => job.id}
-                    bulkActions={bulkActions}
-                    onBulkActionComplete={reload}
-                    columnLayout={layout}
-                    onRowClick={openDetails}
-                    view={shownView}
-                    renderCard={(row) => <JobCard job={row.original} onOpen={openDetails} actions={renderActions(row.original)} />}
-                    // A card shows the way of a backup from left to right, which needs more room than three abreast leave.
-                    cardGridClassName="lg:grid-cols-2"
-                    renderRowMenu={(job, bulk) => <JobContextMenu job={job} bulk={bulk} {...handlers(job)} />}
-                />
+                <>
+                    <JobsStrip jobs={jobs} />
+                    <DataTable
+                        variant="card"
+                        joined
+                        columns={columns}
+                        data={visibleJobs}
+                        searchKey="name"
+                        searchPlaceholder="Search jobs"
+                        toolbarExtra={<JobStatusFilter value={filter} onChange={setFilter} jobs={jobs} />}
+                        onRefresh={refresh}
+                        isLoading={isLoading}
+                        // Selecting for bulk actions is a table thing. Cards keep to one job at a time.
+                        enableRowSelection={canManage && shownView === "table"}
+                        // Load-bearing here: the list is fetched again every few seconds while a job runs.
+                        getRowId={(job) => job.id}
+                        bulkActions={bulkActions}
+                        onBulkActionComplete={reload}
+                        columnLayout={layout}
+                        onRowClick={openDetails}
+                        view={shownView}
+                        renderCard={(row) => <JobCard job={row.original} onOpen={openDetails} actions={renderActions(row.original)} />}
+                        // A card shows the way of a backup from left to right, which needs more room than three abreast leave.
+                        cardGridClassName="lg:grid-cols-2"
+                        renderRowMenu={(job, bulk) => <JobContextMenu job={job} bulk={bulk} {...handlers(job)} />}
+                    />
+                </>
             )}
 
             <JobDetailsSheet

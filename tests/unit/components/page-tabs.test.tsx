@@ -5,15 +5,15 @@ import { KeyRound, User } from "lucide-react";
 import { PageTabs } from "@/components/ui/page-tabs";
 import { Tabs } from "@/components/ui/tabs";
 
-function renderTabs() {
+function renderTabs(value = "users") {
     return render(
-        <Tabs value="users">
+        <Tabs value={value}>
             <PageTabs
                 tabs={[
                     { value: "users", label: "Users", icon: User },
                     { value: "apikeys", label: "API keys", icon: KeyRound, attention: { tone: "warning", note: "CI deploy runs out within two weeks" } },
                 ]}
-                value="users"
+                value={value}
                 onValueChange={() => undefined}
                 label="Users and groups list"
             />
@@ -38,5 +38,18 @@ describe("the tabs of a page", () => {
 
         await userEvent.setup().hover(keys);
         expect(await screen.findByRole("tooltip")).toHaveTextContent("CI deploy runs out within two weeks");
+    });
+
+    it("keep the pill of the open tab when its dot has a tooltip", async () => {
+        renderTabs("apikeys");
+
+        const keys = screen.getByRole("tab", { name: /^API keys/ });
+        expect(keys).toHaveAttribute("aria-selected", "true");
+        expect(keys).toHaveAttribute("data-state", "active");
+        expect(screen.getByRole("tab", { name: "Users" })).toHaveAttribute("data-state", "inactive");
+
+        await userEvent.setup().hover(keys);
+        await screen.findByRole("tooltip");
+        expect(keys).toHaveAttribute("data-state", "active");
     });
 });

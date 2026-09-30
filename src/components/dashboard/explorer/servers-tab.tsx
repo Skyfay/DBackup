@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { SortingState } from "@tanstack/react-table";
-import { ArrowRight, ArrowUpRight, Server } from "lucide-react";
+import { Activity, ArrowRight, ArrowUpRight, Boxes, CircleArrowUp, Database, Server, TriangleAlert } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { kindNames } from "@/components/adapter/connection-columns";
 import type { BackupActionGroup } from "@/components/dashboard/storage/explorer/backup-actions";
@@ -91,19 +91,21 @@ export function ServersTab({ overview, canOpenBackups, cards }: ServersTabProps)
             <ExplorerStrip
                 joined
                 cells={[
-                    { label: "Servers", value: summary.servers.toLocaleString(), extra: `on ${count(summary.engines, "engine")}` },
-                    { label: "Databases", value: summary.databases.toLocaleString(), extra: coverage ? `${summary.covered.toLocaleString()} in a job` : "as the servers list them" },
-                    { label: "New versions", value: loaded.data ? loaded.data.newVersions.toLocaleString() : "-", extra: "in the last 30 days" },
+                    { label: "Servers", icon: Server, value: summary.servers.toLocaleString(), extra: `on ${count(summary.engines, "engine")}` },
+                    { label: "Databases", icon: Database, value: summary.databases.toLocaleString(), extra: coverage ? `${summary.covered.toLocaleString()} in a job` : "as the servers list them" },
+                    { label: "New versions", icon: CircleArrowUp, value: loaded.data ? loaded.data.newVersions.toLocaleString() : "-", extra: "in the last 30 days" },
                     backups
                         ? {
                             label: "Behind",
+                            icon: TriangleAlert,
                             value: summary.behind.length.toLocaleString(),
                             tone: summary.behind.length > 0 ? "warning" : undefined,
                             extra: behind ? `${behind.server.name} takes not every backup of its engine` : "every server takes the backups of its engine",
                         }
-                        : { label: "Engines", value: summary.engines.toLocaleString(), extra: "kinds of database" },
+                        : { label: "Engines", icon: Boxes, value: summary.engines.toLocaleString(), extra: "kinds of database" },
                     {
                         label: "Online",
+                        icon: Activity,
                         value: summary.online.toLocaleString(),
                         unit: `of ${summary.servers.toLocaleString()}`,
                         tone: summary.online < summary.servers ? "warning" : undefined,

@@ -1,5 +1,6 @@
 "use client";
 
+import { LogIn, MonitorSmartphone, ShieldCheck, UserX, Users } from "lucide-react";
 import { ExplorerStrip } from "@/components/dashboard/storage/explorer/explorer-strip";
 import { listWords } from "@/lib/auth/access-summary";
 import type { UsersModel } from "@/services/user/users-types";
@@ -22,11 +23,13 @@ export function UsersStrip({ model }: { model: UsersModel | null }) {
             cells={[
                 {
                     label: "Users",
+                    icon: Users,
                     value: stats ? stats.users.toLocaleString() : "-",
                     extra: stats ? `${stats.inGroup.toLocaleString()} in a group` : " ",
                 },
                 {
                     label: "Without a group",
+                    icon: UserX,
                     value: stats ? withoutGroup.length.toLocaleString() : "-",
                     tone: withoutGroup.length > 0 ? "warning" : undefined,
                     extra: withoutGroup.length > 0
@@ -35,6 +38,7 @@ export function UsersStrip({ model }: { model: UsersModel | null }) {
                 },
                 {
                     label: "Second factor",
+                    icon: ShieldCheck,
                     value: stats ? stats.protected.toLocaleString() : "-",
                     unit: stats ? `of ${stats.users.toLocaleString()}` : undefined,
                     extra: passwordOnly.length > 0
@@ -43,12 +47,14 @@ export function UsersStrip({ model }: { model: UsersModel | null }) {
                 },
                 {
                     label: "Signed in",
+                    icon: LogIn,
                     value: stats ? stats.signedIn.toLocaleString() : "-",
                     unit: "in 30 days",
                     extra: never.length > 0 ? `${listed(never)} never` : "everyone at least once",
                 },
                 {
                     label: "Sessions",
+                    icon: MonitorSmartphone,
                     value: stats ? stats.sessions.toLocaleString() : "-",
                     unit: "open",
                     extra: stats && stats.sessions > 0 ? `in ${stats.devices.toLocaleString()} ${plural(stats.devices, "browser", "browsers")}` : "no browser signed in",

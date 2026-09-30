@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRightToLine, Fingerprint, Lock, LogIn } from "lucide-react";
+import { ArrowRightToLine, Building2, Fingerprint, Link2, Lock, LogIn, RectangleEllipsis } from "lucide-react";
 import { ExplorerStrip } from "@/components/dashboard/storage/explorer/explorer-strip";
 import { listed } from "@/components/dashboard/users/user-strip";
 import { listWords } from "@/lib/auth/access-summary";
@@ -21,16 +21,19 @@ export function SignInStrip({ model }: { model: SsoProvidersModel | null }) {
             cells={[
                 {
                     label: "Providers",
+                    icon: Building2,
                     value: stats ? stats.providers.toLocaleString() : "-",
                     extra: stats ? (stats.providers === 0 ? "none yet" : `${stats.enabled} on${off}`) : " ",
                 },
                 {
                     label: "Linked people",
+                    icon: Link2,
                     value: stats ? stats.linked.toLocaleString() : "-",
                     extra: stats ? (stats.linked === 0 ? "nobody yet" : linkedLine(stats.linkedBy)) : " ",
                 },
                 {
                     label: "Only through a provider",
+                    icon: Lock,
                     value: stats ? stats.onlyThrough.length.toLocaleString() : "-",
                     extra: stats
                         ? stats.onlyThrough.length === 0
@@ -40,11 +43,13 @@ export function SignInStrip({ model }: { model: SsoProvidersModel | null }) {
                 },
                 {
                     label: "Sign-ins through them",
+                    icon: LogIn,
                     value: stats ? stats.signIns.toLocaleString() : "-",
                     extra: "in the last 30 days",
                 },
                 {
                     label: "Password sign-in",
+                    icon: RectangleEllipsis,
                     value: model ? (model.passwordSignIn ? "On" : "Off") : "-",
                     extra: model ? (model.passwordSignIn ? "DISABLE_EMAIL_LOGIN is not set" : "DISABLE_EMAIL_LOGIN is set") : " ",
                 },

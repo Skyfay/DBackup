@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import type { ColumnFiltersState, OnChangeFn, SortingState } from "@tanstack/react-table";
-import { Lock, LockOpen, Trash2 } from "lucide-react";
+import { Archive, Clock, Copy, Layers, Lock, LockOpen, ShieldCheck, Trash2 } from "lucide-react";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
 import { DataTable, type BulkAction, type DataTableFilterableColumn } from "@/components/ui/data-table";
 import type { ColumnLayoutOption } from "@/components/ui/use-column-layout";
@@ -215,22 +215,26 @@ export function BackupsList({
                 cells={[
                     {
                         label: "Backups",
+                        icon: Archive,
                         value: summary.runs.toLocaleString(),
                         extra: `from ${count(summary.jobs, "job")}${summary.deletedJobs > 0 ? ` and ${count(summary.deletedJobs, "deleted job")}` : ""}`,
                     },
                     {
                         label: "Stored",
+                        icon: Layers,
                         value: storedValue,
                         unit: storedUnit,
                         extra: at.length === 1 ? `at ${scopeName}` : `at ${count(summary.destinations, "destination")}`,
                     },
                     {
                         label: "Newest",
+                        icon: Clock,
                         value: summary.newest ? <RelativeTime date={summary.newest.createdAt} /> : "-",
                         extra: newestJob ? `${newestJob.name} · ${typeLabel(summary.newest!.file)}` : undefined,
                     },
                     {
                         label: "Copies",
+                        icon: Copy,
                         value: (summary.copies - summary.missing).toLocaleString(),
                         unit: `of ${summary.copies.toLocaleString()}`,
                         tone: summary.missing > 0 ? "warning" : undefined,
@@ -238,6 +242,7 @@ export function BackupsList({
                     },
                     {
                         label: "Integrity",
+                        icon: ShieldCheck,
                         value: summary.failed > 0 ? summary.failed.toLocaleString() : summary.verified.toLocaleString(),
                         unit: summary.failed > 0 ? "failed" : `of ${summary.runs.toLocaleString()} verified`,
                         tone: summary.failed > 0 ? "destructive" : undefined,

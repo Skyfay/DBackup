@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { ColumnFiltersState, SortingState } from "@tanstack/react-table";
-import { ArrowRight, CalendarClock, Database } from "lucide-react";
+import { ArrowRight, CalendarClock, Database, Layers, RefreshCw, Server, ShieldCheck, ShieldOff, Table2 } from "lucide-react";
 import { toast } from "sonner";
 import { saveViewLayout } from "@/app/actions/auth/table-preferences";
 import { kindNames } from "@/components/adapter/connection-columns";
@@ -198,25 +198,27 @@ export function DatabaseExplorer({ initialView, ...access }: DatabaseExplorerPro
                         <ExplorerStrip
                             joined
                             cells={[
-                                { label: "Databases", value: summary.databases.toLocaleString(), extra: `on ${count(summary.servers, "server")}` },
+                                { label: "Databases", icon: Database, value: summary.databases.toLocaleString(), extra: `on ${count(summary.servers, "server")}` },
                                 {
                                     label: "Stored",
+                                    icon: Layers,
                                     value: storedValue,
                                     unit: storedUnit,
                                     extra: summary.unsized > 0 ? `${count(summary.unsized, "database")} without a size` : summary.biggest ? `${summary.biggest.name} is ${formatBytes(summary.biggest.sizeInBytes ?? 0)} of it` : undefined,
                                 },
-                                { label: "Tables", value: summary.tables.toLocaleString(), extra: keyStores.length > 0 ? `the keys of ${keyStores.join(" and ")} aside` : "as the servers list them" },
+                                { label: "Tables", icon: Table2, value: summary.tables.toLocaleString(), extra: keyStores.length > 0 ? `the keys of ${keyStores.join(" and ")} aside` : "as the servers list them" },
                                 coverage
-                                    ? { label: "Backed up", value: summary.backedUp.toLocaleString(), unit: `of ${summary.databases.toLocaleString()}`, extra: `by ${count(data.jobs.filter((job) => job.enabled).length, "job")}` }
-                                    : { label: "Servers", value: summary.servers.toLocaleString(), extra: "database connections" },
+                                    ? { label: "Backed up", icon: ShieldCheck, value: summary.backedUp.toLocaleString(), unit: `of ${summary.databases.toLocaleString()}`, extra: `by ${count(data.jobs.filter((job) => job.enabled).length, "job")}` }
+                                    : { label: "Servers", icon: Server, value: summary.servers.toLocaleString(), extra: "database connections" },
                                 coverage
                                     ? {
                                         label: "In no job",
+                                        icon: ShieldOff,
                                         value: summary.noJob.toLocaleString(),
                                         tone: summary.noJob > 0 ? "warning" : undefined,
                                         extra: summary.noJob > 0 ? `${formatBytes(summary.noJobSize)} no job backs up` : "every database is in a job",
                                     }
-                                    : { label: "Read", value: oldestRead ? <RelativeTime date={oldestRead} /> : "-", extra: "from the servers, the oldest list" },
+                                    : { label: "Read", icon: RefreshCw, value: oldestRead ? <RelativeTime date={oldestRead} /> : "-", extra: "from the servers, the oldest list" },
                             ]}
                         />
 

@@ -12,7 +12,7 @@ Go to **Settings → Data retention**. Each kind of record shows how many there 
 
 | Setting | What is removed | Default | Options |
 | :--- | :--- | :--- | :--- |
-| **Run logs** | The step log of finished backup, restore and system task runs. The run stays in History with its status, size and timestamps. | 90 days | 7 days to 2 years, Never |
+| **Run logs** | The step log of finished backup, restore and system task runs. The run stays in History with its status, size and timestamps. | 1 year | 7 days to 2 years, Never |
 | **Run history** | Finished runs, including their entry in History. | Never | 30 days to 5 years, Never |
 | **Audit log** | Records of user actions such as sign-ins and configuration changes. | 90 days | 30 days to 5 years |
 | **Notification history** | Notifications sent by DBackup, including their rendered content. | 90 days | 7 days to 5 years |

@@ -9,6 +9,8 @@ All notable changes to DBackup are documented here.
 
 > ⚠️ **Breaking:** The configuration backup is always encrypted now, since it holds every login. One that was on without an encryption key fails until a key is picked under **Settings → Configuration backup**.
 
+> ⚠️ **Breaking:** A configuration backup is a copy of the whole database now and restores only as a whole. The restore replaces the database, so what was added after the backup is gone and the history becomes the one of the backup, which is empty without **Include the history**. A single deleted key, login, connection, job or user comes back from **Settings → Recently deleted** instead, which keeps them for 30 days by default. Restoring in parts stays for the JSON files of older versions only and gets no more work, since keeping it in step with every table cost more than it was worth.
+
 ### ✨ Features
 
 - **connections**: The connection tables show each connection's status with its response time, how many jobs use it, its last backup and its health checks of the last 24 hours. Every user can switch columns on and off, drag them into order and pick a row height, and the layout is saved to their account.
@@ -230,6 +232,8 @@ All notable changes to DBackup are documented here.
 - **api**: `GET /api/settings/system-tasks` also returns the last run of each task with how long it took and what it did, whether it runs now and which setting it follows.
 - **notifications**: The system notification events have new names that say what happened, like **Someone signs in** or **A connection is offline**.
 - **config**: **Include the logins** is gone, since the configuration backup always holds them. Configuration files of older versions still restore, in parts from the Backups page or as a whole from a file.
+- **config**: The configuration backup includes the history by default. An instance that saved this setting before keeps its choice.
+- **settings**: Run logs are kept for a year by default instead of 90 days. An instance that saved its data retention before keeps its choice.
 
 
 ### 🗑️ Removed

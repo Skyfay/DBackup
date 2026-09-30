@@ -6,6 +6,10 @@ Back up DBackup itself for disaster recovery.
 
 The configuration backup is a copy of the whole database of DBackup, compressed and encrypted with a key of the Vault. After a lost server it brings everything back as it was, including whatever a later version of DBackup adds to its database.
 
+::: tip One deleted record
+A restore always replaces the whole database, including what was added since the backup. To bring back a single deleted key, login, connection, job or user, use [Recently deleted](/user-guide/admin/recently-deleted) instead.
+:::
+
 ## What's Included
 
 | Data | Included |
@@ -30,7 +34,7 @@ The configuration backup is a copy of the whole database of DBackup, compressed 
    - **Encryption key**: the file holds every login, so it is always encrypted
    - **Schedule**: when it runs, every day at 03:00 by default, picked like the schedule of a job
    - **Keeps**: how many files stay at the destination, 10 by default
-   - **Include the history**, off by default
+   - **Include the history**: runs, logs, the audit log and the storage history, on by default
 4. Click **Save changes** in the bar at the foot
 
 The system task **Configuration backup** follows this switch and this schedule, so both are set in one place. The top of the part shows when the configuration was last backed up and where to, or why it failed.
@@ -94,7 +98,7 @@ This works only while nobody has an account yet. For a file over 10 MB, create a
 
 ### Files of Older Versions
 
-Files named `config_backup_*.json.gz.enc` come from DBackup versions before the copy of the database. They still restore, in parts from the **Backups** page or as a whole from a file. Such a restore adds and overwrites and never deletes: a record with the same ID, or the same name, is overwritten and keeps its ID here, and everything that links to it follows.
+Files named `config_backup_*.json.gz.enc` come from DBackup versions before the copy of the database. They still restore, in parts from the **Backups** page or as a whole from a file. Restoring in parts exists for these files only and gets no new parts, since keeping it in step with every table cost more than it was worth. Such a restore adds and overwrites and never deletes: a record with the same ID, or the same name, is overwritten and keeps its ID here, and everything that links to it follows.
 
 These files hold no templates, no folders of file jobs and no second factors. A restore drops what links to them, says so afterwards, and does this:
 

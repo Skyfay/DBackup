@@ -32,7 +32,10 @@ vi.mock("@/lib/core/registry", () => ({
     registry: { get: () => ({ upload: mocks.upload, list: mocks.list, delete: mocks.delete }) },
 }));
 vi.mock("@/lib/adapters/config-resolver", () => ({ resolveAdapterConfig: vi.fn(async () => ({ bucket: "test" })) }));
-vi.mock("@/services/config/database-copy", () => ({ createConfigCopy: (...args: unknown[]) => mocks.copy(...args) }));
+vi.mock("@/services/config/database-copy", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@/services/config/database-copy")>()),
+    createConfigCopy: (...args: unknown[]) => mocks.copy(...args),
+}));
 vi.mock("@/lib/temp-dir", () => ({ getTempDir: () => "/tmp" }));
 vi.mock("zlib", () => ({ createGzip: () => new PassThrough() }));
 vi.mock("@/lib/crypto/stream", () => ({
@@ -117,7 +120,7 @@ describe("the configuration backup, a copy of the whole database", () => {
 
         const result = await runConfigBackup();
 
-        expect(mocks.copy).toHaveBeenCalledWith({ includeHistory: false });
+        expect(mocks.copy).toHaveBeenCalledWith({ includeHistory: true });
         const [, localFile, remoteFile] = mocks.upload.mock.calls[0];
         expect(remoteFile).toMatch(/^config-backups\/config_backup_.+\.db\.gz\.enc$/);
         expect(localFile).toMatch(/^\/tmp\/config_backup_.+\.db\.gz\.enc$/);
@@ -141,6 +144,14 @@ describe("the configuration backup, a copy of the whole database", () => {
         await runConfigBackup();
 
         expect(mocks.copy).toHaveBeenCalledWith({ includeHistory: true });
+    });
+
+    it("leaves the history out only once Include the history is switched off", async () => {
+        settings({ ...ON, "config.backup.includeStatistics": "false" });
+
+        await runConfigBackup();
+
+        expect(mocks.copy).toHaveBeenCalledWith({ includeHistory: false });
     });
 
     it("removes the copy also when the upload fails", async () => {

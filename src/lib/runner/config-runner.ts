@@ -14,7 +14,7 @@ import { logger } from "@/lib/logging/logger";
 import { wrapError, EncryptionError, ConfigurationError } from "@/lib/logging/errors";
 import { notify } from "@/services/notifications/system-notification-service";
 import { NOTIFICATION_EVENTS } from "@/lib/notifications";
-import { createConfigCopy } from "@/services/config/database-copy";
+import { createConfigCopy, includesHistory } from "@/services/config/database-copy";
 import { describeBackupFromMetadata } from "@/services/storage/backup-file-fields";
 import packageJson from "../../../package.json";
 
@@ -54,7 +54,7 @@ export async function runConfigBackup(trigger: ConfigBackupTrigger = { type: "Sc
     }
     const storageId = settings.get("config.backup.storageId");
     const profileId = settings.get("config.backup.profileId");
-    const includeHistory = settings.get("config.backup.includeStatistics") === "true";
+    const includeHistory = includesHistory(settings.get("config.backup.includeStatistics"));
     const retentionCount = settings.has("config.backup.retention") ? parseInt(settings.get("config.backup.retention") ?? "", 10) : 10;
 
     if (!storageId) {

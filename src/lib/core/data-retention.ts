@@ -40,7 +40,7 @@ export const DATA_RETENTION_SETTINGS: readonly DataRetentionSetting[] = [
         key: "execution.logRetentionDays",
         label: "Run logs",
         description: "The step logs of backups, restores and system tasks. The run stays in History.",
-        defaultDays: 90,
+        defaultDays: 365,
         choices: [7, 14, 30, 60, 90, 180, 365, 730, RETENTION_NEVER],
     },
     {

@@ -8,6 +8,7 @@ import { isValidCron } from "@/lib/core/cron";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
+import { includesHistory } from "@/services/config/database-copy";
 import { SYSTEM_TASKS } from "@/services/system/system-task-definitions";
 import { systemTaskService } from "@/services/system/system-task-service";
 
@@ -48,7 +49,7 @@ export async function getConfigBackupSettings(): Promise<ConfigBackupSettings> {
         storageId: stored.get(KEYS.storageId) ?? "",
         profileId: stored.get(KEYS.profileId) ?? "",
         schedule: schedule ?? "0 3 * * *",
-        includeStatistics: stored.get(KEYS.includeStatistics) === "true",
+        includeStatistics: includesHistory(stored.get(KEYS.includeStatistics)),
         retention: Number.isFinite(retention) && retention >= 1 ? retention : 10,
     };
 }

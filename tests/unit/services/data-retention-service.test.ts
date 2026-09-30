@@ -50,7 +50,7 @@ describe("Data retention settings", () => {
         const values = await getDataRetentionValues();
 
         expect(values).toEqual({
-            executionLogs: 90,
+            executionLogs: 365,
             executionHistory: 0,
             auditLog: 90,
             notificationHistory: 90,
@@ -73,7 +73,7 @@ describe("Data retention settings", () => {
 
         const values = await getDataRetentionValues();
 
-        expect(values).toMatchObject({ executionLogs: 90, auditLog: 90 });
+        expect(values).toMatchObject({ executionLogs: 365, auditLog: 90 });
     });
 
     it("saves the offered values of the save bar under the keys of their settings, in one transaction", async () => {

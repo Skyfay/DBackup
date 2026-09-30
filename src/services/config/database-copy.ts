@@ -21,6 +21,11 @@ export const DROPPED_TABLES = ["Session", "Verification", "StorageListCache", "D
 /** The history, which a copy holds only with Include the history. */
 export const HISTORY_TABLES = ["NotificationLog", "Execution", "AuditLog", "StorageSnapshot", "HealthCheckLog"];
 
+/** Include the history is on until someone switches it off, so only a stored `false` leaves it out. */
+export function includesHistory(stored: string | null | undefined): boolean {
+    return stored !== "false";
+}
+
 /** The keys of the DBackup a copy came from, and when and by which version it was made. */
 export interface CopyKeys {
     encryptionKey: string;

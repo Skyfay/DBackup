@@ -43,6 +43,7 @@ What DBackup does by itself, each on its own schedule in the time zone of Genera
 | **SuperAdmin permissions** | Every day at 00:00 | Yes | |
 | **Configuration backup** | Every day at 03:00 | No | **Back up the configuration** under Configuration backup |
 | **Integrity check** | Sundays at 04:00 | No | |
+| **Optimize the database** | The 1st of the month at 05:00 | Yes | |
 
 A task that follows a setting has one switch, the one of that setting. Switching the task off sets it off there too, and the other way round. Switching the stuck run watchdog on again brings back the timeout of 6 hours.
 

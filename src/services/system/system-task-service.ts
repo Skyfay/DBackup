@@ -4,6 +4,7 @@ import { isValidCron } from "@/lib/core/cron";
 import { healthCheckService } from "./healthcheck-service";
 import { logger } from "@/lib/logging/logger";
 import { ValidationError, getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { formatBytes } from "@/lib/utils";
 import { runDataRetention } from "./data-retention-service";
 import { isDatabaseMaintenanceActive } from "@/lib/server/database-maintenance";
 import { NOTIFICATION_EVENTS } from "@/lib/notifications/types";
@@ -270,6 +271,15 @@ export class SystemTaskService {
             }
             case SYSTEM_TASKS.WARMUP_STORAGE_CACHE:
                 return warmupStorageCache();
+            case SYSTEM_TASKS.OPTIMIZE_DATABASE: {
+                const { optimizeDatabase } = await import("@/services/system/database-optimize");
+                const result = await optimizeDatabase();
+                if (result.status === "skipped") return { summary: result.reclaimableBytes > 0 ? `Only ${formatBytes(result.reclaimableBytes, 1)} unused` : "Nothing unused" };
+                if (result.status === "waited") {
+                    return { ok: false, summary: result.running > 0 ? `${plural(result.running, "run", "runs")} kept going for an hour` : "The database stayed busy for an hour" };
+                }
+                return { summary: `${formatBytes(Math.max(0, result.beforeBytes - result.afterBytes), 1)} freed` };
+            }
             default:
                 log.warn("Unknown system task", { taskId });
                 return {};

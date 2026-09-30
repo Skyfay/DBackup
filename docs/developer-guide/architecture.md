@@ -343,7 +343,7 @@ Periodic Integrity Check:
 
 ## System Tasks
 
-10 built-in background tasks run on configurable cron schedules (Settings > System tasks):
+11 built-in background tasks run on configurable cron schedules (Settings > System tasks):
 
 | Task | Default Schedule | Enabled by Default | Follows |
 |------|-----------------|-------------------|---------|
@@ -357,12 +357,15 @@ Periodic Integrity Check:
 | `SYNC_PERMISSIONS` | Daily midnight | Yes | |
 | `CONFIG_BACKUP` | Daily 3 AM | No | `config.backup.enabled` and `config.backup.schedule` |
 | `INTEGRITY_CHECK` | Weekly Sunday 4 AM | No | |
+| `OPTIMIZE_DATABASE` | Monthly, the 1st at 5 AM | Yes | |
 
 A task that follows a setting has no switch of its own, `getTaskEnabled` and `setTaskEnabled` read and write that setting. Each run records when it started, how long it took, whether it needs a look and a short result under `task.<id>.lastRun`, which the Settings page shows. A task set to run at start runs once when the scheduler starts, never again when it refreshes after a saved job or setting.
 
 **Infrastructure:** `src/services/system/system-task-definitions.ts` (ids, defaults, words), `system-task-service.ts` (settings, runs, last run), `system-task-runs.ts` (what each task does), `system-task-settings.ts` (the Settings page and Run now) + `src/lib/runner/system-task-runner.ts`
 
 `CLEAN_OLD_LOGS` applies every setting from `src/lib/core/data-retention.ts` through `src/services/system/data-retention-service.ts`. While VACUUM or a database download runs (`src/services/system/database-service.ts`), the flag in `src/lib/server/database-maintenance.ts` makes the queue hold back pending jobs, restores refuse to start and system tasks skip their run.
+
+`OPTIMIZE_DATABASE` (`src/services/system/database-optimize.ts`) runs `vacuumDatabase()` once a fifth of the file and at least 1 MB is unused. Before that it sets the run hold of `database-maintenance.ts`, which only keeps the queue from starting runs, and waits up to an hour for the running ones. Health checks, the stuck run watchdog and restores carry on meanwhile, since only the VACUUM itself holds the connection.
 
 ## Health Check System
 

@@ -55,6 +55,7 @@ All notable changes to DBackup are documented here.
 - **profile**: The Profile page is built like Settings, with its parts on the left, their states and a search, and says what your group lets you do. Passkeys can be renamed, and the authenticator app makes new backup codes.
 - **profile**: **Colors** sets the color of every task, like Add, Edit, Delete and Warning, from a set like Colorblind friendly or one of your own, and shows it before it is saved. The colors are yours alone and reach every page.
 - **settings**: Deleted encryption keys, saved logins, connections, jobs and users wait under **Settings → Recently deleted** for 30 days, where someone who may change the settings restores them with everything that belonged to them or deletes them for good. Only they can skip it with **Delete it permanently now**, and the message after a delete offers Undo.
+- **settings**: The new system task **Optimize the database** gives the unused space of the database back to the disk on the first of every month, once at least a fifth of it is unused. Runs that would start meanwhile wait until it is done.
 
 
 ### 🐛 Bug Fixes

@@ -32,7 +32,7 @@ src/services/
   history/       run-list-service.ts (the runs of the History page), run-detail-service.ts (the page of a run), run-steps.ts, run-summary.ts, run-dumps.ts, run-checks.ts, run-problems.ts, known-problems.ts
   vault/         vault-keys.ts and vault-credentials.ts (the tabs of the Vault page), vault-audit.ts (what the audit log knows), key-id.ts, vault-counts.ts
   notifications/ notification-log-service.ts, system-notification-service.ts, notification-settings-service.ts (the Notifications part: events, default channels, Send a test), notification-test-data.ts
-  system/        healthcheck-service.ts, system-task-service.ts (with -definitions, -runs, -settings), update-service.ts, db-version-service.ts, certificate-service.ts, settings-model.ts (Settings page model), system-settings-service.ts (General, Sign-in, Privacy), rate-limit-settings-service.ts, data-retention-service.ts, database-service.ts
+  system/        healthcheck-service.ts, system-task-service.ts (with -definitions, -runs, -settings), update-service.ts, db-version-service.ts, certificate-service.ts, settings-model.ts (Settings page model), system-settings-service.ts (General, Sign-in, Privacy), rate-limit-settings-service.ts, data-retention-service.ts, database-service.ts, database-optimize.ts (the system task Optimize the database)
   config/        database-copy.ts (the copy the backup uploads), copy-inspect.ts, copy-rekey.ts, open-backup.ts, pending-restores.ts, restore-staging.ts and restore-flow.ts (its restore), import.ts with import-context.ts and one import-*.ts per part (JSON files of older versions), config-service.ts, parse.ts, restore-pipeline.ts, config-backup-settings.ts (the Configuration backup part)
   templates/     naming-template-service.ts, notification-template-service.ts, retention-policy-service.ts, schedule-preset-service.ts, exclude-pattern-preset-service.ts, templates-model.ts (Templates page model), retention-targets.ts and retention-preview.ts (what a retention change removes)
   user/          user-service.ts, users-model.ts (Users tab page model), user-details.ts (the panel of a user), group-service.ts, groups-model.ts (Groups tab page model), group-details.ts (the history of a group), preference-service.ts (table layouts, views and the colors of the tasks), profile-model.ts (Profile page model)
@@ -233,10 +233,13 @@ Background tasks on cron schedules, defined with their defaults and words in `sy
 | `SYNC_PERMISSIONS` | Daily midnight | Yes | |
 | `CONFIG_BACKUP` | Daily 3 AM | No | `config.backup.enabled`, `config.backup.schedule` |
 | `INTEGRITY_CHECK` | Weekly Sunday 4 AM | No | |
+| `OPTIMIZE_DATABASE` | Monthly, the 1st at 5 AM | Yes | |
 
 A task that follows a setting has no switch of its own: `getTaskEnabled` and `setTaskEnabled` read and write that setting, so the two never disagree. A schedule is checked with `isValidCron` before it is stored. Every run records its start, length, whether it needs a look and a short result under `task.<id>.lastRun`, and each run function returns that result as a `TaskOutcome`. A task set to run at start runs once in `scheduler.init()`, never from `refresh()`, which runs after every saved job or setting. Run now goes through `startSystemTask`, which answers at once and refuses a task that runs already.
 
 Scheduled and internal tasks run as system and bypass permission checks.
+
+`OPTIMIZE_DATABASE` (`database-optimize.ts`) holds new runs back with `beginRunHold()` from `src/lib/server/database-maintenance.ts` and waits up to an hour for the running ones before its VACUUM. The hold only stops the queue, while the maintenance flag of the VACUUM itself also skips system tasks and refuses restores.
 
 ## Health checks (`src/services/system/healthcheck-service.ts`)
 

@@ -1,7 +1,7 @@
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logging/logger";
 import { isShutdownRequested } from "@/lib/server/shutdown";
-import { isDatabaseMaintenanceActive } from "@/lib/server/database-maintenance";
+import { isDatabaseMaintenanceActive, isRunHoldActive } from "@/lib/server/database-maintenance";
 
 const log = logger.child({ module: "Queue" });
 
@@ -20,8 +20,9 @@ export async function processQueue() {
         return;
     }
 
-    // Pending runs stay queued. Database maintenance restarts the queue once it is done.
-    if (isDatabaseMaintenanceActive()) {
+    // Pending runs stay queued. Database maintenance restarts the queue once it is done, also
+    // when it only waits for the runs of now to end.
+    if (isDatabaseMaintenanceActive() || isRunHoldActive()) {
         log.debug("Database maintenance in progress - skipping queue processing");
         return;
     }

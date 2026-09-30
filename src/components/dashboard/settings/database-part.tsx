@@ -124,7 +124,7 @@ export function DatabasePart({ info, isSuperAdmin }: { info: DatabaseInfo | null
                     icon={WandSparkles}
                     setting="database.optimize"
                     title="Optimize"
-                    text={`Rebuilds the file without its unused space${reclaimable > 0 ? ` and frees about ${formatBytes(reclaimable, 1)}` : ""}. DBackup pauses for a moment, and it waits while a backup or restore runs.`}
+                    text={`Rebuilds the file without its unused space${reclaimable > 0 ? ` and frees about ${formatBytes(reclaimable, 1)}` : ""}. DBackup pauses for a moment. The system task Optimize the database does this once a month by itself.`}
                 >
                     <Button variant="outline" size="sm" className="w-full sm:w-auto" onClick={() => setConfirm("optimize")} disabled={readOnly || !info}>
                         <WandSparkles />

@@ -57,6 +57,8 @@ SQLite never shrinks its file on its own. Space from removed records is reused f
 - Needs free space on the database volume for the data in use.
 - DBackup may not respond for a moment while it runs on a large database.
 
+The system task **Optimize the database** does the same by itself on the 1st of every month at 05:00, once at least a fifth of the file and at least 1 MB is unused. Instead of being refused, it holds back the runs that would start and waits up to an hour for the running ones. The held runs start right after. When runs keep going for the whole hour, it leaves the file as it is and its row under **Settings → System tasks** needs a look.
+
 ::: tip
 After lowering a retention period, run **Clean old data** first and then optimize the database. Removing records alone does not make the file smaller.
 :::

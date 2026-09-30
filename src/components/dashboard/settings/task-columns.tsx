@@ -16,6 +16,7 @@ import {
     ShieldCheck,
     Timer,
     Trash2,
+    WandSparkles,
     type LucideIcon,
 } from "lucide-react";
 import type { BackupActionGroup } from "@/components/dashboard/storage/explorer/backup-actions";
@@ -37,6 +38,7 @@ const TASK_ICONS: Record<string, LucideIcon> = {
     "system.sync_permissions": ShieldCheck,
     "system.config_backup": FileCog,
     "system.integrity_check": FileCheck2,
+    "system.optimize_database": WandSparkles,
 };
 
 export function taskIcon(taskId: string): LucideIcon {

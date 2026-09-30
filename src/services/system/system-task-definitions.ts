@@ -15,6 +15,7 @@ export const SYSTEM_TASKS = {
     REFRESH_STORAGE_STATS: "system.refresh_storage_stats",
     WARMUP_STORAGE_CACHE: "system.warmup_storage_cache",
     STUCK_EXECUTION_CHECK: "system.stuck_execution_check",
+    OPTIMIZE_DATABASE: "system.optimize_database",
 } as const;
 
 export type SystemTaskId = (typeof SYSTEM_TASKS)[keyof typeof SYSTEM_TASKS];
@@ -112,6 +113,14 @@ export const DEFAULT_TASK_CONFIG: Record<SystemTaskId, SystemTaskDefinition> = {
         label: "Integrity check",
         description: "Downloads backups and compares their SHA-256 with the one saved at the backup.",
     },
+    [SYSTEM_TASKS.OPTIMIZE_DATABASE]: {
+        // The first of the month, after Clean old data freed the space and the configuration backup.
+        interval: "0 5 1 * *",
+        runOnStartup: false,
+        enabled: true,
+        label: "Optimize the database",
+        description: "Rebuilds the database of DBackup without its unused space once a fifth of it is unused. Runs that start meanwhile wait until it is done.",
+    },
 };
 
 /** The order of the Settings page: what runs often first, the heavy ones last. */
@@ -126,6 +135,7 @@ export const TASK_ORDER: readonly SystemTaskId[] = [
     SYSTEM_TASKS.SYNC_PERMISSIONS,
     SYSTEM_TASKS.CONFIG_BACKUP,
     SYSTEM_TASKS.INTEGRITY_CHECK,
+    SYSTEM_TASKS.OPTIMIZE_DATABASE,
 ];
 
 export function isSystemTaskId(value: unknown): value is SystemTaskId {

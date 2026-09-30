@@ -42,7 +42,7 @@ vi.mock('@/lib/logging/logger', () => ({
 
 // 2. Import System Under Test
 import { processQueue } from '@/lib/execution/queue-manager';
-import { beginDatabaseMaintenance, endDatabaseMaintenance } from '@/lib/server/database-maintenance';
+import { beginDatabaseMaintenance, beginRunHold, endDatabaseMaintenance, endRunHold } from '@/lib/server/database-maintenance';
 
 /** The queue as the database holds it: the slots, the jobs of the running runs, the waiting runs. */
 function queue({ max, running = [], pending = [] }: { max: number | null; running?: string[]; pending?: { id: string; jobId: string | null }[] }) {
@@ -150,6 +150,18 @@ describe('Queue Manager Concurrency', () => {
             await processQueue();
         } finally {
             endDatabaseMaintenance();
+        }
+
+        expect(vi.mocked(prisma.systemSetting.findUnique)).not.toHaveBeenCalled();
+        expect(mockPerformExecution).not.toHaveBeenCalled();
+    });
+
+    it('holds pending jobs back while a maintenance waits for the running ones to end', async () => {
+        beginRunHold();
+        try {
+            await processQueue();
+        } finally {
+            endRunHold();
         }
 
         expect(vi.mocked(prisma.systemSetting.findUnique)).not.toHaveBeenCalled();

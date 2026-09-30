@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => ({
     notify: vi.fn(),
     writeFile: vi.fn(),
     unlink: vi.fn(),
+    appendEntry: vi.fn(),
+    removeEntries: vi.fn(),
 }));
 
 vi.mock("@/lib/logging/logger", () => ({
@@ -38,6 +40,12 @@ vi.mock("@/lib/crypto/stream", () => ({
 }));
 vi.mock("@/lib/crypto", () => ({ decrypt: () => "aa".repeat(32) }));
 vi.mock("@/services/notifications/system-notification-service", () => ({ notify: (...args: unknown[]) => mocks.notify(...args) }));
+vi.mock("@/services/storage/storage-service", () => ({
+    storageService: {
+        appendStorageListCacheEntry: (...args: unknown[]) => mocks.appendEntry(...args),
+        removeStorageListCacheEntries: (...args: unknown[]) => mocks.removeEntries(...args),
+    },
+}));
 vi.mock("fs", () => {
     const fsMock = {
         createReadStream: () => Readable.from([Buffer.from("SQLite format 3\u0000")]),
@@ -71,6 +79,8 @@ describe("the configuration backup, a copy of the whole database", () => {
         mocks.notify.mockResolvedValue(undefined);
         mocks.writeFile.mockResolvedValue(undefined);
         mocks.unlink.mockResolvedValue(undefined);
+        mocks.appendEntry.mockResolvedValue(undefined);
+        mocks.removeEntries.mockResolvedValue(undefined);
     });
 
     it("does nothing while it is off", async () => {
@@ -141,24 +151,90 @@ describe("the configuration backup, a copy of the whole database", () => {
         expect(mocks.unlink).toHaveBeenCalledWith("/tmp/dbackup-database-copy.db");
     });
 
-    it("keeps as many files as set and deletes the oldest with their metadata", async () => {
+    it("names the schedule as who started it, like a job the scheduler runs", async () => {
+        settings(ON);
+
+        await runConfigBackup();
+
+        const meta = JSON.parse(mocks.writeFile.mock.calls[0][1] as string);
+        expect(meta.trigger).toEqual({ type: "Scheduler", actor: "Scheduler" });
+        expect(meta.timestamp).toBe(meta.createdAt);
+    });
+
+    it("names the person behind Back up now", async () => {
+        settings(ON);
+
+        await runConfigBackup({ type: "Manual", label: "Ada" });
+
+        expect(JSON.parse(mocks.writeFile.mock.calls[0][1] as string).trigger).toEqual({ type: "Manual", actor: "Ada" });
+    });
+
+    it("leaves the name out when Privacy says so", async () => {
+        settings({ ...ON, "privacy.includeActorInMetadata": "false" });
+
+        await runConfigBackup({ type: "Api", label: "CI deploy" });
+
+        expect(JSON.parse(mocks.writeFile.mock.calls[0][1] as string).trigger).toEqual({ type: "Api" });
+    });
+
+    it("puts the new file into the listing of the Backups page at once", async () => {
+        settings(ON);
+
+        const { fileName } = (await runConfigBackup({ type: "Manual", label: "Ada" })) as { fileName: string };
+
+        expect(mocks.appendEntry).toHaveBeenCalledWith("nas", expect.objectContaining({
+            name: fileName.replace("config-backups/", ""),
+            path: fileName,
+            size: 2048,
+            sourceType: "SYSTEM",
+            jobName: "Config Backup",
+            isEncrypted: true,
+            trigger: { type: "Manual", actor: "Ada" },
+        }));
+    });
+
+    it("still reports the backup when the listing cannot be updated", async () => {
+        settings(ON);
+        mocks.appendEntry.mockRejectedValue(new Error("database is locked"));
+
+        await expect(runConfigBackup()).resolves.toMatchObject({ destination: "NAS" });
+    });
+
+    it("keeps as many files as set and deletes the oldest by their path with their metadata", async () => {
         settings({ ...ON, "config.backup.retention": "2" });
+        // A listing names each file by itself and gives its folder in the path.
+        const file = (name: string) => ({ name, path: `config-backups/${name}` });
         mocks.list.mockResolvedValue([
-            { name: "config-backups/config_backup_2026-09-28.db.gz.enc" },
-            { name: "config-backups/config_backup_2026-09-29.db.gz.enc" },
-            { name: "config-backups/config_backup_2026-09-27.json.gz.enc" },
-            { name: "config-backups/config_backup_2026-09-27.json.gz.enc.meta.json" },
-            { name: "config-backups/config_backup_2026-09-30.db.gz.enc" },
+            file("config_backup_2026-09-28.db.gz.enc"),
+            file("config_backup_2026-09-29.db.gz.enc"),
+            file("config_backup_2026-09-27.json.gz.enc"),
+            file("config_backup_2026-09-27.json.gz.enc.meta.json"),
+            file("config_backup_2026-09-30.db.gz.enc"),
         ]);
 
         await runConfigBackup();
 
-        expect(mocks.delete.mock.calls.map(([, file]) => file)).toEqual([
+        expect(mocks.delete.mock.calls.map(([, path]) => path)).toEqual([
             "config-backups/config_backup_2026-09-28.db.gz.enc",
             "config-backups/config_backup_2026-09-28.db.gz.enc.meta.json",
             "config-backups/config_backup_2026-09-27.json.gz.enc",
             "config-backups/config_backup_2026-09-27.json.gz.enc.meta.json",
         ]);
+        expect(mocks.removeEntries).toHaveBeenCalledWith("nas", [
+            "config-backups/config_backup_2026-09-28.db.gz.enc",
+            "config-backups/config_backup_2026-09-27.json.gz.enc",
+        ]);
+    });
+
+    it("leaves a file it could not delete in the listing", async () => {
+        settings({ ...ON, "config.backup.retention": "1" });
+        const file = (name: string) => ({ name, path: `config-backups/${name}` });
+        mocks.list.mockResolvedValue([file("config_backup_2026-09-29.db.gz.enc"), file("config_backup_2026-09-30.db.gz.enc")]);
+        mocks.delete.mockRejectedValue(new Error("permission denied"));
+
+        await runConfigBackup();
+
+        expect(mocks.removeEntries).not.toHaveBeenCalled();
     });
 
     it("still reports the backup when the retention cannot list the destination", async () => {

@@ -111,10 +111,13 @@ All notable changes to DBackup are documented here.
 - **config**: A job whose encryption key does not come back with a configuration restore is paused instead of writing its next backups unencrypted.
 - **config**: Users with two-factor sign-in are no longer locked out after a configuration restore, which holds no second factor. It is off for them until they set it up again.
 - **config**: Restore from a file takes configuration backups up to 10 MB and points to the Backups page for a larger one. It failed on any file over 1 MB before.
+- **config**: **Keeps** of the configuration backup deletes the oldest files again. Every configuration backup stayed on its destination before.
+- **config**: A new configuration backup shows on the Backups page right away with who started it, the schedule, a person or an API key. It showed only after the next scan of its destination before, without a name.
 - **SSO**: Deleting a sign-in provider no longer counts people with a passkey among those who cannot sign in afterwards.
 - **SSO**: The callback URL of a provider starts with `BETTER_AUTH_URL`, which DBackup sends to the provider, instead of the address the admin opened DBackup at.
 - **settings**: A system task set to run at start no longer runs again each time a job or a setting is saved.
 - **settings**: Run now of a system task answers right away instead of after the task finished, and a task that runs already does not start a second time.
+- **settings**: A system task started through the API names the API key in History instead of the person it belongs to, like a job does.
 - **settings**: A schedule set for the configuration backup under System tasks applies on instances that still had one stored by an older version, and the system tasks API refuses an unknown task or a schedule the scheduler cannot read.
 - **settings**: Saving the general settings no longer stores a file name pattern with an unknown token. A job without a naming template used it while no template was the default and named its files `{name}_` and a date.
 - **settings**: Someone who may only read the settings sees them without controls, instead of forms whose changes failed to save. A change that failed to save no longer looks saved.

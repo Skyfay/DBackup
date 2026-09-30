@@ -193,7 +193,7 @@ export interface IntegrityCheckFailureData {
   failed: number;
   passed: number;
   skipped: number;
-  triggerType: "Scheduler" | "Manual";
+  triggerType: "Scheduler" | "Manual" | "Api";
   errors: Array<{
     file: string;
     destination: string;

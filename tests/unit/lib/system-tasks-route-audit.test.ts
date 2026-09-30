@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
     settings: new Map<string, { schedule: string; runOnStartup: boolean; enabled: boolean }>(),
     logFor: vi.fn(),
     runTask: vi.fn(),
+    getKey: vi.fn(),
 }));
 
 vi.mock("@/lib/logging/logger", () => ({
@@ -20,6 +21,7 @@ vi.mock("next/headers", () => ({ headers: vi.fn().mockResolvedValue(new Headers(
 vi.mock("@/lib/server/scheduler", () => ({ scheduler: { refresh: vi.fn().mockResolvedValue(undefined) } }));
 vi.mock("@/services/audit-service", () => ({ auditService: { logFor: (...args: unknown[]) => mocks.logFor(...args) } }));
 vi.mock("@/lib/prisma", () => ({ default: { user: { findUnique: vi.fn().mockResolvedValue({ name: "Ada" }) } } }));
+vi.mock("@/services/auth/api-key-service", () => ({ apiKeyService: { getById: (...args: unknown[]) => mocks.getKey(...args) } }));
 // A task stored in memory, so a change is what the next read returns.
 vi.mock("@/services/system/system-task-service", () => {
     const task = (id: string) => mocks.settings.get(id) ?? { schedule: "0 0 * * *", runOnStartup: true, enabled: true };
@@ -47,6 +49,7 @@ describe("the audit entries of system tasks", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.settings.clear();
+        mocks.ctx = { userId: "u1", permissions: ["settings:write"], isSuperAdmin: false, authMethod: "session" };
     });
 
     it("writes a new schedule by the name of the task with the schedule before and after", async () => {
@@ -71,5 +74,17 @@ describe("the audit entries of system tasks", () => {
         await PUT(request("PUT", { taskId: "system.clean_audit_logs" }));
 
         expect(mocks.logFor).toHaveBeenCalledWith(mocks.ctx, "EXECUTE", "SYSTEM", { task: "Clean Old Data", name: "Clean Old Data" }, "system.clean_audit_logs");
+        expect(mocks.runTask).toHaveBeenCalledWith("system.clean_audit_logs", "Manual", "Ada");
+    });
+
+    it("starts a task through the API in the name of the key, not its owner", async () => {
+        mocks.ctx = { userId: "u1", permissions: ["settings:write"], isSuperAdmin: false, authMethod: "apikey", apiKeyId: "k1" } as typeof mocks.ctx;
+        mocks.getKey.mockResolvedValue({ id: "k1", name: "CI deploy" });
+        mocks.runTask.mockResolvedValue("exec-2");
+
+        await PUT(request("PUT", { taskId: "system.clean_audit_logs" }));
+
+        expect(mocks.getKey).toHaveBeenCalledWith("k1");
+        expect(mocks.runTask).toHaveBeenCalledWith("system.clean_audit_logs", "Api", "CI deploy");
     });
 });

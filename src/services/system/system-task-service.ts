@@ -201,7 +201,7 @@ export class SystemTaskService {
         }
     }
 
-    async runTask(taskId: string, triggerType?: "Manual" | "Scheduler", triggerLabel?: string): Promise<string | undefined> {
+    async runTask(taskId: string, triggerType?: "Manual" | "Scheduler" | "Api", triggerLabel?: string): Promise<string | undefined> {
         // VACUUM or a database download holds Prisma's only connection. A task started now
         // would just queue behind it until the pool timeout fails it.
         if (isDatabaseMaintenanceActive()) {
@@ -230,7 +230,7 @@ export class SystemTaskService {
         return outcome.executionId;
     }
 
-    private async execute(taskId: string, triggerType: "Manual" | "Scheduler" | undefined, triggerLabel: string | undefined, startedAt: Date): Promise<TaskOutcome> {
+    private async execute(taskId: string, triggerType: "Manual" | "Scheduler" | "Api" | undefined, triggerLabel: string | undefined, startedAt: Date): Promise<TaskOutcome> {
         switch (taskId) {
             case SYSTEM_TASKS.UPDATE_DB_VERSIONS:
                 return updateDbVersions();
@@ -256,7 +256,8 @@ export class SystemTaskService {
             case SYSTEM_TASKS.CONFIG_BACKUP: {
                 // Dynamic import to avoid circular dep if config-runner imports something that imports this.
                 const { runConfigBackup } = await import("@/lib/runner/config-runner");
-                const result = await runConfigBackup();
+                // A run without a trigger comes from the schedule, like a job the scheduler starts.
+                const result = await runConfigBackup({ type: triggerType ?? "Scheduler", label: triggerLabel ?? "Scheduler" });
                 if (!result) return {};
                 return "skipped" in result ? { summary: result.skipped } : { summary: `To ${result.destination}` };
             }

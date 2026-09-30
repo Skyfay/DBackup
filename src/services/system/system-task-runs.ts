@@ -328,7 +328,7 @@ export async function syncPermissions(): Promise<TaskOutcome> {
  * the outcome when the check ends.
  */
 export async function startIntegrityCheck(
-    triggerType: "Manual" | "Scheduler" | undefined,
+    triggerType: "Manual" | "Scheduler" | "Api" | undefined,
     triggerLabel: string | undefined,
     onDone: (outcome: TaskOutcome) => Promise<void>
 ): Promise<TaskOutcome> {
@@ -383,7 +383,7 @@ export async function startIntegrityCheck(
                         failed: result.failed,
                         passed: result.passed,
                         skipped: result.skipped,
-                        triggerType: triggerType === "Manual" ? "Manual" : "Scheduler",
+                        triggerType: triggerType ?? "Scheduler",
                         errors: result.errors,
                     },
                 }, { executionId: runner.id });

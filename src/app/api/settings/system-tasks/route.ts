@@ -8,6 +8,7 @@ import { ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import prisma from "@/lib/prisma";
 import { auditService } from "@/services/audit-service";
+import { apiKeyService } from "@/services/auth/api-key-service";
 import { isSystemTaskId } from "@/services/system/system-task-definitions";
 import { getSystemTaskRows, saveSystemTask, startSystemTask } from "@/services/system/system-task-settings";
 import { getGeneralSettings } from "@/services/system/system-settings-service";
@@ -92,8 +93,15 @@ export async function PUT(req: NextRequest) {
     }
     const task = parsed.data.taskId;
 
-    const user = await prisma.user.findUnique({ where: { id: ctx.userId }, select: { name: true } });
-    const started = await startSystemTask(task, user?.name ?? "Manual");
+    // Like a job started through the API, the run names the key instead of its owner.
+    let started;
+    if (ctx.authMethod === "apikey" && ctx.apiKeyId) {
+        const apiKey = await apiKeyService.getById(ctx.apiKeyId);
+        started = await startSystemTask(task, apiKey.name, "Api");
+    } else {
+        const user = await prisma.user.findUnique({ where: { id: ctx.userId }, select: { name: true } });
+        started = await startSystemTask(task, user?.name ?? "Manual");
+    }
     if (!started.started) return NextResponse.json({ error: started.reason }, { status: 409 });
 
     const name = taskName(task);

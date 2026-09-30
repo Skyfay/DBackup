@@ -8,13 +8,14 @@ import { createGzip } from "zlib";
 import { createEncryptionStream } from "@/lib/crypto/stream";
 import prisma from "@/lib/prisma";
 import { registry } from "@/lib/core/registry";
-import { StorageAdapter } from "@/lib/core/interfaces";
+import type { BackupMetadata, StorageAdapter } from "@/lib/core/interfaces";
 import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { logger } from "@/lib/logging/logger";
 import { wrapError, EncryptionError, ConfigurationError } from "@/lib/logging/errors";
 import { notify } from "@/services/notifications/system-notification-service";
 import { NOTIFICATION_EVENTS } from "@/lib/notifications";
 import { createConfigCopy } from "@/services/config/database-copy";
+import { describeBackupFromMetadata } from "@/services/storage/backup-file-fields";
 import packageJson from "../../../package.json";
 
 const log = logger.child({ runner: "ConfigRunner" });
@@ -25,15 +26,26 @@ export type ConfigBackupResult = { fileName: string; destination: string } | { s
 /** The folder of the destination the files go into. */
 const REMOTE_FOLDER = "config-backups";
 
+const CONFIG_KEYS = ["config.backup.enabled", "config.backup.storageId", "config.backup.profileId", "config.backup.includeStatistics", "config.backup.retention"];
+/** Whether the metadata of a backup names who started it, under Settings, Privacy. */
+const ACTOR_SETTING = "privacy.includeActorInMetadata";
+
+/** Who started a configuration backup: its schedule, someone with Back up now, or an API key. */
+export interface ConfigBackupTrigger {
+    type: "Manual" | "Scheduler" | "Api";
+    /** The person or the API key, named in the metadata unless Privacy leaves it out. */
+    label?: string;
+}
+
 /**
  * Executes a Configuration Backup: a copy of the whole database, compressed and encrypted with
  * the key picked for it, since it holds every login. See `src/services/config/database-copy.ts`.
  */
-export async function runConfigBackup(): Promise<ConfigBackupResult> {
+export async function runConfigBackup(trigger: ConfigBackupTrigger = { type: "Scheduler", label: "Scheduler" }): Promise<ConfigBackupResult> {
     log.info("Starting Configuration Backup");
 
     const settings = new Map(
-        (await prisma.systemSetting.findMany({ where: { key: { startsWith: "config.backup." } }, select: { key: true, value: true } }))
+        (await prisma.systemSetting.findMany({ where: { key: { in: [...CONFIG_KEYS, ACTOR_SETTING] } }, select: { key: true, value: true } }))
             .map((row) => [row.key, row.value])
     );
     if (settings.get("config.backup.enabled") !== "true") {
@@ -100,6 +112,9 @@ export async function runConfigBackup(): Promise<ConfigBackupResult> {
         const remoteFilename = `${REMOTE_FOLDER}/${baseName}.gz.enc`;
         await storageAdapter.upload(decryptedConfig, tempFilePath, remoteFilename);
 
+        // Like the metadata of a job: who started it, named unless Privacy leaves the name out.
+        const includeActor = settings.has(ACTOR_SETTING) ? settings.get(ACTOR_SETTING) === "true" : true;
+        const createdAt = new Date().toISOString();
         const metadata = {
             version: "2.0",
             // A copy of the whole database, which a restore tells from a file of an older version.
@@ -117,10 +132,29 @@ export async function runConfigBackup(): Promise<ConfigBackupResult> {
             },
             encryptionProfileId: profileId,
             sourceType: "SYSTEM",
-            createdAt: new Date().toISOString(),
+            createdAt,
+            // The time the Backups page shows, under the name the metadata of a job has for it.
+            timestamp: createdAt,
+            trigger: { type: trigger.type, ...(includeActor && trigger.label ? { actor: trigger.label } : {}) },
         };
         await fs.promises.writeFile(metaTempPath, JSON.stringify(metadata, null, 2));
         await storageAdapter.upload(decryptedConfig, metaTempPath, `${remoteFilename}.meta.json`);
+
+        // The Backups page lists it at once, like a backup of a job, instead of after its next scan.
+        try {
+            const { storageService } = await import("@/services/storage/storage-service");
+            const name = path.basename(remoteFilename);
+            await storageService.appendStorageListCacheEntry(storageId, {
+                name,
+                path: remoteFilename,
+                size: fileStats.size,
+                lastModified: new Date(),
+                ...describeBackupFromMetadata(name, metadata as unknown as BackupMetadata),
+            });
+        } catch (error: unknown) {
+            // A stale listing is cosmetic, it never fails a backup that is stored.
+            log.warn("Could not add the config backup to the storage listing", {}, wrapError(error));
+        }
 
         log.info("Configuration Backup complete");
 
@@ -136,7 +170,7 @@ export async function runConfigBackup(): Promise<ConfigBackupResult> {
 
         // 5. Retention (Simple cleanup of THIS type of files)
         if (retentionCount > 0) {
-            await applyConfigRetention(storageAdapter, decryptedConfig, retentionCount);
+            await applyConfigRetention(storageAdapter, decryptedConfig, retentionCount, storageId);
         }
 
         return { fileName: remoteFilename, destination: storageConfig.name };
@@ -147,11 +181,14 @@ export async function runConfigBackup(): Promise<ConfigBackupResult> {
     }
 }
 
-async function applyConfigRetention(adapter: StorageAdapter, config: any, keepParams: number) {
+/**
+ * Keeps the newest config backups and deletes the rest with their metadata. A file is deleted by
+ * its path from the listing, which holds the folder, and leaves the listing of the Backups page too.
+ */
+async function applyConfigRetention(adapter: StorageAdapter, config: any, keepParams: number, storageId: string) {
     try {
         log.debug("Checking retention policy for config backups");
-        // List in the subfolder
-        const files = await adapter.list(config, "config-backups");
+        const files = await adapter.list(config, REMOTE_FOLDER);
 
         // Filter for our files specifically
         const configFiles = files.filter(f => f.name.includes("config_backup_") && !f.name.endsWith(".meta.json"));
@@ -162,16 +199,24 @@ async function applyConfigRetention(adapter: StorageAdapter, config: any, keepPa
         if (configFiles.length > keepParams) {
              const toDelete = configFiles.slice(keepParams);
              log.info("Deleting old config backups", { count: toDelete.length });
+             const deleted: string[] = [];
 
              for (const file of toDelete) {
                  try {
-                     await adapter.delete(config, file.name);
+                     await adapter.delete(config, file.path);
+                     deleted.push(file.path);
                  } catch(e) {
                      log.error("Failed to delete config backup", { fileName: file.name }, wrapError(e));
+                     continue;
                  }
 
-                 // Try delete meta
-                 try { await adapter.delete(config, file.name + ".meta.json"); } catch {}
+                 try { await adapter.delete(config, `${file.path}.meta.json`); } catch {}
+             }
+
+             if (deleted.length > 0) {
+                 const { storageService } = await import("@/services/storage/storage-service");
+                 await storageService.removeStorageListCacheEntries(storageId, deleted).catch((error: unknown) =>
+                     log.warn("Could not remove deleted config backups from the storage listing", {}, wrapError(error)));
              }
         }
     } catch (e) {

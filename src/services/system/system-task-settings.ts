@@ -154,13 +154,14 @@ export type TaskStart = { started: true; executionId?: string } | { started: fal
 /**
  * Starts a task by hand without waiting for it to end, so Run now answers at once. The integrity
  * check hands back its run in History right away, the others show in their row when they end.
+ * `by` names the person, or the API key for a start through the API.
  */
-export async function startSystemTask(taskId: SystemTaskId, by: string): Promise<TaskStart> {
+export async function startSystemTask(taskId: SystemTaskId, by: string, type: "Manual" | "Api" = "Manual"): Promise<TaskStart> {
     const name = DEFAULT_TASK_CONFIG[taskId].label;
     if (systemTaskService.isRunning(taskId)) return { started: false, reason: `${name} is running already.` };
     if (isDatabaseMaintenanceActive()) return { started: false, reason: "DBackup is optimizing or copying its database. Try again in a moment." };
 
-    const run = systemTaskService.runTask(taskId, "Manual", by);
+    const run = systemTaskService.runTask(taskId, type, by);
     if (taskId === SYSTEM_TASKS.INTEGRITY_CHECK) return { started: true, executionId: await run };
     run.catch((error: unknown) => log.error("System task failed", { taskId }, wrapError(error)));
     return { started: true };

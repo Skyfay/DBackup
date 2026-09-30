@@ -24,7 +24,7 @@ Live database ──VACUUM INTO──▶ Copy ──▶ without sign-ins, caches
 3. `DROPPED_TABLES` are emptied (sessions, verifications, caches), and without Include the history the `HISTORY_TABLES` too
 4. The keys row is written, then `VACUUM` gives the freed space back
 
-`runConfigBackup()` in `src/lib/runner/config-runner.ts` streams the copy through gzip and the encryption stream and uploads `config-backups/config_backup_<timestamp>.db.gz.enc`. Its `.meta.json` carries `kind: "database"`, `appVersion` and the usual `encryption` block. The retention keeps the newest files named `config_backup_*`, older JSON files included.
+`runConfigBackup()` in `src/lib/runner/config-runner.ts` streams the copy through gzip and the encryption stream and uploads `config-backups/config_backup_<timestamp>.db.gz.enc`. Its `.meta.json` carries `kind: "database"`, `appVersion`, the usual `encryption` block and, like the metadata of a job, `timestamp` and `trigger`, which `system-task-service` passes in (`Scheduler` without one). The runner adds the file to the storage listing cache right after the upload, so the Backups page shows it without a scan. The retention keeps the newest files named `config_backup_*`, older JSON files included, deletes the others by the `path` of the listing and drops them from the cache.
 
 ## Restore of a Copy
 

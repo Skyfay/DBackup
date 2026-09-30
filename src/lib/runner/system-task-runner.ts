@@ -35,7 +35,7 @@ export class SystemTaskRunner {
 
   static async create(
     taskType: string,
-    triggerType?: "Manual" | "Scheduler",
+    triggerType?: "Manual" | "Scheduler" | "Api",
     triggerLabel?: string,
     stageProgressMap: Record<string, [number, number]> = INTEGRITY_CHECK_STAGE_PROGRESS_MAP
   ): Promise<SystemTaskRunner> {

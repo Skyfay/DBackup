@@ -41,7 +41,7 @@ Keep the [recovery kit](/user-guide/security/recovery-kit) of the key somewhere 
 
 ### A Backup Right Now
 
-Click **Back up now** in the head of the part. It uses the saved settings, so save a change first.
+Click **Back up now** in the head of the part. It uses the saved settings, so save a change first. The backup shows on the Backups page as soon as it is uploaded, with you under **Started by**.
 
 ### The File
 
@@ -50,7 +50,7 @@ config-backups/config_backup_2026-09-29T03-00-00-000Z.db.gz.enc
 config-backups/config_backup_2026-09-29T03-00-00-000Z.db.gz.enc.meta.json
 ```
 
-The `.meta.json` beside it names the key and holds what its decryption needs. The Backups page lists both files of every destination under **Config backups**.
+The `.meta.json` beside it names the key and holds what its decryption needs. The Backups page lists both files of every destination under **Config backups**, and **Started by** says **Schedule**, the person behind **Back up now** or the API key that started it. **Name who started a backup in its metadata** under **Settings → Privacy** leaves out the name.
 
 ## Restore Process
 

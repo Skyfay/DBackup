@@ -16,8 +16,8 @@ import * as cryptoLib from "@/lib/crypto";
 import { generateSshKeyPair } from "@/lib/transport/openssh-key";
 import { ConflictError, NotFoundError, ValidationError } from "@/lib/logging/errors";
 
-vi.mock("@/lib/prisma", () => ({
-    default: {
+vi.mock("@/lib/prisma", () => {
+    const client = {
         credentialProfile: {
             create: vi.fn(),
             findUnique: vi.fn(),
@@ -30,8 +30,13 @@ vi.mock("@/lib/prisma", () => ({
             count: vi.fn(),
             findMany: vi.fn(),
         },
-    },
-}));
+        $transaction: vi.fn((callback: (tx: unknown) => unknown) => callback(client)),
+    };
+    return { default: client };
+});
+
+const trash = vi.hoisted(() => ({ keepInTrash: vi.fn(async () => "trash-1") }));
+vi.mock("@/services/trash/trash-snapshot", () => trash);
 
 vi.mock("@/lib/crypto", async (importOriginal) => ({
     ...(await importOriginal<typeof cryptoLib>()),
@@ -391,10 +396,24 @@ describe("Credential Service", () => {
             (prisma.adapterConfig.count as any).mockResolvedValue(0);
             (prisma.credentialProfile.delete as any).mockResolvedValue(baseRow);
 
-            await deleteCredentialProfile("cred-1");
+            await deleteCredentialProfile("cred-1", { by: "u-1" });
             expect(prisma.credentialProfile.delete).toHaveBeenCalledWith({
                 where: { id: "cred-1" },
             });
+            // It waits in Recently deleted, kept in the same transaction as the delete.
+            expect(trash.keepInTrash).toHaveBeenCalledWith(prisma, "credential", "cred-1", "u-1");
+        });
+
+        it("skips Recently deleted for a login deleted permanently", async () => {
+            (prisma.credentialProfile.findUnique as any).mockResolvedValue(baseRow);
+            (prisma.adapterConfig.count as any).mockResolvedValue(0);
+            (prisma.credentialProfile.delete as any).mockResolvedValue(baseRow);
+            trash.keepInTrash.mockClear();
+
+            await deleteCredentialProfile("cred-1", { permanently: true });
+
+            expect(prisma.credentialProfile.delete).toHaveBeenCalled();
+            expect(trash.keepInTrash).not.toHaveBeenCalled();
         });
 
         it("throws NotFoundError when missing", async () => {

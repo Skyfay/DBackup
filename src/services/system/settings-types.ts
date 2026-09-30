@@ -5,11 +5,12 @@ import type { ConfigBackupSettings } from "@/services/config/config-backup-setti
 import type { NotificationsModel } from "@/services/notifications/notification-settings-service";
 import type { CertificateInfo } from "./certificate-service";
 import type { DatabaseInfo } from "./database-service";
+import type { TrashRow } from "@/services/trash/trash-types";
 import type { TaskRunRecord } from "./system-task-service";
 import type { IntegritySettings, SystemTaskRow } from "./system-task-settings";
 import type { GeneralSettings, PrivacySettings, SignInSettings } from "./system-settings-service";
 
-export type { ConfigBackupSettings, CertificateInfo, DatabaseInfo, GeneralSettings, IntegritySettings, PrivacySettings, RateLimitConfig, SignInSettings, SystemTaskRow, TaskRunRecord };
+export type { ConfigBackupSettings, CertificateInfo, DatabaseInfo, GeneralSettings, IntegritySettings, PrivacySettings, RateLimitConfig, SignInSettings, SystemTaskRow, TaskRunRecord, TrashRow };
 
 /** A sign-in provider as the Sign-in part names it. */
 export interface SettingsProvider {
@@ -59,4 +60,6 @@ export interface SettingsModel {
     integrity: IntegritySettings;
     /** Every notification event with where it goes, and the default channels. */
     notifications: NotificationsModel;
+    /** What Recently deleted holds that the viewer may restore, newest first. */
+    trash: TrashRow[];
 }

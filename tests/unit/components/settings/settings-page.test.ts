@@ -66,6 +66,7 @@ function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
                 notificationEvent({ id: "user_login", enabled: false }),
             ],
         },
+        trash: [],
         ...overrides,
     };
 }
@@ -134,6 +135,12 @@ describe("the state of each part in the navigation", () => {
         expect(partStates(expired).https).toEqual({ text: "Expired", tone: "destructive" });
 
         expect(partStates(model({ certificate: null })).https).toEqual({ text: "Unreadable", tone: "warning" });
+    });
+
+    it("counts what waits in Recently deleted, and says nothing while it is empty", () => {
+        const row = { id: "t1", kind: "job" as const, recordId: "j1", name: "Shop nightly", detail: null, deletedAt: "2026-09-29T10:00:00.000Z", deletedByName: "Manu", expiresAt: "2026-10-29T10:00:00.000Z" };
+        expect(partStates(model({ trash: [row, { ...row, id: "t2" }] }))["recently-deleted"]).toEqual({ text: "2" });
+        expect(partStates(model())["recently-deleted"]).toBeUndefined();
     });
 
     it("counts the tasks, or the ones whose last run needs a look", () => {

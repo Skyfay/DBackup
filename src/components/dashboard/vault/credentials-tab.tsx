@@ -20,6 +20,7 @@ import { CredentialCard } from "./credential-card";
 import { credentialColumns, credentialFilters } from "./credential-columns";
 import { CredentialDetails } from "./credential-details";
 import { CredentialDeleteDialog, PublicKeyDialog, RevealSecretDialog, revealSecret } from "./credential-dialogs";
+import { useTrash } from "@/components/trash/use-trash";
 import { TypeTile } from "./vault-cells";
 import { credentialBlocker, matchesCredential, type CredentialQuick } from "./vault-format";
 import { CredentialsStrip } from "./vault-strips";
@@ -104,6 +105,7 @@ export function CredentialsTab({ ref, cards, access, initialLayout }: Credential
     const profiles = useMemo(() => model?.profiles ?? [], [model]);
     const rows = useMemo(() => profiles.filter((profile) => matchesCredential(profile, quick)), [profiles, quick]);
     const filters = useMemo(() => credentialFilters(profiles), [profiles]);
+    const trash = useTrash("credential", afterChange);
     const bulkActions = useMemo<BulkAction<VaultCredential>[]>(() => access.canDelete ? [{
         id: "delete",
         labels: { verb: "delete", verbPast: "deleted", noun: "credential profile" },
@@ -118,8 +120,15 @@ export function CredentialsTab({ ref, cards, access, initialLayout }: Credential
             title: (selected) => `Delete ${selected.length} credential profile${selected.length === 1 ? "" : "s"}?`,
             confirmLabel: "Delete",
         },
-        run: (selected) => requestBulk("/api/credentials/bulk", { action: "delete", ids: selected.map((profile) => profile.id) }),
-    }] : [], [access.canDelete]);
+        trash: {
+            ...trash,
+            permanentLine: (selected) => (selected.length === 1
+                ? "For a login that leaked. It skips Recently deleted with the secret it holds."
+                : "For logins that leaked. They skip Recently deleted with the secrets they hold."),
+        },
+        run: (selected, { permanently }) =>
+            requestBulk("/api/credentials/bulk", { action: "delete", ids: selected.map((profile) => profile.id), ...(permanently ? { permanently } : {}) }),
+    }] : [], [access.canDelete, trash]);
 
     const shown = details ? profiles.find((profile) => profile.id === details.id) ?? null : null;
 
@@ -209,6 +218,7 @@ export function CredentialsTab({ ref, cards, access, initialLayout }: Credential
                         setDetails(null);
                         afterChange();
                     }}
+                    onRestored={afterChange}
                 />
             )}
         </div>

@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { deleteAdapters, getAdapterTypes, updateAdapterFlags, type AdapterFlagChange } from "@/services/adapters/adapter-service";
-import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
-import { getWritePermissionForAdapterType } from "@/lib/auth/permissions";
+import { getAuthContext, checkPermissionWithContext, hasPermissionWithContext } from "@/lib/auth/access-control";
+import { TRASH_ADMIN_PERMISSION, getWritePermissionForAdapterType } from "@/lib/auth/permissions";
+import { PERMANENT_DELETE_REFUSED } from "@/lib/core/delete-mode";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { summarizeBulkResult, BULK_REQUEST_LIMIT } from "@/lib/core/bulk";
@@ -25,6 +26,8 @@ type FlagAction = keyof typeof FLAG_ACTIONS;
 const BulkAdaptersSchema = z.object({
     action: z.enum(["delete", ...(Object.keys(FLAG_ACTIONS) as FlagAction[])]),
     ids: z.array(z.string().min(1)).min(1).max(BULK_REQUEST_LIMIT),
+    /** A delete skips Recently deleted. */
+    permanently: z.boolean().optional(),
 });
 
 /**
@@ -45,7 +48,10 @@ export async function POST(req: NextRequest) {
         if (!parsed.success) {
             return NextResponse.json({ success: false, error: "Invalid request body" }, { status: 400 });
         }
-        const { action, ids } = parsed.data;
+        const { action, ids, permanently = false } = parsed.data;
+        if (action === "delete" && permanently && !hasPermissionWithContext(ctx, TRASH_ADMIN_PERMISSION)) {
+            return NextResponse.json({ success: false, error: PERMANENT_DELETE_REFUSED }, { status: 403 });
+        }
 
         // Resolving the types is a read of nothing but the type column, and it has to come
         // before the check because the check depends on it.
@@ -58,7 +64,7 @@ export async function POST(req: NextRequest) {
         }
 
         const deleting = action === "delete";
-        const result = deleting ? await deleteAdapters(ids) : await updateAdapterFlags(ids, FLAG_ACTIONS[action]);
+        const result = deleting ? await deleteAdapters(ids, { permanently, by: ctx.userId }) : await updateAdapterFlags(ids, FLAG_ACTIONS[action]);
 
         await auditService.logFor(
             ctx,
@@ -66,7 +72,7 @@ export async function POST(req: NextRequest) {
             AUDIT_RESOURCES.ADAPTER,
             {
                 bulk: true,
-                ...(deleting ? {} : { change: action }),
+                ...(deleting ? (permanently ? { permanently: true } : {}) : { change: action }),
                 requested: ids.length,
                 succeeded: result.succeeded.length,
                 failed: result.failed.length,

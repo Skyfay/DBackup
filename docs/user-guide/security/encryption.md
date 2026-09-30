@@ -101,7 +101,9 @@ Importing a config backup matches encryption profiles by name. If the imported c
 
 A key that a job or the config backup still encrypts with cannot be deleted. The dialog names them with a link to each, pick another key there first. Deleting it anyway would have stored the next backups of those jobs unencrypted.
 
-A key that backups still need names them and asks you to confirm that a recovery kit keeps the key, or that the backups are no longer needed. A key that was never in a kit can get its kit right there. After the delete nobody can open those backups, DBackup neither.
+Any other key moves to [Recently deleted](/user-guide/admin/recently-deleted) for 30 days. Its backups cannot be opened while it is there, and a restore opens them again.
+
+With the right to change the settings, tick **Delete it permanently now** for a key that leaked. The dialog then lists the backups that still need the key, and a key that was never in a kit can get its kit right there. After a permanent delete nobody can open those backups without a recovery kit, DBackup neither.
 
 ## Using Encryption
 

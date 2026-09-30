@@ -5,6 +5,8 @@ import { encrypt, decrypt } from '@/lib/crypto';
 import { ConflictError, NotFoundError } from '@/lib/logging/errors';
 import crypto from 'crypto';
 import { isKeyHex, keyIdOf } from '@/services/vault/key-id';
+import { keepInTrash } from "@/services/trash/trash-snapshot";
+import type { DeleteOptions } from "@/services/trash/trash-types";
 
 /** A profile as it may leave this service: everything but its key and the ids it stands for. */
 export type EncryptionProfileSummary = Omit<EncryptionProfile, 'secretKey' | 'aliases'>;
@@ -202,10 +204,10 @@ export async function deleteBlockerOf(id: string): Promise<string | null> {
 }
 
 /**
- * Deletes an encryption profile. Refused while a job or the config backup encrypts with it.
- * WARNING: This will render all backups using this profile permanently unreadable.
+ * Deletes an encryption profile. Refused while a job or the config backup encrypts with it. It waits in
+ * Recently deleted, unless `permanently`, which renders every backup it encrypted unreadable for good.
  */
-export async function deleteEncryptionProfile(id: string): Promise<EncryptionProfileSummary> {
+export async function deleteEncryptionProfile(id: string, options: DeleteOptions = {}): Promise<EncryptionProfileSummary> {
   const existing = await prisma.encryptionProfile.findUnique({ where: { id }, select: { id: true } });
   if (!existing) {
     throw new NotFoundError("EncryptionProfile", id);
@@ -214,9 +216,9 @@ export async function deleteEncryptionProfile(id: string): Promise<EncryptionPro
   if (blocker) {
     throw new ConflictError(blocker, { context: { id } });
   }
-  return await prisma.encryptionProfile.delete({
-    where: { id },
-    select: summaryFields,
+  return prisma.$transaction(async (tx) => {
+    if (!options.permanently) await keepInTrash(tx, "encryptionKey", id, options.by);
+    return tx.encryptionProfile.delete({ where: { id }, select: summaryFields });
   });
 }
 
@@ -277,12 +279,12 @@ export async function getProfileMasterKey(profileId: string): Promise<Buffer> {
  * WARNING: as with the single delete, every backup encrypted with a removed profile
  * becomes permanently unreadable.
  */
-export async function deleteEncryptionProfiles(ids: string[]): Promise<BulkResult> {
+export async function deleteEncryptionProfiles(ids: string[], options: DeleteOptions = {}): Promise<BulkResult> {
   const profiles = await prisma.encryptionProfile.findMany({
     where: { id: { in: ids } },
     select: { id: true, name: true },
   });
   const names = new Map(profiles.map((profile) => [profile.id, profile.name]));
 
-  return runBulk(ids, (id) => deleteEncryptionProfile(id).then(() => undefined), (id) => names.get(id));
+  return runBulk(ids, (id) => deleteEncryptionProfile(id, options).then(() => undefined), (id) => names.get(id));
 }

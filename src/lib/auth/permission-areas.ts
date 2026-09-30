@@ -167,7 +167,7 @@ export const PERMISSION_AREAS: PermissionArea[] = [
         summary: "Change: the system and sign-in",
         permissions: [
             { id: P.SETTINGS.READ, label: "See the settings", description: "The system settings, the sign-in providers and the system tasks" },
-            { id: P.SETTINGS.WRITE, label: "Change the settings", description: "Change them, add sign-in providers and run system tasks", needs: [P.SETTINGS.READ] },
+            { id: P.SETTINGS.WRITE, label: "Change the settings", description: "Change them, add sign-in providers, run system tasks and restore or delete for good what was deleted", needs: [P.SETTINGS.READ] },
         ],
         levels: { see: [P.SETTINGS.READ], change: [P.SETTINGS.READ, P.SETTINGS.WRITE] },
     },

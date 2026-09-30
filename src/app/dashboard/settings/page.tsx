@@ -13,6 +13,7 @@ export default async function SettingsPage() {
     const model = await getSettingsModel({
         canManage: permissions.includes(PERMISSIONS.SETTINGS.WRITE),
         isSuperAdmin: user?.group?.name === "SuperAdmin",
+        permissions,
     });
 
     return (

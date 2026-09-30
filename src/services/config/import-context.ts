@@ -1,8 +1,7 @@
-import type prisma from "@/lib/prisma";
+import type { Tx } from "@/lib/prisma-tx";
 import type { AppConfigurationBackup, RestoreOptions } from "@/lib/types/config-backup";
 
-/** Every write of a restore goes through one transaction, on the client with its extensions. */
-export type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+export type { Tx };
 
 /**
  * A record of the file that merged into one of the same name here keeps the id it has here, so

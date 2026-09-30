@@ -11,6 +11,7 @@ import { jobBulkActions } from "@/components/dashboard/jobs/job-bulk-actions";
 import { JobCard } from "@/components/dashboard/jobs/job-card";
 import { jobColumns } from "@/components/dashboard/jobs/job-columns";
 import { JobDeleteDialog } from "@/components/dashboard/jobs/job-delete-dialog";
+import { useTrash } from "@/components/trash/use-trash";
 import { JobDetailsSheet } from "@/components/dashboard/jobs/job-details-sheet";
 import { JobForm } from "@/components/dashboard/jobs/job-form";
 import type { AdapterOption, EncryptionOption } from "@/components/dashboard/jobs/job-form-schema";
@@ -191,7 +192,8 @@ export function JobsClient({
         [handlers, startingJobId]
     );
     const columns = useMemo(() => jobColumns({ renderActions, onOpen: openDetails }), [renderActions, openDetails]);
-    const bulkActions = useMemo(() => jobBulkActions(canManage), [canManage]);
+    const trash = useTrash("job", reload);
+    const bulkActions = useMemo(() => jobBulkActions(canManage, trash), [canManage, trash]);
     const visibleJobs = useMemo(() => jobs.filter((job) => matchesJobFilter(job, filter)), [jobs, filter]);
 
     // A deleted job has no row left to show, so its panel closes with it.
@@ -296,6 +298,7 @@ export function JobsClient({
                     job={deleting}
                     onClose={() => setDeletingId(null)}
                     onDeleted={(id) => setJobs((current) => current.filter((job) => job.id !== id))}
+                    onRestored={reload}
                 />
             )}
 

@@ -12,6 +12,7 @@ import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { getNotificationsModel } from "@/services/notifications/notification-settings-service";
 import { getConfigBackupSettings } from "@/services/config/config-backup-settings";
+import { listTrash } from "@/services/trash/trash-service";
 import { getCertificateInfo } from "./certificate-service";
 import { getDatabaseInfo } from "./database-service";
 import { getDataRetentionOverview } from "./data-retention-service";
@@ -33,9 +34,9 @@ async function orNull<T>(what: string, read: () => Promise<T> | T): Promise<T | 
     }
 }
 
-export async function getSettingsModel(viewer: { canManage: boolean; isSuperAdmin: boolean }): Promise<SettingsModel> {
+export async function getSettingsModel({ permissions, ...viewer }: { canManage: boolean; isSuperAdmin: boolean; permissions: string[] }): Promise<SettingsModel> {
     const general = await getGeneralSettings();
-    const [signIn, lastWayIn, providers, privacy, retention, database, configBackup, storage, keys, configRun, rateLimits, certificate, tasks, integrity, notifications] =
+    const [signIn, lastWayIn, providers, privacy, retention, database, configBackup, storage, keys, configRun, rateLimits, certificate, tasks, integrity, notifications, trash] =
         await Promise.all([
             getSignInSettings(),
             passkeyIsLastWayIn(),
@@ -56,6 +57,8 @@ export async function getSettingsModel(viewer: { canManage: boolean; isSuperAdmi
             getSystemTaskRows(general.timezone),
             getIntegritySettings(),
             getNotificationsModel(),
+            // Only what the viewer may restore, so the list never offers what the server refuses.
+            listTrash({ permissions, isSuperAdmin: viewer.isSuperAdmin }),
         ]);
 
     return {
@@ -78,5 +81,6 @@ export async function getSettingsModel(viewer: { canManage: boolean; isSuperAdmi
         tasks,
         integrity,
         notifications,
+        trash,
     };
 }

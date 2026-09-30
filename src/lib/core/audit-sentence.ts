@@ -130,6 +130,7 @@ function describe(entry: AuditEntryText, target: string | null): Omit<EntryDescr
             return { parts: [plain("Ran "), ...it], glyph: "play" };
         }
         case A.RESTORE: {
+            if (kind === "trash_restore") return { parts: [plain("Restored "), ...it, plain(" from Recently deleted")], glyph: "restore" };
             if (kind === "config_restore") return { parts: [plain("Restored the configuration"), ...(file ? [plain(" from "), strong(fileName(file))] : [])], glyph: "restore" };
             const into = text(details.target);
             const what = kind === "file_restore" ? [plain("Restored files of "), ...(file ? [strong(fileName(file))] : [plain("a backup")])] : [plain("Restored "), ...(name ? [strong(name)] : [plain("a backup")])];
@@ -184,8 +185,11 @@ function describe(entry: AuditEntryText, target: string | null): Omit<EntryDescr
         }
         case A.DELETE: {
             if (entry.resource === R.AUTH) return { parts: [plain("Unlinked a single sign-on account")], glyph: "trash" };
-            if (details.bulk === true) return { parts: [plain(`Deleted ${count(details.succeeded) ?? "several"} ${plural(noun[0])}`)], glyph: "trash" };
-            return { parts: [plain("Deleted "), ...it], glyph: "trash" };
+            if (kind === "trash_purge") return { parts: [plain("Removed "), ...it, plain(" from Recently deleted")], glyph: "trash" };
+            // Without `permanently` a record went to Recently deleted, where it can still come back.
+            const forGood = details.permanently === true ? [plain(" permanently")] : [];
+            if (details.bulk === true) return { parts: [plain(`Deleted ${count(details.succeeded) ?? "several"} ${plural(noun[0])}`), ...forGood], glyph: "trash" };
+            return { parts: [plain("Deleted "), ...it, ...forGood], glyph: "trash" };
         }
         default:
             return { parts: [plain(`${entry.action.charAt(0)}${entry.action.slice(1).toLowerCase()} `), ...it], glyph: "pencil" };

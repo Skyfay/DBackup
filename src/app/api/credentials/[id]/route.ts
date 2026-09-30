@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { z } from "zod";
-import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
-import { PERMISSIONS } from "@/lib/auth/permissions";
+import { getAuthContext, checkPermissionWithContext, hasPermissionWithContext } from "@/lib/auth/access-control";
+import { PERMISSIONS, TRASH_ADMIN_PERMISSION } from "@/lib/auth/permissions";
+import { PERMANENT_DELETE_REFUSED, permanentlyFrom } from "@/lib/core/delete-mode";
 import * as credentialService from "@/services/auth/credential-service";
 import { credentialChanges, credentialName, credentialSnapshot } from "@/services/auth/credential-audit";
 import { auditService } from "@/services/audit-service";
@@ -95,7 +96,7 @@ export async function PUT(
 }
 
 export async function DELETE(
-    _req: NextRequest,
+    req: NextRequest,
     props: { params: Promise<{ id: string }> }
 ) {
     const { id } = await props.params;
@@ -105,15 +106,20 @@ export async function DELETE(
     try {
         checkPermissionWithContext(ctx, PERMISSIONS.CREDENTIALS.DELETE);
 
+        // Into Recently deleted, unless `?permanently=true`, which needs the right to change the settings too.
+        const permanently = permanentlyFrom(req.nextUrl.searchParams);
+        if (permanently && !hasPermissionWithContext(ctx, TRASH_ADMIN_PERMISSION)) {
+            return NextResponse.json({ success: false, error: PERMANENT_DELETE_REFUSED }, { status: 403 });
+        }
         // Read first, the profile is gone afterwards.
         const name = await credentialName(id);
-        await credentialService.deleteCredentialProfile(id);
+        await credentialService.deleteCredentialProfile(id, { permanently, by: ctx.userId });
 
         await auditService.logFor(
             ctx,
             AUDIT_ACTIONS.DELETE,
             AUDIT_RESOURCES.CREDENTIAL,
-            { name },
+            { name, ...(permanently ? { permanently: true } : {}) },
             id
         );
 

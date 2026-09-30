@@ -39,7 +39,8 @@ export function rekeyValue(value: string, from: Buffer, to: Buffer): string {
     let changed = false;
     const walk = (node: unknown): unknown => {
         if (typeof node === "string") {
-            const next = ENCRYPTED.test(node) ? rekeyValue(node, from, to) : node;
+            // A string may hold JSON of its own, like the config of a connection in Recently deleted.
+            const next = rekeyValue(node, from, to);
             if (next !== node) changed = true;
             return next;
         }
@@ -113,6 +114,30 @@ async function rekeySecondFactors(copy: PrismaClient, from: string, to: string):
     return rekeyed;
 }
 
+/**
+ * The second factors of deleted users, which Recently deleted keeps in the snapshot of their user.
+ * Read raw, since a copy of a version before Recently deleted has no such table.
+ */
+async function rekeyDeletedSecondFactors(copy: PrismaClient, from: string, to: string): Promise<number> {
+    const [table] = await copy.$queryRawUnsafe<{ name: string }[]>(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'DeletedRecord'`);
+    if (!table) return 0;
+    let rekeyed = 0;
+    for (const row of await copy.$queryRawUnsafe<{ id: string; data: string }[]>(`SELECT "id", "data" FROM "DeletedRecord" WHERE "kind" = 'user'`)) {
+        try {
+            const snapshot = JSON.parse(row.data) as { twoFactor?: { secret: string; backupCodes: string } | null };
+            if (!snapshot.twoFactor) continue;
+            snapshot.twoFactor.secret = await symmetricEncrypt({ key: to, data: await symmetricDecrypt({ key: from, data: snapshot.twoFactor.secret }) });
+            snapshot.twoFactor.backupCodes = await symmetricEncrypt({ key: to, data: await symmetricDecrypt({ key: from, data: snapshot.twoFactor.backupCodes }) });
+            await copy.$executeRawUnsafe(`UPDATE "DeletedRecord" SET "data" = ? WHERE "id" = ?`, JSON.stringify(snapshot), row.id);
+            rekeyed++;
+        } catch {
+            // Restored, the user sets the second factor up again, like after a lost phone.
+            log.warn("A second factor in Recently deleted could not be opened", { deletedRecordId: row.id });
+        }
+    }
+    return rekeyed;
+}
+
 /** Encrypts the secrets of a copy again for this DBackup, when the copy came from one with other keys. */
 export async function rekeyCopy(copy: PrismaClient, keys: CopyKeys): Promise<void> {
     const thisKey = process.env.ENCRYPTION_KEY ?? "";
@@ -123,6 +148,7 @@ export async function rekeyCopy(copy: PrismaClient, keys: CopyKeys): Promise<voi
     }
     if (keys.authSecret && keys.authSecret !== thisSecret) {
         const factors = await rekeySecondFactors(copy, keys.authSecret, thisSecret);
-        log.info("Second factors of the backup encrypted again for this DBackup", { factors });
+        const deleted = await rekeyDeletedSecondFactors(copy, keys.authSecret, thisSecret);
+        log.info("Second factors of the backup encrypted again for this DBackup", { factors, deleted });
     }
 }

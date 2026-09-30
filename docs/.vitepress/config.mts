@@ -208,6 +208,7 @@ export default defineConfig({
             { text: 'SSO / OIDC', link: '/user-guide/admin/sso' },
             { text: 'Settings & System Tasks', link: '/user-guide/admin/settings' },
             { text: 'Data Retention & Database', link: '/user-guide/admin/data-retention' },
+            { text: 'Recently Deleted', link: '/user-guide/admin/recently-deleted' },
             { text: 'Templates', link: '/user-guide/features/templates' }
           ]
         }

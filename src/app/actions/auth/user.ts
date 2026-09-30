@@ -1,8 +1,8 @@
 "use server"
 
 import { revalidatePath } from "next/cache";
-import { checkPermission, getCurrentUserWithGroup } from "@/lib/auth/access-control";
-import { PERMISSIONS } from "@/lib/auth/permissions";
+import { checkPermission, getCurrentUserWithGroup, hasPermission } from "@/lib/auth/access-control";
+import { PERMISSIONS, TRASH_ADMIN_PERMISSION } from "@/lib/auth/permissions";
 import { userService } from "@/services/user/user-service";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
@@ -11,6 +11,7 @@ import { wrapError, getErrorMessage } from "@/lib/logging/errors";
 import { notify } from "@/services/notifications/system-notification-service";
 import { NOTIFICATION_EVENTS } from "@/lib/notifications";
 import { BulkIdsSchema } from "@/lib/core/bulk-schema";
+import { DeleteModeSchema, PERMANENT_DELETE_REFUSED, type DeleteMode } from "@/lib/core/delete-mode";
 import { z } from "zod";
 
 const log = logger.child({ action: "user" });
@@ -108,9 +109,14 @@ export async function updateUserGroup(userId: string, groupId: string | null) {
     }
 }
 
-export async function deleteUser(userId: string) {
+/** Deletes a user, who waits in Recently deleted unless `permanently`. */
+export async function deleteUser(userId: string, mode?: DeleteMode) {
     await checkPermission(PERMISSIONS.USERS.WRITE);
     const currentUser = await getCurrentUserWithGroup();
+    const parsedMode = DeleteModeSchema.safeParse(mode);
+    if (!parsedMode.success) return { success: false, error: "Invalid request" };
+    const { permanently = false } = parsedMode.data;
+    if (permanently && !(await hasPermission(TRASH_ADMIN_PERMISSION))) return { success: false, error: PERMANENT_DELETE_REFUSED };
 
     // Refused here and not only left out of the menus, like in the bulk delete.
     if (currentUser?.id === userId) {
@@ -121,7 +127,7 @@ export async function deleteUser(userId: string) {
     }
 
     try {
-        await userService.deleteUser(userId);
+        const deleted = await userService.deleteUser(userId, { permanently, by: currentUser?.id });
         revalidatePath("/dashboard/users");
         revalidatePath("/dashboard/settings");
 
@@ -130,7 +136,7 @@ export async function deleteUser(userId: string) {
                 currentUser.id,
                 AUDIT_ACTIONS.DELETE,
                 AUDIT_RESOURCES.USER,
-                undefined,
+                { name: deleted.name || deleted.email, ...(permanently ? { permanently: true } : {}) },
                 userId
             );
         }
@@ -331,20 +337,23 @@ export async function getUserPreference(key: 'autoRedirectOnJobStart'): Promise<
  * a client-side check is not a guarantee. The last-SuperAdmin and last-user guards live in
  * the service and surface as per-user failures.
  */
-export async function bulkDeleteUsers(userIds: string[]) {
+export async function bulkDeleteUsers(userIds: string[], mode?: DeleteMode) {
     await checkPermission(PERMISSIONS.USERS.WRITE);
     const currentUser = await getCurrentUserWithGroup();
 
     const parsed = BulkIdsSchema.safeParse(userIds);
-    if (!parsed.success) {
+    const parsedMode = DeleteModeSchema.safeParse(mode);
+    if (!parsed.success || !parsedMode.success) {
         return { success: false as const, error: "Invalid request" };
     }
+    const { permanently = false } = parsedMode.data;
+    if (permanently && !(await hasPermission(TRASH_ADMIN_PERMISSION))) return { success: false as const, error: PERMANENT_DELETE_REFUSED };
 
     try {
         // Someone who is no SuperAdmin cannot delete one, so those are reported instead of sent.
         const guarded = currentUser?.group?.name === "SuperAdmin" ? [] : await userService.superAdminsAmong(parsed.data);
         const deletable = parsed.data.filter((id) => id !== currentUser?.id && !guarded.some((user) => user.id === id));
-        const result = await userService.deleteUsers(deletable);
+        const result = await userService.deleteUsers(deletable, { permanently, by: currentUser?.id });
 
         if (currentUser && parsed.data.includes(currentUser.id)) {
             result.failed.push({
@@ -365,7 +374,7 @@ export async function bulkDeleteUsers(userIds: string[]) {
                 currentUser.id,
                 AUDIT_ACTIONS.DELETE,
                 AUDIT_RESOURCES.USER,
-                { bulk: true, requested: parsed.data.length, succeeded: result.succeeded.length, failed: result.failed.length }
+                { bulk: true, requested: parsed.data.length, succeeded: result.succeeded.length, failed: result.failed.length, ...(permanently ? { permanently: true } : {}) }
             );
         }
 

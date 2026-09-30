@@ -83,11 +83,9 @@ Click **Edit** or **Change group** and pick another card. Permissions change wit
 
 ### Delete a User
 
-Click **Delete** in the menu of the user and confirm. Their sessions end at once and their API keys are deleted with them, while the audit log keeps what they did under their name. Tick several rows to delete them together.
+Click **Delete** in the menu of the user and confirm. Their sessions end at once and they cannot sign in anymore, while the audit log keeps what they did under their name. Tick several rows to delete them together.
 
-::: danger Cannot Undo
-Deleting a user is permanent. Your own account, the last SuperAdmin and the last account cannot be deleted, and only a SuperAdmin deletes a SuperAdmin.
-:::
+A deleted user waits in [Recently deleted](/user-guide/admin/recently-deleted) for 30 days and comes back from there with their password, second factor, passkeys and API keys. With the right to change the settings, tick **Delete it permanently now** for an account that has to be gone at once. Your own account, the last SuperAdmin and the last account cannot be deleted, and only a SuperAdmin deletes or restores a SuperAdmin.
 
 ## Authentication
 

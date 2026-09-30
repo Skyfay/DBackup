@@ -64,6 +64,8 @@ Not every area has every level. A group whose permissions match no level of an a
 
 `sources:read` browses the tables and rows of a database in the Database Explorer, `credentials:reveal` shows the secret of a saved login and is written to the audit log.
 
+`settings:write` also restores from [Recently deleted](/user-guide/admin/recently-deleted), deletes for good there and offers **Delete it permanently now** in every delete, each together with the right to change the record. Without it a delete always goes to Recently deleted.
+
 ## Create a Group
 
 **New group** takes two steps.

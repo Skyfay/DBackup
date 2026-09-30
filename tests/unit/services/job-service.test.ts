@@ -16,6 +16,9 @@ vi.mock('@/services/dashboard/cache', async (importOriginal) => ({
     invalidateDashboardCache: vi.fn(),
 }));
 
+const trash = vi.hoisted(() => ({ keepInTrash: vi.fn(async () => 'trash-1') }));
+vi.mock('@/services/trash/trash-snapshot', () => trash);
+
 // Every job the service hands out names its connections without their configs.
 const CONNECTION = { select: { id: true, name: true, type: true, adapterId: true } };
 
@@ -575,15 +578,29 @@ describe('JobService', () => {
     });
 
     describe('deleteJob', () => {
-        it('should delete a job and refresh the scheduler', async () => {
+        beforeEach(() => {
+            prismaMock.$transaction.mockImplementation(async (callback: any) => callback(prismaMock));
+        });
+
+        it('should delete a job into Recently deleted and refresh the scheduler', async () => {
             const deletedJob = { id: 'job-1', name: 'Old Job' };
             prismaMock.job.delete.mockResolvedValue(deletedJob as any);
 
-            const result = await service.deleteJob('job-1');
+            const result = await service.deleteJob('job-1', { by: 'u-1' });
 
+            expect(trash.keepInTrash).toHaveBeenCalledWith(prismaMock, 'job', 'job-1', 'u-1');
             expect(prismaMock.job.delete).toHaveBeenCalledWith({ where: { id: 'job-1' } });
             expect(scheduler.refresh).toHaveBeenCalledTimes(1);
             expect(result).toEqual(deletedJob);
+        });
+
+        it('skips Recently deleted for a job deleted permanently', async () => {
+            prismaMock.job.delete.mockResolvedValue({ id: 'job-1', name: 'Old Job' } as any);
+
+            await service.deleteJob('job-1', { permanently: true });
+
+            expect(trash.keepInTrash).not.toHaveBeenCalled();
+            expect(prismaMock.job.delete).toHaveBeenCalled();
         });
 
         // The overview counts the jobs per connection, and the Connections page decides from

@@ -1,10 +1,9 @@
 /**
- * Coverage tests for services/config/export.ts and services/config/import.ts.
+ * Coverage tests for services/config/import.ts.
  * Covers branches not exercised by the existing complex lifecycle tests.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { prismaMock } from '@/lib/testing/prisma-mock';
-import { exportConfiguration } from '@/services/config/export';
 import { importConfiguration } from '@/services/config/import';
 import type { RestoreOptions } from '@/lib/types/config-backup';
 
@@ -28,22 +27,6 @@ vi.mock('@/lib/crypto', () => ({
 vi.mock('@/lib/logging/logger', () => ({
   logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
 }));
-
-// Helper: set up empty base mocks for the export function
-function setupEmptyExport() {
-  prismaMock.systemSetting.findMany.mockResolvedValue([]);
-  prismaMock.credentialProfile.findMany.mockResolvedValue([]);
-  prismaMock.adapterConfig.findMany.mockResolvedValue([]);
-  prismaMock.job.findMany
-    .mockResolvedValueOnce([]) // regular jobs query
-    .mockResolvedValueOnce([]); // jobsWithNotifications query
-  prismaMock.jobDestination.findMany.mockResolvedValue([]);
-  prismaMock.apiKey.findMany.mockResolvedValue([]);
-  prismaMock.user.findMany.mockResolvedValue([]);
-  prismaMock.group.findMany.mockResolvedValue([]);
-  prismaMock.ssoProvider.findMany.mockResolvedValue([]);
-  prismaMock.encryptionProfile.findMany.mockResolvedValue([]);
-}
 
 // Helper: minimal valid backup for import tests
 function makeBackup(overrides: Record<string, any> = {}) {
@@ -98,147 +81,6 @@ function setupMinimalImport() {
   prismaMock.auditLog.upsert.mockResolvedValue({} as any);
   prismaMock.notificationLog.upsert.mockResolvedValue({} as any);
 }
-
-// ---------------------------------------------------------------------------
-
-describe('export.ts - uncovered branches', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('builds jobNotifications map for jobs that have notifications (line 43)', async () => {
-    setupEmptyExport();
-    // Override: second job.findMany call returns a job WITH notifications
-    prismaMock.job.findMany
-      .mockReset()
-      .mockResolvedValueOnce([]) // regular jobs
-      .mockResolvedValueOnce([
-        { id: 'job-1', notifications: [{ id: 'notif-A' }, { id: 'notif-B' }] } as any,
-        { id: 'job-2', notifications: [] } as any,
-      ]);
-
-    const result = await exportConfiguration(false);
-
-    expect(result.jobNotifications['job-1']).toEqual(['notif-A', 'notif-B']);
-    expect(result.jobNotifications['job-2']).toBeUndefined(); // empty array not added
-  });
-
-  it('handles adapter with invalid JSON config gracefully during export (line 53)', async () => {
-    setupEmptyExport();
-    prismaMock.adapterConfig.findMany.mockResolvedValue([
-      { id: 'a1', name: 'Broken', adapterId: 'mysql', type: 'database', config: 'NOT_JSON' },
-    ] as any);
-
-    const result = await exportConfiguration(false);
-
-    expect(result.adapters).toHaveLength(1);
-    // After parse failure, configObj defaults to {} - stripped secret is also {}
-    expect(JSON.parse(result.adapters[0].config)).toEqual({});
-  });
-
-  it('falls back gracefully when profile key decryption fails (lines 123-126)', async () => {
-    const cryptoModule = await import('@/lib/crypto');
-    (cryptoModule.decrypt as any).mockImplementationOnce(() => {
-      throw new Error('Key decrypt failure');
-    });
-
-    setupEmptyExport();
-    prismaMock.encryptionProfile.findMany.mockResolvedValue([
-      { id: 'p1', name: 'My Profile', secretKey: 'DECRYPT_WILL_FAIL', description: null },
-    ] as any);
-
-    // With includeSecrets=true the code tries to decrypt the key - it should catch and return rest
-    const result = await exportConfiguration(true);
-
-    const profile = result.encryptionProfiles.find(p => p.id === 'p1');
-    expect(profile).toBeDefined();
-    expect((profile as any).secretKey).toBeUndefined(); // secretKey stripped on error
-  });
-
-  it('strips hashedKey from API keys when includeSecrets=false (lines 137-140)', async () => {
-    setupEmptyExport();
-    prismaMock.apiKey.findMany.mockResolvedValue([
-      { id: 'k1', name: 'CI Key', hashedKey: 'abc123', userId: 'u1', createdAt: new Date() },
-    ] as any);
-
-    const result = await exportConfiguration(false);
-
-    expect(result.apiKeys).toHaveLength(1);
-    expect(result.apiKeys[0].hashedKey).toBe('');
-  });
-
-  it('preserves hashedKey when includeSecrets=true', async () => {
-    setupEmptyExport();
-    prismaMock.apiKey.findMany.mockResolvedValue([
-      { id: 'k1', name: 'CI Key', hashedKey: 'abc123', userId: 'u1', createdAt: new Date() },
-    ] as any);
-
-    const result = await exportConfiguration(true);
-
-    expect(result.apiKeys[0].hashedKey).toBe('abc123');
-  });
-
-  it('includes statistics when includeStatistics=true (lines 146-152)', async () => {
-    setupEmptyExport();
-    prismaMock.storageSnapshot.findMany.mockResolvedValue([{ id: 'ss1' }] as any);
-    prismaMock.execution.findMany.mockResolvedValue([{ id: 'ex1' }] as any);
-    prismaMock.auditLog.findMany.mockResolvedValue([{ id: 'al1' }] as any);
-    prismaMock.notificationLog.findMany.mockResolvedValue([{ id: 'nl1' }] as any);
-
-    const result = await exportConfiguration({ includeSecrets: false, includeStatistics: true });
-
-    expect(result.statistics).toBeDefined();
-    expect(result.statistics!.storageSnapshots).toHaveLength(1);
-    expect(result.statistics!.executions).toHaveLength(1);
-    expect(result.metadata.includeStatistics).toBe(true);
-  });
-
-  it('omits statistics field when includeStatistics=false (default)', async () => {
-    setupEmptyExport();
-
-    const result = await exportConfiguration(false);
-
-    expect(result.statistics).toBeUndefined();
-  });
-
-  it('handles SSO provider with null clientSecret and null oidcConfig when stripping secrets (lines 77,79 false branches)', async () => {
-    setupEmptyExport();
-    prismaMock.ssoProvider.findMany.mockResolvedValue([
-      {
-        id: 'sso-null', providerId: 'google', name: 'Google', domain: 'example.com',
-        clientSecret: null, oidcConfig: null, clientId: 'cid',
-        createdAt: new Date(), updatedAt: new Date(),
-      },
-    ] as any);
-
-    const result = await exportConfiguration(false);
-
-    const provider = result.ssoProviders.find((p: any) => p.id === 'sso-null');
-    expect(provider).toBeDefined();
-    expect(provider!.clientSecret).toBeNull(); // null stays null (false branch of line 77)
-    expect(provider!.oidcConfig).toBeNull();   // null stays null (false branch of line 79)
-  });
-
-  it('handles SSO oidcConfig without a clientSecret property (line 83 false branch)', async () => {
-    setupEmptyExport();
-    prismaMock.ssoProvider.findMany.mockResolvedValue([
-      {
-        id: 'sso-no-cs', providerId: 'azure', name: 'Azure', domain: 'example.com',
-        clientSecret: 'mysecret',
-        oidcConfig: JSON.stringify({ authorizationUrl: 'https://login.microsoftonline.com' }),
-        clientId: 'azure-cid', createdAt: new Date(), updatedAt: new Date(),
-      },
-    ] as any);
-
-    const result = await exportConfiguration(false);
-
-    const provider = result.ssoProviders.find((p: any) => p.id === 'sso-no-cs');
-    expect(provider!.clientSecret).toBe('');
-    const oidc = JSON.parse(provider!.oidcConfig!);
-    expect(oidc.authorizationUrl).toBeDefined();
-    expect(oidc.clientSecret).toBeUndefined(); // no clientSecret to strip (false branch of line 83)
-  });
-});
 
 // ---------------------------------------------------------------------------
 
@@ -831,48 +673,6 @@ describe('import.ts - uncovered branches', () => {
     expect(prismaMock.account.upsert).not.toHaveBeenCalled();
   });
 
-  // ---------------------------------------------------------------------------
-  // Credential Profile - export branch coverage
-  // ---------------------------------------------------------------------------
-
-  it('decrypts credential profile data when includeSecrets=true (happy path)', async () => {
-    setupEmptyExport();
-    prismaMock.credentialProfile.findMany.mockResolvedValue([
-      { id: 'cp1', name: 'SSH Key', description: null, type: 'ssh', data: 'ENC_s3cr3t', createdAt: new Date(), updatedAt: new Date() },
-    ] as any);
-
-    const result = await exportConfiguration(true);
-
-    // decrypt('ENC_s3cr3t') returns 's3cr3t' (mock removes ENC_ prefix)
-    expect(result.credentialProfiles[0].data).toBe('s3cr3t');
-  });
-
-  it('falls back to empty data string when credential profile decrypt fails (error branch)', async () => {
-    const cryptoModule = await import('@/lib/crypto');
-    (cryptoModule.decrypt as any).mockImplementationOnce(() => {
-      throw new Error('Decryption error');
-    });
-
-    setupEmptyExport();
-    prismaMock.credentialProfile.findMany.mockResolvedValue([
-      { id: 'cp-bad', name: 'Broken Creds', description: null, type: 'ssh', data: 'corrupted', createdAt: new Date(), updatedAt: new Date() },
-    ] as any);
-
-    const result = await exportConfiguration(true);
-
-    expect(result.credentialProfiles[0].data).toBe('');
-  });
-
-  it('strips credential profile data when includeSecrets=false', async () => {
-    setupEmptyExport();
-    prismaMock.credentialProfile.findMany.mockResolvedValue([
-      { id: 'cp2', name: 'DB Creds', description: null, type: 'database', data: 'ENC_password', createdAt: new Date(), updatedAt: new Date() },
-    ] as any);
-
-    const result = await exportConfiguration(false);
-
-    expect(result.credentialProfiles[0].data).toBe('');
-  });
 });
 
 describe('import.ts - credential profile branches', () => {

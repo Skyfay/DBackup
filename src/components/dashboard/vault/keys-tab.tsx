@@ -21,6 +21,7 @@ import { keyActions, type KeyActionHandlers } from "./key-actions";
 import { KeyCard } from "./key-card";
 import { keyColumns } from "./key-columns";
 import { KeyDeleteDialog } from "./key-delete-dialog";
+import { useTrash } from "@/components/trash/use-trash";
 import { KeyDetails } from "./key-details";
 import { KeyRevealDialog, revealKey } from "./key-reveal-dialog";
 import { RecoveryKitDialog } from "./recovery-kit-dialog";
@@ -107,6 +108,7 @@ export function KeysTab({ ref, cards, canManage, initialLayout }: KeysTabProps) 
     const rows = useMemo(() => keys.filter(QUICK[quick]), [keys, quick]);
     const names = useMemo(() => keys.map((key) => key.name), [keys]);
 
+    const trash = useTrash("encryptionKey", afterChange);
     const bulkActions = useMemo<BulkAction<VaultKey>[]>(() => canManage ? [
         {
             id: "kit",
@@ -134,12 +136,18 @@ export function KeysTab({ ref, cards, canManage, initialLayout }: KeysTabProps) 
             ineligible: keyBlocker,
             confirm: {
                 title: (selected) => `Delete ${count(selected.length, "key")}?`,
-                description: () => "Every backup made with these keys can no longer be opened, DBackup neither. Keep a recovery kit with them for anything you still need.",
+                description: () => "Backups made with these keys cannot be opened while the keys are gone.",
                 confirmLabel: "Delete",
             },
-            run: (selected) => unwrapBulkAction(bulkDeleteEncryptionProfiles(selected.map((key) => key.id))),
+            trash: {
+                ...trash,
+                permanentLine: (selected) => (selected.length === 1
+                    ? "For a key that leaked. It skips Recently deleted, and without a recovery kit the backups made with it can never be opened again, by DBackup neither."
+                    : "For keys that leaked. They skip Recently deleted, and without a recovery kit the backups made with them can never be opened again, by DBackup neither."),
+            },
+            run: (selected, { permanently }) => unwrapBulkAction(bulkDeleteEncryptionProfiles(selected.map((key) => key.id), { permanently })),
         },
-    ] : [], [canManage, keys]);
+    ] : [], [canManage, keys, trash]);
 
     const shown = details ? keys.find((key) => key.id === details.id) ?? null : null;
 
@@ -275,6 +283,7 @@ export function KeysTab({ ref, cards, canManage, initialLayout }: KeysTabProps) 
                         setDetails(null);
                         afterChange();
                     }}
+                    onRestored={afterChange}
                 />
             )}
         </div>

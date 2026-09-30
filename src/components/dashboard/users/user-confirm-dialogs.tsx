@@ -6,6 +6,8 @@ import { toast } from "sonner";
 import { deleteUser } from "@/app/actions/auth/user";
 import { resetUserTwoFactor, revokeUserSessions } from "@/app/actions/auth/user-security";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { TrashConfirmDialog, toastMovedToTrash, useTrashUntil } from "@/components/ui/delete-mode";
+import { useTrash } from "@/components/trash/use-trash";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import type { UserRow } from "@/services/user/users-types";
@@ -27,21 +29,8 @@ interface Ask {
 
 const count = (value: number, one: string, many: string) => `${value} ${value === 1 ? one : many}`;
 
-function askFor(kind: UserConfirmKind, user: UserRow): Ask {
+function askFor(kind: Exclude<UserConfirmKind, "delete">, user: UserRow): Ask {
     switch (kind) {
-        case "delete":
-            return {
-                title: `Delete ${user.name}?`,
-                note: "Cannot be undone",
-                description: [
-                    "Their sessions end at once",
-                    user.apiKeys > 0 ? `and their ${count(user.apiKeys, "API key stops", "API keys stop")} working` : null,
-                ].filter(Boolean).join(" ") + ". The audit log keeps what they did.",
-                confirm: "Delete user",
-                icon: Trash,
-                run: () => deleteUser(user.id),
-                done: `${user.name} deleted`,
-            };
         case "reset-2fa":
             return {
                 title: `Reset 2FA of ${user.name}?`,
@@ -72,10 +61,68 @@ interface UserConfirmDialogProps {
     user: UserRow;
     onClose: () => void;
     onDone: () => void;
+    /** After Undo brought a deleted user back, to load the list again. */
+    onRestored: () => void | Promise<void>;
 }
 
-/** Asks before a user is deleted, loses the second factor or is signed out. Each is red, since each takes something away. */
-export function UserConfirmDialog({ kind, user, onClose, onDone }: UserConfirmDialogProps) {
+/**
+ * Asks before a user is deleted, loses the second factor or is signed out. A delete goes to
+ * Recently deleted in amber unless it is ticked to go at once, the rest is red, since each takes
+ * something away.
+ */
+export function UserConfirmDialog({ kind, onRestored, ...props }: UserConfirmDialogProps) {
+    return kind === "delete" ? <UserDeleteDialog {...props} onRestored={onRestored} /> : <UserAskDialog kind={kind} {...props} />;
+}
+
+function UserDeleteDialog({ user, onClose, onDone, onRestored }: Omit<UserConfirmDialogProps, "kind">) {
+    const [pending, setPending] = useState(false);
+    const trash = useTrash("user", onRestored);
+    const until = useTrashUntil(trash.days);
+    const keys = user.apiKeys > 0 ? " and API keys" : "";
+
+    const remove = async (permanently: boolean) => {
+        setPending(true);
+        try {
+            const result = await deleteUser(user.id, { permanently });
+            if (result.success) {
+                if (permanently) toast.success(`${user.name} deleted`);
+                else toastMovedToTrash(`${user.name} moved to Recently deleted`, trash.days, () => trash.undo([user.id]));
+                onDone();
+                return;
+            }
+            toast.error(result.error || "That did not work.");
+        } catch (error) {
+            // Without the right to change users the action throws instead of answering.
+            log.warn("Deleting a user failed", { userId: user.id }, wrapError(error));
+            toast.error("That did not work.");
+        }
+        setPending(false);
+    };
+
+    return (
+        <TrashConfirmDialog
+            onOpenChange={(open) => !open && onClose()}
+            icon={Trash}
+            title={`Delete ${user.name}?`}
+            note="They cannot sign in while deleted"
+            description={[
+                "Their sessions end at once",
+                user.apiKeys > 0 ? `and their ${count(user.apiKeys, "API key stops", "API keys stop")} working` : null,
+            ].filter(Boolean).join(" ") + ". The audit log keeps what they did."}
+            confirmLabel="Delete user"
+            days={trash.days}
+            canDeletePermanently={trash.canDeletePermanently}
+            subject={user.name}
+            restoreLine={`Restore them until ${until} and they sign in as before, with their password, second factor, passkeys${keys}.`}
+            permanentLine={`For an account that has to be gone at once. It skips Recently deleted with the password, second factor, passkeys${keys}.`}
+            permanentNotice={`${user.name} is gone at once. DBackup keeps no copy of the account anywhere.`}
+            isPending={pending}
+            onConfirm={(permanently) => void remove(permanently)}
+        />
+    );
+}
+
+function UserAskDialog({ kind, user, onClose, onDone }: Omit<UserConfirmDialogProps, "kind" | "onRestored"> & { kind: Exclude<UserConfirmKind, "delete"> }) {
     const [pending, setPending] = useState(false);
     const ask = askFor(kind, user);
 

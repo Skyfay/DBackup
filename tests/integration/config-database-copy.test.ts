@@ -144,6 +144,11 @@ describe("a restore of a copy", () => {
         const file = await oldDatabase("stage.db");
         const setup = openCopy(file);
         await setup.$executeRawUnsafe(`CREATE TRIGGER wipe AFTER INSERT ON "Group" BEGIN DELETE FROM "User"; END`);
+        // Recently deleted keeps a connection whose config holds its secret as JSON in a string, and a user with a second factor.
+        const deletedConfig = JSON.stringify({ host: "old", password: encryptWithKey("gone-but-kept", Buffer.from(KEY_A, "hex")) });
+        await setup.deletedRecord.create({ data: { id: "t-conn", kind: "connection", recordId: "db-9", name: "Old DB", data: JSON.stringify({ record: { id: "db-9", config: deletedConfig } }), permission: "sources:write" } });
+        const deletedFactor = { secret: await symmetricEncrypt({ key: SECRET_A, data: "DELETEDTOTP" }), backupCodes: await symmetricEncrypt({ key: SECRET_A, data: '["three"]' }) };
+        await setup.deletedRecord.create({ data: { id: "t-user", kind: "user", recordId: "u-9", name: "Jana", data: JSON.stringify({ record: { id: "u-9" }, twoFactor: deletedFactor }), permission: "users:write" } });
         await setup.$disconnect();
         const liveDir = path.join(root, "live");
         mkdirSync(liveDir, { recursive: true });
@@ -166,6 +171,11 @@ describe("a restore of a copy", () => {
         const factor = await db.twoFactor.findUniqueOrThrow({ where: { id: "tf-1" } });
         expect(await symmetricDecrypt({ key: SECRET_B, data: factor.secret })).toBe("TOTPSECRET");
         expect(await symmetricDecrypt({ key: SECRET_B, data: factor.backupCodes })).toBe('["one","two"]');
+        const trashedConnection = JSON.parse((await db.deletedRecord.findUniqueOrThrow({ where: { id: "t-conn" } })).data);
+        expect(decryptWithKey(JSON.parse(trashedConnection.record.config).password, key)).toBe("gone-but-kept");
+        const trashedUser = JSON.parse((await db.deletedRecord.findUniqueOrThrow({ where: { id: "t-user" } })).data);
+        expect(await symmetricDecrypt({ key: SECRET_B, data: trashedUser.twoFactor.secret })).toBe("DELETEDTOTP");
+        expect(await symmetricDecrypt({ key: SECRET_B, data: trashedUser.twoFactor.backupCodes })).toBe('["three"]');
         expect(await db.session.count()).toBe(0);
         expect(await db.systemSetting.findUnique({ where: { key: COPY_KEYS_SETTING } })).toBeNull();
         expect(await db.$queryRawUnsafe<unknown[]>(`SELECT name FROM sqlite_master WHERE type = 'trigger'`)).toEqual([]);

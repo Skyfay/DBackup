@@ -68,7 +68,7 @@ A change here saves at once, without the bar at the foot. See [Notifications](/u
 
 ## Data
 
-**Data retention** and **Database** are described in [Data Retention & Database](/user-guide/admin/data-retention), **Configuration backup** in [System Backup](/user-guide/features/system-backup).
+**Data retention** and **Database** are described in [Data Retention & Database](/user-guide/admin/data-retention), **Recently deleted** in [Recently Deleted](/user-guide/admin/recently-deleted) and **Configuration backup** in [System Backup](/user-guide/features/system-backup).
 
 ## Sign-in
 

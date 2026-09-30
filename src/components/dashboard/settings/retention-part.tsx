@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, Bell, FileText, HardDrive, History, ScrollText, type LucideIcon } from "lucide-react";
+import { Activity, ArchiveRestore, Bell, FileText, HardDrive, History, ScrollText, type LucideIcon } from "lucide-react";
 import { saveDataRetentionAction } from "@/app/actions/settings/data-retention";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -16,6 +16,7 @@ const ICONS: Record<DataRetentionId, LucideIcon> = {
     notificationHistory: Bell,
     storageUsage: HardDrive,
     healthChecks: Activity,
+    deletedItems: ArchiveRestore,
 };
 
 const COUNT_LABELS: Record<DataRetentionId, [one: string, many: string]> = {
@@ -25,6 +26,7 @@ const COUNT_LABELS: Record<DataRetentionId, [one: string, many: string]> = {
     notificationHistory: ["notification", "notifications"],
     storageUsage: ["measurement", "measurements"],
     healthChecks: ["check", "checks"],
+    deletedItems: ["item", "items"],
 };
 
 export const RETENTION_FIELDS = Object.fromEntries(

@@ -1,4 +1,5 @@
 import {
+    ArchiveRestore,
     Bell,
     Database,
     EyeOff,
@@ -24,6 +25,7 @@ export type SettingsPartId =
     | "retention"
     | "database"
     | "config-backup"
+    | "recently-deleted"
     | "sign-in"
     | "https"
     | "rate-limits"
@@ -56,6 +58,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         parts: [
             { id: "retention", label: "Data retention", icon: History, description: "How long DBackup keeps its own records, cleared every night by the system task Clean old data. Backup files follow the retention of their job." },
             { id: "database", label: "Database", icon: Database, description: "The SQLite database with the configuration, the users and the history of DBackup." },
+            { id: "recently-deleted", label: "Recently deleted", icon: ArchiveRestore, description: "Keys, saved logins, connections, jobs and users after a delete, for as long as Data retention keeps them. Restore one, or delete it for good." },
             { id: "config-backup", label: "Configuration backup", icon: FileCog, description: "The whole database of DBackup as one encrypted file, to rebuild it after a loss." },
         ],
     },

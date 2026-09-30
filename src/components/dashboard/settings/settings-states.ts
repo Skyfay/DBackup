@@ -45,6 +45,7 @@ export function partStates(model: SettingsModel): Partial<Record<SettingsPartId,
         notifications: notificationState(model.notifications),
         database: model.database ? { text: formatBytes(model.database.totalBytes, 0) } : null,
         "config-backup": configBackupState(model.configBackup),
+        "recently-deleted": model.trash.length > 0 ? { text: String(model.trash.length) } : null,
         https: certificateState(model.certificate),
     };
     return Object.fromEntries(Object.entries(states).filter(([, state]) => state)) as Partial<Record<SettingsPartId, PartState>>;

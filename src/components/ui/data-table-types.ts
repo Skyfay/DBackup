@@ -103,14 +103,38 @@ export interface BulkAction<TData> {
     itemIcon?: (row: TData) => React.ComponentType<{ className?: string }>;
     /** A short muted fact after the name in the confirmation, such as the type of a connection. */
     itemDetail?: (row: TData) => string;
+    /**
+     * A delete that moves its rows to Recently deleted. Its confirmation says so in amber and, for a
+     * viewer who may, offers to delete them permanently now, which turns it red and reaches `run` as
+     * `permanently`. The toast after it offers Undo.
+     */
+    trash?: BulkTrash<TData>;
     /** Performs the action. Reports per-row outcomes rather than throwing on the first failure. */
-    run?: (rows: TData[]) => Promise<BulkResult>;
+    run?: (rows: TData[], options: BulkRunOptions) => Promise<BulkResult>;
     /**
      * Opens a dialog of its own in place of `run`, for an action that needs settings first,
      * like the alerts of several destinations. What it did comes back through `onDone` and is
      * reported and cleared like the result of `run`.
      */
     dialog?: (props: BulkDialogProps<TData>) => React.ReactNode;
+}
+
+/** How a bulk action runs, as its confirmation decided. */
+export interface BulkRunOptions {
+    /** A delete with `trash` skips Recently deleted. */
+    permanently: boolean;
+}
+
+/** A delete whose rows wait in Recently deleted, see `trash` on `BulkAction`. */
+export interface BulkTrash<TData> {
+    /** How long Recently deleted keeps them, from Data retention. */
+    days: number;
+    /** Offers the tick that deletes them at once, for a viewer who may skip Recently deleted. */
+    canDeletePermanently: boolean;
+    /** What deleting them at once loses, the line under the tick. */
+    permanentLine?: (rows: TData[]) => string;
+    /** Brings back what the delete just moved there, for Undo in the toast after it. */
+    undo: (ids: string[]) => void;
 }
 
 /** What the dialog of a bulk action gets: the rows it acts on, and how to hand back. */

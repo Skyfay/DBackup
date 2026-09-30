@@ -17,7 +17,8 @@ export type DataRetentionId =
     | "auditLog"
     | "notificationHistory"
     | "storageUsage"
-    | "healthChecks";
+    | "healthChecks"
+    | "deletedItems";
 
 export interface DataRetentionSetting {
     id: DataRetentionId;
@@ -81,6 +82,14 @@ export const DATA_RETENTION_SETTINGS: readonly DataRetentionSetting[] = [
         description: "The checks of every connection, one a minute.",
         defaultDays: 2,
         choices: [1, 2, 7, 14, 30],
+    },
+    {
+        id: "deletedItems",
+        key: "trash.retentionDays",
+        label: "Deleted items",
+        description: "Keys, saved logins, connections, jobs and users in Recently deleted.",
+        defaultDays: 30,
+        choices: [1, 7, 14, 30, 60, 90],
     },
 ];
 

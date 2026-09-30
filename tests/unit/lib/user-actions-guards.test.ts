@@ -3,6 +3,7 @@ import { PermissionError } from "@/lib/logging/errors";
 
 const mocks = vi.hoisted(() => ({
     allowed: true,
+    mayChangeSettings: true,
     viewer: { id: "admin", name: "Ada", email: "ada@example.ch", group: { name: "Admins" } } as { id: string; name: string; email: string; group: { name: string } | null },
     viewerSession: "s-admin",
     service: {
@@ -26,6 +27,7 @@ vi.mock("@/lib/auth/access-control", () => ({
         if (!mocks.allowed) throw new PermissionError(permission);
     }),
     getCurrentUserWithGroup: vi.fn(async () => mocks.viewer),
+    hasPermission: vi.fn(async () => mocks.mayChangeSettings),
 }));
 vi.mock("@/lib/auth", () => ({ auth: { api: { getSession: vi.fn(async () => ({ session: { id: mocks.viewerSession } })) } } }));
 vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
@@ -46,6 +48,7 @@ describe("what an admin may do to other users", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.allowed = true;
+        mocks.mayChangeSettings = true;
         mocks.viewer = ADMIN;
         mocks.service.isSuperAdmin.mockResolvedValue(false);
         mocks.service.isSuperAdminGroup.mockResolvedValue(false);
@@ -86,12 +89,27 @@ describe("what an admin may do to other users", () => {
         expect(mocks.service.deleteUser).not.toHaveBeenCalled();
     });
 
+    it("deletes a user permanently only for someone who may change the settings", async () => {
+        mocks.mayChangeSettings = false;
+        const refused = { success: false, error: "Deleting permanently needs the right to change the settings." };
+
+        expect(await deleteUser("lena", { permanently: true })).toEqual(refused);
+        expect(await bulkDeleteUsers(["lena"], { permanently: true })).toEqual(refused);
+        expect(mocks.service.deleteUser).not.toHaveBeenCalled();
+        expect(mocks.service.deleteUsers).not.toHaveBeenCalled();
+
+        mocks.mayChangeSettings = true;
+        mocks.service.deleteUser.mockResolvedValue({ name: "Lena", email: "lena@example.ch" });
+        expect(await deleteUser("lena", { permanently: true })).toEqual({ success: true });
+        expect(mocks.service.deleteUser).toHaveBeenCalledWith("lena", { permanently: true, by: "admin" });
+    });
+
     it("reports the SuperAdmins and the own account of a bulk delete instead of sending them", async () => {
         mocks.service.superAdminsAmong.mockResolvedValue([{ id: "root", name: "Root" }]);
 
         const result = await bulkDeleteUsers(["lena", "root", "admin"]);
 
-        expect(mocks.service.deleteUsers).toHaveBeenCalledWith(["lena"]);
+        expect(mocks.service.deleteUsers).toHaveBeenCalledWith(["lena"], { permanently: false, by: "admin" });
         expect(result).toEqual({
             success: true,
             data: {

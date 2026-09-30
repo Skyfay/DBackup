@@ -12,8 +12,10 @@ const config = (id: string, metadata: Record<string, unknown> = {}): AdapterConf
     createdAt: "2026-09-01T00:00:00.000Z",
 });
 
+const TRASH = { days: 30, canDeletePermanently: true, undo: () => undefined };
+
 const available = (rows: AdapterConfig[]) =>
-    connectionBulkActions("database", true)
+    connectionBulkActions("database", true, TRASH)
         .filter((action) => action.isAvailable?.(rows) ?? true)
         .map((action) => action.id);
 
@@ -33,13 +35,13 @@ describe("connectionBulkActions", () => {
     });
 
     it("keeps the other lists to deleting and offers nothing without the edit permission", () => {
-        expect(connectionBulkActions("destination", true).map((action) => action.id)).toEqual(["delete"]);
-        expect(connectionBulkActions("notification", true).map((action) => action.id)).toEqual(["delete"]);
-        expect(connectionBulkActions("database", false)).toEqual([]);
+        expect(connectionBulkActions("destination", true, TRASH).map((action) => action.id)).toEqual(["delete"]);
+        expect(connectionBulkActions("notification", true, TRASH).map((action) => action.id)).toEqual(["delete"]);
+        expect(connectionBulkActions("database", false, TRASH)).toEqual([]);
     });
 
     it("lists a connection in the confirmation with its name and type", () => {
-        const [remove] = connectionBulkActions("destination", true);
+        const [remove] = connectionBulkActions("destination", true, TRASH);
         const row = { ...config("backups"), name: "Backups", adapterId: "local-filesystem" };
 
         expect(remove.itemName?.(row)).toBe("Backups");
@@ -70,7 +72,7 @@ describe("deleteBlocker", () => {
     });
 
     it("is what the delete action checks for every selected connection", () => {
-        const [remove] = connectionBulkActions("database", true);
+        const [remove] = connectionBulkActions("database", true, TRASH);
         expect(remove.ineligible?.(used("database", 1, 0))).toBe("Used by 1 job");
         expect(remove.ineligible?.(used("database", 0, 0))).toBeNull();
     });

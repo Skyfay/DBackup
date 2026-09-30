@@ -18,6 +18,7 @@ Go to **Settings → Data retention**. Each kind of record shows how many there 
 | **Notification history** | Notifications sent by DBackup, including their rendered content. | 90 days | 7 days to 5 years |
 | **Storage history** | Hourly size measurements behind the storage charts and usage alerts. | 90 days | 7 days to 5 years |
 | **Health check history** | Connection checks against sources and destinations, recorded every minute. | 2 days | 1 to 30 days |
+| **Deleted items** | Keys, saved logins, connections, jobs and users in [Recently deleted](/user-guide/admin/recently-deleted), which cannot be restored afterwards. | 30 days | 1 to 90 days |
 
 The step log is by far the largest part of a run. Keeping the History entries while removing old logs frees most of the space without losing statistics.
 

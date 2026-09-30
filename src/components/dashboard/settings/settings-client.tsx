@@ -14,6 +14,7 @@ import { HttpsPart } from "./https-part";
 import { NotificationsPart } from "./notifications-part";
 import { PrivacyPart } from "./privacy-part";
 import { RateLimitsPart } from "./rate-limits-part";
+import { RecentlyDeletedPart } from "./recently-deleted-part";
 import { RetentionPart } from "./retention-part";
 import { SettingsFrameContext } from "./settings-frame";
 import { searchSettings, settingsIndex, type SettingEntry } from "./settings-index";
@@ -132,6 +133,7 @@ export function SettingsClient({ model, viewerName }: SettingsClientProps) {
             case "retention": return <RetentionPart model={model.retention} />;
             case "database": return <DatabasePart info={model.database} isSuperAdmin={model.isSuperAdmin} />;
             case "config-backup": return <ConfigBackupPart model={model.configBackup} isSuperAdmin={model.isSuperAdmin} />;
+            case "recently-deleted": return <RecentlyDeletedPart rows={model.trash} />;
             case "sign-in": return <SignInPart model={model.signIn} />;
             case "https": return <HttpsPart certificate={model.certificate} />;
             case "rate-limits": return <RateLimitsPart saved={model.rateLimits} />;

@@ -36,7 +36,7 @@ A restore has two steps, `src/services/config/restore-flow.ts`:
 
 ### Encrypting Again
 
-`rekeyCopy()` in `copy-rekey.ts` runs when the keys of the copy differ from the ones of this instance. Every value DBackup encrypts has the form `iv:authTag:data` in hex, and AES-GCM opens only a value that really is one, so the copy is searched rather than listed: every `TEXT` column of every table, and every string inside a JSON value. Tables that never hold a secret are skipped for speed. Second factors are encrypted by better-auth with `BETTER_AUTH_SECRET` and go through `symmetricDecrypt` and `symmetricEncrypt`.
+`rekeyCopy()` in `copy-rekey.ts` runs when the keys of the copy differ from the ones of this instance. Every value DBackup encrypts has the form `iv:authTag:data` in hex, and AES-GCM opens only a value that really is one, so the copy is searched rather than listed: every `TEXT` column of every table, and every string inside a JSON value, also JSON held in such a string, like the config of a connection in Recently deleted. Tables that never hold a secret are skipped for speed. Second factors are encrypted by better-auth with `BETTER_AUTH_SECRET` and go through `symmetricDecrypt` and `symmetricEncrypt`, those of the users in Recently deleted as well.
 
 A new table needs nothing here. A table that can never hold a secret may join the skip list.
 
@@ -94,14 +94,11 @@ The copy and its restore live in `src/services/config/`: `database-copy.ts`, `co
 
 ```typescript
 class ConfigService {
-  export(options: ExportOptions): Promise<AppConfigurationBackup>;
   parseBackupFile(filePath: string, metaFilePath?: string, rawKeyHex?: string): Promise<AppConfigurationBackup>;
   import(data: AppConfigurationBackup, strategy: "OVERWRITE", options?: RestoreOptions): Promise<ImportResult>;
   restoreFromStorage(storageConfigId: string, file: string, decryptionProfileId?: string, options?: RestoreOptions): Promise<string>;
 }
 ```
-
-`export()` writes such a JSON file, which no part of DBackup does any more.
 
 ## Security Considerations
 

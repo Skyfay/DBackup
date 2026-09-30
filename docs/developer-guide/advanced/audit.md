@@ -60,7 +60,9 @@ The Audit log tab turns an entry into a sentence with `describeEntry` in `src/li
 | `changes` | `AuditChange[]` from `diffFields` in `src/lib/core/audit-diff.ts`: each field before and after as a person reads it |
 | `renamedFrom`, `clonedFromName` | The old name, the name of the original |
 | `added`, `removed`, `areas` | Permissions of a group or an API key, and the level of each area before and after |
-| `action` | A variant, like `restore`, `download`, `download_link_created`, `lock`, `cancel`, `rotate`, `config_restore`, `audit_export` |
+| `action` | A variant, like `restore`, `download`, `download_link_created`, `lock`, `cancel`, `rotate`, `config_restore`, `audit_export`, `trash_restore` and `trash_purge` for Recently deleted |
+| `permanently` | For a delete that skipped Recently deleted |
+| `originalName` | For a restore from Recently deleted under another name, the name it had |
 | `area` | For `UPDATE SYSTEM`: the settings part a person sees, like `Data retention` |
 | `enabled` | For an enable or disable |
 | `bulk`, `requested`, `succeeded`, `failed` | For a bulk action |

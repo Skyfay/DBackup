@@ -135,6 +135,32 @@ vi.mock('@/lib/prisma', () => {
 import prisma from '@/lib/prisma';
 const prismaMock = prisma as any;
 
+/**
+ * A configuration file of an older version as its export wrote it for the seeded database, with
+ * the logins, or without them, where the export stripped every secret.
+ */
+function oldFile(withLogins: boolean): any {
+    return {
+        metadata: { version: '1.0.0', exportedAt: '2026-09-01T00:00:00.000Z', includeSecrets: withLogins, sourceType: 'SYSTEM' },
+        settings: [],
+        credentialProfiles: [],
+        adapters: [{ id: 'adapter-1', name: 'Production DB', type: 'database', config: JSON.stringify({ host: 'localhost', password: withLogins ? 'super_secret' : '' }) }],
+        jobs: [{ id: 'job-1', name: 'Daily Backup', encryptionProfileId: 'profile-1' }],
+        jobDestinations: [],
+        jobNotifications: {},
+        apiKeys: [],
+        users: [{
+            id: 'user-1',
+            name: 'Admin',
+            email: 'admin@example.com',
+            accounts: [{ id: 'acc-1', userId: 'user-1', providerId: 'credential', password: withLogins ? 'HASHED_PASSWORD_123' : null, accessToken: withLogins ? 'ACCESS_TOKEN_XYZ' : null }],
+        }],
+        groups: [],
+        ssoProviders: [],
+        encryptionProfiles: [withLogins ? { id: 'profile-1', name: 'Offsite Backup', secretKey: 'MASTER_KEY_ABC' } : { id: 'profile-1', name: 'Offsite Backup' }],
+    };
+}
+
 describe('ConfigService Lifecycle (Complex)', () => {
     let service: ConfigService;
 
@@ -183,54 +209,10 @@ describe('ConfigService Lifecycle (Complex)', () => {
         });
     });
 
-    describe('Export Logic', () => {
-        it('should NOT export secrets when includeSecrets=false', async () => {
-            const backup = await service.export(false);
-
-            // Check Adapter
-            const adapter = backup.adapters.find(a => a.id === 'adapter-1');
-            expect(adapter).toBeDefined();
-            const conf = JSON.parse(adapter!.config);
-            expect(conf.password).toBe(""); // Stripped
-
-            // Check Encryption Profile
-            const profile = backup.encryptionProfiles.find(p => p.id === 'profile-1');
-            expect(profile).toBeDefined();
-            expect((profile as any).secretKey).toBeUndefined(); // Key removed
-
-            // Check User Accounts
-            const user = backup.users.find(u => u.id === 'user-1');
-            expect(user).toBeDefined();
-            expect(user!.accounts).toHaveLength(1);
-            expect(user!.accounts[0].password).toBeNull(); // Nulled
-            expect(user!.accounts[0].accessToken).toBeNull(); // Nulled
-        });
-
-        it('should export secrets when includeSecrets=true', async () => {
-            const backup = await service.export(true);
-
-            // Check Adapter
-            const adapter = backup.adapters.find(a => a.id === 'adapter-1');
-            expect(adapter).toBeDefined();
-            const conf = JSON.parse(adapter!.config);
-            expect(conf.password).toBe("super_secret"); // Decrypted!
-
-            // Check Encryption Profile
-            const profile = backup.encryptionProfiles.find(p => p.id === 'profile-1');
-            expect((profile as any).secretKey).toBe("MASTER_KEY_ABC"); // Decrypted!
-
-            // Check User Accounts
-            const user = backup.users.find(u => u.id === 'user-1');
-            expect(user).toBeDefined();
-            expect(user!.accounts[0].password).toBe("HASHED_PASSWORD_123"); // Preserved
-            expect(user!.accounts[0].accessToken).toBe("ACCESS_TOKEN_XYZ"); // Preserved
-        });
-    });
-
     describe('Import Logic', () => {
         it('should restore configuration and re-encrypt secrets', async () => {
-            // 1. Generate a backup WITH secrets
-            const backup = await service.export(true);
+            // 1. A file WITH secrets
+            const backup = oldFile(true);
 
             // 2. Wipe the DB (Simulate fresh install)
             mockDb.adapters.clear();
@@ -267,7 +249,7 @@ describe('ConfigService Lifecycle (Complex)', () => {
         it('should properly detach accounts from user before upsert to avoid Prisma errors', async () => {
             // This tests the code path: const { accounts, ...userFields } = user;
 
-            const backup = await service.export(true);
+            const backup = oldFile(true);
 
             // Spy on user upsert to ensure accounts are NOT passed
             const userUpsertSpy = vi.spyOn(prismaMock.user, 'upsert');
@@ -285,8 +267,8 @@ describe('ConfigService Lifecycle (Complex)', () => {
         });
 
         it('should handle import from stripped backup (no secrets)', async () => {
-            // 1. Generate STRIPPED backup
-            const backup = await service.export(false);
+            // 1. A STRIPPED file
+            const backup = oldFile(false);
 
             // 2. Wipe DB
             mockDb.users.clear();
@@ -360,28 +342,6 @@ describe('ConfigService Lifecycle (Complex)', () => {
             expect(restoredJob).toBeDefined();
             // Service should handle this by setting it to null to prevent crash
             expect(restoredJob.encryptionProfileId).toBeNull();
-        });
-
-        it('should handle SSO secrets correctly', async () => {
-             // 1. Setup SSO Provider
-             mockDb.sso.set('sso-1', {
-                 id: 'sso-1',
-                 domain: 'google.com',
-                 clientSecret: 'GoogleSecret',
-                 oidcConfig: JSON.stringify({ clientId: '123', clientSecret: 'GoogleSecret' })
-             });
-
-             // 2. Export NO Secrets
-             const safeBackup = await service.export(false);
-             const safeProvider = safeBackup.ssoProviders.find(p => p.id === 'sso-1');
-             expect(safeProvider!.clientSecret).toBe("");
-             const safeOidc = JSON.parse(safeProvider!.oidcConfig!);
-             expect(safeOidc.clientSecret).toBe(""); // Should ideally be stripped too if logic exists
-
-             // 3. Export WITH Secrets
-             const fullBackup = await service.export(true);
-             const fullProvider = fullBackup.ssoProviders.find(p => p.id === 'sso-1');
-             expect(fullProvider!.clientSecret).toBe("GoogleSecret");
         });
 
         it('should NOT overwrite existing Encryption Profile keys (Security Stability)', async () => {

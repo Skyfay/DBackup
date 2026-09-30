@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { ConfirmDialog, DialogItemList, type DialogListItem } from "@/components/ui/confirm-dialog";
+import type { Tone } from "@/components/ui/tone";
 
 export interface BulkConfirmDialogProps {
     open: boolean;
@@ -18,8 +19,14 @@ export interface BulkConfirmDialogProps {
     skippedLabel: string;
     confirmLabel?: string;
     destructive?: boolean;
+    /** The tone of a confirmation that is not destructive, like warning for a delete into Recently deleted. */
+    tone?: Tone;
+    /** The line under the title. A destructive one says it cannot be undone when left out. */
+    note?: string;
     isPending?: boolean;
     onConfirm: () => void;
+    /** More below the lists, like where deleted rows go. */
+    children?: React.ReactNode;
 }
 
 /**
@@ -29,9 +36,9 @@ export interface BulkConfirmDialogProps {
  * changed by a filter after it was made and a bare count would not show that. Rows the
  * action leaves out get a list of their own, so it is clear beforehand what happens.
  */
-export function BulkConfirmDialog({ items, skipped = [], itemsLabel, skippedLabel, destructive, ...props }: BulkConfirmDialogProps) {
+export function BulkConfirmDialog({ items, skipped = [], itemsLabel, skippedLabel, destructive, note, children, ...props }: BulkConfirmDialogProps) {
     return (
-        <ConfirmDialog {...props} destructive={destructive} note={destructive ? "Cannot be undone" : undefined} disabled={items.length === 0}>
+        <ConfirmDialog {...props} destructive={destructive} note={note ?? (destructive ? "Cannot be undone" : undefined)} disabled={items.length === 0}>
             {skipped.length === 0 ? (
                 <DialogItemList items={items} />
             ) : (
@@ -40,6 +47,7 @@ export function BulkConfirmDialog({ items, skipped = [], itemsLabel, skippedLabe
                     <ItemGroup label={skippedLabel} items={skipped} size="small" />
                 </>
             )}
+            {children}
         </ConfirmDialog>
     );
 }

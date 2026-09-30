@@ -13,6 +13,8 @@ import {
 } from "@/lib/core/credentials";
 import { generateSshKeyPair, readPublicKey, sshFingerprint } from "@/lib/transport/openssh-key";
 import { holdsOf } from "@/lib/core/credential-holds";
+import { keepInTrash } from "@/services/trash/trash-snapshot";
+import type { DeleteOptions } from "@/services/trash/trash-types";
 
 const log = logger.child({ service: "CredentialService" });
 
@@ -417,10 +419,10 @@ export async function getCredentialUsage(
 }
 
 /**
- * Deletes a credential profile.
+ * Deletes a credential profile, which waits in Recently deleted unless `permanently`.
  * Throws `ConflictError` if any adapter still references it (primary or SSH slot).
  */
-export async function deleteCredentialProfile(id: string): Promise<void> {
+export async function deleteCredentialProfile(id: string, options: DeleteOptions = {}): Promise<void> {
     const existing = await prisma.credentialProfile.findUnique({ where: { id } });
     if (!existing) {
         throw new NotFoundError("CredentialProfile", id);
@@ -434,8 +436,11 @@ export async function deleteCredentialProfile(id: string): Promise<void> {
         );
     }
 
-    await prisma.credentialProfile.delete({ where: { id } });
-    log.info("Credential profile deleted", { id });
+    await prisma.$transaction(async (tx) => {
+        if (!options.permanently) await keepInTrash(tx, "credential", id, options.by);
+        await tx.credentialProfile.delete({ where: { id } });
+    });
+    log.info("Credential profile deleted", { id, permanently: !!options.permanently });
 }
 
 /**
@@ -444,12 +449,12 @@ export async function deleteCredentialProfile(id: string): Promise<void> {
  * Each goes through the single-profile guard, so one still attached to an adapter is
  * refused with its reference count while the rest of the batch continues.
  */
-export async function deleteCredentialProfiles(ids: string[]): Promise<BulkResult> {
+export async function deleteCredentialProfiles(ids: string[], options: DeleteOptions = {}): Promise<BulkResult> {
     const profiles = await prisma.credentialProfile.findMany({
         where: { id: { in: ids } },
         select: { id: true, name: true },
     });
     const names = new Map(profiles.map((profile) => [profile.id, profile.name]));
 
-    return runBulk(ids, (id) => deleteCredentialProfile(id), (id) => names.get(id));
+    return runBulk(ids, (id) => deleteCredentialProfile(id, options), (id) => names.get(id));
 }

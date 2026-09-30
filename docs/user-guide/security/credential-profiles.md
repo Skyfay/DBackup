@@ -152,6 +152,8 @@ either slot. Deleting a profile that is still in use is refused with a
 `409 Conflict`. The dialog names every connection with a link that opens it,
 and **Delete profile** stays off until none uses the profile anymore.
 
+A deleted profile waits in [Recently deleted](/user-guide/admin/recently-deleted) for 30 days with its secret. With the right to change the settings, tick **Delete it permanently now** for a login that leaked.
+
 Adapters whose required primary credential is missing (e.g. you deleted a
 profile by force, or imported a config without profiles) are flagged as
 **OFFLINE** with `lastError = "No credential profile assigned"` and surface

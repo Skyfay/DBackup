@@ -114,6 +114,13 @@ export type Permission =
   | typeof PERMISSIONS.TEMPLATES.READ
   | typeof PERMISSIONS.TEMPLATES.WRITE;
 
+/**
+ * What deleting for good and restoring from Recently deleted need on top of the right to change the
+ * record: skipping it with Delete it permanently now, restoring from it and deleting from it. A
+ * delete into it only needs the right to change the record.
+ */
+export const TRASH_ADMIN_PERMISSION = PERMISSIONS.SETTINGS.WRITE;
+
 export const AVAILABLE_PERMISSIONS = [
   // Users & Groups
   { id: PERMISSIONS.USERS.READ, label: "View Users", category: "Users" },

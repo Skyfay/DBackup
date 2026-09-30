@@ -20,6 +20,7 @@ import { UserCard } from "./user-card";
 import { UserAvatar } from "./user-cells";
 import { userColumns, userFilters } from "./user-columns";
 import { UserConfirmDialog, type UserConfirmKind } from "./user-confirm-dialogs";
+import { useTrash } from "@/components/trash/use-trash";
 import { UserDetails } from "./user-details";
 import { UserDialog } from "./user-dialog";
 import { UserPasswordDialog } from "./user-password-dialog";
@@ -98,6 +99,7 @@ export function UsersTab({ ref, cards, canManage, initialLayout }: UsersTabProps
     const users = useMemo(() => model?.users ?? [], [model]);
     const rows = useMemo(() => users.filter(QUICK.find((option) => option.value === quick)?.keep ?? (() => true)), [users, quick]);
     const filters = useMemo(() => userFilters(users), [users]);
+    const trash = useTrash("user", afterChange);
     const bulkActions = useMemo<BulkAction<UserRow>[]>(() => canManage ? [{
         id: "delete",
         labels: { verb: "delete", verbPast: "deleted", noun: "user" },
@@ -111,8 +113,14 @@ export function UsersTab({ ref, cards, canManage, initialLayout }: UsersTabProps
             description: () => "Their sessions end at once and their API keys stop working. The last SuperAdmin and the last account are kept.",
             confirmLabel: "Delete",
         },
-        run: (selected) => unwrapBulkAction(bulkDeleteUsers(selected.map((user) => user.id))),
-    }] : [], [canManage, guarded]);
+        trash: {
+            ...trash,
+            permanentLine: (selected) => (selected.length === 1
+                ? "For an account that has to be gone at once. It skips Recently deleted with the password, second factor, passkeys and API keys."
+                : "For accounts that have to be gone at once. They skip Recently deleted with their passwords, second factors, passkeys and API keys."),
+        },
+        run: (selected, { permanently }) => unwrapBulkAction(bulkDeleteUsers(selected.map((user) => user.id), { permanently })),
+    }] : [], [canManage, guarded, trash]);
 
     const shown = details ? users.find((user) => user.id === details.id) ?? null : null;
     const shownHandlers = shown ? handlersFor(shown) : {};
@@ -221,6 +229,7 @@ export function UsersTab({ ref, cards, canManage, initialLayout }: UsersTabProps
                         setConfirm(null);
                         afterChange();
                     }}
+                    onRestored={afterChange}
                 />
             )}
         </div>

@@ -8,14 +8,15 @@ import { toAdapterListItem } from "@/lib/adapters/dto";
 import { headers } from "next/headers";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
-import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
-import { getWritePermissionForAdapterType } from "@/lib/auth/permissions";
+import { getAuthContext, checkPermissionWithContext, hasPermissionWithContext } from "@/lib/auth/access-control";
+import { TRASH_ADMIN_PERMISSION, getWritePermissionForAdapterType } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
 import { wrapError, getErrorMessage, ValidationError, NotFoundError, ConflictError } from "@/lib/logging/errors";
 import { registerAdapters } from "@/lib/adapters";
 import { validateCredentialAssignments } from "@/lib/adapters/credential-validation";
 import { deleteAdapter } from "@/services/adapters/adapter-service";
 import { connectionChanges } from "@/services/adapters/adapter-audit";
+import { PERMANENT_DELETE_REFUSED, permanentlyFrom } from "@/lib/core/delete-mode";
 
 registerAdapters();
 
@@ -42,13 +43,18 @@ export async function DELETE(
         }
         checkPermissionWithContext(ctx, getWritePermissionForAdapterType(adapter.type));
 
-        const deletedAdapter = await deleteAdapter(params.id);
+        // Into Recently deleted, unless `?permanently=true`, which needs the right to change the settings too.
+        const permanently = permanentlyFrom(req.nextUrl.searchParams);
+        if (permanently && !hasPermissionWithContext(ctx, TRASH_ADMIN_PERMISSION)) {
+            return NextResponse.json({ success: false, error: PERMANENT_DELETE_REFUSED }, { status: 403 });
+        }
+        const deletedAdapter = await deleteAdapter(params.id, { permanently, by: ctx.userId });
 
         await auditService.logFor(
             ctx,
             AUDIT_ACTIONS.DELETE,
             AUDIT_RESOURCES.ADAPTER,
-            { name: deletedAdapter.name },
+            { name: deletedAdapter.name, ...(permanently ? { permanently: true } : {}) },
             params.id
         );
 

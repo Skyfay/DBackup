@@ -547,3 +547,23 @@ model DatabaseListCache {
   attemptedAt     DateTime      @default(now())
   adapterConfig   AdapterConfig @relation(fields: [adapterConfigId], references: [id], onDelete: Cascade)
 }
+
+// A record moved to Recently deleted, with everything that belonged to it, until it is restored or its
+// time under Data retention is up. The record itself is deleted for real, so no query anywhere has to
+// leave it out and its name is free again.
+model DeletedRecord {
+  id             String   @id @default(uuid())
+  kind           String // encryptionKey | credential | connection | job | user
+  recordId       String // The id it had, and gets back
+  name           String // Its name when it was deleted
+  detail         String? // One line under the name, like the key id or the email
+  data           String // JSON snapshot of the record and what belonged to it, secrets as they were stored
+  permission     String // The permission that restores or purges it, like destinations:write for a destination
+  superAdminOnly Boolean  @default(false) // A SuperAdmin's account, which only a SuperAdmin brings back
+  deletedAt      DateTime @default(now())
+  deletedById    String?
+  deletedByName  String?
+
+  @@index([kind])
+  @@index([deletedAt])
+}

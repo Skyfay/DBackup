@@ -35,6 +35,7 @@ import { ConnectionSplitView } from "./connection-split-view";
 import { adapterTypeIcon } from "./connection-type-icon";
 import { connectionBulkActions, deleteBlocker } from "./connection-bulk-actions";
 import { ConnectionDeleteDialog } from "./connection-delete-dialog";
+import { useTrash } from "@/components/trash/use-trash";
 
 /** What the page around a manager can trigger, such as the Add button beside the tabs. */
 export interface AdapterManagerHandle {
@@ -283,7 +284,8 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
         return [{ id: "adapterId", title: "Type", options }];
     }, [configs, availableAdapters]);
 
-    const bulkActions = useMemo(() => connectionBulkActions(kind, canManage), [kind, canManage]);
+    const trash = useTrash("connection", afterChange);
+    const bulkActions = useMemo(() => connectionBulkActions(kind, canManage, trash), [kind, canManage, trash]);
 
     // The connection the form edits, or the type picked for a new one.
     const editingConfig = editingId ? configs.find((config) => config.id === editingId) : undefined;
@@ -404,6 +406,7 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                         setConfigs((current) => current.filter((config) => config.id !== id));
                         router.refresh();
                     }}
+                    onRestored={afterChange}
                 />
             )}
 

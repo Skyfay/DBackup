@@ -20,17 +20,18 @@ vi.mock('@/lib/prisma', () => ({
   },
 }));
 
-// prisma.$transaction([p1, p2]) returns Promise<[r1, r2]>
-(prisma.$transaction as any).mockImplementation(async (promises: Promise<any>[]) => {
-    return Promise.all(promises);
-});
+const trash = vi.hoisted(() => ({ keepInTrash: vi.fn(async () => 'trash-1') }));
+vi.mock('@/services/trash/trash-snapshot', () => trash);
+
+// prisma.$transaction([p1, p2]) returns Promise<[r1, r2]>, and a callback gets the client as its transaction.
+const transaction = async (work: Promise<any>[] | ((tx: unknown) => unknown)) =>
+  typeof work === 'function' ? work(prisma) : Promise.all(work);
+(prisma.$transaction as any).mockImplementation(transaction);
 
 describe('User Service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (prisma.$transaction as any).mockImplementation(async (promises: Promise<any>[]) => {
-      return Promise.all(promises);
-    });
+    (prisma.$transaction as any).mockImplementation(transaction);
   });
 
   describe('updateUserGroup', () => {
@@ -83,12 +84,23 @@ describe('User Service', () => {
   });
 
   describe('deleteUser', () => {
-    it('should delete user if safe', async () => {
+    it('should delete user if safe, into Recently deleted', async () => {
       (prisma.user.findUnique as any).mockResolvedValue({ id: '1', group: { name: 'User' } });
       (prisma.user.count as any).mockResolvedValue(5);
 
-      await userService.deleteUser('1');
+      await userService.deleteUser('1', { by: 'admin' });
 
+      expect(trash.keepInTrash).toHaveBeenCalledWith(prisma, 'user', '1', 'admin');
+      expect(prisma.user.delete).toHaveBeenCalledWith({ where: { id: '1' } });
+    });
+
+    it('skips Recently deleted for a user deleted permanently', async () => {
+      (prisma.user.findUnique as any).mockResolvedValue({ id: '1', group: { name: 'User' } });
+      (prisma.user.count as any).mockResolvedValue(5);
+
+      await userService.deleteUser('1', { permanently: true });
+
+      expect(trash.keepInTrash).not.toHaveBeenCalled();
       expect(prisma.user.delete).toHaveBeenCalledWith({ where: { id: '1' } });
     });
 

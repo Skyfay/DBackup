@@ -65,6 +65,17 @@ describe("an entry of the audit log as a sentence", () => {
         expect(auditSentence(entry("UPDATE", "SYSTEM", { area: "Data retention", changes: [] }))).toBe("Changed the settings of Data retention");
     });
 
+    it("tells a delete into Recently deleted from one for good, and a restore from there", () => {
+        expect(auditSentence(entry("DELETE", "JOB", { name: "Shop nightly" }))).toBe("Deleted the job Shop nightly");
+        expect(auditSentence(entry("DELETE", "VAULT", { type: "EncryptionProfile", name: "Offsite 2025", permanently: true }))).toBe("Deleted the encryption key Offsite 2025 permanently");
+        expect(auditSentence(entry("DELETE", "USER", { bulk: true, succeeded: 2, permanently: true }))).toBe("Deleted 2 users permanently");
+        expect(auditSentence(entry("DELETE", "ADAPTER", { name: "Old NAS", action: "trash_purge", permanently: true }))).toBe("Removed the connection Old NAS from Recently deleted");
+
+        const restored = describeEntry(entry("RESTORE", "USER", { name: "Jana Keller", action: "trash_restore" }));
+        expect(restored.parts.map((part) => part.text).join("")).toBe("Restored the user Jana Keller from Recently deleted");
+        expect(restored.kind).toBe("sensitive");
+    });
+
     it("stays general for details it cannot read", () => {
         expect(auditSentence({ action: "UPDATE", resource: "JOB", details: "not json" })).toBe("Changed a job");
         expect(auditSentence(entry("UPDATE", "SOMETHING_NEW"))).toBe("Changed an entry");

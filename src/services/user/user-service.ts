@@ -3,6 +3,8 @@ import { runBulk, type BulkResult } from "@/lib/core/bulk";
 import { ValidationError } from "@/lib/logging/errors";
 import { authService } from "@/services/auth/auth-service";
 import { SUPER_ADMIN_GROUP } from "./users-model";
+import { keepInTrash } from "@/services/trash/trash-snapshot";
+import type { DeleteOptions } from "@/services/trash/trash-types";
 
 export const userService = {
   /**
@@ -133,7 +135,8 @@ export const userService = {
    * Delete a user.
    * Prevents deleting the last SuperAdmin or the last user.
    */
-  async deleteUser(userId: string) {
+  /** Deletes a user, who waits in Recently deleted unless `permanently`. Their sessions end either way. */
+  async deleteUser(userId: string, options: DeleteOptions = {}) {
     const user = await prisma.user.findUnique({
       where: { id: userId },
       include: { group: true },
@@ -163,10 +166,9 @@ export const userService = {
       throw new Error("Cannot delete the last user.");
     }
 
-    return await prisma.user.delete({
-      where: {
-        id: userId,
-      },
+    return prisma.$transaction(async (tx) => {
+      if (!options.permanently) await keepInTrash(tx, "user", userId, options.by);
+      return tx.user.delete({ where: { id: userId } });
     });
   },
 
@@ -178,14 +180,14 @@ export const userService = {
    * That is what keeps "delete everyone" from emptying the instance: the guard trips on
    * whoever is left, not on who was there when the request arrived.
    */
-  async deleteUsers(userIds: string[]): Promise<BulkResult> {
+  async deleteUsers(userIds: string[], options: DeleteOptions = {}): Promise<BulkResult> {
     const users = await prisma.user.findMany({
       where: { id: { in: userIds } },
       select: { id: true, name: true, email: true },
     });
     const names = new Map(users.map((user) => [user.id, user.name || user.email]));
 
-    return runBulk(userIds, (id) => this.deleteUser(id).then(() => undefined), (id) => names.get(id));
+    return runBulk(userIds, (id) => this.deleteUser(id, options).then(() => undefined), (id) => names.get(id));
   },
 
   /**

@@ -9,6 +9,8 @@ import { registerAdapters } from "@/lib/adapters";
 import { runBulk, type BulkResult } from "@/lib/core/bulk";
 import { invalidateDashboardCache } from "@/services/dashboard/cache";
 import type { DatabaseAdapter } from "@/lib/core/interfaces";
+import { keepInTrash } from "@/services/trash/trash-snapshot";
+import type { DeleteOptions } from "@/services/trash/trash-types";
 
 registerAdapters();
 
@@ -438,9 +440,11 @@ export class JobService {
         return updatedJob;
     }
 
-    async deleteJob(id: string) {
-        const deletedJob = await prisma.job.delete({
-            where: { id },
+    /** Deletes a job, which waits in Recently deleted unless `permanently`. Its runs stay in History. */
+    async deleteJob(id: string, options: DeleteOptions = {}) {
+        const deletedJob = await prisma.$transaction(async (tx) => {
+            if (!options.permanently) await keepInTrash(tx, "job", id, options.by);
+            return tx.job.delete({ where: { id } });
         });
 
         this.jobsChanged("deleteJob");
@@ -455,12 +459,17 @@ export class JobService {
      * job on each call, so refreshing inside the loop would repeat the identical full
      * rebuild N times to reach the same state.
      */
-    async deleteJobs(ids: string[]): Promise<BulkResult> {
+    async deleteJobs(ids: string[], options: DeleteOptions = {}): Promise<BulkResult> {
         const names = await this.jobNamesById(ids);
 
         const result = await runBulk(
             ids,
-            async (id) => { await prisma.job.delete({ where: { id } }); },
+            async (id) => {
+                await prisma.$transaction(async (tx) => {
+                    if (!options.permanently) await keepInTrash(tx, "job", id, options.by);
+                    await tx.job.delete({ where: { id } });
+                });
+            },
             (id) => names.get(id)
         );
 

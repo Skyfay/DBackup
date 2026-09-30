@@ -8,6 +8,7 @@ const notificationClean = vi.fn();
 const snapshotClean = vi.fn();
 const purgeLogs = vi.fn();
 const deleteRuns = vi.fn();
+const trashClean = vi.fn();
 
 vi.mock("@/services/audit-service", () => ({ auditService: { cleanOldLogs: (...a: unknown[]) => auditClean(...a) } }));
 vi.mock("@/services/system/healthcheck-service", () => ({ healthCheckService: { cleanOldLogs: (...a: unknown[]) => healthClean(...a) } }));
@@ -17,6 +18,7 @@ vi.mock("@/services/system/execution-retention", () => ({
     purgeExecutionLogs: (...a: unknown[]) => purgeLogs(...a),
     deleteOldExecutions: (...a: unknown[]) => deleteRuns(...a),
 }));
+vi.mock("@/services/trash/trash-service", () => ({ cleanTrash: (...a: unknown[]) => trashClean(...a) }));
 vi.mock("@/lib/logging/logger", () => ({
     logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
 }));
@@ -54,6 +56,7 @@ describe("Data retention settings", () => {
             notificationHistory: 90,
             storageUsage: 90,
             healthChecks: 2,
+            deletedItems: 30,
         });
     });
 
@@ -103,6 +106,7 @@ describe("Data retention cleanup run", () => {
         snapshotClean.mockResolvedValue(7);
         purgeLogs.mockResolvedValue(50);
         deleteRuns.mockResolvedValue(0);
+        trashClean.mockResolvedValue(3);
     });
 
     it("applies each configured period and skips the ones set to never", async () => {
@@ -116,6 +120,7 @@ describe("Data retention cleanup run", () => {
         expect(notificationClean).toHaveBeenCalledWith(90);
         expect(snapshotClean).toHaveBeenCalledWith(90);
         expect(healthClean).toHaveBeenCalledWith(2);
+        expect(trashClean).toHaveBeenCalledWith(30);
         expect(result).toEqual({
             executionHistory: null,
             executionLogs: 50,
@@ -123,6 +128,7 @@ describe("Data retention cleanup run", () => {
             notificationHistory: 2,
             storageUsage: 7,
             healthChecks: 100,
+            deletedItems: 3,
         });
     });
 

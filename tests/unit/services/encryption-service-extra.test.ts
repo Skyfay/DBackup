@@ -8,6 +8,9 @@ vi.mock('@/lib/crypto', () => ({
     decrypt: vi.fn((v: string) => v.replace(/^enc:/, '')),
 }));
 
+const trash = vi.hoisted(() => ({ keepInTrash: vi.fn(async () => 'trash-1') }));
+vi.mock('@/services/trash/trash-snapshot', () => trash);
+
 import {
     getEncryptionProfiles,
     getEncryptionProfile,
@@ -99,14 +102,25 @@ describe('deleteEncryptionProfile', () => {
         prismaMock.encryptionProfile.findUnique.mockResolvedValue({ id: 'profile-1' } as any);
         prismaMock.job.count.mockResolvedValue(0);
         prismaMock.systemSetting.findUnique.mockResolvedValue(null);
+        prismaMock.$transaction.mockImplementation(async (callback: any) => callback(prismaMock));
     });
 
-    it('calls prisma.delete with the correct id', async () => {
+    it('keeps the key in Recently deleted and deletes it in the same transaction', async () => {
         prismaMock.encryptionProfile.delete.mockResolvedValue(makeProfile() as any);
 
-        await deleteEncryptionProfile('profile-1');
+        await deleteEncryptionProfile('profile-1', { by: 'u-1' });
 
+        expect(trash.keepInTrash).toHaveBeenCalledWith(prismaMock, 'encryptionKey', 'profile-1', 'u-1');
         expect(prismaMock.encryptionProfile.delete).toHaveBeenCalledWith({ where: { id: 'profile-1' }, select: SUMMARY });
+    });
+
+    it('skips Recently deleted for a key deleted permanently, like one that leaked', async () => {
+        prismaMock.encryptionProfile.delete.mockResolvedValue(makeProfile() as any);
+
+        await deleteEncryptionProfile('profile-1', { permanently: true });
+
+        expect(trash.keepInTrash).not.toHaveBeenCalled();
+        expect(prismaMock.encryptionProfile.delete).toHaveBeenCalled();
     });
 
     it('propagates prisma errors upward', async () => {
@@ -277,6 +291,7 @@ describe('profiles handed back by the service', () => {
     beforeEach(() => vi.clearAllMocks());
 
     it('never ask the database for the key, so no Server Action can pass it to the browser', async () => {
+        prismaMock.$transaction.mockImplementation(async (callback: any) => callback(prismaMock));
         prismaMock.encryptionProfile.findFirst.mockResolvedValue(null);
         prismaMock.encryptionProfile.create.mockResolvedValue(makeProfile() as any);
         prismaMock.encryptionProfile.findMany.mockResolvedValue([]);

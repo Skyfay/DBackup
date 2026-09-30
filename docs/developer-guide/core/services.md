@@ -19,9 +19,10 @@ src/services/
 │   ├── integrity-service.ts   # Periodic backup integrity checks
 │   └── retention-service.ts   # GFS retention algorithm
 ├── config/
-│   ├── config-service.ts      # System config read/write
-│   ├── export.ts              # Config backup export
-│   └── import.ts              # Config backup import
+│   ├── database-copy.ts       # The copy of the database the config backup uploads
+│   ├── restore-flow.ts        # Checks a config backup, then restores it
+│   ├── config-service.ts      # Facade of the JSON files of older versions
+│   └── import.ts              # Import of those JSON files
 ├── jobs/
 │   └── job-service.ts         # CRUD for backup jobs
 ├── notifications/
@@ -53,6 +54,10 @@ src/services/
 │   ├── system-task-runs.ts      # What each task does, with a short result
 │   ├── system-task-settings.ts  # The System tasks part: rows, Edit, Run now
 │   └── update-service.ts        # New version detection
+├── trash/
+│   ├── trash-snapshot.ts      # keepInTrash: the snapshot a delete keeps, with what belongs to the record
+│   ├── trash-restore.ts       # Brings a snapshot back under its own id, dropping links to what is gone
+│   └── trash-service.ts       # Recently deleted: list, restore, purge and the cleanup by Data retention
 ├── templates/
 │   ├── naming-template-service.ts    # File naming pattern templates
 │   ├── retention-policy-service.ts   # Reusable retention policy CRUD
@@ -441,6 +446,22 @@ Each service handles one domain:
 - `JobService` - Job CRUD only
 - `BackupService` - Backup execution only
 - Don't mix concerns
+
+### Recently Deleted
+
+A delete of an encryption key, a credential profile, a connection, a job or a user keeps a snapshot of the record in `DeletedRecord` before it deletes it, both in one transaction. The delete functions of those services take `DeleteOptions`: `permanently` skips the snapshot, `by` names who deleted.
+
+```typescript
+await prisma.$transaction(async (tx) => {
+    if (!options.permanently) await keepInTrash(tx, "job", id, options.by);
+    await tx.job.delete({ where: { id } });
+});
+```
+
+- The snapshot holds the rows as they were stored, secrets still encrypted with `ENCRYPTION_KEY`, and everything that belongs to the record: the destinations, folders, channels and run ids of a job, the accounts, second factor, passkeys, API keys and preferences of a user, the version history of a connection.
+- Each row keeps the permission of its kind, and `superAdminOnly` for the account of a SuperAdmin. `listTrash` only lists rows the viewer may handle. Restoring, purging and `permanently` need `TRASH_ADMIN_PERMISSION` (`settings:write`) on top, checked by the actions in `src/app/actions/settings/trash.ts` and by every delete action and route. Undo needs only the right of the kind, for the viewer's own delete of the last 5 minutes.
+- `restoreSnapshot` creates the rows again under their old ids in one transaction. A link to a record that is gone meanwhile is dropped with a note, a taken name throws `ConflictError` and the caller asks for another.
+- A new kind of record adds its kind to `TRASH_KINDS`, a snapshot in `trash-snapshot.ts` and a restore in `trash-restore.ts`. A new table that cascades from a kept record belongs in its snapshot, or the restore loses it.
 
 ### 2. Use Transactions
 

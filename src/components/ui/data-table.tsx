@@ -40,9 +40,9 @@ import { useTableDefaults } from "./table-defaults";
 import { isPlainClick, toggleOnClick } from "./row-click";
 import { JOIN_END } from "./page-head";
 import { cn } from "@/lib/utils";
-import type { BulkAction, DataTableFilterableColumn, DataTableFilterOption, RowMenuBulk } from "./data-table-types";
+import type { BulkAction, BulkRunOptions, BulkTrash, DataTableFilterableColumn, DataTableFilterOption, RowMenuBulk } from "./data-table-types";
 
-export type { BulkAction, DataTableFilterableColumn, DataTableFilterOption, RowMenuBulk };
+export type { BulkAction, BulkRunOptions, BulkTrash, DataTableFilterableColumn, DataTableFilterOption, RowMenuBulk };
 
 interface DataTableProps<TData, TValue> {
     columns: ColumnDef<TData, TValue>[];

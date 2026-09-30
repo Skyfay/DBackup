@@ -1,5 +1,5 @@
 import { Bell, BellOff, Eye, EyeOff, Trash } from "lucide-react";
-import type { BulkAction } from "@/components/ui/data-table";
+import type { BulkAction, BulkTrash } from "@/components/ui/data-table";
 import { requestBulk } from "@/lib/bulk-request";
 import type { AdapterConfig } from "./types";
 import { kindNames, type ConnectionKind } from "./connection-columns";
@@ -39,8 +39,8 @@ export function deleteBlocker(config: AdapterConfig): string | null {
     return parts.length > 0 ? `Used by ${parts.join(" and ")}` : null;
 }
 
-const run = (action: string) => (rows: AdapterConfig[]) =>
-    requestBulk("/api/adapters/bulk", { action, ids: rows.map((config) => config.id) });
+const run = (action: string) => (rows: AdapterConfig[], { permanently }: { permanently: boolean } = { permanently: false }) =>
+    requestBulk("/api/adapters/bulk", { action, ids: rows.map((config) => config.id), ...(permanently ? { permanently } : {}) });
 
 /**
  * A setting switched on many connections at once. It only shows while at least one selected
@@ -69,12 +69,12 @@ function setting(
 }
 
 /**
- * What a selection of connections can do together. Every list can delete. Databases also
- * switch their health check notifications and whether they are restore targets, which every
- * database adapter supports. The other lists keep to deleting for now, their settings differ
- * too much from one adapter to the next.
+ * What a selection of connections can do together. Every list can delete, into Recently deleted
+ * with `trash`. Databases also switch their health check notifications and whether they are
+ * restore targets, which every database adapter supports. The other lists keep to deleting for
+ * now, their settings differ too much from one adapter to the next.
  */
-export function connectionBulkActions(kind: ConnectionKind, canManage: boolean): BulkAction<AdapterConfig>[] {
+export function connectionBulkActions(kind: ConnectionKind, canManage: boolean, trash: Omit<BulkTrash<AdapterConfig>, "permanentLine">): BulkAction<AdapterConfig>[] {
     if (!canManage) return [];
 
     const remove: BulkAction<AdapterConfig> = {
@@ -88,6 +88,12 @@ export function connectionBulkActions(kind: ConnectionKind, canManage: boolean):
         confirm: {
             title: (rows) => `Delete ${rows.length} connection${rows.length === 1 ? "" : "s"}?`,
             confirmLabel: "Delete",
+        },
+        trash: {
+            ...trash,
+            permanentLine: (rows) => (rows.length === 1
+                ? "It skips Recently deleted, with the login it holds. Backups it stored stay where they are."
+                : "They skip Recently deleted, with the logins they hold. Backups they stored stay where they are."),
         },
         run: run("delete"),
     };

@@ -12,6 +12,8 @@ import { logger } from "@/lib/logging/logger";
 import { ConflictError, NotFoundError, ValidationError } from "@/lib/logging/errors";
 import { runBulk, emptyBulkResult, type BulkResult } from "@/lib/core/bulk";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
+import { keepInTrash } from "@/services/trash/trash-snapshot";
+import type { DeleteOptions } from "@/services/trash/trash-types";
 
 const log = logger.child({ service: "AdapterService" });
 
@@ -125,16 +127,23 @@ export async function getAdapterUsage(id: string): Promise<AdapterUsage> {
  * the caller can pass the message straight through rather than inventing its own. Same
  * shape as `credentialService.deleteCredentialProfile`, which refuses for the same reason.
  */
-export async function deleteAdapter(id: string): Promise<{ name: string }> {
+export async function deleteAdapter(id: string, options: DeleteOptions = {}): Promise<{ name: string }> {
     const blocked = describeAdapterUsage(await getAdapterUsage(id));
     if (blocked) throw new ConflictError(blocked);
 
+    const deleted = await removeAdapter(id, options);
+    log.info("Adapter deleted", { adapterId: id, permanently: !!options.permanently });
+    return { name: deleted.name };
+}
+
+/** The delete itself, into Recently deleted unless `permanently`. Its storage history goes either way. */
+async function removeAdapter(id: string, options: DeleteOptions) {
     // StorageSnapshot has no foreign key to AdapterConfig, so it needs clearing by hand.
     await prisma.storageSnapshot.deleteMany({ where: { adapterConfigId: id } });
-
-    const deleted = await prisma.adapterConfig.delete({ where: { id } });
-    log.info("Adapter deleted", { adapterId: id });
-    return { name: deleted.name };
+    return prisma.$transaction(async (tx) => {
+        if (!options.permanently) await keepInTrash(tx, "connection", id, options.by);
+        return tx.adapterConfig.delete({ where: { id } });
+    });
 }
 
 /**
@@ -143,7 +152,7 @@ export async function deleteAdapter(id: string): Promise<{ name: string }> {
  * Usage is resolved for the whole batch up front, so a connection that is still in use is
  * reported with the jobs that hold it instead of aborting the rest of the selection.
  */
-export async function deleteAdapters(ids: string[]): Promise<BulkResult> {
+export async function deleteAdapters(ids: string[], options: DeleteOptions = {}): Promise<BulkResult> {
     if (ids.length === 0) return emptyBulkResult();
 
     const [usageMap, adapters] = await Promise.all([
@@ -158,8 +167,7 @@ export async function deleteAdapters(ids: string[]): Promise<BulkResult> {
             const blocked = describeAdapterUsage(usageMap.get(id) ?? { ...EMPTY_USAGE });
             if (blocked) throw new ConflictError(blocked);
 
-            await prisma.storageSnapshot.deleteMany({ where: { adapterConfigId: id } });
-            await prisma.adapterConfig.delete({ where: { id } });
+            await removeAdapter(id, options);
         },
         (id) => names.get(id)
     );

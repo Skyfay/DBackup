@@ -4,7 +4,8 @@ import * as React from "react";
 import { toast } from "sonner";
 import { BulkConfirmation, BulkFailures, type BulkOutcome, type BulkPartition } from "@/components/ui/data-table-bulk-dialogs";
 import type { BulkAction } from "@/components/ui/data-table-types";
-import { summarizeBulkResult, BULK_REQUEST_LIMIT, type BulkResult } from "@/lib/core/bulk";
+import { toastMovedToTrash } from "@/components/ui/delete-mode";
+import { countNoun, summarizeBulkResult, BULK_REQUEST_LIMIT, type BulkResult } from "@/lib/core/bulk";
 import { logger } from "@/lib/logging/logger";
 
 const log = logger.child({ component: "useBulkActions" });
@@ -50,6 +51,8 @@ export function useBulkActions<TData>({
     const [openDialog, setOpenDialog] = React.useState<{ action: BulkAction<TData>; rows: TData[] } | null>(null);
     const [runningId, setRunningId] = React.useState<string | null>(null);
     const [outcome, setOutcome] = React.useState<BulkOutcome<TData> | null>(null);
+    // Delete them permanently now, in the confirmation of a delete into Recently deleted.
+    const [permanently, setPermanently] = React.useState(false);
 
     const nameOf = React.useCallback(
         (action: BulkAction<TData>, row: TData, index: number) =>
@@ -72,11 +75,16 @@ export function useBulkActions<TData>({
         [selectedRows, nameOf]
     );
 
-    const report = React.useCallback((action: BulkAction<TData>, result: BulkResult, rows: TData[]) => {
+    const report = React.useCallback((action: BulkAction<TData>, result: BulkResult, rows: TData[], permanently = false) => {
         const succeeded = result.succeeded.length;
         const failed = result.failed.length;
         const summary = summarizeBulkResult(result, action.labels);
+        const trash = action.trash;
 
+        if (failed === 0 && trash && !permanently) {
+            toastMovedToTrash(`${countNoun(succeeded, action.labels)} moved to Recently deleted`, trash.days, () => trash.undo(result.succeeded));
+            return;
+        }
         if (failed === 0) {
             toast.success(summary);
             return;
@@ -104,12 +112,12 @@ export function useBulkActions<TData>({
     }, []);
 
     const execute = React.useCallback(
-        async (action: BulkAction<TData>, rows: TData[]) => {
+        async (action: BulkAction<TData>, rows: TData[], permanently = false) => {
             if (!action.run) return;
             setRunningId(action.id);
             try {
-                const result = await action.run(rows);
-                report(action, result, rows);
+                const result = await action.run(rows, { permanently });
+                report(action, result, rows, permanently);
                 if (result.succeeded.length > 0) onClearSelection();
             } catch (error: unknown) {
                 // The action itself failed rather than any single row. Nothing is known
@@ -144,8 +152,10 @@ export function useBulkActions<TData>({
             }
 
             if (action.dialog) setOpenDialog({ action, rows: eligible });
-            else if (action.confirm) setPendingAction(action);
-            else void execute(action, eligible);
+            else if (action.confirm) {
+                setPermanently(false);
+                setPendingAction(action);
+            } else void execute(action, eligible);
         },
         [partition, execute]
     );
@@ -161,8 +171,10 @@ export function useBulkActions<TData>({
                     partition={confirmState}
                     nameOf={nameOf}
                     isPending={runningId === pendingAction.id}
+                    permanently={permanently}
+                    onPermanentlyChange={setPermanently}
                     onCancel={() => setPendingAction(null)}
-                    onConfirm={() => void execute(pendingAction, confirmState.eligible)}
+                    onConfirm={() => void execute(pendingAction, confirmState.eligible, permanently)}
                 />
             )}
             {outcome && <BulkFailures outcome={outcome} getRowId={getRowId} onClose={() => setOutcome(null)} />}

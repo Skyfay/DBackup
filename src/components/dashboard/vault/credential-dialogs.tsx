@@ -9,6 +9,8 @@ import { CREDENTIAL_TYPE_INFO } from "@/components/settings/credential-types";
 import { SshPublicKeyPanel } from "@/components/settings/ssh-public-key-panel";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog, DIALOG_FOOTER, DIALOG_SURFACE, DialogHead, DialogItemList, dialogNoteClass } from "@/components/ui/confirm-dialog";
+import { TrashConfirmDialog, toastMovedToTrash } from "@/components/ui/delete-mode";
+import { useTrash } from "@/components/trash/use-trash";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -147,23 +149,27 @@ interface CredentialDeleteDialogProps {
     profile: VaultCredential;
     onClose: () => void;
     onDeleted: (id: string) => void;
+    /** After Undo brought it back, to load the list again. */
+    onRestored: () => void | Promise<void>;
 }
 
 /**
- * Deletes one profile. While connections log in with it, it names them with a way to each and
- * keeps Delete off, since the server refuses it anyway.
+ * Deletes one profile into Recently deleted, or at once with the tick. While connections log in
+ * with it, it names them with a way to each and keeps Delete off, since the server refuses it anyway.
  */
-export function CredentialDeleteDialog({ profile, onClose, onDeleted }: CredentialDeleteDialogProps) {
+export function CredentialDeleteDialog({ profile, onClose, onDeleted, onRestored }: CredentialDeleteDialogProps) {
     const [pending, setPending] = useState(false);
+    const trash = useTrash("credential", onRestored);
     const used = profile.usedBy.length;
 
-    const remove = async () => {
+    const remove = async (permanently: boolean) => {
         setPending(true);
         try {
-            const response = await fetch(`/api/credentials/${profile.id}`, { method: "DELETE" });
+            const response = await fetch(`/api/credentials/${profile.id}${permanently ? "?permanently=true" : ""}`, { method: "DELETE" });
             const body = await response.json().catch(() => null);
             if (response.ok) {
-                toast.success("Credential profile deleted");
+                if (permanently) toast.success("Credential profile deleted");
+                else toastMovedToTrash(`${profile.name} moved to Recently deleted`, trash.days, () => trash.undo([profile.id]));
                 onDeleted(profile.id);
                 return;
             }
@@ -216,18 +222,19 @@ export function CredentialDeleteDialog({ profile, onClose, onDeleted }: Credenti
 
     const Icon = CREDENTIAL_TYPE_INFO[profile.type].icon;
     return (
-        <ConfirmDialog
-            open
+        <TrashConfirmDialog
             onOpenChange={(open) => !open && onClose()}
             icon={Trash}
-            destructive
             title="Delete profile?"
-            note="Cannot be undone"
             confirmLabel="Delete profile"
+            days={trash.days}
+            canDeletePermanently={trash.canDeletePermanently}
+            permanentLine="For a login that leaked. It skips Recently deleted with the secret it holds."
+            permanentNotice={`${profile.name} is gone at once. DBackup keeps no copy of it anywhere.`}
             isPending={pending}
-            onConfirm={remove}
+            onConfirm={(permanently) => void remove(permanently)}
         >
             <DialogItemList items={[{ name: profile.name, detail: CREDENTIAL_TYPE_INFO[profile.type].title, icon: Icon }]} />
-        </ConfirmDialog>
+        </TrashConfirmDialog>
     );
 }

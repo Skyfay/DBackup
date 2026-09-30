@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { z } from "zod";
-import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
-import { PERMISSIONS } from "@/lib/auth/permissions";
+import { getAuthContext, checkPermissionWithContext, hasPermissionWithContext } from "@/lib/auth/access-control";
+import { PERMISSIONS, TRASH_ADMIN_PERMISSION } from "@/lib/auth/permissions";
+import { PERMANENT_DELETE_REFUSED } from "@/lib/core/delete-mode";
 import * as credentialService from "@/services/auth/credential-service";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
@@ -15,6 +16,8 @@ const log = logger.child({ route: "credentials/bulk" });
 const BulkCredentialsSchema = z.object({
     action: z.literal("delete"),
     ids: z.array(z.string().min(1)).min(1).max(BULK_REQUEST_LIMIT),
+    /** Skips Recently deleted. */
+    permanently: z.boolean().optional(),
 });
 
 /**
@@ -37,7 +40,11 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ success: false, error: "Invalid request body" }, { status: 400 });
         }
 
-        const result = await credentialService.deleteCredentialProfiles(parsed.data.ids);
+        const permanently = parsed.data.permanently ?? false;
+        if (permanently && !hasPermissionWithContext(ctx, TRASH_ADMIN_PERMISSION)) {
+            return NextResponse.json({ success: false, error: PERMANENT_DELETE_REFUSED }, { status: 403 });
+        }
+        const result = await credentialService.deleteCredentialProfiles(parsed.data.ids, { permanently, by: ctx.userId });
 
         await auditService.logFor(
             ctx,
@@ -48,6 +55,7 @@ export async function POST(req: NextRequest) {
                 requested: parsed.data.ids.length,
                 succeeded: result.succeeded.length,
                 failed: result.failed.length,
+                ...(permanently ? { permanently: true } : {}),
             }
         );
 

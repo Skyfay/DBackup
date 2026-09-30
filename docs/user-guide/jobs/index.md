@@ -160,7 +160,7 @@ The button at the end of a row, a right click on the row and the details of a jo
 | **Edit** | Opens the job form |
 | **Clone** | Copies the job with every setting under a new name, the retention policy of each destination included. The copy starts paused, so it cannot run before you checked it |
 | **Pause** or **Resume** | A paused job does not run on its schedule, it can still be started by hand |
-| **Delete** | Removes the job. Backups it stored stay where they are, under **Deleted jobs** on the Backups page |
+| **Delete** | Moves the job to [Recently deleted](/user-guide/admin/recently-deleted) for 30 days, or removes it at once with **Delete it permanently now**, which needs the right to change the settings. Backups it stored stay where they are, under **Deleted jobs** on the Backups page |
 
 Tick several jobs in the table to pause, resume or delete them together. A right click on one of the ticked rows offers the same.
 

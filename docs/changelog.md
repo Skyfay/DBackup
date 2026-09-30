@@ -50,6 +50,7 @@ All notable changes to DBackup are documented here.
 - **settings**: The system notifications are a list with the channels, the reminder and a switch of each event, and an event opens an Edit dialog with a test. Ticked events go on, off or to other channels together, and an event that goes nowhere shows in amber.
 - **config**: The configuration backup is a copy of the whole database, so it brings back every template, the folders of file jobs, second factors and passkeys, and whatever a later version adds. A restore shows what the backup holds first, then replaces the database and restarts DBackup.
 - **config**: A new DBackup restores a configuration backup on its sign-up page with the key from its recovery kit, and needs neither the old ENCRYPTION_KEY nor the old BETTER_AUTH_SECRET.
+- **settings**: Deleted encryption keys, saved logins, connections, jobs and users wait under **Settings → Recently deleted** for 30 days, where someone who may change the settings restores them with everything that belonged to them or deletes them for good. Only they can skip it with **Delete it permanently now**, and the message after a delete offers Undo.
 
 
 ### 🐛 Bug Fixes
@@ -268,6 +269,7 @@ All notable changes to DBackup are documented here.
 - **docs**: A new Settings guide describes the parts of the page, the search, the save bar and every system task with what it follows. The guides for data retention, rate limits, the configuration backup and time zones use the new names.
 - **docs**: The notification and settings guides describe the list of system notifications, its Edit dialog, the actions for several events and the default reminder of each event. The developer guide names the new actions and where a new event gets its test data.
 - **docs**: The system backup guide describes the copy of the database, its restore with a restart, the restore on the sign-up page and the way back to the database before it. The developer guide describes the copy, its checks, the new encryption of its secrets and the swap at the next start.
+- **docs**: A new Recently Deleted guide describes what a delete keeps, the list, a restore and who sees what. The key, credential profile, user, job, data retention and API guides say where a delete goes, and the developer guide describes the snapshot of a delete.
 
 
 ### 🧪 Tests
@@ -278,6 +280,7 @@ All notable changes to DBackup are documented here.
 - **tests**: New tests cover saving the system notifications, their tests and a storage alert whose reminder is off.
 - **tests**: New tests cover a configuration restore onto a new instance, the upload of Restore from a file and a failed system task that reports a system error.
 - **tests**: New tests run the copy of the database, its checks, the new encryption of its secrets and its swap before the start against real SQLite files.
+- **tests**: New tests cover Recently deleted, from the rights of each record and the delete routes to a delete and restore against a real SQLite file.
 
 
 ### 🔧 CI/CD

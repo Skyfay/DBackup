@@ -18,6 +18,7 @@ import { logger } from "@/lib/logging/logger";
 import { auditService } from "@/services/audit-service";
 import { healthCheckService } from "@/services/system/healthcheck-service";
 import { cleanOldNotificationLogs } from "@/services/notifications/notification-log-service";
+import { cleanTrash } from "@/services/trash/trash-service";
 import { deleteOldExecutions, purgeExecutionLogs } from "./execution-retention";
 
 const log = logger.child({ service: "DataRetentionService" });
@@ -48,17 +49,18 @@ export async function getDataRetentionValues(): Promise<DataRetentionValues> {
 
 export async function getDataRetentionOverview(): Promise<DataRetentionOverview> {
     const values = await getDataRetentionValues();
-    const [executionLogs, executionHistory, auditLog, notificationHistory, storageUsage, healthChecks] = await Promise.all([
+    const [executionLogs, executionHistory, auditLog, notificationHistory, storageUsage, healthChecks, deletedItems] = await Promise.all([
         prisma.execution.count({ where: { logsPurgedAt: null } }),
         prisma.execution.count(),
         prisma.auditLog.count(),
         prisma.notificationLog.count(),
         prisma.storageSnapshot.count(),
         prisma.healthCheckLog.count(),
+        prisma.deletedRecord.count(),
     ]);
     return {
         values,
-        counts: { executionLogs, executionHistory, auditLog, notificationHistory, storageUsage, healthChecks },
+        counts: { executionLogs, executionHistory, auditLog, notificationHistory, storageUsage, healthChecks, deletedItems },
     };
 }
 
@@ -97,6 +99,7 @@ const CLEANUPS: Record<DataRetentionId, (days: number) => Promise<number>> = {
         return cleanupOldSnapshots(days);
     },
     healthChecks: (days) => healthCheckService.cleanOldLogs(days),
+    deletedItems: (days) => cleanTrash(days),
 };
 
 /**

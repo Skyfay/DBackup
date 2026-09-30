@@ -5,7 +5,6 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
     Archive,
-    ArrowUpCircle,
     CalendarClock,
     Database,
     History,
@@ -34,7 +33,7 @@ import {
     useSidebar,
 } from "@/components/ui/sidebar"
 
-interface NavItem {
+export interface NavItem {
     icon: LucideIcon;
     label: string;
     href: string;
@@ -42,12 +41,12 @@ interface NavItem {
     quickSetupOnly?: boolean;
 }
 
-interface NavGroup {
+export interface NavGroup {
     label: string;
     items: NavItem[];
 }
 
-const navGroups: NavGroup[] = [
+export const navGroups: NavGroup[] = [
     {
         label: "General",
         items: [
@@ -85,14 +84,12 @@ const navGroups: NavGroup[] = [
     },
 ]
 
-const RELEASES_URL = "https://github.com/Skyfay/DBackup/releases"
-
 interface AppSidebarProps {
     permissions?: string[];
     isSuperAdmin?: boolean;
-    updateAvailable?: boolean;
     currentVersion?: string;
-    latestVersion?: string;
+    /** The name under General, which the head shows instead of DBackup. Later the tenant takes its place. */
+    instanceName?: string;
     showQuickSetup?: boolean;
     groupName?: string;
 }
@@ -103,7 +100,7 @@ function isActiveRoute(pathname: string, href: string) {
     return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function AppSidebar({ permissions = [], isSuperAdmin = false, updateAvailable = false, currentVersion, latestVersion, showQuickSetup = false, groupName }: AppSidebarProps) {
+export function AppSidebar({ permissions = [], isSuperAdmin = false, currentVersion, instanceName, showQuickSetup = false, groupName }: AppSidebarProps) {
     const pathname = usePathname()
     const { isMobile, setOpenMobile } = useSidebar()
 
@@ -127,8 +124,6 @@ export function AppSidebar({ permissions = [], isSuperAdmin = false, updateAvail
         }))
         .filter((group) => group.items.length > 0)
 
-    const updateLabel = latestVersion ? `Update to ${latestVersion}` : "Update available"
-
     return (
         <Sidebar collapsible="icon">
             <SidebarHeader className="h-15 justify-center border-b border-sidebar-border px-2.5 py-0">
@@ -137,10 +132,11 @@ export function AppSidebar({ permissions = [], isSuperAdmin = false, updateAvail
                         <SidebarMenuButton size="lg" asChild className="hover:bg-transparent active:bg-transparent">
                             <Link href="/dashboard" onClick={closeMobileSheet}>
                                 <Image src="/logo.svg" alt="DBackup Logo" width={30} height={30} priority className="size-7.5 shrink-0" />
+                                {/* Where you work: the name under General, or DBackup. The logo keeps the brand either way. */}
                                 <div className="grid flex-1 text-left leading-tight">
-                                    <span className="truncate text-sm font-semibold text-sidebar-foreground">DBackup</span>
+                                    <span className="truncate text-sm font-semibold text-sidebar-foreground">{instanceName || "DBackup"}</span>
                                     {currentVersion && (
-                                        <span className="truncate text-xs text-sidebar-foreground/60 dark:text-sidebar-foreground/55">v{currentVersion}</span>
+                                        <span className="truncate text-xs text-sidebar-foreground/60 dark:text-sidebar-foreground/55">{instanceName ? `DBackup v${currentVersion}` : `v${currentVersion}`}</span>
                                     )}
                                 </div>
                             </Link>
@@ -173,19 +169,7 @@ export function AppSidebar({ permissions = [], isSuperAdmin = false, updateAvail
             </SidebarContent>
 
             <SidebarFooter className="gap-1 border-t border-sidebar-border px-2.5 py-2">
-                {updateAvailable && (
-                    <SidebarMenu>
-                        <SidebarMenuItem>
-                            <SidebarMenuButton asChild tooltip={updateLabel}>
-                                <a href={RELEASES_URL} target="_blank" rel="noopener noreferrer">
-                                    <ArrowUpCircle />
-                                    <span>{updateLabel}</span>
-                                </a>
-                            </SidebarMenuButton>
-                        </SidebarMenuItem>
-                    </SidebarMenu>
-                )}
-                <NavUser groupName={groupName} />
+                <NavUser groupName={groupName} version={currentVersion} />
             </SidebarFooter>
             <SidebarRail />
         </Sidebar>

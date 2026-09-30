@@ -2,7 +2,8 @@
 
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { BookOpen, FileCode2, Globe, LogOut, Monitor, Moon, MoreHorizontal, Sun, User } from "lucide-react"
+import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu"
+import { ArrowUpRight, BookOpen, FileCode2, Globe, LogOut, Monitor, Moon, MoreHorizontal, Palette, ShieldCheck, Sparkles, Sun, SunMoon, User, type LucideIcon } from "lucide-react"
 import { useTheme } from "next-themes"
 import { useSession, signOut } from "@/lib/auth/client"
 import { SKIP_SSO_AUTO_REDIRECT_KEY } from "@/components/auth/login-form"
@@ -10,23 +11,35 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
     DropdownMenu,
     DropdownMenuContent,
-    DropdownMenuGroup,
     DropdownMenuItem,
     DropdownMenuLabel,
-    DropdownMenuPortal,
     DropdownMenuSeparator,
-    DropdownMenuSub,
-    DropdownMenuSubContent,
-    DropdownMenuSubTrigger,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { RowMenuHead } from "@/components/ui/row-menu"
 import { Skeleton } from "@/components/ui/skeleton"
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from "@/components/ui/sidebar"
 
 interface NavUserProps {
     /** Shown under the name. Falls back to the email for users without a group. */
     groupName?: string;
+    /** The version of this DBackup, named by What's new. */
+    version?: string;
 }
+
+const THEMES: { value: string; label: string; icon: LucideIcon }[] = [
+    { value: "light", label: "Light", icon: Sun },
+    { value: "dark", label: "Dark", icon: Moon },
+    { value: "system", label: "System", icon: Monitor },
+]
+
+const HELP: { href: string; label: string; icon: LucideIcon }[] = [
+    { href: "https://docs.dbackup.app", label: "Guides", icon: BookOpen },
+    { href: "/docs/api", label: "API reference", icon: FileCode2 },
+    { href: "https://api.dbackup.app", label: "API reference online", icon: Globe },
+]
+
+const CHANGELOG = "https://docs.dbackup.app/changelog"
 
 function getInitials(name?: string) {
     if (!name) return "U";
@@ -38,11 +51,11 @@ function getInitials(name?: string) {
         .substring(0, 2);
 }
 
-export function NavUser({ groupName }: NavUserProps) {
+export function NavUser({ groupName, version }: NavUserProps) {
     const { data: session, isPending } = useSession()
     const { isMobile, setOpenMobile } = useSidebar()
     const router = useRouter()
-    const { setTheme } = useTheme()
+    const { theme, setTheme } = useTheme()
 
     const handleSignOut = async () => {
         await signOut({
@@ -73,6 +86,8 @@ export function NavUser({ groupName }: NavUserProps) {
     if (!session) return null
 
     const { user } = session
+    const secondFactor = !!user.twoFactorEnabled || !!(user as { passkeyTwoFactor?: boolean | null }).passkeyTwoFactor
+    const closeOnPhone = () => isMobile && setOpenMobile(false)
 
     const avatar = (
         <Avatar className="size-7.5">
@@ -99,82 +114,77 @@ export function NavUser({ groupName }: NavUserProps) {
                         </SidebarMenuButton>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent
-                        className="min-w-56 rounded-lg"
+                        className="w-68 rounded-lg"
                         side={isMobile ? "top" : "right"}
                         align="end"
                         sideOffset={4}
                     >
-                        <DropdownMenuLabel className="p-0 font-normal">
-                            <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
-                                {avatar}
-                                <div className="grid flex-1 text-left text-sm leading-tight">
-                                    <span className="truncate font-medium">{user.name}</span>
-                                    <span className="truncate text-xs text-muted-foreground">{user.email}</span>
-                                </div>
-                            </div>
-                        </DropdownMenuLabel>
+                        <RowMenuHead
+                            tile={<Avatar className="size-8"><AvatarImage src={user.image || ""} alt="" /><AvatarFallback className="text-xs">{getInitials(user.name)}</AvatarFallback></Avatar>}
+                            title={user.name}
+                            note={[groupName, user.email].filter(Boolean).join(" · ")}
+                        />
+                        <DropdownMenuLabel className="text-xs text-muted-foreground">Account</DropdownMenuLabel>
+                        <DropdownMenuItem asChild tone="neutral">
+                            <Link href="/dashboard/profile" onClick={closeOnPhone}>
+                                <User />
+                                Profile
+                            </Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild tone="neutral">
+                            <Link href="/dashboard/profile?part=security" onClick={closeOnPhone}>
+                                <ShieldCheck />
+                                Security
+                                {secondFactor && <span className="ml-auto text-xs text-success"><span className="sr-only">, </span>2FA on</span>}
+                            </Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild tone="neutral">
+                            <Link href="/dashboard/profile?part=colors" onClick={closeOnPhone}>
+                                <Palette />
+                                Colors
+                            </Link>
+                        </DropdownMenuItem>
+                        {/* A switch rather than a submenu, and it keeps the menu open, so the change shows at once. */}
+                        <div className="flex items-center justify-between gap-2 py-1 pr-1 pl-2 text-sm">
+                            <span className="flex items-center gap-2">
+                                <SunMoon className="size-4 text-muted-foreground" aria-hidden="true" />
+                                Theme
+                            </span>
+                            <DropdownMenuPrimitive.RadioGroup value={theme ?? "system"} onValueChange={setTheme} aria-label="Theme" className="inline-flex gap-0.5 rounded-lg bg-muted p-0.5">
+                                {THEMES.map((option) => (
+                                    <DropdownMenuPrimitive.RadioItem
+                                        key={option.value}
+                                        value={option.value}
+                                        aria-label={option.label}
+                                        title={option.label}
+                                        onSelect={(event) => event.preventDefault()}
+                                        className="flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors data-[highlighted]:text-foreground data-[highlighted]:ring-2 data-[highlighted]:ring-ring/50 data-[state=checked]:bg-background data-[state=checked]:text-foreground data-[state=checked]:shadow-sm dark:data-[state=checked]:bg-foreground/12"
+                                    >
+                                        <option.icon className="size-4" aria-hidden="true" />
+                                    </DropdownMenuPrimitive.RadioItem>
+                                ))}
+                            </DropdownMenuPrimitive.RadioGroup>
+                        </div>
                         <DropdownMenuSeparator />
-                        <DropdownMenuGroup>
-                            <DropdownMenuItem asChild>
-                                <Link href="/dashboard/profile" onClick={() => isMobile && setOpenMobile(false)}>
-                                    <User />
-                                    Profile
-                                </Link>
+                        <DropdownMenuLabel className="text-xs text-muted-foreground">Help</DropdownMenuLabel>
+                        {HELP.map((link) => (
+                            <DropdownMenuItem key={link.href} asChild tone="neutral">
+                                <a href={link.href} target="_blank" rel="noopener noreferrer">
+                                    <link.icon />
+                                    {link.label}
+                                    <ArrowUpRight className="ml-auto size-3.5 text-muted-foreground" aria-hidden="true" />
+                                </a>
                             </DropdownMenuItem>
-                            <DropdownMenuSub>
-                                <DropdownMenuSubTrigger>
-                                    <Monitor />
-                                    Theme
-                                </DropdownMenuSubTrigger>
-                                <DropdownMenuPortal>
-                                    <DropdownMenuSubContent>
-                                        <DropdownMenuItem onClick={() => setTheme("light")}>
-                                            <Sun />
-                                            Light
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem onClick={() => setTheme("dark")}>
-                                            <Moon />
-                                            Dark
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem onClick={() => setTheme("system")}>
-                                            <Monitor />
-                                            System
-                                        </DropdownMenuItem>
-                                    </DropdownMenuSubContent>
-                                </DropdownMenuPortal>
-                            </DropdownMenuSub>
-                        </DropdownMenuGroup>
+                        ))}
+                        <DropdownMenuItem asChild tone="neutral">
+                            <a href={CHANGELOG} target="_blank" rel="noopener noreferrer">
+                                <Sparkles />
+                                {version ? `What's new in v${version}` : "What's new"}
+                                <ArrowUpRight className="ml-auto size-3.5 text-muted-foreground" aria-hidden="true" />
+                            </a>
+                        </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuSub>
-                            <DropdownMenuSubTrigger>
-                                <BookOpen />
-                                Documentation
-                            </DropdownMenuSubTrigger>
-                            <DropdownMenuPortal>
-                                <DropdownMenuSubContent>
-                                    <DropdownMenuItem asChild>
-                                        <a href="https://docs.dbackup.app" target="_blank" rel="noopener noreferrer">
-                                            <BookOpen />
-                                            Guides
-                                        </a>
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem asChild>
-                                        <a href="/docs/api" target="_blank" rel="noopener noreferrer">
-                                            <FileCode2 />
-                                            API Docs (Local)
-                                        </a>
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem asChild>
-                                        <a href="https://api.dbackup.app" target="_blank" rel="noopener noreferrer">
-                                            <Globe />
-                                            API Docs (Remote)
-                                        </a>
-                                    </DropdownMenuItem>
-                                </DropdownMenuSubContent>
-                            </DropdownMenuPortal>
-                        </DropdownMenuSub>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={handleSignOut}>
+                        <DropdownMenuItem variant="destructive" tone="destructive" onSelect={() => void handleSignOut()}>
                             <LogOut />
                             Log out
                         </DropdownMenuItem>

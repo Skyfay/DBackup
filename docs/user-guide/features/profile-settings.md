@@ -39,7 +39,7 @@ Every browser signed in as you, with its browser, system, address, when it signe
 
 ## Appearance
 
-**Light**, **Dark** or **System**, which follows the theme of your system. It applies at once and stays in this browser.
+**Light**, **Dark** or **System**, which follows the theme of your system. It applies at once and stays in this browser. The menu of your avatar at the foot of the sidebar switches it too, with one click on its sun, moon or screen.
 
 ## Colors
 

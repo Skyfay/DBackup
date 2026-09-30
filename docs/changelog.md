@@ -58,6 +58,7 @@ All notable changes to DBackup are documented here.
 - **settings**: The new system task **Optimize the database** gives the unused space of the database back to the disk on the first of every month, once at least a fifth of it is unused. Runs that would start meanwhile wait until it is done.
 - **ui**: The tabs of every page show an icon, and a dot in amber or red while their list holds something to fix, like a connection that does not answer or a job whose last run failed. What it is shows on hover.
 - **ui**: The numbers above every list are tiles with an icon, and what each means shows on hover. Jobs and Connections have them too, with how the latest runs went, what answers and how fast.
+- **ui**: A search in the middle of the header, or Ctrl+K (⌘K on macOS) anywhere, finds the jobs, connections, databases, backups, runs, settings and pages you may open. It also starts a found job and switches the theme.
 
 
 ### 🐛 Bug Fixes
@@ -162,6 +163,7 @@ All notable changes to DBackup are documented here.
 
 ### 🎨 Improvements
 
+- **ui**: The menu of your account at the foot of the sidebar switches the theme in one click, leads straight to Security and Colors of your profile and lists the help with What's new in this version.
 - **ui**: The sidebar collapses to icons with the new button in the header or Ctrl+B (⌘B on macOS), and small screens get it as a slide-in menu. Both themes use a new zinc color palette where dialogs, menus and buttons, and the fields and switches in them, take the color of their task, like blue to add and violet to edit, and the interface uses the Geist font on every operating system.
 - **dashboard**: The overview was rebuilt with a status banner that names a failing job and can rerun it, trend cards, a switch between the latest executions and the jobs, and a backup calendar that shows as many weeks as the screen fits. It works on phones, and its statistics are cached for a minute or until the next backup finishes or a job changes.
 - **storage**: The storage history dialog shows one bar a day, with the stored size, the change in the range and the number of backups above the chart. It switches between 7 days, 30 days, 90 days and a year without loading again, and leads on to the Backups page.
@@ -237,7 +239,9 @@ All notable changes to DBackup are documented here.
 - **config**: **Include the logins** is gone, since the configuration backup always holds them. Configuration files of older versions still restore, in parts from the Backups page or as a whole from a file.
 - **config**: The configuration backup includes the history by default. An instance that saved this setting before keeps its choice.
 - **settings**: Run logs are kept for a year by default instead of 90 days. An instance that saved its data retention before keeps its choice.
-
+- **api**: The new `GET /api/search?q=` returns the jobs, connections, databases and latest runs whose name holds the query. It finds only the kinds the caller may read.
+- **ui**: A new version shows on the right of the header with a blue dot beside the guides and DBackup on GitHub, and opens a card with how to update. The sidebar no longer shows it at its foot.
+- **ui**: The name under Settings → General heads the sidebar, with DBackup and the version below it. Without a name the sidebar shows DBackup as before.
 
 ### 🗑️ Removed
 

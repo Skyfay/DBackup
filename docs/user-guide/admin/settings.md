@@ -18,11 +18,11 @@ Someone who may only read the settings sees every value and a line on top that s
 
 | Setting | What it does | Default |
 | :--- | :--- | :--- |
-| **Name** | Shown in the browser tab as `DBackup \| Name`. Empty shows DBackup alone. | Empty |
+| **Name** | Shown on top of the sidebar and in the browser tab as `DBackup \| Name`. Empty shows DBackup alone. | Empty |
 | **Time zone** | The clock of every schedule, of the file names and of the retention. The line below it says what 03:00 there is in UTC. | UTC |
 | **Runs at the same time** | How many backups run at once. A running restore or integrity check takes a run too. | 1 |
 | **Fail a run that stops reporting after** | Fails a backup or restore that reports no progress for this long, so it gives its run back. **Never** turns it off. | 6 hours |
-| **Look for new versions** | Asks GitHub for the newest release, shows a new version in the sidebar and reports it once a day. Off, DBackup never asks. | On |
+| **Look for new versions** | Asks GitHub for the newest release, marks a new version with a blue dot on the right of the header and reports it once a day. Off, DBackup never asks. | On |
 | **Show Quick Setup in the sidebar** | Keeps Quick Setup in the sidebar. It shows by itself while no database is set up. | Off |
 
 See [Timezones](/user-guide/features/timezones) for how the time zone of the scheduler and the one of your profile work together.

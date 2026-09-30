@@ -39,6 +39,7 @@ src/services/
   trash/         Recently deleted: trash-snapshot.ts (keepInTrash, the snapshot a delete keeps), trash-restore.ts, trash-service.ts (list, restore, purge, cleanup)
   dashboard/     overview-service.ts (page model), aggregates.ts (cached history), health.ts, trends.ts, cache.ts
   audit/         the Audit log tab: audit-list-service.ts (page, filters, numbers), audit-details.ts, audit-timeline.ts, audit-export.ts (CSV)
+  search/        search-service.ts (what the search in the header finds by name, only of the kinds its caller allows), search-types.ts (shared with the browser)
   audit-service.ts, dashboard-service.ts   (flat, no subdirectory)
 ```
 

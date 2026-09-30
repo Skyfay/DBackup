@@ -89,9 +89,13 @@ function CommandInput({
 
 function CommandList({
   className,
+  scrollClassName,
   children,
   ...props
-}: React.ComponentProps<typeof CommandPrimitive.List>) {
+}: React.ComponentProps<typeof CommandPrimitive.List> & {
+  /** Classes for the scroll area inside, like a max-height other than the default. */
+  scrollClassName?: string
+}) {
   const viewportRef = React.useRef<HTMLDivElement>(null)
 
   return (
@@ -115,7 +119,7 @@ function CommandList({
         e.preventDefault()
       }}
     >
-      <ScrollArea viewportRef={viewportRef} className="max-h-75 **:data-[slot=scroll-area-viewport]:max-h-[inherit]">
+      <ScrollArea viewportRef={viewportRef} className={cn("max-h-75 **:data-[slot=scroll-area-viewport]:max-h-[inherit]", scrollClassName)}>
         {children}
       </ScrollArea>
     </CommandPrimitive.List>

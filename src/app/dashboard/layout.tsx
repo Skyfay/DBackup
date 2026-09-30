@@ -38,7 +38,7 @@ export default async function DashboardLayout({
     }
 
     // Run all queries in parallel to avoid sequential blocking
-    const [permissions, userWithGroup, updateInfo, sourceCount, quickSetupSetting, cookieStore, tableDefaults, trashDays, taskColors] = await Promise.all([
+    const [permissions, userWithGroup, updateInfo, sourceCount, quickSetupSetting, cookieStore, tableDefaults, trashDays, taskColors, instanceName] = await Promise.all([
         getUserPermissions(),
         getCurrentUserWithGroup(),
         updateService.checkForUpdates(),
@@ -48,6 +48,7 @@ export default async function DashboardLayout({
         getTableDefaults(session.user.id),
         getTrashDays(),
         getTaskColors(session.user.id),
+        prisma.systemSetting.findUnique({ where: { key: "general.instanceName" } }),
     ]);
 
     const isSuperAdmin = userWithGroup?.group?.name === "SuperAdmin";
@@ -74,14 +75,13 @@ export default async function DashboardLayout({
                             <AppSidebar
                                 permissions={permissions}
                                 isSuperAdmin={isSuperAdmin}
-                                updateAvailable={updateInfo.updateAvailable}
                                 currentVersion={updateInfo.currentVersion}
-                                latestVersion={updateInfo.latestVersion}
+                                instanceName={instanceName?.value.trim() || undefined}
                                 showQuickSetup={showQuickSetup}
                                 groupName={userWithGroup?.group?.name}
                             />
                             <SidebarInset className="min-w-0 overflow-clip bg-page">
-                                <Header />
+                                <Header updateAvailable={updateInfo.updateAvailable} currentVersion={updateInfo.currentVersion} latestVersion={updateInfo.latestVersion} />
                                 {/* Radix wraps the page in a `display: table` div that grows with its widest child, so a
                                     wide table pushed the whole page past the right edge, clipped and not scrollable.
                                     Block keeps the page at the window's width, and a wide table scrolls inside its card. */}

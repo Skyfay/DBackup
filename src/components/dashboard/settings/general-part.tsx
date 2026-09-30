@@ -34,7 +34,7 @@ export function GeneralPart({ saved }: { saved: GeneralSettings }) {
         <>
             <PartFrame part="general">
                 <fieldset disabled={readOnly} className="min-w-0 space-y-6">
-                    <Field label="Name" setting="general.name" hint={name ? `The browser tab reads DBackup | ${name}.` : "Empty shows DBackup alone in the browser tab."} error={save.errorOf("instanceName")}>
+                    <Field label="Name" setting="general.name" hint={name ? `The sidebar shows ${name} on top, the browser tab reads DBackup | ${name}.` : "Empty shows DBackup on top of the sidebar and alone in the browser tab."} error={save.errorOf("instanceName")}>
                         {(id) => (
                             <Input id={id} value={values.instanceName} maxLength={50} placeholder="Like Production" className="max-w-md" onChange={(event) => set("instanceName", event.target.value)} />
                         )}
@@ -87,7 +87,7 @@ export function GeneralPart({ saved }: { saved: GeneralSettings }) {
                         <div data-setting="general.updates">
                             <SwitchRow
                                 title="Look for new versions"
-                                description="DBackup asks GitHub for its newest release, shows it in the sidebar and reports it once a day. The system task Check for updates follows this switch."
+                                description="DBackup asks GitHub for its newest release, marks it on the right of the header and reports it once a day. The system task Check for updates follows this switch."
                                 checked={values.checkForUpdates}
                                 onCheckedChange={(checked) => set("checkForUpdates", checked)}
                             />

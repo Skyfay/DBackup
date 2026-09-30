@@ -15,11 +15,11 @@ export interface SettingEntry<Id extends string = SettingsPartId> {
 }
 
 const SETTINGS: SettingEntry[] = [
-    { part: "general", id: "general.name", label: "Name", text: "The name in the browser tab, like DBackup | Production." },
+    { part: "general", id: "general.name", label: "Name", text: "The name on top of the sidebar and in the browser tab, like Production." },
     { part: "general", id: "general.timezone", label: "Time zone", text: "Schedules, file names, the retention and the dashboard follow it." },
     { part: "general", id: "general.runs", label: "Runs at the same time", text: "Backups, restores and integrity checks share them." },
     { part: "general", id: "general.stuck", label: "Fail a run that stops reporting after", text: "The system task Stuck run watchdog follows it." },
-    { part: "general", id: "general.updates", label: "Look for new versions", text: "Asks GitHub for the newest release and shows it in the sidebar." },
+    { part: "general", id: "general.updates", label: "Look for new versions", text: "Asks GitHub for the newest release and marks it in the header." },
     { part: "general", id: "general.quick-setup", label: "Show Quick Setup in the sidebar", text: "It shows by itself while no database is set up." },
     { part: "notifications", id: "notifications.events", label: "Default channels", text: "Where every event goes unless it has channels of its own." },
     ...DATA_RETENTION_SETTINGS.map((setting): SettingEntry => ({ part: "retention", id: `retention.${setting.id}`, label: setting.label, text: setting.description })),

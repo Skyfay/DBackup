@@ -106,37 +106,17 @@ The update check runs as the system task **Check for updates** (`system.check_fo
 - **On start**: ten seconds after DBackup started, once per start
 - **By hand**: Settings → System tasks → Run now
 
-The task has no switch of its own. It follows **Look for new versions** under Settings → General (`general.checkForUpdates`), so `getTaskEnabled` and `setTaskEnabled` of `system-task-service.ts` read and write that setting. While it is off, `updateService.checkForUpdates()` returns without asking GitHub, for the task and for the sidebar alike. A new version is reported through the notification `UPDATE_AVAILABLE`, at most once per version within its reminder interval.
+The task has no switch of its own. It follows **Look for new versions** under Settings → General (`general.checkForUpdates`), so `getTaskEnabled` and `setTaskEnabled` of `system-task-service.ts` read and write that setting. While it is off, `updateService.checkForUpdates()` returns without asking GitHub, for the task and for the header alike. A new version is reported through the notification `UPDATE_AVAILABLE`, at most once per version within its reminder interval.
 
-## UI Notification
+## In the dashboard
 
-When an update is available, a notification appears in the dashboard:
-
-```tsx
-function UpdateBanner() {
-  const { data } = useSWR('/api/system/updates');
-
-  if (!data?.available) return null;
-
-  return (
-    <Alert>
-      <AlertTitle>Update Available</AlertTitle>
-      <AlertDescription>
-        Version {data.latestVersion} is available.
-        <Link href={data.releaseUrl}>View Release Notes</Link>
-      </AlertDescription>
-    </Alert>
-  );
-}
-```
+The dashboard layout (`src/app/dashboard/layout.tsx`) calls `updateService.checkForUpdates()` on every page load and hands the result to the header. `HeaderLinks` in `src/components/layout/header-links.tsx` groups the guides, DBackup on GitHub and, while `updateAvailable` is true, the update: an arrow with a blue dot in the `create` tone. It opens a card with the running and the newest version, the command that pulls the new image, the release on GitHub and What's new.
 
 ## Configuration
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `general.checkForUpdates` | `true` | Enable/disable update checks |
-| `general.updateCheckSchedule` | `0 4 * * *` | Cron schedule |
-| `general.notifyOnUpdate` | `true` | Show UI notification |
+| `general.checkForUpdates` | `true` | **Look for new versions** under Settings → General. Off, DBackup never asks GitHub and the header shows no update. |
 
 ## Caching
 

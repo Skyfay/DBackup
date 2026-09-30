@@ -159,6 +159,12 @@ Get alerted when backups complete or fail.
 4. Set the **Notification Trigger** (Always, Success only, Failure only)
 5. Save
 
+## Finding Your Way
+
+The sidebar lists the pages, headed by the name set under **Settings → General**. The search in the middle of the header, or **Ctrl+K** (**⌘K** on macOS) on any page, finds jobs, connections, databases, backups, runs, settings and pages by name, only the ones you may open. It can also start a job it found, and **Tab** narrows it to one kind.
+
+The buttons on the right of the header lead to the guides and to DBackup on GitHub. A blue dot there marks a new version, and its card says how to update.
+
 ## Next Steps
 
 Congratulations! You've created your first automated backup. Now explore:

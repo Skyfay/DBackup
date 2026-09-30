@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Download, Plus } from "lucide-react";
+import { Download, KeyRound, LogIn, Plus, ScrollText, User, Users, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { saveViewLayout } from "@/app/actions/auth/table-preferences";
 import { ApiKeysTab, type ApiKeysTabHandle } from "@/components/dashboard/api-keys/api-keys-tab";
@@ -21,7 +21,7 @@ import { ViewSwitch } from "@/components/ui/view-switch";
 import { useIsMobileState } from "@/hooks/use-mobile";
 import type { TablePreferences, ViewMode } from "@/lib/core/table-preferences";
 import { UsersTab, type UsersTabHandle } from "./users-tab";
-import { USERS_TABLE_ID, type UsersPageCounts, type UsersPageTab } from "./users-tables";
+import { USERS_TABLE_ID, type UsersPageAttention, type UsersPageTab } from "./users-tables";
 
 /** The audit log shows as a list or with the timeline above it, a phone gets cards. */
 const AUDIT_VIEWS: ViewMode[] = ["table", "timeline"];
@@ -39,6 +39,14 @@ const LABELS: Record<UsersPageTab, string> = {
     sso: "Sign-in",
 };
 
+const ICONS: Record<UsersPageTab, LucideIcon> = {
+    users: User,
+    groups: Users,
+    apikeys: KeyRound,
+    audit: ScrollText,
+    sso: LogIn,
+};
+
 interface UsersClientProps {
     canReadUsers: boolean;
     canManageUsers: boolean;
@@ -53,7 +61,7 @@ interface UsersClientProps {
     canReadSignIn: boolean;
     /** Only a SuperAdmin changes the sign-in providers and signs out a SuperAdmin. */
     viewerSuperAdmin: boolean;
-    counts: UsersPageCounts;
+    attention: UsersPageAttention;
     layouts: Record<string, TablePreferences>;
     /** The view of the groups this user picked last. */
     groupsView: ViewMode;
@@ -71,7 +79,7 @@ interface UsersClientProps {
  * phone gets cards.
  */
 export function UsersClient(props: UsersClientProps) {
-    const { canReadUsers, canManageUsers, canReadGroups, canManageGroups, canReadApiKeys, canManageApiKeys, canOpenRuns, canReadAudit, canReadSignIn, viewerSuperAdmin, counts, layouts } = props;
+    const { canReadUsers, canManageUsers, canReadGroups, canManageGroups, canReadApiKeys, canManageApiKeys, canOpenRuns, canReadAudit, canReadSignIn, viewerSuperAdmin, attention, layouts } = props;
     const router = useRouter();
     const searchParams = useSearchParams();
     const isMobile = useIsMobileState();
@@ -136,7 +144,7 @@ export function UsersClient(props: UsersClientProps) {
         <Tabs value={active} onValueChange={setTab} className="w-full gap-4 md:gap-0">
             <PageHead>
                 <PageTabs
-                    tabs={tabs.map((tab) => ({ value: tab, label: LABELS[tab], count: counts[tab] }))}
+                    tabs={tabs.map((tab) => ({ value: tab, label: LABELS[tab], icon: ICONS[tab], attention: attention[tab] }))}
                     value={active}
                     onValueChange={setTab}
                     label="Users and groups list"

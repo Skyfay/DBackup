@@ -1,3 +1,4 @@
+import { attentionOf, combineAttention, type TabAttention } from "@/lib/core/tab-attention";
 import type { JobListItem } from "@/services/jobs/job-list-service";
 
 /** The quick filters of the Jobs page. */
@@ -35,4 +36,13 @@ export function matchesJobFilter(job: JobListItem, filter: JobFilter): boolean {
         case "paused":
             return !job.enabled;
     }
+}
+
+/** The dot of the Jobs tab, the jobs of Needs attention: red for a failed last run, amber for one that missed a copy. */
+export function jobsAttention(jobs: JobListItem[]): TabAttention | undefined {
+    const named = (outcome: string) => jobs.filter((job) => lastOutcome(job) === outcome).map((job) => job.name);
+    return combineAttention(
+        attentionOf("destructive", named("Failed"), "failed on its last run", "failed on their last run"),
+        attentionOf("warning", named("Partial"), "missed a copy on its last run", "missed a copy on their last run"),
+    );
 }

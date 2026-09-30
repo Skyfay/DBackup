@@ -16,7 +16,7 @@ import { JobDetailsSheet } from "@/components/dashboard/jobs/job-details-sheet";
 import { JobForm } from "@/components/dashboard/jobs/job-form";
 import type { AdapterOption, EncryptionOption } from "@/components/dashboard/jobs/job-form-schema";
 import { JobContextMenu, JobRowActions } from "@/components/dashboard/jobs/job-menus";
-import { matchesJobFilter, type JobFilter } from "@/components/dashboard/jobs/job-status";
+import { jobsAttention, matchesJobFilter, type JobFilter } from "@/components/dashboard/jobs/job-status";
 import { JobStatusFilter } from "@/components/dashboard/jobs/job-status-filter";
 import { JOBS_PAGE_ID, JOBS_TABLE_ID } from "@/components/dashboard/jobs/job-tables";
 import { useJobList } from "@/components/dashboard/jobs/use-job-list";
@@ -209,7 +209,7 @@ export function JobsClient({
                 between kinds of connections. The filters of the list sit beside its search. */}
             <PageHead>
                 <Tabs value="jobs" className="min-w-0 flex-1">
-                    <PageTabs tabs={[{ value: "jobs", label: "Jobs", count: hasLoaded ? jobs.length : undefined }]} value="jobs" onValueChange={() => undefined} label="Job list" />
+                    <PageTabs tabs={[{ value: "jobs", label: "Jobs", icon: CalendarClock, attention: hasLoaded ? jobsAttention(jobs) : undefined }]} value="jobs" onValueChange={() => undefined} label="Job list" />
                 </Tabs>
                 <div className="ml-auto flex shrink-0 items-center gap-2">
                     {/* Hidden by CSS rather than by the measured screen, so it never pops in after loading. */}

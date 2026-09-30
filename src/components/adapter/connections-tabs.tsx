@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Plus } from "lucide-react";
+import { Bell, Database, FolderTree, HardDrive, Plus, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { saveViewLayout } from "@/app/actions/auth/table-preferences";
 import { AdapterManager, type AdapterManagerHandle } from "@/components/adapter/adapter-manager";
@@ -15,7 +15,7 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { listView, type ListViewMode, type TablePreferences, type ViewMode } from "@/lib/core/table-preferences";
 import { useIsMobileState } from "@/hooks/use-mobile";
-import { CONNECTION_TABLE_IDS, CONNECTIONS_PAGE_ID, type ConnectionCounts } from "./connection-tables";
+import { CONNECTION_TABLE_IDS, CONNECTIONS_PAGE_ID, type ConnectionAttention } from "./connection-tables";
 
 /**
  * Tab keys, also the `?tab=` values.
@@ -42,24 +42,31 @@ const TAB_NAMES: Record<ConnectionTab, string> = {
 
 interface ConnectionsTabsProps {
     permissions: string[];
-    counts: ConnectionCounts;
+    attention: ConnectionAttention;
     /** Saved column layouts, keyed by table id. */
     layouts: Record<string, TablePreferences>;
     /** The view this user picked last, table when they never picked one. */
     initialView: ViewMode;
 }
 
-/** How many connections a list holds, left out for the lists the user cannot open. */
-function countOf(tab: ConnectionTab, counts: ConnectionCounts) {
+/** What needs a look in a list, left out for the lists the user cannot open. */
+function attentionOf(tab: ConnectionTab, attention: ConnectionAttention) {
     return {
-        [CONNECTION_TABS.DATABASES]: counts.databases,
-        [CONNECTION_TABS.DIRECTORY_SOURCES]: counts.sources,
-        [CONNECTION_TABS.DESTINATIONS]: counts.destinations,
-        [CONNECTION_TABS.NOTIFICATIONS]: counts.notifications,
+        [CONNECTION_TABS.DATABASES]: attention.databases,
+        [CONNECTION_TABS.DIRECTORY_SOURCES]: attention.sources,
+        [CONNECTION_TABS.DESTINATIONS]: attention.destinations,
+        [CONNECTION_TABS.NOTIFICATIONS]: attention.notifications,
     }[tab];
 }
 
-export function ConnectionsTabs({ permissions, counts, layouts, initialView }: ConnectionsTabsProps) {
+const TAB_ICONS: Record<ConnectionTab, LucideIcon> = {
+    [CONNECTION_TABS.DATABASES]: Database,
+    [CONNECTION_TABS.DIRECTORY_SOURCES]: FolderTree,
+    [CONNECTION_TABS.DESTINATIONS]: HardDrive,
+    [CONNECTION_TABS.NOTIFICATIONS]: Bell,
+};
+
+export function ConnectionsTabs({ permissions, attention, layouts, initialView }: ConnectionsTabsProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const [view, setView] = useState<ListViewMode>(listView(initialView));
@@ -128,7 +135,7 @@ export function ConnectionsTabs({ permissions, counts, layouts, initialView }: C
         <Tabs value={active} onValueChange={onTabChange} className="w-full gap-4 md:gap-0">
             <PageHead>
                 <PageTabs
-                    tabs={visible.map((tab) => ({ value: tab, label: TAB_NAMES[tab], count: countOf(tab, counts) }))}
+                    tabs={visible.map((tab) => ({ value: tab, label: TAB_NAMES[tab], icon: TAB_ICONS[tab], attention: attentionOf(tab, attention) }))}
                     value={active}
                     onValueChange={onTabChange}
                     label="Connection list"

@@ -12,6 +12,7 @@ import { logger } from "@/lib/logging/logger";
 import { ConflictError, NotFoundError, ValidationError } from "@/lib/logging/errors";
 import { runBulk, emptyBulkResult, type BulkResult } from "@/lib/core/bulk";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
+import { attentionOf, combineAttention, type TabAttention } from "@/lib/core/tab-attention";
 import { keepInTrash } from "@/services/trash/trash-snapshot";
 import type { DeleteOptions } from "@/services/trash/trash-types";
 
@@ -246,21 +247,27 @@ export async function getAdapterTypes(ids: string[]): Promise<string[]> {
     return adapters.map((adapter) => adapter.type);
 }
 
-/** How many connections of each kind exist, for the counts beside the Connections tabs. */
-export async function getConnectionCounts(): Promise<{ databases: number; sources: number; destinations: number; notifications: number }> {
-    const groups = await prisma.adapterConfig.groupBy({
-        by: ["type", "storageRole"],
-        _count: { _all: true },
+/** Which connections of each kind the health check finds failing, for the dots of the Connections tabs. */
+export async function getConnectionAttention(): Promise<Record<"databases" | "sources" | "destinations" | "notifications", TabAttention | undefined>> {
+    const failing = await prisma.adapterConfig.findMany({
+        where: { lastStatus: { in: ["OFFLINE", "DEGRADED"] } },
+        select: { name: true, type: true, storageRole: true, lastStatus: true },
+        orderBy: { name: "asc" },
     });
-    const count = (type: string, role?: string) =>
-        groups
-            .filter((group) => group.type === type && (!role || group.storageRole === role))
-            .reduce((sum, group) => sum + group._count._all, 0);
+    // A connection that does not answer is red, one that failed a check or two amber.
+    const of = (type: string, role?: string) => {
+        const list = failing.filter((adapter) => adapter.type === type && (!role || adapter.storageRole === role));
+        const names = (status: string) => list.filter((adapter) => adapter.lastStatus === status).map((adapter) => adapter.name);
+        return combineAttention(
+            attentionOf("destructive", names("OFFLINE"), "does not answer", "do not answer"),
+            attentionOf("warning", names("DEGRADED"), "failed its last check", "failed their last check"),
+        );
+    };
 
     return {
-        databases: count("database"),
-        sources: count("storage", STORAGE_ROLES.SOURCE),
-        destinations: count("storage", STORAGE_ROLES.DESTINATION),
-        notifications: count("notification"),
+        databases: of("database"),
+        sources: of("storage", STORAGE_ROLES.SOURCE),
+        destinations: of("storage", STORAGE_ROLES.DESTINATION),
+        notifications: of("notification"),
     };
 }

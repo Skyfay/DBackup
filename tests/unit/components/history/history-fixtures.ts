@@ -244,7 +244,7 @@ const json = (body: unknown, status = 200) => Promise.resolve({ ok: status < 400
 export function serve({ run = detail(), page = runPage }: { run?: RunDetail | null; page?: RunPage } = {}) {
     fetchMock.mockReset();
     fetchMock.mockImplementation((url: string) => {
-        if (url === "/api/history/counts") return json({ success: true, data: { runs: 1284, notifications: 3402 } });
+        if (url === "/api/history/attention") return json({ success: true, data: { runs: { tone: "destructive", note: "Shop offsite failed on its last run" } } });
         if (url.startsWith("/api/history/runs?")) return json({ success: true, data: page });
         if (url.startsWith("/api/history/runs/")) {
             if (!run) return json({ success: false, error: "This run could not be found." }, 404);

@@ -26,7 +26,7 @@ import { databaseColumns, engineOf } from "./database-columns";
 import { backupsHref, readNow, useDatabaseData } from "./database-data";
 import { DatabaseDayPanel, type DayPanelAccess, type DayPick } from "./database-day-panel";
 import { DatabaseCard, DatabasesEmpty, DatabasesSkeleton, databaseFilters } from "./database-list-parts";
-import { databaseHref, freshnessOf, summarize } from "./database-model";
+import { databaseHref, explorerAttention, freshnessOf, summarize } from "./database-model";
 import { DatabasesTimeline } from "./databases-timeline";
 import { DATABASES_PAGE_ID } from "./explorer-ids";
 import { ExplorerTabs, type ExplorerTab } from "./explorer-tabs";
@@ -176,7 +176,7 @@ export function DatabaseExplorer({ initialView, ...access }: DatabaseExplorerPro
     return (
         <div className={cn(dayBeside && "flex items-start gap-4 md:gap-6")}>
             <div className="min-w-0 flex-1 space-y-4 md:space-y-0">
-                <ExplorerTabs tab={tab} databases={data.databases.length} servers={data.servers.length} onTab={setTab}>
+                <ExplorerTabs tab={tab} attention={explorerAttention(data, summary, coverage)} onTab={setTab}>
                     <ServerFreshness servers={data.servers} onReadNow={read} />
                     {coverage && tab === "databases" && (
                         // Hidden by CSS rather than by the measured screen, so it does not pop in after loading.

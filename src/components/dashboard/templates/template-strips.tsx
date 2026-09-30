@@ -3,10 +3,10 @@
 import { useMemo } from "react";
 import { ExplorerStrip } from "@/components/dashboard/storage/explorer/explorer-strip";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
-import { firstNameClash } from "@/components/templates/naming-collisions";
 import { readCron } from "@/lib/core/cron";
 import { resolveExcludePatterns } from "@/lib/exclude-groups";
 import type { TemplatesModel } from "@/services/templates/templates-types";
+import { clashingJobs } from "./template-attention";
 import { count, listed } from "./template-format";
 
 type Model = TemplatesModel | null;
@@ -54,12 +54,7 @@ export function NamingStrip({ model }: { model: Model }) {
     const rows = model?.naming;
     const totals = model?.namingTotals;
     const fallback = rows?.find((row) => row.isDefault);
-    // The jobs whose next runs get a name an earlier run already has, like the file names field warns.
-    const clashing = useMemo(() => {
-        if (!model) return [];
-        const patterns = new Map(model.naming.flatMap((row) => row.uses.map((use) => [use.jobId, row.pattern] as const)));
-        return model.jobs.filter((job) => job.enabled && !job.incremental && patterns.has(job.id) && firstNameClash(patterns.get(job.id)!, job.schedule, model.timezone) !== null);
-    }, [model]);
+    const clashing = useMemo(() => (model ? clashingJobs(model) : []), [model]);
     return (
         <ExplorerStrip joined
             cells={[

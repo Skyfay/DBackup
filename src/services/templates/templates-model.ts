@@ -11,7 +11,6 @@ import type {
     RetentionUse,
     ScheduleRow,
     TemplateConnection,
-    TemplateCounts,
     TemplateJob,
     TemplatesModel,
 } from "./templates-types";
@@ -294,14 +293,3 @@ export async function getTemplatesModel(): Promise<TemplatesModel> {
     });
 }
 
-/** How many templates of each kind there are, for the tabs of the page. */
-export async function getTemplateCounts(): Promise<TemplateCounts> {
-    const [retention, naming, schedules, notifications, excludes] = await Promise.all([
-        prisma.retentionPolicy.count(),
-        prisma.namingTemplate.count(),
-        prisma.schedulePreset.count(),
-        prisma.notificationTemplate.count(),
-        prisma.excludePatternPreset.count(),
-    ]);
-    return { retention, naming, schedules, notifications, excludes };
-}

@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Bell, ScrollText } from "lucide-react";
 import { PageHead } from "@/components/ui/page-head";
 import { PageTabs } from "@/components/ui/page-tabs";
 import { Tabs } from "@/components/ui/tabs";
 import { useIsMobileState } from "@/hooks/use-mobile";
+import type { HistoryAttention } from "@/services/history/history-attention";
 import { NotificationsTab } from "./notifications-tab";
 import { RunsTab, type RunsAccess } from "./runs-tab";
 
@@ -20,13 +22,13 @@ export function HistoryClient({ access }: { access: RunsAccess }) {
     const searchParams = useSearchParams();
     const tab: HistoryTab = searchParams.get("tab") === "notifications" ? "notifications" : "runs";
     const isMobile = useIsMobileState();
-    const [counts, setCounts] = useState<{ runs: number; notifications: number } | null>(null);
+    const [attention, setAttention] = useState<HistoryAttention>({});
 
     useEffect(() => {
         let cancelled = false;
-        void fetch("/api/history/counts")
+        void fetch("/api/history/attention")
             .then((response) => (response.ok ? response.json() : null))
-            .then((body) => { if (!cancelled && body?.success) setCounts(body.data); })
+            .then((body) => { if (!cancelled && body?.success) setAttention(body.data); })
             .catch(() => undefined);
         return () => { cancelled = true; };
     }, []);
@@ -38,7 +40,10 @@ export function HistoryClient({ access }: { access: RunsAccess }) {
             <PageHead>
                 <Tabs value={tab} onValueChange={(value) => setTab(value as HistoryTab)} className="min-w-0 flex-1">
                     <PageTabs
-                        tabs={[{ value: "runs", label: "Runs", count: counts?.runs }, { value: "notifications", label: "Notifications", count: counts?.notifications }]}
+                        tabs={[
+                            { value: "runs", label: "Runs", icon: ScrollText, attention: attention.runs },
+                            { value: "notifications", label: "Notifications", icon: Bell, attention: attention.notifications },
+                        ]}
                         value={tab}
                         onValueChange={(value) => setTab(value as HistoryTab)}
                         label="History list"

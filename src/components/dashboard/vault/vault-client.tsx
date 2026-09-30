@@ -2,7 +2,7 @@
 
 import { useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Download, Import, MoreHorizontal, Plus } from "lucide-react";
+import { Download, Import, KeyRound, LockKeyhole, MoreHorizontal, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { PageHead } from "@/components/ui/page-head";
@@ -12,6 +12,7 @@ import { useIsMobileState } from "@/hooks/use-mobile";
 import type { TablePreferences } from "@/lib/core/table-preferences";
 import { CredentialsTab, type CredentialsAccess, type CredentialsTabHandle } from "./credentials-tab";
 import { KeysTab, type KeysTabHandle } from "./keys-tab";
+import type { VaultAttention } from "@/services/vault/vault-counts";
 import { VAULT_TABLE_IDS, type VaultCounts } from "./vault-tables";
 
 type VaultTab = "credentials" | "encryption";
@@ -26,6 +27,7 @@ export interface VaultAccess extends CredentialsAccess {
 interface VaultClientProps {
     access: VaultAccess;
     counts: VaultCounts;
+    attention: VaultAttention;
     layouts: Record<string, TablePreferences>;
 }
 
@@ -34,7 +36,7 @@ interface VaultClientProps {
  * encrypted with. The tab lives in the address, the buttons beside the tabs belong to the open one,
  * and a phone gets cards.
  */
-export function VaultClient({ access, counts, layouts }: VaultClientProps) {
+export function VaultClient({ access, counts, attention, layouts }: VaultClientProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const isMobile = useIsMobileState();
@@ -57,8 +59,8 @@ export function VaultClient({ access, counts, layouts }: VaultClientProps) {
             <PageHead>
                 <PageTabs
                     tabs={[
-                        ...(access.canReadCredentials ? [{ value: "credentials", label: "Credentials", count: counts.credentials }] : []),
-                        { value: "encryption", label: "Encryption", count: counts.keys },
+                        ...(access.canReadCredentials ? [{ value: "credentials", label: "Credentials", icon: LockKeyhole, attention: attention.credentials }] : []),
+                        { value: "encryption", label: "Encryption", icon: KeyRound, attention: attention.encryption },
                     ]}
                     value={active}
                     onValueChange={setTab}

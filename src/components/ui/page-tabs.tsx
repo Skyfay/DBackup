@@ -1,22 +1,34 @@
 "use client";
 
+import type { LucideIcon } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { TabCount, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import type { TabAttention } from "@/lib/core/tab-attention";
+import { cn } from "@/lib/utils";
 
 export interface PageTab {
     value: string;
     label: string;
-    /** How many entries the list holds, left out while it is not known. */
-    count?: number;
+    icon: LucideIcon;
+    /** Something in the list needs a look: a dot beside the name, and what it is on hover. */
+    attention?: TabAttention;
 }
 
-/** The name of a list and its count. The space between them is only for screen readers, the flex gap draws it. */
+/** The icon and name of a list, and its dot. The dot says in words what it means to screen readers. */
 function TabName({ tab }: { tab: PageTab }) {
+    const Icon = tab.icon;
     return (
         <span className="flex items-center gap-2">
+            <Icon className="size-4" aria-hidden="true" />
             {tab.label}
-            {tab.count !== undefined && <>{" "}<TabCount value={tab.count} /></>}
+            {tab.attention && (
+                <>
+                    <span aria-hidden="true" className={cn("size-1.5 shrink-0 rounded-full", tab.attention.tone === "destructive" ? "bg-destructive" : "bg-warning")} />
+                    <span className="sr-only">, needs a look: {tab.attention.note}</span>
+                </>
+            )}
         </span>
     );
 }
@@ -54,11 +66,19 @@ export function PageTabs({ tabs, value, onValueChange, label }: PageTabsProps) {
             </div>
             <ScrollArea horizontal className="hidden min-w-0 md:block">
                 <TabsList variant="page" aria-label={label}>
-                    {tabs.map((tab) => (
-                        <TabsTrigger key={tab.value} value={tab.value}>
-                            <TabName tab={tab} />
-                        </TabsTrigger>
-                    ))}
+                    {tabs.map((tab) => {
+                        const trigger = (
+                            <TabsTrigger key={tab.value} value={tab.value}>
+                                <TabName tab={tab} />
+                            </TabsTrigger>
+                        );
+                        return tab.attention ? (
+                            <Tooltip key={tab.value}>
+                                <TooltipTrigger asChild>{trigger}</TooltipTrigger>
+                                <TooltipContent side="bottom">{tab.attention.note}</TooltipContent>
+                            </Tooltip>
+                        ) : trigger;
+                    })}
                 </TabsList>
             </ScrollArea>
         </>

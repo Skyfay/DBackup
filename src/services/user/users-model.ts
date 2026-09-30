@@ -1,6 +1,8 @@
 import prisma from "@/lib/prisma";
 import { AUDIT_ACTIONS } from "@/lib/core/audit-types";
+import { attentionOf, type TabAttention } from "@/lib/core/tab-attention";
 import { parseUserAgent } from "@/lib/core/user-agent";
+import { SOON_MS } from "@/services/auth/api-keys-types";
 import type { SecondFactor, SignInMethod, UserRow, UserSignIn, UsersGroup, UsersModel } from "./users-types";
 
 /** The name of the group that passes every check. */
@@ -215,8 +217,21 @@ export async function getUsersModel(viewerId: string | null, viewerSuperAdmin: b
     });
 }
 
-/** How many users, groups, API keys and sign-in providers there are, for the tabs of the page. */
-export async function getUsersPageCounts() {
-    const [users, groups, apikeys, sso] = await Promise.all([prisma.user.count(), prisma.group.count(), prisma.apiKey.count(), prisma.ssoProvider.count()]);
-    return { users, groups, apikeys, sso };
+/**
+ * What needs a look in the tabs of the page: someone without a group, who signs in and sees
+ * nothing, and a working API key that runs out within two weeks, like the badge of its row.
+ */
+export async function getUsersPageAttention(now = Date.now()): Promise<{ users?: TabAttention; apikeys?: TabAttention }> {
+    const [grouplessUsers, endingKeys] = await Promise.all([
+        prisma.user.findMany({ where: { groupId: null }, select: { name: true }, orderBy: { name: "asc" } }),
+        prisma.apiKey.findMany({
+            where: { enabled: true, expiresAt: { gt: new Date(now), lte: new Date(now + SOON_MS) } },
+            select: { name: true },
+            orderBy: { expiresAt: "asc" },
+        }),
+    ]);
+    return {
+        users: attentionOf("warning", grouplessUsers.map((user) => user.name), "has no group and sees nothing", "have no group and see nothing"),
+        apikeys: attentionOf("warning", endingKeys.map((key) => key.name), "runs out within two weeks", "run out within two weeks"),
+    };
 }

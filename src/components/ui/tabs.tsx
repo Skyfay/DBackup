@@ -69,11 +69,6 @@ function TabsTrigger({
   )
 }
 
-/** How many entries a tab holds, a plain number beside its name. */
-function TabCount({ value, className }: { value: number; className?: string }) {
-  return <span className={cn("text-xs font-normal text-muted-foreground tabular-nums", className)}>{value.toLocaleString()}</span>
-}
-
 function TabsContent({
   className,
   ...props
@@ -87,4 +82,4 @@ function TabsContent({
   )
 }
 
-export { Tabs, TabsList, TabsTrigger, TabsContent, TabCount }
+export { Tabs, TabsList, TabsTrigger, TabsContent }

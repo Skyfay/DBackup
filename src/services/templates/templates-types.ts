@@ -140,15 +140,6 @@ export interface TemplatesModel {
     channels: TemplateConnection[];
 }
 
-/** How many templates of each kind there are, for the tabs of the page. */
-export interface TemplateCounts {
-    retention: number;
-    naming: number;
-    schedules: number;
-    notifications: number;
-    excludes: number;
-}
-
 /** A destination whose next run a change of its retention policy reaches, with the backups it holds now. */
 export interface RetentionTarget {
     jobId: string;

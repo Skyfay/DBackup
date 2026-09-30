@@ -7,8 +7,7 @@ export const VAULT_TABLE_IDS = {
     keys: "vault.keys",
 } as const;
 
-/** How many entries each tab holds, left out for a tab the viewer cannot open. */
+/** How many keys the Vault holds, since a recovery kit needs at least one. */
 export interface VaultCounts {
-    credentials?: number;
     keys: number;
 }

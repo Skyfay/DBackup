@@ -5,11 +5,11 @@ import { AUDIT_PAGE_ID } from "@/components/dashboard/audit/audit-tables";
 import { GROUPS_PAGE_ID, GROUPS_TABLE_ID } from "@/components/dashboard/groups/groups-tables";
 import { SIGN_IN_PAGE_ID, SIGN_IN_TABLE_ID } from "@/components/dashboard/sign-in/sign-in-tables";
 import { UsersClient } from "@/components/dashboard/users/users-client";
-import { USERS_TABLE_ID, type UsersPageCounts } from "@/components/dashboard/users/users-tables";
+import { USERS_TABLE_ID, type UsersPageAttention } from "@/components/dashboard/users/users-tables";
 import { getCurrentUserWithGroup, getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getTablePreferences, getViewMode } from "@/services/user/preference-service";
-import { getUsersPageCounts } from "@/services/user/users-model";
+import { getUsersPageAttention } from "@/services/user/users-model";
 
 /**
  * Users & Groups: the users with how they sign in, the groups, the API keys, the audit log and
@@ -27,8 +27,8 @@ export default async function UsersPage() {
     const canReadSettings = can(PERMISSIONS.SETTINGS.READ);
     if (!canReadUsers && !canReadGroups && !canReadAudit && !canReadApiKeys) redirect("/dashboard");
 
-    const [counts, layouts, groupsView, apiKeysView, auditView, signInView] = await Promise.all([
-        getUsersPageCounts(),
+    const [attention, layouts, groupsView, apiKeysView, auditView, signInView] = await Promise.all([
+        getUsersPageAttention(),
         getTablePreferences(user.id, [USERS_TABLE_ID, GROUPS_TABLE_ID, API_KEYS_TABLE_ID, SIGN_IN_TABLE_ID]),
         getViewMode(user.id, GROUPS_PAGE_ID),
         getViewMode(user.id, API_KEYS_PAGE_ID),
@@ -36,12 +36,10 @@ export default async function UsersPage() {
         getViewMode(user.id, SIGN_IN_PAGE_ID),
     ]);
 
-    // The count of a tab the viewer cannot open stays out, so the page never hints at it.
-    const visibleCounts: UsersPageCounts = {
-        users: canReadUsers ? counts.users : undefined,
-        groups: canReadGroups ? counts.groups : undefined,
-        apikeys: canReadApiKeys ? counts.apikeys : undefined,
-        sso: canReadSettings ? counts.sso : undefined,
+    // The dot of a tab the viewer cannot open stays out, so the page never hints at it.
+    const visibleAttention: UsersPageAttention = {
+        users: canReadUsers ? attention.users : undefined,
+        apikeys: canReadApiKeys ? attention.apikeys : undefined,
     };
 
     return (
@@ -60,7 +58,7 @@ export default async function UsersPage() {
                     canReadAudit={canReadAudit}
                     canReadSignIn={canReadSettings}
                     viewerSuperAdmin={user.group?.name === "SuperAdmin"}
-                    counts={visibleCounts}
+                    attention={visibleAttention}
                     layouts={layouts}
                     groupsView={groupsView ?? "table"}
                     apiKeysView={apiKeysView ?? "table"}

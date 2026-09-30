@@ -40,8 +40,9 @@ describe("the History page", () => {
         expect(within(offsite).getByText("1 of 2 copies")).toBeInTheDocument();
         expect(within(offsite).getByText("Schedule")).toBeInTheDocument();
         expect(screen.getByText("Integrity check")).toBeInTheDocument();
-        // The count of the tab, which a phone shows in the list picker of the page as well.
-        expect(await screen.findByRole("tab", { name: "Runs 1,284" })).toBeInTheDocument();
+        // No count on the tab, a dot while a job is still broken, which says what in words.
+        expect(await screen.findByRole("tab", { name: "Runs, needs a look: Shop offsite failed on its last run" })).toBeInTheDocument();
+        expect(screen.getByRole("tab", { name: "Notifications" })).toBeInTheDocument();
     });
 
     it("puts the filters beside the search and the quick filters after them, like every table", async () => {

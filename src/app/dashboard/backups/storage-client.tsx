@@ -1,12 +1,14 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
+import { Archive, HardDrive } from "lucide-react";
 import { toast } from "sonner";
 import { saveViewLayout } from "@/app/actions/auth/table-preferences";
 import { BackupDetailsSheet } from "@/components/dashboard/storage/explorer/backup-details";
 import { targetsOf } from "@/components/dashboard/storage/explorer/backup-filters";
 import { BACKUPS_PAGE_ID, BACKUPS_TABLE_ID, DESTINATIONS_PAGE_ID } from "@/components/dashboard/storage/explorer/backup-tables";
 import { BackupsList } from "@/components/dashboard/storage/explorer/backups-list";
+import { backupsAttention, destinationsAttention } from "@/components/dashboard/storage/explorer/destination-model";
 import { DestinationsView } from "@/components/dashboard/storage/explorer/destinations-view";
 import { checkNow, destinationsOf, useExplorerData, useListingPoll } from "@/components/dashboard/storage/explorer/explorer-data";
 import { ExplorerEmpty, ExplorerSkeleton } from "@/components/dashboard/storage/explorer/explorer-page-states";
@@ -146,7 +148,6 @@ export function StorageClient({
     }, [reloadAll]);
     const onPick = useCallback((destinationId: string | null) => setParams({ tab: "destinations", destination: destinationId }), [setParams]);
 
-    const backupCount = jobs.reduce((sum, entry) => sum + entry.runs, 0);
     const detailsRun = details.run;
     const changeTab = (next: string) => {
         details.reset();
@@ -190,8 +191,8 @@ export function StorageClient({
                 <Tabs value={pageTab} onValueChange={changeTab} className="min-w-0 flex-1">
                     <PageTabs
                         tabs={[
-                            { value: "backups", label: "Backups", count: backupCount },
-                            { value: "destinations", label: "Destinations", count: destinations.length },
+                            { value: "backups", label: "Backups", icon: Archive, attention: backupsAttention(jobs) },
+                            { value: "destinations", label: "Destinations", icon: HardDrive, attention: destinationsAttention(destinations) },
                         ]}
                         value={pageTab}
                         onValueChange={changeTab}

@@ -1,4 +1,5 @@
 import type { DayKey } from "@/components/dashboard/storage/explorer/timeline-model";
+import { attentionOf, combineAttention, type TabAttention } from "@/lib/core/tab-attention";
 import type {
     DatabaseOverview, DatabaseRun, DatabaseRuns, DatabaseRunsData, ExplorerDatabase, ExplorerDbJob, ExplorerServer, PlannedRun, VersionChange,
 } from "@/services/databases/database-explorer-types";
@@ -282,4 +283,21 @@ export function runsSpan(first: DayKey, last: DayKey): { from: string; until: st
     const start = Math.floor(Date.parse(`${first}T00:00:00Z`) / block) * block - DAY_MS;
     const end = Math.ceil((Date.parse(`${last}T00:00:00Z`) + DAY_MS) / block) * block + DAY_MS;
     return { from: new Date(start).toISOString(), until: new Date(end).toISOString() };
+}
+
+/**
+ * The dots of the Explorer tabs: databases no job backs up are amber, while the viewer sees the jobs,
+ * and a server that does not answer is red, one that failed a check amber.
+ */
+export function explorerAttention(overview: DatabaseOverview, summary: DatabaseSummary, coverage: boolean): { databases?: TabAttention; servers?: TabAttention } {
+    const named = (status: string) => overview.servers.filter((server) => server.status === status).map((server) => server.name);
+    return {
+        databases: coverage && summary.noJob > 0
+            ? { tone: "warning", note: summary.noJob === 1 ? "1 database is in no job" : `${summary.noJob.toLocaleString()} databases are in no job` }
+            : undefined,
+        servers: combineAttention(
+            attentionOf("destructive", named("OFFLINE"), "does not answer", "do not answer"),
+            attentionOf("warning", named("DEGRADED"), "failed its last check", "failed their last check"),
+        ),
+    };
 }

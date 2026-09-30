@@ -1,3 +1,4 @@
+import { attentionOf, combineAttention, namesFor, type TabAttention } from "@/lib/core/tab-attention";
 import type { BackupRun, ExplorerDestination, ExplorerJob } from "@/services/storage/explorer-types";
 import { isStale } from "./explorer-state";
 
@@ -91,6 +92,27 @@ export function activeAlerts(destination: ExplorerDestination): string[] {
         ...(storageLimit.active ? ["Storage limit"] : []),
         ...(usageSpike.active ? ["Usage spike"] : []),
     ];
+}
+
+/** The dot of the Backups tab: a backup that failed its integrity check is red, a missing copy amber. */
+export function backupsAttention(jobs: ExplorerJob[]): TabAttention | undefined {
+    const failed = jobs.reduce((sum, job) => sum + job.failedChecks, 0);
+    const missing = jobs.reduce((sum, job) => sum + job.missingCopies, 0);
+    return combineAttention(
+        failed > 0 ? { tone: "destructive", note: failed === 1 ? "1 backup failed its integrity check" : `${failed.toLocaleString()} backups failed their integrity check` } : undefined,
+        missing > 0 ? { tone: "warning", note: missing === 1 ? "1 copy is missing" : `${missing.toLocaleString()} copies are missing` } : undefined,
+    );
+}
+
+/** The dot of the Destinations tab: one that does not answer is red, one that failed a check or has an alert on amber. */
+export function destinationsAttention(destinations: ExplorerDestination[]): TabAttention | undefined {
+    const named = (status: string) => destinations.filter((destination) => destination.health.status === status).map((destination) => destination.name);
+    const alerts = destinations.flatMap((destination) => activeAlerts(destination).map((name) => `${name} at ${destination.name}`));
+    return combineAttention(
+        attentionOf("destructive", named("OFFLINE"), "does not answer", "do not answer"),
+        attentionOf("warning", named("DEGRADED"), "failed its last check", "failed their last check"),
+        alerts.length > 0 ? { tone: "warning", note: `${namesFor(alerts)} ${alerts.length === 1 ? "is active" : "are active"}` } : undefined,
+    );
 }
 
 /** The share of the storage limit a destination fills, when its limit alert is on. */

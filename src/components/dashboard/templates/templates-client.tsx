@@ -2,19 +2,20 @@
 
 import { useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Plus } from "lucide-react";
+import { Plus, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHead } from "@/components/ui/page-head";
 import { PageTabs } from "@/components/ui/page-tabs";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { useIsMobileState } from "@/hooks/use-mobile";
 import type { TablePreferences } from "@/lib/core/table-preferences";
-import type { TemplateCounts } from "@/services/templates/templates-types";
 import { ExcludeTab } from "./exclude-tab";
 import { NamingTab } from "./naming-tab";
 import { NotificationTab } from "./notification-tab";
 import { RetentionTab } from "./retention-tab";
 import { ScheduleTab } from "./schedule-tab";
+import { templatesAttention } from "./template-attention";
+import { KIND_ICONS } from "./template-cells";
 import type { TemplateTabHandle, TemplateTabProps } from "./template-tab-props";
 import { TEMPLATE_TABLE_IDS, TEMPLATE_TABS, type TemplateTab } from "./template-tables";
 import { useTemplatesModel } from "./use-templates-model";
@@ -43,8 +44,15 @@ const TABS: Record<TemplateTab, (props: TemplateTabProps) => React.ReactNode> = 
     excludes: ExcludeTab,
 };
 
+const ICONS: Record<TemplateTab, LucideIcon> = {
+    retention: KIND_ICONS.retention,
+    naming: KIND_ICONS.naming,
+    schedules: KIND_ICONS.schedule,
+    notifications: KIND_ICONS.notification,
+    excludes: KIND_ICONS.exclude,
+};
+
 interface TemplatesClientProps {
-    counts: TemplateCounts;
     layouts: Record<string, TablePreferences>;
     /** May add, change and delete templates, not only look at them. */
     canManage: boolean;
@@ -55,7 +63,7 @@ interface TemplatesClientProps {
  * patterns, each a list with what uses every template. The tab lives in the address, New beside
  * the tabs belongs to the open one, and a phone gets cards.
  */
-export function TemplatesClient({ counts, layouts, canManage }: TemplatesClientProps) {
+export function TemplatesClient({ layouts, canManage }: TemplatesClientProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const isMobile = useIsMobileState();
@@ -72,20 +80,18 @@ export function TemplatesClient({ counts, layouts, canManage }: TemplatesClientP
         router.replace(`?${next.toString()}`, { scroll: false });
     }, [router, searchParams]);
 
-    // The counts beside the tabs come from the server first, then from the loaded templates.
     const afterChange = useCallback(() => {
         void refresh();
         router.refresh();
     }, [refresh, router]);
-    const live: TemplateCounts = model
-        ? { retention: model.retention.length, naming: model.naming.length, schedules: model.schedules.length, notifications: model.notifications.length, excludes: model.excludes.length }
-        : counts;
+    // The dots come with the templates, so they follow every change at once.
+    const attention = model ? templatesAttention(model) : {};
 
     return (
         <Tabs value={active} onValueChange={setTab} className="w-full gap-4 md:gap-0">
             <PageHead>
                 <PageTabs
-                    tabs={TEMPLATE_TABS.map((tab) => ({ value: tab, label: LABELS[tab], count: live[tab] }))}
+                    tabs={TEMPLATE_TABS.map((tab) => ({ value: tab, label: LABELS[tab], icon: ICONS[tab], attention: attention[tab] }))}
                     value={active}
                     onValueChange={setTab}
                     label="Template list"

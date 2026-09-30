@@ -5,283 +5,75 @@ import { z } from "zod";
 import { checkPermission } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
-import { wrapError } from "@/lib/logging/errors";
-import {
-  getNotificationConfig,
-  saveNotificationConfig,
-  getAvailableChannels,
-} from "@/services/notifications/system-notification-service";
-import { EVENT_DEFINITIONS } from "@/lib/notifications/events";
-import { notificationSettingsChanges } from "@/services/notifications/notification-settings-audit";
-import { SETTINGS_AREAS } from "@/services/system/settings-audit";
-import { auditService } from "@/services/audit-service";
+import { ValidationError, wrapError } from "@/lib/logging/errors";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
+import type { SaveResult } from "@/lib/settings/save-part";
+import type { SystemNotificationConfig } from "@/lib/notifications/types";
+import { auditService } from "@/services/audit-service";
+import { notificationSettingsChanges } from "@/services/notifications/notification-settings-audit";
+import { MAX_REMINDER_HOURS, saveDefaultChannels, saveEventSettings, sendEventTest } from "@/services/notifications/notification-settings-service";
+import { SETTINGS_AREAS } from "@/services/system/settings-audit";
 
 const log = logger.child({ action: "notification-settings" });
 
-// ── Validation Schemas ─────────────────────────────────────────
-
-/** At most a year between two reminders. */
-const MAX_REMINDER_HOURS = 24 * 365;
-
-const eventSettingSchema = z.object({
-  enabled: z.boolean(),
-  channels: z.array(z.string()).nullable(),
-  notifyUser: z.enum(["none", "also", "only"]).optional(),
-  // 0 turns the reminder off, null keeps the default of the event.
-  reminderIntervalHours: z.number().int().min(0).max(MAX_REMINDER_HOURS).nullable().optional(),
+const patchSchema = z.object({
+    enabled: z.boolean().optional(),
+    channels: z.array(z.string().min(1)).nullable().optional(),
+    notifyUser: z.enum(["none", "also", "only"]).optional(),
+    // 0 turns the reminder off, null keeps the default of the event.
+    reminderHours: z.number().int().min(0).max(MAX_REMINDER_HOURS).nullable().optional(),
 });
 
-const configSchema = z.object({
-  globalChannels: z.array(z.string()),
-  events: z.record(z.string(), eventSettingSchema),
-});
-
-// ── Actions ────────────────────────────────────────────────────
-
-/** Load the current notification configuration (channels + events) */
-export async function getNotificationSettings() {
-  await checkPermission(PERMISSIONS.SETTINGS.READ);
-
-  try {
-    const [config, channels] = await Promise.all([
-      getNotificationConfig(),
-      getAvailableChannels(),
-    ]);
-
-    return {
-      success: true,
-      data: {
-        config,
-        availableChannels: channels,
-        eventDefinitions: EVENT_DEFINITIONS,
-      },
-    };
-  } catch (error: unknown) {
-    log.error("Failed to load notification settings", {}, wrapError(error));
-    return { success: false, error: "Failed to load notification settings" };
-  }
+/** Writes what a save changed and answers the part, or hands back why it was refused. */
+async function saved(userId: string, save: () => Promise<{ before: SystemNotificationConfig; after: SystemNotificationConfig }>): Promise<SaveResult> {
+    try {
+        const { before, after } = await save();
+        const changes = await notificationSettingsChanges(before, after);
+        if (changes.length > 0) {
+            await auditService.log(userId, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SYSTEM, { area: SETTINGS_AREAS.NOTIFICATIONS, changes });
+        }
+        revalidatePath("/dashboard/settings");
+        return { success: true };
+    } catch (error: unknown) {
+        if (error instanceof ValidationError) return { success: false, error: error.message, field: error.field };
+        log.error("Failed to save the notification settings", {}, wrapError(error));
+        return { success: false, error: "Failed to save the notification settings" };
+    }
 }
 
-/** Save the full notification configuration */
-export async function updateNotificationSettings(
-  data: z.infer<typeof configSchema>
-) {
-  const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+/** Saves one event from its Edit dialog or its switch, or the same change of several from the bar of a selection. */
+export async function saveNotificationEventsAction(eventIds: string[], patch: z.infer<typeof patchSchema>): Promise<SaveResult> {
+    const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
 
-  const result = configSchema.safeParse(data);
-  if (!result.success) {
-    return { success: false, error: result.error.issues[0].message };
-  }
-
-  try {
-    const before = await getNotificationConfig();
-    await saveNotificationConfig(result.data);
-    const changes = await notificationSettingsChanges(before, result.data);
-    if (changes.length > 0) {
-      await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SYSTEM, { area: SETTINGS_AREAS.NOTIFICATIONS, changes });
-    }
-    revalidatePath("/dashboard/settings");
-    return { success: true };
-  } catch (error: unknown) {
-    log.error("Failed to update notification settings", {}, wrapError(error));
-    return { success: false, error: "Failed to update notification settings" };
-  }
+    const ids = z.array(z.string().min(1)).min(1).max(100).safeParse(eventIds);
+    const parsed = patchSchema.safeParse(patch);
+    if (!ids.success) return { success: false, error: "Pick at least one event" };
+    if (!parsed.success) return { success: false, error: parsed.error.issues[0].message, field: String(parsed.error.issues[0].path[0] ?? "") };
+    return saved(user.id, () => saveEventSettings(ids.data, parsed.data));
 }
 
-/** Send a test notification through all enabled channels for a given event type */
-export async function sendTestNotification(eventType: string) {
-  await checkPermission(PERMISSIONS.SETTINGS.WRITE);
+/** Saves the channels every event goes to unless it has its own. */
+export async function saveDefaultChannelsAction(channelIds: string[]): Promise<SaveResult> {
+    const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
 
-  try {
-    const eventDef = EVENT_DEFINITIONS.find((e) => e.id === eventType);
-    if (!eventDef) {
-      return { success: false, error: "Unknown event type" };
-    }
-
-    // Dynamically import to avoid circular dependencies
-    const { notify } = await import("@/services/notifications/system-notification-service");
-
-    // Build a synthetic event with example data
-    const testData = buildTestData(eventType);
-    if (!testData) {
-      return { success: false, error: "No test data available for this event" };
-    }
-
-    const result = await notify(testData);
-
-    if (!result) {
-      return { success: true, message: "Test notification skipped (disabled or no channels configured)" };
-    }
-    if (result.failed > 0 && result.succeeded === 0) {
-      return { success: false, error: "Test notification failed to deliver. Check the system logs for details." };
-    }
-    if (result.failed > 0) {
-      return { success: true, message: `Test notification sent (${result.failed} channel(s) failed to deliver)` };
-    }
-    return { success: true, message: "Test notification sent" };
-  } catch (error: unknown) {
-    log.error("Failed to send test notification", {}, wrapError(error));
-    return { success: false, error: "Failed to send test notification" };
-  }
+    const parsed = z.array(z.string().min(1)).max(100).safeParse(channelIds);
+    if (!parsed.success) return { success: false, error: "Invalid channels" };
+    return saved(user.id, () => saveDefaultChannels(parsed.data));
 }
 
-// ── Helpers ────────────────────────────────────────────────────
+/** Sends an example of an event to where it goes now, and says how many channels took it. */
+export async function sendTestNotificationAction(eventId: string): Promise<{ success: boolean; message?: string; error?: string }> {
+    await checkPermission(PERMISSIONS.SETTINGS.WRITE);
 
-function buildTestData(eventType: string): any {
-  const now = new Date().toISOString();
-
-  const testPayloads: Record<string, any> = {
-    user_login: {
-      eventType: "user_login",
-      data: {
-        userName: "Test User",
-        email: "test@example.com",
-        ipAddress: "127.0.0.1",
-        timestamp: now,
-      },
-    },
-    user_created: {
-      eventType: "user_created",
-      data: {
-        userName: "New User",
-        email: "new@example.com",
-        createdBy: "Admin",
-        timestamp: now,
-      },
-    },
-    restore_complete: {
-      eventType: "restore_complete",
-      data: {
-        sourceName: "MySQL Production",
-        targetDatabase: "app_db_restored",
-        duration: 8000,
-        timestamp: now,
-      },
-    },
-    restore_failure: {
-      eventType: "restore_failure",
-      data: {
-        sourceName: "MySQL Production",
-        targetDatabase: "app_db",
-        error: "Permission denied (test)",
-        timestamp: now,
-      },
-    },
-    config_backup: {
-      eventType: "config_backup",
-      data: {
-        fileName: "config_backup_test.json.gz.enc",
-        size: 4096,
-        encrypted: true,
-        timestamp: now,
-      },
-    },
-    system_error: {
-      eventType: "system_error",
-      data: {
-        component: "Scheduler",
-        error: "This is a test error notification",
-        timestamp: now,
-      },
-    },
-    storage_usage_spike: {
-      eventType: "storage_usage_spike",
-      data: {
-        storageName: "Local Storage (Test)",
-        previousSize: 1073741824,
-        currentSize: 1610612736,
-        changePercent: 50,
-        timestamp: now,
-      },
-    },
-    storage_limit_warning: {
-      eventType: "storage_limit_warning",
-      data: {
-        storageName: "Local Storage (Test)",
-        currentSize: 9663676416,
-        limitSize: 10737418240,
-        usagePercent: 90,
-        timestamp: now,
-      },
-    },
-    storage_missing_backup: {
-      eventType: "storage_missing_backup",
-      data: {
-        storageName: "Local Storage (Test)",
-        lastBackupAt: new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString(),
-        thresholdHours: 48,
-        hoursSinceLastBackup: 72,
-        timestamp: now,
-      },
-    },
-    update_available: {
-      eventType: "update_available",
-      data: {
-        latestVersion: "99.0.0",
-        currentVersion: "1.0.0",
-        releaseUrl: "https://github.com/Skyfay/DBackup/releases",
-        timestamp: now,
-      },
-    },
-    connection_offline: {
-      eventType: "connection_offline",
-      data: {
-        adapterName: "MySQL Production (Test)",
-        adapterType: "database",
-        adapterId: "mysql",
-        consecutiveFailures: 3,
-        lastError: "Connection refused (test)",
-        timestamp: now,
-      },
-    },
-    connection_online: {
-      eventType: "connection_online",
-      data: {
-        adapterName: "MySQL Production (Test)",
-        adapterType: "database",
-        adapterId: "mysql",
-        downtime: "2h 15m",
-        timestamp: now,
-      },
-    },
-    db_version_changed: {
-      eventType: "db_version_changed",
-      data: {
-        sourceName: "MySQL Production (Test)",
-        sourceId: "test-source-id",
-        adapterId: "mysql",
-        previousVersion: "8.0.36",
-        newVersion: "8.0.40",
-        edition: null,
-        timestamp: now,
-      },
-    },
-    integrity_check_failure: {
-      eventType: "integrity_check_failure",
-      data: {
-        totalFiles: 12,
-        failed: 2,
-        passed: 9,
-        skipped: 1,
-        triggerType: "Scheduler",
-        errors: [
-          {
-            file: "daily-backup/app_db_2026-01-15.sql.gz.enc",
-            destination: "Local Storage (Test)",
-            expected: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
-            actual: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
-          },
-          {
-            file: "daily-backup/app_db_2026-01-14.sql.gz.enc",
-            destination: "Local Storage (Test)",
-            expected: "f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5",
-            actual: "cafebabecafebabecafebabecafebabecafebabecafebabecafebabecafebabe",
-          },
-        ],
-      },
-    },
-  };
-
-  return testPayloads[eventType] ?? null;
+    const parsed = z.string().min(1).safeParse(eventId);
+    if (!parsed.success) return { success: false, error: "Unknown notification event" };
+    try {
+        const { sent, failed } = await sendEventTest(parsed.data);
+        const channels = (count: number) => (count === 1 ? "1 channel" : `${count} channels`);
+        return { success: true, message: failed > 0 ? `Sent to ${channels(sent)}, ${channels(failed)} did not take it` : `Sent to ${channels(sent)}` };
+    } catch (error: unknown) {
+        if (error instanceof ValidationError) return { success: false, error: error.message };
+        log.error("Failed to send a test notification", { eventId: parsed.data }, wrapError(error));
+        return { success: false, error: "Failed to send the test" };
+    }
 }

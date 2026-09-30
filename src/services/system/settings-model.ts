@@ -8,10 +8,9 @@ import { getAdapterOptions } from "@/lib/adapters/dto";
 import { isEmailLoginDisabled } from "@/lib/auth/env-flags";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { getRateLimitConfig } from "@/lib/rate-limit/server";
-import { EVENT_DEFINITIONS } from "@/lib/notifications/events";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
-import { getNotificationConfig } from "@/services/notifications/system-notification-service";
+import { getNotificationsModel } from "@/services/notifications/notification-settings-service";
 import { getConfigBackupSettings } from "@/services/config/config-backup-settings";
 import { getCertificateInfo } from "./certificate-service";
 import { getDatabaseInfo } from "./database-service";
@@ -32,12 +31,6 @@ async function orNull<T>(what: string, read: () => Promise<T> | T): Promise<T | 
         log.warn(`Failed to read ${what}`, {}, wrapError(error));
         return null;
     }
-}
-
-async function notificationCount(): Promise<SettingsModel["notifications"]> {
-    const config = await getNotificationConfig();
-    const on = EVENT_DEFINITIONS.filter((event) => config.events[event.id]?.enabled ?? event.defaultEnabled).length;
-    return { on, total: EVENT_DEFINITIONS.length };
 }
 
 export async function getSettingsModel(viewer: { canManage: boolean; isSuperAdmin: boolean }): Promise<SettingsModel> {
@@ -62,7 +55,7 @@ export async function getSettingsModel(viewer: { canManage: boolean; isSuperAdmi
             orNull("certificate info", getCertificateInfo),
             getSystemTaskRows(general.timezone),
             getIntegritySettings(),
-            notificationCount(),
+            getNotificationsModel(),
         ]);
 
     return {

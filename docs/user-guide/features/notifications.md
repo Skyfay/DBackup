@@ -72,37 +72,41 @@ Every channel of a template hears about the runs picked for it:
 
 ## System Notifications
 
-System notifications cover events beyond individual backup jobs: user activity, restores, configuration backups, and system errors.
+System notifications cover events beyond individual backup jobs: sign-ins, restores, storage, health, updates, and the configuration backup.
 
 ### Setup
 
 1. Go to **Settings** → **Notifications**
-2. **Select global channels** – Choose which notification channels receive system alerts by default
-3. **Enable events** – Toggle individual events on or off
-4. Optionally override channels per event
+2. Use **Change** in the **Default channels** strip on top to pick where every event goes unless it has channels of its own
+3. Turn events on or off with the switch in their row
+4. Click an event to open its **Edit** dialog for its channels, the email to the user, and the reminder
+
+Each row shows where the event goes: the logos and names of its channels marked **default** or **own**, **Off**, or **Nowhere yet** in amber for an event that is on without a channel to go to. The **Notifications** entry in the list of parts shows how many events are on, or in amber how many go nowhere.
+
+**Add a channel** in the head of the part adds a notification channel without leaving Settings.
 
 ### Available Events
 
-#### Authentication Events
+#### Sign-in Events
 
 | Event | Description | Default |
 | :--- | :--- | :--- |
-| **User Login** | A user logged into the application | Disabled |
-| **User Created** | A new user account was created | Disabled |
+| **Someone signs in** | A user signed in to DBackup | Off |
+| **A user is created** | A new account was made | Off |
 
 #### Restore Events
 
 | Event | Description | Default |
 | :--- | :--- | :--- |
-| **Restore Completed** | A database restore completed successfully | Enabled |
-| **Restore Failed** | A database restore failed | Enabled |
+| **A restore finished** | A database came back from a backup | On |
+| **A restore failed** | A restore stopped with an error | On |
 
 #### System Events
 
 | Event | Description | Default |
 | :--- | :--- | :--- |
-| **Configuration Backup** | System configuration backup was created | Disabled |
-| **System Error** | A critical system error occurred | Enabled |
+| **The configuration was backed up** | A configuration backup was made | Off |
+| **A system error** | A critical error in DBackup itself | On |
 
 ::: info Why no backup events?
 Backup success/failure notifications are configured **per-job** (Job → Notifications tab) and are not duplicated in system notifications. This prevents double notifications.
@@ -112,9 +116,9 @@ Backup success/failure notifications are configured **per-job** (Job → Notific
 
 | Event | Description | Default |
 | :--- | :--- | :--- |
-| **Storage Usage Spike** | Storage size changed significantly between snapshots | Enabled |
-| **Storage Limit Warning** | Storage usage is approaching the configured size limit | Enabled |
-| **Missing Backup Alert** | No new backup was created within the expected time window | Enabled |
+| **Storage grows fast** | The size of a destination changed a lot between two measurements | On, reminds every day |
+| **Storage nearly full** | A destination nears the size limit of its alert | On, reminds every day |
+| **A backup is missing** | A destination got nothing new within the time of its alert | On, reminds every day |
 
 These events are configured per destination on the **Backups** page: open the **Destinations** tab, pick the destination and use **Edit alerts**.
 
@@ -122,62 +126,71 @@ These events are configured per destination on the **Backups** page: open the **
 
 | Event | Description | Default |
 | :--- | :--- | :--- |
-| **Update Available** | A new version of DBackup is available | Enabled |
+| **A new version is out** | DBackup found a newer version | On, reminds every 7 days |
 
-Supports **reminder** notifications — resend at a configured interval while the update remains uninstalled.
-
-#### Health & Connectivity Events
+#### Health Events
 
 | Event | Description | Default |
 | :--- | :--- | :--- |
-| **Connection Offline** | A source or destination became unreachable after repeated health checks | Enabled |
-| **Connection Recovered** | A previously offline source or destination is reachable again | Enabled |
-| **Database Version Changed** | A database engine version changed between two health check intervals | Enabled |
+| **A connection is offline** | A source or destination stopped answering its health checks | On, reminds every day |
+| **A connection is back** | An offline source or destination answers again | On |
+| **A database version changed** | A server reports another version than at its last check | On |
 
-Connection Offline supports **reminder** notifications. Health checks run every minute — notifications fire after repeated failures to avoid alerting on transient blips.
+Health checks run every minute. A connection is only reported offline after repeated failures, so a short blip stays quiet.
 
-To silence these two alerts for one connection, turn off **Health alerts** in the **Behavior** part of its edit form. The health checks keep running. Several databases can be switched at once: tick them on the **Databases** tab of **Connections** and pick **Turn off notifications** under **More**.
+To silence the offline and back alerts for one connection, turn off **Health alerts** in the **Behavior** part of its edit form. The health checks keep running. Several databases can be switched at once: tick them on the **Databases** tab of **Connections** and pick **Turn off notifications** under **More**.
 
 #### Integrity Events
 
 | Event | Description | Default |
 | :--- | :--- | :--- |
-| **Integrity Check Failed** | A scheduled or manual integrity check found one or more checksum mismatches | Enabled |
+| **An integrity check failed** | A backup no longer matches the checksum saved with it | On |
 
-### Global vs. Per-Event Channels
+### Default and Own Channels
 
-- **Global Channels**: The default channels used for all events that don't have an explicit override.
-- **Per-Event Override**: Click the channel button on an event to assign custom channels. A "Custom Channels" badge appears. Click "Reset to Global Channels" to undo.
+- **The default channels**: every event goes here unless it has its own. Change them with **Change** in the strip on top of the list. With none picked, only events with channels of their own send anything.
+- **Its own channels**: **Send it to** in the **Edit** dialog of an event picks between the default channels and channels of its own. An event with its own channels needs at least one of them ticked, and its row says **own**.
 
-### Notify User Directly
+### Change Several Events at Once
 
-For **User Login** and **User Created** events, you can optionally send an email directly to the affected user (e.g., a login notification to the user who logged in, or a welcome email to the newly created user).
+Tick events in the list, and the bar that appears offers:
+
+| Action | What it does |
+| :--- | :--- |
+| **Send to** | Sends every ticked event to the default channels, or to the same own channels |
+| **Switch on** | Turns every ticked event on |
+| **Switch off** | Turns every ticked event off |
+
+The filter above the list shows **All**, **On**, **Off**, and **Own channels**, and **Nowhere** while an event is on without a channel to go to.
+
+### Tell the User Too
+
+**Someone signs in** and **A user is created** can also email the user themselves, like a sign-in notice to the person who signed in or a welcome email to a new account. **Tell the user too** in the **Edit** dialog offers:
+
+| Choice | Behavior |
+| :--- | :--- |
+| **Only the channels** | The notification goes only to the channels of the event |
+| **The channels and the user** | The channels get it, and the user gets an email too |
+| **Only the user** | Only the user gets an email, the channels are skipped |
 
 ::: warning Email Channel Required
-This feature only works with Email (SMTP) channels. At least one Email channel must be selected for the event.
+The email to the user goes out through the Email (SMTP) channels among the channels of the event. Without one, the user gets nothing.
 :::
 
-#### Modes
+The address comes from the account of the user.
 
-| Mode | Behavior |
+### Reminders
+
+Some events last, like a connection that stays offline. While they last, they send once more after a set time, and they stop once the problem is over. **Remind while it lasts** in the **Edit** dialog picks the default of the event, off, or every 6 hours up to every 7 days. The **Reminder** column shows what each event does.
+
+| Event | Default reminder |
 | :--- | :--- |
-| **Disabled** | Notification goes only to the configured admin channels |
-| **Admin & User** | Notification goes to admin channels AND a direct email to the user |
-| **User only** | Notification goes ONLY to the user's email (admin channels are skipped) |
+| Storage events, **A connection is offline** | Every day |
+| **A new version is out** | Every 7 days |
 
-#### How to Configure
+### Send a Test
 
-1. Go to **Settings** → **Notifications**
-2. Enable **User Login** or **User Created**
-3. Ensure at least one Email channel is selected
-4. A **"Notify user directly"** dropdown appears below the channel selector
-5. Choose the desired mode
-
-The user's email address is taken from their account profile - no additional configuration needed.
-
-### Test Notifications
-
-Each event has a **Test** button that sends a sample notification through all selected channels using dummy data. Use this to verify your setup before relying on it.
+**Send a test** in the row of an event, in its menu, or in its **Edit** dialog sends a sample notification with made-up data to the channels of the event. It also works while the event is off. The message says how many channels took it, and a test that reached nobody counts as failed.
 
 ---
 

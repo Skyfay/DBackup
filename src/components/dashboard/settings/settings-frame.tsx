@@ -41,7 +41,7 @@ export function PartFrame({ part, action, flush = false, children }: PartFramePr
     const { readOnly } = useSettingsFrame();
     const { label, description } = partOf(part);
     return (
-        <section aria-labelledby={`settings-${part}`} className="min-w-0">
+        <section aria-labelledby={`settings-${part}`} className="min-w-0 flex-1">
             <div className="flex flex-col gap-3 border-b px-4 py-4 sm:flex-row sm:items-start md:px-6 md:py-5">
                 <div className="min-w-0 flex-1">
                     <h2 id={`settings-${part}`} className="font-semibold">{label}</h2>

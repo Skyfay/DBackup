@@ -109,7 +109,7 @@ export function DatabasePart({ info, isSuperAdmin }: { info: DatabaseInfo | null
                     </div>
                     <p className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
                         <FileText className="size-3.5 shrink-0" aria-hidden="true" />
-                        <span className="truncate font-mono text-foreground" title={info.path}>{info.path}</span>
+                        <span className="truncate text-foreground" title={info.path}>{info.path}</span>
                         SQLite
                     </p>
                 </div>

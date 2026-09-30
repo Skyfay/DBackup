@@ -6,7 +6,7 @@ The Settings page holds what applies to the whole instance: its name and clock, 
 
 The parts sit on the left in three groups, **System**, **Data** and **Security**. Beside each name stands its state when it has one, like how many notification events are on, the size of the database, a configuration backup that is **Off** or the days a certificate has left. A state in amber or red needs a look.
 
-The search above the parts finds a setting by the start of its words, so `backup` finds **Include the logins** of the configuration backup but not every mention of DBackup. The parts without a hit are dimmed, and a click on a hit opens its part and marks the setting for a moment. A system task opens its Edit dialog right away.
+The search above the parts finds a setting by the start of its words, so `backup` finds **Include the logins** of the configuration backup but not every mention of DBackup. The parts without a hit are dimmed, and a click on a hit opens its part and marks the setting for a moment. A system task or a notification event opens its Edit dialog right away.
 
 Changes wait in a bar at the foot of the part, which names each change with its value before and after. **Save changes** saves the whole part, **Discard** goes back to what is saved. Leaving a part with changes that are not saved asks first.
 
@@ -58,7 +58,13 @@ A click on a task opens its Edit dialog:
 
 ## Notifications
 
-Which events DBackup reports and to which channels. See [Notifications](/user-guide/features/notifications).
+Every event DBackup reports as a row with the channels it goes to, its reminder and its switch. The **Default channels** strip on top names where every event goes unless it has its own, and **Change** picks them.
+
+- A click on an event opens its Edit dialog: **Report it**, **Send it to** the default channels or its own, **Tell the user too** for the sign-in events and **Remind while it lasts** for events that last. **Send a test** in its foot sends a sample.
+- Ticked events go on, off or to other channels together with **Switch on**, **Switch off** and **Send to**.
+- An event that is on without a channel to go to says **Nowhere yet** in amber, and the part shows how many there are.
+
+A change here saves at once, without the bar at the foot. See [Notifications](/user-guide/features/notifications) for every event and what it reports.
 
 ## Data
 
@@ -92,6 +98,7 @@ How many requests one address may make in a time window. See [Rate Limits](/user
 
 ## Who May Change What
 
-- `settings:read` shows the page, `settings:write` changes it, starts the system tasks and optimizes the database.
+- `settings:read` shows the page, `settings:write` changes it, starts the system tasks, sends test notifications and optimizes the database.
+- **Add a channel** under Notifications also needs `notifications:write`.
 - Only a SuperAdmin restores a configuration backup and downloads the database, see [Groups & Permissions](/user-guide/admin/permissions).
 - Every change writes an entry to the [Audit Log](/user-guide/admin/audit-log) with the values before and after.

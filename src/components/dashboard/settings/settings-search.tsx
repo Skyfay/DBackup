@@ -32,7 +32,7 @@ export function SettingsResults({ term, search, onPick }: SettingsResultsProps) 
     const parts = Object.keys(search.counts).length;
     const count = search.hits.length;
     return (
-        <section aria-live="polite" className="min-w-0">
+        <section aria-live="polite" className="min-w-0 flex-1">
             <div className="border-b px-4 py-4 md:px-6 md:py-5">
                 <h2 className="font-semibold">
                     {count === 0 ? "No setting" : count === 1 ? "1 setting" : `${count} settings`} with {term.trim()}

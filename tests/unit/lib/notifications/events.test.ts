@@ -100,7 +100,7 @@ describe("Notification Event Registry", () => {
       const def = getEventDefinition(NOTIFICATION_EVENTS.USER_LOGIN);
       expect(def).toBeDefined();
       expect(def!.id).toBe("user_login");
-      expect(def!.name).toBe("User Login");
+      expect(def!.name).toBe("Someone signs in");
     });
 
     it("should return undefined for unknown event type", () => {

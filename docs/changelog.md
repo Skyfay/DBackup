@@ -45,6 +45,7 @@ All notable changes to DBackup are documented here.
 - **SSO**: Each sign-in provider puts the people it adds into a group picked for it. They started without a group and saw nothing before.
 - **settings**: The Settings page lists its parts on the left with the state of each, like a configuration backup that is off or a certificate that runs out soon, and a search finds every setting. Changes wait in a bar at the foot until they are saved, and a phone lists the parts and opens each on its own.
 - **settings**: The system tasks are a list with their schedule in words, their last run with what it did and a switch each, and a task opens an Edit dialog with the schedule picker of the jobs. The configuration backup sets its destination, key and schedule in one place and shows when it last ran.
+- **settings**: The system notifications are a list with the channels, the reminder and a switch of each event, and an event opens an Edit dialog with a test. Ticked events go on, off or to other channels together, and an event that goes nowhere shows in amber.
 
 
 ### 🐛 Bug Fixes
@@ -94,7 +95,10 @@ All notable changes to DBackup are documented here.
 - **auth**: A sign-in through single sign-on is written to the audit log, where only password and passkey sign-ins showed before.
 - **users**: The filters of the audit log keep every picked value instead of only the first, and its search finds the names in the entries, like a job or a backup.
 - **users**: Deleting a user keeps their name in their audit log entries, which showed System/Deleted before.
-- **notifications**: The reminder interval picked for a system notification is saved. Every save dropped it before, so reminders kept the default of 24 hours and could not be turned off.
+- **notifications**: The reminder interval picked for a system notification is saved, and turning it off also stops the reminders of storage alerts. Every save dropped it before, so reminders kept the default of 24 hours and could not be turned off.
+- **notifications**: Each system notification with a reminder names its own default, like 7 days for a new version, where the settings claimed 24 hours for all of them.
+- **notifications**: Send a test of a system notification reports a failure when nothing was sent, where it reported success before, and it also sends while the event is off. The email to the user counts as a delivery.
+- **notifications**: Unticking the last own channel of a system notification no longer sends it back to the default channels without a word. Saving asks for at least one channel instead.
 - **SSO**: Deleting a sign-in provider no longer counts people with a passkey among those who cannot sign in afterwards.
 - **SSO**: The callback URL of a provider starts with `BETTER_AUTH_URL`, which DBackup sends to the provider, instead of the address the admin opened DBackup at.
 - **settings**: A system task set to run at start no longer runs again each time a job or a setting is saved.
@@ -207,6 +211,7 @@ All notable changes to DBackup are documented here.
 - **SSO**: The provider ID of a sign-in provider stays once it is saved, since its callback URL and every link to it use it.
 - **settings**: Check for updates follows **Look for new versions** under General and the stuck run watchdog follows the time there, so each has one switch. An update turns that setting off once where the task alone was off.
 - **api**: `GET /api/settings/system-tasks` also returns the last run of each task with how long it took and what it did, whether it runs now and which setting it follows.
+- **notifications**: The system notification events have new names that say what happened, like **Someone signs in** or **A connection is offline**.
 
 
 ### 🗑️ Removed
@@ -250,6 +255,7 @@ All notable changes to DBackup are documented here.
 - **docs**: The SSO guide describes the Sign-in tab, New provider, Disable and Delete and the group of new people, and no longer claims that a provider takes several email domains. The developer guide describes how the server decides who signs in through which provider.
 - **docs**: The groups guide lists what only a SuperAdmin does, and the config backup guide says who restores a configuration and where.
 - **docs**: A new Settings guide describes the parts of the page, the search, the save bar and every system task with what it follows. The guides for data retention, rate limits, the configuration backup and time zones use the new names.
+- **docs**: The notification and settings guides describe the list of system notifications, its Edit dialog, the actions for several events and the default reminder of each event. The developer guide names the new actions and where a new event gets its test data.
 
 
 ### 🧪 Tests
@@ -257,6 +263,7 @@ All notable changes to DBackup are documented here.
 - **tests**: The test that generates an SSH key no longer fails at random during a full run, where the busy crypto thread pool made it slower than the default timeout.
 - **tests**: The palette color guard allows 11 colors without a dark variant, down from 37, and the guard for a height on the root of a scroll area allows 2, down from 3.
 - **tests**: New tests cover the permission check of every save on the Settings page, the settings the system tasks follow and the fixes of the certificate, the scheduler and the rate limits.
+- **tests**: New tests cover saving the system notifications, their tests and a storage alert whose reminder is off.
 
 
 ### 🐳 Docker

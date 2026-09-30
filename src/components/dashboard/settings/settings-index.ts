@@ -8,7 +8,7 @@ import { SETTINGS_PARTS, type SettingsPartId } from "./settings-parts";
 
 export interface SettingEntry {
     part: SettingsPartId;
-    /** `data-setting` of its row, `task:<id>` for a task, or the id of the part for the part itself. */
+    /** `data-setting` of its row, `task:<id>` for a task, `event:<id>` for a notification event, or the id of the part for the part itself. */
     id: string;
     label: string;
     text: string;
@@ -21,7 +21,7 @@ const SETTINGS: SettingEntry[] = [
     { part: "general", id: "general.stuck", label: "Fail a run that stops reporting after", text: "The system task Stuck run watchdog follows it." },
     { part: "general", id: "general.updates", label: "Look for new versions", text: "Asks GitHub for the newest release and shows it in the sidebar." },
     { part: "general", id: "general.quick-setup", label: "Show Quick Setup in the sidebar", text: "It shows by itself while no database is set up." },
-    { part: "notifications", id: "notifications.events", label: "Events and channels", text: "Which events DBackup reports, to which channels and how often it reminds." },
+    { part: "notifications", id: "notifications.events", label: "Default channels", text: "Where every event goes unless it has channels of its own." },
     ...DATA_RETENTION_SETTINGS.map((setting): SettingEntry => ({ part: "retention", id: `retention.${setting.id}`, label: setting.label, text: setting.description })),
     { part: "database", id: "database.optimize", label: "Optimize", text: "Rebuilds the database file without its unused space." },
     { part: "database", id: "database.download", label: "Download the database", text: "A copy of the whole database, only for a SuperAdmin." },
@@ -46,12 +46,15 @@ const SETTINGS: SettingEntry[] = [
     { part: "privacy", id: "privacy.actor", label: "Name who started a backup in its metadata", text: "The .meta.json beside each backup, which is not encrypted." },
 ];
 
-/** The settings with the tasks, which the page knows only from its model, and the parts themselves. */
-export function settingsIndex(tasks: { id: string; name: string; description: string }[]): SettingEntry[] {
+type Named = { id: string; name: string; description: string };
+
+/** The settings with the tasks and the notification events, which the page knows only from its model, and the parts themselves. */
+export function settingsIndex(tasks: Named[], events: Named[] = []): SettingEntry[] {
     return [
         ...SETTINGS_PARTS.map((part): SettingEntry => ({ part: part.id, id: part.id, label: part.label, text: part.description })),
         ...SETTINGS,
         ...tasks.map((task): SettingEntry => ({ part: "tasks", id: `task:${task.id}`, label: task.name, text: task.description })),
+        ...events.map((event): SettingEntry => ({ part: "notifications", id: `event:${event.id}`, label: event.name, text: event.description })),
     ];
 }
 

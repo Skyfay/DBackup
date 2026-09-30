@@ -262,7 +262,10 @@ async function sendThroughChannel(
  * Failures are logged but never thrown – callers should not be blocked by
  * notification delivery issues.
  */
-export async function notify(event: NotificationEventData, opts?: { executionId?: string }): Promise<{ succeeded: number; failed: number } | undefined> {
+export async function notify(
+  event: NotificationEventData,
+  opts?: { executionId?: string; /** Sends even while the event is off, for Send a test. */ test?: boolean }
+): Promise<{ succeeded: number; failed: number } | undefined> {
   let succeeded = 0;
   let failed = 0;
   try {
@@ -277,7 +280,7 @@ export async function notify(event: NotificationEventData, opts?: { executionId?
       ? eventConfig.enabled
       : eventDef?.defaultEnabled ?? false;
 
-    if (!isEnabled) {
+    if (!isEnabled && !opts?.test) {
       log.debug("System notification skipped (disabled)", {
         eventType: event.eventType,
       });
@@ -351,6 +354,7 @@ export async function notify(event: NotificationEventData, opts?: { executionId?
             userEmail,
             opts
           );
+          succeeded++;
         } catch (err) {
           log.error(
             "Failed to send user-targeted notification",
@@ -361,6 +365,7 @@ export async function notify(event: NotificationEventData, opts?: { executionId?
             },
             wrapError(err)
           );
+          failed++;
         }
       }
     }

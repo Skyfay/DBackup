@@ -3,7 +3,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 /** The Settings page while it loads: the parts on the left, the open part beside them, on a phone the list. */
 export function SettingsSkeleton() {
     return (
-        <div className="flex min-w-0 overflow-clip rounded-xl border bg-card shadow-sm" aria-busy="true">
+        <div className="flex min-w-0 overflow-clip rounded-xl border bg-card shadow-sm md:min-h-[calc(100svh-6.75rem)]" aria-busy="true">
             <span className="sr-only">Loading the settings</span>
             <div className="hidden w-64 shrink-0 space-y-4 border-r p-3 md:block lg:w-72">
                 <Skeleton className="h-9 w-full" />

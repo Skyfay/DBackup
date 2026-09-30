@@ -205,7 +205,8 @@ export async function checkStorageAlerts(
   try {
     const notifConfig = await getNotificationConfig();
     for (const [eventId, eventCfg] of Object.entries(notifConfig.events)) {
-      if (eventCfg.reminderIntervalHours && eventCfg.reminderIntervalHours > 0) {
+      // 0 turns the reminders off, which shouldNotify reads as such. Only a missing value keeps the default.
+      if (eventCfg.reminderIntervalHours !== undefined && eventCfg.reminderIntervalHours !== null && eventCfg.reminderIntervalHours >= 0) {
         reminderCooldowns[eventId] = eventCfg.reminderIntervalHours * 60 * 60 * 1000;
       }
     }

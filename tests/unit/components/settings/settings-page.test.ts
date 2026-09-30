@@ -27,6 +27,13 @@ function task(overrides: Partial<SystemTaskRow> = {}): SystemTaskRow {
     };
 }
 
+function notificationEvent(overrides: Partial<SettingsModel["notifications"]["events"][number]>): SettingsModel["notifications"]["events"][number] {
+    return {
+        id: "restore_complete", name: "A restore finished", description: "", category: "restore", enabled: true, channels: null,
+        notifyUser: null, supportsReminder: false, reminderHours: null, defaultReminderHours: null, ...overrides,
+    };
+}
+
 function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
     return {
         canManage: true,
@@ -50,7 +57,15 @@ function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
         },
         tasks: [task()],
         integrity: { scanMode: "jobs", skipPassed: false, maxAgeDays: 0, maxFileSizeMb: 0 },
-        notifications: { on: 10, total: 13 },
+        notifications: {
+            channels: [{ id: "mail", name: "Admins", adapterId: "email" } as SettingsModel["notifications"]["channels"][number]],
+            defaultChannels: ["mail"],
+            events: [
+                notificationEvent({ id: "restore_complete" }),
+                notificationEvent({ id: "restore_failure", channels: ["mail"] }),
+                notificationEvent({ id: "user_login", enabled: false }),
+            ],
+        },
         ...overrides,
     };
 }
@@ -128,8 +143,14 @@ describe("the state of each part in the navigation", () => {
         expect(partStates(problem).tasks).toEqual({ text: "1 problem", tone: "warning" });
     });
 
+    it("warns about events that are on but have no channel to go to", () => {
+        const empty = model();
+        empty.notifications.defaultChannels = [];
+        expect(partStates(empty).notifications).toEqual({ text: "1 goes nowhere", tone: "warning" });
+    });
+
     it("names how many notification events are on", () => {
-        expect(partStates(model()).notifications).toEqual({ text: "10 of 13" });
+        expect(partStates(model()).notifications).toEqual({ text: "2 of 3" });
     });
 });
 

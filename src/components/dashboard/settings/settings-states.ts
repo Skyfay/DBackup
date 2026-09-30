@@ -29,12 +29,20 @@ function configBackupState({ settings, lastRun }: SettingsModel["configBackup"])
     return null;
 }
 
+/** How many events are on, or in amber how many of them go nowhere. */
+function notificationState({ events, channels, defaultChannels }: SettingsModel["notifications"]): PartState {
+    const known = new Set(channels.map((channel) => channel.id));
+    const nowhere = events.filter((event) => event.enabled && (event.channels ?? defaultChannels).every((id) => !known.has(id))).length;
+    if (nowhere > 0) return { text: nowhere === 1 ? "1 goes nowhere" : `${nowhere} go nowhere`, tone: "warning" };
+    return { text: `${events.filter((event) => event.enabled).length} of ${events.length}` };
+}
+
 /** The state of every part that has one. */
 export function partStates(model: SettingsModel): Partial<Record<SettingsPartId, PartState>> {
     const problems = model.tasks.filter((task) => task.lastRun && !task.lastRun.ok).length;
     const states: Partial<Record<SettingsPartId, PartState | null>> = {
         tasks: problems > 0 ? { text: problems === 1 ? "1 problem" : `${problems} problems`, tone: "warning" } : { text: String(model.tasks.length) },
-        notifications: { text: `${model.notifications.on} of ${model.notifications.total}` },
+        notifications: notificationState(model.notifications),
         database: model.database ? { text: formatBytes(model.database.totalBytes, 0) } : null,
         "config-backup": configBackupState(model.configBackup),
         https: certificateState(model.certificate),

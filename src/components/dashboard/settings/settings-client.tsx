@@ -49,6 +49,7 @@ export function SettingsClient({ model, viewerName }: SettingsClientProps) {
     const [term, setTerm] = useState("");
     const [mark, setMark] = useState<string | null>(null);
     const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+    const [openEventId, setOpenEventId] = useState<string | null>(null);
     const [leaving, setLeaving] = useState<(() => void) | null>(null);
     const dirty = useRef(new Set<SettingsPartId>());
 
@@ -109,12 +110,14 @@ export function SettingsClient({ model, viewerName }: SettingsClientProps) {
         guarded(() => {
             setTerm("");
             if (entry.id.startsWith("task:")) setOpenTaskId(entry.id.slice("task:".length));
+            else if (entry.id.startsWith("event:")) setOpenEventId(entry.id.slice("event:".length));
             else if (entry.id !== entry.part) setMark(entry.id);
             if (entry.part !== current || !addressed) navigate(entry.part);
         });
     const clearOpenTask = useCallback(() => setOpenTaskId(null), []);
+    const clearOpenEvent = useCallback(() => setOpenEventId(null), []);
 
-    const index = useMemo(() => settingsIndex(model.tasks), [model.tasks]);
+    const index = useMemo(() => settingsIndex(model.tasks, model.notifications.events), [model.tasks, model.notifications.events]);
     const search = useMemo(() => searchSettings(index, term), [index, term]);
     const states = useMemo(() => partStates(model), [model]);
     const searching = term.trim().length > 0;
@@ -125,7 +128,7 @@ export function SettingsClient({ model, viewerName }: SettingsClientProps) {
         switch (current) {
             case "general": return <GeneralPart saved={model.general} />;
             case "tasks": return <TasksPart tasks={model.tasks} integrity={model.integrity} openTaskId={openTaskId} onOpened={clearOpenTask} onOpenPart={open} />;
-            case "notifications": return <NotificationsPart />;
+            case "notifications": return <NotificationsPart model={model.notifications} openEventId={openEventId} onOpened={clearOpenEvent} />;
             case "retention": return <RetentionPart model={model.retention} />;
             case "database": return <DatabasePart info={model.database} isSuperAdmin={model.isSuperAdmin} />;
             case "config-backup": return <ConfigBackupPart model={model.configBackup} isSuperAdmin={model.isSuperAdmin} />;
@@ -151,17 +154,18 @@ export function SettingsClient({ model, viewerName }: SettingsClientProps) {
                             <ArrowLeft />
                             Settings
                         </Button>
-                        <div className="overflow-clip rounded-xl border bg-card text-card-foreground shadow-sm">{part}</div>
+                        <div className="flex min-h-[calc(100svh-9.25rem)] flex-col overflow-clip rounded-xl border bg-card text-card-foreground shadow-sm">{part}</div>
                     </div>
                 )
             ) : (
-                <div className="flex min-w-0 overflow-clip rounded-xl border bg-card text-card-foreground shadow-sm">
+                // As tall as the window at least, like a list, so a short part does not end halfway down.
+                <div className="flex min-h-[calc(100svh-6.75rem)] min-w-0 overflow-clip rounded-xl border bg-card text-card-foreground shadow-sm">
                     <div className="shrink-0 border-r">
                         <div className="sticky top-4">
                             <SettingsNav current={current} states={states} term={term} onTermChange={setTerm} counts={searching ? search.counts : null} onOpen={open} />
                         </div>
                     </div>
-                    <div className="min-w-0 flex-1">{searching ? results : part}</div>
+                    <div className="flex min-w-0 flex-1 flex-col">{searching ? results : part}</div>
                 </div>
             )}
 

@@ -93,8 +93,8 @@ async function notifyUpdateAvailable(latestVersion: string, currentVersion: stri
         const eventConfig = config.events[NOTIFICATION_EVENTS.UPDATE_AVAILABLE];
         const eventDef = getEventDefinition(NOTIFICATION_EVENTS.UPDATE_AVAILABLE);
 
-        // Default reminder: 7 days (168 hours)
-        const DEFAULT_REMINDER_HOURS = 168;
+        // The default of the event, 7 days, which the Notifications part names too.
+        const DEFAULT_REMINDER_HOURS = eventDef?.defaultReminderHours ?? 168;
         let reminderMs = DEFAULT_REMINDER_HOURS * 60 * 60 * 1000;
         let reminderDisabled = false;
 

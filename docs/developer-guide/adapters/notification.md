@@ -335,14 +335,18 @@ src/lib/notifications/
 ├── templates.ts    # Template functions → adapter-agnostic payloads
 └── index.ts        # Barrel exports
 
-src/services/
-└── system-notification-service.ts   # Core dispatch service
+src/services/notifications/
+├── system-notification-service.ts   # Core dispatch service
+├── notification-settings-service.ts # Events, default channels and Send a test of the Settings page
+└── notification-test-data.ts        # Example data of every event for Send a test
 
-src/app/actions/
-└── notification-settings.ts         # Server actions for UI
+src/app/actions/settings/
+└── notification-settings.ts         # Server actions for the Notifications part
 
-src/components/settings/
-└── notification-settings.tsx        # Settings UI component
+src/components/dashboard/settings/
+├── notifications-part.tsx           # The list of events with its bulk actions
+├── notification-dialog.tsx          # Edit of one event
+└── notification-bulk.tsx            # Send to of several events, the default channels
 ```
 
 ### Event Types
@@ -421,8 +425,9 @@ interface SystemNotificationConfig {
   globalChannels: string[];     // Default AdapterConfig IDs
   events: Record<string, {
     enabled: boolean;
-    channels: string[] | null;  // null = use globalChannels
+    channels: string[] | null;  // null = use globalChannels, never an empty list
     notifyUser?: NotifyUserMode; // "none" | "also" | "only"
+    reminderIntervalHours?: number | null; // null = defaultReminderHours of the event, 0 = off
   }>;
 }
 ```
@@ -494,25 +499,26 @@ databaseHooks: {
 
 ### Server Actions
 
-`src/app/actions/notification-settings.ts` provides:
+The Settings page reads the events through `getNotificationsModel()` in `notification-settings-service.ts`, as part of the page model. `src/app/actions/settings/notification-settings.ts` provides:
 
 | Action | Permission | Description |
 | :--- | :--- | :--- |
-| `getNotificationSettings()` | `SETTINGS.READ` | Load config, available channels, event definitions |
-| `updateNotificationSettings(data)` | `SETTINGS.WRITE` | Validate & persist config |
-| `sendTestNotification(eventType)` | `SETTINGS.WRITE` | Send test through enabled channels |
+| `saveNotificationEventsAction(eventIds, patch)` | `SETTINGS.WRITE` | Saves `enabled`, `channels`, `notifyUser` or `reminderHours` of one or several events, with an audit entry |
+| `saveDefaultChannelsAction(ids)` | `SETTINGS.WRITE` | Saves the default channels |
+| `sendTestNotificationAction(eventId)` | `SETTINGS.WRITE` | Sends the example data of `notification-test-data.ts` to the channels of the event |
+
+The service refuses an unknown event, own channels that are empty or no longer exist, and a reminder outside `0` to `MAX_REMINDER_HOURS`. A test goes out while the event is off through `notify(event, { test: true })`, and a test that reached no channel and no user is an error, never a success.
 
 ### UI Component
 
-`src/components/settings/notification-settings.tsx` renders the Settings → Notifications tab:
+`notifications-part.tsx` renders the Notifications part of Settings:
 
-1. **Global Channel Selector** – Multi-select popover with search to choose default notification channels
-2. **Event Cards** – Grouped by category (Auth, Restore, System) with:
-   - Toggle switch (enable/disable)
-   - Channel override popover with per-channel checkboxes
-   - "Notify user directly" dropdown (only for `supportsNotifyUser` events when an email channel is selected)
-   - Test button
-3. **Auto-save** – Every UI change immediately persists via `toast.promise()`
+1. **Default channels** - a strip on top with the logos of the default channels and **Change**
+2. **Event list** - a `DataTable` with where each event goes, its reminder and a switch, plus a filter for On, Off, Own channels and Nowhere
+3. **Edit dialog** - `notification-dialog.tsx` with Report it, Send it to, Tell the user too (only for `supportsNotifyUser` events), Remind while it lasts (only for `supportsReminder` events) and Send a test
+4. **Bulk actions** - Send to, Switch on and Switch off for the ticked events, one save for all of them
+
+A switch or a saved dialog persists at once, the part has no save bar.
 
 ---
 
@@ -1000,8 +1006,11 @@ export type NotificationEventData =
   category: "system",
   defaultEnabled: false,
   // supportsNotifyUser: true  // Only if event carries a user email
+  // supportsReminder: true, defaultReminderHours: 24  // Only if the event lasts and repeats
 },
 ```
+
+The name is a short sentence of what happened, like "A connection is offline", which the Settings list and the search show. Add example data for **Send a test** to `buildTestData()` in `src/services/notifications/notification-test-data.ts`.
 
 ### 4. Create the Template
 
@@ -1043,7 +1052,7 @@ notify({
 });
 ```
 
-The event will automatically appear in the Settings → Notifications UI with its category, description, and default state.
+The event appears in the Notifications part of Settings with its category, description, default state and default reminder.
 
 ## Related Documentation
 

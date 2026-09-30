@@ -2,6 +2,7 @@ import type { AdapterListItemDTO } from "@/lib/adapters/dto";
 import type { DataRetentionId } from "@/lib/core/data-retention";
 import type { RateLimitConfig } from "@/lib/rate-limit";
 import type { ConfigBackupSettings } from "@/services/config/config-backup-settings";
+import type { NotificationsModel } from "@/services/notifications/notification-settings-service";
 import type { CertificateInfo } from "./certificate-service";
 import type { DatabaseInfo } from "./database-service";
 import type { TaskRunRecord } from "./system-task-service";
@@ -56,6 +57,6 @@ export interface SettingsModel {
     certificate: CertificateInfo | null;
     tasks: SystemTaskRow[];
     integrity: IntegritySettings;
-    /** How many of the notification events are on. */
-    notifications: { on: number; total: number };
+    /** Every notification event with where it goes, and the default channels. */
+    notifications: NotificationsModel;
 }

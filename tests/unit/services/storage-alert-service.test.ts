@@ -836,6 +836,22 @@ describe("StorageAlertService", () => {
         expect(mockNotify).not.toHaveBeenCalled();
       });
 
+      it("sends no reminder at all while the reminder of the event is off", async () => {
+        // Off is 0 hours, which fell back to the default of 24 hours before.
+        mockGetNotificationConfig.mockResolvedValue({
+          globalChannels: [],
+          events: { [NOTIFICATION_EVENTS.STORAGE_LIMIT_WARNING]: { enabled: true, channels: null, reminderIntervalHours: 0 } },
+        });
+        mockAlertSetting("cfg-1",
+          { storageLimitEnabled: true, storageLimitBytes: 1000 },
+          { storageLimit: { active: true, lastNotifiedAt: "2026-02-19T11:00:00Z" } }
+        );
+
+        await checkStorageAlerts([makeEntry({ size: 950 })]);
+
+        expect(mockNotify).not.toHaveBeenCalled();
+      });
+
       it("should re-send as reminder after cooldown expires (24h)", async () => {
         // Alert was sent 25 hours ago → cooldown expired
         mockAlertSetting("cfg-1",

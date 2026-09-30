@@ -31,7 +31,7 @@ src/services/
   databases/     database-list-service.ts (cached database lists), database-explorer-service.ts (Database Explorer page model)
   history/       run-list-service.ts (the runs of the History page), run-detail-service.ts (the page of a run), run-steps.ts, run-summary.ts, run-dumps.ts, run-checks.ts, run-problems.ts, known-problems.ts
   vault/         vault-keys.ts and vault-credentials.ts (the tabs of the Vault page), vault-audit.ts (what the audit log knows), key-id.ts, vault-counts.ts
-  notifications/ notification-log-service.ts, system-notification-service.ts
+  notifications/ notification-log-service.ts, system-notification-service.ts, notification-settings-service.ts (the Notifications part: events, default channels, Send a test), notification-test-data.ts
   system/        healthcheck-service.ts, system-task-service.ts (with -definitions, -runs, -settings), update-service.ts, db-version-service.ts, certificate-service.ts, settings-model.ts (Settings page model), system-settings-service.ts (General, Sign-in, Privacy), rate-limit-settings-service.ts, data-retention-service.ts, database-service.ts
   config/        config-service.ts, export.ts, import.ts, parse.ts, restore-pipeline.ts, config-backup-settings.ts (the Configuration backup part)
   templates/     naming-template-service.ts, notification-template-service.ts, retention-policy-service.ts, schedule-preset-service.ts, exclude-pattern-preset-service.ts, templates-model.ts (Templates page model), retention-targets.ts and retention-preview.ts (what a retention change removes)
@@ -244,13 +244,13 @@ Runs every minute. Pings all configured adapters and writes `HealthCheckLog` rec
 
 ## Storage alerts (`src/services/storage/storage-alert-service.ts`)
 
-Per-destination alerts: usage spike (growth over X%), storage limit (total size over threshold), missing backup (nothing new in N hours). Notifies once on trigger, re-notifies after a 24 h cooldown while still active, resets automatically when resolved.
+Per-destination alerts: usage spike (growth over X%), storage limit (total size over threshold), missing backup (nothing new in N hours). Notifies once on trigger, re-notifies after the reminder of its event while still active (24 h by default, never with the reminder at `0`), resets automatically when resolved.
 
 ## Notifications
 
 Defined in `src/lib/notifications/` - `types.ts` holds the `NOTIFICATION_EVENTS` map, `events.ts` holds `EVENT_DEFINITIONS`.
 
-**Global events** (configurable system-wide under Settings > Notifications):
+**Global events** (configurable system-wide under Settings > Notifications, each with its name, default and default reminder in `EVENT_DEFINITIONS`):
 
 | Category | Events |
 | :--- | :--- |

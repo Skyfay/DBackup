@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useState } from "react";
+import { HexColorPicker } from "react-colorful";
 import { ChevronDown, CircleCheck, Palette, TriangleAlert } from "lucide-react";
 import { DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
@@ -52,12 +53,24 @@ interface ColorPickerProps {
 export function ColorPicker({ task, value, onChange, theme }: ColorPickerProps) {
     const [open, setOpen] = useState(false);
     const [own, setOwn] = useState(value.startsWith("#") ? value : "");
+    // The field to pick any color, open from the start for a color of the person's own.
+    const [free, setFree] = useState(value.startsWith("#"));
     const ownId = useId();
     const shades = shadesOf(value);
+    const current = HEX.test(own.toLowerCase()) ? own.toLowerCase() : shades.light;
 
     useEffect(() => {
-        if (open) setOwn(value.startsWith("#") ? value : "");
-    }, [open, value]);
+        if (!open) return;
+        setOwn(value.startsWith("#") ? value : "");
+        setFree(value.startsWith("#"));
+        // Only a new opening starts from the value, not every pick while it is open.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open]);
+
+    const pickOwn = (hex: string) => {
+        setOwn(hex);
+        onChange(hex.toLowerCase() as TaskColorValue);
+    };
 
     return (
         <Popover open={open} onOpenChange={setOpen}>
@@ -98,7 +111,10 @@ export function ColorPicker({ task, value, onChange, theme }: ColorPickerProps) 
                                         aria-checked={picked}
                                         aria-label={colorName(family)}
                                         title={colorName(family)}
-                                        onClick={() => onChange(family)}
+                                        onClick={() => {
+                                            setOwn("");
+                                            onChange(family);
+                                        }}
                                         className={cn(
                                             "size-7 rounded-md shadow-[inset_0_0_0_1px_rgb(0_0_0/0.12)] outline-none transition-transform hover:scale-110 focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-2 focus-visible:ring-offset-raised",
                                             picked && "ring-2 ring-foreground ring-offset-2 ring-offset-raised"
@@ -112,11 +128,19 @@ export function ColorPicker({ task, value, onChange, theme }: ColorPickerProps) 
                     <div className="grid gap-1.5">
                         <Label htmlFor={ownId} className="text-xs text-muted-foreground">Your own</Label>
                         <div className="flex items-center gap-2">
-                            <Swatch color={HEX.test(own.toLowerCase()) ? own : "transparent"} className="size-8 rounded-md" />
+                            <button
+                                type="button"
+                                aria-expanded={free}
+                                aria-label={free ? "Hide the color field" : "Pick any color"}
+                                title={free ? "Hide the color field" : "Pick any color"}
+                                onClick={() => setFree((shown) => !shown)}
+                                className="size-9 shrink-0 rounded-md shadow-[inset_0_0_0_1px_rgb(0_0_0/0.12)] outline-none transition-transform hover:scale-105 focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-2 focus-visible:ring-offset-raised"
+                                style={{ backgroundColor: current }}
+                            />
                             <Input
                                 id={ownId}
                                 value={own}
-                                placeholder="#c2410c"
+                                placeholder={shades.light}
                                 maxLength={7}
                                 className="font-mono"
                                 onChange={(event) => {
@@ -126,6 +150,10 @@ export function ColorPicker({ task, value, onChange, theme }: ColorPickerProps) 
                                 }}
                             />
                         </div>
+                        {free && (
+                            // Any color: the shade across the field, the hue in the bar below it.
+                            <HexColorPicker color={current} onChange={pickOwn} className="mt-1 h-36! w-full!" />
+                        )}
                     </div>
                     <div className="grid gap-1">
                         <ContrastLine label={`On white ${shades.light}`} color={shades.light} surface={THEME_SURFACES.light} />

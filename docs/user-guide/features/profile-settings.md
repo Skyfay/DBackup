@@ -46,7 +46,7 @@ Every browser signed in as you, with its browser, system, address, when it signe
 Every task has a color across DBackup: blue adds, violet edits, turquoise picks, fuchsia filters, amber warns, red deletes and green says all is well. **Colors** changes them for you alone.
 
 1. **Start from** a set: **Default**, **Colorblind friendly**, where Delete and Success are never red and green, or **Soft**.
-2. Change a task with the button of its row, which shows its shade in the light and in the dark theme. The picker offers 16 colors or **Your own** as `#rrggbb`, and says how well each shade reads on white and in the dark theme. The dark shade of your own color is worked out for you.
+2. Change a task with the button of its row, which shows its shade in the light and in the dark theme. The picker offers 16 colors or **Your own**, picked freely in the color field its swatch opens or typed as `#rrggbb`, and says how well each shade reads on white and in the dark theme. The dark shade of your own color is worked out for you.
 3. **How it looks** shows a row menu, three dialogs, the buttons, the states of a run and a filter in your colors before you save.
 4. **Save changes** puts them on every page. **Reset to default** goes back to the colors DBackup ships with.
 

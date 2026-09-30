@@ -95,6 +95,7 @@
     "radix-ui": "^1.6.7",
     "rate-limiter-flexible": "^11.2.0",
     "react": "19.2.8",
+    "react-colorful": "^5.8.1",
     "react-day-picker": "^10.0.1",
     "react-dom": "19.2.8",
     "react-hook-form": "^7.83.0",

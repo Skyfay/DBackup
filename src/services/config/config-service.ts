@@ -1,6 +1,6 @@
 import { AppConfigurationBackup, RestoreOptions } from "@/lib/types/config-backup";
 import { exportConfiguration, ExportOptions } from "./export";
-import { importConfiguration } from "./import";
+import { importConfiguration, type ImportResult } from "./import";
 import { parseBackupFile } from "./parse";
 import { restoreFromStorage } from "./restore-pipeline";
 
@@ -21,7 +21,7 @@ export class ConfigService {
     return parseBackupFile(filePath, metaFilePath, rawKeyHex);
   }
 
-  import(data: AppConfigurationBackup, strategy: 'OVERWRITE', options?: RestoreOptions): Promise<void> {
+  import(data: AppConfigurationBackup, strategy: 'OVERWRITE', options?: RestoreOptions): Promise<ImportResult> {
     return importConfiguration(data, strategy, options);
   }
 
@@ -37,4 +37,4 @@ export class ConfigService {
 
 // Re-export individual functions for direct use (preferred for new code)
 export { exportConfiguration, importConfiguration, parseBackupFile, restoreFromStorage };
-export type { ExportOptions };
+export type { ExportOptions, ImportResult };

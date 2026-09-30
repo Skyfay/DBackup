@@ -106,7 +106,7 @@ Each row shows where the event goes: the logos and names of its channels marked 
 | Event | Description | Default |
 | :--- | :--- | :--- |
 | **The configuration was backed up** | A configuration backup was made | Off |
-| **A system error** | A critical error in DBackup itself | On |
+| **A system task failed** | A system task stopped with an error, like the configuration backup. Reported once, then again only after the task ran through in between | On |
 
 ::: info Why no backup events?
 Backup success/failure notifications are configured **per-job** (Job → Notifications tab) and are not duplicated in system notifications. This prevents double notifications.

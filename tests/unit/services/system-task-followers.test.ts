@@ -13,7 +13,7 @@ vi.mock("@/lib/adapters/config-resolver", () => ({ resolveAdapterConfig: vi.fn()
 vi.mock("@/services/system/update-service", () => ({ updateService: { checkForUpdates: vi.fn() } }));
 vi.mock("@/services/system/healthcheck-service", () => ({ healthCheckService: { performHealthCheck: vi.fn() } }));
 vi.mock("@/services/system/data-retention-service", () => ({ runDataRetention: (...args: unknown[]) => mocks.retention(...args) }));
-vi.mock("@/services/notifications/system-notification-service", () => ({ notify: vi.fn(), getNotificationConfig: vi.fn() }));
+vi.mock("@/services/notifications/system-notification-service", () => ({ notify: vi.fn(async () => undefined), getNotificationConfig: vi.fn() }));
 vi.mock("@/lib/runner/config-runner", () => ({ runConfigBackup: (...args: unknown[]) => mocks.configBackup(...args) }));
 vi.mock("@/services/system/stuck-execution-service", () => ({
     STUCK_TIMEOUT_SETTING: "execution.stuckTimeoutMinutes",
@@ -129,6 +129,27 @@ describe("the last run of a system task", () => {
             ok: false,
             summary: "No destination is picked under Configuration backup",
         });
+    });
+
+    it("reports a task that stops with an error as a system error once, until it runs through again", async () => {
+        const { notify } = await import("@/services/notifications/system-notification-service");
+        mocks.configBackup.mockRejectedValue(new Error("No destination is picked under Configuration backup"));
+
+        await expect(service.runTask(SYSTEM_TASKS.CONFIG_BACKUP)).rejects.toThrow();
+        await expect(service.runTask(SYSTEM_TASKS.CONFIG_BACKUP)).rejects.toThrow();
+
+        expect(notify).toHaveBeenCalledTimes(1);
+        expect(notify).toHaveBeenCalledWith({
+            eventType: "system_error",
+            data: { component: "Configuration backup", error: "No destination is picked under Configuration backup", timestamp: expect.any(String) },
+        });
+        expect(await service.getTaskLastRun(SYSTEM_TASKS.CONFIG_BACKUP)).toMatchObject({ ok: false, failed: true });
+
+        mocks.configBackup.mockResolvedValueOnce({ fileName: "config-backups/config_backup_x.json.gz.enc", destination: "NAS" });
+        await service.runTask(SYSTEM_TASKS.CONFIG_BACKUP);
+        await expect(service.runTask(SYSTEM_TASKS.CONFIG_BACKUP)).rejects.toThrow();
+
+        expect(notify).toHaveBeenCalledTimes(2);
     });
 
     it("names where the configuration backup went", async () => {

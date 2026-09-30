@@ -3,7 +3,7 @@
   "version": "3.4.0",
   "private": true,
   "scripts": {
-    "dev": "prisma migrate deploy && prisma generate && next dev",
+    "dev": "node scripts/apply-pending-restore.js && prisma migrate deploy && prisma generate && next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",

@@ -15,6 +15,7 @@ import { RedisGuide } from "@/components/dashboard/storage/restore/redis-guide";
 import { RestoreHead } from "@/components/dashboard/storage/restore/restore-head";
 import { databaseSentence, pickedCount, plural, restoreBlocker, restoreLabel } from "@/components/dashboard/storage/restore/restore-model";
 import { Notice } from "@/components/dashboard/storage/restore/restore-parts";
+import { DatabaseCopyRestore, isDatabaseCopyFile } from "@/components/dashboard/storage/restore/database-copy-restore";
 import { SystemRestore } from "@/components/dashboard/storage/restore/system-restore";
 import { useRestoreAnalysis } from "@/components/dashboard/storage/restore/use-restore-analysis";
 import { useRestoreDatabases } from "@/components/dashboard/storage/restore/use-restore-databases";
@@ -135,7 +136,10 @@ export function RestoreClient({ canManageVault = false, canDownload = false, can
     let body: React.ReactNode;
     if (isRedis) {
         body = <RedisGuide file={file} destinationId={destinationId} engine={type === "valkey" ? "Valkey" : "Redis"} canDownload={canDownload} />;
+    } else if (isSystem && file && isDatabaseCopyFile(file.name)) {
+        body = <DatabaseCopyRestore file={file} destinationId={destinationId} canRestore={canRestoreConfig} canManageVault={canManageVault} onCancel={back} />;
     } else if (isSystem) {
+        // A configuration file of an older version, which restores in parts.
         body = <SystemRestore file={file} destinationId={destinationId} canRestore={canRestoreConfig} onCancel={back} />;
     } else {
         body = (

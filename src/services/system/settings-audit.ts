@@ -126,7 +126,6 @@ const CONFIG_BACKUP: StoredSetting[] = [
     { key: CONFIG_DESTINATION, label: "Destination", fallback: "" },
     { key: CONFIG_KEY, label: "Encryption key", fallback: "" },
     { key: "config.backup.schedule", label: "Schedule", fallback: "0 3 * * *" },
-    { key: "config.backup.includeSecrets", label: "Include the logins", fallback: "false", show: on },
     { key: "config.backup.includeStatistics", label: "Include the history", fallback: "false", show: on },
     { key: "config.backup.retention", label: "Keeps", fallback: "10" },
 ];

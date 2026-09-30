@@ -63,7 +63,7 @@ const { saveSystemTaskAction, runSystemTaskAction } = await import("@/app/action
 
 const GENERAL = { instanceName: "", timezone: "UTC", maxConcurrentJobs: 1, stuckTimeoutMinutes: 360, checkForUpdates: true, showQuickSetup: false };
 const LIMIT = { points: 5, duration: 60 };
-const CONFIG = { enabled: false, storageId: "", profileId: "", schedule: "0 3 * * *", includeSecrets: false, includeStatistics: false, retention: 10 };
+const CONFIG = { enabled: false, storageId: "", profileId: "", schedule: "0 3 * * *", includeStatistics: false, retention: 10 };
 
 const SAVES = [
     ["General", () => saveGeneralSettingsAction(GENERAL)],

@@ -44,7 +44,7 @@ function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
         retention: { values: {} as SettingsModel["retention"]["values"], counts: {} as SettingsModel["retention"]["counts"] },
         database: null,
         configBackup: {
-            settings: { enabled: true, storageId: "nas", profileId: "", schedule: "0 3 * * *", includeSecrets: false, includeStatistics: false, retention: 10 },
+            settings: { enabled: true, storageId: "nas", profileId: "", schedule: "0 3 * * *", includeStatistics: false, retention: 10 },
             destinations: [],
             keys: [],
             lastRun: null,

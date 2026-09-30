@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { FileCog, Loader2, LockKeyhole, Play, Upload } from "lucide-react";
+import { Database, FileCog, Loader2, LockKeyhole, Play, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { saveConfigBackupSettingsAction } from "@/app/actions/backup/config-backup-settings";
 import { runSystemTaskAction } from "@/app/actions/settings/system-tasks";
@@ -40,7 +40,6 @@ function fieldsOf(model: SettingsModel["configBackup"]) {
         profileId: { label: "Encryption key", show: key },
         schedule: { label: "Schedule", show: schedule },
         retention: { label: "Keeps" },
-        includeSecrets: { label: "Include the logins" },
         includeStatistics: { label: "Include the history" },
     } satisfies { [K in keyof ConfigBackupSettings]?: { label: string; show?: (value: ConfigBackupSettings[K]) => string } };
 }
@@ -89,7 +88,6 @@ export function ConfigBackupPart({ model, isSuperAdmin }: { model: SettingsModel
     const [restoring, setRestoring] = useState(false);
     const [starting, setStarting] = useState(false);
     const fields = fieldsOf(model);
-    const secretsWithoutKey = values.includeSecrets && !values.profileId;
 
     const backUpNow = async () => {
         setStarting(true);
@@ -140,6 +138,14 @@ export function ConfigBackupPart({ model, isSuperAdmin }: { model: SettingsModel
                         </SwitchList>
                     </div>
 
+                    <p className="flex gap-2.5 rounded-lg border bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">
+                        <Database className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                        <span>
+                            <span className="font-medium text-foreground">What the file holds:</span> the whole database. Connections, jobs, every template, keys and
+                            logins, users with their second factor and passkeys, groups, API keys, sign-in providers and the settings. Whatever a later version adds is in it too.
+                        </span>
+                    </p>
+
                     <Field label="Destination" setting="config.destination" hint="The file goes into the folder config-backups there." error={save.errorOf("storageId")}>
                         {(id) => (
                             <ConnectionPicker
@@ -157,8 +163,8 @@ export function ConfigBackupPart({ model, isSuperAdmin }: { model: SettingsModel
                     <Field
                         label="Encryption key"
                         setting="config.key"
-                        hint="Needed for the logins. Keep it in a recovery kit, or a lost server takes the key with it."
-                        error={save.errorOf("profileId") ?? (secretsWithoutKey ? "The logins go into the file only encrypted. Pick a key or leave them out." : null)}
+                        hint="The file holds every login, so it is always encrypted. Keep the key in a recovery kit, or a lost server takes it with it."
+                        error={save.errorOf("profileId") ?? (values.enabled && !values.profileId ? "Pick an encryption key to back up the configuration." : null)}
                     >
                         {(id) => (
                             <EncryptionKeyPicker
@@ -195,18 +201,10 @@ export function ConfigBackupPart({ model, isSuperAdmin }: { model: SettingsModel
                     </Field>
 
                     <SwitchList>
-                        <div data-setting="config.secrets">
-                            <SwitchRow
-                                title="Include the logins"
-                                description="The passwords and keys of every connection. Only with an encryption key, and a restore brings them back without typing them again."
-                                checked={values.includeSecrets}
-                                onCheckedChange={(checked) => set("includeSecrets", checked)}
-                            />
-                        </div>
                         <div data-setting="config.history">
                             <SwitchRow
                                 title="Include the history"
-                                description="Runs, logs, the audit log and the storage history. The file gets much bigger."
+                                description="Runs, logs, the audit log and the storage history. Off, the copy leaves them out."
                                 checked={values.includeStatistics}
                                 onCheckedChange={(checked) => set("includeStatistics", checked)}
                             />

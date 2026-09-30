@@ -20,8 +20,6 @@ export interface ConfigBackupSettings {
     /** The encryption key, empty for none. */
     profileId: string;
     schedule: string;
-    /** Puts the logins of every connection into the file, which then needs a key. */
-    includeSecrets: boolean;
     /** Puts the runs, logs, audit log and storage history into the file. */
     includeStatistics: boolean;
     /** How many files stay at the destination. */
@@ -33,7 +31,6 @@ export const MAX_CONFIG_BACKUPS_KEPT = 365;
 const KEYS = {
     storageId: "config.backup.storageId",
     profileId: "config.backup.profileId",
-    includeSecrets: "config.backup.includeSecrets",
     includeStatistics: "config.backup.includeStatistics",
     retention: "config.backup.retention",
 } as const;
@@ -51,7 +48,6 @@ export async function getConfigBackupSettings(): Promise<ConfigBackupSettings> {
         storageId: stored.get(KEYS.storageId) ?? "",
         profileId: stored.get(KEYS.profileId) ?? "",
         schedule: schedule ?? "0 3 * * *",
-        includeSecrets: stored.get(KEYS.includeSecrets) === "true",
         includeStatistics: stored.get(KEYS.includeStatistics) === "true",
         retention: Number.isFinite(retention) && retention >= 1 ? retention : 10,
     };
@@ -60,7 +56,7 @@ export async function getConfigBackupSettings(): Promise<ConfigBackupSettings> {
 /** Why the settings cannot be saved as they are, or null when they can. */
 async function problemOf(next: ConfigBackupSettings): Promise<{ field: keyof ConfigBackupSettings; message: string } | null> {
     if (next.enabled && !next.storageId) return { field: "storageId", message: "Pick a destination to back up the configuration." };
-    if (next.includeSecrets && !next.profileId) return { field: "profileId", message: "The logins go into the file only encrypted. Pick an encryption key." };
+    if (next.enabled && !next.profileId) return { field: "profileId", message: "Pick an encryption key. The file holds every login, so it is always encrypted." };
     if (!isValidCron(next.schedule)) return { field: "schedule", message: "The scheduler cannot read this schedule." };
     if (next.storageId) {
         const destination = await prisma.adapterConfig.findUnique({ where: { id: next.storageId }, select: { type: true, storageRole: true } });
@@ -83,7 +79,6 @@ export async function saveConfigBackupSettings(next: ConfigBackupSettings): Prom
     await prisma.$transaction([
         upsert(KEYS.storageId, next.storageId),
         upsert(KEYS.profileId, next.profileId),
-        upsert(KEYS.includeSecrets, String(next.includeSecrets)),
         upsert(KEYS.includeStatistics, String(next.includeStatistics)),
         upsert(KEYS.retention, String(next.retention)),
     ]);

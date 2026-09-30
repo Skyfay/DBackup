@@ -12,7 +12,6 @@ const configBackupSchema = z.object({
     storageId: z.string(),
     profileId: z.string(),
     schedule: z.string().trim().min(1, "Pick a schedule"),
-    includeSecrets: z.boolean(),
     includeStatistics: z.boolean(),
     retention: z.coerce.number().int().min(1).max(MAX_CONFIG_BACKUPS_KEPT),
 });

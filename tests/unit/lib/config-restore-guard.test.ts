@@ -21,16 +21,11 @@ vi.mock("@/services/backup/encryption-service", () => ({ getProfileMasterKey: vi
 vi.mock("@/services/adapters/adapter-audit", () => ({ connectionName: vi.fn(async () => "NAS") }));
 vi.mock("@/services/audit-service", () => ({ auditService: { log: (...args: unknown[]) => mocks.audit(...args) } }));
 
-const { restoreFromStorageAction, uploadAndRestoreConfigAction } = await import("@/app/actions/backup/config-management");
+// Restore from a file is the route /api/settings/config-backup/restore, see config-restore-route.test.ts.
+const { restoreFromStorageAction } = await import("@/app/actions/backup/config-management");
 
 const SUPER_ADMIN = { id: "root", group: { name: "SuperAdmin" } };
 const SETTINGS_ADMIN = { id: "lena", group: { name: "Settings" } };
-
-const upload = () => {
-    const form = new FormData();
-    form.set("backupFile", new File(['{"metadata":{"version":"1"}}'], "config_backup.json"));
-    return form;
-};
 
 describe("restoring the configuration of DBackup", () => {
     beforeEach(() => {
@@ -42,7 +37,6 @@ describe("restoring the configuration of DBackup", () => {
         mocks.caller.mockReturnValue(SETTINGS_ADMIN);
         const refused = { success: false, error: "Only a SuperAdmin restores a configuration backup." };
 
-        expect(await uploadAndRestoreConfigAction(upload())).toEqual(refused);
         expect(await restoreFromStorageAction("dest-1", "config_backup.json.gz")).toEqual(refused);
         expect(mocks.importConfig).not.toHaveBeenCalled();
         expect(mocks.restoreFromStorage).not.toHaveBeenCalled();

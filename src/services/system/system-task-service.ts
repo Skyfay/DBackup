@@ -6,6 +6,8 @@ import { logger } from "@/lib/logging/logger";
 import { ValidationError, getErrorMessage, wrapError } from "@/lib/logging/errors";
 import { runDataRetention } from "./data-retention-service";
 import { isDatabaseMaintenanceActive } from "@/lib/server/database-maintenance";
+import { NOTIFICATION_EVENTS } from "@/lib/notifications/types";
+import { notify } from "@/services/notifications/system-notification-service";
 import { DEFAULT_TASK_CONFIG, SYSTEM_TASKS } from "./system-task-definitions";
 import { checkForUpdates, startIntegrityCheck, syncPermissions, updateDbVersions, warmupStorageCache, type TaskOutcome } from "./system-task-runs";
 
@@ -26,6 +28,8 @@ export interface TaskRunRecord {
     summary: string | null;
     /** The run in History, for a task that writes one. */
     executionId?: string;
+    /** The run stopped with an error, rather than with a result that needs a look. */
+    failed?: boolean;
 }
 
 /** Settings of another part that switch a task on and off, so both always agree. */
@@ -154,6 +158,24 @@ export class SystemTaskService {
         return startedAt ? { at: startedAt, durationMs: null, ok: true, summary: null } : null;
     }
 
+    /** The record the last run left, whether or not a run started since. */
+    private async readRecord(taskId: string): Promise<TaskRunRecord | null> {
+        try {
+            const record = await readSetting(`task.${taskId}.lastRun`);
+            return record ? (JSON.parse(record) as TaskRunRecord) : null;
+        } catch {
+            return null;
+        }
+    }
+
+    /** A system error for a task that stopped with an error. Its delivery never holds the task up. */
+    private reportError(taskId: string, error: string) {
+        notify({
+            eventType: NOTIFICATION_EVENTS.SYSTEM_ERROR,
+            data: { component: defaults(taskId)?.label ?? taskId, error, timestamp: new Date().toISOString() },
+        }).catch((notifyError: unknown) => log.warn("Could not report a failed system task", { taskId }, wrapError(notifyError)));
+    }
+
     isRunning(taskId: string): boolean {
         return running.has(taskId);
     }
@@ -162,7 +184,7 @@ export class SystemTaskService {
         await writeSetting(`task.${taskId}.lastRunAt`, at.toISOString(), `Last run timestamp for ${taskId}`);
     }
 
-    private async recordRun(taskId: string, startedAt: Date, outcome: TaskOutcome) {
+    private async recordRun(taskId: string, startedAt: Date, outcome: TaskOutcome, failed = false) {
         running.delete(taskId);
         const record: TaskRunRecord = {
             at: startedAt.toISOString(),
@@ -170,6 +192,7 @@ export class SystemTaskService {
             ok: outcome.ok ?? true,
             summary: outcome.summary ?? null,
             ...(outcome.executionId ? { executionId: outcome.executionId } : {}),
+            ...(failed ? { failed: true } : {}),
         };
         try {
             await writeSetting(`task.${taskId}.lastRun`, JSON.stringify(record), `Last run of ${taskId}`);
@@ -195,7 +218,11 @@ export class SystemTaskService {
         try {
             outcome = await this.execute(taskId, triggerType, triggerLabel, startedAt);
         } catch (error: unknown) {
-            await this.recordRun(taskId, startedAt, { ok: false, summary: getErrorMessage(error) });
+            const message = getErrorMessage(error);
+            const before = await this.readRecord(taskId);
+            await this.recordRun(taskId, startedAt, { ok: false, summary: message }, true);
+            // Reported once, not again while the task keeps failing, until it runs through again.
+            if (!before?.failed) this.reportError(taskId, message);
             throw error;
         }
         // A task that goes on in the background records itself when it ends.

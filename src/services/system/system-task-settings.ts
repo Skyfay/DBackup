@@ -115,12 +115,18 @@ async function saveIntegritySettings(settings: IntegritySettings) {
     );
 }
 
-/** The configuration backup runs to its destination, so it cannot be switched on without one. */
+/** The configuration backup runs to its destination, encrypted with its key, so it cannot be switched on without both. */
 async function needsDestination(taskId: SystemTaskId, enabled: boolean) {
     if (taskId !== SYSTEM_TASKS.CONFIG_BACKUP || !enabled) return;
-    const destination = await prisma.systemSetting.findUnique({ where: { key: "config.backup.storageId" } });
+    const [destination, key] = await Promise.all([
+        prisma.systemSetting.findUnique({ where: { key: "config.backup.storageId" } }),
+        prisma.systemSetting.findUnique({ where: { key: "config.backup.profileId" } }),
+    ]);
     if (!destination?.value) {
         throw new ValidationError("Pick a destination under Configuration backup first.", { field: "enabled" });
+    }
+    if (!key?.value) {
+        throw new ValidationError("Pick an encryption key under Configuration backup first.", { field: "enabled" });
     }
 }
 

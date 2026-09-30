@@ -6,7 +6,7 @@ The Settings page holds what applies to the whole instance: its name and clock, 
 
 The parts sit on the left in three groups, **System**, **Data** and **Security**. Beside each name stands its state when it has one, like how many notification events are on, the size of the database, a configuration backup that is **Off** or the days a certificate has left. A state in amber or red needs a look.
 
-The search above the parts finds a setting by the start of its words, so `backup` finds **Include the logins** of the configuration backup but not every mention of DBackup. The parts without a hit are dimmed, and a click on a hit opens its part and marks the setting for a moment. A system task or a notification event opens its Edit dialog right away.
+The search above the parts finds a setting by the start of its words, so `backup` finds **Include the history** of the configuration backup but not every mention of DBackup. The parts without a hit are dimmed, and a click on a hit opens its part and marks the setting for a moment. A system task or a notification event opens its Edit dialog right away.
 
 Changes wait in a bar at the foot of the part, which names each change with its value before and after. **Save changes** saves the whole part, **Discard** goes back to what is saved. Leaving a part with changes that are not saved asks first.
 

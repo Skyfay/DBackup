@@ -472,10 +472,9 @@ describe('import.ts - uncovered branches', () => {
       permissions: [],
     } as any);
 
-    // User email lookup: existing user with same email but different ID
-    prismaMock.user.findUnique
-      .mockResolvedValueOnce({ id: 'db-user-id', email: 'admin@example.com' } as any) // email lookup
-      .mockResolvedValueOnce({ id: 'db-user-id' } as any); // auditLog userId FK check
+    // User email lookup: existing user with same email but different ID. The auditLog userId
+    // needs no lookup, the restore knows the user it just wrote.
+    prismaMock.user.findUnique.mockResolvedValueOnce({ id: 'db-user-id', email: 'admin@example.com' } as any);
 
     const backup = makeBackup({
       groups: [{ id: 'backup-group-id', name: 'Admins', permissions: [], createdAt: new Date(), updatedAt: new Date() }],
@@ -757,7 +756,8 @@ describe('import.ts - uncovered branches', () => {
   });
 
   it('restores API key as-is when userId is not in userIdMap (line 284 false branch)', async () => {
-    // No users in backup -> userIdMap is empty -> userId is not remapped
+    // No users in backup -> userIdMap is empty -> userId is not remapped. The user is here already.
+    prismaMock.user.findUnique.mockResolvedValueOnce({ id: 'existing-user-id' } as any);
     const backup = makeBackup({
       users: [],
       apiKeys: [{ id: 'k1', name: 'Direct Key', hashedKey: 'abc123hash', userId: 'existing-user-id' }],
@@ -781,6 +781,8 @@ describe('import.ts - uncovered branches', () => {
   });
 
   it('restores job destination without configId remapping when adapter not in adapterIdMap (line 185 false)', async () => {
+    // The destination is here under its own id, it did not merge.
+    prismaMock.adapterConfig.findUnique.mockResolvedValueOnce({ id: 'unknown-adapter-id' } as any);
     const backup = makeBackup({
       jobs: [{ id: 'job-1', name: 'Job 1', sourceId: null, encryptionProfileId: null }],
       jobDestinations: [{
@@ -798,6 +800,8 @@ describe('import.ts - uncovered branches', () => {
   });
 
   it('restores job notifications with adapter IDs not in adapterIdMap using original IDs (line 200 ?? fallback)', async () => {
+    // The channel is here under its own id, it did not merge.
+    prismaMock.adapterConfig.findUnique.mockResolvedValueOnce({ id: 'unknown-notif-id' } as any);
     const backup = makeBackup({
       jobs: [{ id: 'job-1', name: 'Job 1', sourceId: null, encryptionProfileId: null }],
       jobNotifications: {

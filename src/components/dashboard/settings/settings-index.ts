@@ -30,7 +30,6 @@ const SETTINGS: SettingEntry[] = [
     { part: "config-backup", id: "config.key", label: "Encryption key", text: "The key the configuration backup is encrypted with." },
     { part: "config-backup", id: "config.schedule", label: "Schedule", text: "When the configuration backup runs." },
     { part: "config-backup", id: "config.keeps", label: "Keeps", text: "How many configuration backups stay at the destination." },
-    { part: "config-backup", id: "config.secrets", label: "Include the logins", text: "Passwords and keys of every connection, only encrypted." },
     { part: "config-backup", id: "config.history", label: "Include the history", text: "Runs, logs, the audit log and the storage history." },
     { part: "config-backup", id: "config.restore", label: "Restore from a file", text: "Brings back connections, jobs, users and settings, only for a SuperAdmin." },
     { part: "sign-in", id: "signin.sessions", label: "Sessions last", text: "How long someone stays signed in." },

@@ -7,6 +7,8 @@ All notable changes to DBackup are documented here.
 
 > ⚠️ **Breaking:** Retention now follows a renamed job into the folder of its old name, where its backups stayed untouched until now. The first run of such a job after updating removes the backups there that its policy no longer keeps, all at once. Locked backups stay, so lock anything in the old folder you want to keep before updating. The Backups page lists those backups under the job, and the retention step of that first run names every folder it looked at.
 
+> ⚠️ **Breaking:** The configuration backup is always encrypted now, since it holds every login. One that was on without an encryption key fails until a key is picked under **Settings → Configuration backup**.
+
 ### ✨ Features
 
 - **connections**: The connection tables show each connection's status with its response time, how many jobs use it, its last backup and its health checks of the last 24 hours. Every user can switch columns on and off, drag them into order and pick a row height, and the layout is saved to their account.
@@ -46,6 +48,8 @@ All notable changes to DBackup are documented here.
 - **settings**: The Settings page lists its parts on the left with the state of each, like a configuration backup that is off or a certificate that runs out soon, and a search finds every setting. Changes wait in a bar at the foot until they are saved, and a phone lists the parts and opens each on its own.
 - **settings**: The system tasks are a list with their schedule in words, their last run with what it did and a switch each, and a task opens an Edit dialog with the schedule picker of the jobs. The configuration backup sets its destination, key and schedule in one place and shows when it last ran.
 - **settings**: The system notifications are a list with the channels, the reminder and a switch of each event, and an event opens an Edit dialog with a test. Ticked events go on, off or to other channels together, and an event that goes nowhere shows in amber.
+- **config**: The configuration backup is a copy of the whole database, so it brings back every template, the folders of file jobs, second factors and passkeys, and whatever a later version adds. A restore shows what the backup holds first, then replaces the database and restarts DBackup.
+- **config**: A new DBackup restores a configuration backup on its sign-up page with the key from its recovery kit, and needs neither the old ENCRYPTION_KEY nor the old BETTER_AUTH_SECRET.
 
 
 ### 🐛 Bug Fixes
@@ -99,6 +103,11 @@ All notable changes to DBackup are documented here.
 - **notifications**: Each system notification with a reminder names its own default, like 7 days for a new version, where the settings claimed 24 hours for all of them.
 - **notifications**: Send a test of a system notification reports a failure when nothing was sent, where it reported success before, and it also sends while the event is off. The email to the user counts as a delivery.
 - **notifications**: Unticking the last own channel of a system notification no longer sends it back to the default channels without a word. Saving asks for at least one channel instead.
+- **notifications**: A system task that stops with an error sends **A system task failed**, once until it runs through again. The event was listed but never sent.
+- **config**: A configuration restore onto a new instance no longer stops with a foreign key error, like on a retention policy the file does not hold, and it names what it could not bring back ([#171](https://github.com/Skyfay/DBackup/issues/171)). A destination without its policy keeps every backup until one is picked again.
+- **config**: A job whose encryption key does not come back with a configuration restore is paused instead of writing its next backups unencrypted.
+- **config**: Users with two-factor sign-in are no longer locked out after a configuration restore, which holds no second factor. It is off for them until they set it up again.
+- **config**: Restore from a file takes configuration backups up to 10 MB and points to the Backups page for a larger one. It failed on any file over 1 MB before.
 - **SSO**: Deleting a sign-in provider no longer counts people with a passkey among those who cannot sign in afterwards.
 - **SSO**: The callback URL of a provider starts with `BETTER_AUTH_URL`, which DBackup sends to the provider, instead of the address the admin opened DBackup at.
 - **settings**: A system task set to run at start no longer runs again each time a job or a setting is saved.
@@ -133,6 +142,7 @@ All notable changes to DBackup are documented here.
 - **SSO**: The Keycloak provider checks its URL before it reads the configuration, like the other providers, which keeps it away from cloud metadata endpoints.
 - **SSO**: Only a SuperAdmin adds, changes, switches and deletes sign-in providers. The right to change the settings was enough before, and a provider signs in as anyone whose email it names.
 - **settings**: Only a SuperAdmin restores a configuration backup, which brings back users and groups. The right to change the settings was enough before.
+- **config**: Restore from a file writes the uploaded file only into the temp folder, whatever path its name holds.
 - **users**: Only a SuperAdmin resets the second factor of a SuperAdmin or signs them out.
 - **users**: Nobody changes the group they are in. Anyone who may change groups could give their own group every permission before.
 - **auth**: The rate limits count over their whole window again. The counters started over every 30 seconds, which allowed twice the sign-in attempts in a window of a minute.
@@ -212,6 +222,7 @@ All notable changes to DBackup are documented here.
 - **settings**: Check for updates follows **Look for new versions** under General and the stuck run watchdog follows the time there, so each has one switch. An update turns that setting off once where the task alone was off.
 - **api**: `GET /api/settings/system-tasks` also returns the last run of each task with how long it took and what it did, whether it runs now and which setting it follows.
 - **notifications**: The system notification events have new names that say what happened, like **Someone signs in** or **A connection is offline**.
+- **config**: **Include the logins** is gone, since the configuration backup always holds them. Configuration files of older versions still restore, in parts from the Backups page or as a whole from a file.
 
 
 ### 🗑️ Removed
@@ -256,6 +267,7 @@ All notable changes to DBackup are documented here.
 - **docs**: The groups guide lists what only a SuperAdmin does, and the config backup guide says who restores a configuration and where.
 - **docs**: A new Settings guide describes the parts of the page, the search, the save bar and every system task with what it follows. The guides for data retention, rate limits, the configuration backup and time zones use the new names.
 - **docs**: The notification and settings guides describe the list of system notifications, its Edit dialog, the actions for several events and the default reminder of each event. The developer guide names the new actions and where a new event gets its test data.
+- **docs**: The system backup guide describes the copy of the database, its restore with a restart, the restore on the sign-up page and the way back to the database before it. The developer guide describes the copy, its checks, the new encryption of its secrets and the swap at the next start.
 
 
 ### 🧪 Tests
@@ -264,6 +276,13 @@ All notable changes to DBackup are documented here.
 - **tests**: The palette color guard allows 11 colors without a dark variant, down from 37, and the guard for a height on the root of a scroll area allows 2, down from 3.
 - **tests**: New tests cover the permission check of every save on the Settings page, the settings the system tasks follow and the fixes of the certificate, the scheduler and the rate limits.
 - **tests**: New tests cover saving the system notifications, their tests and a storage alert whose reminder is off.
+- **tests**: New tests cover a configuration restore onto a new instance, the upload of Restore from a file and a failed system task that reports a system error.
+- **tests**: New tests run the copy of the database, its checks, the new encryption of its secrets and its swap before the start against real SQLite files.
+
+
+### 🔧 CI/CD
+
+- **docker**: The image runs a script before the migrations that swaps in a restored configuration backup.
 
 
 ### 🐳 Docker

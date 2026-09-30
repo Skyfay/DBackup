@@ -57,8 +57,8 @@ export const EVENT_DEFINITIONS: NotificationEventDefinition[] = [
   },
   {
     id: NOTIFICATION_EVENTS.SYSTEM_ERROR,
-    name: "A system error",
-    description: "A critical error in DBackup itself.",
+    name: "A system task failed",
+    description: "A system task stopped with an error, like the configuration backup.",
     category: "system",
     defaultEnabled: true,
   },

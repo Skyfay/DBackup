@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { LoginForm } from "@/components/auth/login-form";
+import { SetupRestore } from "@/components/auth/setup-restore";
 import { getPublicSsoProviders } from "@/app/actions/auth/oidc";
 import { getOidcAutoRedirectProviderId, isEmailLoginDisabled } from "@/lib/auth/env-flags";
 import Image from "next/image";
@@ -64,6 +65,17 @@ export default async function Home({ searchParams }: HomeProps) {
                 disableEmailLogin={disableEmailLogin}
                 autoRedirectProviderId={autoRedirectProvider?.providerId}
             />
+            {/* A new DBackup can take a backup of an old one instead of a first account. */}
+            {userCount === 0 && (
+                <>
+                    <div className="my-4 flex w-87.5 items-center gap-3 text-xs text-muted-foreground">
+                        <span className="h-px flex-1 bg-border" />
+                        OR
+                        <span className="h-px flex-1 bg-border" />
+                    </div>
+                    <SetupRestore />
+                </>
+            )}
         </div>
     );
 }

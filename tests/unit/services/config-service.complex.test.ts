@@ -120,6 +120,13 @@ vi.mock('@/lib/prisma', () => {
             group: createPrismaDelegate(mockDb.groups, 'id'),
             ssoProvider: createPrismaDelegate(mockDb.sso, 'id'),
             encryptionProfile: createPrismaDelegate(mockDb.profiles, 'id'),
+            // Tables the file does not hold, which the restore only checks links against.
+            jobSource: { count: vi.fn(async () => 0) },
+            retentionPolicy: { findUnique: vi.fn(async () => null) },
+            namingTemplate: { findUnique: vi.fn(async () => null) },
+            schedulePreset: { findUnique: vi.fn(async () => null) },
+            twoFactor: { findUnique: vi.fn(async () => null) },
+            passkey: { count: vi.fn(async () => 0) },
             $transaction: vi.fn(async (callback) => callback(prismaMock)),
         },
     };

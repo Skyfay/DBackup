@@ -35,7 +35,7 @@ const { saveSignInSettings } = await import("@/services/system/system-settings-s
 const { saveConfigBackupSettings } = await import("@/services/config/config-backup-settings");
 const { saveSystemTask, startSystemTask } = await import("@/services/system/system-task-settings");
 
-const CONFIG = { enabled: true, storageId: "nas", profileId: "", schedule: "0 3 * * *", includeSecrets: false, includeStatistics: false, retention: 10 };
+const CONFIG = { enabled: true, storageId: "nas", profileId: "key-1", schedule: "0 3 * * *", includeStatistics: false, retention: 10 };
 
 describe("sign-in settings", () => {
     beforeEach(() => {
@@ -66,6 +66,7 @@ describe("configuration backup settings", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         prismaMock.adapterConfig.findUnique.mockResolvedValue({ type: "storage", storageRole: "DESTINATION" } as never);
+        prismaMock.encryptionProfile.findUnique.mockResolvedValue({ id: "key-1" } as never);
         prismaMock.$transaction.mockResolvedValue([] as never);
     });
 
@@ -74,8 +75,9 @@ describe("configuration backup settings", () => {
         expect(prismaMock.$transaction).not.toHaveBeenCalled();
     });
 
-    it("puts the logins into the file only with an encryption key", async () => {
-        await expect(saveConfigBackupSettings({ ...CONFIG, includeSecrets: true })).rejects.toMatchObject({ field: "profileId" });
+    it("needs an encryption key to be switched on, since the file holds every login", async () => {
+        await expect(saveConfigBackupSettings({ ...CONFIG, profileId: "" })).rejects.toMatchObject({ field: "profileId" });
+        expect(prismaMock.$transaction).not.toHaveBeenCalled();
     });
 
     it("refuses a schedule the scheduler cannot read", async () => {

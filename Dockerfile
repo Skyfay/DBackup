@@ -177,6 +177,9 @@ WORKDIR /app
 # tests/unit/lint-guards/recovery-kit-shipped.test.ts.
 COPY --from=builder --link --chown=1001:1001 /app/scripts/dbackup-recover.js ./scripts/dbackup-recover.js
 
+# Swaps in a configuration restore before the migrations run, called by docker-entrypoint.sh.
+COPY --from=builder --link --chown=1001:1001 /app/scripts/apply-pending-restore.js ./scripts/apply-pending-restore.js
+
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PNPM_HOME="/pnpm"

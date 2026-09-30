@@ -58,8 +58,8 @@ export function buildTestData(eventType: string): NotificationEventData | null {
     system_error: {
       eventType: "system_error",
       data: {
-        component: "Scheduler",
-        error: "This is a test error notification",
+        component: "Configuration backup",
+        error: "No destination is picked under Configuration backup (test)",
         timestamp: now,
       },
     },

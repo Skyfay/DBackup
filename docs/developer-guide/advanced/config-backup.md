@@ -1,172 +1,114 @@
-# Configuration Export & Import (Meta-Backup)
+# Configuration Backup (Meta-Backup)
 
-The Meta-Backup system enables complete disaster recovery of the application without relying on filesystem snapshots of the SQLite database.
+The configuration backup is a copy of DBackup's own SQLite database, compressed and encrypted with a key of the Vault. A copy holds every table and every link, so no part of DBackup needs export or import code, and a table a later version adds is in it without a word.
 
 ## Overview
 
-The goal is to store the entire app configuration in a portable manner. If the server needs to be rebuilt or the cryptographic context (`ENCRYPTION_KEY`) changes, the configuration can be restored via a clean import interface.
+```
+Live database ──VACUUM INTO──▶ Copy ──▶ without sign-ins, caches and (optionally) history
+                                         + keys row ──▶ gzip ──▶ AES-256-GCM ──▶ Destination
+```
 
 ### Core Concepts
 
-1. **Portable Export**: Configuration is exported as JSON, then encrypted with a user-selected Encryption Profile
-2. **Security**: Secrets are only exported when explicitly enabled, and must be encrypted
-3. **Independence**: The backup file is independent of the server's System Key
+1. **Complete by construction**: the copy is the database, templates, folders of file jobs, second factors and passkeys included
+2. **Keys travel with it**: a row `configBackup.copyKeys` in `SystemSetting` of the copy holds `ENCRYPTION_KEY`, `BETTER_AUTH_SECRET`, the version and the time. It only ever exists in a copy, and a restore removes it
+3. **Always encrypted**: the task refuses to run without a key, since the file holds every login and both keys of the instance
 
-```
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  Database       │────▶│  JSON Export     │────▶│  Compression    │
-│  (Prisma)       │     │  (Decrypted)     │     │  (Optional)     │
-└─────────────────┘     └──────────────────┘     └─────────────────┘
-                                                         │
-                                                         ▼
-                                                 ┌─────────────────┐
-                                                 │  Encryption     │
-                                                 │  (AES-256-GCM)  │
-                                                 └─────────────────┘
-                                                         │
-                                                         ▼
-                                                 ┌─────────────────┐
-                                                 │  Storage        │
-                                                 │  (Upload)       │
-                                                 └─────────────────┘
-```
+## The Copy
 
-## Included Data
+`createConfigCopy({ includeHistory })` in `src/services/config/database-copy.ts`:
 
-| Area | Description | Secrets Handling |
-|------|-------------|------------------|
-| **System Settings** | Global settings | Always included |
-| **Credential Profiles** | Vault - reusable credentials for adapters | Data only with `includeSecrets` |
-| **Adapter Configs** | Database & storage connections | Passwords only with `includeSecrets` |
-| **Jobs** | Backup schedules, retention | Always included |
-| **Users** | Local user accounts | Password hashes only with `includeSecrets` |
-| **Groups** | RBAC configurations | Always included |
-| **SSO Providers** | OIDC configurations | Client secrets only with `includeSecrets` |
-| **Encryption Profiles** | Vault - backup encryption keys | Keys only with `includeSecrets` |
+1. `createDatabaseSnapshot()` writes a consistent copy with `VACUUM INTO`, the same one Download database uses
+2. `openCopy()` opens it with a second `PrismaClient`, apart from the live one
+3. `DROPPED_TABLES` are emptied (sessions, verifications, caches), and without Include the history the `HISTORY_TABLES` too
+4. The keys row is written, then `VACUUM` gives the freed space back
 
-**Not included:**
-- Actual backup files (SQL dumps)
-- Execution history and logs
-- Temporary files or caches
+`runConfigBackup()` in `src/lib/runner/config-runner.ts` streams the copy through gzip and the encryption stream and uploads `config-backups/config_backup_<timestamp>.db.gz.enc`. Its `.meta.json` carries `kind: "database"`, `appVersion` and the usual `encryption` block. The retention keeps the newest files named `config_backup_*`, older JSON files included.
 
-## Export Process
+## Restore of a Copy
 
-### Automatic Backup
+A restore has two steps, `src/services/config/restore-flow.ts`:
 
-Export runs automatically via the **System Task** scheduler (`config.backup`):
+1. **Check**: `checkUploadedBackup()` or `checkStoredBackup()` decrypt and unpack the file into a temp file with `openBackupFile()`. `isDatabaseCopy()` reads the SQLite header, and `inspectDatabaseCopy()` runs `PRAGMA integrity_check`, compares `_prisma_migrations` with `prisma/migrations` so a copy of a newer version is refused, reads the keys row and counts what the copy holds. A copy without keys row, like a download of the database, is refused when its secrets do not open with the key of this instance. The checked file waits in `pending-restores.ts` for 30 minutes under a token bound to the user who checked it
+2. **Apply**: `applyCheckedRestore()` refuses while a run is `Running`. `stageDatabaseRestore()` drops triggers and views, encrypts the secrets again when the keys row names other keys, removes the keys row and the sign-ins, writes an audit entry into the copy, lays it beside the live database as `restore-pending.db` and calls `restartSoon()`, which ends the process after the answer went out
+3. **Swap**: `scripts/apply-pending-restore.js` runs before `prisma migrate deploy`, in `docker-entrypoint.sh` and in `pnpm dev`. It moves the live database with its `-wal`, `-shm` and `-journal` files aside as `dbackup.db.before-restore*` and renames the copy into place. On a failure it puts everything back and keeps the copy as `restore-failed-<time>.db`, so the next start does not try again
 
-```typescript
-// Configured in System Settings
-{
-  "config.backup.enabled": true,
-  "config.backup.schedule": "0 3 * * *",  // Daily at 3 AM
-  "config.backup.storageId": "clx123...", // Target storage
-  "config.backup.encryptionProfileId": "clx456...",
-  "config.backup.includeSecrets": true
-}
-```
+### Encrypting Again
 
-### Manual Trigger
+`rekeyCopy()` in `copy-rekey.ts` runs when the keys of the copy differ from the ones of this instance. Every value DBackup encrypts has the form `iv:authTag:data` in hex, and AES-GCM opens only a value that really is one, so the copy is searched rather than listed: every `TEXT` column of every table, and every string inside a JSON value. Tables that never hold a secret are skipped for speed. Second factors are encrypted by better-auth with `BETTER_AUTH_SECRET` and go through `symmetricDecrypt` and `symmetricEncrypt`.
 
-Via **Settings → Configuration backup → Back up now**, or **Run now** of the system task. The task follows `config.backup.enabled` and `config.backup.schedule`, which the Configuration backup part sets, and records where the file went as its last run.
+A new table needs nothing here. A table that can never hold a secret may join the skip list.
 
-### Pipeline Steps
+### Routes
 
-1. **Data Fetching**: `ConfigService` loads all data from Prisma
-2. **Decryption (Pre-Flight)**: System-encrypted fields are decrypted with current `ENCRYPTION_KEY`
-3. **Secret Handling**: If `includeSecrets = false`, sensitive fields become empty strings
-4. **Compression**: GZIP applied to JSON
-5. **Encryption**: AES-256-GCM with selected Encryption Profile
-6. **Upload**: Written to configured storage destination
+| Route | Who | What |
+|-------|-----|------|
+| `POST /api/settings/config-backup/restore` | SuperAdmin session | Checks an uploaded file, up to the 10 MB the middleware passes |
+| `POST /api/settings/config-backup/restore/destination` | SuperAdmin session | Checks a backup at a destination, read on the server |
+| `POST /api/settings/config-backup/restore/apply` | SuperAdmin session | Restores a checked backup by its token |
+| `POST /api/setup/restore`, `/api/setup/restore/apply` | Anyone while no account exists | The same on the sign-up page of a new instance |
 
-```typescript
-// File naming convention
-const filename = `config_backup_${timestamp}.json.gz.enc`;
-// Example: config_backup_2026-01-31T10-00-00-000Z.json.gz.enc
-```
+`requireConfigRestorer()` in `src/lib/server/config-restore-guard.ts` guards the routes in Settings. A 413 answers an upload over `CONFIG_UPLOAD_MAX_BYTES` before its body is read, and a missing key the usual 422 of `keyRequiredResponse()`.
 
-## Import Process
+## Import of Older Files
 
-### Pre-Flight Checks
+Configuration backups of versions before the copy are JSON files, `config_backup_*.json.gz.enc`. A check recognises them by their content and the same two steps restore them, as a whole, without a restart. The Backups page still restores them in parts through `restoreFromStorageAction`.
 
-Before import, the system validates:
-1. File can be decrypted (correct Encryption Profile)
-2. Schema version is compatible
-3. No critical conflicts (e.g., duplicate primary keys)
+`importConfiguration()` in `src/services/config/import.ts` restores the parts the caller picked in one transaction, in the order the links need. Each part lives in a module of its own:
 
-### Conflict Resolution
+| Module | Restores |
+|--------|----------|
+| `import-connections.ts` | Settings, saved logins, connections, encryption keys |
+| `import-jobs.ts` | Jobs, their destinations and the channels they name |
+| `import-users.ts` | Groups, users with their sign-ins, API keys, sign-in providers |
+| `import-history.ts` | Runs, audit log, notifications and storage history |
+
+`import-context.ts` holds what they share: the transaction, the maps from an ID of the file to the ID here, the IDs known to exist and the notes.
+
+### Matching and Links
 
 | Scenario | Resolution |
 |----------|------------|
 | Same ID exists | Update existing record |
+| Same name exists under another ID | Update that record and keep its ID, every link follows through the ID maps |
 | New ID | Create new record |
-| Missing dependency | Skip with warning |
-| Schema mismatch | Abort with error |
+| Link to a record neither in the file nor here | Drop the link and add a note |
 
-### Import Modes
+A foreign key must never stop a restore. Every link is checked before the write, and the record comes back without what is missing:
 
-```typescript
-type ImportMode =
-  | 'full'      // Replace everything
-  | 'merge'     // Add missing, update existing
-  | 'selective' // User chooses what to import
-```
+| Missing | What the restore does |
+|---------|-----------------------|
+| Retention policy of a job destination | `retentionPolicyId` null and `retention` keeps everything, so the default policy cannot remove backups |
+| Naming template or schedule preset of a job | The link is null, the job uses the default names or its own `schedule` |
+| Encryption key of a job | The key is null and the job paused, so it does not back up unencrypted |
+| Database connection of a job | `sourceId` is null |
+| Job or connection of a destination, user of an API key | The row is left out |
+| Second factor of a user | `twoFactorEnabled` or `passkeyTwoFactor` is false |
+
+`importConfiguration()` returns `{ notes }`, one sentence per kind of change. `restoreFromStorage()` writes them to the log of the run as warnings, and Restore from a file shows them in a toast. A table the export learns later needs its links checked the same way.
 
 ## Service Layer
 
-**Location**: `src/services/config-service.ts`
-
-### Key Methods
+The copy and its restore live in `src/services/config/`: `database-copy.ts`, `copy-inspect.ts`, `copy-rekey.ts`, `open-backup.ts`, `pending-restores.ts`, `restore-staging.ts` and `restore-flow.ts`. `config-service.ts` is the facade of the JSON files of older versions:
 
 ```typescript
 class ConfigService {
-  // Export configuration to JSON
-  async exportConfig(options: ExportOptions): Promise<Buffer>;
-
-  // Import configuration from JSON
-  async importConfig(data: Buffer, options: ImportOptions): Promise<ImportResult>;
-
-  // Validate import data without applying
-  async validateImport(data: Buffer): Promise<ValidationResult>;
-
-  // Get export preview (what will be included)
-  async getExportPreview(includeSecrets: boolean): Promise<ExportPreview>;
+  export(options: ExportOptions): Promise<AppConfigurationBackup>;
+  parseBackupFile(filePath: string, metaFilePath?: string, rawKeyHex?: string): Promise<AppConfigurationBackup>;
+  import(data: AppConfigurationBackup, strategy: "OVERWRITE", options?: RestoreOptions): Promise<ImportResult>;
+  restoreFromStorage(storageConfigId: string, file: string, decryptionProfileId?: string, options?: RestoreOptions): Promise<string>;
 }
 ```
 
-### Export Options
-
-```typescript
-interface ExportOptions {
-  includeSecrets: boolean;        // Include passwords, API keys
-  encryptionProfileId?: string;   // Required if includeSecrets = true
-  compression?: 'none' | 'gzip' | 'brotli';
-}
-```
+`export()` writes such a JSON file, which no part of DBackup does any more.
 
 ## Security Considerations
 
 ### Who Restores
 
-A restore writes users, groups, API keys and sign-in providers from the file, so it could make anyone a SuperAdmin. `uploadAndRestoreConfigAction` and `restoreFromStorageAction` in `src/app/actions/backup/config-management.ts` check `settings:write` first and then refuse anyone who is no SuperAdmin. Taking a config backup stays with `settings:write`.
+A restore writes users, groups, API keys and sign-in providers, so it could make anyone a SuperAdmin. The routes in Settings and `restoreFromStorageAction` check `settings:write` first and then refuse anyone who is no SuperAdmin, the routes also every API key. The routes of the sign-up page answer only while no account exists, the moment anyone who reaches the page may create the first account too. Taking a config backup stays with `settings:write`.
 
-### Secret Export Requirements
+### The File
 
-If `includeSecrets = true`:
-- An Encryption Profile **must** be selected
-- Exporting plaintext secrets is actively blocked
-- The resulting file requires the Recovery Kit for decryption
-
-### Recovery Without Secrets
-
-If imported without secrets:
-- Adapter connections will fail until passwords are re-entered
-- SSO providers will need client secrets reconfigured
-- Encryption profiles will need keys re-imported from Recovery Kits
-
-### Best Practices
-
-1. **Always use encryption** for config backups
-2. **Store Recovery Kits separately** from config backups
-3. **Test restore process** in a staging environment
-4. **Document encryption profile** used for backups
+The file holds every secret of the instance and both of its keys, so its encryption key is as sensitive as the server itself. Keep the recovery kit of that key apart from the backups.

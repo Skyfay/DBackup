@@ -33,7 +33,7 @@ src/services/
   vault/         vault-keys.ts and vault-credentials.ts (the tabs of the Vault page), vault-audit.ts (what the audit log knows), key-id.ts, vault-counts.ts
   notifications/ notification-log-service.ts, system-notification-service.ts, notification-settings-service.ts (the Notifications part: events, default channels, Send a test), notification-test-data.ts
   system/        healthcheck-service.ts, system-task-service.ts (with -definitions, -runs, -settings), update-service.ts, db-version-service.ts, certificate-service.ts, settings-model.ts (Settings page model), system-settings-service.ts (General, Sign-in, Privacy), rate-limit-settings-service.ts, data-retention-service.ts, database-service.ts
-  config/        config-service.ts, export.ts, import.ts, parse.ts, restore-pipeline.ts, config-backup-settings.ts (the Configuration backup part)
+  config/        database-copy.ts (the copy the backup uploads), copy-inspect.ts, copy-rekey.ts, open-backup.ts, pending-restores.ts, restore-staging.ts and restore-flow.ts (its restore), import.ts with import-context.ts and one import-*.ts per part (JSON files of older versions), config-service.ts, export.ts, parse.ts, restore-pipeline.ts, config-backup-settings.ts (the Configuration backup part)
   templates/     naming-template-service.ts, notification-template-service.ts, retention-policy-service.ts, schedule-preset-service.ts, exclude-pattern-preset-service.ts, templates-model.ts (Templates page model), retention-targets.ts and retention-preview.ts (what a retention change removes)
   user/          user-service.ts, users-model.ts (Users tab page model), user-details.ts (the panel of a user), group-service.ts, groups-model.ts (Groups tab page model), group-details.ts (the history of a group), preference-service.ts
   dashboard/     overview-service.ts (page model), aggregates.ts (cached history), health.ts, trends.ts, cache.ts
@@ -85,7 +85,7 @@ Permission categories: `USERS`, `GROUPS`, `SOURCES`, `DESTINATIONS`, `JOBS`, `ST
 No permission is enough for what decides who is a SuperAdmin or who signs in as whom. These actions check their permission first, then refuse anyone whose group is not SuperAdmin:
 
 - Making someone a SuperAdmin, and changing the group, the password, the second factor or the sessions of a SuperAdmin or deleting one (`actions/auth/user.ts`, `user-security.ts`, `group.ts`).
-- Sign-in providers (`actions/auth/oidc.ts`) and the configuration restore (`actions/backup/config-management.ts`).
+- Sign-in providers (`actions/auth/oidc.ts`) and the configuration restore (`actions/backup/config-management.ts` and the routes under `api/settings/config-backup/restore`, which also refuse API keys). The routes under `api/setup/restore` answer only while no account exists.
 
 Nobody changes or deletes the group they are in, and an API key never gets more than its owner holds. A new action of this kind follows the same pattern and gets a guard test.
 
@@ -266,7 +266,11 @@ Defined in `src/lib/notifications/` - `types.ts` holds the `NOTIFICATION_EVENTS`
 
 ## Config backup (`src/lib/runner/config-runner.ts`)
 
-`CONFIG_BACKUP` system task exports the full system configuration (adapters, jobs, users, groups, settings, schedules, policies) as `.tar.gz` or `.tar.gz.enc` to a chosen destination. Including secrets requires an encryption profile - secrets can never be exported unencrypted. Disabled by default.
+`CONFIG_BACKUP` system task uploads a copy of the whole database (`createConfigCopy` in `src/services/config/database-copy.ts`), gzipped and always encrypted with the key picked for it, as `config_backup_<time>.db.gz.enc`. The copy leaves sign-ins and caches out, the history without Include the history, and carries `ENCRYPTION_KEY` and `BETTER_AUTH_SECRET` in a row that only ever exists in a copy. Disabled by default.
+
+A restore checks a copy first (`restore-flow.ts`: integrity, no migration this version does not know, its keys), then lays it beside the live database as `restore-pending.db` and restarts. `scripts/apply-pending-restore.js` swaps it in before `prisma migrate deploy`, keeping the old database as `dbackup.db.before-restore`. A copy from an instance with other keys is encrypted again by `copy-rekey.ts`, which searches the copy for encrypted values instead of listing columns, so a new table needs no code there.
+
+JSON files of older versions still restore through `importConfiguration()`, which checks every link before it writes, drops one to a record neither in the file nor here and returns a note for each kind of change. A foreign key error during a restore is a bug. See `docs/developer-guide/advanced/config-backup.md`.
 
 ## Credential profiles (`src/services/auth/credential-service.ts`)
 

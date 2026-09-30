@@ -159,6 +159,8 @@ describe("Task colors", () => {
         "run-live.tsx",
         "run-summary-parts.tsx",
         "run-checks.tsx",
+        // A system task that runs now, in the Last run column of the Settings page.
+        "task-columns.tsx",
     ];
 
     it("should keep the info blue to the running status", () => {

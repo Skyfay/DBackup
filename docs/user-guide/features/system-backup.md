@@ -40,20 +40,21 @@ This enables complete disaster recovery without losing your setup.
 
 ### Automated System Backup
 
-1. Go to **Settings** → **System Config**
-2. Enable **Automated Backup**
-3. Configure:
-   - **Destination**: Storage adapter to use
-   - **Encryption Profile**: Required for secrets
-   - **Retention**: Number of backups to keep
+1. Go to **Settings → Configuration backup**
+2. Switch on **Back up the configuration**
+3. Pick:
+   - **Destination**: where the file goes, into its folder `config-backups`
+   - **Encryption key**: needed for **Include the logins**
+   - **Schedule**: when it runs, every day at 03:00 by default, picked like the schedule of a job
+   - **Keeps**: how many files stay at the destination, 10 by default
+   - **Include the logins** and **Include the history**
+4. Click **Save changes** in the bar at the foot
 
-### Manual Export
+The system task **Configuration backup** follows this switch and this schedule, so both are set in one place. The top of the part shows when the configuration was last backed up and where to, or why it failed.
 
-1. Go to **Settings** → **System Config**
-2. Click **Export Configuration**
-3. Choose options:
-   - Include secrets (requires encryption)
-4. Download file
+### A Backup Right Now
+
+Click **Back up now** in the head of the part. It uses the saved settings, so save a change first.
 
 ## Security
 
@@ -125,11 +126,11 @@ When you have a working DBackup instance:
 When starting fresh:
 
 1. Install a new DBackup instance and create the first user, who becomes the SuperAdmin
-2. Go to **Settings → Configuration Backup**
-3. Click **Upload & Restore...**
-4. Upload the backup file, and its `.meta.json` if it is encrypted
+2. Go to **Settings → Configuration backup**
+3. Click **Restore from a file**
+4. Pick the backup file, and its `.meta.json` if it is encrypted
 5. For an encrypted backup DBackup looks for the key itself. Import the key first, or give it when asked
-6. Click **Restore & Overwrite**
+6. Click **Restore and overwrite**
 
 ## Restore Strategy
 
@@ -175,7 +176,7 @@ When starting fresh:
    - Vault → Encryption → Import key
 
 5. Offline restore:
-   - Settings → System Config → Offline Restore
+   - Settings → Configuration backup → Restore from a file
    - Upload backup file
    - System decrypts with imported key
 
@@ -206,7 +207,7 @@ Store separately from config backup:
 ### Testing Recovery
 
 Periodically test:
-1. Export config
+1. Click **Back up now**
 2. Deploy test instance
 3. Restore config
 4. Verify functionality
@@ -237,7 +238,7 @@ Document your setup:
 **Cause**: Exported without secrets
 
 **Solutions**:
-1. Re-export with "Include Secrets"
+1. Switch on **Include the logins** and back up again
 2. Or manually re-enter credentials
 
 ### ID Conflicts

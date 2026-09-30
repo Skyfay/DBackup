@@ -18,7 +18,7 @@ vi.mock("@/services/audit-service", () => ({ auditService: { log: (...args: unkn
 vi.mock("@/lib/rate-limit/server", () => ({ reloadRateLimits: vi.fn() }));
 vi.mock("@/services/system/data-retention-service", () => ({
     getDataRetentionValues: (...args: unknown[]) => mocks.retentionValues(...args),
-    updateDataRetentionSetting: (...args: unknown[]) => mocks.updateRetention(...args),
+    updateDataRetentionSettings: (...args: unknown[]) => mocks.updateRetention(...args),
 }));
 vi.mock("@/services/system/certificate-service", () => ({
     getCertificateInfo: (...args: unknown[]) => mocks.certificateInfo(...args),
@@ -29,12 +29,12 @@ vi.mock("@/services/storage/storage-alert-service", () => ({
     saveAlertConfig: (...args: unknown[]) => mocks.saveAlertConfig(...args),
 }));
 
-const { updateRateLimitSettings, resetRateLimitSettings } = await import("@/app/actions/settings/rate-limit-settings");
-const { updateDataRetentionSettingAction } = await import("@/app/actions/settings/data-retention");
+const { updateRateLimitSettings } = await import("@/app/actions/settings/rate-limit-settings");
+const { saveDataRetentionAction } = await import("@/app/actions/settings/data-retention");
 const { uploadCertificate } = await import("@/app/actions/settings/certificate");
 const { updateStorageAlertSettings } = await import("@/app/actions/storage/storage-alerts");
 
-const RATE_LIMITS = { authPoints: 10, authDuration: 120, apiPoints: 100, apiDuration: 60, mutationPoints: 20, mutationDuration: 60 };
+const RATE_LIMITS = { auth: { points: 10, duration: 120 }, api: { points: 100, duration: 60 }, mutation: { points: 20, duration: 60 } };
 const RETENTION = { executionLogs: 90, executionHistory: 0, auditLog: 90, notificationHistory: 90, storageUsage: 90, healthChecks: 2 };
 
 describe("the audit entry of a settings change", () => {
@@ -53,40 +53,33 @@ describe("the audit entry of a settings change", () => {
         expect(mocks.audit).toHaveBeenCalledWith("admin", "UPDATE", "SYSTEM", {
             area: "Rate limits",
             changes: [
-                { field: "Authentication max requests", from: "5", to: "10" },
-                { field: "Authentication time window", from: "60 seconds", to: "120 seconds" },
+                { field: "Sign-ins", from: "5 requests", to: "10 requests" },
+                { field: "Sign-ins window", from: "60 seconds", to: "120 seconds" },
             ],
         });
     });
 
-    it("marks a reset of the rate limits as one", async () => {
-        prismaMock.systemSetting.findMany
-            .mockResolvedValueOnce([{ key: "rateLimit.api.points", value: "500" }] as never)
-            .mockResolvedValueOnce([] as never);
+    it("refuses a window under 10 seconds and names its field", async () => {
+        const result = await updateRateLimitSettings({ ...RATE_LIMITS, api: { points: 100, duration: 5 } });
 
-        await resetRateLimitSettings();
-
-        expect(mocks.audit).toHaveBeenCalledWith("admin", "UPDATE", "SYSTEM", {
-            area: "Rate limits",
-            action: "reset",
-            changes: [{ field: "API read max requests", from: "500", to: "100" }],
-        });
+        expect(result).toEqual({ success: false, error: "A window is at least 10 seconds", field: "api" });
+        expect(mocks.audit).not.toHaveBeenCalled();
     });
 
     it("writes nothing for a save that changed nothing", async () => {
         prismaMock.systemSetting.findMany.mockResolvedValue([] as never);
 
-        await updateRateLimitSettings({ ...RATE_LIMITS, authPoints: 5, authDuration: 60 });
+        await updateRateLimitSettings({ ...RATE_LIMITS, auth: { points: 5, duration: 60 } });
 
         expect(mocks.audit).not.toHaveBeenCalled();
     });
 
-    it("writes a retention period in the words of the Data Retention card", async () => {
+    it("writes a retention period in the words of the Data retention part", async () => {
         mocks.retentionValues.mockResolvedValueOnce(RETENTION).mockResolvedValueOnce({ ...RETENTION, auditLog: 365 });
 
-        expect(await updateDataRetentionSettingAction({ id: "auditLog", days: 365 })).toEqual({ success: true });
+        expect(await saveDataRetentionAction({ auditLog: 365 })).toEqual({ success: true });
 
-        expect(mocks.updateRetention).toHaveBeenCalledWith("auditLog", 365);
+        expect(mocks.updateRetention).toHaveBeenCalledWith({ auditLog: 365 });
         expect(mocks.audit).toHaveBeenCalledWith("admin", "UPDATE", "SYSTEM", {
             area: "Data retention",
             changes: [{ field: "Audit log", from: "90 days", to: "1 year" }],

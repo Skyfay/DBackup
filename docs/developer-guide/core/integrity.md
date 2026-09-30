@@ -8,7 +8,7 @@ The integrity check system performs periodic full verification of stored backup 
 
 After every backup upload, `verification-service.ts` records SHA-256 and MD5 checksums in a `.meta.json` sidecar file alongside the backup. The integrity check system reads those checksums later and re-verifies the stored file — catching any corruption that occurred after the upload completed.
 
-The check runs as the `INTEGRITY_CHECK` system task (weekly, Sunday at 4 AM, disabled by default). It can also be triggered manually from Settings - System Tasks.
+The check runs as the `INTEGRITY_CHECK` system task (weekly, Sunday at 4 AM, disabled by default). It can also be triggered manually from Settings - System tasks, where its Edit dialog sets what it checks.
 
 ## Scan Modes
 
@@ -87,10 +87,10 @@ The integrity check is registered as the `INTEGRITY_CHECK` system task:
 |----------|-------|
 | Default schedule | Weekly, Sunday at 4 AM (`0 4 * * 0`) |
 | Enabled by default | No |
-| Manual trigger | Settings - System Tasks |
+| Manual trigger | Settings - System tasks - Run now |
 | Notification event | `INTEGRITY_CHECK_FAILURE` (fires when `failed > 0`) |
 
-Enable it in Settings - System Tasks. When failures are detected, an `INTEGRITY_CHECK_FAILURE` notification is dispatched through the configured notification channels.
+Enable it in Settings - System tasks. When failures are detected, an `INTEGRITY_CHECK_FAILURE` notification is dispatched through the configured notification channels.
 
 ## Skipping Verification per Destination
 

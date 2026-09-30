@@ -540,6 +540,6 @@ Notification logs are automatically cleaned by the "Clean Old Data" system task:
 
 - **SystemSetting key**: `notification.logRetentionDays`
 - **Default**: 90 days
-- **Configurable**: 7 days to 5 years (Settings → General → Data Retention, shown as **Notification History**)
+- **Configurable**: 7 days to 5 years (Settings → Data retention, shown as **Notification history**)
 
 All retention settings are defined once in `src/lib/core/data-retention.ts` and applied by `runDataRetention()` in `src/services/system/data-retention-service.ts`.

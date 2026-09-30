@@ -34,6 +34,7 @@ vi.mock("@/services/system/system-task-service", () => {
             setTaskRunOnStartup: async (id: string, runOnStartup: boolean) => void mocks.settings.set(id, { ...task(id), runOnStartup }),
             setTaskEnabled: async (id: string, enabled: boolean) => void mocks.settings.set(id, { ...task(id), enabled }),
             runTask: (...args: unknown[]) => mocks.runTask(...args),
+            isRunning: () => false,
         },
     };
 });

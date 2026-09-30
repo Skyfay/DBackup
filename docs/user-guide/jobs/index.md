@@ -234,8 +234,8 @@ For clarity, create separate jobs for:
 
 By default, one backup runs at a time. Configure concurrency:
 
-1. Go to **Settings** → **System**
-2. Set **Max Concurrent Jobs**
+1. Go to **Settings** → **General**
+2. Set **Runs at the same time**
 3. Higher values = more parallel backups
 
 Runs of the same job never overlap, whatever the setting. A run started by hand, by the API or by the schedule while the job is still running waits as **Queued** and starts right after. Two runs of one job at once would plan the same step of an incremental chain and could write the same file.
@@ -250,13 +250,13 @@ A running job occupies one of those slots until it finishes. If a run stops maki
 a source that stopped answering, a network path that went away without closing the connection -
 it would hold its slot indefinitely and every job queued behind it would silently never start.
 
-**Settings** → **System** → **Stuck Job Timeout** sets how long a run may go without reporting
-progress before it is cancelled and marked failed. The default is 6 hours, and `Never (disabled)`
-switches the check off.
+**Settings** → **General** → **Fail a run that stops reporting after** sets how long a run may go
+without reporting progress before it is cancelled and marked failed. The default is 6 hours, and
+`Never` switches the check off.
 
 The measure is progress, not age. A twelve-hour transfer that keeps reporting is left alone; a
-five-minute one that went quiet is not. The watchdog runs every five minutes and can be disabled
-per instance under **Settings** → **System Tasks**.
+five-minute one that went quiet is not. The watchdog runs every five minutes as the system task
+**Stuck run watchdog**, which follows this setting: switching the task off sets it to `Never`.
 
 ## Job Pipeline
 

@@ -7,10 +7,11 @@ import type { ScheduleLoad } from "@/lib/core/schedule-conflicts";
  * What the scheduler already runs, for the warning of the schedule picker. Null until it is
  * loaded and for someone without the right to read jobs, who then simply sees no warning.
  */
-export function useScheduleLoad(): ScheduleLoad | null {
+export function useScheduleLoad(enabled = true): ScheduleLoad | null {
     const [load, setLoad] = useState<ScheduleLoad | null>(null);
 
     useEffect(() => {
+        if (!enabled) return;
         let active = true;
         fetch("/api/jobs/schedules")
             .then((res) => (res.ok ? res.json() : null))
@@ -23,7 +24,7 @@ export function useScheduleLoad(): ScheduleLoad | null {
         return () => {
             active = false;
         };
-    }, []);
+    }, [enabled]);
 
     return load;
 }

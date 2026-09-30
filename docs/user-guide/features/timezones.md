@@ -8,7 +8,7 @@ DBackup separates timezone concerns into two independent roles:
 
 | Role | Setting | Purpose |
 | :--- | :--- | :--- |
-| **Scheduler Timezone** | Settings - General - Scheduler Timezone | Controls **when** cron jobs fire. `0 3 * * *` means "3:00 AM in this timezone." |
+| **Scheduler Timezone** | Settings - General - Time zone | Controls **when** cron jobs fire. `0 3 * * *` means "3:00 AM in this timezone." |
 | **Display Timezone** | User Profile - Timezone | Controls **how** timestamps are shown to each user in the UI. |
 
 These two settings are completely independent. You can schedule jobs to run at 3:00 AM Berlin time while one user views timestamps in UTC and another in Tokyo time - both are correct.
@@ -24,9 +24,9 @@ The scheduler timezone defines the timezone in which cron expressions are interp
 ### How to configure
 
 1. Open **Settings** in the sidebar.
-2. Go to the **General** tab.
-3. Under **Scheduler Timezone**, select your timezone from the list.
-4. The setting is saved immediately.
+2. Open **General**.
+3. Pick your zone under **Time zone**. The line below it says what 03:00 there is in UTC.
+4. Click **Save changes** in the bar at the foot.
 
 After changing the scheduler timezone, the scheduler restarts automatically and all jobs are rescheduled with the new timezone.
 
@@ -97,14 +97,14 @@ The Jobs Activity chart on the dashboard groups executions by day using the sche
 
 The preview in the schedule picker always reflects the **scheduler timezone** (shown in brackets). If the time looks unexpected, check:
 
-1. Go to **Settings - General - Scheduler Timezone** and confirm the correct timezone is set.
+1. Go to **Settings - General - Time zone** and confirm the correct timezone is set.
 2. The preview updates after the page loads the setting from the server.
 
 ### Dashboard chart shows jobs on the wrong day
 
 The activity chart groups by the scheduler timezone. If jobs appear on an unexpected day:
 
-1. Verify the **Scheduler Timezone** in Settings - General.
+1. Verify the **Time zone** in Settings - General.
 2. A backup running near midnight may fall on different days depending on the timezone.
 
 ### History timestamps look wrong
@@ -119,4 +119,4 @@ Changing the scheduler timezone immediately reschedules all jobs. A job that was
 
 - [Scheduling](../jobs/scheduling.md) - Cron expression format and common schedule examples
 - [Profile Settings](./profile-settings.md) - How to change your display timezone, date format, and time format
-- [System Tasks](../admin/users.md) - Built-in scheduled maintenance tasks
+- [System Tasks](../admin/settings.md#system-tasks) - Built-in scheduled maintenance tasks

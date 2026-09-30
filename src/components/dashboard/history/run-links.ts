@@ -12,7 +12,7 @@ const ORIGINS: Record<RunOrigin, { label: string; href: string }> = {
     backups: { label: "Backups", href: "/dashboard/backups" },
     explorer: { label: "Database Explorer", href: "/dashboard/explorer" },
     connections: { label: "Connections", href: "/dashboard/connections" },
-    settings: { label: "Settings", href: "/dashboard/settings" },
+    settings: { label: "System tasks", href: "/dashboard/settings?part=tasks" },
     restore: { label: "Backups", href: "/dashboard/backups" },
     setup: { label: "Quick Setup", href: "/dashboard/setup" },
     apikeys: { label: "API keys", href: "/dashboard/users?tab=apikeys" },

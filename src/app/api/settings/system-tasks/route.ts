@@ -1,62 +1,43 @@
 import { NextRequest, NextResponse } from "next/server";
-import { systemTaskService, SYSTEM_TASKS, DEFAULT_TASK_CONFIG } from "@/services/system/system-task-service";
+import { headers } from "next/headers";
+import { z } from "zod";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { headers } from "next/headers";
-import { scheduler } from "@/lib/server/scheduler";
-import { auditService } from "@/services/audit-service";
-import { taskChanges, taskName, taskSnapshot } from "@/services/system/system-task-audit";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
+import { ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
-import { wrapError } from "@/lib/logging/errors";
-import { Cron } from "croner";
 import prisma from "@/lib/prisma";
+import { auditService } from "@/services/audit-service";
+import { isSystemTaskId } from "@/services/system/system-task-definitions";
+import { getSystemTaskRows, saveSystemTask, startSystemTask } from "@/services/system/system-task-settings";
+import { getGeneralSettings } from "@/services/system/system-settings-service";
+import { taskChanges, taskName, taskSnapshot } from "@/services/system/system-task-audit";
 
 const log = logger.child({ route: "system-tasks" });
+
+const taskId = z.string().refine(isSystemTaskId, { message: "Unknown system task" });
+
+const updateSchema = z.object({
+    taskId,
+    schedule: z.string().trim().min(1).optional(),
+    runOnStartup: z.boolean().optional(),
+    enabled: z.boolean().optional(),
+});
 
 export async function GET(_req: NextRequest) {
     const ctx = await getAuthContext(await headers());
     if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.READ); // assuming generic settings permission
+    checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.READ);
 
-    const tzSetting = await prisma.systemSetting.findUnique({ where: { key: "system.timezone" } });
-    const timezone = tzSetting?.value || "UTC";
-
-    const tasks = [];
-    for (const [_key, taskId] of Object.entries(SYSTEM_TASKS)) {
-        const schedule = await systemTaskService.getTaskConfig(taskId);
-        const runOnStartup = await systemTaskService.getTaskRunOnStartup(taskId);
-        const enabled = await systemTaskService.getTaskEnabled(taskId);
-        const lastRunAt = await systemTaskService.getTaskLastRunAt(taskId);
-        const config = DEFAULT_TASK_CONFIG[taskId];
-
-        if (!config) continue;
-
-        let nextRunAt: string | null = null;
-        if (enabled && schedule) {
-            try {
-                const job = new Cron(schedule, { timezone });
-                const next = job.nextRun();
-                nextRunAt = next ? next.toISOString() : null;
-            } catch {
-                // Invalid cron expression - leave nextRunAt null
-            }
-        }
-
-        tasks.push({
-            id: taskId,
-            schedule,
-            runOnStartup,
-            enabled,
-            label: config.label,
-            description: config.description,
-            lastRunAt,
-            nextRunAt,
-            timezone,
-        });
-    }
-
-    return NextResponse.json(tasks);
+    const { timezone } = await getGeneralSettings();
+    const rows = await getSystemTaskRows(timezone);
+    // The fields of earlier versions stay, the label and the start of the last run included.
+    return NextResponse.json(rows.map((row) => ({
+        ...row,
+        label: row.name,
+        lastRunAt: row.lastRun?.at ?? null,
+        timezone,
+    })));
 }
 
 export async function POST(req: NextRequest) {
@@ -64,33 +45,25 @@ export async function POST(req: NextRequest) {
     if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.WRITE);
 
-    const body = await req.json();
-    const { taskId, schedule, runOnStartup, enabled } = body;
+    const parsed = updateSchema.safeParse(await req.json().catch(() => null));
+    if (!parsed.success || !isSystemTaskId(parsed.data.taskId)) {
+        return NextResponse.json({ error: parsed.success ? "Unknown system task" : parsed.error.issues[0].message }, { status: 400 });
+    }
+    const { taskId: task, ...input } = parsed.data;
+    if (!isSystemTaskId(task)) return NextResponse.json({ error: "Unknown system task" }, { status: 400 });
 
-    if (!taskId) {
-         return NextResponse.json({ error: "Missing taskId" }, { status: 400 });
+    const before = await taskSnapshot(task);
+    try {
+        await saveSystemTask(task, input);
+    } catch (error: unknown) {
+        if (error instanceof ValidationError) return NextResponse.json({ error: error.message }, { status: 400 });
+        log.error("Failed to save a system task", { taskId: task }, wrapError(error));
+        return NextResponse.json({ error: "Failed to save the task" }, { status: 500 });
     }
 
-    const before = await taskSnapshot(taskId);
-
-    if (schedule !== undefined) {
-        await systemTaskService.setTaskConfig(taskId, schedule);
-    }
-
-    if (runOnStartup !== undefined) {
-        await systemTaskService.setTaskRunOnStartup(taskId, runOnStartup);
-    }
-
-    if (enabled !== undefined) {
-        await systemTaskService.setTaskEnabled(taskId, enabled);
-    }
-
-    // Refresh scheduler
-    scheduler.refresh().catch((e) => log.error("Scheduler refresh failed after system task update", {}, wrapError(e)));
-
-    const after = await taskSnapshot(taskId);
+    const after = await taskSnapshot(task);
     // Switching a task on or off alone reads as that, anything else as a change with its values.
-    const switchedOnly = enabled !== undefined && schedule === undefined && runOnStartup === undefined;
+    const switchedOnly = input.enabled !== undefined && input.schedule === undefined && input.runOnStartup === undefined;
     await auditService.logFor(
         ctx,
         AUDIT_ACTIONS.UPDATE,
@@ -98,10 +71,10 @@ export async function POST(req: NextRequest) {
         {
             task: after.name,
             name: after.name,
-            ...(typeof enabled === "boolean" ? { enabled } : {}),
+            ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
             ...(switchedOnly ? {} : { changes: taskChanges(before, after) }),
         },
-        taskId
+        task
     );
 
     return NextResponse.json({ success: true });
@@ -113,23 +86,24 @@ export async function PUT(req: NextRequest) {
     if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     checkPermissionWithContext(ctx, PERMISSIONS.SETTINGS.WRITE);
 
-    const body = await req.json();
-    const { taskId } = body;
-
-    if (!taskId) return NextResponse.json({ error: "Missing taskId" }, { status: 400 });
+    const parsed = z.object({ taskId }).safeParse(await req.json().catch(() => null));
+    if (!parsed.success || !isSystemTaskId(parsed.data.taskId)) {
+        return NextResponse.json({ error: "Unknown system task" }, { status: 400 });
+    }
+    const task = parsed.data.taskId;
 
     const user = await prisma.user.findUnique({ where: { id: ctx.userId }, select: { name: true } });
+    const started = await startSystemTask(task, user?.name ?? "Manual");
+    if (!started.started) return NextResponse.json({ error: started.reason }, { status: 409 });
 
-    const executionId = await systemTaskService.runTask(taskId, "Manual", user?.name ?? "Manual");
-
-    const name = taskName(taskId);
+    const name = taskName(task);
     await auditService.logFor(
         ctx,
         AUDIT_ACTIONS.EXECUTE,
         AUDIT_RESOURCES.SYSTEM,
         { task: name, name },
-        taskId
+        task
     );
 
-    return NextResponse.json({ success: true, ...(executionId ? { executionId } : {}) });
+    return NextResponse.json({ success: true, ...(started.executionId ? { executionId: started.executionId } : {}) });
 }

@@ -32,8 +32,8 @@ src/services/
   history/       run-list-service.ts (the runs of the History page), run-detail-service.ts (the page of a run), run-steps.ts, run-summary.ts, run-dumps.ts, run-checks.ts, run-problems.ts, known-problems.ts
   vault/         vault-keys.ts and vault-credentials.ts (the tabs of the Vault page), vault-audit.ts (what the audit log knows), key-id.ts, vault-counts.ts
   notifications/ notification-log-service.ts, system-notification-service.ts
-  system/        healthcheck-service.ts, system-task-service.ts, update-service.ts, db-version-service.ts, certificate-service.ts
-  config/        config-service.ts, export.ts, import.ts, parse.ts, restore-pipeline.ts
+  system/        healthcheck-service.ts, system-task-service.ts (with -definitions, -runs, -settings), update-service.ts, db-version-service.ts, certificate-service.ts, settings-model.ts (Settings page model), system-settings-service.ts (General, Sign-in, Privacy), rate-limit-settings-service.ts, data-retention-service.ts, database-service.ts
+  config/        config-service.ts, export.ts, import.ts, parse.ts, restore-pipeline.ts, config-backup-settings.ts (the Configuration backup part)
   templates/     naming-template-service.ts, notification-template-service.ts, retention-policy-service.ts, schedule-preset-service.ts, exclude-pattern-preset-service.ts, templates-model.ts (Templates page model), retention-targets.ts and retention-preview.ts (what a retention change removes)
   user/          user-service.ts, users-model.ts (Users tab page model), user-details.ts (the panel of a user), group-service.ts, groups-model.ts (Groups tab page model), group-details.ts (the history of a group), preference-service.ts
   dashboard/     overview-service.ts (page model), aggregates.ts (cached history), health.ts, trends.ts, cache.ts
@@ -214,19 +214,22 @@ A version guard rejects restoring a newer dump onto an older server.
 
 ## System tasks (`src/services/system/system-task-service.ts`)
 
-Background tasks on cron schedules with enable/disable toggles. Runner infrastructure in `src/lib/runner/system-task-runner.ts`, managed via Settings > System Tasks or `POST /api/settings/system-tasks`.
+Background tasks on cron schedules, defined with their defaults and words in `system-task-definitions.ts`. What each does lives in `system-task-runs.ts`, the Settings page and Run now in `system-task-settings.ts`. Runner infrastructure in `src/lib/runner/system-task-runner.ts`, managed via Settings > System tasks or `POST /api/settings/system-tasks`.
 
-| Task | Default schedule | Enabled |
-| :--- | :--- | :--- |
-| `HEALTH_CHECK` | Every minute | Yes |
-| `UPDATE_DB_VERSIONS` | Hourly | Yes |
-| `REFRESH_STORAGE_STATS` | Hourly | Yes |
-| `WARMUP_STORAGE_CACHE` | Hourly | Yes |
-| `CHECK_FOR_UPDATES` | Daily midnight | Yes |
-| `CLEAN_OLD_LOGS` | Daily midnight | Yes |
-| `SYNC_PERMISSIONS` | Daily midnight | Yes |
-| `CONFIG_BACKUP` | Daily 3 AM | No |
-| `INTEGRITY_CHECK` | Weekly Sunday 4 AM | No |
+| Task | Default schedule | Enabled | Follows |
+| :--- | :--- | :--- | :--- |
+| `HEALTH_CHECK` | Every minute | Yes | |
+| `STUCK_EXECUTION_CHECK` | Every 5 minutes | Yes | the stuck run timeout, off at `0` |
+| `UPDATE_DB_VERSIONS` | Hourly | Yes | |
+| `REFRESH_STORAGE_STATS` | Hourly | Yes | |
+| `WARMUP_STORAGE_CACHE` | Hourly | Yes | |
+| `CHECK_FOR_UPDATES` | Daily midnight | Yes | `general.checkForUpdates` |
+| `CLEAN_OLD_LOGS` | Daily midnight | Yes | |
+| `SYNC_PERMISSIONS` | Daily midnight | Yes | |
+| `CONFIG_BACKUP` | Daily 3 AM | No | `config.backup.enabled`, `config.backup.schedule` |
+| `INTEGRITY_CHECK` | Weekly Sunday 4 AM | No | |
+
+A task that follows a setting has no switch of its own: `getTaskEnabled` and `setTaskEnabled` read and write that setting, so the two never disagree. A schedule is checked with `isValidCron` before it is stored. Every run records its start, length, whether it needs a look and a short result under `task.<id>.lastRun`, and each run function returns that result as a `TaskOutcome`. A task set to run at start runs once in `scheduler.init()`, never from `refresh()`, which runs after every saved job or setting. Run now goes through `startSystemTask`, which answers at once and refuses a task that runs already.
 
 Scheduled and internal tasks run as system and bypass permission checks.
 

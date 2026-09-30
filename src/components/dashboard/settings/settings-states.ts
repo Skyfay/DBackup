@@ -1,0 +1,43 @@
+import { formatBytes } from "@/lib/utils";
+import type { SettingsModel } from "@/services/system/settings-types";
+import type { SettingsPartId } from "./settings-parts";
+
+/** The state a part shows beside its name in the navigation, like how long the certificate has left. */
+export interface PartState {
+    text: string;
+    /** A state that needs a look, as a dot in its color. */
+    tone?: "warning" | "destructive";
+}
+
+/** When the certificate starts to warn, like the part itself. */
+export const CERTIFICATE_WARN_DAYS = 30;
+
+function certificateState(certificate: SettingsModel["certificate"]): PartState | null {
+    if (!certificate || certificate.error) return { text: "Unreadable", tone: "warning" };
+    if (!certificate.isHttpsEnabled) return { text: "Off" };
+    if (!certificate.exists) return { text: "No certificate", tone: "warning" };
+    if (certificate.expired) return { text: "Expired", tone: "destructive" };
+    if (certificate.daysRemaining <= CERTIFICATE_WARN_DAYS) {
+        return { text: certificate.daysRemaining === 1 ? "1 day" : certificate.daysRemaining < 1 ? "Today" : `${certificate.daysRemaining} days`, tone: "warning" };
+    }
+    return null;
+}
+
+function configBackupState({ settings, lastRun }: SettingsModel["configBackup"]): PartState | null {
+    if (!settings.enabled) return { text: "Off", tone: "warning" };
+    if (lastRun && !lastRun.ok) return { text: "Failed", tone: "warning" };
+    return null;
+}
+
+/** The state of every part that has one. */
+export function partStates(model: SettingsModel): Partial<Record<SettingsPartId, PartState>> {
+    const problems = model.tasks.filter((task) => task.lastRun && !task.lastRun.ok).length;
+    const states: Partial<Record<SettingsPartId, PartState | null>> = {
+        tasks: problems > 0 ? { text: problems === 1 ? "1 problem" : `${problems} problems`, tone: "warning" } : { text: String(model.tasks.length) },
+        notifications: { text: `${model.notifications.on} of ${model.notifications.total}` },
+        database: model.database ? { text: formatBytes(model.database.totalBytes, 0) } : null,
+        "config-backup": configBackupState(model.configBackup),
+        https: certificateState(model.certificate),
+    };
+    return Object.fromEntries(Object.entries(states).filter(([, state]) => state)) as Partial<Record<SettingsPartId, PartState>>;
+}

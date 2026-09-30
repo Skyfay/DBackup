@@ -1,95 +1,26 @@
 "use server"
 
-import prisma from "@/lib/prisma";
-import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { checkPermission } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { logger } from "@/lib/logging/logger";
-import { wrapError } from "@/lib/logging/errors";
-import { scheduler } from "@/lib/server/scheduler";
-import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
-import { auditService } from "@/services/audit-service";
-import { configBackupSettings, settingsChanges, SETTINGS_AREAS } from "@/services/system/settings-audit";
-
-const log = logger.child({ action: "config-backup-settings" });
+import { MAX_CONFIG_BACKUPS_KEPT, saveConfigBackupSettings } from "@/services/config/config-backup-settings";
+import { configBackupSettings, SETTINGS_AREAS } from "@/services/system/settings-audit";
+import { invalid, savePart, type SaveResult } from "@/lib/settings/save-part";
 
 const configBackupSchema = z.object({
     enabled: z.boolean(),
-    // schedule: z.string().min(1, "Schedule is required"), // Removed
-    storageId: z.string().min(1, "Destination is required"),
-    profileId: z.string().optional().or(z.literal("")), // Can be empty if secrets not included? But UI recommends it.
+    storageId: z.string(),
+    profileId: z.string(),
+    schedule: z.string().trim().min(1, "Pick a schedule"),
     includeSecrets: z.boolean(),
     includeStatistics: z.boolean(),
-    retention: z.coerce.number().min(1).default(10),
+    retention: z.coerce.number().int().min(1).max(MAX_CONFIG_BACKUPS_KEPT),
 });
 
-export async function updateConfigBackupSettings(data: z.infer<typeof configBackupSchema>) {
+export async function saveConfigBackupSettingsAction(data: z.infer<typeof configBackupSchema>): Promise<SaveResult> {
     const user = await checkPermission(PERMISSIONS.SETTINGS.WRITE);
 
-    const result = configBackupSchema.safeParse(data);
-    if (!result.success) {
-        return { success: false, error: result.error.issues[0].message };
-    }
-
-    if (result.data.includeSecrets && !result.data.profileId) {
-        return { success: false, error: "Encryption Profile is required when including secrets." };
-    }
-
-    try {
-        const before = await configBackupSettings();
-        await prisma.$transaction([
-            prisma.systemSetting.upsert({
-                where: { key: "config.backup.enabled" },
-                update: { value: String(result.data.enabled) },
-                create: { key: "config.backup.enabled", value: String(result.data.enabled) },
-            }),
-            /* Schedule is now managed in System Tasks
-            prisma.systemSetting.upsert({
-                where: { key: "config.backup.schedule" },
-                update: { value: result.data.schedule },
-                create: { key: "config.backup.schedule", value: result.data.schedule },
-            }),
-            */
-            prisma.systemSetting.upsert({
-                where: { key: "config.backup.storageId" },
-                update: { value: result.data.storageId },
-                create: { key: "config.backup.storageId", value: result.data.storageId },
-            }),
-            prisma.systemSetting.upsert({
-                where: { key: "config.backup.profileId" },
-                update: { value: result.data.profileId || "" },
-                create: { key: "config.backup.profileId", value: result.data.profileId || "" },
-            }),
-            prisma.systemSetting.upsert({
-                where: { key: "config.backup.includeSecrets" },
-                update: { value: String(result.data.includeSecrets) },
-                create: { key: "config.backup.includeSecrets", value: String(result.data.includeSecrets) },
-            }),
-             prisma.systemSetting.upsert({
-                where: { key: "config.backup.retention" },
-                update: { value: String(result.data.retention) },
-                create: { key: "config.backup.retention", value: String(result.data.retention) },
-            }),
-            prisma.systemSetting.upsert({
-                where: { key: "config.backup.includeStatistics" },
-                update: { value: String(result.data.includeStatistics) },
-                create: { key: "config.backup.includeStatistics", value: String(result.data.includeStatistics) },
-            }),
-        ]);
-
-        const changes = settingsChanges(before, await configBackupSettings());
-        if (changes.length > 0) {
-            await auditService.log(user.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.SYSTEM, { area: SETTINGS_AREAS.CONFIG_BACKUP, changes });
-        }
-
-        // Refresh scheduler so enabling/disabling takes effect immediately without a restart
-        scheduler.refresh().catch((e) => log.error("Scheduler refresh failed after config backup settings update", {}, wrapError(e)));
-
-        revalidatePath("/dashboard/settings");
-        return { success: true };
-    } catch (error: unknown) {
-        log.error("Failed to update config backup settings", {}, wrapError(error));
-        return { success: false, error: "Failed to update settings" };
-    }
+    const parsed = configBackupSchema.safeParse(data);
+    if (!parsed.success) return invalid(parsed.error.issues);
+    return savePart(user.id, SETTINGS_AREAS.CONFIG_BACKUP, configBackupSettings, () => saveConfigBackupSettings(parsed.data));
 }

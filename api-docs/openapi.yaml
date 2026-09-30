@@ -2623,15 +2623,19 @@ paths:
               properties:
                 taskId:
                   type: string
+                  example: system.health_check
                 schedule:
                   type: string
-                  description: Cron expression
+                  description: Cron expression the scheduler can read
                   example: "*/5 * * * *"
                 runOnStartup:
                   type: boolean
                 enabled:
                   type: boolean
+                  description: For a task that follows a setting, like Check for updates, this is that setting
       responses:
+        "400":
+          description: An unknown task or a schedule the scheduler cannot read
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -2645,7 +2649,7 @@ paths:
     put:
       tags: [Settings]
       summary: Run System Task Now
-      description: Manually trigger a system task (non-blocking).
+      description: Starts a system task by hand and answers at once. The integrity check returns its run in History as `executionId`.
       operationId: runSystemTask
       security:
         - BearerAuth: []
@@ -2660,10 +2664,14 @@ paths:
                 taskId:
                   type: string
       responses:
+        "400":
+          description: An unknown task
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "409":
+          description: The task is running already, or DBackup optimizes or copies its database
         "200":
           description: Task started
           content:
@@ -2673,9 +2681,9 @@ paths:
                 properties:
                   success:
                     type: boolean
-                  message:
+                  executionId:
                     type: string
-                    example: "Task started"
+                    description: The run in History, for a task that writes one
 
   # ─── Health ────────────────────────────────────────────────────
   /health:
@@ -3800,19 +3808,66 @@ components:
       properties:
         id:
           type: string
-          example: health-check
+          example: system.health_check
+        name:
+          type: string
+          example: "Health checks"
         label:
           type: string
-          example: "Health Check"
+          description: The same as name, kept for earlier clients
+          example: "Health checks"
         description:
           type: string
         schedule:
           type: string
-          example: "*/5 * * * *"
+          example: "*/1 * * * *"
         runOnStartup:
           type: boolean
         enabled:
           type: boolean
+        running:
+          type: boolean
+        nextRunAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastRunAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastRun:
+          type: object
+          nullable: true
+          properties:
+            at:
+              type: string
+              format: date-time
+            durationMs:
+              type: number
+              nullable: true
+            ok:
+              type: boolean
+              description: False when the run needs a look
+            summary:
+              type: string
+              nullable: true
+              example: "2,418 removed"
+            executionId:
+              type: string
+        follows:
+          type: object
+          nullable: true
+          description: The setting of another part of the Settings page that switches the task on and off
+          properties:
+            part:
+              type: string
+              enum: [general, config-backup]
+            setting:
+              type: string
+              example: "Look for new versions"
+        timezone:
+          type: string
+          example: Europe/Zurich
 
     HealthResponse:
       type: object

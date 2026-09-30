@@ -72,7 +72,7 @@ Mismatched key + database = all credentials broken. The fix is to set the correc
 
 DBackup does not currently support in-place key rotation (re-encrypting all data with a new key). To rotate:
 
-1. Export your configuration via **Settings → Config Backup**
+1. Back up your configuration via **Settings → Configuration backup**
 2. Spin up a fresh instance with a new `ENCRYPTION_KEY`
 3. Re-import the config - credentials will need to be re-entered manually since they were encrypted with the old key
 

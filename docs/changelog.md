@@ -43,6 +43,9 @@ All notable changes to DBackup are documented here.
 - **users**: The Sign-in tab lists every sign-in provider with its logo, where it signs in, who is linked through it, the last sign-in and what happens to someone new, as a table or as cards. A provider opens a panel with what to set up in the provider, the people linked through it and its endpoints, with Check connection.
 - **users**: New provider starts from the provider as a card and checks its URL right away, beside the steps to set it up in the provider with the callback URL to copy. Edit never shows the client secret, and Delete names who cannot sign in afterwards.
 - **SSO**: Each sign-in provider puts the people it adds into a group picked for it. They started without a group and saw nothing before.
+- **settings**: The Settings page lists its parts on the left with the state of each, like a configuration backup that is off or a certificate that runs out soon, and a search finds every setting. Changes wait in a bar at the foot until they are saved, and a phone lists the parts and opens each on its own.
+- **settings**: The system tasks are a list with their schedule in words, their last run with what it did and a switch each, and a task opens an Edit dialog with the schedule picker of the jobs. The configuration backup sets its destination, key and schedule in one place and shows when it last ran.
+
 
 ### 🐛 Bug Fixes
 
@@ -94,6 +97,15 @@ All notable changes to DBackup are documented here.
 - **notifications**: The reminder interval picked for a system notification is saved. Every save dropped it before, so reminders kept the default of 24 hours and could not be turned off.
 - **SSO**: Deleting a sign-in provider no longer counts people with a passkey among those who cannot sign in afterwards.
 - **SSO**: The callback URL of a provider starts with `BETTER_AUTH_URL`, which DBackup sends to the provider, instead of the address the admin opened DBackup at.
+- **settings**: A system task set to run at start no longer runs again each time a job or a setting is saved.
+- **settings**: Run now of a system task answers right away instead of after the task finished, and a task that runs already does not start a second time.
+- **settings**: A schedule set for the configuration backup under System tasks applies on instances that still had one stored by an older version, and the system tasks API refuses an unknown task or a schedule the scheduler cannot read.
+- **settings**: Saving the general settings no longer stores a file name pattern with an unknown token. A job without a naming template used it while no template was the default and named its files `{name}_` and a date.
+- **settings**: Someone who may only read the settings sees them without controls, instead of forms whose changes failed to save. A change that failed to save no longer looks saved.
+- **settings**: The certificate no longer shows HTTPS as off when it cannot be read, or as expired on its last day.
+- **settings**: A new self-signed certificate keeps the old one when openssl fails, and an uploaded EC or Ed25519 key is checked against its certificate like an RSA key.
+- **settings**: Passkey sign-in can no longer be turned off while `DISABLE_EMAIL_LOGIN` and no sign-in provider leave it the only way in.
+
 
 ### 🔒 Security
 
@@ -119,6 +131,8 @@ All notable changes to DBackup are documented here.
 - **settings**: Only a SuperAdmin restores a configuration backup, which brings back users and groups. The right to change the settings was enough before.
 - **users**: Only a SuperAdmin resets the second factor of a SuperAdmin or signs them out.
 - **users**: Nobody changes the group they are in. Anyone who may change groups could give their own group every permission before.
+- **auth**: The rate limits count over their whole window again. The counters started over every 30 seconds, which allowed twice the sign-in attempts in a window of a minute.
+
 
 ### 🎨 Improvements
 
@@ -191,6 +205,9 @@ All notable changes to DBackup are documented here.
 - **api**: The new `GET /api/audit`, `/api/audit/{id}`, `/api/audit/timeline` and `/api/audit/export` return the audit log a page at a time, one entry, the entries per person and day, and the filtered entries as CSV.
 - **api**: The new `GET /api/sso-providers` returns every sign-in provider with the people linked through it and the numbers of the Sign-in tab, never a client secret.
 - **SSO**: The provider ID of a sign-in provider stays once it is saved, since its callback URL and every link to it use it.
+- **settings**: Check for updates follows **Look for new versions** under General and the stuck run watchdog follows the time there, so each has one switch. An update turns that setting off once where the task alone was off.
+- **api**: `GET /api/settings/system-tasks` also returns the last run of each task with how long it took and what it did, whether it runs now and which setting it follows.
+
 
 ### 🗑️ Removed
 
@@ -232,11 +249,15 @@ All notable changes to DBackup are documented here.
 - **docs**: A new Audit Log guide describes the tab, its filters, the timeline, the export and what is recorded. The developer guide describes how an entry is written, and the API key and user guides point to it.
 - **docs**: The SSO guide describes the Sign-in tab, New provider, Disable and Delete and the group of new people, and no longer claims that a provider takes several email domains. The developer guide describes how the server decides who signs in through which provider.
 - **docs**: The groups guide lists what only a SuperAdmin does, and the config backup guide says who restores a configuration and where.
+- **docs**: A new Settings guide describes the parts of the page, the search, the save bar and every system task with what it follows. The guides for data retention, rate limits, the configuration backup and time zones use the new names.
+
 
 ### 🧪 Tests
 
 - **tests**: The test that generates an SSH key no longer fails at random during a full run, where the busy crypto thread pool made it slower than the default timeout.
 - **tests**: The palette color guard allows 11 colors without a dark variant, down from 37, and the guard for a height on the root of a scroll area allows 2, down from 3.
+- **tests**: New tests cover the permission check of every save on the Settings page, the settings the system tasks follow and the fixes of the certificate, the scheduler and the rate limits.
+
 
 ### 🐳 Docker
 

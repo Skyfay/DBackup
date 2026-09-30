@@ -130,7 +130,7 @@ describe("runConfigBackup - early exits", () => {
     it("returns early when config.backup.enabled is not 'true'", async () => {
         mockPrisma.systemSetting.findUnique.mockResolvedValue({ key: "config.backup.enabled", value: "false" });
 
-        await runConfigBackup();
+        expect(await runConfigBackup()).toEqual({ skipped: "Off under Configuration backup" });
 
         // Storage should never be touched
         expect(mockStorageAdapter.upload).not.toHaveBeenCalled();
@@ -144,14 +144,14 @@ describe("runConfigBackup - early exits", () => {
         expect(mockStorageAdapter.upload).not.toHaveBeenCalled();
     });
 
-    it("returns early when no storageId is configured", async () => {
+    it("fails when it is on without a destination, so the run shows as failed", async () => {
         mockPrisma.systemSetting.findUnique.mockImplementation(({ where }: { where: { key: string } }) => {
             if (where.key === "config.backup.enabled") return Promise.resolve({ key: "config.backup.enabled", value: "true" });
             // All others return null including storageId
             return Promise.resolve(null);
         });
 
-        await runConfigBackup();
+        await expect(runConfigBackup()).rejects.toThrow("No destination is picked under Configuration backup");
 
         expect(mockStorageAdapter.upload).not.toHaveBeenCalled();
     });

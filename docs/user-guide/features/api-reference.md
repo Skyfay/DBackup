@@ -60,7 +60,7 @@ Authorization: Bearer dbackup_your_api_key
 | GET requests | 100/min per IP |
 | POST / PUT / DELETE | 20/min per IP |
 
-Rate limits are configurable in **Settings → Rate Limits**.
+Rate limits are configurable in **Settings → Rate limits**.
 
 ## Endpoints
 
@@ -87,7 +87,7 @@ For the full endpoint documentation with request/response schemas, examples, and
 | Databases | `GET /api/databases`, `POST /api/databases/read`, `GET /api/databases/runs?from=&until=[&errors=1]` | Every database of every server with the jobs that back it up, reading them from the servers now, and the runs and version changes of a time span for the Database Explorer, with the last error of each failed run on `errors=1`. A run names its databases by an index into `names`, which lists each set once |
 | Database servers | `GET /api/databases/servers`, `GET /api/databases/servers/:id`, `GET /api/databases/servers/:id/versions?page=&size=` | Every database server with its address, response time, kept backups and the newer backup of its engine it is behind, one server with its uptime over 30 days, and the versions it ran newest first with the backups made and kept on each, 5 a page unless `size` asks for up to 50. The kept backups need `storage:read` and the backups made `jobs:read` |
 | Vault | `GET /api/vault/:id/recovery-kit` | Download encryption recovery kit |
-| Settings | `GET/POST/PUT /api/settings/system-tasks` | System tasks configuration |
+| Settings | `GET/POST/PUT /api/settings/system-tasks` | The system tasks with their schedule, their last run and what each follows (`GET`), a change of one by its `taskId` (`POST`, an unknown task or a schedule the scheduler cannot read answers 400), and Run now (`PUT`, 409 while the task runs) |
 | Health | `GET /api/health` | Health check (public, no auth) |
 
 ## Permissions

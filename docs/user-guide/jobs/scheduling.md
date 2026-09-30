@@ -146,13 +146,13 @@ End of business day:
 
 ## Time Zone
 
-DBackup interprets all cron expressions in the **Scheduler Timezone** configured in **Settings - General**. For example, `0 3 * * *` means "3:00 AM in the configured scheduler timezone."
+DBackup interprets all cron expressions in the **Time zone** configured in **Settings - General**. For example, `0 3 * * *` means "3:00 AM in the configured scheduler timezone."
 
 To change the scheduler timezone:
 
 1. Open **Settings** in the sidebar.
-2. Go to the **General** tab.
-3. Select your timezone under **Scheduler Timezone**.
+2. Open **General**.
+3. Pick your zone under **Time zone** and click **Save changes**.
 
 The schedule picker shows its times in the scheduler timezone and names it beside the schedule in words, so you know exactly when a job will fire.
 

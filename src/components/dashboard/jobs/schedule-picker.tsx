@@ -47,6 +47,11 @@ interface SchedulePickerProps {
     presetId?: string;
     /** What runs on the schedule, which the warning names. */
     subject?: "job" | "preset";
+    /**
+     * Whether to warn about runs that wait for a free slot. Off for what takes no slot of the
+     * queue, like a system task.
+     */
+    withClashes?: boolean;
 }
 
 /**
@@ -54,12 +59,12 @@ interface SchedulePickerProps {
  * Below it the schedule in words with its next runs, and a small warning when runs would wait
  * for a free slot of the queue, with a time that has room.
  */
-export function SchedulePicker({ value, onChange, jobId, presetId, subject = "job" }: SchedulePickerProps) {
+export function SchedulePicker({ value, onChange, jobId, presetId, subject = "job", withClashes = true }: SchedulePickerProps) {
     const [schedule, setSchedule] = useState<SimpleSchedule>(() => parseCron(value) ?? DEFAULT_SCHEDULE);
     const [mode, setMode] = useState<ScheduleMode>(() => parseCron(value)?.frequency ?? "cron");
     const [cronText, setCronText] = useState(value);
     const timezone = useSchedulerTimezone();
-    const load = useScheduleLoad();
+    const load = useScheduleLoad(withClashes);
 
     const expression = mode === "cron" ? cronText.trim() : buildCron(schedule);
     const valid = isValidCron(expression);

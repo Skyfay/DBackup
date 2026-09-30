@@ -12,21 +12,6 @@ import { certificateChanges, certificateSnapshot, SETTINGS_AREAS } from "@/servi
 const log = logger.child({ action: "certificate" });
 
 /**
- * Returns information about the current TLS certificate.
- */
-export async function getCertificateInfo() {
-  await checkPermission(PERMISSIONS.SETTINGS.READ);
-
-  try {
-    const info = certificateService.getCertificateInfo();
-    return { success: true, data: info };
-  } catch (error) {
-    log.error("Failed to get certificate info", {}, wrapError(error));
-    return { success: false, error: getErrorMessage(error) };
-  }
-}
-
-/**
  * Uploads a custom TLS certificate and private key.
  * Requires SETTINGS.WRITE permission.
  */

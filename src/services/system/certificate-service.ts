@@ -17,11 +17,19 @@ export interface CertificateInfo {
   subject: string;
   validFrom: string;
   validTo: string;
+  /** The end of `validTo` as an ISO date, empty when it cannot be read. */
+  expiresAt: string;
+  /** Past its end. A certificate on its last day is not expired yet, though it has 0 days left. */
+  expired: boolean;
   serialNumber: string;
   fingerprint: string;
+  /** The names and addresses it is valid for, from its subject alternative names. */
+  names: string[];
   isSelfSigned: boolean;
   daysRemaining: number;
   isHttpsEnabled: boolean;
+  /** Why the certificate could not be read, when it exists but openssl failed on it. */
+  error?: string;
 }
 
 /**
@@ -51,8 +59,11 @@ export function getCertificateInfo(): CertificateInfo {
       subject: "",
       validFrom: "",
       validTo: "",
+      expiresAt: "",
+      expired: false,
       serialNumber: "",
       fingerprint: "",
+      names: [],
       isSelfSigned: false,
       daysRemaining: 0,
       isHttpsEnabled: httpsEnabled,
@@ -78,12 +89,14 @@ export function getCertificateInfo(): CertificateInfo {
     const isSelfSigned = subject === issuer || issuer.includes("DBackup Self-Signed");
 
     let daysRemaining = 0;
-    if (notAfter) {
-      const expiryDate = new Date(notAfter);
-      const now = new Date();
-      daysRemaining = Math.floor(
-        (expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
-      );
+    let expiresAt = "";
+    let expired = false;
+    const expiryDate = notAfter ? new Date(notAfter) : null;
+    if (expiryDate && !Number.isNaN(expiryDate.getTime())) {
+      const left = expiryDate.getTime() - Date.now();
+      daysRemaining = Math.floor(left / (1000 * 60 * 60 * 24));
+      expiresAt = expiryDate.toISOString();
+      expired = left <= 0;
     }
 
     return {
@@ -92,8 +105,11 @@ export function getCertificateInfo(): CertificateInfo {
       subject,
       validFrom: notBefore,
       validTo: notAfter,
+      expiresAt,
+      expired,
       serialNumber: serial,
       fingerprint,
+      names: readNames(),
       isSelfSigned,
       daysRemaining,
       isHttpsEnabled: httpsEnabled,
@@ -106,13 +122,45 @@ export function getCertificateInfo(): CertificateInfo {
       subject: "Error reading certificate",
       validFrom: "",
       validTo: "",
+      expiresAt: "",
+      expired: false,
       serialNumber: "",
       fingerprint: "",
+      names: [],
       isSelfSigned: false,
       daysRemaining: 0,
       isHttpsEnabled: httpsEnabled,
+      error: error instanceof Error ? error.message : String(error),
     };
   }
+}
+
+/**
+ * The names and addresses the certificate is valid for. An openssl too old for `-ext` gives
+ * none, which only leaves out that line.
+ */
+function readNames(): string[] {
+  try {
+    const text = execSync(`openssl x509 -in "${CERT_PATH}" -noout -ext subjectAltName`, {
+      encoding: "utf-8",
+      timeout: 5000,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return parseNames(text);
+  } catch {
+    return [];
+  }
+}
+
+/** "DNS:localhost, IP Address:127.0.0.1" under its heading, as a list. */
+export function parseNames(text: string): string[] {
+  const lines = text.split("\n");
+  const heading = lines.findIndex((line) => line.includes("Subject Alternative Name"));
+  if (heading === -1 || !lines[heading + 1]) return [];
+  return lines[heading + 1]
+    .split(",")
+    .map((entry) => entry.trim().replace(/^(DNS|IP Address|IP|email|URI):/i, ""))
+    .filter(Boolean);
 }
 
 /**
@@ -145,37 +193,24 @@ export function uploadCertificate(certPem: string, keyPem: string): void {
       timeout: 5000,
     });
 
-    // Validate key is parseable (try RSA first, then EC)
-    try {
-      execSync(`openssl rsa -in "${tmpKey}" -check -noout`, {
-        stdio: "pipe",
-        timeout: 5000,
-      });
-    } catch {
-      execSync(`openssl ec -in "${tmpKey}" -check -noout`, {
-        stdio: "pipe",
-        timeout: 5000,
-      });
-    }
+    // Validate the key is parseable, whatever its type (RSA, EC, Ed25519)
+    execSync(`openssl pkey -in "${tmpKey}" -noout`, {
+      stdio: "pipe",
+      timeout: 5000,
+    });
 
-    // Validate cert and key match (RSA modulus comparison)
-    try {
-      const certModulus = execSync(
-        `openssl x509 -in "${tmpCert}" -noout -modulus`,
-        { encoding: "utf-8", timeout: 5000 }
-      ).trim();
-      const keyModulus = execSync(
-        `openssl rsa -in "${tmpKey}" -noout -modulus`,
-        { encoding: "utf-8", timeout: 5000 }
-      ).trim();
-      if (certModulus !== keyModulus) {
-        throw new Error("Certificate and private key do not match.");
-      }
-    } catch (e) {
-      // For EC keys, modulus check doesn't apply - skip
-      if (e instanceof Error && e.message.includes("do not match")) {
-        throw e;
-      }
+    // The public key in the certificate must be the one of the private key. Comparing them works
+    // for every key type, where the modulus only exists for RSA.
+    const certPublicKey = execSync(`openssl x509 -in "${tmpCert}" -noout -pubkey`, {
+      encoding: "utf-8",
+      timeout: 5000,
+    }).trim();
+    const keyPublicKey = execSync(`openssl pkey -in "${tmpKey}" -pubout`, {
+      encoding: "utf-8",
+      timeout: 5000,
+    }).trim();
+    if (!certPublicKey || certPublicKey !== keyPublicKey) {
+      throw new Error("Certificate and private key do not match.");
     }
 
     // All validations passed - replace existing files
@@ -216,35 +251,38 @@ function getExtraSansFromAuthUrl(): string {
 }
 
 /**
- * Regenerates the self-signed certificate, replacing the existing one.
+ * Regenerates the self-signed certificate, replacing the existing one. The new files are made
+ * beside the old ones and only replace them once both exist, so a failure keeps the old ones.
  */
 export function regenerateSelfSignedCert(): void {
   if (!existsSync(CERTS_DIR)) {
     mkdirSync(CERTS_DIR, { recursive: true, mode: 0o700 });
   }
 
-  // Remove existing cert files
-  try {
-    if (existsSync(CERT_PATH)) unlinkSync(CERT_PATH);
-    if (existsSync(KEY_PATH)) unlinkSync(KEY_PATH);
-  } catch {
-    // ignore
-  }
-
   const extraSans = getExtraSansFromAuthUrl();
+  const newCert = path.join(CERTS_DIR, "tls.crt.new");
+  const newKey = path.join(CERTS_DIR, "tls.key.new");
 
   try {
     execSync(
-      `openssl req -x509 -newkey rsa:2048 -keyout "${KEY_PATH}" -out "${CERT_PATH}" ` +
+      `openssl req -x509 -newkey rsa:2048 -keyout "${newKey}" -out "${newCert}" ` +
         `-days 365 -nodes -subj "/CN=DBackup/O=DBackup Self-Signed" ` +
         `-addext "subjectAltName=DNS:localhost,IP:127.0.0.1${extraSans}"`,
       { stdio: "pipe", timeout: 30000 }
     );
-    execSync(`chmod 600 "${KEY_PATH}"`, { stdio: "pipe" });
-    execSync(`chmod 644 "${CERT_PATH}"`, { stdio: "pipe" });
+    execSync(`chmod 600 "${newKey}"`, { stdio: "pipe" });
+    execSync(`chmod 644 "${newCert}"`, { stdio: "pipe" });
+    renameSync(newKey, KEY_PATH);
+    renameSync(newCert, CERT_PATH);
     log.info("Self-signed TLS certificate regenerated successfully");
   } catch (error) {
     log.error("Failed to regenerate certificate", {}, wrapError(error));
+    try {
+      if (existsSync(newCert)) unlinkSync(newCert);
+      if (existsSync(newKey)) unlinkSync(newKey);
+    } catch {
+      // ignore cleanup errors
+    }
     throw new Error(
       "Failed to generate TLS certificate. Is openssl installed?"
     );

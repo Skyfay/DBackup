@@ -62,20 +62,27 @@ export async function getDataRetentionOverview(): Promise<DataRetentionOverview>
     };
 }
 
-export async function updateDataRetentionSetting(id: string, days: number): Promise<void> {
-    const setting = getDataRetentionSetting(id);
-    if (!setting) {
-        throw new ValidationError(`Unknown retention setting "${id}"`, { field: "id" });
-    }
-    if (!setting.choices.includes(days)) {
-        throw new ValidationError(`${days} is not an allowed value for ${setting.label}`, { field: "days" });
-    }
-
-    await prisma.systemSetting.upsert({
-        where: { key: setting.key },
-        update: { value: String(days) },
-        create: { key: setting.key, value: String(days), description: `Retention in days for ${setting.label}` },
+/**
+ * Saves the retention periods the save bar hands over, all or none. Each must be one the Data
+ * retention part offers.
+ */
+export async function updateDataRetentionSettings(values: Partial<Record<string, number>>): Promise<void> {
+    const writes = Object.entries(values).map(([id, days]) => {
+        const setting = getDataRetentionSetting(id);
+        if (!setting) {
+            throw new ValidationError(`Unknown retention setting "${id}"`, { field: "id" });
+        }
+        if (days === undefined || !setting.choices.includes(days)) {
+            throw new ValidationError(`${days} is not an allowed value for ${setting.label}`, { field: id });
+        }
+        return prisma.systemSetting.upsert({
+            where: { key: setting.key },
+            update: { value: String(days) },
+            create: { key: setting.key, value: String(days), description: `Retention in days for ${setting.label}` },
+        });
     });
+
+    await prisma.$transaction(writes);
 }
 
 const CLEANUPS: Record<DataRetentionId, (days: number) => Promise<number>> = {

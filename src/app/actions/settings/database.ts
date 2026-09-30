@@ -7,21 +7,9 @@ import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { getErrorMessage, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { auditService } from "@/services/audit-service";
-import { getDatabaseInfo, vacuumDatabase } from "@/services/system/database-service";
+import { vacuumDatabase } from "@/services/system/database-service";
 
 const log = logger.child({ action: "database" });
-
-/** Current size figures of the DBackup database. */
-export async function getDatabaseInfoAction() {
-    await checkPermission(PERMISSIONS.SETTINGS.READ);
-
-    try {
-        return { success: true, data: await getDatabaseInfo() };
-    } catch (error: unknown) {
-        log.error("Failed to read database info", {}, wrapError(error));
-        return { success: false, error: getErrorMessage(error) };
-    }
-}
 
 /** Runs VACUUM on the DBackup database. Refused while backups or restores are running. */
 export async function vacuumDatabaseAction() {

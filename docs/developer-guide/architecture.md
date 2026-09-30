@@ -343,21 +343,24 @@ Periodic Integrity Check:
 
 ## System Tasks
 
-9 built-in background tasks run on configurable cron schedules (Settings > System Tasks):
+10 built-in background tasks run on configurable cron schedules (Settings > System tasks):
 
-| Task | Default Schedule | Enabled by Default |
-|------|-----------------|-------------------|
-| `HEALTH_CHECK` | Every minute | Yes |
-| `UPDATE_DB_VERSIONS` | Hourly | Yes |
-| `REFRESH_STORAGE_STATS` | Hourly | Yes |
-| `WARMUP_STORAGE_CACHE` | Hourly | Yes |
-| `CHECK_FOR_UPDATES` | Daily midnight | Yes |
-| `CLEAN_OLD_LOGS` | Daily midnight | Yes |
-| `SYNC_PERMISSIONS` | Daily midnight | Yes |
-| `CONFIG_BACKUP` | Daily 3 AM | No |
-| `INTEGRITY_CHECK` | Weekly Sunday 4 AM | No |
+| Task | Default Schedule | Enabled by Default | Follows |
+|------|-----------------|-------------------|---------|
+| `HEALTH_CHECK` | Every minute | Yes | |
+| `STUCK_EXECUTION_CHECK` | Every 5 minutes | Yes | the stuck run timeout under General, off at `0` |
+| `UPDATE_DB_VERSIONS` | Hourly | Yes | |
+| `REFRESH_STORAGE_STATS` | Hourly | Yes | |
+| `WARMUP_STORAGE_CACHE` | Hourly | Yes | |
+| `CHECK_FOR_UPDATES` | Daily midnight | Yes | `general.checkForUpdates` |
+| `CLEAN_OLD_LOGS` | Daily midnight | Yes | |
+| `SYNC_PERMISSIONS` | Daily midnight | Yes | |
+| `CONFIG_BACKUP` | Daily 3 AM | No | `config.backup.enabled` and `config.backup.schedule` |
+| `INTEGRITY_CHECK` | Weekly Sunday 4 AM | No | |
 
-**Infrastructure:** `src/services/system/system-task-service.ts` + `src/lib/runner/system-task-runner.ts`
+A task that follows a setting has no switch of its own, `getTaskEnabled` and `setTaskEnabled` read and write that setting. Each run records when it started, how long it took, whether it needs a look and a short result under `task.<id>.lastRun`, which the Settings page shows. A task set to run at start runs once when the scheduler starts, never again when it refreshes after a saved job or setting.
+
+**Infrastructure:** `src/services/system/system-task-definitions.ts` (ids, defaults, words), `system-task-service.ts` (settings, runs, last run), `system-task-runs.ts` (what each task does), `system-task-settings.ts` (the Settings page and Run now) + `src/lib/runner/system-task-runner.ts`
 
 `CLEAN_OLD_LOGS` applies every setting from `src/lib/core/data-retention.ts` through `src/services/system/data-retention-service.ts`. While VACUUM or a database download runs (`src/services/system/database-service.ts`), the flag in `src/lib/server/database-maintenance.ts` makes the queue hold back pending jobs, restores refuse to start and system tasks skip their run.
 

@@ -46,7 +46,12 @@ src/services/
 │   ├── certificate-service.ts   # TLS certificate management
 │   ├── db-version-service.ts    # Tracks DB engine versions
 │   ├── healthcheck-service.ts   # Adapter connectivity monitoring
-│   ├── system-task-service.ts   # Built-in background task management
+│   ├── settings-model.ts        # The Settings page model, every part read at once
+│   ├── system-settings-service.ts # General, Sign-in and Privacy, read with defaults and saved whole
+│   ├── system-task-definitions.ts # Ids, defaults and words of the system tasks, what each follows
+│   ├── system-task-service.ts   # Task settings, runs and their last run
+│   ├── system-task-runs.ts      # What each task does, with a short result
+│   ├── system-task-settings.ts  # The System tasks part: rows, Edit, Run now
 │   └── update-service.ts        # New version detection
 ├── templates/
 │   ├── naming-template-service.ts    # File naming pattern templates
@@ -313,7 +318,7 @@ interface IntegrityCheckResult {
 }
 ```
 
-**Integration:** Registered as a system task (`system.integrity_check`) in `system-task-service.ts`. Runs weekly (Sunday 4 AM), disabled by default. Can be triggered manually via Settings → System Tasks.
+**Integration:** Registered as a system task (`system.integrity_check`) in `system-task-service.ts`. Runs weekly (Sunday 4 AM), disabled by default. Can be triggered manually via Settings → System tasks → Run now.
 
 ### NotificationLogService
 

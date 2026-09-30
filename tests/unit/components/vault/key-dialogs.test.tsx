@@ -59,7 +59,7 @@ describe("KeyDeleteDialog", () => {
         render(<KeyDeleteDialog keyRow={key({ configBackup: true })} canKit onKitDownloaded={vi.fn()} onClose={vi.fn()} onDeleted={vi.fn()} />);
 
         expect(screen.getByText("The config backup still encrypts with it")).toBeInTheDocument();
-        expect(screen.getByRole("link", { name: "Config backup" })).toHaveAttribute("href", "/dashboard/settings?tab=config");
+        expect(screen.getByRole("link", { name: "Configuration backup" })).toHaveAttribute("href", "/dashboard/settings?part=config-backup");
     });
 
     it("lists the backups that need the key and deletes only once a kit is confirmed", async () => {

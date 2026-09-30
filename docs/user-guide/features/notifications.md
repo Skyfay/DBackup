@@ -76,7 +76,7 @@ System notifications cover events beyond individual backup jobs: user activity, 
 
 ### Setup
 
-1. Go to **Settings** → **Notifications** tab
+1. Go to **Settings** → **Notifications**
 2. **Select global channels** – Choose which notification channels receive system alerts by default
 3. **Enable events** – Toggle individual events on or off
 4. Optionally override channels per event

@@ -100,26 +100,13 @@ GET /api/system/updates
 
 ## System Task Integration
 
-The update check runs as a system task (`system.update_check`):
+The update check runs as the system task **Check for updates** (`system.check_for_updates`, see `src/services/system/system-task-definitions.ts`):
 
-- **Default Schedule**: Daily at 4 AM (`0 4 * * *`)
-- **On Startup**: Optionally run on application start
-- **Manual Trigger**: Via Settings → System Tasks
+- **Default schedule**: every day at 00:00 (`0 0 * * *`), in the time zone of General
+- **On start**: ten seconds after DBackup started, once per start
+- **By hand**: Settings → System tasks → Run now
 
-```typescript
-// Register system task
-registerTask({
-  id: 'system.update_check',
-  name: 'Check for Updates',
-  schedule: '0 4 * * *',
-  handler: async () => {
-    const result = await updateService.checkForUpdates();
-    if (result.available) {
-      await notifyAdmins(result);
-    }
-  },
-});
-```
+The task has no switch of its own. It follows **Look for new versions** under Settings → General (`general.checkForUpdates`), so `getTaskEnabled` and `setTaskEnabled` of `system-task-service.ts` read and write that setting. While it is off, `updateService.checkForUpdates()` returns without asking GitHub, for the task and for the sidebar alike. A new version is reported through the notification `UPDATE_AVAILABLE`, at most once per version within its reminder interval.
 
 ## UI Notification
 
@@ -161,4 +148,4 @@ fetch(url, {
 });
 ```
 
-The cache can be manually invalidated via the System Tasks UI.
+A run of **Check for updates** reads through the same cache of an hour.

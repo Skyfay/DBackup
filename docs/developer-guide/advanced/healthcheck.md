@@ -106,7 +106,7 @@ if (success) {
 
 ### Retention
 
-Logs are automatically deleted once a day by the `CLEAN_OLD_LOGS` system task, not on every health check run. Default retention is 2 days, configurable as **Health Check History** under Settings → General → Data Retention (`healthcheck.logRetentionDays`).
+Logs are automatically deleted once a day by the `CLEAN_OLD_LOGS` system task, not on every health check run. Default retention is 2 days, configurable as **Health check history** under Settings → Data retention (`healthcheck.logRetentionDays`).
 
 ## System Task Integration
 
@@ -115,7 +115,7 @@ Logs are automatically deleted once a day by the `CLEAN_OLD_LOGS` system task, n
 The healthcheck is integrated as a system task (`system.health_check`).
 
 - **Default Interval**: Every minute (`*/1 * * * *`)
-- **Configuration**: Settings → System Tasks
+- **Configuration**: Settings → System tasks
 - **Manual Trigger**: Can be run on-demand via UI
 
 ## Adapter Integration
@@ -230,9 +230,9 @@ tests/unit/services/healthcheck-service.test.ts
 
 ### Manual Testing
 
-1. Go to **Settings** → **System Tasks**
-2. Find "Health Check & Connectivity"
-3. Click **Run Now**
+1. Go to **Settings** → **System tasks**
+2. Find **Health checks**
+3. Click **Run now** at the end of its row
 4. Check the terminal logs for output
 5. Navigate to **Sources** or **Destinations** - status badges should be updated
 

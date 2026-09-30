@@ -1,7 +1,7 @@
 import prisma from "@/lib/prisma";
 import { diffFields, type AuditField, type AuditValue } from "@/lib/core/audit-diff";
 import type { AuditChange } from "@/lib/core/audit-types";
-import { DATA_RETENTION_SETTINGS, RETENTION_NEVER, formatRetentionDays, type DataRetentionId } from "@/lib/core/data-retention";
+import { DATA_RETENTION_SETTINGS, formatRetentionDays, type DataRetentionId } from "@/lib/core/data-retention";
 import { RATE_LIMIT_DEFAULTS, RATE_LIMIT_KEYS } from "@/lib/rate-limit";
 import type { CertificateInfo } from "@/services/system/certificate-service";
 
@@ -13,6 +13,7 @@ import type { CertificateInfo } from "@/services/system/certificate-service";
 /** The parts of the settings, as an entry names them in `area`. */
 export const SETTINGS_AREAS = {
     GENERAL: "General",
+    SIGN_IN: "Sign-in",
     DATA_RETENTION: "Data retention",
     NOTIFICATIONS: "Notifications",
     RATE_LIMITS: "Rate limits",
@@ -67,6 +68,7 @@ function secondsText(value: string): string {
 }
 
 const seconds = (value: string) => `${value} seconds`;
+const requests = (value: string) => `${value} ${value === "1" ? "request" : "requests"}`;
 
 async function readStored(settings: readonly StoredSetting[]): Promise<SettingsSnapshot> {
     const rows = await prisma.systemSetting.findMany({ where: { key: { in: settings.map((setting) => setting.key) } }, select: { key: true, value: true } });
@@ -82,48 +84,51 @@ async function readStored(settings: readonly StoredSetting[]): Promise<SettingsS
 }
 
 const general = (stuckTimeoutKey: string, stuckTimeoutDefault: number): StoredSetting[] => [
-    { key: "general.instanceName", label: "Instance name", fallback: "" },
-    { key: "maxConcurrentJobs", label: "Max concurrent jobs", fallback: "1" },
-    { key: stuckTimeoutKey, label: "Stuck job timeout", fallback: String(stuckTimeoutDefault), show: minutesText },
-    { key: "general.checkForUpdates", label: "Check for updates", fallback: "true", show: on },
-    { key: "system.timezone", label: "Scheduler timezone", fallback: "UTC" },
-    { key: "system.filenamePattern", label: "File name pattern", fallback: "{name}_yyyy-MM-dd_HH-mm-ss" },
-    { key: "general.showQuickSetup", label: "Always show Quick Setup", fallback: "false", show: on },
-    { key: "auth.sessionDuration", label: "Session duration", fallback: "604800", show: secondsText },
+    { key: "general.instanceName", label: "Name", fallback: "" },
+    { key: "system.timezone", label: "Time zone", fallback: "UTC" },
+    { key: "maxConcurrentJobs", label: "Runs at the same time", fallback: "1" },
+    { key: stuckTimeoutKey, label: "Fail a run that stops reporting after", fallback: String(stuckTimeoutDefault), show: minutesText },
+    { key: "general.checkForUpdates", label: "Look for new versions", fallback: "true", show: on },
+    { key: "general.showQuickSetup", label: "Show Quick Setup in the sidebar", fallback: "false", show: on },
+];
+
+const SIGN_IN: StoredSetting[] = [
+    { key: "auth.sessionDuration", label: "Sessions last", fallback: "604800", show: secondsText },
     // Stored as a switch that turns it off, shown the way round that on means on.
     { key: "auth.disablePasskeyLogin", label: "Sign in with a passkey", fallback: "false", show: (value) => !on(value) },
 ];
 
 const PRIVACY: StoredSetting[] = [
-    { key: "privacy.includeActorInMetadata", label: "Store trigger actor in metadata", fallback: "true", show: on },
+    { key: "privacy.includeActorInMetadata", label: "Name who started a backup in its metadata", fallback: "true", show: on },
 ];
 
 const INTEGRITY: StoredSetting[] = [
-    { key: "integrity.scanMode", label: "Scan mode", fallback: "jobs", show: (value) => (value === "destinations" ? "All files" : "Jobs") },
-    { key: "integrity.skipPassed", label: "Skip verified backups", fallback: "false", show: on },
-    { key: "integrity.maxAgeDays", label: "Max backup age", fallback: "0", show: count("day", "days", "No limit") },
-    { key: "integrity.maxFileSizeMb", label: "Max file size", fallback: "0", show: count("MB", "MB", "No limit") },
+    { key: "integrity.scanMode", label: "What it checks", fallback: "jobs", show: (value) => (value === "destinations" ? "Every file" : "Backups of jobs") },
+    { key: "integrity.skipPassed", label: "Skip backups that passed", fallback: "false", show: on },
+    { key: "integrity.maxAgeDays", label: "Only backups newer than", fallback: "0", show: count("day", "days", "No limit") },
+    { key: "integrity.maxFileSizeMb", label: "Skip files larger than", fallback: "0", show: count("MB", "MB", "No limit") },
 ];
 
 const RATE_LIMITS: StoredSetting[] = [
-    { key: RATE_LIMIT_KEYS.authPoints, label: "Authentication max requests", fallback: String(RATE_LIMIT_DEFAULTS.auth.points) },
-    { key: RATE_LIMIT_KEYS.authDuration, label: "Authentication time window", fallback: String(RATE_LIMIT_DEFAULTS.auth.duration), show: seconds },
-    { key: RATE_LIMIT_KEYS.apiPoints, label: "API read max requests", fallback: String(RATE_LIMIT_DEFAULTS.api.points) },
-    { key: RATE_LIMIT_KEYS.apiDuration, label: "API read time window", fallback: String(RATE_LIMIT_DEFAULTS.api.duration), show: seconds },
-    { key: RATE_LIMIT_KEYS.mutationPoints, label: "API write max requests", fallback: String(RATE_LIMIT_DEFAULTS.mutation.points) },
-    { key: RATE_LIMIT_KEYS.mutationDuration, label: "API write time window", fallback: String(RATE_LIMIT_DEFAULTS.mutation.duration), show: seconds },
+    { key: RATE_LIMIT_KEYS.authPoints, label: "Sign-ins", fallback: String(RATE_LIMIT_DEFAULTS.auth.points), show: requests },
+    { key: RATE_LIMIT_KEYS.authDuration, label: "Sign-ins window", fallback: String(RATE_LIMIT_DEFAULTS.auth.duration), show: seconds },
+    { key: RATE_LIMIT_KEYS.apiPoints, label: "Reads through the API", fallback: String(RATE_LIMIT_DEFAULTS.api.points), show: requests },
+    { key: RATE_LIMIT_KEYS.apiDuration, label: "Reads through the API window", fallback: String(RATE_LIMIT_DEFAULTS.api.duration), show: seconds },
+    { key: RATE_LIMIT_KEYS.mutationPoints, label: "Changes through the API", fallback: String(RATE_LIMIT_DEFAULTS.mutation.points), show: requests },
+    { key: RATE_LIMIT_KEYS.mutationDuration, label: "Changes through the API window", fallback: String(RATE_LIMIT_DEFAULTS.mutation.duration), show: seconds },
 ];
 
 const CONFIG_DESTINATION = "config.backup.storageId";
 const CONFIG_KEY = "config.backup.profileId";
 
 const CONFIG_BACKUP: StoredSetting[] = [
-    { key: "config.backup.enabled", label: "Automated backups", fallback: "false", show: on },
+    { key: "config.backup.enabled", label: "Back up the configuration", fallback: "false", show: on },
     { key: CONFIG_DESTINATION, label: "Destination", fallback: "" },
     { key: CONFIG_KEY, label: "Encryption key", fallback: "" },
-    { key: "config.backup.includeSecrets", label: "Include secrets", fallback: "false", show: on },
-    { key: "config.backup.includeStatistics", label: "Include statistics", fallback: "false", show: on },
-    { key: "config.backup.retention", label: "Backups kept", fallback: "10" },
+    { key: "config.backup.schedule", label: "Schedule", fallback: "0 3 * * *" },
+    { key: "config.backup.includeSecrets", label: "Include the logins", fallback: "false", show: on },
+    { key: "config.backup.includeStatistics", label: "Include the history", fallback: "false", show: on },
+    { key: "config.backup.retention", label: "Keeps", fallback: "10" },
 ];
 
 /** The General part. The stuck run watchdog is imported only here, it pulls the queue in with it. */
@@ -132,6 +137,7 @@ export async function generalSettings(): Promise<SettingsSnapshot> {
     return readStored(general(STUCK_TIMEOUT_SETTING, DEFAULT_STUCK_TIMEOUT_MINUTES));
 }
 
+export const signInSettings = () => readStored(SIGN_IN);
 export const privacySettings = () => readStored(PRIVACY);
 export const integritySettings = () => readStored(INTEGRITY);
 export const rateLimitSettings = () => readStored(RATE_LIMITS);
@@ -152,20 +158,11 @@ export async function configBackupSettings(): Promise<SettingsSnapshot> {
     return snapshot;
 }
 
-/** "90 days", "1 year" or "Never", in the words of the Data Retention card. */
-function retentionText(days: number): string {
-    const text = formatRetentionDays(days);
-    return days === RETENTION_NEVER ? text : text.toLowerCase();
-}
-
-/** "Audit log" for "Audit Log". */
-const sentenceCase = (label: string) => label.replace(/ ([A-Z])([a-z])/g, (_match, first: string, rest: string) => ` ${first.toLowerCase()}${rest}`);
-
-/** What changed between two readings of the retention periods, in days by setting. */
+/** What changed between two readings of the retention periods, in the words of the Data retention part. */
 export function retentionChanges(before: Record<DataRetentionId, number>, after: Record<DataRetentionId, number>): AuditChange[] {
-    const fields = Object.fromEntries(DATA_RETENTION_SETTINGS.map((setting) => [setting.id, { label: sentenceCase(setting.label) }]));
+    const fields = Object.fromEntries(DATA_RETENTION_SETTINGS.map((setting) => [setting.id, { label: setting.label }]));
     const shown = (values: Record<DataRetentionId, number>) =>
-        Object.fromEntries(DATA_RETENTION_SETTINGS.map((setting) => [setting.id, retentionText(values[setting.id])]));
+        Object.fromEntries(DATA_RETENTION_SETTINGS.map((setting) => [setting.id, formatRetentionDays(values[setting.id])]));
     return diffFields(shown(before), shown(after), fields);
 }
 

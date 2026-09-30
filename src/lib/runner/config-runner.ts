@@ -20,17 +20,20 @@ import { NOTIFICATION_EVENTS } from "@/lib/notifications";
 const pipelineAsync = promisify(pipeline);
 const log = logger.child({ runner: "ConfigRunner" });
 
+/** What a configuration backup did: the file it wrote and where, or why it did not run. */
+export type ConfigBackupResult = { fileName: string; destination: string } | { skipped: string };
+
 /**
  * Executes a Configuration Backup.
  */
-export async function runConfigBackup() {
+export async function runConfigBackup(): Promise<ConfigBackupResult> {
     log.info("Starting Configuration Backup");
 
     // 1. Fetch Configuration Settings
     const enabled = await prisma.systemSetting.findUnique({ where: { key: "config.backup.enabled" } });
     if (enabled?.value !== "true") {
         log.info("Aborted - feature disabled");
-        return;
+        return { skipped: "Off under Configuration backup" };
     }
 
     const storageId = await prisma.systemSetting.findUnique({ where: { key: "config.backup.storageId" } });
@@ -41,8 +44,7 @@ export async function runConfigBackup() {
     const retentionCount = retentionCountSetting ? parseInt(retentionCountSetting.value) : 10;
 
     if (!storageId?.value) {
-        log.error("No storage destination configured");
-        return;
+        throw new ConfigurationError("config-backup", "No destination is picked under Configuration backup");
     }
 
     // 2. Resolve Storage Adapter
@@ -208,6 +210,8 @@ export async function runConfigBackup() {
     if (retentionCount > 0) {
         await applyConfigRetention(storageAdapter, decryptedConfig, retentionCount);
     }
+
+    return { fileName: remoteFilename, destination: storageConfig.name };
 }
 
 async function applyConfigRetention(adapter: StorageAdapter, config: any, keepParams: number) {

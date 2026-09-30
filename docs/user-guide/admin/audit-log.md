@@ -65,7 +65,7 @@ The address comes from the `X-Forwarded-For` or `X-Real-IP` header of the revers
 
 ## How Long Entries Stay
 
-The log keeps 90 days by default. Change it under **Settings → Data Retention**, see [Data Retention](/user-guide/admin/data-retention).
+The log keeps 90 days by default. Change it under **Settings → Data retention**, see [Data Retention](/user-guide/admin/data-retention).
 
 ## Next Steps
 

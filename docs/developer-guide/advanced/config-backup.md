@@ -68,7 +68,7 @@ Export runs automatically via the **System Task** scheduler (`config.backup`):
 
 ### Manual Trigger
 
-Via **Settings → System Tasks → Configuration Backup → Run Now**
+Via **Settings → Configuration backup → Back up now**, or **Run now** of the system task. The task follows `config.backup.enabled` and `config.backup.schedule`, which the Configuration backup part sets, and records where the file went as its last run.
 
 ### Pipeline Steps
 

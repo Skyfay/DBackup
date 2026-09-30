@@ -55,9 +55,9 @@ export function KeyUsers({ keyRow }: { keyRow: Pick<VaultKey, "jobs" | "configBa
             ))}
             {keyRow.configBackup && (
                 <UseRow
-                    href="/dashboard/settings?tab=config"
+                    href="/dashboard/settings?part=config-backup"
                     tile={<span className="flex size-7 shrink-0 items-center justify-center rounded-lg border bg-muted/50" aria-hidden="true"><Settings2 className="size-3.5 text-muted-foreground" /></span>}
-                    name="Config backup"
+                    name="Configuration backup"
                     detail="The backup of the settings of DBackup"
                 />
             )}

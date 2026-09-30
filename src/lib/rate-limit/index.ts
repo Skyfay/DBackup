@@ -56,12 +56,30 @@ export function getMutationLimiter() { return _limiters.mutation; }
 
 // ── Helpers ────────────────────────────────────────────────────
 
-function rebuildLimiters(config: RateLimitConfig): void {
-    _limiters = {
-        auth: new RateLimiterMemory({ points: config.auth.points, duration: config.auth.duration }),
-        api: new RateLimiterMemory({ points: config.api.points, duration: config.api.duration }),
-        mutation: new RateLimiterMemory({ points: config.mutation.points, duration: config.mutation.duration }),
-    };
+/** The limits the limiters were built with, so an unchanged config keeps their counters. */
+let _applied: RateLimitConfig = {
+    auth: { ...RATE_LIMIT_DEFAULTS.auth },
+    api: { ...RATE_LIMIT_DEFAULTS.api },
+    mutation: { ...RATE_LIMIT_DEFAULTS.mutation },
+};
+
+const same = (a: { points: number; duration: number }, b: { points: number; duration: number }) =>
+    a.points === b.points && a.duration === b.duration;
+
+/**
+ * Builds a limiter anew only where its limit changed. A new limiter starts counting from zero,
+ * and the middleware applies the config every 30 seconds, which reset every counter each time.
+ */
+function rebuildLimiters(config: RateLimitConfig): boolean {
+    const kinds = ["auth", "api", "mutation"] as const;
+    let changed = false;
+    for (const kind of kinds) {
+        if (same(_applied[kind], config[kind])) continue;
+        _limiters = { ..._limiters, [kind]: new RateLimiterMemory({ points: config[kind].points, duration: config[kind].duration }) };
+        changed = true;
+    }
+    _applied = { auth: { ...config.auth }, api: { ...config.api }, mutation: { ...config.mutation } };
+    return changed;
 }
 
 // ── Public API ─────────────────────────────────────────────────
@@ -73,7 +91,7 @@ function rebuildLimiters(config: RateLimitConfig): void {
  * This is Edge Runtime safe - no Prisma, no Node.js APIs.
  */
 export function applyExternalConfig(config: RateLimitConfig): void {
-    rebuildLimiters(config);
+    if (!rebuildLimiters(config)) return;
     log.info("Rate limiters updated from external config", {
         auth: `${config.auth.points}/${config.auth.duration}s`,
         api: `${config.api.points}/${config.api.duration}s`,

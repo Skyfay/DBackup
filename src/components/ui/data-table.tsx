@@ -80,6 +80,8 @@ interface DataTableProps<TData, TValue> {
     variant?: "default" | "card";
     /** From md up the card goes on from a `PageHead` above it, square on top. In the cards and split views that is the card of the toolbar. */
     joined?: boolean;
+    /** The card look without its own frame, for a table that fills a pane of a card around it, like the system tasks of the Settings page. */
+    frameless?: boolean;
     /**
      * Turns on the Columns menu: switch columns on and off, move them, pick a row height. The
      * rows per page are kept with it. Feed it from `useTableLayout`, which saves the layout to
@@ -152,6 +154,7 @@ export function DataTable<TData, TValue>({
     onBulkActionComplete,
     variant = "default",
     joined = false,
+    frameless = false,
     columnLayout,
     toolbarExtra,
     toolbarNote,
@@ -473,7 +476,7 @@ export function DataTable<TData, TValue>({
 
     if (card) {
         return (
-            <div className={cn("min-w-0 overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm", joined && JOIN_END)}>
+            <div className={cn("min-w-0 overflow-hidden", !frameless && "rounded-xl border bg-card text-card-foreground shadow-sm", joined && JOIN_END)}>
                 {/* The bulk bar lies over the toolbar while rows are selected, so nothing below moves. */}
                 <div className="relative">
                     {toolbar}

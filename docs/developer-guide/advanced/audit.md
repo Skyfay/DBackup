@@ -97,4 +97,4 @@ The filters are query parameters shared by all four: `who` (repeatable, `user:<i
 
 ## Retention Policy
 
-Old entries are removed by `auditService.cleanOldLogs(retentionDays)` based on the system setting `audit.retentionDays` (default 90 days, **Audit Log** under Settings → Data Retention). It runs as part of the "Clean Old Data" system task, together with the other data retention settings.
+Old entries are removed by `auditService.cleanOldLogs(retentionDays)` based on the system setting `audit.retentionDays` (default 90 days, **Audit log** under Settings → Data retention). It runs as part of the "Clean old data" system task, together with the other data retention settings.

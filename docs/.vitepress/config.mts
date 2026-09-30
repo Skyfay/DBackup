@@ -206,6 +206,7 @@ export default defineConfig({
             { text: 'Groups & Permissions', link: '/user-guide/admin/permissions' },
             { text: 'Audit Log', link: '/user-guide/admin/audit-log' },
             { text: 'SSO / OIDC', link: '/user-guide/admin/sso' },
+            { text: 'Settings & System Tasks', link: '/user-guide/admin/settings' },
             { text: 'Data Retention & Database', link: '/user-guide/admin/data-retention' },
             { text: 'Templates', link: '/user-guide/features/templates' }
           ]

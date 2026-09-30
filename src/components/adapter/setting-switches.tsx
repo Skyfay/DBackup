@@ -16,6 +16,7 @@ interface SwitchRowProps {
     description?: string;
     checked: boolean;
     onCheckedChange: (checked: boolean) => void;
+    disabled?: boolean;
 }
 
 /**
@@ -23,7 +24,7 @@ interface SwitchRowProps {
  * stores the other way round, like `healthNotificationsDisabled`, are turned around by the
  * caller, so on always means on.
  */
-export function SwitchRow({ title, description, checked, onCheckedChange }: SwitchRowProps) {
+export function SwitchRow({ title, description, checked, onCheckedChange, disabled }: SwitchRowProps) {
     const id = useId();
     return (
         <div className="flex items-center gap-4 px-4 py-3">
@@ -31,7 +32,7 @@ export function SwitchRow({ title, description, checked, onCheckedChange }: Swit
                 <Label htmlFor={id}>{title}</Label>
                 {description && <p className="text-xs text-muted-foreground">{description}</p>}
             </div>
-            <Switch id={id} checked={checked} onCheckedChange={onCheckedChange} />
+            <Switch id={id} checked={checked} onCheckedChange={onCheckedChange} disabled={disabled} />
         </div>
     );
 }

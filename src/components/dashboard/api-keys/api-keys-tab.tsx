@@ -28,6 +28,7 @@ import { ApiKeyDetails } from "./api-key-details";
 import { ApiKeyFormDialog, type ApiKeyFormMode } from "./api-key-form-dialog";
 import { ApiKeysStrip } from "./api-key-strip";
 import { API_KEYS_TABLE_ID } from "./api-keys-tables";
+import { useOpenFromLink } from "@/hooks/use-open-from-link";
 
 const log = logger.child({ component: "api-keys-tab" });
 
@@ -117,6 +118,8 @@ export function ApiKeysTab({ ref, view, canManage, canOpenRuns, initialLayout }:
     }, [handlers, viewerPermissions]);
 
     const open = useCallback((key: ApiKeyRow) => setDetails({ id: key.id, open: true }), []);
+    // A link like the search in the header opens one with `?open=`.
+    useOpenFromLink(model?.keys, open);
     const columns = useMemo(
         () => apiKeyColumns({ onOpen: open, now, renderActions: (key) => <BackupRowMenu name={key.name} groups={apiKeyActions(key, handlersFor(key))} /> }),
         [open, now, handlersFor]

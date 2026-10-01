@@ -58,7 +58,7 @@ All notable changes to DBackup are documented here.
 - **settings**: The new system task **Optimize the database** gives the unused space of the database back to the disk on the first of every month, once at least a fifth of it is unused. Runs that would start meanwhile wait until it is done.
 - **ui**: The tabs of every page show an icon, and a dot in amber or red while their list holds something to fix, like a connection that does not answer or a job whose last run failed. What it is shows on hover.
 - **ui**: The numbers above every list are tiles with an icon, and what each means shows on hover. Jobs and Connections have them too, with how the latest runs went, what answers and how fast.
-- **ui**: A search in the middle of the header, or Ctrl+K (⌘K on macOS) anywhere, finds the jobs, connections, databases, backups, runs, settings and pages you may open. It also starts a found job and switches the theme.
+- **ui**: A search in the middle of the header, or Ctrl+K (⌘K on macOS) anywhere, finds the jobs, connections, databases, backups, runs, people, groups, API keys, templates, Vault entries, settings and pages you may open. It also starts a found job and switches the theme.
 
 
 ### 🐛 Bug Fixes
@@ -239,7 +239,7 @@ All notable changes to DBackup are documented here.
 - **config**: **Include the logins** is gone, since the configuration backup always holds them. Configuration files of older versions still restore, in parts from the Backups page or as a whole from a file.
 - **config**: The configuration backup includes the history by default. An instance that saved this setting before keeps its choice.
 - **settings**: Run logs are kept for a year by default instead of 90 days. An instance that saved its data retention before keeps its choice.
-- **api**: The new `GET /api/search?q=` returns the jobs, connections, databases and latest runs whose name holds the query. It finds only the kinds the caller may read.
+- **api**: The new `GET /api/search?q=` returns the jobs and their backups, connections, databases, latest runs, people, groups, API keys, templates, encryption keys and saved logins whose name holds the query. It finds only the kinds the caller may read.
 - **ui**: A new version shows on the right of the header with a blue dot beside the guides and DBackup on GitHub, and opens a card with how to update. The sidebar no longer shows it at its foot.
 - **ui**: The name under Settings → General heads the sidebar, with DBackup and the version below it. Without a name the sidebar shows DBackup as before.
 

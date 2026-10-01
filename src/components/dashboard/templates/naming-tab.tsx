@@ -24,6 +24,7 @@ import { NamingStrip } from "./template-strips";
 import { TemplateTable } from "./template-table";
 import type { TemplateTabProps } from "./template-tab-props";
 import { TEMPLATE_TABLE_IDS } from "./template-tables";
+import { useOpenFromLink } from "@/hooks/use-open-from-link";
 
 /** Why a template cannot be deleted yet, or null. The server refuses it the same way. */
 function namingBlocker(row: NamingRow): string | null {
@@ -66,6 +67,8 @@ export function NamingTab({ ref, model, isLoading, refresh, afterChange, cards, 
         [handlers]
     );
     const open = useCallback((row: NamingRow) => setDetails({ id: row.id, open: true }), []);
+    // A link like the search in the header opens one with `?open=`.
+    useOpenFromLink(rows, open);
     const columns = useMemo(
         () => namingColumns({ jobs, timezone, onOpen: open, renderActions: (row) => <BackupRowMenu name={row.name} groups={actionsOf(row)} /> }),
         [jobs, timezone, open, actionsOf]

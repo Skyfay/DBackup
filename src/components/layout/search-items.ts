@@ -1,33 +1,24 @@
 import { formatDistanceToNowStrict } from "date-fns";
+import { Archive, KeyRound, Play, SunMoon, User, Users, type LucideIcon } from "lucide-react";
 import { describeSchedule } from "@/components/dashboard/jobs/job-schedule";
 import { kindNames } from "@/components/adapter/connection-columns";
 import { databaseHref } from "@/components/dashboard/explorer/database-model";
 import { runHref } from "@/components/dashboard/history/run-links";
-import { profileIndex } from "@/components/dashboard/profile/profile-index";
-import { PROFILE_PARTS, type ProfilePartId } from "@/components/dashboard/profile/profile-parts";
-import { searchSettings, settingsIndex, wordsOf } from "@/components/dashboard/settings/settings-index";
+import { PROFILE_PARTS } from "@/components/dashboard/profile/profile-parts";
 import { SETTINGS_PARTS } from "@/components/dashboard/settings/settings-parts";
+import { KIND_ICONS } from "@/components/dashboard/templates/template-cells";
+import { CREDENTIAL_TYPE_INFO } from "@/components/settings/credential-types";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import type { CredentialType } from "@/lib/core/credentials";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { formatBytes } from "@/lib/utils";
-import type { SearchHit } from "@/services/search/search-types";
+import type { SearchHit, TemplateKind } from "@/services/search/search-types";
 import { navGroups } from "./app-sidebar";
 
 /** The groups of the search, in the order they show. */
-export type SearchGroup = "recent" | "jobs" | "connections" | "databases" | "backups" | "runs" | "settings" | "pages" | "actions";
+export type SearchGroup = "recent" | "jobs" | "connections" | "databases" | "backups" | "runs" | "access" | "templates" | "vault" | "settings" | "pages" | "actions";
 
-/** The kinds the chips above the results narrow the search to. */
-export const SEARCH_CHIPS = [
-    { value: "all", label: "All" },
-    { value: "jobs", label: "Jobs" },
-    { value: "connections", label: "Connections" },
-    { value: "databases", label: "Databases" },
-    { value: "backups", label: "Backups" },
-    { value: "runs", label: "Runs" },
-    { value: "settings", label: "Settings" },
-] as const;
-
-export type SearchChip = (typeof SEARCH_CHIPS)[number]["value"];
+export const GROUP_ORDER: SearchGroup[] = ["recent", "jobs", "connections", "databases", "backups", "runs", "access", "templates", "vault", "settings", "pages", "actions"];
 
 export const GROUP_LABELS: Record<SearchGroup, string> = {
     recent: "Recent",
@@ -36,10 +27,35 @@ export const GROUP_LABELS: Record<SearchGroup, string> = {
     databases: "Databases",
     backups: "Backups",
     runs: "Runs",
+    access: "Users & Groups",
+    templates: "Templates",
+    vault: "Vault",
     settings: "Settings",
     pages: "Go to",
     actions: "Actions",
 };
+
+/** The kinds the chips above the results narrow the search to, each shown to whoever may open one of its lists. */
+export const SEARCH_CHIPS = [
+    { value: "all", label: "All", needsAny: [] },
+    { value: "jobs", label: "Jobs", needsAny: [PERMISSIONS.JOBS.READ] },
+    { value: "connections", label: "Connections", needsAny: [PERMISSIONS.SOURCES.VIEW, PERMISSIONS.DESTINATIONS.READ, PERMISSIONS.NOTIFICATIONS.READ] },
+    { value: "databases", label: "Databases", needsAny: [PERMISSIONS.SOURCES.VIEW] },
+    { value: "backups", label: "Backups", needsAny: [PERMISSIONS.STORAGE.READ] },
+    { value: "runs", label: "Runs", needsAny: [PERMISSIONS.HISTORY.READ] },
+    { value: "access", label: "Users", needsAny: [PERMISSIONS.USERS.READ, PERMISSIONS.GROUPS.READ, PERMISSIONS.API_KEYS.READ] },
+    { value: "templates", label: "Templates", needsAny: [PERMISSIONS.TEMPLATES.READ] },
+    { value: "vault", label: "Vault", needsAny: [PERMISSIONS.VAULT.READ] },
+    // Holds the own profile too, which everyone may open.
+    { value: "settings", label: "Settings", needsAny: [] },
+] as const satisfies readonly { value: "all" | SearchGroup; label: string; needsAny: readonly string[] }[];
+
+export type SearchChip = (typeof SEARCH_CHIPS)[number]["value"];
+
+/** The chips of the kinds the viewer may see, so the search never hints at the others. */
+export function visibleChips(can: (permission: string) => boolean) {
+    return SEARCH_CHIPS.filter((chip) => chip.needsAny.length === 0 || chip.needsAny.some(can));
+}
 
 export interface SearchItem {
     /** Unique in the list, also what cmdk selects. */
@@ -59,11 +75,44 @@ export interface SearchItem {
     action?: "theme" | "run";
     jobId?: string;
     adapterId?: string | null;
-    /** The href of a page, whose icon it shows. */
-    page?: string;
+    /** The icon by name, like `user` or `page:/dashboard/jobs`, so a recent entry keeps it in storage. */
+    icon?: string;
+    /** Every permission the page it opens needs, checked again for a recent entry. */
+    needs?: readonly string[];
+}
+
+/** Whether the viewer may open what a row leads to, for a recent entry kept from before. */
+export function mayOpen(item: SearchItem, can: (permission: string) => boolean): boolean {
+    return (item.needs ?? []).every(can);
+}
+
+/** The second line of a row: what it is, how it is now and when it happened. */
+export function subLine(item: SearchItem): string {
+    return [item.sub, item.state, item.at ? formatDistanceToNowStrict(new Date(item.at), { addSuffix: true }) : null].filter(Boolean).join(" · ");
+}
+
+const NAMED_ICONS: Record<string, LucideIcon> = { backups: Archive, user: User, group: Users, apiKey: KeyRound, key: KeyRound, theme: SunMoon, run: Play };
+const PAGE_ICONS = new Map<string, LucideIcon>(navGroups.flatMap((group) => group.items.map((item) => [item.href, item.icon] as const)));
+const TEMPLATE_ICONS: Record<TemplateKind, LucideIcon> = { retention: KIND_ICONS.retention, naming: KIND_ICONS.naming, schedules: KIND_ICONS.schedule, notifications: KIND_ICONS.notification, excludes: KIND_ICONS.exclude };
+
+/** The icon a row shows when it has no logo of an adapter, the one of the tab or page it opens. */
+export function iconOf(item: SearchItem): LucideIcon | undefined {
+    if (!item.icon) return undefined;
+    const at = item.icon.indexOf(":");
+    const space = at < 0 ? item.icon : item.icon.slice(0, at);
+    const id = item.icon.slice(at + 1);
+    switch (space) {
+        case "page": return PAGE_ICONS.get(id);
+        case "settings": return SETTINGS_PARTS.find((part) => part.id === id)?.icon;
+        case "profile": return PROFILE_PARTS.find((part) => part.id === id)?.icon;
+        case "template": return TEMPLATE_ICONS[id as TemplateKind];
+        case "credential": return CREDENTIAL_TYPE_INFO[id as CredentialType]?.icon;
+        default: return NAMED_ICONS[space];
+    }
 }
 
 const CONNECTION_TABS: Record<string, string> = { database: "databases", source: "directory-sources", destination: "destinations", notification: "notifications" };
+const CONNECTION_NEEDS: Record<string, string> = { database: PERMISSIONS.SOURCES.VIEW, storage: PERMISSIONS.DESTINATIONS.READ, notification: PERMISSIONS.NOTIFICATIONS.READ };
 
 function connectionRole(hit: Extract<SearchHit, { kind: "connection" }>): string {
     if (hit.type === "database") return "database";
@@ -74,28 +123,20 @@ function connectionRole(hit: Extract<SearchHit, { kind: "connection" }>): string
 const ROLE_WORDS: Record<string, string> = { database: "Database connection", source: "Directory source", destination: "Destination", notification: "Channel" };
 const STATUS_WORDS: Record<string, string> = { OFFLINE: "does not answer", DEGRADED: "failed its last check", ONLINE: "answers" };
 const RUN_WORDS: Record<string, string> = { Success: "Succeeded", Failed: "Failed", Partial: "Missed a copy", Running: "Running", Pending: "Waiting", Cancelled: "Cancelled" };
+const TEMPLATE_WORDS: Record<TemplateKind, string> = { retention: "Retention policy", naming: "File name", schedules: "Schedule preset", notifications: "Notification template", excludes: "Exclude patterns" };
 
-/** A hit of the server as a row of the search. */
-export function hitItems(hit: SearchHit, can: (permission: string) => boolean): SearchItem[] {
+const count = (value: number, one: string, many: string) => `${value} ${value === 1 ? one : many}`;
+const link = (path: string, params: Record<string, string>) => `${path}?${new URLSearchParams(params).toString()}`;
+
+/** A hit of the server as a row of the search, with what opening it needs. */
+export function hitItems(hit: SearchHit): SearchItem[] {
     switch (hit.kind) {
         case "job": {
             const state = !hit.enabled ? "paused" : hit.lastStatus === "Failed" ? "failed on its last run" : hit.lastStatus === "Partial" ? "missed a copy on its last run" : null;
-            const job: SearchItem = {
-                key: `job:${hit.id}`,
-                group: "jobs",
-                title: hit.name,
-                sub: describeSchedule(hit.schedule).text,
-                state,
-                kind: "Job",
-                href: `/dashboard/jobs?job=${encodeURIComponent(hit.id)}`,
-                adapterId: hit.adapterId,
-            };
-            // The backups of a job are one click away, so a job found by name finds them too.
-            const backups: SearchItem[] = can(PERMISSIONS.STORAGE.READ)
-                ? [{ key: `backups:${hit.id}`, group: "backups", title: `Backups of ${hit.name}`, sub: "Every backup of the job at every destination", kind: "Backups", href: `/dashboard/backups?job=${encodeURIComponent(hit.id)}` }]
-                : [];
-            return [job, ...backups];
+            return [{ key: `job:${hit.id}`, group: "jobs", title: hit.name, sub: describeSchedule(hit.schedule).text, state, kind: "Job", href: link("/dashboard/jobs", { job: hit.id }), adapterId: hit.adapterId, needs: [PERMISSIONS.JOBS.READ] }];
         }
+        case "backups":
+            return [{ key: `backups:${hit.jobId}`, group: "backups", title: `Backups of ${hit.name}`, sub: "Every backup of the job at every destination", kind: "Backups", href: link("/dashboard/backups", { job: hit.jobId }), icon: "backups", needs: [PERMISSIONS.STORAGE.READ] }];
         case "connection": {
             const role = connectionRole(hit);
             return [{
@@ -105,8 +146,9 @@ export function hitItems(hit: SearchHit, can: (permission: string) => boolean): 
                 sub: `${ROLE_WORDS[role]} · ${kindNames.get(hit.adapterId) ?? hit.adapterId}`,
                 state: hit.type === "notification" ? null : STATUS_WORDS[hit.status],
                 kind: "Connection",
-                href: `/dashboard/connections?tab=${CONNECTION_TABS[role]}&open=${encodeURIComponent(hit.id)}`,
+                href: link("/dashboard/connections", { tab: CONNECTION_TABS[role], open: hit.id }),
                 adapterId: hit.adapterId,
+                needs: [CONNECTION_NEEDS[hit.type] ?? PERMISSIONS.DESTINATIONS.READ],
             }];
         }
         case "database":
@@ -118,86 +160,60 @@ export function hitItems(hit: SearchHit, can: (permission: string) => boolean): 
                 kind: "Database",
                 href: databaseHref({ serverId: hit.serverId, kind: "database", name: hit.name }),
                 adapterId: hit.adapterId,
+                needs: [PERMISSIONS.SOURCES.VIEW],
             }];
         case "run":
+            return [{ key: `run:${hit.id}`, group: "runs", title: `Run of ${hit.name}`, sub: "", state: RUN_WORDS[hit.status] ?? hit.status, at: hit.startedAt, kind: "Run", href: runHref(hit.id), adapterId: hit.adapterId, needs: [PERMISSIONS.HISTORY.READ] }];
+        case "user":
+            return [{ key: `user:${hit.id}`, group: "access", title: hit.name, sub: `${hit.email} · ${hit.group ?? "No group"}`, kind: "User", href: link("/dashboard/users", { tab: "users", open: hit.id }), icon: "user", needs: [PERMISSIONS.USERS.READ] }];
+        case "group":
+            return [{ key: `group:${hit.id}`, group: "access", title: hit.name, sub: count(hit.people, "person", "people"), kind: "Group", href: link("/dashboard/users", { tab: "groups", open: hit.id }), icon: "group", needs: [PERMISSIONS.GROUPS.READ] }];
+        case "apiKey":
             return [{
-                key: `run:${hit.id}`,
-                group: "runs",
-                title: `Run of ${hit.name}`,
-                sub: "",
-                state: RUN_WORDS[hit.status] ?? hit.status,
-                at: hit.startedAt,
-                kind: "Run",
-                href: runHref(hit.id),
-                adapterId: hit.adapterId,
+                key: `apikey:${hit.id}`,
+                group: "access",
+                title: hit.name,
+                sub: `${hit.prefix}… · ${hit.owner}`,
+                state: !hit.enabled ? "off" : hit.expired ? "expired" : null,
+                kind: "API key",
+                href: link("/dashboard/users", { tab: "apikeys", open: hit.id }),
+                icon: "apiKey",
+                needs: [PERMISSIONS.API_KEYS.READ],
+            }];
+        case "template": {
+            const detail = hit.template === "schedules" && hit.detail ? describeSchedule(hit.detail).text : hit.detail;
+            return [{
+                key: `template:${hit.id}`,
+                group: "templates",
+                title: hit.name,
+                sub: [TEMPLATE_WORDS[hit.template], detail].filter(Boolean).join(" · "),
+                kind: "Template",
+                href: link("/dashboard/templates", { tab: hit.template, open: hit.id }),
+                icon: `template:${hit.template}`,
+                needs: [PERMISSIONS.TEMPLATES.READ],
+            }];
+        }
+        case "key":
+            return [{
+                key: `key:${hit.id}`,
+                group: "vault",
+                title: hit.name,
+                sub: hit.jobs === 0 ? "Encryption key no job uses" : `Encryption key of ${count(hit.jobs, "job", "jobs")}`,
+                kind: "Key",
+                href: link("/dashboard/vault", { tab: "encryption", open: hit.id }),
+                icon: "key",
+                needs: [PERMISSIONS.VAULT.READ],
+            }];
+        case "credential":
+            return [{
+                key: `credential:${hit.id}`,
+                group: "vault",
+                title: hit.name,
+                sub: CREDENTIAL_TYPE_INFO[hit.type as CredentialType]?.title ?? hit.type,
+                kind: "Credential",
+                href: link("/dashboard/vault", { tab: "credentials", open: hit.id }),
+                icon: `credential:${hit.type}`,
+                needs: [PERMISSIONS.VAULT.READ, PERMISSIONS.CREDENTIALS.READ],
             }];
     }
-}
-
-/** The second line of a row: what it is, how it is now and when it happened. */
-export function subLine(item: SearchItem): string {
-    return [item.sub, item.state, item.at ? formatDistanceToNowStrict(new Date(item.at), { addSuffix: true }) : null].filter(Boolean).join(" · ");
-}
-
-/** Whether every word of the search starts a word of the text, like the search of the Settings page. */
-function matches(text: string, query: string): boolean {
-    const terms = wordsOf(query);
-    const words = wordsOf(text);
-    return terms.length > 0 && terms.every((term) => words.some((word) => word.startsWith(term)));
-}
-
-/** The pages of the sidebar the viewer may open, all while the search is empty. */
-export function pageItems(query: string, can: (permission: string) => boolean): SearchItem[] {
-    const pages = navGroups.flatMap((group) => group.items)
-        .filter((item) => !item.quickSetupOnly)
-        .filter((item) => !item.permission || (Array.isArray(item.permission) ? item.permission : [item.permission]).some(can));
-    const all: SearchItem[] = [
-        ...pages.map((item) => ({ key: `page:${item.href}`, group: "pages" as const, title: item.label, sub: "Page", kind: "Page", href: item.href, page: item.href })),
-        { key: "page:/dashboard/profile", group: "pages", title: "Profile", sub: "Your account, sign-in and the look of DBackup", kind: "Page", href: "/dashboard/profile", page: "/dashboard/profile" },
-    ];
-    return query.trim() ? all.filter((item) => matches(item.title, query)) : all;
-}
-
-/** The parts and settings of Settings and of the profile whose words the search starts. */
-export function settingItems(query: string, canSettings: boolean): SearchItem[] {
-    if (!query.trim()) return [];
-    const partLabel = new Map<string, string>([...SETTINGS_PARTS.map((part) => [part.id, part.label] as const)]);
-    const settings = canSettings
-        ? searchSettings(settingsIndex([]), query).hits.map((hit): SearchItem => ({
-            key: `setting:${hit.id}`,
-            group: "settings",
-            title: hit.label,
-            sub: hit.id === hit.part ? "Settings" : `Settings › ${partLabel.get(hit.part) ?? hit.part}`,
-            kind: "Setting",
-            href: `/dashboard/settings?part=${hit.part}`,
-        }))
-        : [];
-    const profileLabel = new Map(PROFILE_PARTS.map((part) => [part.id, part.label] as const));
-    const profile = searchSettings<ProfilePartId>(profileIndex(), query, PROFILE_PARTS.map((part) => part.id)).hits.map((hit): SearchItem => ({
-        key: `profile:${hit.id}`,
-        group: "settings",
-        title: hit.label,
-        sub: hit.id === hit.part ? "Profile" : `Profile › ${profileLabel.get(hit.part) ?? hit.part}`,
-        kind: "Profile",
-        href: `/dashboard/profile?part=${hit.part}`,
-    }));
-    return [...settings, ...profile].slice(0, 6);
-}
-
-/** What the search can do instead of open: switch the theme, and start a job it found. */
-export function actionItems(query: string, jobs: SearchHit[], can: (permission: string) => boolean): SearchItem[] {
-    const theme: SearchItem = { key: "action:theme", group: "actions", title: "Switch the theme", sub: "Light or dark, for this browser", kind: "Action", action: "theme" };
-    const run = can(PERMISSIONS.JOBS.EXECUTE)
-        ? jobs.flatMap((hit) => (hit.kind === "job" && hit.enabled ? [{
-            key: `action:run:${hit.id}`,
-            group: "actions" as const,
-            title: `Run ${hit.name} now`,
-            sub: "Starts the job, like Run now in its menu",
-            kind: "Action",
-            action: "run" as const,
-            jobId: hit.id,
-        }] : [])).slice(0, 2)
-        : [];
-    const themeHit = !query.trim() || matches("switch the theme light dark", query) ? [theme] : [];
-    return [...run, ...themeHit];
 }

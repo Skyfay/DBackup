@@ -26,6 +26,7 @@ import { UserDialog } from "./user-dialog";
 import { UserPasswordDialog } from "./user-password-dialog";
 import { UsersStrip } from "./user-strip";
 import { USERS_TABLE_ID } from "./users-tables";
+import { useOpenFromLink } from "@/hooks/use-open-from-link";
 
 /** What the page around the list can start, like New user beside the tabs. */
 export interface UsersTabHandle {
@@ -91,6 +92,8 @@ export function UsersTab({ ref, cards, canManage, initialLayout }: UsersTabProps
         : handlers, [handlers, guarded]);
 
     const open = useCallback((user: UserRow) => setDetails({ id: user.id, open: true }), []);
+    // A link like the search in the header opens one with `?open=`.
+    useOpenFromLink(model?.users, open);
     const columns = useMemo(
         () => userColumns({ onOpen: open, renderActions: (user) => <BackupRowMenu name={user.name} groups={userActions(user, handlersFor(user))} /> }),
         [open, handlersFor]

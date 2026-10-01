@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { CalendarClock, CirclePause, ListChecks, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { saveViewLayout } from "@/app/actions/auth/table-preferences";
@@ -40,6 +40,7 @@ import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { cn } from "@/lib/utils";
 import type { JobListItem } from "@/services/jobs/job-list-service";
 import { runHref } from "@/components/dashboard/history/run-links";
+import { useOpenFromLink } from "@/hooks/use-open-from-link";
 
 interface JobsClientProps {
     canManage: boolean;
@@ -115,9 +116,6 @@ export function JobsClient({
     const [apiTrigger, setApiTrigger] = useState<{ id: string; name: string } | null>(null);
     // The id stays after closing, so the panel keeps its content while it slides out.
     const [details, setDetails] = useState<{ id: string; open: boolean } | null>(null);
-    // A link like the Open job of the Backups page names a job, whose panel opens once it loaded.
-    const linkedJobId = useSearchParams().get("job");
-    const [linkHandled, setLinkHandled] = useState(false);
 
     const changeView = useCallback((next: ViewMode) => {
         setView(listView(next));
@@ -172,6 +170,8 @@ export function JobsClient({
 
     const openForm = useCallback((job: JobListItem | null) => setForm({ open: true, job }), []);
     const openDetails = useCallback((job: JobListItem) => setDetails({ id: job.id, open: true }), []);
+    // A link like Open job of the Backups page or the search in the header names a job with `?job=`.
+    useOpenFromLink(hasLoaded ? jobs : null, openDetails, "job");
 
     /** What one job can do. The panel shows Run now and Edit as buttons of their own, so its menu leaves them out. */
     const handlers = useCallback((job: JobListItem, inPanel = false): JobActionHandlers => ({
@@ -198,9 +198,7 @@ export function JobsClient({
     const visibleJobs = useMemo(() => jobs.filter((job) => matchesJobFilter(job, filter)), [jobs, filter]);
 
     // A deleted job has no row left to show, so its panel closes with it.
-    const linked = !linkHandled && !details && linkedJobId && jobs.some((job) => job.id === linkedJobId) ? { id: linkedJobId, open: true } : null;
-    const shownDetails = details ?? linked;
-    const detailsJob = shownDetails ? jobs.find((job) => job.id === shownDetails.id) ?? null : null;
+    const detailsJob = details ? jobs.find((job) => job.id === details.id) ?? null : null;
     const deleting = deletingId ? jobs.find((job) => job.id === deletingId) : undefined;
     const directorySourceOptions = useMemo(() => destinations.filter((option) => option.storageRole === STORAGE_ROLES.SOURCE), [destinations]);
 
@@ -261,13 +259,9 @@ export function JobsClient({
             )}
 
             <JobDetailsSheet
-                open={shownDetails !== null && shownDetails.open}
+                open={details !== null && details.open}
                 job={detailsJob}
-                onClose={() => {
-                    // The linked panel becomes an ordinary one, so it slides out with its content.
-                    setLinkHandled(true);
-                    setDetails((current) => (current ? { ...current, open: false } : linked && { id: linked.id, open: false }));
-                }}
+                onClose={() => setDetails((current) => current && { ...current, open: false })}
                 canViewHistory={canViewHistory}
                 onRun={detailsJob && canExecute ? () => void run(detailsJob) : undefined}
                 starting={detailsJob !== null && startingJobId === detailsJob.id}

@@ -16,6 +16,7 @@ import { getTrashDays } from "@/services/trash/trash-service"
 import { logger } from "@/lib/logging/logger"
 import { wrapError } from "@/lib/logging/errors"
 import prisma from "@/lib/prisma"
+import { usesAppleKeys } from "@/lib/core/keyboard"
 
 const log = logger.child({ component: "dashboard-layout" });
 
@@ -24,10 +25,11 @@ export default async function DashboardLayout({
 }: {
     children: React.ReactNode
 }) {
+    const requestHeaders = await headers();
     let session = null;
     try {
         session = await auth.api.getSession({
-            headers: await headers()
+            headers: requestHeaders
         })
     } catch (e) {
         log.error("Dashboard session check failed", {}, wrapError(e));
@@ -81,7 +83,7 @@ export default async function DashboardLayout({
                                 groupName={userWithGroup?.group?.name}
                             />
                             <SidebarInset className="min-w-0 overflow-clip bg-page">
-                                <Header updateAvailable={updateInfo.updateAvailable} currentVersion={updateInfo.currentVersion} latestVersion={updateInfo.latestVersion} />
+                                <Header updateAvailable={updateInfo.updateAvailable} currentVersion={updateInfo.currentVersion} latestVersion={updateInfo.latestVersion} apple={usesAppleKeys(requestHeaders)} userId={session.user.id} />
                                 {/* Radix wraps the page in a `display: table` div that grows with its widest child, so a
                                     wide table pushed the whole page past the right edge, clipped and not scrollable.
                                     Block keeps the page at the window's width, and a wide table scrolls inside its card. */}

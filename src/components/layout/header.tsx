@@ -13,10 +13,13 @@ interface HeaderProps {
     updateAvailable?: boolean;
     currentVersion?: string;
     latestVersion?: string;
+    /** Whether the browser runs on a Mac, iPhone or iPad, for the keys of the search. */
+    apple?: boolean;
+    userId?: string;
 }
 
 /** The bar on top of every page: the sidebar toggle and where you are, the search in the middle, the guides, GitHub and the update on the right. */
-export function Header({ updateAvailable, currentVersion, latestVersion }: HeaderProps) {
+export function Header({ updateAvailable, currentVersion, latestVersion, apple, userId }: HeaderProps) {
     const pathname = usePathname()
     // Split path, filtering empty strings
     const segments = pathname.split('/').filter(Boolean)
@@ -57,7 +60,7 @@ export function Header({ updateAvailable, currentVersion, latestVersion }: Heade
                 </nav>
             </div>
             <div className="flex justify-center lg:w-[min(32rem,36vw)]">
-                <GlobalSearch />
+                <GlobalSearch apple={apple} userId={userId} />
             </div>
             <div className="flex justify-end">
                 <HeaderLinks updateAvailable={updateAvailable} currentVersion={currentVersion} latestVersion={latestVersion} />

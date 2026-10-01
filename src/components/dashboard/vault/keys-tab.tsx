@@ -31,6 +31,7 @@ import { count, keyBlocker, keyUse, type KeyQuick } from "./vault-format";
 import { KeysStrip } from "./vault-strips";
 import { useVaultModel } from "./use-vault-model";
 import { VAULT_TABLE_IDS } from "./vault-tables";
+import { useOpenFromLink } from "@/hooks/use-open-from-link";
 
 /** What the page around the list can start, the buttons beside the tabs. */
 export interface KeysTabHandle {
@@ -99,6 +100,8 @@ export function KeysTab({ ref, cards, canManage, initialLayout }: KeysTabProps) 
     } : {}, [canManage, reveal]);
 
     const open = useCallback((key: VaultKey) => setDetails({ id: key.id, open: true }), []);
+    // A link like the search in the header opens one with `?open=`.
+    useOpenFromLink(model?.keys, open);
     const columns = useMemo(
         () => keyColumns({ onOpen: open, renderActions: (key) => <BackupRowMenu name={key.name} groups={keyActions(key, handlers)} /> }),
         [open, handlers]

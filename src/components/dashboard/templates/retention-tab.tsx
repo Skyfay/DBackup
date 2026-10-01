@@ -24,6 +24,7 @@ import { RetentionStrip } from "./template-strips";
 import { TemplateTable } from "./template-table";
 import type { TemplateTabProps } from "./template-tab-props";
 import { TEMPLATE_TABLE_IDS } from "./template-tables";
+import { useOpenFromLink } from "@/hooks/use-open-from-link";
 
 /** Why a policy cannot be deleted yet, or null. The server refuses it the same way. */
 function retentionBlocker(row: RetentionRow): string | null {
@@ -66,6 +67,8 @@ export function RetentionTab({ ref, model, isLoading, refresh, afterChange, card
         [handlers]
     );
     const open = useCallback((row: RetentionRow) => setDetails({ id: row.id, open: true }), []);
+    // A link like the search in the header opens one with `?open=`.
+    useOpenFromLink(rows, open);
     const columns = useMemo(() => retentionColumns({ onOpen: open, renderActions: (row) => <BackupRowMenu name={row.name} groups={actionsOf(row)} /> }), [open, actionsOf]);
     const filters = useMemo(() => retentionFilters(rows ?? []), [rows]);
     const bulkActions = useMemo<BulkAction<RetentionRow>[]>(() => canManage ? [{

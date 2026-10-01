@@ -23,6 +23,7 @@ import { ScheduleStrip } from "./template-strips";
 import { TemplateTable } from "./template-table";
 import type { TemplateTabProps } from "./template-tab-props";
 import { TEMPLATE_TABLE_IDS } from "./template-tables";
+import { useOpenFromLink } from "@/hooks/use-open-from-link";
 
 const inUse = (row: ScheduleRow) => row.jobIds.length > 0;
 
@@ -52,6 +53,8 @@ export function ScheduleTab({ ref, model, isLoading, refresh, afterChange, cards
     // A preset has no default: a job picks its schedule itself.
     const actionsOf = useCallback((row: ScheduleRow, inPanel = false) => templateActions(row, handlers, { isDefault: false, inPanel }), [handlers]);
     const open = useCallback((row: ScheduleRow) => setDetails({ id: row.id, open: true }), []);
+    // A link like the search in the header opens one with `?open=`.
+    useOpenFromLink(rows, open);
     const columns = useMemo(
         () => scheduleColumns({ jobs, timezone, onOpen: open, renderActions: (row) => <BackupRowMenu name={row.name} groups={actionsOf(row)} /> }),
         [jobs, timezone, open, actionsOf]

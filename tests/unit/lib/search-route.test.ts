@@ -28,12 +28,32 @@ describe("the route of the global search", () => {
     });
 
     it("searches only the kinds the viewer may open", async () => {
-        mocks.ctx = { permissions: ["jobs:read", "history:read", "notifications:read"], isSuperAdmin: false };
+        mocks.ctx = { permissions: ["jobs:read", "history:read", "notifications:read", "groups:read", "vault:read"], isSuperAdmin: false };
 
         const response = await GET(request("mysql"));
 
-        expect(mocks.search).toHaveBeenCalledWith("mysql", { jobs: true, runs: true, databases: false, connections: ["notification"] });
+        expect(mocks.search).toHaveBeenCalledWith("mysql", {
+            jobs: true,
+            backups: false,
+            runs: true,
+            databases: false,
+            connections: ["notification"],
+            users: false,
+            groups: true,
+            apiKeys: false,
+            templates: false,
+            keys: true,
+            credentials: false,
+        });
         expect(await response.json()).toEqual({ success: true, data: { hits: [] } });
+    });
+
+    it("finds the saved logins only with the credentials as well as the Vault", async () => {
+        mocks.ctx = { permissions: ["vault:read", "credentials:read"], isSuperAdmin: false };
+
+        await GET(request("prod"));
+
+        expect(mocks.search).toHaveBeenCalledWith("prod", expect.objectContaining({ keys: true, credentials: true }));
     });
 
     it("searches everything for a SuperAdmin", async () => {
@@ -41,6 +61,18 @@ describe("the route of the global search", () => {
 
         await GET(request("prod"));
 
-        expect(mocks.search).toHaveBeenCalledWith("prod", { jobs: true, runs: true, databases: true, connections: ["database", "storage", "notification"] });
+        expect(mocks.search).toHaveBeenCalledWith("prod", {
+            jobs: true,
+            backups: true,
+            runs: true,
+            databases: true,
+            connections: ["database", "storage", "notification"],
+            users: true,
+            groups: true,
+            apiKeys: true,
+            templates: true,
+            keys: true,
+            credentials: true,
+        });
     });
 });

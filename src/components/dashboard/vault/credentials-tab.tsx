@@ -26,6 +26,7 @@ import { credentialBlocker, matchesCredential, type CredentialQuick } from "./va
 import { CredentialsStrip } from "./vault-strips";
 import { useVaultModel } from "./use-vault-model";
 import { VAULT_TABLE_IDS } from "./vault-tables";
+import { useOpenFromLink } from "@/hooks/use-open-from-link";
 
 /** What the page around the list can start, like New profile beside the tabs. */
 export interface CredentialsTabHandle {
@@ -97,6 +98,8 @@ export function CredentialsTab({ ref, cards, access, initialLayout }: Credential
     }), [access, reveal]);
 
     const open = useCallback((profile: VaultCredential) => setDetails({ id: profile.id, open: true }), []);
+    // A link like the search in the header opens one with `?open=`.
+    useOpenFromLink(model?.profiles, open);
     const columns = useMemo(
         () => credentialColumns({ onOpen: open, renderActions: (profile) => <BackupRowMenu name={profile.name} groups={credentialActions(profile, handlers)} /> }),
         [open, handlers]

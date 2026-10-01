@@ -34,10 +34,13 @@ function memoryStorage(): Storage {
     };
 }
 
-function renderSearch(permissions: string[] = [PERMISSIONS.JOBS.READ, PERMISSIONS.JOBS.EXECUTE, PERMISSIONS.HISTORY.READ]) {
-    render(<PermissionsProvider permissions={permissions}><GlobalSearch /></PermissionsProvider>);
+function renderSearch(permissions: string[] = [PERMISSIONS.JOBS.READ, PERMISSIONS.JOBS.EXECUTE, PERMISSIONS.HISTORY.READ], props: React.ComponentProps<typeof GlobalSearch> = {}) {
+    render(<PermissionsProvider permissions={permissions}><GlobalSearch {...props} /></PermissionsProvider>);
     return userEvent.setup();
 }
+
+/** A person opened from the search before, kept for whoever the key names. */
+const keptUser = { key: "recent:/dashboard/users?tab=users&open=u9", group: "recent", title: "Alex", sub: "alex@example.com · Operators", kind: "User", href: "/dashboard/users?tab=users&open=u9", icon: "user", needs: [PERMISSIONS.USERS.READ] };
 
 async function searchFor(user: ReturnType<typeof userEvent.setup>, text: string) {
     await user.click(screen.getByRole("button", { name: /^Search jobs, connections/ }));
@@ -116,6 +119,55 @@ describe("the search in the header", () => {
         await user.click(screen.getByRole("option", { name: /^Run Nightly MySQL now/ }));
 
         expect(mocks.startRun).toHaveBeenCalledWith("j1", "Nightly MySQL");
+    });
+
+    it("hides a recent entry once the viewer may no longer open its page", async () => {
+        localStorage.setItem("dbackup.search.recent:u1", JSON.stringify([keptUser]));
+        const user = renderSearch([PERMISSIONS.JOBS.READ], { userId: "u1" });
+
+        await user.click(screen.getByRole("button", { name: /^Search jobs, connections/ }));
+
+        expect(await screen.findByRole("option", { name: /^Jobs/ })).toBeInTheDocument();
+        expect(screen.queryByRole("group", { name: "Recent" })).not.toBeInTheDocument();
+        expect(screen.queryByText("Alex")).not.toBeInTheDocument();
+    });
+
+    it("keeps the recent entries of each person apart", async () => {
+        localStorage.setItem("dbackup.search.recent:u1", JSON.stringify([keptUser]));
+        const user = renderSearch([PERMISSIONS.USERS.READ], { userId: "u2" });
+
+        await user.click(screen.getByRole("button", { name: /^Search jobs, connections/ }));
+
+        expect(await screen.findByRole("option", { name: /^Users & Groups/ })).toBeInTheDocument();
+        expect(screen.queryByText("Alex")).not.toBeInTheDocument();
+    });
+
+    it("shows a recent entry to the same person while they may open it", async () => {
+        localStorage.setItem("dbackup.search.recent:u1", JSON.stringify([keptUser]));
+        const user = renderSearch([PERMISSIONS.USERS.READ], { userId: "u1" });
+
+        await user.click(screen.getByRole("button", { name: /^Search jobs, connections/ }));
+
+        const recent = await screen.findByRole("group", { name: "Recent" });
+        expect(within(recent).getByRole("option", { name: /^Alex/ })).toBeInTheDocument();
+    });
+
+    it("offers the chips of the kinds the viewer may see only", async () => {
+        const user = renderSearch([PERMISSIONS.JOBS.READ]);
+        await user.click(screen.getByRole("button", { name: /^Search jobs, connections/ }));
+
+        const chips = within(await screen.findByRole("group", { name: "Kind" })).getAllByRole("button").map((chip) => chip.textContent);
+
+        expect(chips).toEqual(["All", "Jobs", "Settings"]);
+    });
+
+    it("shows the keys of a Mac on a Mac and Ctrl everywhere else", () => {
+        const { unmount } = render(<GlobalSearch apple />);
+        expect(screen.getByRole("button", { name: /^Search jobs, connections/ })).toHaveTextContent(/CommandK$/);
+        unmount();
+
+        render(<GlobalSearch />);
+        expect(screen.getByRole("button", { name: /^Search jobs, connections/ })).toHaveTextContent(/CtrlK$/);
     });
 
     it("offers no start to someone who may only look", async () => {

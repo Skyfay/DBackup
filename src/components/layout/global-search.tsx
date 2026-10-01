@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Command as CommandPrimitive } from "cmdk";
-import { Loader2, Play, Search, SunMoon, type LucideIcon } from "lucide-react";
+import { ArrowDown, ArrowUp, CornerDownLeft, Loader2, Search } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
@@ -17,14 +17,11 @@ import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { cn } from "@/lib/utils";
 import { MIN_QUERY_LENGTH, type SearchHit } from "@/services/search/search-types";
-import { navGroups } from "./app-sidebar";
-import { GROUP_LABELS, SEARCH_CHIPS, actionItems, hitItems, pageItems, settingItems, subLine, type SearchChip, type SearchGroup, type SearchItem } from "./search-items";
-import { Kbd, useRecentSearches } from "./search-parts";
+import { GROUP_LABELS, GROUP_ORDER, hitItems, iconOf, mayOpen, subLine, visibleChips, type SearchChip, type SearchItem } from "./search-items";
+import { actionItems, pageItems, settingItems } from "./search-offers";
+import { Kbd, SearchShortcut, useRecentSearches } from "./search-parts";
 
 const log = logger.child({ component: "global-search" });
-
-const ORDER: SearchGroup[] = ["recent", "jobs", "connections", "databases", "backups", "runs", "settings", "pages", "actions"];
-const PAGE_ICONS = new Map<string, LucideIcon>(navGroups.flatMap((group) => group.items.map((item) => [item.href, item.icon] as const)));
 
 /** The part of a text the search matched, marked. */
 function Marked({ text, query }: { text: string; query: string }) {
@@ -41,24 +38,32 @@ function Marked({ text, query }: { text: string; query: string }) {
 }
 
 function ItemTile({ item }: { item: SearchItem }) {
-    const Icon = item.action === "run" ? Play : item.action === "theme" ? SunMoon : item.page ? PAGE_ICONS.get(item.page) : undefined;
+    const Icon = iconOf(item) ?? Search;
     return (
         <span
             {...toneAttribute(item.action === "run" ? "create" : undefined)}
             className={cn("flex size-7 shrink-0 items-center justify-center rounded-md border bg-muted/50", item.action === "run" && "border-transparent bg-tone/14 text-tone")}
             aria-hidden="true"
         >
-            {item.adapterId ? <AdapterIcon adapterId={item.adapterId} className="size-4" /> : Icon ? <Icon className="size-3.5" /> : <Search className="size-3.5" />}
+            {item.adapterId ? <AdapterIcon adapterId={item.adapterId} className="size-4" /> : <Icon className="size-3.5" />}
         </span>
     );
 }
 
+interface SearchDialogProps {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    /** Whose recent entries show, so someone else in the same browser never sees them. */
+    userId?: string;
+}
+
 /**
  * The search over the whole of DBackup, from the field in the header or Cmd K anywhere. Empty, it
- * offers what was opened last, the pages and the actions. Typing finds jobs, connections, databases,
- * backups and runs on the server, only what the viewer may open, and settings and pages at once.
+ * offers what was opened last, the pages and the actions. Typing finds jobs and their backups,
+ * connections, databases, runs, people, templates and the Vault on the server, and settings and
+ * pages at once. Every row, a recent one too, shows only while the viewer may open its page.
  */
-export function SearchDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+export function SearchDialog({ open, onOpenChange, userId }: SearchDialogProps) {
     const router = useRouter();
     const permissions = useViewerPermissions();
     const { resolvedTheme, setTheme } = useTheme();
@@ -66,9 +71,10 @@ export function SearchDialog({ open, onOpenChange }: { open: boolean; onOpenChan
     const [chip, setChip] = useState<SearchChip>("all");
     const [hits, setHits] = useState<SearchHit[]>([]);
     const [loading, setLoading] = useState(false);
-    const { recent, remember } = useRecentSearches();
+    const { recent, remember } = useRecentSearches(userId);
 
     const can = useMemo(() => (permission: string) => permissions?.includes(permission) ?? false, [permissions]);
+    const chips = useMemo(() => visibleChips(can), [can]);
 
     useEffect(() => {
         const term = query.trim();
@@ -100,12 +106,14 @@ export function SearchDialog({ open, onOpenChange }: { open: boolean; onOpenChan
     const items = useMemo(() => {
         const typed = query.trim().length > 0;
         const all: SearchItem[] = typed
-            ? [...hits.flatMap((hit) => hitItems(hit, can)), ...settingItems(query, can(PERMISSIONS.SETTINGS.READ)), ...pageItems(query, can), ...actionItems(query, hits, can)]
+            ? [...hits.flatMap(hitItems), ...settingItems(query, can(PERMISSIONS.SETTINGS.READ)), ...pageItems(query, can), ...actionItems(query, hits, can)]
             : [...recent, ...pageItems("", can), ...actionItems("", [], can)];
-        return chip === "all" ? all : all.filter((item) => item.group === chip);
+        // The server searched only what the viewer may open, a recent entry is from before.
+        const allowed = all.filter((item) => mayOpen(item, can));
+        return chip === "all" ? allowed : allowed.filter((item) => item.group === chip);
     }, [query, hits, recent, chip, can]);
 
-    const groups = ORDER.map((group) => ({ group, items: items.filter((item) => item.group === group) })).filter((entry) => entry.items.length > 0);
+    const groups = GROUP_ORDER.map((group) => ({ group, items: items.filter((item) => item.group === group) })).filter((entry) => entry.items.length > 0);
 
     const choose = (item: SearchItem) => {
         if (item.action === "theme") {
@@ -114,11 +122,13 @@ export function SearchDialog({ open, onOpenChange }: { open: boolean; onOpenChan
         }
         onOpenChange(false);
         if (item.action === "run" && item.jobId) {
-            void startRun(item.jobId, item.title.replace(/^Run | now$/g, ""));
+            const job = hits.find((hit) => hit.kind === "job" && hit.id === item.jobId);
+            void startRun(item.jobId, job?.name ?? item.title);
             return;
         }
         if (item.href) {
-            remember(item);
+            // The pages show while the search is empty anyway.
+            if (item.group !== "pages") remember(item);
             router.push(item.href);
         }
     };
@@ -127,16 +137,16 @@ export function SearchDialog({ open, onOpenChange }: { open: boolean; onOpenChan
     const onKeyDown = (event: React.KeyboardEvent) => {
         if (event.key !== "Tab") return;
         event.preventDefault();
-        const index = SEARCH_CHIPS.findIndex((entry) => entry.value === chip);
-        const next = (index + (event.shiftKey ? -1 : 1) + SEARCH_CHIPS.length) % SEARCH_CHIPS.length;
-        setChip(SEARCH_CHIPS[next].value);
+        const index = chips.findIndex((entry) => entry.value === chip);
+        const next = (index + (event.shiftKey ? -1 : 1) + chips.length) % chips.length;
+        setChip(chips[next].value);
     };
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent showCloseButton={false} className="top-[12vh] translate-y-0 gap-0 overflow-hidden bg-raised p-0 sm:max-w-2xl">
                 <DialogTitle className="sr-only">Search</DialogTitle>
-                <DialogDescription className="sr-only">Find jobs, connections, databases, backups, runs, settings and pages.</DialogDescription>
+                <DialogDescription className="sr-only">Find jobs, connections, databases, backups, runs, people, templates, the Vault, settings and pages.</DialogDescription>
                 <Command shouldFilter={false} loop onKeyDown={onKeyDown} className="bg-transparent">
                     <div className="flex h-13 items-center gap-2.5 border-b px-4">
                         <Search className="size-4.5 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -150,14 +160,14 @@ export function SearchDialog({ open, onOpenChange }: { open: boolean; onOpenChan
                         <Kbd>esc</Kbd>
                     </div>
                     <div className="flex flex-wrap gap-1 px-2.5 pt-2" role="group" aria-label="Kind">
-                        {SEARCH_CHIPS.map((entry) => (
+                        {chips.map((entry) => (
                             <button
                                 key={entry.value}
                                 type="button"
                                 aria-pressed={chip === entry.value}
                                 onClick={() => setChip(entry.value)}
                                 className={cn(
-                                    "h-6.5 rounded-full px-2.5 text-xs font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50",
+                                    "h-6.5 rounded-full px-2 text-xs font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50",
                                     chip === entry.value && "bg-muted text-foreground"
                                 )}
                             >
@@ -185,7 +195,7 @@ export function SearchDialog({ open, onOpenChange }: { open: boolean; onOpenChan
                                                 <div className="truncate text-xs text-muted-foreground"><Marked text={subLine(item)} query={query} /></div>
                                             </div>
                                             <span className="text-xs text-muted-foreground group-data-[selected=true]:hidden">{item.kind}</span>
-                                            <Kbd className="hidden group-data-[selected=true]:inline-flex">↵</Kbd>
+                                            <Kbd label="Enter" className="hidden group-data-[selected=true]:inline-flex"><CornerDownLeft aria-hidden="true" /></Kbd>
                                         </CommandItem>
                                     ))}
                                 </CommandGroup>
@@ -193,8 +203,8 @@ export function SearchDialog({ open, onOpenChange }: { open: boolean; onOpenChan
                         </div>
                     </CommandList>
                     <div className="flex items-center gap-4 border-t bg-page/60 px-4 py-2.5 text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1.5"><Kbd>↑</Kbd><Kbd>↓</Kbd> to move</span>
-                        <span className="flex items-center gap-1.5"><Kbd>↵</Kbd> to open</span>
+                        <span className="flex items-center gap-1.5"><Kbd label="Up"><ArrowUp aria-hidden="true" /></Kbd><Kbd label="Down"><ArrowDown aria-hidden="true" /></Kbd> to move</span>
+                        <span className="flex items-center gap-1.5"><Kbd label="Enter"><CornerDownLeft aria-hidden="true" /></Kbd> to open</span>
                         <span className="hidden items-center gap-1.5 sm:flex"><Kbd>tab</Kbd> for the next kind</span>
                     </div>
                 </Command>
@@ -203,16 +213,20 @@ export function SearchDialog({ open, onOpenChange }: { open: boolean; onOpenChan
     );
 }
 
+interface GlobalSearchProps {
+    /** Whether the browser runs on a Mac, iPhone or iPad, read from the request, so the keys show right from the first paint. */
+    apple?: boolean;
+    userId?: string;
+}
+
 /**
  * The search field in the middle of the header, a button on a phone, and Cmd K or Ctrl K anywhere.
  * Both open the search over the page.
  */
-export function GlobalSearch() {
+export function GlobalSearch({ apple = false, userId }: GlobalSearchProps) {
     const [open, setOpen] = useState(false);
-    const [mac, setMac] = useState(true);
 
     useEffect(() => {
-        setMac(/mac|iphone|ipad/i.test(navigator.userAgent));
         const onKey = (event: KeyboardEvent) => {
             if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
                 event.preventDefault();
@@ -232,12 +246,12 @@ export function GlobalSearch() {
             >
                 <Search className="size-4 shrink-0" aria-hidden="true" />
                 <span className="truncate">Search jobs, connections, backups and settings</span>
-                <Kbd className="ml-auto">{mac ? "⌘K" : "Ctrl K"}</Kbd>
+                <SearchShortcut apple={apple} className="ml-auto" />
             </button>
             <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setOpen(true)} aria-label="Search">
                 <Search />
             </Button>
-            {open && <SearchDialog open={open} onOpenChange={setOpen} />}
+            {open && <SearchDialog open={open} onOpenChange={setOpen} userId={userId} />}
         </>
     );
 }

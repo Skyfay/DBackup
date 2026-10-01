@@ -1,21 +1,23 @@
 /**
- * The records the global search finds by name: jobs, connections, the databases on the servers and
- * the latest runs of a job. It searches only the kinds the caller allows, so the route decides what
- * the viewer may see. Pages, actions and settings the search finds in the browser.
+ * The records the global search finds by name: jobs and their backups, connections, the databases
+ * on the servers, the latest runs of a job, and with `search-admin.ts` the people, templates and the
+ * Vault. It searches only the kinds the caller allows, so the route decides what the viewer may
+ * see. Pages, actions and settings the search finds in the browser.
  */
 
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
-import { MIN_QUERY_LENGTH, type SearchHit, type SearchScope } from "./search-types";
+import { apiKeys, credentials, groups, keys, templates, users } from "./search-admin";
+import { MIN_QUERY_LENGTH, PER_KIND, type SearchHit, type SearchScope } from "./search-types";
 
 const log = logger.child({ service: "SearchService" });
 
-/** Hits per kind, the first ones in the order of their names. */
-const PER_KIND = 5;
 const FINISHED = ["Success", "Failed", "Partial"];
 
-async function jobs(query: string): Promise<SearchHit[]> {
+/** The jobs by name, as jobs and as the backups each one made, whichever the caller may see. */
+async function jobs(query: string, scope: SearchScope): Promise<SearchHit[]> {
+    if (!scope.jobs && !scope.backups) return [];
     const found = await prisma.job.findMany({
         where: { name: { contains: query } },
         orderBy: { name: "asc" },
@@ -23,20 +25,26 @@ async function jobs(query: string): Promise<SearchHit[]> {
         select: { id: true, name: true, enabled: true, schedule: true, schedulePreset: { select: { schedule: true } }, source: { select: { adapterId: true } } },
     });
     // The newest finished run of each, which the index on job and start time finds at once.
-    const last = await Promise.all(found.map((job) => prisma.execution.findFirst({
-        where: { jobId: job.id, status: { in: FINISHED } },
-        orderBy: { startedAt: "desc" },
-        select: { status: true },
-    })));
-    return found.map((job, index) => ({
-        kind: "job",
-        id: job.id,
-        name: job.name,
-        enabled: job.enabled,
-        schedule: job.schedulePreset?.schedule ?? job.schedule,
-        adapterId: job.source?.adapterId ?? null,
-        lastStatus: last[index]?.status ?? null,
-    }));
+    const last = scope.jobs
+        ? await Promise.all(found.map((job) => prisma.execution.findFirst({
+            where: { jobId: job.id, status: { in: FINISHED } },
+            orderBy: { startedAt: "desc" },
+            select: { status: true },
+        })))
+        : [];
+    const asJobs: SearchHit[] = scope.jobs
+        ? found.map((job, index) => ({
+            kind: "job",
+            id: job.id,
+            name: job.name,
+            enabled: job.enabled,
+            schedule: job.schedulePreset?.schedule ?? job.schedule,
+            adapterId: job.source?.adapterId ?? null,
+            lastStatus: last[index]?.status ?? null,
+        }))
+        : [];
+    const asBackups: SearchHit[] = scope.backups ? found.map((job) => ({ kind: "backups", jobId: job.id, name: job.name })) : [];
+    return [...asJobs, ...asBackups];
 }
 
 async function connections(query: string, types: SearchScope["connections"]): Promise<SearchHit[]> {
@@ -109,10 +117,16 @@ export async function searchRecords(query: string, scope: SearchScope): Promise<
     const term = query.trim();
     if (term.length < MIN_QUERY_LENGTH) return [];
     const parts = await Promise.all([
-        scope.jobs ? jobs(term) : [],
+        jobs(term, scope),
         connections(term, scope.connections),
         scope.databases ? databases(term) : [],
         scope.runs ? runs(term) : [],
+        scope.users ? users(term) : [],
+        scope.groups ? groups(term) : [],
+        scope.apiKeys ? apiKeys(term) : [],
+        scope.templates ? templates(term) : [],
+        scope.keys ? keys(term) : [],
+        scope.credentials ? credentials(term) : [],
     ]);
     return parts.flat();
 }

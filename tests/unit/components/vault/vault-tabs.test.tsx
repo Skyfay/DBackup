@@ -6,7 +6,7 @@ import { KeysTab } from "@/components/dashboard/vault/keys-tab";
 import type { VaultCredentialsModel, VaultKey, VaultKeysModel } from "@/services/vault/vault-types";
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }), useSearchParams: () => new URLSearchParams() }));
 vi.mock("@/app/actions/auth/table-preferences", () => ({ saveTableLayout: vi.fn(async () => ({ success: true })) }));
 vi.mock("@/app/actions/backup/encryption", () => ({
     createEncryptionProfile: vi.fn(),

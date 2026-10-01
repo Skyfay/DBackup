@@ -39,7 +39,7 @@ src/services/
   trash/         Recently deleted: trash-snapshot.ts (keepInTrash, the snapshot a delete keeps), trash-restore.ts, trash-service.ts (list, restore, purge, cleanup)
   dashboard/     overview-service.ts (page model), aggregates.ts (cached history), health.ts, trends.ts, cache.ts
   audit/         the Audit log tab: audit-list-service.ts (page, filters, numbers), audit-details.ts, audit-timeline.ts, audit-export.ts (CSV)
-  search/        search-service.ts (what the search in the header finds by name, only of the kinds its caller allows), search-types.ts (shared with the browser)
+  search/        search-service.ts (what the search in the header finds by name, only of the kinds its caller allows) with search-admin.ts (people, templates, Vault), search-types.ts (shared with the browser)
   audit-service.ts, dashboard-service.ts   (flat, no subdirectory)
 ```
 
@@ -94,6 +94,10 @@ Nobody changes or deletes the group they are in, and an API key never gets more 
 ### The own profile
 
 The `profile:*` permissions decide what someone changes of their own account, on the server as well as on the page. The actions in `actions/auth/profile.ts` check the permission of each field that changes, `updateOwnPassword`, `togglePasskeyTwoFactor` and the SSO link actions check theirs, and `src/lib/auth/profile-guard.ts` refuses the better-auth endpoints the browser calls itself, like `/two-factor/enable` or `/passkey/delete-passkey`, from `beforeAuth` in `src/lib/auth/index.ts`. A new better-auth endpoint that changes the profile goes into `PROFILE_ENDPOINTS`.
+
+## Global search
+
+`GET /api/search` searches each kind only while the viewer may open the page that lists it, from the flags of `SearchScope` the route sets. A new kind gets a flag, a finder in `src/services/search/` that selects no secret, and rows with `needs` in `src/components/layout/search-items.ts`, which also hide a recent entry once its permission is gone.
 
 ## Audit log
 

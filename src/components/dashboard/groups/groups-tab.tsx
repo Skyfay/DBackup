@@ -25,6 +25,7 @@ import { GroupFormDialog, type GroupFormMode } from "./group-form-dialog";
 import { GroupMoveDialog, type GroupMoveTask } from "./group-move-dialog";
 import { GroupsStrip } from "./group-strip";
 import { GROUPS_TABLE_ID } from "./groups-tables";
+import { useOpenFromLink } from "@/hooks/use-open-from-link";
 
 /** What the page around the list can start, like New group beside the tabs. */
 export interface GroupsTabHandle {
@@ -85,6 +86,8 @@ export function GroupsTab({ ref, view, canManage, canMove, initialLayout }: Grou
     const movable = useCallback((group: GroupRow) => canMove && (!group.superAdmin || viewerSuperAdmin), [canMove, viewerSuperAdmin]);
 
     const open = useCallback((group: GroupRow) => setDetails({ id: group.id, open: true }), []);
+    // A link like the search in the header opens one with `?open=`.
+    useOpenFromLink(model?.groups, open);
     const columns = useMemo(
         () => groupColumns({ onOpen: open, renderActions: (group) => <BackupRowMenu name={group.name} groups={groupActions(group, handlers)} /> }),
         [open, handlers]

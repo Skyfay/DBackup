@@ -88,7 +88,7 @@ For the full endpoint documentation with request/response schemas, examples, and
 | Database servers | `GET /api/databases/servers`, `GET /api/databases/servers/:id`, `GET /api/databases/servers/:id/versions?page=&size=` | Every database server with its address, response time, kept backups and the newer backup of its engine it is behind, one server with its uptime over 30 days, and the versions it ran newest first with the backups made and kept on each, 5 a page unless `size` asks for up to 50. The kept backups need `storage:read` and the backups made `jobs:read` |
 | Vault | `GET /api/vault/:id/recovery-kit` | Download encryption recovery kit |
 | Settings | `GET/POST/PUT /api/settings/system-tasks` | The system tasks with their schedule, their last run and what each follows (`GET`), a change of one by its `taskId` (`POST`, an unknown task or a schedule the scheduler cannot read answers 400), and Run now (`PUT`, 409 while the task runs) |
-| Search | `GET /api/search?q=` | The jobs, connections, databases and latest runs whose name holds `q`, from two letters on, as `hits`. It needs no permission of its own and finds only the kinds the key may read, like jobs with `jobs:read` and runs with `history:read` |
+| Search | `GET /api/search?q=` | The jobs, backups of a job, connections, databases, latest runs, people (by name or email), groups, API keys, templates, encryption keys and saved logins whose name holds `q`, from two letters on, as `hits`. It needs no permission of its own and finds only the kinds the key may read, like jobs with `jobs:read`, backups with `storage:read` and saved logins with `vault:read` and `credentials:read`. It never returns a secret |
 | Health | `GET /api/health` | Health check (public, no auth) |
 
 ## Permissions

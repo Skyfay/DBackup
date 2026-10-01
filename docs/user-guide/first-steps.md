@@ -161,7 +161,7 @@ Get alerted when backups complete or fail.
 
 ## Finding Your Way
 
-The sidebar lists the pages, headed by the name set under **Settings → General**. The search in the middle of the header, or **Ctrl+K** (**⌘K** on macOS) on any page, finds jobs, connections, databases, backups, runs, settings and pages by name, only the ones you may open. It can also start a job it found, and **Tab** narrows it to one kind.
+The sidebar lists the pages, headed by the name set under **Settings → General**. The search in the middle of the header, or **Ctrl+K** (**⌘K** on macOS) on any page, finds jobs, connections, databases, backups, runs, people, groups, API keys, templates, Vault entries, settings and pages by name, and opens the one you pick on its page. It shows only what you may open, the entries you opened last included, and keeps those for you alone. It can also start a job it found, and **Tab** narrows it to one kind.
 
 The buttons on the right of the header lead to the guides and to DBackup on GitHub. A blue dot there marks a new version, and its card says how to update.
 

@@ -13,7 +13,11 @@ import { cn, formatBytes } from "@/lib/utils";
 import type { LoginImageInfo, LoginLook } from "@/services/system/login-image-service";
 
 const ACCEPT = "image/png,image/jpeg,image/webp";
-const PREVIEW_LOGOS = ["postgres", "mongodb", "mariadb", "redis", "google-drive", "dropbox"];
+/** Two rows like on the login page, databases on top and destinations below. */
+const PREVIEW_ROWS = [
+    ["postgres", "mongodb", "mariadb", "redis", "mssql", "firebird"],
+    ["s3-r2", "google-drive", "dropbox", "onedrive", "s3-hetzner", "docker-volume"],
+];
 
 /** The login page small: what its left side shows, and the form as lines beside it. */
 function MiniLogin({ children }: { children: React.ReactNode }) {
@@ -31,9 +35,9 @@ function MiniLogin({ children }: { children: React.ReactNode }) {
 }
 
 function LogosPreview() {
-    const row = (offset: string) => (
-        <span className={cn("flex gap-1", offset)}>
-            {PREVIEW_LOGOS.map((id) => (
+    const row = (ids: string[], offset: string) => (
+        <span key={ids[0]} className={cn("flex gap-1", offset)}>
+            {ids.map((id) => (
                 <span key={id} className="flex size-4.5 shrink-0 items-center justify-center rounded-[4px] border bg-background/70">
                     <AdapterIcon adapterId={id} className="size-2.5" />
                 </span>
@@ -43,8 +47,8 @@ function LogosPreview() {
     return (
         <MiniLogin>
             <span className="login-tint flex size-full flex-col justify-center gap-1 bg-card px-2">
-                {row("")}
-                {row("ml-2.5")}
+                {row(PREVIEW_ROWS[0], "")}
+                {row(PREVIEW_ROWS[1], "ml-2.5")}
             </span>
         </MiniLogin>
     );
@@ -158,7 +162,7 @@ export function LoginLookField({ value, onChange, image, readOnly, error }: Logi
                                 {busy ? <Loader2 className="animate-spin" /> : <Upload />}
                                 Replace
                             </Button>
-                            <Button type="button" variant="ghost" size="sm" tone="destructive" disabled={busy} onClick={() => setRemoving(true)}>
+                            <Button type="button" variant="ghost-destructive" size="sm" disabled={busy} onClick={() => setRemoving(true)}>
                                 <Trash2 />
                                 Remove
                             </Button>

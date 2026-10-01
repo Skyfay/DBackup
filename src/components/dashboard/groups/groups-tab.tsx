@@ -129,7 +129,6 @@ export function GroupsTab({ ref, view, canManage, canMove, initialLayout }: Grou
                 </div>
             ) : (
                 <DataTable
-                    variant="card"
                     joined
                     columns={columns}
                     data={rows}

@@ -112,7 +112,6 @@ export function SignInTab({ ref, view, canManage, initialLayout }: SignInTabProp
                 </div>
             ) : (
                 <DataTable
-                    variant="card"
                     joined
                     columns={columns}
                     data={providers}

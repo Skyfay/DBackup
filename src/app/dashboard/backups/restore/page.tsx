@@ -1,7 +1,11 @@
+import type { Metadata } from "next";
 import { getCurrentUserWithGroup, getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { redirect } from "next/navigation";
 import { RestoreClient } from "./restore-client";
+
+/** The name of the browser tab, which the root layout ends with the name of the instance. */
+export const metadata: Metadata = { title: "Restore" };
 
 export default async function RestorePage() {
     const [permissions, user] = await Promise.all([getUserPermissions(), getCurrentUserWithGroup()]);

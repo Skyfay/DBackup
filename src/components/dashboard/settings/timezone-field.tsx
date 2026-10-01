@@ -66,7 +66,7 @@ export function TimezoneField({ id, value, onChange, disabled }: TimezoneFieldPr
                     <span className="shrink-0 text-xs text-muted-foreground">{offsetLabel(value)}</span>
                 </PickTrigger>
             </PopoverTrigger>
-            <PopoverContent tone="pick" align="start" className="w-(--radix-popover-trigger-width) min-w-80 overflow-hidden bg-raised p-0">
+            <PopoverContent tone="pick" align="start" className="w-(--radix-popover-trigger-width) min-w-80 overflow-hidden p-0">
                 <PickList
                     icon={Globe}
                     title="Pick a time zone"

@@ -55,7 +55,7 @@ describe("connection picker", () => {
         await user.click(screen.getByRole("combobox", { name: "Destination 1" }));
         await user.click(screen.getByRole("button", { name: "New destination" }));
 
-        expect(await screen.findByRole("dialog", { name: "Add destination" })).toBeInTheDocument();
+        expect(await screen.findByRole("dialog", { name: "New destination" })).toBeInTheDocument();
     });
 
     it("offers New beside the database field, where there is room for it", () => {

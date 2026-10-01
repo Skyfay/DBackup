@@ -193,7 +193,6 @@ export function DestinationsView(props: DestinationsViewProps) {
             />
 
             <DataTable
-                variant="card"
                 joined
                 columns={columns}
                 data={destinations}

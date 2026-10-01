@@ -22,7 +22,7 @@ Email (SMTP) requires a [Credential Profile](/user-guide/security/credential-pro
 ## Setup Guide
 
 1. Create an `SMTP` credential profile in **Vault → Credentials** with your SMTP username and password ([guide](/user-guide/security/credential-profiles))
-2. In DBackup: **Connections** → **Notifications** → **Add New** → **Email (SMTP)**
+2. In DBackup: **Connections** → **Channels** → **New channel** → **Email (SMTP)**
 3. Enter your SMTP server details (host, port, security mode)
 4. Pick the credential profile under **SMTP login**
 5. In the **Message** part, set the From address and add the recipients under To (several are supported)

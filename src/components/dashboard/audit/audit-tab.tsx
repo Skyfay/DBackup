@@ -147,7 +147,6 @@ export function AuditTab({ ref, view, cards, canSignOut, viewerSuperAdmin }: Aud
         <div className="space-y-4 md:space-y-0">
             <AuditStrip stats={page?.stats ?? null} />
             <DataTable
-                variant="card"
                 joined
                 columns={columns}
                 data={list.rows}

@@ -158,7 +158,6 @@ export function RecentlyDeletedPart({ rows }: { rows: TrashRow[] }) {
                 </div>
             ) : (
                 <DataTable
-                    variant="card"
                     frameless
                     columns={columns}
                     data={shown}

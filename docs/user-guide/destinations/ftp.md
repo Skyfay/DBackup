@@ -22,7 +22,7 @@ FTP requires a [Credential Profile](/user-guide/security/credential-profiles) of
 1. Create a `USERNAME_PASSWORD` credential profile in **Vault → Credentials** ([guide](/user-guide/security/credential-profiles))
 2. Ensure an FTP server is running on the target host
 3. Create a dedicated user with write access to the backup directory
-4. Go to **Connections** → **Backup Destinations** → **Add New** → **FTP**
+4. Go to **Connections** → **Destinations** → **New destination** → **FTP**
 5. Enter Host and pick the credential profile under **Login**
 6. Enable **TLS** if your server supports FTPS (recommended)
 7. (Optional) Set a **Folder** in the **Location** part to specify the remote directory, or pick it with the folder button (📂)

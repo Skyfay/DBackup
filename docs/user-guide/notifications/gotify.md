@@ -13,7 +13,7 @@ Send push notifications to your self-hosted [Gotify](https://gotify.net/) server
 ## Setup Guide
 
 1. In your Gotify web UI: **Apps** → **Create Application** → copy the **App Token**
-2. In DBackup: **Connections** → **Notifications** → **Add New** → **Gotify**
+2. In DBackup: **Connections** → **Channels** → **New channel** → **Gotify**
 3. Enter the Server URL and pick or create the credential profile under **App token** → **Send test** → **Create channel**
 
 <details>

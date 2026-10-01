@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { TemplatesClient } from "@/components/dashboard/templates/templates-client";
@@ -5,6 +6,9 @@ import { TEMPLATE_TABLE_IDS } from "@/components/dashboard/templates/template-ta
 import { getCurrentUserWithGroup, getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getTablePreferences } from "@/services/user/preference-service";
+
+/** The name of the browser tab, which the root layout ends with the name of the instance. */
+export const metadata: Metadata = { title: "Templates" };
 
 /**
  * The Templates page: retention policies, file names, schedule presets, notifications and exclude

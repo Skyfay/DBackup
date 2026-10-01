@@ -29,7 +29,7 @@ Enable this for providers that don't support virtual-hosted-style URLs (e.g. Min
 1. Create a bucket in your S3-compatible provider
 2. Generate access credentials (access key + secret key)
 3. **Create an `ACCESS_KEY` credential profile** in **Vault → Credentials** with those keys ([guide](/user-guide/security/credential-profiles))
-4. Go to **Connections** → **Backup Destinations** → **Add New** → **S3-Compatible**
+4. Go to **Connections** → **Destinations** → **New destination** → **S3-Compatible**
 5. Enter the **Endpoint** URL and Bucket, then pick the credential profile under **Login**
 6. Turn on **Path-style URLs** in the **Options** part if your provider needs it
 7. (Optional) Set a **Folder** in the **Location** part for organizing backups, or pick it with the folder button (📂)

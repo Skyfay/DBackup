@@ -1,29 +1,17 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { Loader2, Plus, Filter, ChevronsUpDown, Check, Pencil } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-  CommandSeparator,
-} from "@/components/ui/command";
-import { cn } from "@/lib/utils";
+import { useCallback, useEffect, useState } from "react";
+import { Filter } from "lucide-react";
+import type { ExcludePatternPreset } from "@prisma/client";
 import { toast } from "sonner";
-import { ExcludePatternPreset } from "@prisma/client";
 import { getExcludePatternPresets } from "@/app/actions/templates";
-import { resolveExcludePatterns } from "@/lib/exclude-groups";
+import { useCan } from "@/components/permissions/permissions-context";
 import { ExcludePatternPresetDialog } from "@/components/settings/templates/exclude-pattern-preset-dialog";
+import { Badge } from "@/components/ui/badge";
+import { PickList, PickTrigger, type PickEntry } from "@/components/ui/pick-list";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { PERMISSIONS } from "@/lib/auth/permissions";
+import { resolveExcludePatterns } from "@/lib/exclude-groups";
 
 function parsePatterns(patterns: string): string[] {
   try {
@@ -34,177 +22,129 @@ function parsePatterns(patterns: string): string[] {
   }
 }
 
+/** What a preset leaves out: its groups plus its own entries, the same resolution the backup applies. */
+function patternsOf(preset: ExcludePatternPreset): string[] {
+  return resolveExcludePatterns({
+    groups: parsePatterns(preset.groups),
+    excludedGroupPatterns: parsePatterns(preset.excludedGroupPatterns),
+    patterns: parsePatterns(preset.patterns),
+  });
+}
+
+function entryOf(preset: ExcludePatternPreset): PickEntry {
+  const patterns = patternsOf(preset);
+  const first = patterns.slice(0, 2).join(", ");
+  return {
+    id: preset.id,
+    name: preset.name,
+    meta: patterns.length === 0 ? "Leaves out nothing yet" : patterns.length > 2 ? `${first} and ${patterns.length - 2} more` : first,
+    keywords: [...patterns, ...(preset.description ? [preset.description] : [])],
+    // A preset that ships with DBackup changes with its releases, nobody edits it.
+    editable: !preset.isSystem,
+  };
+}
+
+const byName = (a: ExcludePatternPreset, b: ExcludePatternPreset) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+
 interface Props {
   value: string | null;
   onChange: (id: string | null) => void;
   placeholder?: string;
-  /** Preset ids already linked by sibling rows - disabled here to prevent picking the same preset twice. */
+  /** Preset ids already linked by sibling rows, left out here so a folder never links one twice. */
   usedIds?: string[];
 }
 
 /**
- * Single-preset row picker (matches NotificationTemplatePicker's semantics): a job source can link
- * several of these presets at once, rendered as a list of rows by the caller (see job-form.tsx's
- * exclude-patterns panel) - add a row, remove a row, same pattern as the Notify tab's templates.
- * Selecting a preset only sets the reference - it never copies patterns into the row's own
- * job-specific list. The preset's current patterns are shown read-only below and re-fetch on every
- * mount, so editing the preset in Settings -> Templates and coming back here reflects the update.
+ * Picks one exclude preset for a row of a folder source, like every field that picks a saved
+ * entry: the presets in a list that says what each leaves out, Edit on a row and New at its foot,
+ * both only for a viewer who may write templates. A folder links several presets as rows (see
+ * job-folder-row.tsx), and picking one only links it, its patterns stay in the preset and show
+ * below as they are now.
  */
-export function ExcludePatternPresetPicker({ value, onChange, placeholder = "Add exclude pattern preset...", usedIds = [] }: Props) {
+export function ExcludePatternPresetPicker({ value, onChange, placeholder = "Pick a preset", usedIds = [] }: Props) {
   const [presets, setPresets] = useState<ExcludePatternPreset[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<ExcludePatternPreset | null>(null);
-  const [editOpen, setEditOpen] = useState(false);
+  const [dialog, setDialog] = useState<{ open: boolean; preset?: ExcludePatternPreset }>({ open: false });
+  const canWrite = useCan(PERMISSIONS.TEMPLATES.WRITE);
 
   const fetchPresets = useCallback(async () => {
     setLoading(true);
     const res = await getExcludePatternPresets();
-    if (res.success && res.data) {
-      setPresets(res.data);
-    } else {
-      toast.error("Failed to load exclude pattern presets");
-    }
+    if (res.success && res.data) setPresets(res.data);
+    else toast.error("The exclude presets could not be loaded.");
     setLoading(false);
   }, []);
 
   useEffect(() => {
-    fetchPresets();
+    void fetchPresets();
   }, [fetchPresets]);
 
-  const selected = presets.find((p) => p.id === value);
-  // Groups plus own entries - the same resolution the backup applies, so the preview here
-  // matches what a run will actually exclude.
-  const selectedPatterns = selected
-    ? resolveExcludePatterns({
-        groups: parsePatterns(selected.groups),
-        excludedGroupPatterns: parsePatterns(selected.excludedGroupPatterns),
-        patterns: parsePatterns(selected.patterns),
-      })
-    : [];
+  const selected = presets.find((preset) => preset.id === value);
+  const selectedPatterns = selected ? patternsOf(selected) : [];
+  const offered = presets.filter((preset) => preset.id === value || !usedIds.includes(preset.id));
+
+  const openDialog = (preset?: ExcludePatternPreset) => {
+    setOpen(false);
+    setDialog({ open: true, preset });
+  };
 
   return (
     <div className="space-y-2">
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover open={open} onOpenChange={setOpen} modal>
         <PopoverTrigger asChild>
-          <Button
-            type="button"
-            variant="outline"
-            role="combobox"
-            size="sm"
-            aria-expanded={open}
-            disabled={loading}
-            className="w-full min-w-0 justify-between font-normal h-8"
-          >
+          <PickTrigger icon={Filter} loading={loading} disabled={loading} aria-expanded={open} size="sm" className="h-8 w-full flex-none">
             {loading ? (
-              <span className="flex items-center gap-2 text-muted-foreground text-xs">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Loading...
-              </span>
+              <span className="text-muted-foreground">Loading...</span>
             ) : selected ? (
-              <span className="flex items-center gap-1.5 min-w-0 text-xs">
-                <Filter className="h-3 w-3 text-muted-foreground shrink-0" />
-                <span className="truncate">{selected.name}</span>
-              </span>
+              <span className="truncate">{selected.name}</span>
             ) : (
-              <span className="flex items-center gap-1.5 min-w-0 text-xs text-muted-foreground">
-                <Filter className="h-3 w-3 shrink-0" />
-                {placeholder}
-              </span>
+              <span className="truncate text-muted-foreground">{placeholder}</span>
             )}
-            <ChevronsUpDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
-          </Button>
+          </PickTrigger>
         </PopoverTrigger>
-        <PopoverContent className="w-(--radix-popover-trigger-width) p-0" align="start">
-          <Command>
-            <CommandInput placeholder="Search presets..." />
-            <CommandList>
-              <CommandEmpty>No presets found.</CommandEmpty>
-              <CommandGroup>
-                {presets.map((preset) => {
-                  const isUsed = usedIds.includes(preset.id) && preset.id !== value;
-                  return (
-                    <CommandItem
-                      key={preset.id}
-                      value={preset.name}
-                      disabled={isUsed}
-                      className="group pr-1"
-                      onSelect={() => {
-                        onChange(preset.id);
-                        setOpen(false);
-                      }}
-                    >
-                      <Check className={cn("mr-2 h-4 w-4", value === preset.id ? "opacity-100" : "opacity-0")} />
-                      <span className="flex-1">{preset.name}</span>
-                      {!preset.isSystem && (
-                        <button
-                          type="button"
-                          className="opacity-0 group-hover:opacity-100 transition-opacity ml-1 rounded p-0.5 hover:bg-accent"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setOpen(false);
-                            setEditTarget(preset);
-                            setEditOpen(true);
-                          }}
-                        >
-                          <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
-                        </button>
-                      )}
-                    </CommandItem>
-                  );
-                })}
-              </CommandGroup>
-              <CommandSeparator />
-              <CommandGroup>
-                <CommandItem
-                  value="__create__"
-                  onSelect={() => {
-                    setOpen(false);
-                    setCreateOpen(true);
-                  }}
-                  className="font-medium"
-                >
-                  <Plus className="mr-2 h-3.5 w-3.5" />
-                  Create new preset...
-                </CommandItem>
-              </CommandGroup>
-            </CommandList>
-          </Command>
+        <PopoverContent tone="pick" align="start" className="w-(--radix-popover-trigger-width) min-w-80 overflow-hidden p-0">
+          <PickList
+            icon={Filter}
+            title="Pick from Templates"
+            note="Exclude presets"
+            groups={[{ entries: offered.map(entryOf) }]}
+            value={value}
+            emptyText={presets.length === 0 ? "There is no exclude preset yet." : "Nothing matches."}
+            onPick={(id) => {
+              onChange(id);
+              setOpen(false);
+            }}
+            onEdit={canWrite ? (id) => openDialog(presets.find((preset) => preset.id === id)) : undefined}
+            createLabel="New preset"
+            onCreate={canWrite ? () => openDialog() : undefined}
+          />
         </PopoverContent>
       </Popover>
 
       {selected && (
         <div className="flex flex-wrap items-center gap-1 text-xs">
-          <span className="text-muted-foreground shrink-0">From template (live):</span>
+          <span className="shrink-0 text-muted-foreground">Leaves out:</span>
           {selectedPatterns.length === 0 ? (
-            <span className="text-muted-foreground italic">no patterns</span>
+            <span className="text-muted-foreground">nothing yet</span>
           ) : (
-            selectedPatterns.map((p, i) => (
-              <Badge key={i} variant="outline" className="font-mono text-xs">{p}</Badge>
+            selectedPatterns.map((pattern, index) => (
+              <Badge key={index} variant="outline" className="font-mono text-xs">{pattern}</Badge>
             ))
           )}
         </div>
       )}
 
       <ExcludePatternPresetDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
+        open={dialog.open}
+        onOpenChange={(next) => setDialog((current) => ({ ...current, open: next }))}
+        preset={dialog.preset}
         onSuccess={(preset) => {
-          setPresets((prev) => [...prev.filter((p) => p.id !== preset.id), preset].sort((a, b) => a.name.localeCompare(b.name)));
-          onChange(preset.id);
-          setCreateOpen(false);
-        }}
-      />
-
-      <ExcludePatternPresetDialog
-        open={editOpen}
-        onOpenChange={(v) => { setEditOpen(v); if (!v) setEditTarget(null); }}
-        preset={editTarget ?? undefined}
-        onSuccess={(preset) => {
-          setPresets((prev) => prev.map((p) => (p.id === preset.id ? preset : p)));
-          setEditTarget(null);
-          setEditOpen(false);
+          setPresets((list) => [...list.filter((entry) => entry.id !== preset.id), preset].sort(byName));
+          // A new preset is linked right away, an edited one only refreshes what the row shows.
+          if (!dialog.preset) onChange(preset.id);
+          // The preset stays until the dialog has faded out, so its head does not turn into New on the way.
+          setDialog((current) => ({ ...current, open: false }));
         }}
       />
     </div>

@@ -54,7 +54,7 @@ export function ServerFreshness({ servers, onReadNow }: ServerFreshnessProps) {
                     {!reading && behind.length > 0 && <span className="size-1.5 rounded-full bg-warning" aria-hidden="true" />}
                 </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-96 overflow-hidden rounded-xl bg-raised p-0" align="end">
+            <PopoverContent className="w-96 overflow-hidden p-0" align="end">
                 <DialogHead tone={tone} icon={behind.length > 0 ? TriangleAlert : Check} className="px-4 py-3">
                     <p className="text-sm font-semibold">{behind.length > 0 ? `${count(behind.length, "server")} not read` : "The lists are up to date"}</p>
                     <p className={cn(dialogNoteClass(tone), "truncate")}>

@@ -14,7 +14,7 @@ Send rich embed notifications to Discord channels via webhooks.
 
 1. In Discord: **Server Settings** → **Integrations** → **Webhooks** → **New Webhook**
 2. Choose the target channel → **Copy Webhook URL**
-3. In DBackup: **Connections** → **Notifications** → **Add New** → **Discord Webhook**
+3. In DBackup: **Connections** → **Channels** → **New channel** → **Discord Webhook**
 4. Under **Webhook**, pick or create a credential profile holding the webhook URL
 5. Click **Send test** → verify the message appears in Discord → **Create channel**
 

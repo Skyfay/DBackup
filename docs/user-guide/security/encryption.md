@@ -85,7 +85,7 @@ To restore access after a reinstall, or to open backups of another install:
 
 A key the Vault holds already is refused with the name of the key that has it. Backups that name a key the Vault lacks open with an imported key that fits, the restore finds it by itself.
 
-A key imported from a recovery kit remembers the ID it had in the install the kit came from, so the Vault counts the backups that name that ID under the imported key right away. A kit with a single key made by an older version does not name the ID. Then the Vault learns it the first time a restore, or the **Encryption Key Required** dialog of a backup, opens one of those backups with the key.
+A key imported from a recovery kit remembers the ID it had in the install the kit came from, so the Vault counts the backups that name that ID under the imported key right away. A kit with a single key made by an older version does not name the ID. Then the Vault learns it the first time a restore, or the dialog **This backup needs its key**, opens one of those backups with the key.
 
 ### Edit a Key
 

@@ -2,6 +2,7 @@
 
 import { Check, CircleX, HardDrive, Info, SquareTerminal, TriangleAlert } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { stageLabel } from "@/lib/core/logs";
 import { useDateFormatter } from "@/hooks/use-date-formatter";
 import { sourceOf } from "@/lib/logs/line-source";
 import { cn, formatDuration } from "@/lib/utils";
@@ -90,7 +91,7 @@ export function GroupHead({ step, now }: { step: RunStep; now: number }) {
     return (
         <div className="mt-2 flex items-center gap-2 px-3 py-2 text-sm font-semibold first:mt-0">
             <StepIcon state={step.state} className="size-3.5" />
-            {step.name}
+            {stageLabel(step.name)}
             {duration !== null && <span className="font-normal text-muted-foreground tabular-nums">{formatDuration(Math.max(0, duration))}{step.state === "running" ? " so far" : ""}</span>}
             {step.usualMs !== null && <span className="font-normal text-muted-foreground/70">· usual {formatDuration(step.usualMs)}</span>}
             <span className="h-px flex-1 bg-border" aria-hidden="true" />

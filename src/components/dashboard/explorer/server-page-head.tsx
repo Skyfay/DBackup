@@ -55,7 +55,7 @@ function ServerSwitcher({ overview, current }: { overview: DatabaseOverview; cur
                     </span>
                 </PickTrigger>
             </PopoverTrigger>
-            <PopoverContent tone="pick" align="end" className="w-80 overflow-hidden bg-raised p-0">
+            <PopoverContent tone="pick" align="end" className="w-80 overflow-hidden p-0">
                 <PickList
                     icon={Server}
                     title="Open another server"

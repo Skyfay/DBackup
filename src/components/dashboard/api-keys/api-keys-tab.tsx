@@ -184,7 +184,6 @@ export function ApiKeysTab({ ref, view, canManage, canOpenRuns, initialLayout }:
                 </div>
             ) : (
                 <DataTable
-                    variant="card"
                     joined
                     columns={columns}
                     data={rows}

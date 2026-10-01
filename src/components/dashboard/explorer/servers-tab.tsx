@@ -115,7 +115,6 @@ export function ServersTab({ overview, canOpenBackups, cards }: ServersTabProps)
             />
 
             <DataTable
-                variant="card"
                 joined
                 columns={columns}
                 data={shown}

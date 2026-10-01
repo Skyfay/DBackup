@@ -161,7 +161,7 @@ export function ArchiveFileTree({
                         />
 
                         {entry.type === "directory"
-                            ? <Folder className="h-4 w-4 shrink-0 text-blue-500" />
+                            ? <Folder className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                             : entry.link !== undefined
                                 ? <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" />
                                 : <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />}

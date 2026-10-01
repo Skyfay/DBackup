@@ -40,7 +40,7 @@ Open the target folder in Google Drive - the Folder ID is the last part of the U
 
 ## Setup Guide
 
-1. Go to **Connections** → **Backup Destinations** → **Add New** → **Google Drive**
+1. Go to **Connections** → **Destinations** → **New destination** → **Google Drive**
 2. Under **OAuth app**, pick the credential profile holding the Client ID and Client Secret, or create one with **New**
 3. Click **Authorize** - Google opens in a new window
 4. Sign in and grant DBackup access to manage its files

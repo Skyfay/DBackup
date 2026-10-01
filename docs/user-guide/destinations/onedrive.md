@@ -51,7 +51,7 @@ Or recreate the App Registration with the correct setting (third option).
 
 ## Setup Guide
 
-1. Go to **Connections** → **Backup Destinations** → **Add New** → **Microsoft OneDrive**
+1. Go to **Connections** → **Destinations** → **New destination** → **Microsoft OneDrive**
 2. Under **OAuth app**, pick the credential profile holding the Client ID and Client Secret, or create one with **New**
 3. Click **Authorize** - Microsoft opens in a new window
 4. Sign in and accept the requested permissions

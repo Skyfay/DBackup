@@ -114,7 +114,7 @@ export function NavUser({ groupName, version }: NavUserProps) {
                         </SidebarMenuButton>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent
-                        className="w-68 rounded-lg"
+                        className="w-68"
                         side={isMobile ? "top" : "right"}
                         align="end"
                         sideOffset={4}

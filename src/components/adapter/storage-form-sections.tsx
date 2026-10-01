@@ -223,7 +223,7 @@ function BehaviorPart({ adapter, storageRole, onStorageRoleChange, storageRoleLo
 
     return (
         <>
-            {/* A page that decides the role says so in the head, "Add backup destination", and asks nothing. */}
+            {/* A page that decides the role says so in the head, "New destination", and asks nothing. */}
             {!storageRoleLocked && (
                 <div className="grid gap-2">
                     <p id={labelId} className="text-sm font-medium">Used as</p>

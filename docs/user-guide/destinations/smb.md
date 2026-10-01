@@ -30,7 +30,7 @@ SMB requires a [Credential Profile](/user-guide/security/credential-profiles) of
 1. Create a `USERNAME_PASSWORD` credential profile in **Vault → Credentials** ([guide](/user-guide/security/credential-profiles))
 2. Ensure the SMB share is accessible from the DBackup server
 3. Create a dedicated user with write access to the share (recommended)
-4. Go to **Connections** → **Backup Destinations** → **Add New** → **SMB / CIFS**
+4. Go to **Connections** → **Destinations** → **New destination** → **SMB / CIFS**
 5. Enter the **Address** in UNC format: `//hostname-or-ip/sharename`
 6. Pick the credential profile under **Login** (or leave empty for anonymous access)
 7. (Optional) Set **Domain** if authenticating against a Windows domain

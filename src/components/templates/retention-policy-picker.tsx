@@ -125,7 +125,7 @@ export function RetentionPolicyPicker({
                     </PickTrigger>
                 </PopoverTrigger>
                 {/* On the raised surface, so it stands out from the dialog it opens over. */}
-                <PopoverContent tone="pick" align="end" className="w-(--radix-popover-trigger-width) min-w-80 overflow-hidden bg-raised p-0">
+                <PopoverContent tone="pick" align="end" className="w-(--radix-popover-trigger-width) min-w-80 overflow-hidden p-0">
                     <PickList
                         icon={Timer}
                         title="Pick from Templates"

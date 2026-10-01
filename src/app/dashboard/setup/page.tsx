@@ -1,8 +1,12 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { SetupWizard } from "@/components/dashboard/setup/setup-wizard";
 import { getEncryptionProfiles } from "@/services/backup/encryption-service";
+
+/** The name of the browser tab, which the root layout ends with the name of the instance. */
+export const metadata: Metadata = { title: "Quick Setup" };
 
 export default async function SetupPage() {
     const permissions = await getUserPermissions();

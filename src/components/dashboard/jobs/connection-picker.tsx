@@ -92,7 +92,7 @@ export function ConnectionPicker({ options, value, onChange, placeholder, kind, 
                     </PickTrigger>
                 </PopoverTrigger>
                 {/* On the raised surface, so it stands out from the dialog it opens over. */}
-                <PopoverContent tone="pick" align="start" className="w-(--radix-popover-trigger-width) min-w-80 overflow-hidden bg-raised p-0">
+                <PopoverContent tone="pick" align="start" className="w-(--radix-popover-trigger-width) min-w-80 overflow-hidden p-0">
                     <PickList
                         icon={setup.icon}
                         title="Pick from Connections"
@@ -121,7 +121,7 @@ export function ConnectionPicker({ options, value, onChange, placeholder, kind, 
                 onOpenChange={setAdding}
                 type={setup.type}
                 role={setup.role}
-                title={`Add ${setup.noun}`}
+                title={`New ${setup.noun}`}
                 onSaved={(saved) => {
                     const option: AdapterOption = { ...saved, type: setup.type, storageRole: setup.role };
                     setAdded((list) => [...list, option]);

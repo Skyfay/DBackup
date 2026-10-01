@@ -92,7 +92,6 @@ export function NotificationsTab({ cards }: { cards: boolean }) {
         <div className="space-y-4 md:space-y-0">
             <NotificationsStrip stats={page?.stats ?? null} />
             <DataTable
-                variant="card"
                 joined
                 columns={columns}
                 data={list.rows}

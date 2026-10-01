@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowDownToLine, ChevronDown, ChevronUp, Database, ListFilter, ScrollText, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { stageLabel } from "@/lib/core/logs";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -27,7 +28,7 @@ function StepSelect({ steps, picked, onPick }: { steps: string[]; picked: string
                 </SelectTrigger>
                 <SelectContent>
                     <SelectItem value="all">Every step</SelectItem>
-                    {steps.map((step) => <SelectItem key={step} value={step}>{step}</SelectItem>)}
+                    {steps.map((step) => <SelectItem key={step} value={step}>{stageLabel(step)}</SelectItem>)}
                 </SelectContent>
             </Select>
             {picked && <Button variant="ghost" size="icon" className="size-8" onClick={() => onPick(null)} aria-label="Show every step"><X /></Button>}

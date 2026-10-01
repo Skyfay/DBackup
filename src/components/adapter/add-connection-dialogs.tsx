@@ -16,7 +16,7 @@ interface AddConnectionDialogsProps {
     type: "database" | "storage" | "notification";
     /** The role a new storage connection gets, kept as it is. */
     role?: StorageRole;
-    /** Names what is added, like "Add destination". */
+    /** Names what is added, like "New destination", the way every dialog that creates is titled. */
     title: string;
     onSaved: (saved: SavedConnection) => void;
     /**

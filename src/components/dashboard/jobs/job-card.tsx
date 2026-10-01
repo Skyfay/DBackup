@@ -2,6 +2,7 @@
 
 import { Archive, ChevronRight, CircleAlert, Lock, LockOpen, Repeat, TriangleAlert, type LucideIcon } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
+import { stageLabel } from "@/lib/core/logs";
 import { ExecutionStatusBadge } from "@/components/dashboard/widgets/execution-status";
 import { RunBars } from "@/components/dashboard/widgets/run-bars";
 import { isPlainClick } from "@/components/ui/row-click";
@@ -81,7 +82,7 @@ function Notice({ job }: { job: JobListItem }) {
         return (
             <div>
                 <div className="flex justify-between text-xs text-muted-foreground tabular-nums">
-                    <span>{live.status === "Pending" ? "Waiting for its turn" : live.stage ?? "Starting"}</span>
+                    <span>{live.status === "Pending" ? "Waiting for its turn" : live.stage ? stageLabel(live.stage) : "Starting"}</span>
                     {live.progress !== null && <span>{live.progress}%</span>}
                 </div>
                 <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted">

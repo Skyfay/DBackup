@@ -14,7 +14,7 @@ Send JSON payloads to any HTTP endpoint. Use for custom integrations with PagerD
 
 ## Setup Guide
 
-1. In DBackup: **Connections** → **Notifications** → **Add New** → **Generic Webhook**
+1. In DBackup: **Connections** → **Channels** → **New channel** → **Generic Webhook**
 2. Under **Webhook**, pick or create a credential profile holding the target URL and, if needed, the authorization header
 3. (Optional) Set the method in the **Connection** part, and extra headers and a payload template in the **Message** part
 4. Click **Send test** → **Create channel**

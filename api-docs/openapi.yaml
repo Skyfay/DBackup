@@ -2032,26 +2032,35 @@ paths:
                           format: date-time
 
   # ─── Vault ─────────────────────────────────────────────────────
-  /vault/{id}/recovery-kit:
+  /vault/recovery-kit:
     get:
       tags: [Vault]
       summary: Download Recovery Kit
       description: |
-        Download a ZIP file containing the master encryption key and helper scripts for offline decryption.
+        Download a ZIP file with the master keys of one or more encryption profiles and the tools
+        to decrypt a backup offline. Several profiles in one kit open the backups of every job that
+        uses one of them.
 
         The ZIP contains:
-        - `master.key` - Hex-encoded encryption key
-        - `decrypt_backup.js` - Node.js decryption script
-        - `decrypt_drag_drop_windows.bat` - Windows drag & drop helper
-        - `decrypt_linux_mac.sh` - Linux/macOS helper script
+        - `master.key` for one profile, or `keys/` with a file per profile and `keys/keys.json` naming them
+        - `dbackup-recover.js` - Node.js recovery tool
+        - `START-Windows.bat`, `START-macOS.command` and `START-Linux.sh` - launchers of the tool
         - `README.txt` - Usage instructions
+
+        **Required permission:** `vault:write`
 
         > This is a sensitive operation. An audit log entry is created.
       operationId: downloadRecoveryKit
       security:
         - BearerAuth: []
       parameters:
-        - $ref: "#/components/parameters/ResourceId"
+        - name: ids
+          in: query
+          required: true
+          description: Comma separated ids of the encryption profiles the kit holds.
+          schema:
+            type: string
+          example: clx1abc2def,clx3ghi4jkl
       responses:
         "200":
           description: ZIP file download
@@ -2060,10 +2069,14 @@ paths:
               schema:
                 type: string
                 format: binary
+        "400":
+          description: No encryption profile was named in `ids`
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "404":
+          description: One of the encryption profiles does not exist
 
   # ─── Credentials ───────────────────────────────────────────────
   /credentials:

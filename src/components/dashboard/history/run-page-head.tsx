@@ -46,7 +46,7 @@ function RunSwitcher({ run, go }: { run: RunDetail; go: (id: string) => void }) 
                     <span className="truncate"><DateDisplay date={run.startedAt} format="Pp" /><span className="text-muted-foreground"> · {STATUS_WORDS[run.status]}</span></span>
                 </PickTrigger>
             </PopoverTrigger>
-            <PopoverContent tone="pick" align="end" className="w-96 overflow-hidden bg-raised p-0">
+            <PopoverContent tone="pick" align="end" className="w-96 overflow-hidden p-0">
                 <PickList
                     icon={History}
                     title="Open another run"

@@ -140,6 +140,8 @@ All notable changes to DBackup are documented here.
 - **notifications**: Tab moves on from the recipients of an email channel instead of staying in the field.
 - **ui**: The old addresses `/dashboard/destinations` and `/dashboard/notifications` open their tab of the Connections page instead of the databases.
 - **jobs**: The list of exclude presets of a folder opens as wide as its field.
+- **history**: The preview of a notification no longer breaks on a payload that is no JSON, and shows it as it went out.
+- **ui**: A long confirmation scrolls between its head and its buttons instead of running off a short window.
 
 ### 🔒 Security
 
@@ -221,6 +223,10 @@ All notable changes to DBackup are documented here.
 - **ui**: An error shows a page of DBackup with Try again and an ID to find it in the log, inside the dashboard with the sidebar, and an unknown address a page with a way back. Both showed the bare page of Next.js before.
 - **history**: Cancel run asks before it stops a run and says that a stopped restore may leave its database half restored.
 - **connections**: The Connections page no longer asks for the state of its connections every 10 seconds while its browser tab is hidden.
+- **ui**: Every page names its browser tab, like Jobs, and shows the shape of its content while it loads.
+- **jobs**: The folder tree of a folder source names its buttons and boxes for a screen reader and shows folders that load as placeholders.
+- **jobs**: The exclude presets of a folder open in a list that says what each leaves out, with Edit on a phone too. Edit and New show only for someone who may change templates.
+- **connections**: A Hetzner region, an S3 storage class and an R2 jurisdiction show by their names, like Falkenstein (fsn1), instead of their codes.
 
 ### 🔄 Changed
 
@@ -260,6 +266,7 @@ All notable changes to DBackup are documented here.
 - **ui**: The name under Settings → General heads the sidebar, with DBackup and the version below it. Without a name the sidebar shows DBackup as before.
 - **api**: The new `GET /api/login-image` serves the picture of the login page while it is picked, and `/api/settings/login-image` uploads and removes it with `settings:write`.
 - **profile**: Profile pictures live in the database and come back with a configuration backup. Pictures under `/data/storage/avatars` move there on the first start, and the folder is gone.
+- **connections**: The lists of the Connections page are called Databases, Directory sources, Destinations and Channels everywhere, and their New buttons and dialogs name what they add.
 - **api**: The success rate of `GET /api/dashboard/stats` counts a partial run as one that did not succeed, like every success share of the dashboard.
 
 ### 🗑️ Removed
@@ -267,6 +274,8 @@ All notable changes to DBackup are documented here.
 - **dashboard**: The job status donut and the year picker of the backup calendar are gone. Past years stay available through `GET /api/dashboard/calendar?year=`.
 - **explorer**: The General and Version History tabs of the Database Explorer are gone. The timeline marks each new version of a server and the page of a server lists every version it ran.
 - **history**: The System Tasks tab and the log dialog of the History page are gone. The system tasks are a group of the Type filter, and a run opens as a page of its own.
+- **connections**: The red banner about credential profiles from the update to 2.0.0 is gone. A connection without its login still says so in its row.
+- **ui**: Unused components, colors and images left from the start of the project are gone, with the package of the accordion.
 
 ### 📝 Documentation
 
@@ -307,6 +316,8 @@ All notable changes to DBackup are documented here.
 - **docs**: The system backup guide describes the copy of the database, its restore with a restart, the restore on the sign-up page and the way back to the database before it. The developer guide describes the copy, its checks, the new encryption of its secrets and the swap at the next start.
 - **docs**: The profile guide describes the new page with its parts and the colors of the tasks, and the developer guide how a color of a person reaches every page.
 - **docs**: A new Recently Deleted guide describes what a delete keeps, the list, a restore and who sees what. The key, credential profile, user, job, data retention and API guides say where a delete goes, and the developer guide describes the snapshot of a delete.
+- **api**: The API reference in the app lists the bulk endpoints of the docs site again, and the download of a recovery kit has its real address, `GET /api/vault/recovery-kit?ids=`.
+- **docs**: The guides name the tabs of the Connections page and their New buttons as the app shows them, and the restore guide the dialog that asks for a key.
 
 
 ### 🧪 Tests
@@ -320,6 +331,7 @@ All notable changes to DBackup are documented here.
 - **tests**: New tests cover Recently deleted, from the rights of each record and the delete routes to a delete and restore against a real SQLite file.
 - **tests**: New tests cover the colors of the tasks, the actions of the profile and what a group may change of it, also where the browser calls better-auth itself.
 - **tests**: The guard of the retired connection pages checks their redirects in `next.config.ts` and that no page stands in for them.
+- **tests**: The design guard also catches boxes that scroll sideways and checks the primitives, and its two baselines are at zero. New guards check that every page of the dashboard has a loading state and a title and that both copies of the API reference match.
 
 
 ### 🔧 CI/CD

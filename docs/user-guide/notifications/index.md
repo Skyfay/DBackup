@@ -18,8 +18,8 @@ DBackup supports multiple notification channels to keep you informed about backu
 
 ## Adding a Notification Channel
 
-1. Navigate to **Connections** in the sidebar, then the **Notifications** tab
-2. Click **Add New** and pick the channel type
+1. Navigate to **Connections** in the sidebar, then the **Channels** tab
+2. Click **New channel** and pick the channel type
 3. Fill in the **Connection** part and, where the channel has one, the **Message** part
 4. Click **Send test** to send a test notification
 5. Click **Create channel**

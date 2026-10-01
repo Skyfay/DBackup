@@ -1,9 +1,13 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { HistoryClient } from "@/components/dashboard/history/history-client";
 import { runHref } from "@/components/dashboard/history/run-links";
 import { checkPermission, getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+
+/** The name of the browser tab, which the root layout ends with the name of the instance. */
+export const metadata: Metadata = { title: "History" };
 
 export const dynamic = "force-dynamic";
 

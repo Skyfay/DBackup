@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { API_KEYS_PAGE_ID, API_KEYS_TABLE_ID } from "@/components/dashboard/api-keys/api-keys-tables";
@@ -10,6 +11,9 @@ import { getCurrentUserWithGroup, getUserPermissions } from "@/lib/auth/access-c
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getTablePreferences, getViewMode } from "@/services/user/preference-service";
 import { getUsersPageAttention } from "@/services/user/users-model";
+
+/** The name of the browser tab, which the root layout ends with the name of the instance. */
+export const metadata: Metadata = { title: "Users & Groups" };
 
 /**
  * Users & Groups: the users with how they sign in, the groups, the API keys, the audit log and

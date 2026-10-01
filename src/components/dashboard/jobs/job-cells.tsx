@@ -2,6 +2,7 @@
 
 import { FolderInput, Lock, LockOpen } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
+import { stageLabel } from "@/lib/core/logs";
 import { ExecutionStatusBadge } from "@/components/dashboard/widgets/execution-status";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
 import { DateDisplay } from "@/components/utils/date-display";
@@ -57,7 +58,7 @@ function duration(run: { startedAt: string; endedAt: string | null }): string | 
 export function RunLine({ job, className }: { job: JobListItem; className?: string }) {
     const { live, error, lastRun, status } = job.overview;
     if (live) {
-        const text = live.status === "Pending" ? "Waiting for its turn" : [live.stage ?? "Starting", live.progress !== null ? `${live.progress}%` : null].filter(Boolean).join(" · ");
+        const text = live.status === "Pending" ? "Waiting for its turn" : [live.stage ? stageLabel(live.stage) : "Starting", live.progress !== null ? `${live.progress}%` : null].filter(Boolean).join(" · ");
         return <span className={cn("block truncate text-xs text-muted-foreground tabular-nums", className)}>{text}</span>;
     }
     if (error) {

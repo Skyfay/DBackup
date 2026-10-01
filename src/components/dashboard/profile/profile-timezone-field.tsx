@@ -39,7 +39,7 @@ export function ProfileTimezoneField({ id, value, onChange }: { id: string; valu
                     <span className="shrink-0 text-xs text-muted-foreground">{value ? offsetLabel(value) : `${shown} · ${offsetLabel(shown)}`}</span>
                 </PickTrigger>
             </PopoverTrigger>
-            <PopoverContent tone="pick" align="start" className="w-(--radix-popover-trigger-width) min-w-80 overflow-hidden bg-raised p-0">
+            <PopoverContent tone="pick" align="start" className="w-(--radix-popover-trigger-width) min-w-80 overflow-hidden p-0">
                 <PickList
                     icon={Globe}
                     title="Pick a time zone"

@@ -25,7 +25,11 @@ export async function generateMetadata(): Promise<Metadata> {
     // DB not available at build time.
   }
   return {
-    title: instanceName ? `DBackup | ${instanceName}` : "DBackup",
+    // A page names itself first, like "Jobs | Home lab", so tabs and bookmarks tell the pages apart.
+    title: {
+      default: instanceName ? `DBackup | ${instanceName}` : "DBackup",
+      template: `%s | ${instanceName || "DBackup"}`,
+    },
     description: "Manage your database backups easily.",
     icons: {
       icon: [

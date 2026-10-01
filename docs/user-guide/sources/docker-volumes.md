@@ -39,7 +39,7 @@ A process that can talk to the Docker socket can start containers, and a contain
 
 ## Setup Guide
 
-1. Go to **Connections** → **Directory Sources** → **Add New** and pick **Docker Volumes**. It is offered here only - a container runtime cannot be a backup destination.
+1. Go to **Connections** → **Directory sources** → **New directory source** and pick **Docker Volumes**. It is offered here only - a container runtime cannot be a backup destination.
 2. Pick **Direct** or **Over SSH** under **How DBackup connects**. The parts that depend on it appear once you have, because the two modes ask for different things.
 3. **Over SSH**, enter the host and pick an `SSH_KEY` credential profile under **SSH login** in the **SSH server** part. For **Direct**, leave the socket empty unless it is somewhere unusual.
 4. Click **Test connection**. It reports the Docker version and how many volumes it can see.

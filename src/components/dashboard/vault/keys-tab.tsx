@@ -171,7 +171,6 @@ export function KeysTab({ ref, cards, canManage, initialLayout }: KeysTabProps) 
                 </div>
             ) : (
                 <DataTable
-                    variant="card"
                     joined
                     columns={columns}
                     data={rows}

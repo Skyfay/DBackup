@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { VaultClient } from "@/components/dashboard/vault/vault-client";
@@ -6,6 +7,9 @@ import { getCurrentUserWithGroup, getUserPermissions } from "@/lib/auth/access-c
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getTablePreferences } from "@/services/user/preference-service";
 import { getVaultAttention, getVaultCounts } from "@/services/vault/vault-counts";
+
+/** The name of the browser tab, which the root layout ends with the name of the instance. */
+export const metadata: Metadata = { title: "Vault" };
 
 /**
  * The Vault: the credential profiles connections log in with, and the keys backups are encrypted

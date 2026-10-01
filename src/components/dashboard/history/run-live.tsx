@@ -2,6 +2,7 @@
 
 import { LoaderCircle } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
+import { stageLabel } from "@/lib/core/logs";
 import { useDateFormatter } from "@/hooks/use-date-formatter";
 import { cn, formatBytes, formatDuration } from "@/lib/utils";
 import type { RunDetail, RunNeighbour, RunUpload } from "@/services/history/run-types";
@@ -76,7 +77,7 @@ export function LiveSummary({ run, now }: { run: RunDetail; now: number }) {
                     ? "It starts when a slot is free."
                     : run.usualMs !== null && doneAt
                         ? <>{formatDuration(elapsed)} of the usual {formatDuration(run.usualMs)}, done around {formatDate(doneAt, "p")}</>
-                        : `${run.live?.stage ?? "Running"}, no earlier run to compare with`}
+                        : `${run.live?.stage ? stageLabel(run.live.stage) : "Running"}, no earlier run to compare with`}
             </p>
             <LiveBar percent={run.live?.percent ?? null} className="mt-3" />
         </div>

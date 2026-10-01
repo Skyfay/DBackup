@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { ActivityPanel } from "@/components/dashboard/widgets/activity-panel";
 import { BackupCalendar } from "@/components/dashboard/widgets/backup-calendar";
 import { DashboardRefresh } from "@/components/dashboard/widgets/dashboard-refresh";
@@ -9,6 +10,9 @@ import { UpcomingRuns } from "@/components/dashboard/widgets/upcoming-runs";
 import { getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getDashboardOverview } from "@/services/dashboard/overview-service";
+
+/** The name of the browser tab, which the root layout ends with the name of the instance. */
+export const metadata: Metadata = { title: "Overview" };
 
 export const dynamic = "force-dynamic";
 

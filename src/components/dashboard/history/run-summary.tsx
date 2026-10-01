@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { ScrollText } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
+import { stageLabel } from "@/lib/core/logs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { DateDisplay } from "@/components/utils/date-display";
 import { formatBytes, formatDuration } from "@/lib/utils";
@@ -55,7 +56,7 @@ function Section({ run, step, summary, now, speed, last }: { run: RunDetail; ste
             <span className="relative z-10 h-4 bg-card pt-0.5"><StepIcon state={step.state} /></span>
             <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-                    <h3 className="text-sm font-semibold">{step.name}</h3>
+                    <h3 className="text-sm font-semibold">{stageLabel(step.name)}</h3>
                     {time && <span className="text-xs text-muted-foreground tabular-nums">{time}</span>}
                     <ProblemBadges errors={step.errors} warnings={step.warnings} />
                     {step.state === "running" && <LivePill />}
@@ -142,7 +143,7 @@ export function RunSummary({ run, now, speed, picked, tabs, className }: RunSumm
                         </ol>
                         {pending.length > 0 && (
                             <p className="mb-2 ml-7 rounded-lg border border-dashed px-3 py-2 text-sm text-muted-foreground">
-                                Then {pending.map((step) => step.name).join(", ")}{pendingMs > 0 ? `, usually ${formatDuration(pendingMs)} together` : ""}
+                                Then {pending.map((step) => stageLabel(step.name)).join(", ")}{pendingMs > 0 ? `, usually ${formatDuration(pendingMs)} together` : ""}
                             </p>
                         )}
                     </div>

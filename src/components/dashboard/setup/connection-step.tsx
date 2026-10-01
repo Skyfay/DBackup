@@ -110,7 +110,7 @@ export function ConnectionStep({ number, step, picked, onSkip, onDone }: Connect
                 onOpenChange={(open) => !open && setAdding(null)}
                 type={kind.type}
                 role={kind.role}
-                title={`Add ${kind.noun}`}
+                title={`New ${kind.noun}`}
                 start={adding}
                 onSaved={(saved) => onDone({ id: saved.id, name: saved.name, adapterId: saved.adapterId })}
             />

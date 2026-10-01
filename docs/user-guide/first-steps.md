@@ -46,8 +46,8 @@ First, create a place to store your backups.
 
 ### Using Local Filesystem
 
-1. Go to **Connections** in the sidebar, then the **Backup Destinations** tab
-2. Click **Add New**
+1. Go to **Connections** in the sidebar, then the **Destinations** tab
+2. Click **New destination**
 3. Select **Local Filesystem**
 4. Configure:
    - **Name**: `Local Backups`
@@ -67,7 +67,7 @@ Now add the database you want to backup.
 
 1. Create a `USERNAME_PASSWORD` credential profile in **Vault → Credentials** with your database user and password (see [Credential Profiles](/user-guide/security/credential-profiles))
 2. Go to **Connections** in the sidebar, then the **Databases** tab
-3. Click **Add New**
+3. Click **New database**
 4. Select **MySQL**
 5. Configure:
    - **Name**: `Production MySQL`
@@ -146,8 +146,8 @@ Get alerted when backups complete or fail.
 
 ### Discord Webhook
 
-1. Go to **Connections** in the sidebar, then the **Notifications** tab
-2. Click **Add Notification**
+1. Go to **Connections** in the sidebar, then the **Channels** tab
+2. Click **New channel**
 3. Select **Discord Webhook**
 4. Paste your webhook URL
 5. Click **Test** to verify

@@ -119,7 +119,6 @@ export function TasksPart({ tasks, integrity, openTaskId, onOpened, onOpenPart }
     return (
         <PartFrame part="tasks" flush>
             <DataTable
-                variant="card"
                 frameless
                 columns={columns}
                 data={shown}

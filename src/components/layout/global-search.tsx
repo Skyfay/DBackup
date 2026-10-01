@@ -147,7 +147,7 @@ export function SearchDialog({ open, onOpenChange, userId }: SearchDialogProps) 
             <DialogContent showCloseButton={false} className="top-[12vh] translate-y-0 gap-0 overflow-hidden bg-raised p-0 sm:max-w-2xl">
                 <DialogTitle className="sr-only">Search</DialogTitle>
                 <DialogDescription className="sr-only">Find jobs, connections, databases, backups, runs, people, templates, the Vault, settings and pages.</DialogDescription>
-                <Command shouldFilter={false} loop onKeyDown={onKeyDown} className="bg-transparent">
+                <Command shouldFilter={false} loop onKeyDown={onKeyDown}>
                     <div className="flex h-13 items-center gap-2.5 border-b px-4">
                         <Search className="size-4.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                         <CommandPrimitive.Input

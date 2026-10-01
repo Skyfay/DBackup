@@ -36,7 +36,7 @@ Select the auth type when creating the `SSH_KEY` credential profile in the Vault
    sudo mkdir -p /home/dbackup/backups
    sudo chown dbackup: /home/dbackup/backups
    ```
-4. Go to **Connections** → **Backup Destinations** → **Add New** → **SFTP**
+4. Go to **Connections** → **Destinations** → **New destination** → **SFTP**
 5. Enter Host and pick the credential profile under **Login**
 6. (Optional) Set a **Folder** in the **Location** part to the remote backup directory (e.g. `/home/dbackup/backups`), or pick it with the folder button (📂)
 7. Click **Test connection** to verify the connection

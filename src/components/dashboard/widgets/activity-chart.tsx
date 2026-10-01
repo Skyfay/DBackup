@@ -1,7 +1,7 @@
 "use client";
 
 import { Bar, BarChart, XAxis } from "recharts";
-import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
+import { CHART_TOOLTIP, ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import type { ActivityDataPoint } from "@/services/dashboard-service";
 
 type SeriesKey = "completed" | "cancelled" | "partial" | "failed" | "pending" | "running";
@@ -66,13 +66,19 @@ export function ActivityChart({ data }: { data: ActivityDataPoint[] }) {
                 />
                 <ChartTooltip
                     cursor={{ fill: "var(--muted)", opacity: 0.6 }}
-                    content={({ active, label, payload }) => (
-                        <ChartTooltipContent
-                            active={active}
-                            label={label}
-                            payload={payload?.filter((item) => Number(item.value) > 0)}
-                        />
-                    )}
+                    content={({ active, label, payload }) => {
+                        const runs = payload?.filter((item) => Number(item.value) > 0) ?? [];
+                        // A day without runs still names its date, rather than showing nothing at all.
+                        if (active && payload?.length && runs.length === 0) {
+                            return (
+                                <div className={CHART_TOOLTIP}>
+                                    <span className="font-medium">{label}</span>
+                                    <span className="text-muted-foreground">No runs</span>
+                                </div>
+                            );
+                        }
+                        return <ChartTooltipContent active={active} label={label} payload={runs} />;
+                    }}
                 />
                 {SERIES.map((series) => (
                     <Bar

@@ -90,9 +90,9 @@ describe("the page of a run", () => {
 
         const steps = await screen.findByRole("region", { name: "Steps" });
         await user.click(screen.getByRole("tab", { name: /Log/ }));
-        await user.click(within(steps).getByRole("button", { name: /Dumping Databases/ }));
+        await user.click(within(steps).getByRole("button", { name: /Dumping databases/ }));
         const log = screen.getByRole("region", { name: "Log" });
-        expect(within(log).getByRole("combobox", { name: "The step the log shows" })).toHaveTextContent("Dumping Databases");
+        expect(within(log).getByRole("combobox", { name: "The step the log shows" })).toHaveTextContent("Dumping databases");
         expect(within(log).queryByText("Upload complete: Shop offsite/a.tar")).not.toBeInTheDocument();
 
         await user.click(within(log).getByRole("button", { name: "Show every step" }));
@@ -174,7 +174,7 @@ describe("the page of a run", () => {
         expect(within(log).getByText(/testdb1\.stress_data 526527\/1500000/)).toHaveTextContent(/^mongodump \[#/);
         expect(within(log).queryByText(/2026-09-27T17:01:37/)).not.toBeInTheDocument();
         // The group heads of the steps stay, and what dumps now fills a row at the end.
-        expect(within(log).getByText("Dumping Databases")).toBeInTheDocument();
+        expect(within(log).getByText("Dumping databases")).toBeInTheDocument();
         expect(within(log).getByText("35 % · 526,527 of 1,500,000 documents")).toBeInTheDocument();
     });
 

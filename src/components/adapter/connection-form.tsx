@@ -45,14 +45,17 @@ const SECTION_ICONS: Record<SectionId, LucideIcon> = {
     behavior: Activity,
 };
 
-/** What the connection is called in the title and on the Create button, by type and role. */
+/**
+ * What the connection is called in the title and on the Create button, by type and role. The
+ * title says it like the New button of its list, New destination or New channel.
+ */
 function wording(adapter: AdapterDefinition, role: StorageRole): { noun: string; short: string } {
     if (adapter.type === "storage") {
         return role === STORAGE_ROLES.SOURCE
             ? { noun: "directory source", short: "source" }
-            : { noun: "backup destination", short: "destination" };
+            : { noun: "destination", short: "destination" };
     }
-    if (adapter.type === "notification") return { noun: "notification channel", short: "channel" };
+    if (adapter.type === "notification") return { noun: "channel", short: "channel" };
     return { noun: "database", short: "database" };
 }
 
@@ -162,7 +165,7 @@ export function ConnectionForm({
     const tone: Tone = initialData ? "edit" : "create";
     const Section = isStorage ? StorageSection : isNotification ? NotificationSection : DatabaseSection;
     const SectionAction = isStorage ? StorageSectionAction : isNotification ? NotificationSectionAction : DatabaseSectionAction;
-    const title = initialData ? `Edit ${noun}` : `Add ${noun}`;
+    const title = initialData ? `Edit ${noun}` : `New ${noun}`;
     const note = initialData ? `${initialData.name} · ${adapter.name}` : step ? `${adapter.name} · ${step}` : adapter.name;
 
     return (

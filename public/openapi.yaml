@@ -122,6 +122,55 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /jobs/bulk:
+    post:
+      tags: [Jobs]
+      summary: Bulk Job Action
+      description: |
+        Applies one action to several jobs in a single request.
+
+        A job that could not be processed does not fail the request. The response is always
+        `200` with per-job outcomes in `data`, so a partial result is reported rather than
+        discarded.
+
+        **Required permission:** `jobs:write`
+      operationId: bulkJobAction
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, ids]
+              properties:
+                action:
+                  type: string
+                  enum: [delete, enable, disable]
+                ids:
+                  type: array
+                  items: { type: string }
+                  minItems: 1
+                  maxItems: 200
+      responses:
+        "200":
+          description: Action applied, with per-job outcomes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkResponse"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /jobs/{id}:
     put:
       tags: [Jobs]
@@ -765,6 +814,63 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /adapters/bulk:
+    post:
+      tags: [Adapters]
+      summary: Bulk Delete Adapters
+      description: |
+        Deletes several adapter configurations in a single request.
+
+        Permissions are checked per distinct adapter type in the selection, so a mixed
+        batch requires every matching write permission (`sources:write`,
+        `destinations:write`, `notifications:write`).
+
+        An adapter still referenced by a job, a directory source or a notification template
+        is kept and reported in `data.failed` with the names holding it. The request itself
+        still answers `200`.
+      operationId: bulkDeleteAdapters
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, ids]
+              properties:
+                action:
+                  type: string
+                  enum: [delete]
+                ids:
+                  type: array
+                  items: { type: string }
+                  minItems: 1
+                  maxItems: 200
+      responses:
+        "200":
+          description: Deletion applied, with per-adapter outcomes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkResponse"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: None of the given ids exist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /adapters/{id}:
     put:
       tags: [Adapters]
@@ -1298,6 +1404,58 @@ paths:
                       $ref: "#/components/schemas/ColumnInfo"
 
   # ─── Storage Explorer ──────────────────────────────────────────
+  /storage/{id}/files/bulk:
+    post:
+      tags: [Storage]
+      summary: Bulk Backup Action
+      description: |
+        Deletes, locks or unlocks several backups on a destination in a single request.
+
+        A locked backup is never deleted - it is reported in `data.failed` instead. An
+        incremental chain can be deleted as a whole, and members are removed newest-first
+        so no snapshot is left depending on one that is gone. Selecting only part of a
+        chain is still refused per file.
+
+        **Required permission:** `storage:delete`
+      operationId: bulkBackupAction
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, paths]
+              properties:
+                action:
+                  type: string
+                  enum: [delete, lock, unlock]
+                paths:
+                  type: array
+                  items: { type: string }
+                  minItems: 1
+                  maxItems: 200
+      responses:
+        "200":
+          description: Action applied, with per-backup outcomes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkResponse"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /storage/{id}/files:
     get:
       tags: [Storage Explorer]
@@ -1874,26 +2032,35 @@ paths:
                           format: date-time
 
   # ─── Vault ─────────────────────────────────────────────────────
-  /vault/{id}/recovery-kit:
+  /vault/recovery-kit:
     get:
       tags: [Vault]
       summary: Download Recovery Kit
       description: |
-        Download a ZIP file containing the master encryption key and helper scripts for offline decryption.
+        Download a ZIP file with the master keys of one or more encryption profiles and the tools
+        to decrypt a backup offline. Several profiles in one kit open the backups of every job that
+        uses one of them.
 
         The ZIP contains:
-        - `master.key` - Hex-encoded encryption key
-        - `decrypt_backup.js` - Node.js decryption script
-        - `decrypt_drag_drop_windows.bat` - Windows drag & drop helper
-        - `decrypt_linux_mac.sh` - Linux/macOS helper script
+        - `master.key` for one profile, or `keys/` with a file per profile and `keys/keys.json` naming them
+        - `dbackup-recover.js` - Node.js recovery tool
+        - `START-Windows.bat`, `START-macOS.command` and `START-Linux.sh` - launchers of the tool
         - `README.txt` - Usage instructions
+
+        **Required permission:** `vault:write`
 
         > This is a sensitive operation. An audit log entry is created.
       operationId: downloadRecoveryKit
       security:
         - BearerAuth: []
       parameters:
-        - $ref: "#/components/parameters/ResourceId"
+        - name: ids
+          in: query
+          required: true
+          description: Comma separated ids of the encryption profiles the kit holds.
+          schema:
+            type: string
+          example: clx1abc2def,clx3ghi4jkl
       responses:
         "200":
           description: ZIP file download
@@ -1902,10 +2069,14 @@ paths:
               schema:
                 type: string
                 format: binary
+        "400":
+          description: No encryption profile was named in `ids`
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "404":
+          description: One of the encryption profiles does not exist
 
   # ─── Credentials ───────────────────────────────────────────────
   /credentials:
@@ -1970,6 +2141,54 @@ paths:
                 $ref: "#/components/schemas/CredentialProfile"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /credentials/bulk:
+    post:
+      tags: [Credentials]
+      summary: Bulk Delete Credential Profiles
+      description: |
+        Deletes several credential profiles in a single request.
+
+        A profile still attached to an adapter is kept and reported in `data.failed` with
+        its reference count.
+
+        **Required permission:** `credentials:delete`
+      operationId: bulkDeleteCredentialProfiles
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, ids]
+              properties:
+                action:
+                  type: string
+                  enum: [delete]
+                ids:
+                  type: array
+                  items: { type: string }
+                  minItems: 1
+                  maxItems: 200
+      responses:
+        "200":
+          description: Deletion applied, with per-profile outcomes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkResponse"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -2417,15 +2636,19 @@ paths:
               properties:
                 taskId:
                   type: string
+                  example: system.health_check
                 schedule:
                   type: string
-                  description: Cron expression
+                  description: Cron expression the scheduler can read
                   example: "*/5 * * * *"
                 runOnStartup:
                   type: boolean
                 enabled:
                   type: boolean
+                  description: For a task that follows a setting, like Check for updates, this is that setting
       responses:
+        "400":
+          description: An unknown task or a schedule the scheduler cannot read
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -2439,7 +2662,7 @@ paths:
     put:
       tags: [Settings]
       summary: Run System Task Now
-      description: Manually trigger a system task (non-blocking).
+      description: Starts a system task by hand and answers at once. The integrity check returns its run in History as `executionId`.
       operationId: runSystemTask
       security:
         - BearerAuth: []
@@ -2454,10 +2677,14 @@ paths:
                 taskId:
                   type: string
       responses:
+        "400":
+          description: An unknown task
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "409":
+          description: The task is running already, or DBackup optimizes or copies its database
         "200":
           description: Task started
           content:
@@ -2467,9 +2694,9 @@ paths:
                 properties:
                   success:
                     type: boolean
-                  message:
+                  executionId:
                     type: string
-                    example: "Task started"
+                    description: The run in History, for a task that writes one
 
   # ─── Health ────────────────────────────────────────────────────
   /health:
@@ -2560,6 +2787,44 @@ components:
         success:
           type: boolean
           example: true
+
+    BulkResponse:
+      type: object
+      description: |
+        Outcome of an action applied to several records.
+
+        `success` describes the request, not the records. It is `true` whenever the request
+        was handled, including when every record failed - the per-record verdicts live in
+        `data`. Only authentication, permission, validation and unexpected server errors
+        produce `success: false` with a 4xx or 5xx status.
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          description: One-line summary, for example "8 of 10 jobs deleted".
+          example: 8 of 10 jobs deleted
+        data:
+          type: object
+          properties:
+            succeeded:
+              type: array
+              description: Ids (or paths, for storage) that were processed.
+              items: { type: string }
+            failed:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                    description: Human-readable label, when one is known.
+                  error:
+                    type: string
+                    description: Why this record was not processed.
 
     Pagination:
       type: object
@@ -3556,19 +3821,66 @@ components:
       properties:
         id:
           type: string
-          example: health-check
+          example: system.health_check
+        name:
+          type: string
+          example: "Health checks"
         label:
           type: string
-          example: "Health Check"
+          description: The same as name, kept for earlier clients
+          example: "Health checks"
         description:
           type: string
         schedule:
           type: string
-          example: "*/5 * * * *"
+          example: "*/1 * * * *"
         runOnStartup:
           type: boolean
         enabled:
           type: boolean
+        running:
+          type: boolean
+        nextRunAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastRunAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastRun:
+          type: object
+          nullable: true
+          properties:
+            at:
+              type: string
+              format: date-time
+            durationMs:
+              type: number
+              nullable: true
+            ok:
+              type: boolean
+              description: False when the run needs a look
+            summary:
+              type: string
+              nullable: true
+              example: "2,418 removed"
+            executionId:
+              type: string
+        follows:
+          type: object
+          nullable: true
+          description: The setting of another part of the Settings page that switches the task on and off
+          properties:
+            part:
+              type: string
+              enum: [general, config-backup]
+            setting:
+              type: string
+              example: "Look for new versions"
+        timezone:
+          type: string
+          example: Europe/Zurich
 
     HealthResponse:
       type: object

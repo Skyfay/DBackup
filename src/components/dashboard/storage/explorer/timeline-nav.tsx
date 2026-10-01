@@ -67,7 +67,7 @@ export function TimelineNav({ days, today, last, ahead, ready, pickedDay, proble
                         <ChevronDown className="opacity-50" />
                     </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-auto overflow-hidden rounded-xl bg-raised p-0" align="end">
+                <PopoverContent className="w-auto overflow-hidden p-0" align="end">
                     <Calendar
                         mode="single"
                         selected={pickedDay ? toDate(pickedDay) : undefined}

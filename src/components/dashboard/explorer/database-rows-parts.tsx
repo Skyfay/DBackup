@@ -88,7 +88,7 @@ export function RowsFilter({ columns, filter, onChange, note = "The server looks
                     )}
                 </button>
             </PopoverTrigger>
-            <PopoverContent tone="filter" className="w-80 overflow-hidden rounded-xl bg-raised p-0" align="start">
+            <PopoverContent tone="filter" className="w-80 overflow-hidden p-0" align="start">
                 <DialogHead tone="filter" icon={ListFilter} className="px-4 py-3">
                     <p className="text-sm font-semibold">Filter the rows</p>
                     <p className={cn(dialogNoteClass("filter"), "truncate")}>{note}</p>

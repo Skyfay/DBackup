@@ -76,8 +76,6 @@ interface DataTableProps<TData, TValue> {
     /** Runs after a bulk action settles, whether fully or partly successful. Refetch here. */
     onBulkActionComplete?: () => void | Promise<void>;
 
-    /** "card" draws the table as one panel with its toolbar inside, the look of the redesigned pages. */
-    variant?: "default" | "card";
     /** From md up the card goes on from a `PageHead` above it, square on top. In the cards and split views that is the card of the toolbar. */
     joined?: boolean;
     /** The card look without its own frame, for a table that fills a pane of a card around it, like the system tasks of the Settings page. */
@@ -152,7 +150,6 @@ export function DataTable<TData, TValue>({
     isRowSelectable,
     bulkActions = [],
     onBulkActionComplete,
-    variant = "default",
     joined = false,
     frameless = false,
     columnLayout,
@@ -285,11 +282,10 @@ export function DataTable<TData, TValue>({
         ? table.getFilteredSelectedRowModel().rows.map((row) => row.original)
         : [];
 
-    const card = variant === "card";
     const compact = density === "compact";
-    // In a card table the whole checkbox cell ticks the box, so a near miss beside it does not
-    // open the row instead. The gap before the next column moves into that cell to widen it.
-    const wideCheckbox = card && enableRowSelection;
+    // The whole checkbox cell ticks the box, so a near miss beside it does not open the row
+    // instead. The gap before the next column moves into that cell to widen it.
+    const wideCheckbox = enableRowSelection;
 
     const clearSelection = React.useCallback(() => setRowSelection({}), []);
     const bulk = useBulkActions({
@@ -327,7 +323,6 @@ export function DataTable<TData, TValue>({
             filterableColumns={filterableColumns}
             onRefresh={onRefresh}
             isLoading={isLoading}
-            variant={variant}
             searchPlaceholder={searchPlaceholder}
             toolbarExtra={toolbarExtra}
             columnSettings={layout ? (
@@ -349,7 +344,6 @@ export function DataTable<TData, TValue>({
             runningId={bulk.runningId}
             onStart={bulk.start}
             onClearSelection={clearSelection}
-            variant={card ? "card" : "default"}
         />
     );
     const grid = (
@@ -359,7 +353,7 @@ export function DataTable<TData, TValue>({
                     <TableRow
                         key={headerGroup.id}
                         className={cn(
-                            card && "hover:bg-transparent",
+                            "hover:bg-transparent",
                             wideCheckbox && "[&>th:first-child]:cursor-pointer [&>th:first-child]:pr-3 [&>th:nth-child(2)]:pl-0"
                         )}
                     >
@@ -373,11 +367,11 @@ export function DataTable<TData, TValue>({
                                         : undefined
                                 }
                                 className={cn(
-                                    card && "px-3 text-xs text-muted-foreground first:pl-4 last:pr-4",
+                                    "px-3 text-xs text-muted-foreground first:pl-4 last:pr-4",
                                     // The checkbox and the actions keep to their content. A full-width table
                                     // would hand them spare width too, which pushes the name further right
                                     // the fewer columns a table has.
-                                    card && (header.column.id === "select" || header.column.columnDef.meta?.pin === "end") && "w-px",
+                                    (header.column.id === "select" || header.column.columnDef.meta?.pin === "end") && "w-px",
                                     // Movable headers can be dragged, and show where a dragged one lands.
                                     "[&[draggable=true]]:cursor-grab data-[drop-target]:shadow-[inset_2px_0_0_var(--foreground)]"
                                 )}
@@ -401,8 +395,8 @@ export function DataTable<TData, TValue>({
                             className={cn(
                                 // Cells can show controls on hover of their row, like a card does.
                                 "group/row",
-                                card && "[&>td]:px-3 [&>td:first-child]:pl-4 [&>td:last-child]:pr-4",
-                                card && (compact ? "[&>td]:py-1" : "[&>td]:py-2.5"),
+                                "[&>td]:px-3 [&>td:first-child]:pl-4 [&>td:last-child]:pr-4",
+                                compact ? "[&>td]:py-1" : "[&>td]:py-2.5",
                                 wideCheckbox && "[&>td:first-child]:cursor-pointer [&>td:first-child]:pr-3 [&>td:nth-child(2)]:pl-0",
                                 onRowClick && "cursor-pointer",
                                 // The row stays marked while its right click menu is open, or its details show.
@@ -425,7 +419,7 @@ export function DataTable<TData, TValue>({
                             // Counted from the table, not from `columns`, so the
                             // prepended select column does not break the span.
                             colSpan={table.getVisibleLeafColumns().length}
-                            className={cn("h-24 text-center", card && "text-muted-foreground")}
+                            className="h-24 text-center text-muted-foreground"
                         >
                             No results.
                         </TableCell>
@@ -435,7 +429,7 @@ export function DataTable<TData, TValue>({
         </Table>
     );
 
-    if (card && view === "split" && renderSplit) {
+    if (view === "split" && renderSplit) {
         return (
             <div className="min-w-0 space-y-4">
                 <div className={cn("rounded-xl border bg-card text-card-foreground shadow-sm", joined && JOIN_END)}>{toolbar}</div>
@@ -445,7 +439,7 @@ export function DataTable<TData, TValue>({
         );
     }
 
-    if (card && view === "cards" && renderCard) {
+    if (view === "cards" && renderCard) {
         const rows = table.getRowModel().rows;
         return (
             <div className="min-w-0 space-y-4">
@@ -474,40 +468,25 @@ export function DataTable<TData, TValue>({
         );
     }
 
-    if (card) {
-        return (
-            <div className={cn("min-w-0 overflow-hidden", !frameless && "rounded-xl border bg-card text-card-foreground shadow-sm", joined && JOIN_END)}>
-                {/* The bulk bar lies over the toolbar while rows are selected, so nothing below moves. */}
-                <div className="relative">
-                    {toolbar}
-                    {!aboveRows && toolbarNote}
-                    {bulkBar}
-                </div>
-                {aboveRows && <div className="border-t">{typeof aboveRows === "function" ? aboveRows(table.getPrePaginationRowModel().rows) : aboveRows}</div>}
-                {!hideRows && (
-                    <>
-                        {/* With a part above the rows, their legend moves down to them. */}
-                        {aboveRows && toolbarNote && <div className="border-t pt-3">{toolbarNote}</div>}
-                        <div className="border-t">{grid}</div>
-                        <div className="border-t px-2">
-                            <DataTablePagination table={table} totalRows={totalRows} />
-                        </div>
-                    </>
-                )}
-                {bulkDialogs}
-            </div>
-        );
-    }
-
     return (
-        <div className="w-full">
-            {toolbar}
-            {bulkBar}
-            {/* The table scrolls sideways in its own scroll area, this box only rounds its corners. */}
-            <div className="rounded-md border overflow-hidden max-w-[calc(100vw-6rem)] md:max-w-[calc(100vw-22rem)]">
-                {grid}
+        <div className={cn("min-w-0 overflow-hidden", !frameless && "rounded-xl border bg-card text-card-foreground shadow-sm", joined && JOIN_END)}>
+            {/* The bulk bar lies over the toolbar while rows are selected, so nothing below moves. */}
+            <div className="relative">
+                {toolbar}
+                {!aboveRows && toolbarNote}
+                {bulkBar}
             </div>
-            <DataTablePagination table={table} totalRows={totalRows} />
+            {aboveRows && <div className="border-t">{typeof aboveRows === "function" ? aboveRows(table.getPrePaginationRowModel().rows) : aboveRows}</div>}
+            {!hideRows && (
+                <>
+                    {/* With a part above the rows, their legend moves down to them. */}
+                    {aboveRows && toolbarNote && <div className="border-t pt-3">{toolbarNote}</div>}
+                    <div className="border-t">{grid}</div>
+                    <div className="border-t px-2">
+                        <DataTablePagination table={table} totalRows={totalRows} />
+                    </div>
+                </>
+            )}
             {bulkDialogs}
         </div>
     );

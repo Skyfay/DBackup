@@ -130,7 +130,7 @@ For backup-only operations, `SELECT`, `SHOW VIEW`, `TRIGGER`, and `LOCK TABLES` 
 
 #### Direct Mode
 
-1. Go to **Connections** → **Databases** → **Add New**
+1. Go to **Connections** → **Databases** → **New database**
 2. Select **MySQL** or **MariaDB**
 3. Pick **Direct** under **How DBackup connects**
 4. Enter host and port, and pick or create the **Login**
@@ -139,7 +139,7 @@ For backup-only operations, `SELECT`, `SHOW VIEW`, `TRIGGER`, and `LOCK TABLES` 
 
 #### SSH Mode
 
-1. Go to **Connections** → **Databases** → **Add New**
+1. Go to **Connections** → **Databases** → **New database**
 2. Select **MySQL** or **MariaDB**
 3. Pick **Over SSH** under **How DBackup connects**
 4. In the **SSH server** part: enter the SSH host and pick or create the **SSH login**

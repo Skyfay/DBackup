@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo } from "react";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useDateFormatter } from "@/hooks/use-date-formatter";
@@ -138,7 +137,7 @@ function SlackPreview({ entry }: NotificationPreviewProps) {
       <div className="flex gap-3">
         {/* App icon */}
         <div className="shrink-0">
-          <div className="w-9 h-9 rounded bg-emerald-600 flex items-center justify-center text-white font-bold text-xs">
+          <div className="w-9 h-9 rounded bg-[#2EB67D] flex items-center justify-center text-white font-bold text-xs">
             DB
           </div>
         </div>
@@ -187,10 +186,11 @@ function EmailPreview({ entry }: NotificationPreviewProps) {
     return (
       <div className="bg-card rounded-lg overflow-hidden max-w-xl border border-border">
         <div className="bg-muted/50 border-b border-border px-4 py-2 flex items-center gap-2">
-          <div className="flex gap-1.5">
-            <div className="w-3 h-3 rounded-full bg-red-400" />
-            <div className="w-3 h-3 rounded-full bg-yellow-400" />
-            <div className="w-3 h-3 rounded-full bg-green-400" />
+          {/* The buttons of a mail window, neutral, since they stand for no state. */}
+          <div className="flex gap-1.5" aria-hidden="true">
+            <div className="size-3 rounded-full bg-muted-foreground/25" />
+            <div className="size-3 rounded-full bg-muted-foreground/25" />
+            <div className="size-3 rounded-full bg-muted-foreground/25" />
           </div>
           <span className="text-xs text-muted-foreground ml-2">
             Subject: {entry.title}
@@ -198,8 +198,7 @@ function EmailPreview({ entry }: NotificationPreviewProps) {
         </div>
         <iframe
           srcDoc={previewHtml}
-          className="w-full border-0 bg-white"
-          style={{ minHeight: 400 }}
+          className="min-h-100 w-full border-0 bg-white"
           sandbox="allow-same-origin"
           title="Email Preview"
         />
@@ -342,9 +341,27 @@ const PREVIEW_COMPONENTS: Record<
 
 // ── Main Preview Component ─────────────────────────────────────
 
+/** The name of a channel on the tab of its look. */
+const CHANNEL_NAMES: Record<string, string> = { discord: "Discord", email: "Email", slack: "Slack", telegram: "Telegram", teams: "Teams" };
+
+/** The payload as it went out, indented when it is JSON and as it is when it is not. */
+function rawText(entry: NotificationLogRow): string {
+  if (entry.renderedHtml) return entry.renderedHtml;
+  if (!entry.renderedPayload) return "No payload available";
+  const parsed = parsePayload(entry.renderedPayload);
+  return parsed ? JSON.stringify(parsed, null, 2) : entry.renderedPayload;
+}
+
+/** The scroll height of a view, on the viewport, where a max height takes effect. */
+const VIEW_HEIGHT = "*:data-[slot=scroll-area-viewport]:max-h-[60vh]";
+
+/**
+ * What a notification said, as its channel shows it, as plain text and as the payload that went
+ * out. The panel around it names the channel, whether it arrived and why not, so this starts with
+ * the message itself.
+ */
 export function NotificationPreview({ entry }: NotificationPreviewProps) {
-  const PreviewComponent =
-    PREVIEW_COMPONENTS[entry.adapterId] || GenericPreview;
+  const PreviewComponent = PREVIEW_COMPONENTS[entry.adapterId] || GenericPreview;
   const fields = parseFields(entry.fields);
 
   // Determine which tabs to show
@@ -357,82 +374,48 @@ export function NotificationPreview({ entry }: NotificationPreviewProps) {
   }, [hasAdapterPreview]);
 
   return (
-    <div className="space-y-4">
-      {/* Metadata header */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="outline">{entry.adapterId}</Badge>
-        <Badge
-          className={
-            entry.status === "Success"
-              ? "bg-[hsl(145,78%,45%)] text-white border-transparent"
-              : "bg-[hsl(357,78%,54%)] text-white border-transparent"
-          }
-        >
-          {entry.status === "Success" ? "Sent" : "Failed"}
-        </Badge>
-        {entry.error && (
-          <span className="text-xs text-destructive">{entry.error}</span>
-        )}
-      </div>
-
-      <Tabs defaultValue={defaultTab} className="w-full">
-        <TabsList>
-          {hasAdapterPreview && (
-            <TabsTrigger value="preview">
-              {entry.adapterId.charAt(0).toUpperCase() + entry.adapterId.slice(1)} Preview
-            </TabsTrigger>
-          )}
-          <TabsTrigger value="plain">Plain Text</TabsTrigger>
-          {hasRawPayload && (
-            <TabsTrigger value="raw">Raw Payload</TabsTrigger>
-          )}
-        </TabsList>
-
+    <Tabs defaultValue={defaultTab} className="w-full">
+      <TabsList className="h-8">
         {hasAdapterPreview && (
-          <TabsContent value="preview" className="mt-4">
-            <ScrollArea className="max-h-[60vh]">
-              <PreviewComponent entry={entry} />
-            </ScrollArea>
-          </TabsContent>
+          <TabsTrigger value="preview" className="px-2.5 text-xs">{CHANNEL_NAMES[entry.adapterId] ?? "Preview"}</TabsTrigger>
         )}
+        <TabsTrigger value="plain" className="px-2.5 text-xs">Plain text</TabsTrigger>
+        {hasRawPayload && <TabsTrigger value="raw" className="px-2.5 text-xs">Raw payload</TabsTrigger>}
+      </TabsList>
 
-        <TabsContent value="plain" className="mt-4">
-          <div className="space-y-3">
-            <h4 className="font-semibold text-foreground">{entry.title}</h4>
-            <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-              {entry.message}
-            </p>
-            {fields.length > 0 && (
-              <div className="border rounded-md overflow-hidden text-sm">
-                {fields.map((field, idx) => (
-                  <div key={idx} className="flex border-b last:border-b-0">
-                    <div className="w-36 bg-muted px-3 py-2 font-medium text-muted-foreground">
-                      {field.name}
-                    </div>
-                    <div className="flex-1 px-3 py-2 text-foreground">
-                      {field.value}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+      {hasAdapterPreview && (
+        <TabsContent value="preview" className="mt-4">
+          <ScrollArea className={VIEW_HEIGHT}>
+            <PreviewComponent entry={entry} />
+          </ScrollArea>
         </TabsContent>
+      )}
 
-        {hasRawPayload && (
-          <TabsContent value="raw" className="mt-4">
-            <ScrollArea className="max-h-[60vh]">
-              <pre className="bg-muted rounded-lg p-4 text-xs font-mono text-foreground whitespace-pre-wrap overflow-x-auto">
-                {entry.renderedHtml
-                  ? entry.renderedHtml
-                  : entry.renderedPayload
-                    ? JSON.stringify(JSON.parse(entry.renderedPayload), null, 2)
-                    : "No payload available"}
-              </pre>
-            </ScrollArea>
-          </TabsContent>
-        )}
-      </Tabs>
-    </div>
+      <TabsContent value="plain" className="mt-4">
+        <div className="space-y-3">
+          <h4 className="font-semibold text-foreground">{entry.title}</h4>
+          <p className="text-sm text-muted-foreground whitespace-pre-wrap">{entry.message}</p>
+          {fields.length > 0 && (
+            <div className="border rounded-md overflow-hidden text-sm">
+              {fields.map((field, idx) => (
+                <div key={idx} className="flex border-b last:border-b-0">
+                  <div className="w-36 bg-muted px-3 py-2 font-medium text-muted-foreground">{field.name}</div>
+                  <div className="flex-1 px-3 py-2 text-foreground">{field.value}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </TabsContent>
+
+      {hasRawPayload && (
+        <TabsContent value="raw" className="mt-4">
+          {/* Wraps a long token like a key instead of scrolling sideways, the view scrolls down. */}
+          <ScrollArea className={VIEW_HEIGHT}>
+            <pre className="rounded-lg bg-muted p-4 font-mono text-xs text-foreground whitespace-pre-wrap wrap-anywhere">{rawText(entry)}</pre>
+          </ScrollArea>
+        </TabsContent>
+      )}
+    </Tabs>
   );
 }

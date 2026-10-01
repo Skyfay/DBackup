@@ -232,7 +232,6 @@ export function JobsClient({
                 <>
                     <JobsStrip jobs={jobs} />
                     <DataTable
-                        variant="card"
                         joined
                         columns={columns}
                         data={visibleJobs}

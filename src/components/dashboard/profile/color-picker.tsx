@@ -92,7 +92,7 @@ export function ColorPicker({ task, value, onChange, theme }: ColorPickerProps) 
                     <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden="true" />
                 </button>
             </PopoverTrigger>
-            <PopoverContent tone="pick" align="end" className="w-80 overflow-hidden bg-raised p-0">
+            <PopoverContent tone="pick" align="end" className="w-80 overflow-hidden p-0">
                 <DialogHead tone="pick" icon={Palette} className="px-4 py-3">
                     <p className="text-sm font-semibold">Color of {task}</p>
                     <p className={dialogNoteClass("pick")}>Both themes, one pick</p>

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { CalendarClock, CircleAlert, FolderInput, Loader2, Pencil, Play, TriangleAlert } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
+import { stageLabel } from "@/lib/core/logs";
 import { DetailStats, FactList, Section, type DetailStat } from "@/components/adapter/connection-details-sections";
 import { getStatusStyle } from "@/components/dashboard/widgets/execution-status";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
@@ -88,7 +89,7 @@ function LiveRunBox({ job, canViewHistory }: { job: JobListItem; canViewHistory:
     return (
         <div className="rounded-lg border border-info/30 bg-info/5 p-3">
             <div className="flex items-center justify-between gap-3 text-sm">
-                <span className="font-medium">{live.status === "Pending" ? "Waiting for its turn" : `Running · ${live.stage ?? "Starting"}`}</span>
+                <span className="font-medium">{live.status === "Pending" ? "Waiting for its turn" : `Running · ${live.stage ? stageLabel(live.stage) : "Starting"}`}</span>
                 {canViewHistory && (
                     <Link href={runHref(live.executionId, "jobs")} className="shrink-0 font-medium hover:underline hover:underline-offset-4">
                         Open the run

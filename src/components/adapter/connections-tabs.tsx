@@ -33,11 +33,20 @@ export const CONNECTION_TABS = {
 
 export type ConnectionTab = typeof CONNECTION_TABS[keyof typeof CONNECTION_TABS];
 
+// One name per list, the one its strip, the pickers and the search use too.
 const TAB_NAMES: Record<ConnectionTab, string> = {
     [CONNECTION_TABS.DATABASES]: "Databases",
-    [CONNECTION_TABS.DIRECTORY_SOURCES]: "Directory Sources",
-    [CONNECTION_TABS.DESTINATIONS]: "Backup Destinations",
-    [CONNECTION_TABS.NOTIFICATIONS]: "Notifications",
+    [CONNECTION_TABS.DIRECTORY_SOURCES]: "Directory sources",
+    [CONNECTION_TABS.DESTINATIONS]: "Destinations",
+    [CONNECTION_TABS.NOTIFICATIONS]: "Channels",
+};
+
+/** The New button of each list, which names what it adds like on every other page. */
+const NEW_LABELS: Record<ConnectionTab, string> = {
+    [CONNECTION_TABS.DATABASES]: "New database",
+    [CONNECTION_TABS.DIRECTORY_SOURCES]: "New directory source",
+    [CONNECTION_TABS.DESTINATIONS]: "New destination",
+    [CONNECTION_TABS.NOTIFICATIONS]: "New channel",
 };
 
 interface ConnectionsTabsProps {
@@ -146,9 +155,9 @@ export function ConnectionsTabs({ permissions, attention, layouts, initialView }
                         <ViewSwitch value={view} onChange={changeView} />
                     </div>
                     {canManage[active] && (
-                        <Button tone="create" onClick={() => managers.current[active]?.openCreate()} aria-label="Add New">
+                        <Button tone="create" onClick={() => managers.current[active]?.openCreate()} aria-label={NEW_LABELS[active]}>
                             <Plus />
-                            <span className="hidden sm:inline">Add New</span>
+                            <span className="hidden sm:inline">{NEW_LABELS[active]}</span>
                         </Button>
                     )}
                 </div>

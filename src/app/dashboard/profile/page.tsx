@@ -1,7 +1,11 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUserWithGroup, getUserPermissions } from "@/lib/auth/access-control";
 import { ProfileClient } from "@/components/dashboard/profile/profile-client";
 import { getProfileModel } from "@/services/user/profile-model";
+
+/** The name of the browser tab, which the root layout ends with the name of the instance. */
+export const metadata: Metadata = { title: "Profile" };
 
 export default async function ProfilePage() {
     const [permissions, user] = await Promise.all([getUserPermissions(), getCurrentUserWithGroup()]);

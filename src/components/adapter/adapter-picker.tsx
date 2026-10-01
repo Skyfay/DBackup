@@ -162,7 +162,7 @@ export function AdapterPickerDialog({
     title,
     onSelect,
 }: AdapterPickerProps & {
-    /** Names what is being created, like "Add database". */
+    /** Names what is being created, like "New database". */
     title: string;
 }) {
     const [search, setSearch] = useState("");

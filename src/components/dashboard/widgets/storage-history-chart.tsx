@@ -1,9 +1,9 @@
 "use client";
 
 import { Bar, BarChart, CartesianGrid, Cell, XAxis, YAxis } from "recharts";
-import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart";
+import { CHART_TOOLTIP, ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart";
 import { useDateFormatter } from "@/hooks/use-date-formatter";
-import { formatBytes } from "@/lib/utils";
+import { cn, formatBytes } from "@/lib/utils";
 import { byteTicks, dayTicks, type HistoryPoint } from "./storage-history-data";
 
 /** Neutral like the destination bars on the dashboard. The newest measurement carries the accent. */
@@ -70,7 +70,7 @@ export function StorageHistoryChart({ points, daily, dayKey }: StorageHistoryCha
                         const point = payload?.[0]?.payload as HistoryPoint | undefined;
                         if (!active || !point) return null;
                         return (
-                            <div className="grid min-w-32 gap-0.5 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl">
+                            <div className={cn(CHART_TOOLTIP, "gap-0.5")}>
                                 <span className="text-muted-foreground">{formatDate(new Date(point.at), daily ? "P" : "Pp")}</span>
                                 {point.size === null ? (
                                     <span className="text-muted-foreground">Not measured</span>

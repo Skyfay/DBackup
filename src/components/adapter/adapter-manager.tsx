@@ -7,9 +7,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { DIALOG_SURFACE } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Activity, AlertTriangle, ArrowLeftRight, FolderOpen, ListChecks } from "lucide-react";
-import Link from "next/link";
+import { Activity, ArrowLeftRight, FolderOpen, ListChecks } from "lucide-react";
 import { ADAPTER_DEFINITIONS, AdapterDefinition } from "@/lib/adapters/definitions";
 import { Skeleton } from "@/components/ui/skeleton";
 import { JOIN_END } from "@/components/ui/page-head";
@@ -142,7 +140,7 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
 
     // The dialogs used to say "Destination" for every storage adapter, so the Directory
     // Sources page invited you to add a destination and then filed it under sources.
-    const storageNoun = pickerRole ? storageRoleLabel(pickerRole) : "Storage Connection";
+    const storageNoun = pickerRole ? storageRoleLabel(pickerRole) : "Storage connection";
 
     useImperativeHandle(ref, () => ({
         openCreate: () => {
@@ -285,9 +283,6 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
 
     return (
         <div className="flex flex-col gap-4 md:gap-0">
-            {/* From md up the list joins the tabs above it into one card, so the banner moves under it. */}
-            <CredentialUpgradeBanner configs={configs} className="md:order-last md:mt-6" />
-
             {!hasLoaded || !view ? (
                 <div className={cn("space-y-3 rounded-xl border bg-card p-4 shadow-sm", JOIN_END)} aria-busy="true">
                     <span className="sr-only">Loading connections</span>
@@ -303,7 +298,6 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                 <>
                     {configs.length > 0 && <ConnectionStrip kind={kind} configs={configs} />}
                     <DataTable
-                        variant="card"
                         joined
                         columns={columns}
                         data={visibleConfigs}
@@ -363,7 +357,7 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
                 <DialogContent tone="create" showCloseButton={false} className={cn(DIALOG_SURFACE, "sm:max-w-lg")}>
                     <AdapterPickerDialog
                         adapters={availableAdapters}
-                        title={type === 'notification' ? "Add notification channel" : (type === 'database' ? "Add database" : `Add ${storageNoun.toLowerCase()}`)}
+                        title={type === 'notification' ? "New channel" : (type === 'database' ? "New database" : `New ${storageNoun.toLowerCase()}`)}
                         onSelect={(adapter) => {
                             setSelectedAdapterForNew(adapter.id);
                             setIsPickerOpen(false);
@@ -454,56 +448,4 @@ function cloneCopy({ name, role }: { name: string; role?: StorageRole }) {
             { icon: FolderOpen, text: "Check its path afterwards, since the files to back up and the backups rarely share a folder." },
         ],
     };
-}
-
-/**
- * Banner shown at the top of the adapter manager when one or more adapters
- * are flagged OFFLINE due to a missing credential profile assignment.
- *
- * The startup-checks job sets `lastError = "No credential profile assigned"`
- * for adapters that existed before the credential vault (v2.0.0 migration).
- * New adapters where the user intentionally leaves the credential field empty
- * are never flagged and therefore never appear here.
- *
- * TODO(2026-06-28): Remove this migration banner. It was added for the v1.5
- * credential profiles rollout to guide users through reassigning their
- * credentials. By this point all active installs should have migrated.
- */
-function CredentialUpgradeBanner({ configs, className }: { configs: AdapterConfig[]; className?: string }) {
-    const affected = configs.filter(
-        (c) => (c.lastStatus === "OFFLINE" || c.lastStatus === "DEGRADED") && c.lastError === "No credential profile assigned"
-    );
-    if (affected.length === 0) return null;
-
-    return (
-        <Alert variant="destructive" className={className}>
-            <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>Credential profiles required</AlertTitle>
-            <AlertDescription>
-                <p className="mb-2">
-                    {affected.length === 1 ? "1 adapter" : `${affected.length} adapters`} need a credential profile to come back online:
-                </p>
-                <ul className="list-disc pl-5 space-y-0.5 mb-2">
-                    {affected.slice(0, 5).map((a) => (
-                        <li key={a.id}>
-                            <span className="font-medium">{a.name}</span>{" "}
-                            <span className="text-xs">({a.adapterId})</span>
-                        </li>
-                    ))}
-                    {affected.length > 5 && (
-                        <li className="text-xs italic">
-                            ...and {affected.length - 5} more.
-                        </li>
-                    )}
-                </ul>
-                <p className="text-sm">
-                    Create reusable profiles in the{" "}
-                    <Link href="/dashboard/vault" className="underline font-medium">
-                        Security Vault
-                    </Link>
-                    , then assign them by editing each adapter.
-                </p>
-            </AlertDescription>
-        </Alert>
-    );
 }

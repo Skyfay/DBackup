@@ -252,7 +252,6 @@ export function BackupsList({
             />
 
             <DataTable
-                variant="card"
                 joined
                 columns={columns}
                 data={timeline.data}

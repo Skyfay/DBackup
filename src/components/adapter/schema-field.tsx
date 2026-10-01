@@ -30,6 +30,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { configFieldLabel } from "@/lib/adapters/field-label";
 import { FolderOpen } from "lucide-react";
+import { enumLabel } from "./enum-labels";
 import { PLACEHOLDERS } from "./form-constants";
 import { useSecretStatus } from "./secret-status-context";
 import { FileBrowserDialog } from "@/components/system/file-browser-dialog";
@@ -166,10 +167,11 @@ export function SchemaField({
                                 </FormControl>
                                 <SelectContent>
                                     {((unwrappedShape as any).options || (unwrappedShape as any)._def?.values || []).map((val: string) => (
-                                        <SelectItem key={val} value={val} className="capitalize">
-                                            {val === "none" ? "None (Insecure)" : val === "ssl" ? "SSL / TLS" : val === "starttls" ? "STARTTLS" : val === "ssh" ? (
+                                        // The name rather than the stored code, also in the closed field, which shows the text of the item.
+                                        <SelectItem key={val} value={val}>
+                                            {val === "ssh" ? (
                                                 <span className="inline-flex items-center gap-2">SSH <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-primary">Beta</span></span>
-                                            ) : val}
+                                            ) : enumLabel(fieldKey, val)}
                                         </SelectItem>
                                     ))}
                                 </SelectContent>

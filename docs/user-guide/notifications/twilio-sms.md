@@ -15,7 +15,7 @@ Send SMS notifications for critical backup events via the Twilio API. Works on a
 
 1. Sign up at [twilio.com](https://www.twilio.com/try-twilio) → copy **Account SID** and **Auth Token** from the Console Dashboard
 2. Under **Phone Numbers** → **Buy a number** with SMS capability (this is your **From** number)
-3. In DBackup: **Connections** → **Notifications** → **Add New** → **SMS (Twilio)**
+3. In DBackup: **Connections** → **Channels** → **New channel** → **SMS (Twilio)**
 4. Enter the Account SID and pick or create the credential profile under **Auth token**, then From and To in the **Message** part → **Send test** → **Create channel**
 
 ::: tip Trial Accounts

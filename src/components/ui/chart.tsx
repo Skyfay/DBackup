@@ -104,6 +104,9 @@ ${colorConfig
 
 const ChartTooltip = RechartsPrimitive.Tooltip
 
+/** The box of a chart tooltip, raised with a border like every tooltip and popover of the app. */
+export const CHART_TOOLTIP = "grid min-w-32 items-start gap-1.5 rounded-lg border bg-raised px-2.5 py-1.5 text-xs text-popover-foreground shadow-md"
+
 function ChartTooltipContent({
   active,
   payload,
@@ -175,10 +178,7 @@ function ChartTooltipContent({
 
   return (
     <div
-      className={cn(
-        "border-border/50 bg-background grid min-w-32 items-start gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs shadow-xl",
-        className
-      )}
+      className={cn(CHART_TOOLTIP, className)}
     >
       {!nestLabel ? tooltipLabel : null}
       <div className="grid gap-1.5">
@@ -238,8 +238,9 @@ function ChartTooltipContent({
                           {itemConfig?.label || item.name}
                         </span>
                       </div>
-                      {item.value && (
-                        <span className="text-foreground font-mono font-medium tabular-nums">
+                      {/* A value of 0 is a value too, and a number takes Geist like every number. */}
+                      {item.value !== undefined && item.value !== null && (
+                        <span className="text-foreground font-medium tabular-nums">
                           {item.value.toLocaleString()}
                         </span>
                       )}

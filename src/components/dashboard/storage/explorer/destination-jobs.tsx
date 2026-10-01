@@ -162,7 +162,6 @@ export function DestinationJobs({ destination, entries, destinations, canDelete,
 
     return (
         <DataTable
-            variant="card"
             columns={columns}
             data={entries}
             searchKey="job"

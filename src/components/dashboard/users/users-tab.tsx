@@ -143,7 +143,6 @@ export function UsersTab({ ref, cards, canManage, initialLayout }: UsersTabProps
                 </div>
             ) : (
                 <DataTable
-                    variant="card"
                     joined
                     columns={columns}
                     data={rows}

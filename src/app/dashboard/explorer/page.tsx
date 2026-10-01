@@ -1,9 +1,13 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import { DatabaseExplorer } from "@/components/dashboard/explorer/database-explorer";
 import { DATABASES_PAGE_ID } from "@/components/dashboard/explorer/explorer-ids";
 import { checkPermission, getCurrentUserWithGroup, getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getViewMode } from "@/services/user/preference-service";
+
+/** The name of the browser tab, which the root layout ends with the name of the instance. */
+export const metadata: Metadata = { title: "Database Explorer" };
 
 export const dynamic = "force-dynamic";
 

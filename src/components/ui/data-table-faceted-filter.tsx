@@ -169,12 +169,12 @@ export function DataTableFacetedFilter<TData, TValue>({
           <ChevronDown className="size-4 shrink-0 opacity-50" aria-hidden="true" />
         </button>
       </PopoverTrigger>
-      <PopoverContent tone="filter" className={cn("w-80 overflow-hidden rounded-xl bg-raised p-0", contentClassName)} align="start">
+      <PopoverContent tone="filter" className={cn("w-80 overflow-hidden p-0", contentClassName)} align="start">
         <DialogHead tone="filter" icon={ListFilter} className="px-4 py-3">
           <p className="truncate text-sm font-semibold">{heading ?? `Filter by ${title.toLowerCase()}`}</p>
           <p className={cn(dialogNoteClass("filter"), "truncate")}>{note}</p>
         </DialogHead>
-        <Command shouldFilter={false} className="bg-transparent">
+        <Command shouldFilter={false}>
           <div className="flex items-center gap-2 border-b p-2">
             <Checkbox
               checked={shownState}

@@ -48,9 +48,9 @@ describe("validateStorageRole", () => {
     it("says what the adapter is and what it does support", () => {
         // The message is the whole user-facing part of this rule, so it is worth pinning.
         expect(() => validateStorageRole("read-only-thing", STORAGE_ROLES.DESTINATION))
-            .toThrow(/'Read Only Thing' cannot be used as a Backup Destination/);
+            .toThrow(/'Read Only Thing' cannot be used as a Destination/);
         expect(() => validateStorageRole("read-only-thing", STORAGE_ROLES.DESTINATION))
-            .toThrow(/It supports: Directory Source/);
+            .toThrow(/It supports: Directory source/);
     });
 
     it("leaves an unknown adapter id to whatever validates it next", () => {

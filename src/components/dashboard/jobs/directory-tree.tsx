@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { ChevronRight, ChevronDown, Folder, HardDrive, Loader2 } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { ChevronRight, ChevronDown, Folder, HardDrive } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -33,8 +34,19 @@ interface DirectoryTreeProps {
     rows: DirectoryTreeRow[];
     /** Called with the full replacement row list for this adapter on every toggle - no separate confirm step. */
     onRowsChange: (rows: DirectoryTreeRow[]) => void;
-    /** Renders the per-root panel (exclude pattern editing) below a checked/indeterminate root-level row. */
-    renderRootPanel?: (row: DirectoryTreeRow, onChange: (patch: Partial<DirectoryTreeRow>) => void) => ReactNode;
+}
+
+/** A row that is on, in the soft tint of the tone of the dialog, like every list that picks. */
+const PICKED_ROW = "bg-tone-control/5 hover:bg-tone-control/10 dark:bg-tone-control/10";
+
+/** Rows of the width of folder names, while a level loads. */
+function LoadingRows({ indent, count = 2 }: { indent: number; count?: number }) {
+    return (
+        <div className="space-y-2 py-2" style={{ paddingLeft: indent }} aria-busy="true">
+            <span className="sr-only">Loading the folders</span>
+            {Array.from({ length: count }, (_, index) => <Skeleton key={index} className={cn("h-4", index % 2 ? "w-28" : "w-40")} />)}
+        </div>
+    );
 }
 
 function isAtOrUnder(candidate: string, base: string): boolean {
@@ -65,12 +77,10 @@ export function DirectoryTree({
     configId,
     rows,
     onRowsChange,
-    renderRootPanel,
 }: DirectoryTreeProps) {
     const [nodesByKey, setNodesByKey] = useState<Map<string, TreeNodeInfo>>(new Map());
     const [childrenByKey, setChildrenByKey] = useState<Map<string, string[] | "loading">>(new Map());
     const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
-    const [expandedPanels, setExpandedPanels] = useState<Set<string>>(new Set());
 
     const fetchChildren = useCallback(async (parentKey: string): Promise<BrowseEntry[]> => {
         setChildrenByKey((prev) => new Map(prev).set(parentKey, "loading"));
@@ -78,12 +88,12 @@ export function DirectoryTree({
             const res = await fetch(`/api/adapters/${encodeURIComponent(configId)}/browse?path=${encodeURIComponent(parentKey)}`);
             const json = await res.json();
             if (!json.success) {
-                toast.error(json.error || "Failed to load folders");
+                toast.error(json.error || "The folders could not be loaded.");
                 setChildrenByKey((prev) => new Map(prev).set(parentKey, []));
                 return [];
             }
             if (json.supported === false) {
-                toast.error("This adapter does not support folder browsing");
+                toast.error("This connection cannot list its folders.");
                 setChildrenByKey((prev) => new Map(prev).set(parentKey, []));
                 return [];
             }
@@ -96,7 +106,7 @@ export function DirectoryTree({
             setChildrenByKey((prev) => new Map(prev).set(parentKey, entries.map((e) => e.path)));
             return entries;
         } catch {
-            toast.error("Network error while browsing folders");
+            toast.error("The folders could not be loaded.");
             setChildrenByKey((prev) => new Map(prev).set(parentKey, []));
             return [];
         }
@@ -225,14 +235,6 @@ export function DirectoryTree({
         if (!childrenByKey.has(key)) fetchChildren(key);
     }, [childrenByKey, fetchChildren]);
 
-    const togglePanel = useCallback((path: string) => {
-        setExpandedPanels((prev) => {
-            const next = new Set(prev);
-            if (next.has(path)) next.delete(path); else next.add(path);
-            return next;
-        });
-    }, []);
-
     const renderNode = (key: string, depth: number) => {
         const info = nodesByKey.get(key);
         if (!info) return null;
@@ -240,55 +242,34 @@ export function DirectoryTree({
         const state = getNodeState(path);
         const expanded = expandedKeys.has(key);
         const kids = childrenByKey.get(key);
-        const owningRow = state !== "unchecked" ? findOwningRow(path) : undefined;
-        const isRoot = owningRow?.path === path;
-        const panelOpen = isRoot && expandedPanels.has(path);
 
         return (
             <div key={key}>
                 <div
-                    className={cn(
-                        "flex items-center gap-2 py-2 px-2 rounded-md",
-                        state !== "unchecked" && "bg-accent/40"
-                    )}
+                    className={cn("flex items-center gap-2 rounded-md px-2 py-2 hover:bg-muted/50", state !== "unchecked" && PICKED_ROW)}
                     style={{ paddingLeft: depth * 24 + 8 }}
                 >
                     <button
                         type="button"
-                        className="p-0.5 rounded hover:bg-muted shrink-0"
+                        className="shrink-0 rounded p-0.5 text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
                         onClick={() => handleExpandToggle(key)}
+                        aria-expanded={expanded}
+                        aria-label={`${expanded ? "Close" : "Open"} ${info.name}`}
                     >
-                        {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        {expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
                     </button>
                     <Checkbox
                         className="size-4.5"
                         checked={state === "indeterminate" ? "indeterminate" : state === "checked"}
                         onCheckedChange={() => toggleNode(key)}
+                        aria-label={`Back up ${info.name}`}
                     />
-                    <Folder className="h-4.5 w-4.5 text-amber-500 shrink-0" />
-                    <span className="text-sm truncate flex-1">{info.name}</span>
-                    {isRoot && renderRootPanel && (
-                        <button
-                            type="button"
-                            className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-muted shrink-0"
-                            onClick={() => togglePanel(path)}
-                        >
-                            Excludes{owningRow!.excludePatterns.length > 0 ? ` (${owningRow!.excludePatterns.length})` : ""}
-                        </button>
-                    )}
+                    <Folder className="size-4.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <span className="min-w-0 flex-1 truncate text-sm">{info.name}</span>
                 </div>
-                {panelOpen && owningRow && renderRootPanel && (
-                    <div style={{ paddingLeft: depth * 24 + 40 }} className="pb-2 pr-3">
-                        {renderRootPanel(owningRow, (patch) => {
-                            onRowsChange(rows.map((r) => (r === owningRow ? { ...r, ...patch } : r)));
-                        })}
-                    </div>
-                )}
                 {expanded && (
                     kids === "loading" ? (
-                        <div style={{ paddingLeft: (depth + 1) * 24 + 8 }} className="py-1.5">
-                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                        </div>
+                        <LoadingRows indent={(depth + 1) * 24 + 8} />
                     ) : kids && kids.length > 0 ? (
                         kids.map((childKey) => renderNode(childKey, depth + 1))
                     ) : (
@@ -304,21 +285,16 @@ export function DirectoryTree({
     const rootState = getNodeState("");
 
     const rootRow = (
-        <div
-            className={cn(
-                "flex items-center gap-2 py-2 px-2 rounded-md",
-                rootState !== "unchecked" && "bg-accent/40"
-            )}
-            style={{ paddingLeft: 8 }}
-        >
-            <span className="w-5 h-4 shrink-0" />
+        <div className={cn("flex items-center gap-2 rounded-md py-2 pr-2 pl-2 hover:bg-muted/50", rootState !== "unchecked" && PICKED_ROW)}>
+            <span className="h-4 w-5 shrink-0" />
             <Checkbox
                 className="size-4.5"
                 checked={rootState === "indeterminate" ? "indeterminate" : rootState === "checked"}
                 onCheckedChange={toggleRoot}
+                aria-label="Back up everything"
             />
-            <HardDrive className="h-4.5 w-4.5 text-muted-foreground shrink-0" />
-            <span className="text-sm font-medium flex-1">Back up everything (this adapter&apos;s root)</span>
+            <HardDrive className="size-4.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <span className="min-w-0 flex-1 text-sm font-medium">Back up everything at the root of this connection</span>
         </div>
     );
 
@@ -328,9 +304,8 @@ export function DirectoryTree({
         return (
             <div>
                 {rootRow}
-                <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                </div>
+                <div className="my-1 border-t" />
+                <LoadingRows indent={40} count={5} />
             </div>
         );
     }
@@ -339,8 +314,8 @@ export function DirectoryTree({
         return (
             <div>
                 {rootRow}
-                <div className="text-center text-sm text-muted-foreground py-8">
-                    No folders found at this adapter&apos;s configured root.
+                <div className="py-8 text-center text-sm text-muted-foreground">
+                    No folders at the root of this connection.
                 </div>
             </div>
         );

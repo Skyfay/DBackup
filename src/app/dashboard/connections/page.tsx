@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import { ConnectionsTabs } from "@/components/adapter/connections-tabs";
 import { CONNECTION_TABLE_IDS, CONNECTIONS_PAGE_ID, type ConnectionAttention } from "@/components/adapter/connection-tables";
@@ -6,6 +7,9 @@ import { getCurrentUserWithGroup, getUserPermissions } from "@/lib/auth/access-c
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getConnectionAttention } from "@/services/adapters/adapter-service";
 import { getTablePreferences, getViewMode } from "@/services/user/preference-service";
+
+/** The name of the browser tab, which the root layout ends with the name of the instance. */
+export const metadata: Metadata = { title: "Connections" };
 
 /**
  * Everything DBackup connects to, in one place: databases, storage in either role, and

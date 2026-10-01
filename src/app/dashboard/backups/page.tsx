@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 
 import { Suspense } from "react";
 import { StorageClient } from "./storage-client";
@@ -5,6 +6,9 @@ import { BACKUPS_PAGE_ID, BACKUPS_TABLE_ID, DESTINATIONS_PAGE_ID } from "@/compo
 import { getCurrentUserWithGroup, getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getTablePreferences, getViewMode } from "@/services/user/preference-service";
+
+/** The name of the browser tab, which the root layout ends with the name of the instance. */
+export const metadata: Metadata = { title: "Backups" };
 
 export default async function StoragePage() {
     const [permissions, user] = await Promise.all([getUserPermissions(), getCurrentUserWithGroup()]);

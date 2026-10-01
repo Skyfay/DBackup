@@ -73,7 +73,6 @@ export function TemplateTable<T extends { id: string }>({
 
     return (
         <DataTable
-            variant="card"
             joined
             columns={columns}
             data={shown}

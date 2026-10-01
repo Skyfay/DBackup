@@ -108,7 +108,7 @@ export function StatusCell({ status, configId, lastCheckedAt, detail, error, int
                     {label}
                 </button>
             </PopoverTrigger>
-            <PopoverContent className="w-85 overflow-hidden rounded-xl bg-raised p-0" align="start">
+            <PopoverContent className="w-85 overflow-hidden p-0" align="start">
                 {open && (
                     <ConnectionHealthPopover
                         status={status}

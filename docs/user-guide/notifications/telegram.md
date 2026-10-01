@@ -19,7 +19,7 @@ Send notifications to Telegram chats, groups, or channels using a Telegram Bot.
    - **Private chat:** Message your bot, then open `https://api.telegram.org/bot<TOKEN>/getUpdates` → find `"chat": { "id": ... }`
    - **Group:** Add bot to group, send a message, check `/getUpdates` (ID is negative, e.g. `-1001234567890`)
    - **Channel:** Add bot as **admin**, use `@channel_username` or numeric ID from `/getUpdates`
-3. In DBackup: **Connections** → **Notifications** → **Add New** → **Telegram**
+3. In DBackup: **Connections** → **Channels** → **New channel** → **Telegram**
 4. Pick or create the credential profile under **Bot token** and enter the Chat ID → **Send test** → **Create channel**
 
 ## Troubleshooting

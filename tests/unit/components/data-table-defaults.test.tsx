@@ -22,7 +22,7 @@ const rowCount = () => screen.getAllByRole("row").length - 1;
 
 function renderTable(defaults: TableDefaults | null, initial?: TablePreferences | null, onChange = vi.fn()) {
     const table = (
-        <DataTable variant="card" columns={columns} data={items} getRowId={(item) => item.id} columnLayout={initial === undefined ? undefined : { initial, onChange }} />
+        <DataTable columns={columns} data={items} getRowId={(item) => item.id} columnLayout={initial === undefined ? undefined : { initial, onChange }} />
     );
     render(defaults ? <TableDefaultsProvider defaults={defaults}>{table}</TableDefaultsProvider> : table);
     return onChange;

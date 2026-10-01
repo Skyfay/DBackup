@@ -150,7 +150,6 @@ export function CredentialsTab({ ref, cards, access, initialLayout }: Credential
                 </div>
             ) : (
                 <DataTable
-                    variant="card"
                     joined
                     columns={columns}
                     data={rows}

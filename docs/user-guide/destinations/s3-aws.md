@@ -40,7 +40,7 @@ Objects stored in `GLACIER` or `DEEP_ARCHIVE` are archived and cannot be downloa
    - Attach the `AmazonS3FullAccess` policy (or a scoped policy - see below)
    - Create an **Access Key** (use case: "Application outside AWS") and copy both keys
 3. **Create an `ACCESS_KEY` credential profile** in **Vault → Credentials** with the Access Key ID and Secret Access Key ([guide](/user-guide/security/credential-profiles))
-4. Go to **Connections** → **Backup Destinations** → **Add New** → **Amazon S3**
+4. Go to **Connections** → **Destinations** → **New destination** → **Amazon S3**
 5. Enter your Region and Bucket, then pick the credential profile under **Login**
 6. (Optional) Set a **Folder** in the **Location** part to organize backups in a subfolder, or pick it with the folder button (📂)
 7. (Optional) Select a **Storage class** for cost optimization

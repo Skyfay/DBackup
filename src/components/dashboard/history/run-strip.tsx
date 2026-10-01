@@ -2,6 +2,7 @@
 
 import { Archive, Bell, CircleCheck, CircleSlash, CircleX, Copy, Layers, ListChecks, Timer, TriangleAlert, UserRound } from "lucide-react";
 import { ExplorerStrip, type StripCell } from "@/components/dashboard/storage/explorer/explorer-strip";
+import { stageLabel } from "@/lib/core/logs";
 import { formatBytes, formatDuration } from "@/lib/utils";
 import type { RunChecks, RunDetail } from "@/services/history/run-types";
 
@@ -13,7 +14,7 @@ function bytes(size: number | null): Pick<StripCell, "value" | "unit"> {
 
 function time(run: RunDetail, live: boolean, elapsed: number): StripCell {
     return live
-        ? { label: "Running for", icon: Timer, value: formatDuration(elapsed), extra: run.usualMs !== null ? `usual ${formatDuration(run.usualMs)} in all` : run.live?.stage ?? " " }
+        ? { label: "Running for", icon: Timer, value: formatDuration(elapsed), extra: run.usualMs !== null ? `usual ${formatDuration(run.usualMs)} in all` : run.live?.stage ? stageLabel(run.live.stage) : " " }
         : { label: "Took", icon: Timer, value: run.durationMs !== null ? formatDuration(run.durationMs) : "-", extra: run.usualMs !== null ? `usual ${formatDuration(run.usualMs)}` : "no earlier run to compare" };
 }
 

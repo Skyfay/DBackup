@@ -2,6 +2,7 @@
 
 import { CircleCheck, CircleDashed, CircleX, TriangleAlert } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
+import { stageLabel } from "@/lib/core/logs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn, formatDuration } from "@/lib/utils";
 import type { RunDetail, RunStep, RunStepState, RunUpload } from "@/services/history/run-types";
@@ -107,7 +108,7 @@ export function StepsPane({ run, now, picked, onPick, className }: StepsPaneProp
                                     <StepIcon state={step.state} />
                                     <span className="min-w-0 flex-1">
                                         <span className="flex items-center gap-2">
-                                            <span className={cn("truncate text-sm font-medium", (step.state === "pending" || step.state === "skipped") && "text-muted-foreground")}>{step.name}</span>
+                                            <span className={cn("truncate text-sm font-medium", (step.state === "pending" || step.state === "skipped") && "text-muted-foreground")}>{stageLabel(step.name)}</span>
                                             <ProblemBadges errors={step.errors} warnings={step.warnings} />
                                         </span>
                                         {note && <span className="block truncate text-xs text-muted-foreground">{note}</span>}

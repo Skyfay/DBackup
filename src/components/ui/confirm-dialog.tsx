@@ -36,7 +36,7 @@ const NOTES: Partial<Record<Tone, string>> = {
 
 /** Classes shared by the dialogs built on DialogHead: the raised surface and the button strip. */
 export const DIALOG_SURFACE = "gap-0 overflow-hidden rounded-xl bg-card p-0 sm:max-w-md";
-export const DIALOG_FOOTER = "border-t bg-page/60 px-5 py-3";
+export const DIALOG_FOOTER = "shrink-0 border-t bg-page/60 px-5 py-3";
 
 interface DialogHeadProps {
     tone: Tone;
@@ -52,7 +52,7 @@ interface DialogHeadProps {
 export function DialogHead({ tone, icon: Icon, className, action, children }: DialogHeadProps) {
     const classes = headClasses(tone);
     return (
-        <div {...toneAttribute(tone)} className={cn("flex min-w-0 items-center gap-3 border-b px-5 py-4", classes.head, className)}>
+        <div {...toneAttribute(tone)} className={cn("flex min-w-0 shrink-0 items-center gap-3 border-b px-5 py-4", classes.head, className)}>
             <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg", classes.tile)} aria-hidden="true">
                 <Icon className="size-4" />
             </span>
@@ -199,13 +199,15 @@ export function ConfirmDialog({
                     <AlertDialogTitle className="text-base">{title}</AlertDialogTitle>
                     {note && <AlertDialogDescription className={dialogNoteClass(tone)}>{note}</AlertDialogDescription>}
                 </DialogHead>
-                {/* The content is a grid, whose items default to min-width:auto. Without min-w-0
-                    a long name would widen the dialog instead of being cut off. */}
+                {/* The body scrolls on its own once a long one meets a short window, while the head
+                    and the buttons stay. Inside, min-w-0 cuts a long name off instead of widening it. */}
                 {(bodyText || children) && (
-                    <div className="grid min-w-0 gap-4 px-5 py-4">
-                        {bodyText}
-                        {children}
-                    </div>
+                    <ScrollArea className="min-h-0 flex-1">
+                        <div className="grid min-w-0 gap-4 px-5 py-4">
+                            {bodyText}
+                            {children}
+                        </div>
+                    </ScrollArea>
                 )}
                 <AlertDialogFooter className={DIALOG_FOOTER}>
                     <AlertDialogCancel disabled={isPending}>{cancelLabel}</AlertDialogCancel>

@@ -60,7 +60,7 @@ function DatabaseSwitcher({ overview, current, server }: { overview: DatabaseOve
                     </span>
                 </PickTrigger>
             </PopoverTrigger>
-            <PopoverContent tone="pick" align="end" className="w-80 overflow-hidden bg-raised p-0">
+            <PopoverContent tone="pick" align="end" className="w-80 overflow-hidden p-0">
                 <PickList
                     icon={Database}
                     title="Open another database"

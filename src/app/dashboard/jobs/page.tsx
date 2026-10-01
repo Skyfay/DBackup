@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { getCurrentUserWithGroup, getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getAdapterOptions } from "@/lib/adapters/dto";
@@ -5,6 +6,9 @@ import { getEncryptionProfiles } from "@/app/actions/backup/encryption";
 import { getTablePreferences, getViewMode } from "@/services/user/preference-service";
 import { JOBS_PAGE_ID, JOBS_TABLE_ID } from "@/components/dashboard/jobs/job-tables";
 import { JobsClient } from "./jobs-client";
+
+/** The name of the browser tab, which the root layout ends with the name of the instance. */
+export const metadata: Metadata = { title: "Jobs" };
 
 export default async function JobsPage() {
     const [permissions, user] = await Promise.all([getUserPermissions(), getCurrentUserWithGroup()]);

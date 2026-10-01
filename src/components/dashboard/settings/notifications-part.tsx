@@ -208,7 +208,6 @@ export function NotificationsPart({ model, openEventId, onOpened }: { model: Not
             <div data-setting="notifications.events">
                 <DefaultsStrip channels={model.defaultChannels.map((id) => byId.get(id)).filter((channel): channel is AdapterListItemDTO => !!channel)} onChange={readOnly ? undefined : () => setChangingDefaults(true)} />
                 <DataTable
-                    variant="card"
                     frameless
                     columns={columns}
                     data={shown}

@@ -223,7 +223,6 @@ export function DatabaseExplorer({ initialView, ...access }: DatabaseExplorerPro
                         />
 
                         <DataTable
-                            variant="card"
                             joined
                             columns={columns}
                             data={data.databases}

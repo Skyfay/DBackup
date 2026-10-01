@@ -47,7 +47,7 @@ there, while a source reads from that same path - and a source set to "Back up e
 reads the path itself. One adapter doing both would mean a job backing up its own previous
 archives, growing without limit.
 
-Both live on the **Connections** page, on the **Backup Destinations** and **Directory Sources** tabs.
+Both live on the **Connections** page, on the **Destinations** and **Directory sources** tabs.
 
 ::: tip Same server for both
 Pick **Create as directory source** in the menu of a destination, or **Create as backup destination** on a source, to copy it into the opposite role with its login, then adjust the path. Two adapters for one server is intentional: they point at different paths and are monitored separately.
@@ -55,7 +55,7 @@ Pick **Create as directory source** in the menu of a destination, or **Create as
 
 ## Adding a Destination
 
-1. Navigate to **Connections** → **Backup Destinations** → **Add New**
+1. Navigate to **Connections** → **Destinations** → **New destination**
 2. Select the storage type
 3. Fill in the parts listed on the left. A check marks each part that has everything it needs.
 4. Leave **Used as** on **Backup destination** in the **Behavior** part

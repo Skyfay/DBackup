@@ -86,7 +86,7 @@ describe("connection form", () => {
     it("starts a Redis source on its default setup instead of an empty choice", () => {
         renderForm("redis");
         const options = screen.getByRole("tabpanel", { name: /Options/ });
-        expect(within(options).getByRole("combobox", { name: "Redis setup" })).toHaveTextContent("standalone");
+        expect(within(options).getByRole("combobox", { name: "Redis setup" })).toHaveTextContent("Standalone");
     });
 
     it("asks before saving a database whose connection test fails, and saves once confirmed", async () => {
@@ -222,7 +222,7 @@ describe("connection form", () => {
         const onSaved = renderForm("teams");
 
         // The Quick Setup shows the types on its page and opens the form on the one picked there.
-        expect(screen.getByRole("dialog", { name: "Add notification channel" })).toHaveAccessibleDescription("Microsoft Teams");
+        expect(screen.getByRole("dialog", { name: "New channel" })).toHaveAccessibleDescription("Microsoft Teams");
         await user.type(screen.getByLabelText("Name"), "Ops channel");
         await user.click(screen.getByRole("button", { name: "Create channel" }));
 

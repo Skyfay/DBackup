@@ -15,7 +15,7 @@ Send push notifications via [ntfy](https://ntfy.sh/) - a simple, topic-based not
 
 1. Choose a **unique topic name** (e.g., `dbackup-a8f3k2m9x`)
 2. Subscribe to the topic on your device ([Android](https://f-droid.org/packages/io.heckel.ntfy/), [iOS](https://apps.apple.com/app/ntfy/id1625396347), or [Web](https://ntfy.sh/))
-3. In DBackup: **Connections** → **Notifications** → **Add New** → **ntfy**
+3. In DBackup: **Connections** → **Channels** → **New channel** → **ntfy**
 4. Enter Server URL and Topic → **Send test** → **Create channel**
 
 ::: warning Public Topics

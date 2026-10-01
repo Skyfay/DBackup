@@ -96,6 +96,7 @@ const SIGN_IN: StoredSetting[] = [
     { key: "auth.sessionDuration", label: "Sessions last", fallback: "604800", show: secondsText },
     // Stored as a switch that turns it off, shown the way round that on means on.
     { key: "auth.disablePasskeyLogin", label: "Sign in with a passkey", fallback: "false", show: (value) => !on(value) },
+    { key: "signin.loginLook", label: "Login page", fallback: "logos", show: (value) => (value === "image" ? "Your own image" : "DBackup logos") },
 ];
 
 const PRIVACY: StoredSetting[] = [

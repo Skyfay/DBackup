@@ -19,6 +19,7 @@ import { getDataRetentionOverview } from "./data-retention-service";
 import { SYSTEM_TASKS } from "./system-task-definitions";
 import { systemTaskService } from "./system-task-service";
 import { getIntegritySettings, getSystemTaskRows } from "./system-task-settings";
+import { getLoginImageInfo } from "./login-image-service";
 import { getGeneralSettings, getPrivacySettings, getSignInSettings, passkeyIsLastWayIn } from "./system-settings-service";
 import type { SettingsModel } from "./settings-types";
 
@@ -36,10 +37,11 @@ async function orNull<T>(what: string, read: () => Promise<T> | T): Promise<T | 
 
 export async function getSettingsModel({ permissions, ...viewer }: { canManage: boolean; isSuperAdmin: boolean; permissions: string[] }): Promise<SettingsModel> {
     const general = await getGeneralSettings();
-    const [signIn, lastWayIn, providers, privacy, retention, database, configBackup, storage, keys, configRun, rateLimits, certificate, tasks, integrity, notifications, trash] =
+    const [signIn, lastWayIn, loginImage, providers, privacy, retention, database, configBackup, storage, keys, configRun, rateLimits, certificate, tasks, integrity, notifications, trash] =
         await Promise.all([
             getSignInSettings(),
             passkeyIsLastWayIn(),
+            getLoginImageInfo(),
             prisma.ssoProvider.findMany({ select: { name: true, adapterId: true, enabled: true }, orderBy: { name: "asc" } }),
             getPrivacySettings(),
             getDataRetentionOverview(),
@@ -64,7 +66,7 @@ export async function getSettingsModel({ permissions, ...viewer }: { canManage: 
     return {
         ...viewer,
         general,
-        signIn: { ...signIn, emailLoginDisabledByEnv: isEmailLoginDisabled(), providers, passkeyIsLastWayIn: lastWayIn },
+        signIn: { ...signIn, emailLoginDisabledByEnv: isEmailLoginDisabled(), providers, passkeyIsLastWayIn: lastWayIn, loginImage },
         privacy,
         retention,
         database,

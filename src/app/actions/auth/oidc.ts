@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { checkPermission, getUserPermissions } from "@/lib/auth/access-control";
+import { checkPermission } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { getErrorMessage, wrapError } from "@/lib/logging/errors";
@@ -68,12 +68,6 @@ async function missingGroup(groupId: string | null | undefined, current: string 
 }
 
 // --- Actions ---
-
-export async function getPublicSsoProviders() {
-    // Audit compliance: Safe for public access because it returns [] if not logged in
-    await getUserPermissions();
-    return OidcProviderService.getEnabledProviders();
-}
 
 /** Reads the endpoints of a provider from its fields, for the check in its dialog and in its panel. */
 export async function checkSsoConnection(input: z.input<typeof checkSchema>) {

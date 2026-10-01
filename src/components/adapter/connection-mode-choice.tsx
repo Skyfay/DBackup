@@ -15,6 +15,8 @@ export interface ModeOption {
     /** A word beside the title, like Default, or why the card cannot be picked. */
     badge?: string;
     disabled?: boolean;
+    /** A small picture of what the option looks like, above its title. */
+    preview?: React.ReactNode;
 }
 
 interface ChoiceCardsProps extends Omit<React.ComponentProps<typeof RadioGroup>, "value" | "onValueChange" | "children"> {
@@ -39,15 +41,16 @@ export function ChoiceCards({ value, onValueChange, options, className, ...props
                 <Label
                     key={option.value}
                     htmlFor={`${id}-${option.value}`}
-                    className="cursor-pointer items-start gap-3 rounded-lg border p-3 leading-normal font-normal transition-colors hover:bg-muted/40 has-disabled:cursor-not-allowed has-disabled:opacity-55 has-disabled:hover:bg-transparent has-data-[state=checked]:border-tone-control/60 has-data-[state=checked]:bg-tone-control/5 dark:has-data-[state=checked]:bg-tone-control/10"
+                    className="cursor-pointer flex-wrap items-start gap-3 rounded-lg border p-3 leading-normal font-normal transition-colors hover:bg-muted/40 has-disabled:cursor-not-allowed has-disabled:opacity-55 has-disabled:hover:bg-transparent has-data-[state=checked]:border-tone-control/60 has-data-[state=checked]:bg-tone-control/5 dark:has-data-[state=checked]:bg-tone-control/10"
                 >
+                    {option.preview && <span className="block w-full">{option.preview}</span>}
                     <RadioGroupItem
                         id={`${id}-${option.value}`}
                         value={option.value}
                         disabled={option.disabled}
                         className="mt-0.5 shrink-0"
                     />
-                    <span className="grid min-w-0 gap-0.5">
+                    <span className="grid min-w-0 flex-1 gap-0.5">
                         <span className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
                             {option.title}
                             {option.beta && (

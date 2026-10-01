@@ -89,6 +89,7 @@ For the full endpoint documentation with request/response schemas, examples, and
 | Vault | `GET /api/vault/:id/recovery-kit` | Download encryption recovery kit |
 | Settings | `GET/POST/PUT /api/settings/system-tasks` | The system tasks with their schedule, their last run and what each follows (`GET`), a change of one by its `taskId` (`POST`, an unknown task or a schedule the scheduler cannot read answers 400), and Run now (`PUT`, 409 while the task runs) |
 | Search | `GET /api/search?q=` | The jobs, backups of a job, connections, databases, latest runs, people (by name or email), groups, API keys, templates, encryption keys and saved logins whose name holds `q`, from two letters on, as `hits`. It needs no permission of its own and finds only the kinds the key may read, like jobs with `jobs:read`, backups with `storage:read` and saved logins with `vault:read` and `credentials:read`. It never returns a secret |
+| Login picture | `GET /api/login-image`, `GET/POST/DELETE /api/settings/login-image` | The picture of the login page, public and only while **Your own image** is picked. Under settings the picture for the preview with `settings:read`, a new one as `file` in a form and its removal with `settings:write`. Only PNG, JPG or WebP up to 5 MB |
 | Health | `GET /api/health` | Health check (public, no auth) |
 
 ## Permissions

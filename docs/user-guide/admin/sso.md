@@ -99,13 +99,13 @@ It asks for the issuer, the authorization, token and user info endpoints, and th
 
 ## Login Page
 
-Every provider that is on shows as a button on the login page. With an **Email domain**, someone who types an email of that domain goes straight to the provider. A provider takes one domain.
+Every provider that is on shows as a button with its logo on the login page. With an **Email domain**, the login page asks for the email first, says under it which provider an email of that domain signs in with, and its button goes there. A provider takes one domain.
 
 Two environment variables change the login page. Both are set on the container rather than in the UI, because either one can lock you out and the lever has to work without signing in.
 
 ### Switching off password login
 
-`DISABLE_EMAIL_LOGIN=true` removes the email and password form. Only SSO and passkeys remain, and the endpoints are rejected server-side rather than just hidden. Administrators keep creating users and resetting passwords under **Users**, since an account often has to exist before it can link to an SSO identity. Passkey login has its own switch under **Settings → General**.
+`DISABLE_EMAIL_LOGIN=true` removes the email and password form. Only SSO and passkeys remain, and the endpoints are rejected server-side rather than just hidden. Administrators keep creating users and resetting passwords under **Users**, since an account often has to exist before it can link to an SSO identity. Passkey login has its own switch under **Settings → Sign-in**.
 
 ::: warning Order matters on a new instance
 Create the first administrator and configure your provider **before** setting this. There is no bootstrap exception, on an empty instance it leaves no way to sign in and no way to create an account.
@@ -121,8 +121,10 @@ OIDC_AUTO_REDIRECT=authentik
 
 The redirect is skipped after a failed sign-in, so the error is readable instead of looping, and on the page load right after signing out, so signing out works. An ID matching no enabled provider logs an error at startup and leaves the redirect off rather than stopping the application.
 
-::: warning No way past it from the browser
-While this is set, nothing in the URL reaches the login form. If the provider is unreachable or misconfigured, remove the variable and restart.
+While it waits for the provider, the page offers **Sign in another way**, which shows the login form for that one visit.
+
+::: warning A provider that never answers
+Nothing in the URL turns the redirect off. If the provider is unreachable or misconfigured for longer, remove the variable and restart.
 :::
 
 ## Troubleshooting

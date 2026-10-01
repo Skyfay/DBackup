@@ -7,6 +7,7 @@ import prisma from "@/lib/prisma";
 import { isEmailLoginDisabled } from "@/lib/auth/env-flags";
 import { ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
+import { getLoginImageInfo, LOGIN_LOOK_KEY, type LoginLook } from "./login-image-service";
 
 const log = logger.child({ service: "SystemSettingsService" });
 
@@ -25,6 +26,8 @@ export interface SignInSettings {
     /** How long a session lasts, in seconds. */
     sessionDuration: number;
     passkeyLogin: boolean;
+    /** What the left of the login page shows, the logos of the adapters or the picture of the instance. */
+    loginLook: LoginLook;
 }
 
 export interface PrivacySettings {
@@ -43,6 +46,7 @@ const KEYS = {
     sessionDuration: "auth.sessionDuration",
     // Stored the other way round, true turns the passkey button off.
     disablePasskeyLogin: "auth.disablePasskeyLogin",
+    loginLook: LOGIN_LOOK_KEY,
     includeActor: "privacy.includeActorInMetadata",
 } as const;
 
@@ -105,10 +109,11 @@ export async function saveGeneralSettings(next: GeneralSettings): Promise<void> 
 }
 
 export async function getSignInSettings(): Promise<SignInSettings> {
-    const stored = await readAll([KEYS.sessionDuration, KEYS.disablePasskeyLogin]);
+    const stored = await readAll([KEYS.sessionDuration, KEYS.disablePasskeyLogin, KEYS.loginLook]);
     return {
         sessionDuration: whole(stored.get(KEYS.sessionDuration), DEFAULT_SESSION_DURATION, 1),
         passkeyLogin: stored.get(KEYS.disablePasskeyLogin) !== "true",
+        loginLook: stored.get(KEYS.loginLook) === "image" ? "image" : "logos",
     };
 }
 
@@ -129,9 +134,13 @@ export async function saveSignInSettings(next: SignInSettings): Promise<void> {
             { field: "passkeyLogin" }
         );
     }
+    if (next.loginLook === "image" && before.loginLook !== "image" && !(await getLoginImageInfo())) {
+        throw new ValidationError("Upload a picture first, the login page has none yet.", { field: "loginLook" });
+    }
     await prisma.$transaction([
         upsert(KEYS.sessionDuration, String(next.sessionDuration)),
         upsert(KEYS.disablePasskeyLogin, String(!next.passkeyLogin)),
+        upsert(KEYS.loginLook, next.loginLook),
     ]);
 }
 

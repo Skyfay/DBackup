@@ -59,6 +59,7 @@ All notable changes to DBackup are documented here.
 - **ui**: The tabs of every page show an icon, and a dot in amber or red while their list holds something to fix, like a connection that does not answer or a job whose last run failed. What it is shows on hover.
 - **ui**: The numbers above every list are tiles with an icon, and what each means shows on hover. Jobs and Connections have them too, with how the latest runs went, what answers and how fast.
 - **ui**: A search in the middle of the header, or Ctrl+K (⌘K on macOS) anywhere, finds the jobs, connections, databases, backups, runs, people, groups, API keys, templates, Vault entries, settings and pages you may open. It also starts a found job and switches the theme.
+- **auth**: The login page can show a picture of your own instead of the logos, chosen under Settings › Sign-in. The picture lives in the database and comes back with the configuration backup.
 
 
 ### 🐛 Bug Fixes
@@ -205,6 +206,9 @@ All notable changes to DBackup are documented here.
 - **users**: Editing a group writes what changed to the audit log instead of its whole list of permissions, and a group keeps only permissions DBackup knows.
 - **auth**: Creating an API key writes its permissions, its end and its task to the audit log instead of a count, and an edit writes what it added and removed.
 - **audit**: Every entry of the audit log keeps the address and browser of its request and names the API key it came with. A change keeps what each field was before and after, a secret only that it changed.
+- **auth**: The login page names the instance beside the logos of everything DBackup backs up, shows the providers with their logos and says at the field what went wrong. An email of a provider's domain says where it signs in before the page leaves for it.
+- **auth**: The first start of a new DBackup offers a first account or the restore of a configuration backup, which takes the backup with its metadata in one drop and the key from its recovery kit.
+- **auth**: While OIDC_AUTO_REDIRECT sends the login page to a provider, the page offers another way to sign in.
 
 ### 🔄 Changed
 
@@ -242,6 +246,7 @@ All notable changes to DBackup are documented here.
 - **api**: The new `GET /api/search?q=` returns the jobs and their backups, connections, databases, latest runs, people, groups, API keys, templates, encryption keys and saved logins whose name holds the query. It finds only the kinds the caller may read.
 - **ui**: A new version shows on the right of the header with a blue dot beside the guides and DBackup on GitHub, and opens a card with how to update. The sidebar no longer shows it at its foot.
 - **ui**: The name under Settings → General heads the sidebar, with DBackup and the version below it. Without a name the sidebar shows DBackup as before.
+- **api**: The new `GET /api/login-image` serves the picture of the login page while it is picked, and `/api/settings/login-image` uploads and removes it with `settings:write`.
 
 ### 🗑️ Removed
 

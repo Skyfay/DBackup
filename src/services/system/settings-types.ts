@@ -9,6 +9,7 @@ import type { TrashRow } from "@/services/trash/trash-types";
 import type { TaskRunRecord } from "./system-task-service";
 import type { IntegritySettings, SystemTaskRow } from "./system-task-settings";
 import type { GeneralSettings, PrivacySettings, SignInSettings } from "./system-settings-service";
+import type { LoginImageInfo } from "./login-image-service";
 
 export type { ConfigBackupSettings, CertificateInfo, DatabaseInfo, GeneralSettings, IntegritySettings, PrivacySettings, RateLimitConfig, SignInSettings, SystemTaskRow, TaskRunRecord, TrashRow };
 
@@ -38,6 +39,8 @@ export interface SettingsModel {
         providers: SettingsProvider[];
         /** Turning the passkey button off would leave nobody a way to sign in. */
         passkeyIsLastWayIn: boolean;
+        /** The picture of the login page, kept while the logos show too. */
+        loginImage: LoginImageInfo | null;
     };
     privacy: PrivacySettings;
     retention: {

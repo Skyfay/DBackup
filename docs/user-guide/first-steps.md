@@ -6,7 +6,9 @@ This guide walks you through your first login and setting up your first automate
 
 After installation, open [http://localhost:3000](http://localhost:3000) in your browser.
 
-On first launch, you'll see a login page with a "Sign Up" option. This self-registration is **only available for the first user** and creates the administrator account.
+On the first start, the login page asks how you want to start. **Start fresh** creates the first account, which becomes the SuperAdmin. **Restore a backup** brings back another DBackup from its configuration backup instead, see [System Backup](/user-guide/features/system-backup#on-a-new-server). Both are there only while nobody has an account, and a third way, using the instance as a runner of another DBackup, is marked as coming soon.
+
+Later the login page shows the name set under **Settings → General** and signs you in with your email and password, a passkey or a sign-in provider.
 
 Once logged in, open **Quick Setup** in the sidebar to set up your first backup step by step. This is the recommended approach for new users.
 

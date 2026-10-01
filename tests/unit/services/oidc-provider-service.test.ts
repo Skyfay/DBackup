@@ -77,21 +77,6 @@ describe('OidcProviderService', () => {
         });
     });
 
-    describe('getEnabledProviders()', () => {
-        it('returns only enabled providers without secrets', async () => {
-            prismaMock.ssoProvider.findMany.mockResolvedValue([mockProvider] as any);
-
-            await OidcProviderService.getEnabledProviders();
-
-            expect(prismaMock.ssoProvider.findMany).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    where: { enabled: true },
-                    select: expect.not.objectContaining({ clientId: expect.anything() }),
-                })
-            );
-        });
-    });
-
     describe('createProvider()', () => {
         it('encrypts clientId and clientSecret before storing', async () => {
             prismaMock.ssoProvider.create.mockResolvedValue(mockProvider as any);

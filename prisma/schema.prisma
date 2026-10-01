@@ -567,3 +567,14 @@ model DeletedRecord {
   @@index([kind])
   @@index([deletedAt])
 }
+
+// The picture of the login page under Settings, Sign-in, one row at most. It shows to everyone who
+// opens the login page while Your own image is picked, so nothing in it is private.
+model LoginImage {
+  id        String   @id @default("login")
+  fileName  String
+  mimeType  String // image/png, image/jpeg or image/webp, read from the bytes
+  size      Int
+  data      Bytes
+  updatedAt DateTime @updatedAt
+}

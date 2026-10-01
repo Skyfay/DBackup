@@ -4,11 +4,11 @@ Manage the people who sign in to DBackup, how they sign in and what their group 
 
 ## First User
 
-The first user to sign up becomes the administrator:
-1. Open DBackup login page
-2. Click **Sign Up**
+The first account becomes the administrator:
+1. Open the login page of the new DBackup
+2. Pick **Start fresh**
 3. Create your account
-4. This account has full permissions
+4. This account is a SuperAdmin with every permission
 
 ::: warning First User Only
 Self-registration is only available for the first user. Additional users must be created by an admin.

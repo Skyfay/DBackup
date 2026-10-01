@@ -314,3 +314,31 @@
     background-size: 0% 2px;
   }
 }
+
+/*
+ * The login page (`components/auth/login-panel.tsx`): the tint of its left side, the rows of logos
+ * that drift in turns and the logo that fills once. The classes that start them carry `motion-safe:`,
+ * so nothing moves with Reduce motion in the system.
+ */
+.login-tint {
+  background-image: linear-gradient(160deg, color-mix(in oklab, var(--create) 10%, transparent), color-mix(in oklab, var(--create) 4%, transparent) 45%, transparent 75%);
+}
+
+.dark .login-tint {
+  background-image: linear-gradient(160deg, color-mix(in oklab, var(--create) 22%, transparent), color-mix(in oklab, var(--create) 7%, transparent) 45%, transparent 75%);
+}
+
+@keyframes login-drift {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes login-fill {
+  from {
+    clip-path: inset(100% 0 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}

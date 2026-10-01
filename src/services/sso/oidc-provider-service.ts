@@ -63,22 +63,6 @@ export class OidcProviderService {
         return prisma.group.findUnique({ where: { id }, select: { id: true, name: true, permissions: true } });
     }
 
-    static async getEnabledProviders() {
-        return prisma.ssoProvider.findMany({
-            where: { enabled: true },
-            select: {
-                id: true,
-                providerId: true,
-                name: true,
-                type: true,
-                adapterId: true,
-                domain: true,
-                allowProvisioning: true
-                // Do NOT select secrets
-            }
-        });
-    }
-
     static async createProvider(data: CreateSsoProviderInput) {
         // Use discoveryEndpoint from adapter if provided, otherwise fallback to standard path
         // Different OIDC providers have different discovery paths (e.g., Authentik uses /application/o/{slug}/...)

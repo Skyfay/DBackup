@@ -58,7 +58,7 @@ The `.meta.json` beside it names the key and holds what its decryption needs. Th
 
 ## Restore Process
 
-Only a SuperAdmin restores a configuration, since it brings back users, groups and sign-in providers. The one exception is the sign-up page of a new DBackup, see [On a New Server](#on-a-new-server).
+Only a SuperAdmin restores a configuration, since it brings back users, groups and sign-in providers. The one exception is the first start of a new DBackup, see [On a New Server](#on-a-new-server).
 
 ### What Happens
 
@@ -90,8 +90,8 @@ The file can be up to 10 MB. A bigger one, for example with the history, is rest
 ### On a New Server
 
 1. Install a new DBackup. New values for `ENCRYPTION_KEY` and `BETTER_AUTH_SECRET` are fine
-2. On the sign-up page, use **Or restore from a backup** instead of creating an account
-3. Pick the backup file and its `.meta.json`, and paste the key from its recovery kit
+2. On the first start, pick **Restore a backup** instead of **Start fresh**
+3. Drop the backup file and its `.meta.json` together, and paste the key from its recovery kit or drop the kit as `.zip` on the key field
 4. Check what it holds, click **Restore and restart**, then sign in with an account of the backup
 
 This works only while nobody has an account yet. For a file over 10 MB, create an account first, add the destination as a connection, and restore from the **Backups** page.

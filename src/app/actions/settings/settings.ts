@@ -22,6 +22,7 @@ const generalSchema = z.object({
 const signInSchema = z.object({
     sessionDuration: z.coerce.number().int().min(3600).max(7776000), // 1h to 90d in seconds
     passkeyLogin: z.boolean(),
+    loginLook: z.enum(["logos", "image"]),
 });
 
 export async function saveGeneralSettingsAction(input: z.infer<typeof generalSchema>): Promise<SaveResult> {

@@ -39,7 +39,7 @@ function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
         canManage: true,
         isSuperAdmin: true,
         general: { instanceName: "", timezone: "UTC", maxConcurrentJobs: 1, stuckTimeoutMinutes: 360, checkForUpdates: true, showQuickSetup: false },
-        signIn: { sessionDuration: 604800, passkeyLogin: true, emailLoginDisabledByEnv: false, providers: [], passkeyIsLastWayIn: false },
+        signIn: { sessionDuration: 604800, passkeyLogin: true, loginLook: "logos", emailLoginDisabledByEnv: false, providers: [], passkeyIsLastWayIn: false, loginImage: null },
         privacy: { includeActorInMetadata: true },
         retention: { values: {} as SettingsModel["retention"]["values"], counts: {} as SettingsModel["retention"]["counts"] },
         database: null,

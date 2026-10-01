@@ -48,7 +48,7 @@ describe("sign-in settings", () => {
         mocks.emailLoginDisabled.mockReturnValue(true);
         prismaMock.ssoProvider.count.mockResolvedValue(0);
 
-        await expect(saveSignInSettings({ sessionDuration: 604800, passkeyLogin: false })).rejects.toBeInstanceOf(ValidationError);
+        await expect(saveSignInSettings({ sessionDuration: 604800, passkeyLogin: false, loginLook: "logos" })).rejects.toBeInstanceOf(ValidationError);
         expect(prismaMock.$transaction).not.toHaveBeenCalled();
     });
 
@@ -56,9 +56,24 @@ describe("sign-in settings", () => {
         mocks.emailLoginDisabled.mockReturnValue(true);
         prismaMock.ssoProvider.count.mockResolvedValue(1);
 
-        await saveSignInSettings({ sessionDuration: 604800, passkeyLogin: false });
+        await saveSignInSettings({ sessionDuration: 604800, passkeyLogin: false, loginLook: "logos" });
 
         expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it("shows a picture on the login page only once one is uploaded", async () => {
+        prismaMock.loginImage.findUnique.mockResolvedValue(null);
+
+        await expect(saveSignInSettings({ sessionDuration: 604800, passkeyLogin: true, loginLook: "image" })).rejects.toMatchObject({ field: "loginLook" });
+        expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    });
+
+    it("keeps the picture as the look of the login page once there is one", async () => {
+        prismaMock.loginImage.findUnique.mockResolvedValue({ fileName: "alps.jpg", mimeType: "image/jpeg", size: 1000, updatedAt: new Date() } as never);
+
+        await saveSignInSettings({ sessionDuration: 604800, passkeyLogin: true, loginLook: "image" });
+
+        expect(prismaMock.systemSetting.upsert).toHaveBeenCalledWith(expect.objectContaining({ where: { key: "signin.loginLook" }, update: { value: "image" } }));
     });
 });
 

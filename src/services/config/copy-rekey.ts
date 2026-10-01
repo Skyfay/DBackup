@@ -17,7 +17,7 @@ import { DROPPED_TABLES, HISTORY_TABLES, type CopyKeys } from "./database-copy";
 const log = logger.child({ service: "ConfigRestore" });
 
 const ENCRYPTED = /^[0-9a-f]{32}:[0-9a-f]{32}:[0-9a-f]*$/;
-const NO_SECRETS = new Set(["_prisma_migrations", "TwoFactor", "DbVersionHistory", "UserPreference", ...HISTORY_TABLES, ...DROPPED_TABLES]);
+const NO_SECRETS = new Set(["_prisma_migrations", "TwoFactor", "DbVersionHistory", "UserPreference", "LoginImage", ...HISTORY_TABLES, ...DROPPED_TABLES]);
 const PAGE = 500;
 
 /** One value encrypted again, or as it was when it is no encrypted value. JSON is searched inside. */

@@ -67,7 +67,7 @@ const CONFIG = { enabled: false, storageId: "", profileId: "", schedule: "0 3 * 
 
 const SAVES = [
     ["General", () => saveGeneralSettingsAction(GENERAL)],
-    ["Sign-in", () => saveSignInSettingsAction({ sessionDuration: 604800, passkeyLogin: true })],
+    ["Sign-in", () => saveSignInSettingsAction({ sessionDuration: 604800, passkeyLogin: true, loginLook: "logos" })],
     ["Privacy", () => savePrivacySettingsAction({ includeActorInMetadata: false })],
     ["Data retention", () => saveDataRetentionAction({ auditLog: 365 })],
     ["Rate limits", () => updateRateLimitSettings({ auth: LIMIT, api: LIMIT, mutation: LIMIT })],

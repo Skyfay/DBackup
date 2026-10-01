@@ -32,6 +32,7 @@ const SETTINGS: SettingEntry[] = [
     { part: "config-backup", id: "config.keeps", label: "Keeps", text: "How many configuration backups stay at the destination." },
     { part: "config-backup", id: "config.history", label: "Include the history", text: "Runs, logs, the audit log and the storage history." },
     { part: "config-backup", id: "config.restore", label: "Restore from a file", text: "Brings back connections, jobs, users and settings, only for a SuperAdmin." },
+    { part: "sign-in", id: "signin.look", label: "Login page", text: "The logos of DBackup or a picture of your own beside the sign-in." },
     { part: "sign-in", id: "signin.sessions", label: "Sessions last", text: "How long someone stays signed in." },
     { part: "sign-in", id: "signin.passkey", label: "Sign in with a passkey", text: "The passkey button on the login page." },
     { part: "sign-in", id: "signin.password", label: "Sign in with a password", text: "DISABLE_EMAIL_LOGIN on the container turns it off." },

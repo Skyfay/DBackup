@@ -8,10 +8,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { SettingsModel } from "@/services/system/settings-types";
+import { LoginLookField } from "./login-look-field";
 import { Field, PartFrame, SaveBar, useSettingsFrame, usePartSave, usePartValues } from "./settings-frame";
 import { SESSION_CHOICES, changesOf, secondsText, withSaved } from "./settings-values";
 
 export const SIGN_IN_FIELDS = {
+    loginLook: { label: "Login page", show: (look: string) => (look === "image" ? "Your own image" : "DBackup logos") },
     sessionDuration: { label: "Sessions last", show: secondsText },
     passkeyLogin: { label: "Sign in with a passkey" },
 } as const;
@@ -22,10 +24,10 @@ function providerNames(names: string[]): string {
     return `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`;
 }
 
-/** How long sessions last, the passkey button, the password switch of the container and the providers. */
+/** What the login page shows, how long sessions last, the passkey button, the password switch of the container and the providers. */
 export function SignInPart({ model }: { model: SettingsModel["signIn"] }) {
     const { readOnly } = useSettingsFrame();
-    const form = usePartValues("sign-in", { sessionDuration: model.sessionDuration, passkeyLogin: model.passkeyLogin });
+    const form = usePartValues("sign-in", { loginLook: model.loginLook, sessionDuration: model.sessionDuration, passkeyLogin: model.passkeyLogin });
     const save = usePartSave("sign-in");
     const { values, set } = form;
     const enabled = model.providers.filter((provider) => provider.enabled);
@@ -36,6 +38,7 @@ export function SignInPart({ model }: { model: SettingsModel["signIn"] }) {
     return (
         <>
             <PartFrame part="sign-in">
+                <LoginLookField value={values.loginLook} onChange={(look) => set("loginLook", look)} image={model.loginImage} readOnly={readOnly} error={save.errorOf("loginLook") ?? undefined} />
                 <fieldset disabled={readOnly} className="min-w-0 space-y-6">
                     <Field label="Sessions last" setting="signin.sessions" hint="How long someone stays signed in. A new length applies from their next sign-in." error={save.errorOf("sessionDuration")}>
                         {(id) => (

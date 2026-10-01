@@ -4,18 +4,12 @@ import { Copy } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { COPY_FAILED, copyToClipboard } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 
-/** Puts a value on the clipboard, which a page served over plain HTTP may not reach. */
+/** Puts a value on the clipboard and says in a toast whether it arrived. */
 export function copyText(text: string, what: string) {
-    if (!navigator.clipboard) {
-        toast.error("The clipboard is only open to pages served over HTTPS.");
-        return;
-    }
-    navigator.clipboard
-        .writeText(text)
-        .then(() => toast.success(`${what} copied`))
-        .catch(() => toast.error(`${what} could not be copied`));
+    void copyToClipboard(text).then((copied) => (copied ? toast.success(`${what} copied`) : toast.error(COPY_FAILED)));
 }
 
 interface SecretFieldProps {

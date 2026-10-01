@@ -23,6 +23,7 @@ import { StorageHistoryModal } from "@/components/dashboard/widgets/storage-hist
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { CloneDialog } from "@/components/ui/clone-dialog";
 import { useTableLayout } from "@/hooks/use-table-layout";
+import { useVisibleInterval } from "@/hooks/use-visible-interval";
 import { connectionColumns, type ConnectionKind } from "./connection-columns";
 import { ConnectionStrip } from "./connection-strip";
 import { ConnectionRowActions } from "./connection-row-actions";
@@ -162,11 +163,8 @@ export function AdapterManager({ ref, type, canManage = true, permissions = [], 
         fetchConfigs();
     }, [type, pickerRole, fetchConfigs]);
 
-    // Poll every 10 seconds to keep health status up to date
-    useEffect(() => {
-        const interval = setInterval(silentRefresh, 10000);
-        return () => clearInterval(interval);
-    }, [silentRefresh]);
+    // Keeps the health of the connections current every 10 seconds, never in a hidden tab.
+    useVisibleInterval(silentRefresh, 10_000);
 
     const cloneAdapter = async (id: string, name: string, role?: StorageRole) => {
         setCloningId(id);

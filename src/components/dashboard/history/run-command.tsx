@@ -3,6 +3,7 @@
 import { Fragment, useState } from "react";
 import { Check, ChevronRight, Copy } from "lucide-react";
 import { toast } from "sonner";
+import { COPY_FAILED, copyToClipboard } from "@/lib/clipboard";
 import { isStatement, parseCommand, statementLines, type CommandArg } from "@/lib/logs/line-source";
 import { cn } from "@/lib/utils";
 
@@ -19,12 +20,14 @@ export function Arg({ arg }: { arg: CommandArg }) {
 
 export function CopyButton({ text }: { text: string }) {
     const [copied, setCopied] = useState(false);
-    const copy = () => navigator.clipboard.writeText(text)
-        .then(() => {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-        })
-        .catch(() => toast.error("The command could not be copied"));
+    const copy = () => void copyToClipboard(text).then((done) => {
+        if (!done) {
+            toast.error(COPY_FAILED);
+            return;
+        }
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+    });
     return (
         <button
             type="button"

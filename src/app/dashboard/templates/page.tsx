@@ -12,7 +12,8 @@ import { getTablePreferences } from "@/services/user/preference-service";
  */
 export default async function TemplatesPage() {
     const [permissions, user] = await Promise.all([getUserPermissions(), getCurrentUserWithGroup()]);
-    if (!user) redirect("/login");
+    // The login lives on the root page, there is no /login.
+    if (!user) redirect("/");
     if (!permissions.includes(PERMISSIONS.TEMPLATES.READ)) redirect("/dashboard");
 
     const layouts = await getTablePreferences(user.id, Object.values(TEMPLATE_TABLE_IDS));

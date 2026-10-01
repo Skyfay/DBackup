@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import { Check, Copy, FileText } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import { COPY_FAILED, copyToClipboard } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 
 export type CodeLanguage = "bash" | "powershell" | "python" | "typescript" | "go" | "yaml" | "json";
@@ -132,7 +134,10 @@ export function CodeBlock({ name, code, language, icon, mark, className }: CodeB
     const [copied, setCopied] = useState(false);
 
     const copy = async () => {
-        await navigator.clipboard.writeText(code);
+        if (!(await copyToClipboard(code))) {
+            toast.error(COPY_FAILED);
+            return;
+        }
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
     };

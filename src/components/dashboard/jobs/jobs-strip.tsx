@@ -3,6 +3,7 @@
 import { CalendarClock, CircleCheck, Clock, LoaderCircle, TriangleAlert } from "lucide-react";
 import { ExplorerStrip } from "@/components/dashboard/storage/explorer/explorer-strip";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
+import { successShare } from "@/lib/core/success-share";
 import { namesFor } from "@/lib/core/tab-attention";
 import type { JobListItem } from "@/services/jobs/job-list-service";
 import { lastOutcome } from "./job-status";
@@ -17,7 +18,11 @@ export function JobsStrip({ jobs }: { jobs: JobListItem[] }) {
     const paused = jobs.filter((job) => !job.enabled).length;
     const runs = jobs.flatMap((job) => job.overview.runs).filter((run) => DONE.has(run.status));
     const succeeded = runs.filter((run) => run.status === "Success").length;
-    const share = runs.length > 0 ? Math.round((succeeded / runs.length) * 1000) / 10 : null;
+    const share = successShare({
+        succeeded,
+        partial: runs.filter((run) => run.status === "Partial").length,
+        failed: runs.filter((run) => run.status === "Failed").length,
+    });
     const failed = jobs.filter((job) => lastOutcome(job) === "Failed").map((job) => job.name);
     const partial = jobs.filter((job) => lastOutcome(job) === "Partial").map((job) => job.name);
     const attention = [

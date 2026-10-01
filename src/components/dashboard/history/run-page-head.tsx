@@ -12,7 +12,8 @@ import { DateDisplay } from "@/components/utils/date-display";
 import { useDateFormatter } from "@/hooks/use-date-formatter";
 import { formatBytes, formatDuration } from "@/lib/utils";
 import type { RunDetail, RunNeighbour } from "@/services/history/run-types";
-import { cancelRun, startRun } from "./run-actions";
+import { CancelRunDialog } from "./cancel-run-dialog";
+import { startRun } from "./run-actions";
 import { RunTile } from "./run-cells";
 import { typeLabel } from "./run-format";
 import { originOf, runHref, type RunOrigin } from "./run-links";
@@ -71,6 +72,7 @@ export function RunPageHead({ run, access, onChanged }: { run: RunDetail; access
     const from = searchParams.get("from");
     const origin = originOf(from);
     const live = run.status === "Running" || run.status === "Pending";
+    const [cancelling, setCancelling] = useState(false);
     // Stepping between runs replaces the address, so the arrow still leads back to where the first one was opened.
     const go = (id: string) => router.replace(runHref(id, origin.key as RunOrigin), { scroll: false });
     const back = () => {
@@ -117,9 +119,10 @@ export function RunPageHead({ run, access, onChanged }: { run: RunDetail; access
                     <Button variant="outline" size="sm" onClick={() => void startRun(run.job!.id, run.job!.name).then((id) => (id ? go(id) : onChanged()))}><Play />Run again</Button>
                 )}
                 {live && access.canExecute && (
-                    <Button variant="outline" size="sm" tone="destructive" className="border-tone/50 text-tone hover:text-tone" onClick={() => void cancelRun(run.id).then(onChanged)}><Square />Cancel run</Button>
+                    <Button variant="outline" size="sm" tone="destructive" className="border-tone/50 text-tone hover:text-tone" onClick={() => setCancelling(true)}><Square />Cancel run</Button>
                 )}
             </div>
+            <CancelRunDialog run={cancelling ? run : null} onClose={() => setCancelling(false)} onCancelled={onChanged} />
         </div>
     );
 }

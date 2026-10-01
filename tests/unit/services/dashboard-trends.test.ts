@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { dailyStorageTotals, successPercentage, successRateTrend, valueDaysAgo } from "@/services/dashboard/trends";
+import { dailyStorageTotals, successRateTrend, valueDaysAgo } from "@/services/dashboard/trends";
 import type { ActivityDataPoint } from "@/services/dashboard-service";
 
 const toDayKey = (date: Date) => date.toISOString().slice(0, 10);
@@ -8,24 +8,17 @@ function snapshot(adapterConfigId: string, size: number, count: number, createdA
     return { adapterConfigId, size: BigInt(size), count, createdAt: new Date(createdAt) };
 }
 
-describe("successPercentage", () => {
-    it("rounds to one decimal and ignores partial or cancelled runs", () => {
-        expect(successPercentage(491, 9)).toBe(98.2);
-        expect(successPercentage(3, 0)).toBe(100);
-    });
-
-    it("is null when nothing finished", () => {
-        expect(successPercentage(0, 0)).toBeNull();
-    });
-});
-
 describe("successRateTrend", () => {
-    it("computes one rate per day and leaves days without finished runs empty", () => {
-        const day = (completed: number, failed: number): ActivityDataPoint => ({
-            date: "Sep 1", completed, failed, partial: 0, running: 0, pending: 0, cancelled: 0,
-        });
+    const day = (completed: number, failed: number, partial = 0, cancelled = 0): ActivityDataPoint => ({
+        date: "Sep 1", completed, failed, partial, running: 0, pending: 0, cancelled,
+    });
 
+    it("computes one rate per day and leaves days without finished runs empty", () => {
         expect(successRateTrend([day(3, 1), day(0, 0), day(2, 0)])).toEqual([75, null, 100]);
+    });
+
+    it("counts a partial run against the day like every success share, and a cancelled one not at all", () => {
+        expect(successRateTrend([day(3, 0, 1), day(2, 0, 0, 5)])).toEqual([75, 100]);
     });
 });
 

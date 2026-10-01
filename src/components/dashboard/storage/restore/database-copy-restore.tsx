@@ -5,6 +5,7 @@ import { Loader2, RotateCw } from "lucide-react";
 import { RestartWait } from "@/components/config-restore/restart-wait";
 import { RestoreContents } from "@/components/config-restore/restore-contents";
 import { EncryptionKeyResolutionDialog, type KeyResolutionResult } from "@/components/common/encryption-key-resolution-dialog";
+import { WRONG_KEY } from "@/hooks/use-encryption-key-recovery";
 import type { FileInfo } from "@/components/dashboard/storage/file-info";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -60,18 +61,27 @@ export function DatabaseCopyRestore({ file, destinationId, canRestore, canManage
     const [confirming, setConfirming] = useState(false);
     const [restoring, setRestoring] = useState(false);
     const [restarting, setRestarting] = useState(false);
-    const [keyDialog, setKeyDialog] = useState<{ open: boolean; profileId: string }>({ open: false, profileId: "" });
+    const [keyDialog, setKeyDialog] = useState<{ open: boolean; profileId: string; error?: string }>({ open: false, profileId: "" });
 
     const read = useCallback(async (key?: { keyHex?: string; profileId?: string }) => {
         setReading(true);
         setProblem(null);
+        const closeKeyDialog = () => setKeyDialog({ open: false, profileId: "" });
         try {
             const answer = await post<Checked>("/api/settings/config-backup/restore/destination", { destinationId, file: file.path, ...key });
-            if (answer.success && answer.data) setChecked(answer.data);
-            else if (answer.code === "ENCRYPTION_KEY_REQUIRED") setKeyDialog({ open: true, profileId: answer.profileId ?? "" });
-            else setProblem(answer.error ?? "The backup could not be read.");
+            if (answer.success && answer.data) {
+                closeKeyDialog();
+                setChecked(answer.data);
+            } else if (answer.code === "ENCRYPTION_KEY_REQUIRED") {
+                // A key that was tried and does not fit keeps the dialog open and says so.
+                setKeyDialog({ open: true, profileId: answer.profileId ?? "", error: key ? answer.error || WRONG_KEY : undefined });
+            } else {
+                closeKeyDialog();
+                setProblem(answer.error ?? "The backup could not be read.");
+            }
         } catch (error: unknown) {
             log.warn("Reading a configuration backup failed", { destinationId }, wrapError(error));
+            closeKeyDialog();
             setProblem("The backup could not be read.");
         } finally {
             setReading(false);
@@ -101,8 +111,8 @@ export function DatabaseCopyRestore({ file, destinationId, canRestore, canManage
         }
     };
 
+    // The dialog stays open with its spinner until the backup opens with the key or says why not.
     const withKey = (result: KeyResolutionResult) => {
-        setKeyDialog({ open: false, profileId: "" });
         void read(result.type === "rawKey" ? { keyHex: result.keyHex } : { profileId: result.profileId });
     };
 
@@ -174,6 +184,7 @@ export function DatabaseCopyRestore({ file, destinationId, canRestore, canManage
                 canManageVault={canManageVault}
                 onConfirm={withKey}
                 loading={reading}
+                error={keyDialog.error}
             />
         </div>
     );

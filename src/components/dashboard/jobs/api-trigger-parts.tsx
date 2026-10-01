@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight, Check, Copy, KeyRound, Plus } from "lucide-react";
+import { toast } from "sonner";
 import { ApiKeyFormDialog } from "@/components/dashboard/api-keys/api-key-form-dialog";
 import { ExecutionStatusBadge } from "@/components/dashboard/widgets/execution-status";
 import { useCan, useViewerPermissions } from "@/components/permissions/permissions-context";
@@ -11,6 +12,7 @@ import { CodeBlock, MarkedText, type CodeMark } from "@/components/ui/code-block
 import { usePageModel } from "@/hooks/use-page-model";
 import { accessSentences, summarizeAccess } from "@/lib/auth/access-summary";
 import { AVAILABLE_PERMISSIONS, PERMISSIONS } from "@/lib/auth/permissions";
+import { COPY_FAILED, copyToClipboard } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 import type { ApiKeysModel } from "@/services/auth/api-keys-types";
 import { PIPELINE_SECRETS, RESPONSE_EXAMPLES, TRIGGER_PERMISSIONS, curlTrigger, statusUrl, triggerUrl, type TriggerExample, type TriggerTarget } from "./api-trigger-examples";
@@ -41,7 +43,10 @@ const STATUSES = [
 export function CopyButton({ value, label }: { value: string; label: string }) {
     const [copied, setCopied] = useState(false);
     const copy = async () => {
-        await navigator.clipboard.writeText(value);
+        if (!(await copyToClipboard(value))) {
+            toast.error(COPY_FAILED);
+            return;
+        }
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
     };

@@ -9,7 +9,8 @@ import {
     type StorageVolumeEntry,
 } from "@/services/dashboard-service";
 import { cached } from "./cache";
-import { dailyStorageTotals, successPercentage } from "./trends";
+import { successShare } from "@/lib/core/success-share";
+import { dailyStorageTotals } from "./trends";
 import type { CalendarDay, RunSummary } from "./types";
 
 /** How long the aggregates stay cached. A finished backup clears them earlier. */
@@ -165,11 +166,13 @@ async function loadRunStats(now: Date) {
     const since30d = subDays(now, 30);
     const since60d = subDays(now, 60);
 
-    const [success30d, failed30d, successPrev, failedPrev, succeeded24h, failed24h, total24h, backedUp, lastFailure, recentSuccesses] =
+    const [success30d, partial30d, failed30d, successPrev, partialPrev, failedPrev, succeeded24h, failed24h, total24h, backedUp, lastFailure, recentSuccesses] =
         await Promise.all([
             prisma.execution.count({ where: { status: "Success", startedAt: { gte: since30d } } }),
+            prisma.execution.count({ where: { status: "Partial", startedAt: { gte: since30d } } }),
             prisma.execution.count({ where: { status: "Failed", startedAt: { gte: since30d } } }),
             prisma.execution.count({ where: { status: "Success", startedAt: { gte: since60d, lt: since30d } } }),
+            prisma.execution.count({ where: { status: "Partial", startedAt: { gte: since60d, lt: since30d } } }),
             prisma.execution.count({ where: { status: "Failed", startedAt: { gte: since60d, lt: since30d } } }),
             prisma.execution.count({ where: { status: "Success", startedAt: { gte: since24h } } }),
             prisma.execution.count({ where: { status: "Failed", startedAt: { gte: since24h } } }),
@@ -199,8 +202,8 @@ async function loadRunStats(now: Date) {
 
     return {
         successRate: {
-            value: successPercentage(success30d, failed30d),
-            previous: successPercentage(successPrev, failedPrev),
+            value: successShare({ succeeded: success30d, partial: partial30d, failed: failed30d }),
+            previous: successShare({ succeeded: successPrev, partial: partialPrev, failed: failedPrev }),
         },
         succeeded24h,
         failed24h,

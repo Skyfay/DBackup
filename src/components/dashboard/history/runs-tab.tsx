@@ -9,8 +9,9 @@ import { DataTable } from "@/components/ui/data-table";
 import { QuickFilter } from "@/components/ui/quick-filter";
 import { filterText, filterValues, usePagedList, type PagedQuery } from "@/hooks/use-paged-list";
 import type { RunPage, RunRow } from "@/services/history/run-types";
+import { CancelRunDialog } from "./cancel-run-dialog";
 import { RunsStrip } from "./history-strips";
-import { cancelRun, startRun } from "./run-actions";
+import { startRun } from "./run-actions";
 import { RunCard } from "./run-card";
 import { RunTile } from "./run-cells";
 import { runColumns } from "./run-columns";
@@ -50,6 +51,7 @@ export function RunsTab({ cards, access }: { cards: boolean; access: RunsAccess 
     const [quick, setQuick] = useState<RunQuick>("all");
     const [page, setPage] = useState<RunPage | null>(null);
     const [pollMs, setPollMs] = useState(5000);
+    const [cancelling, setCancelling] = useState<RunRow | null>(null);
 
     const load = useCallback(async (query: PagedQuery) => {
         const data = await loadRuns(query, quick);
@@ -83,7 +85,7 @@ export function RunsTab({ cards, access }: { cards: boolean; access: RunsAccess 
                     ? [{ id: "again", label: "Run again", icon: Play, onSelect: () => void startRun(row.jobId!, row.name).then(() => list.refresh()), tone: "neutral" as const }]
                     : []),
                 ...(live && access.canExecute
-                    ? [{ id: "cancel", label: "Cancel run", icon: Square, onSelect: () => void cancelRun(row.id).then(() => list.refresh()), tone: "destructive" as const }]
+                    ? [{ id: "cancel", label: "Cancel run", icon: Square, onSelect: () => setCancelling(row), tone: "destructive" as const }]
                     : []),
             ],
         }];
@@ -141,6 +143,7 @@ export function RunsTab({ cards, access }: { cards: boolean; access: RunsAccess 
                     <BackupContextMenu tile={<RunTile row={row} />} title={row.name} note={`${typeLabel(row.type)} · ${row.starter.label}`} groups={groupsFor(row)} bulk={null} />
                 )}
             />
+            <CancelRunDialog run={cancelling} onClose={() => setCancelling(null)} onCancelled={() => void list.refresh()} />
         </div>
     );
 }

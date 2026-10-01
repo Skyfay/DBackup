@@ -15,125 +15,169 @@ interface UpdateInfo {
 const GITHUB_OWNER = "Skyfay";
 const GITHUB_REPO = "DBackup";
 
+/** How long the dashboard shows an answer of GitHub, and how soon a check that failed runs again. */
+const ANSWER_KEPT_MS = 60 * 60 * 1000;
+const FAILURE_KEPT_MS = 10 * 60 * 1000;
+
+/** The last answer of a check, which the dashboard shows without waiting for GitHub. */
+let lastCheck: { info: UpdateInfo; at: number } | null = null;
+let checking: Promise<UpdateInfo> | null = null;
+
+function noUpdate(currentVersion: string): UpdateInfo {
+  return { updateAvailable: false, latestVersion: currentVersion, currentVersion };
+}
+
 export const updateService = {
+  /** Asks GitHub for the newest version now, and keeps the answer for the dashboard. */
   async checkForUpdates(): Promise<UpdateInfo> {
+    const info = await fetchUpdateInfo();
+    lastCheck = { info, at: Date.now() };
+    return info;
+  },
+
+  /**
+   * What the dashboard shows about a new version, without ever waiting for GitHub: the last answer,
+   * and a check in the background once it is old. On an instance without internet every page would
+   * otherwise wait for the timeout of the request, since a failed answer is never cached by fetch.
+   */
+  async getUpdateInfo(): Promise<UpdateInfo> {
     const currentVersion = packageJson.version;
-
     try {
-      // 1. Check if updates are enabled in settings
-      const setting = await prisma.systemSetting.findUnique({
-        where: { key: "general.checkForUpdates" },
+      const setting = await prisma.systemSetting.findUnique({ where: { key: "general.checkForUpdates" } });
+      if (setting && setting.value !== "true") return noUpdate(currentVersion);
+    } catch (error) {
+      log.error("Reading whether to look for new versions failed", {}, wrapError(error));
+      return noUpdate(currentVersion);
+    }
+
+    const keptFor = lastCheck?.info.error ? FAILURE_KEPT_MS : ANSWER_KEPT_MS;
+    if ((!lastCheck || Date.now() - lastCheck.at > keptFor) && !checking) {
+      // checkForUpdates never throws, it answers a failure with `error`.
+      checking = updateService.checkForUpdates().finally(() => {
+        checking = null;
       });
+    }
+    return lastCheck?.info ?? noUpdate(currentVersion);
+  },
+};
 
-      const isEnabled = setting ? setting.value === "true" : true;
+async function fetchUpdateInfo(): Promise<UpdateInfo> {
+  const currentVersion = packageJson.version;
 
-      if (!isEnabled) {
-        return {
+  try {
+    // 1. Check if updates are enabled in settings
+    const setting = await prisma.systemSetting.findUnique({
+      where: { key: "general.checkForUpdates" },
+    });
+
+    const isEnabled = setting ? setting.value === "true" : true;
+
+    if (!isEnabled) {
+      return {
+        updateAvailable: false,
+        latestVersion: currentVersion,
+        currentVersion,
+      };
+    }
+
+    // 2. Fetch tags from GitHub API
+    // Public repos don't require authentication
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+
+    let response: Response;
+    try {
+      response = await fetch(
+        `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/tags?per_page=100`,
+        {
+          headers: { "Accept": "application/vnd.github+json" },
+          next: { revalidate: 3600 },
+          signal: controller.signal,
+        }
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch tags: ${response.statusText}`);
+    }
+
+    const data: { name: string }[] = await response.json();
+
+    if (!data || data.length === 0) {
+      return {
           updateAvailable: false,
           latestVersion: currentVersion,
           currentVersion,
-        };
-      }
+      };
+    }
 
-      // 2. Fetch tags from GitHub API
-      // Public repos don't require authentication
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
-
-      let response: Response;
-      try {
-        response = await fetch(
-          `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/tags?per_page=100`,
-          {
-            headers: { "Accept": "application/vnd.github+json" },
-            next: { revalidate: 3600 },
-            signal: controller.signal,
-          }
-        );
-      } finally {
-        clearTimeout(timeout);
-      }
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch tags: ${response.statusText}`);
-      }
-
-      const data: { name: string }[] = await response.json();
-
-      if (!data || data.length === 0) {
-        return {
-            updateAvailable: false,
-            latestVersion: currentVersion,
-            currentVersion,
-        };
-      }
-
-      const tags = data
-        .filter(t => /^v?\d+\.\d+\.\d+/.test(t.name))
-        .map(t => ({ name: t.name }));
+    const tags = data
+      .filter(t => /^v?\d+\.\d+\.\d+/.test(t.name))
+      .map(t => ({ name: t.name }));
 
 // 3. Find latest relevant version
 
-      // Parse current version
-      const current = parseVersion(currentVersion);
-      if (!current) {
-          log.error("Invalid current version in package.json", { currentVersion });
-          return { updateAvailable: false, latestVersion: currentVersion, currentVersion };
-      }
+    // Parse current version
+    const current = parseVersion(currentVersion);
+    if (!current) {
+        log.error("Invalid current version in package.json", { currentVersion });
+        return { updateAvailable: false, latestVersion: currentVersion, currentVersion };
+    }
 
-      const currentStability = getStability(current.prerelease);
+    const currentStability = getStability(current.prerelease);
 
-      // Filter and parse tags
-      const validTags = tags
-        .map(t => t.name)
-        .map(name => ({ name, version: parseVersion(name) }))
-        .filter(item => item.version !== null) as { name: string, version: ParsedVersion }[];
+    // Filter and parse tags
+    const validTags = tags
+      .map(t => t.name)
+      .map(name => ({ name, version: parseVersion(name) }))
+      .filter(item => item.version !== null) as { name: string, version: ParsedVersion }[];
 
-      // Filter by stability channel
-      // Rules:
-      // - Stable user (3) -> Only updates to Stable (3)
-      // - Beta user (2) -> Updates to Beta (2) or Stable (3)
-      // - Dev user (1) -> Updates to Dev (1), Beta (2), or Stable (3)
-      const relevantTags = validTags.filter(item => {
-          const tagStability = getStability(item.version.prerelease);
-          return tagStability >= currentStability;
-      });
+    // Filter by stability channel
+    // Rules:
+    // - Stable user (3) -> Only updates to Stable (3)
+    // - Beta user (2) -> Updates to Beta (2) or Stable (3)
+    // - Dev user (1) -> Updates to Dev (1), Beta (2), or Stable (3)
+    const relevantTags = validTags.filter(item => {
+        const tagStability = getStability(item.version.prerelease);
+        return tagStability >= currentStability;
+    });
 
-      if (relevantTags.length === 0) {
-          return { updateAvailable: false, latestVersion: currentVersion, currentVersion };
-      }
+    if (relevantTags.length === 0) {
+        return { updateAvailable: false, latestVersion: currentVersion, currentVersion };
+    }
 
-      // Sort by SemVer descending
-      relevantTags.sort((a, b) => compareSemver(b.version, a.version));
+    // Sort by SemVer descending
+    relevantTags.sort((a, b) => compareSemver(b.version, a.version));
 
-      const latest = relevantTags[0];
+    const latest = relevantTags[0];
 
-      // Compare latest relevant vs current
-      if (compareSemver(latest.version, current) > 0) {
-        return {
-          updateAvailable: true,
-          latestVersion: latest.name,
-          currentVersion,
-        };
-      }
-
+    // Compare latest relevant vs current
+    if (compareSemver(latest.version, current) > 0) {
       return {
-        updateAvailable: false,
-        latestVersion: currentVersion,
+        updateAvailable: true,
+        latestVersion: latest.name,
         currentVersion,
-      };
-
-    } catch (error) {
-      log.error("Update check failed", {}, wrapError(error));
-      return {
-        updateAvailable: false,
-        latestVersion: currentVersion,
-        currentVersion,
-        error: "Failed to check for updates",
       };
     }
-  },
-};
+
+    return {
+      updateAvailable: false,
+      latestVersion: currentVersion,
+      currentVersion,
+    };
+
+  } catch (error) {
+    log.error("Update check failed", {}, wrapError(error));
+    return {
+      updateAvailable: false,
+      latestVersion: currentVersion,
+      currentVersion,
+      error: "Failed to check for updates",
+    };
+  }
+}
 
 interface ParsedVersion {
     major: number;

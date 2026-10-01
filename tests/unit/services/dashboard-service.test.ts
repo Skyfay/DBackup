@@ -83,6 +83,17 @@ describe("getDashboardStats", () => {
     expect(result.totalStorageBytes).toBe(2048);
   });
 
+  it("counts a partial run against the success rate, like every success share of the dashboard", async () => {
+    prismaMock.job.count.mockResolvedValue(0);
+    prismaMock.execution.count.mockResolvedValue(0);
+
+    await getDashboardStats();
+
+    expect(prismaMock.execution.count).toHaveBeenCalledWith({
+      where: { startedAt: { gte: expect.any(Date) }, status: { in: ["Success", "Partial", "Failed"] } },
+    });
+  });
+
   it("returns 100% success rate when no executions exist in the last 30 days", async () => {
     prismaMock.job.count.mockResolvedValue(0);
     prismaMock.execution.count

@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { RestartWait } from "@/components/config-restore/restart-wait";
 import { RestoreContents } from "@/components/config-restore/restore-contents";
 import { EncryptionKeyResolutionDialog, type KeyResolutionResult } from "@/components/common/encryption-key-resolution-dialog";
+import { WRONG_KEY } from "@/hooks/use-encryption-key-recovery";
 import { Button } from "@/components/ui/button";
 import { DIALOG_FOOTER, DIALOG_SURFACE, DialogBackButton, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -67,7 +68,7 @@ export function ConfigRestoreDialog({ open, onOpenChange }: ConfigRestoreDialogP
     const [busy, setBusy] = useState(false);
     const [problem, setProblem] = useState<string | null>(null);
     const pending = useRef<FormData | null>(null);
-    const [keyDialog, setKeyDialog] = useState<{ open: boolean; profileId: string }>({ open: false, profileId: "" });
+    const [keyDialog, setKeyDialog] = useState<{ open: boolean; profileId: string; error?: string }>({ open: false, profileId: "" });
 
     const database = checked?.preview.kind === "database";
     const tone = step === "check" && database ? "destructive" : "warning";
@@ -95,15 +96,20 @@ export function ConfigRestoreDialog({ open, onOpenChange }: ConfigRestoreDialogP
                 return true;
             }
             if (answer.code === "ENCRYPTION_KEY_REQUIRED") {
-                // The key of the file was not found by itself, so it is asked for.
+                // The key of the file was not found by itself, so it is asked for. A key that was
+                // tried and does not fit keeps the dialog open and says so.
+                const tried = formData.has("encryptionKeyHex") || formData.has("encryptionProfileIdOverride");
                 pending.current = formData;
-                setKeyDialog({ open: true, profileId: answer.profileId ?? "" });
+                setKeyDialog({ open: true, profileId: answer.profileId ?? "", error: tried ? answer.error || WRONG_KEY : undefined });
                 return false;
             }
+            // Any other answer shows in this dialog, so the one of the key steps aside.
+            setKeyDialog({ open: false, profileId: "" });
             setProblem(answer.error ?? "The file could not be read.");
             return false;
         } catch (error: unknown) {
             log.warn("Checking a configuration backup failed", {}, wrapError(error));
+            setKeyDialog({ open: false, profileId: "" });
             setProblem("The file could not be read.");
             return false;
         } finally {
@@ -114,6 +120,9 @@ export function ConfigRestoreDialog({ open, onOpenChange }: ConfigRestoreDialogP
     const withKey = async (result: KeyResolutionResult) => {
         const formData = pending.current;
         if (!formData) return;
+        // Only the key of this try, a typed key would otherwise win over a profile picked after it.
+        formData.delete("encryptionKeyHex");
+        formData.delete("encryptionProfileIdOverride");
         if (result.type === "rawKey") formData.set("encryptionKeyHex", result.keyHex);
         else formData.set("encryptionProfileIdOverride", result.profileId);
         if (await checkFile(formData)) setKeyDialog({ open: false, profileId: "" });
@@ -244,6 +253,7 @@ export function ConfigRestoreDialog({ open, onOpenChange }: ConfigRestoreDialogP
                 profileIdHint={keyDialog.profileId}
                 onConfirm={(result) => void withKey(result)}
                 loading={busy}
+                error={keyDialog.error}
             />
         </>
     );

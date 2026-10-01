@@ -12,6 +12,7 @@ import { SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet
 import { Skeleton } from "@/components/ui/skeleton";
 import { DateDisplay } from "@/components/utils/date-display";
 import { getAdapterDefinition } from "@/lib/adapters/definitions";
+import { successShare } from "@/lib/core/success-share";
 import { cn, formatBytes, formatDuration } from "@/lib/utils";
 import type { JobListItem } from "@/services/jobs/job-list-service";
 import { destinationsText, NextRun, sourceOf } from "./job-cells";
@@ -119,6 +120,7 @@ export function JobDetailsContent({ job, canViewHistory, onRun, starting = false
     const style = getStatusStyle(job.overview.status);
     const typical = history ? typicalLength(history.runs) : null;
     const rate = history?.successRate;
+    const share = rate ? successShare(rate) : null;
 
     const stats: DetailStat[] = [
         {
@@ -129,8 +131,8 @@ export function JobDetailsContent({ job, canViewHistory, onRun, starting = false
         },
         {
             label: "Success, 30 days",
-            value: rate && rate.total > 0 ? `${Math.round((rate.succeeded / rate.total) * 100)}%` : "-",
-            extra: rate ? `${rate.succeeded} of ${rate.total} runs` : undefined,
+            value: share !== null ? `${share.toLocaleString()}%` : "-",
+            extra: rate ? `${rate.succeeded} of ${rate.total} finished runs` : undefined,
         },
         {
             label: "Next run",

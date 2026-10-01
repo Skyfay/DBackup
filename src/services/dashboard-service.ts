@@ -101,10 +101,11 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     prisma.execution.count({
       where: { status: "Failed", startedAt: { gte: twentyFourHoursAgo } },
     }),
+    // Every finished run, a partial one counting against the rate like on every page of the dashboard.
     prisma.execution.count({
       where: {
         startedAt: { gte: thirtyDaysAgo },
-        status: { in: ["Success", "Failed"] },
+        status: { in: ["Success", "Partial", "Failed"] },
       },
     }),
     prisma.execution.count({

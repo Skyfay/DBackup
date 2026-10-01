@@ -17,7 +17,8 @@ import { getUsersPageAttention } from "@/services/user/users-model";
  */
 export default async function UsersPage() {
     const [permissions, user] = await Promise.all([getUserPermissions(), getCurrentUserWithGroup()]);
-    if (!user) redirect("/login");
+    // The login lives on the root page, there is no /login.
+    if (!user) redirect("/");
 
     const can = (permission: string) => permissions.includes(permission);
     const canReadUsers = can(PERMISSIONS.USERS.READ);

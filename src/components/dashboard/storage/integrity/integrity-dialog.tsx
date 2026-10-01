@@ -14,6 +14,7 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } fr
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useDateFormatter } from "@/hooks/use-date-formatter";
+import { COPY_FAILED, copyToClipboard } from "@/lib/clipboard";
 import { cn, formatBytes } from "@/lib/utils";
 import type { BackupCopy, ExplorerDestination, ExplorerFile } from "@/services/storage/explorer-types";
 import { checkOrder, copyRows, howText, lastCheckText, statusOf, summaryText, verifiable, type CopyRow, type CopyStatus } from "./integrity-model";
@@ -201,7 +202,11 @@ function Checksums({ file }: { file: ExplorerFile }) {
 function ChecksumRow({ label, value }: { label: string; value: string }) {
     const [copied, setCopied] = useState(false);
     const copy = async () => {
-        await navigator.clipboard.writeText(value).catch(() => {});
+        // The tick only once the value arrived, a refused copy says so instead.
+        if (!(await copyToClipboard(value))) {
+            toast.error(COPY_FAILED);
+            return;
+        }
         setCopied(true);
         setTimeout(() => setCopied(false), 1500);
     };

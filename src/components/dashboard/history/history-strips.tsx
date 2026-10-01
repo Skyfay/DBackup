@@ -3,6 +3,7 @@
 import { CircleCheck, CircleX, LoaderCircle, MessageSquare, ScrollText, Send, TriangleAlert, Zap } from "lucide-react";
 import { ExplorerStrip } from "@/components/dashboard/storage/explorer/explorer-strip";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
+import { successShare } from "@/lib/core/success-share";
 import type { NotificationStats } from "@/services/notifications/notification-log-service";
 import type { RunStats } from "@/services/history/run-types";
 
@@ -12,12 +13,14 @@ export function RunsStrip({ stats }: { stats: RunStats | null }) {
     const liveText = !stats || live === 0
         ? "nothing runs right now"
         : [stats.running[0] && `${stats.running[0]} runs`, stats.queued[0] && `${stats.queued[0]} waits`].filter(Boolean).join(", ");
-    const share = stats && stats.total > 0 ? Math.round((stats.succeeded / stats.total) * 1000) / 10 : null;
+    // Of the runs that finished, like every success share of the app, see success-share.ts.
+    const share = stats ? successShare(stats) : null;
+    const finished = stats ? stats.succeeded + stats.partial + stats.failed : 0;
     return (
         <ExplorerStrip joined
             cells={[
                 { label: "Runs", icon: ScrollText, value: stats ? stats.total.toLocaleString() : "-", extra: "in the last 30 days" },
-                { label: "Succeeded", icon: CircleCheck, value: share !== null ? share.toLocaleString() : "-", unit: share !== null ? "%" : undefined, tone: share === 100 ? "success" : undefined, extra: stats ? `${stats.succeeded.toLocaleString()} of ${stats.total.toLocaleString()}` : " " },
+                { label: "Succeeded", icon: CircleCheck, value: share !== null ? share.toLocaleString() : "-", unit: share !== null ? "%" : undefined, tone: share === 100 ? "success" : undefined, extra: stats ? `${stats.succeeded.toLocaleString()} of ${finished.toLocaleString()} finished runs` : " " },
                 {
                     label: "Failed",
                     icon: CircleX,

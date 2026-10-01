@@ -12,7 +12,7 @@ The **Runs** tab lists backups, restores and the system tasks, the newest first:
 - What it wrote and how many of its copies a destination took
 - Who started it: the schedule, a person, or an API key
 
-The numbers above the list cover the last 30 days: how many runs there were, how many succeeded, the failed and the partial ones with the last of each, and what runs or waits right now.
+The numbers above the list cover the last 30 days: how many runs there were, the share of the finished ones that succeeded, the failed and the partial ones with the last of each, and what runs or waits right now. A partial run counts against the share and a cancelled one not at all, the same way as on the Overview and the Jobs page.
 
 ### Filters
 
@@ -76,7 +76,7 @@ While a run is live, its page follows it:
 - The runs that wait for it
 - The log, which follows the newest line until you scroll up, and then counts the new lines
 
-The progress of an upload fills one line instead of writing a new one every few seconds. **Cancel run** stops it.
+The progress of an upload fills one line instead of writing a new one every few seconds. **Cancel run** stops it after asking first, since a restore that stops leaves its database as far as it got.
 
 On a phone the page is one column: what to look at or the live state first, then the steps and the log.
 

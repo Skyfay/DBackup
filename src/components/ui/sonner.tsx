@@ -3,7 +3,8 @@
 import { useState } from "react"
 import { Check, CircleCheck, CircleX, Copy, Info, Loader2, TriangleAlert } from "lucide-react"
 import { useTheme } from "next-themes"
-import { Toaster as Sonner, type ToasterProps } from "sonner"
+import { Toaster as Sonner, toast, type ToasterProps } from "sonner"
+import { COPY_FAILED, copyToClipboard } from "@/lib/clipboard"
 import { cn } from "@/lib/utils"
 
 /** How long a toast stays, which the line along its foot counts down. */
@@ -21,13 +22,16 @@ function CopyToast() {
   const [copied, setCopied] = useState(false)
 
   const copy = async (event: React.MouseEvent<HTMLButtonElement>) => {
-    const toast = event.currentTarget.closest("[data-sonner-toast]")
+    const card = event.currentTarget.closest("[data-sonner-toast]")
     const text = ["[data-title]", "[data-description]"]
-      .map((selector) => toast?.querySelector(selector)?.textContent?.trim())
+      .map((selector) => card?.querySelector(selector)?.textContent?.trim())
       .filter(Boolean)
       .join("\n")
     if (!text) return
-    await navigator.clipboard.writeText(text)
+    if (!(await copyToClipboard(text))) {
+      toast.error(COPY_FAILED)
+      return
+    }
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }

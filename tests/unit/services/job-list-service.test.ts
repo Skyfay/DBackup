@@ -54,7 +54,7 @@ describe("job run history", () => {
 
         expect(history.runs.map((run) => run.id)).toEqual(["run-1", "run-2"]);
         expect(history.runs[0].size).toBe(1234);
-        expect(history.successRate).toEqual({ succeeded: 28, total: 30 });
+        expect(history.successRate).toEqual({ succeeded: 28, partial: 0, failed: 2, total: 30 });
         expect(history.lastSuccess).toEqual({ at: "2026-09-22T03:00:00.000Z", size: 1234 });
     });
 });

@@ -43,7 +43,8 @@ export default async function DashboardLayout({
     const [permissions, userWithGroup, updateInfo, sourceCount, quickSetupSetting, cookieStore, tableDefaults, trashDays, taskColors, instanceName] = await Promise.all([
         getUserPermissions(),
         getCurrentUserWithGroup(),
-        updateService.checkForUpdates(),
+        // The last answer of GitHub, so a page never waits for it.
+        updateService.getUpdateInfo(),
         prisma.adapterConfig.count({ where: { type: "database" } }),
         prisma.systemSetting.findUnique({ where: { key: "general.showQuickSetup" } }),
         cookies(),

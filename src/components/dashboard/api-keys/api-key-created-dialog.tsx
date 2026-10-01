@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import { Check, Copy, KeyRound } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { CodeBlock } from "@/components/ui/code-block";
 import { DIALOG_FOOTER, DIALOG_SURFACE, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { exampleTaskFor, templateExample } from "@/lib/auth/api-key-templates";
+import { COPY_FAILED, copyToClipboard } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 
 export interface CreatedKey {
@@ -29,7 +31,10 @@ export function ApiKeyCreatedDialog({ created, onClose }: { created: CreatedKey;
     const example = templateExample(created.templateId ?? exampleTaskFor(created.permissions), typeof window === "undefined" ? "" : window.location.origin, created.rawKey);
 
     const copy = async () => {
-        await navigator.clipboard.writeText(created.rawKey);
+        if (!(await copyToClipboard(created.rawKey))) {
+            toast.error(COPY_FAILED);
+            return;
+        }
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
     };

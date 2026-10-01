@@ -1,15 +1,9 @@
+import { successShare } from "@/lib/core/success-share";
 import type { ActivityDataPoint } from "@/services/dashboard-service";
-
-/** Share of successful runs among successful and failed ones, rounded to one decimal. */
-export function successPercentage(succeeded: number, failed: number): number | null {
-    const total = succeeded + failed;
-    if (total === 0) return null;
-    return Math.round((succeeded / total) * 1000) / 10;
-}
 
 /** Daily success rate over the activity window, null for days without finished runs. */
 export function successRateTrend(activity: ActivityDataPoint[]): (number | null)[] {
-    return activity.map((day) => successPercentage(day.completed, day.failed));
+    return activity.map((day) => successShare({ succeeded: day.completed, partial: day.partial, failed: day.failed }));
 }
 
 export function failedTrend(activity: ActivityDataPoint[]): number[] {

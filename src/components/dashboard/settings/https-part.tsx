@@ -12,10 +12,14 @@ import { ConfirmDialog, DIALOG_FOOTER, DIALOG_SURFACE, DialogHead, dialogNoteCla
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { wrapError } from "@/lib/logging/errors";
+import { logger } from "@/lib/logging/logger";
 import { cn } from "@/lib/utils";
 import type { CertificateInfo } from "@/services/system/settings-types";
 import { PartFrame, useSettingsFrame } from "./settings-frame";
 import { CERTIFICATE_WARN_DAYS } from "./settings-states";
+
+const log = logger.child({ component: "https-part" });
 
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
     return (
@@ -104,22 +108,36 @@ export function HttpsPart({ certificate }: { certificate: CertificateInfo | null
         formData.append("certificate", cert);
         formData.append("privateKey", key);
         setPending(true);
-        const result = await uploadCertificate(formData);
-        setPending(false);
-        if (!result.success) return toast.error(result.error || "The certificate could not be uploaded.");
-        toast.success("The certificate is uploaded. It applies after a restart of DBackup.");
-        setUploading(false);
-        router.refresh();
+        // An action that fails on the way, like on a lost connection, throws instead of answering,
+        // and the dialog, which stays open while pending, must not wait for it forever.
+        try {
+            const result = await uploadCertificate(formData);
+            if (!result.success) return toast.error(result.error || "The certificate could not be uploaded.");
+            toast.success("The certificate is uploaded. It applies after a restart of DBackup.");
+            setUploading(false);
+            router.refresh();
+        } catch (error: unknown) {
+            log.warn("Uploading a certificate failed", {}, wrapError(error));
+            toast.error("The certificate could not be uploaded.");
+        } finally {
+            setPending(false);
+        }
     };
 
     const regenerate = async () => {
         setPending(true);
-        const result = await regenerateCertificate();
-        setPending(false);
-        if (!result.success) return toast.error(result.error || "No new certificate could be made.");
-        toast.success("A new self-signed certificate is ready. It applies after a restart of DBackup.");
-        setRegenerating(false);
-        router.refresh();
+        try {
+            const result = await regenerateCertificate();
+            if (!result.success) return toast.error(result.error || "No new certificate could be made.");
+            toast.success("A new self-signed certificate is ready. It applies after a restart of DBackup.");
+            setRegenerating(false);
+            router.refresh();
+        } catch (error: unknown) {
+            log.warn("Making a self-signed certificate failed", {}, wrapError(error));
+            toast.error("No new certificate could be made.");
+        } finally {
+            setPending(false);
+        }
     };
 
     return (

@@ -114,8 +114,8 @@ export interface JobRunEntry {
 export interface JobRunHistory {
     /** Oldest first. */
     runs: JobRunEntry[];
-    /** Finished runs of the last 30 days and how many of them succeeded. */
-    successRate: { succeeded: number; total: number };
+    /** Finished runs of the last 30 days, `total` of them, by how they ended. */
+    successRate: { succeeded: number; partial: number; failed: number; total: number };
     lastSuccess: { at: string; size: number | null } | null;
 }
 
@@ -152,7 +152,7 @@ export async function getJobRunHistory(jobId: string, now = new Date()): Promise
             endedAt: run.endedAt?.toISOString() ?? null,
             size: run.size === null ? null : Number(run.size),
         })),
-        successRate: { succeeded: counts.get("Success") ?? 0, total },
+        successRate: { succeeded: counts.get("Success") ?? 0, partial: counts.get("Partial") ?? 0, failed: counts.get("Failed") ?? 0, total },
         lastSuccess: lastSuccess ? { at: lastSuccess.startedAt.toISOString(), size: lastSuccess.size === null ? null : Number(lastSuccess.size) } : null,
     };
 }

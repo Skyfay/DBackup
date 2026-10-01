@@ -20,7 +20,7 @@ interface TagInputProps {
 
 /**
  * A tag/chip input component that allows users to enter multiple values.
- * Type a value and press Enter, Space, Tab, or comma to add it as a tag.
+ * Type a value and press Enter, Space or a comma to add it as a tag, or leave the field with Tab.
  * Click the X button on a tag to remove it.
  */
 export function TagInput({
@@ -58,7 +58,8 @@ export function TagInput({
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         const val = inputValue.trim();
 
-        if (e.key === "Enter" || e.key === "Tab" || e.key === ",") {
+        // Tab moves on like in every field, and leaving the field turns its text into a tag.
+        if (e.key === "Enter" || e.key === ",") {
             e.preventDefault();
             if (val) addTag(val);
         } else if (e.key === " ") {

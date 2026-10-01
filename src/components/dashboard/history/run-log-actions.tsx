@@ -3,6 +3,7 @@
 import { Copy, Download } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { COPY_FAILED, copyToClipboard } from "@/lib/clipboard";
 import type { LogEntry } from "@/lib/core/logs";
 import { formatLogsAsText, generateLogFilename } from "@/lib/logs/format";
 import { sanitizeLogs } from "@/lib/logs/sanitize";
@@ -29,7 +30,7 @@ export function logText(run: RunDetail): string {
 /** Copy and Download of the log, the same on every tab of the page of a run. */
 export function LogActions({ run }: { run: RunDetail }) {
     const purged = run.logsPurgedAt !== null;
-    const copy = () => navigator.clipboard.writeText(logText(run)).then(() => toast.success("The log is copied")).catch(() => toast.error("The log could not be copied"));
+    const copy = () => void copyToClipboard(logText(run)).then((copied) => (copied ? toast.success("The log is copied") : toast.error(COPY_FAILED)));
     const download = () => {
         const url = URL.createObjectURL(new Blob([logText(run)], { type: "text/plain" }));
         const link = document.createElement("a");

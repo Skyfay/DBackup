@@ -13,7 +13,8 @@ import { getVaultAttention, getVaultCounts } from "@/services/vault/vault-counts
  */
 export default async function VaultPage() {
     const [permissions, user] = await Promise.all([getUserPermissions(), getCurrentUserWithGroup()]);
-    if (!user) redirect("/login");
+    // The login lives on the root page, there is no /login.
+    if (!user) redirect("/");
     if (!permissions.includes(PERMISSIONS.VAULT.READ)) redirect("/dashboard");
 
     const canReadCredentials = permissions.includes(PERMISSIONS.CREDENTIALS.READ);

@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { Tone } from "@/components/ui/tone";
 import { authClient } from "@/lib/auth/client";
+import { COPY_FAILED, copyToClipboard } from "@/lib/clipboard";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { cn, formatTwoFactorCode } from "@/lib/utils";
@@ -83,7 +84,11 @@ function BackupCodes({ codes }: { codes: string[] }) {
                 size="sm"
                 className="justify-self-start"
                 onClick={() => {
-                    void navigator.clipboard.writeText(codes.join("\n")).then(() => {
+                    void copyToClipboard(codes.join("\n")).then((done) => {
+                        if (!done) {
+                            toast.error(COPY_FAILED);
+                            return;
+                        }
                         setCopied(true);
                         window.setTimeout(() => setCopied(false), 2000);
                     });
@@ -279,7 +284,7 @@ export function TwoFactorOnDialog({ open, onOpenChange, onDone }: { open: boolea
                     {/* The whole key, in groups of four like the apps show it. The code above holds it anyway, so it is not hidden. */}
                     <div className="flex items-center gap-2 rounded-lg border bg-muted/40 py-1.5 pr-1.5 pl-3">
                         <code className="min-w-0 flex-1 font-mono text-sm tracking-wide break-words">{key.match(/.{1,4}/g)?.join(" ")}</code>
-                        <Button type="button" variant="ghost" size="icon" className="size-8 shrink-0" onClick={() => void navigator.clipboard.writeText(key).then(() => toast.success("Key copied"))} aria-label="Copy the key">
+                        <Button type="button" variant="ghost" size="icon" className="size-8 shrink-0" onClick={() => void copyToClipboard(key).then((copied) => (copied ? toast.success("Key copied") : toast.error(COPY_FAILED)))} aria-label="Copy the key">
                             <Copy />
                         </Button>
                     </div>

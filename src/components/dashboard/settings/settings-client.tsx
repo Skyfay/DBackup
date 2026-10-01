@@ -6,6 +6,7 @@ import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useIsMobileState } from "@/hooks/use-mobile";
+import { useVisibleInterval } from "@/hooks/use-visible-interval";
 import type { SettingsModel } from "@/services/system/settings-types";
 import { ConfigBackupPart } from "./config-backup-part";
 import { DatabasePart } from "./database-part";
@@ -71,11 +72,7 @@ export function SettingsClient({ model, viewerName }: SettingsClientProps) {
 
     // A task that runs shows how it ends without a reload.
     const running = model.tasks.some((task) => task.running) || model.configBackup.running;
-    useEffect(() => {
-        if (!running) return;
-        const timer = setInterval(() => router.refresh(), 3000);
-        return () => clearInterval(timer);
-    }, [running, router]);
+    useVisibleInterval(() => router.refresh(), 3000, running);
 
     // The setting the search picked, marked for a moment once its part shows it.
     useEffect(() => {

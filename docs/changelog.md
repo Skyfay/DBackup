@@ -133,6 +133,13 @@ All notable changes to DBackup are documented here.
 - **settings**: Passkey sign-in can no longer be turned off while `DISABLE_EMAIL_LOGIN` and no sign-in provider leave it the only way in.
 - **profile**: While a passkey counts as the second factor, the profile shows the authenticator app as off instead of on with backup codes the account does not have.
 - **profile**: The profile picture takes files up to 5 MB, as the page says. It failed on any picture over 1 MB before.
+- **ui**: Copy buttons work on an instance served over plain HTTP, like on an address in the local network, and say so when a copy fails. They did nothing there before, also for a new API key and the backup codes.
+- **auth**: A page opened after the session ended leads to the login page instead of a page that does not exist.
+- **ui**: An instance without internet access no longer waits up to 5 seconds on every page for the check for new versions. The dashboard shows the last answer and asks GitHub in the background.
+- **settings**: Uploading a certificate or making a self-signed one that fails on the way, like on a lost connection, shows an error instead of a dialog that never closes.
+- **notifications**: Tab moves on from the recipients of an email channel instead of staying in the field.
+- **ui**: The old addresses `/dashboard/destinations` and `/dashboard/notifications` open their tab of the Connections page instead of the databases.
+- **jobs**: The list of exclude presets of a folder opens as wide as its field.
 
 ### 🔒 Security
 
@@ -211,6 +218,9 @@ All notable changes to DBackup are documented here.
 - **auth**: The first start of a new DBackup offers a first account or the restore of a configuration backup, which takes the backup with its metadata in one drop and the key from its recovery kit.
 - **auth**: While OIDC_AUTO_REDIRECT sends the login page to a provider, the page offers another way to sign in.
 - **auth**: A passkey that counts as the second factor is asked for right after the password, without a field for a code.
+- **ui**: An error shows a page of DBackup with Try again and an ID to find it in the log, inside the dashboard with the sidebar, and an unknown address a page with a way back. Both showed the bare page of Next.js before.
+- **history**: Cancel run asks before it stops a run and says that a stopped restore may leave its database half restored.
+- **connections**: The Connections page no longer asks for the state of its connections every 10 seconds while its browser tab is hidden.
 
 ### 🔄 Changed
 
@@ -250,6 +260,7 @@ All notable changes to DBackup are documented here.
 - **ui**: The name under Settings → General heads the sidebar, with DBackup and the version below it. Without a name the sidebar shows DBackup as before.
 - **api**: The new `GET /api/login-image` serves the picture of the login page while it is picked, and `/api/settings/login-image` uploads and removes it with `settings:write`.
 - **profile**: Profile pictures live in the database and come back with a configuration backup. Pictures under `/data/storage/avatars` move there on the first start, and the folder is gone.
+- **api**: The success rate of `GET /api/dashboard/stats` counts a partial run as one that did not succeed, like every success share of the dashboard.
 
 ### 🗑️ Removed
 
@@ -308,6 +319,7 @@ All notable changes to DBackup are documented here.
 - **tests**: New tests run the copy of the database, its checks, the new encryption of its secrets and its swap before the start against real SQLite files.
 - **tests**: New tests cover Recently deleted, from the rights of each record and the delete routes to a delete and restore against a real SQLite file.
 - **tests**: New tests cover the colors of the tasks, the actions of the profile and what a group may change of it, also where the browser calls better-auth itself.
+- **tests**: The guard of the retired connection pages checks their redirects in `next.config.ts` and that no page stands in for them.
 
 
 ### 🔧 CI/CD

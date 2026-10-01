@@ -149,6 +149,8 @@ export interface ConfirmDialogProps {
     /** Shown in the tile of the head. Falls back to a warning or an info sign. */
     icon?: IconComponent;
     confirmLabel?: string;
+    /** The button that closes without acting, Cancel unless the action is a cancel itself. */
+    cancelLabel?: string;
     destructive?: boolean;
     /** The tone of the head when it is neither destructive nor neutral, like warning for a report of what failed. */
     tone?: Tone;
@@ -176,6 +178,7 @@ export function ConfirmDialog({
     description,
     icon,
     confirmLabel = "Confirm",
+    cancelLabel = "Cancel",
     destructive = false,
     tone: toneOverride,
     isPending = false,
@@ -205,7 +208,7 @@ export function ConfirmDialog({
                     </div>
                 )}
                 <AlertDialogFooter className={DIALOG_FOOTER}>
-                    <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
+                    <AlertDialogCancel disabled={isPending}>{cancelLabel}</AlertDialogCancel>
                     {/* A plain button, since the Radix action would close the dialog before the action ran. */}
                     <Button
                         variant={destructive ? "destructive" : "default"}

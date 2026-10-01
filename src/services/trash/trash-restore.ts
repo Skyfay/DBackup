@@ -151,6 +151,10 @@ async function restoreUser(tx: Tx, snapshot: UserSnapshot, newEmail?: string): P
     for (const passkey of snapshot.passkeys) await tx.passkey.create({ data: passkey });
     for (const apiKey of snapshot.apiKeys) await tx.apiKey.create({ data: apiKey });
     for (const preference of snapshot.preferences) await tx.userPreference.create({ data: preference });
+    if (snapshot.avatar) {
+        const { data, ...avatar } = snapshot.avatar;
+        await tx.avatar.create({ data: { ...avatar, userId: record.id, data: Buffer.from(data, "base64") } });
+    }
     return { name: record.name || email, notes };
 }
 

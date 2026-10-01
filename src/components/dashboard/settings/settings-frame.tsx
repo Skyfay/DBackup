@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import type { SaveResult } from "@/lib/settings/save-part";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { toneAttribute } from "@/components/ui/tone";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { cn } from "@/lib/utils";
@@ -108,14 +109,15 @@ interface SaveBarProps {
 
 /**
  * Stays at the foot while the part scrolls, as long as it holds changes: how many and which, with
- * Discard and Save changes. Nothing is saved before Save changes.
+ * Discard and Save changes. Nothing is saved before Save changes. Saving changes what exists, so the
+ * tile and Save changes take the tone of editing while the bar itself stays neutral.
  */
 export function SaveBar({ changes, saving, onDiscard, onSave }: SaveBarProps) {
     if (changes.length === 0) return null;
     const detail = changes.map((change) => `${change.label} ${change.from} to ${change.to}`).join(" · ");
     return (
         <div className="sticky bottom-3 z-20 mx-3 mb-3 flex flex-wrap items-center gap-3 rounded-xl border bg-raised px-4 py-3 shadow-lg md:bottom-4 md:mx-4 md:mb-4">
-            <span className="hidden size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground sm:flex" aria-hidden="true">
+            <span {...toneAttribute("edit")} className="hidden size-8 shrink-0 items-center justify-center rounded-lg bg-tone/12 text-tone sm:flex" aria-hidden="true">
                 <Pencil className="size-4" />
             </span>
             <div className="min-w-0 flex-1" role="status">
@@ -126,7 +128,7 @@ export function SaveBar({ changes, saving, onDiscard, onSave }: SaveBarProps) {
                 <Button variant="outline" className="flex-1 sm:flex-none" onClick={onDiscard} disabled={saving}>
                     Discard
                 </Button>
-                <Button className="flex-1 sm:flex-none" onClick={onSave} disabled={saving}>
+                <Button tone="edit" className="flex-1 sm:flex-none" onClick={onSave} disabled={saving}>
                     {saving && <Loader2 className="animate-spin" />}
                     Save changes
                 </Button>

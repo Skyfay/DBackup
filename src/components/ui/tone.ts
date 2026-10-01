@@ -2,8 +2,8 @@
  * The task a dialog, popover, menu entry or button serves. It decides the color of everything
  * inside that carries one: the head, the filled button, picked cards, switches, checkboxes, radio
  * buttons and the focus ring of fields. Outside a task the switches, checkboxes and radio buttons
- * are a quiet gray and fields keep the gray ring. The rules for picking a tone live under Color in
- * `src/app/dashboard/CLAUDE.md`, the colors in `globals.css`.
+ * that are on are a soft gray and fields keep the gray ring. The rules for picking a tone live
+ * under Color in `src/app/dashboard/CLAUDE.md`, the colors in `globals.css`.
  *
  * - `create` adds a new entry (blue)
  * - `edit` changes an entry that exists (violet)

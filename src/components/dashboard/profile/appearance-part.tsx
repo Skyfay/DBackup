@@ -48,7 +48,8 @@ export function AppearancePart() {
                                     onClick={() => setTheme(option.value)}
                                     className={cn(
                                         "grid gap-2.5 rounded-xl border p-2.5 text-left outline-none transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring/50",
-                                        picked && "border-foreground ring-1 ring-foreground"
+                                        // Picked like every picked card of the app: a frame and a light veil in the soft gray of a page.
+                                        picked && "border-tone-control/60 bg-tone-control/5 hover:bg-tone-control/10 dark:bg-tone-control/10"
                                     )}
                                 >
                                     <ThemePicture theme={option.value} />

@@ -206,7 +206,7 @@ COPY --from=builder --link --chown=1001:1001 /app/prisma ./prisma
 # to avoid "Can't write to @prisma/engines" errors at container startup
 # Prisma version is read from package.json to stay in sync automatically
 COPY --from=builder --link /app/package.json /tmp/package.json
-RUN mkdir -p /data/storage/avatars /data/db /data/certs && \
+RUN mkdir -p /data/db /data/certs && \
     chown -R 1001:1001 /data && \
     PRISMA_VERSION=$(node -e "console.log(require('/tmp/package.json').devDependencies.prisma.replace(/[\^~>=<]/g,''))") && \
     pnpm add -g prisma@${PRISMA_VERSION} && \

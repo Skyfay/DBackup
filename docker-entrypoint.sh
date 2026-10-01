@@ -57,7 +57,7 @@ fi
 # All persistent data lives under /data (single mount point).
 # Subdirectories are created automatically if missing.
 DATA_DIR="${DATA_DIR:-/data}"
-mkdir -p "$DATA_DIR/db" "$DATA_DIR/storage/avatars" "$DATA_DIR/certs"
+mkdir -p "$DATA_DIR/db" "$DATA_DIR/certs"
 
 chown -R "$PUID:$PGID" "$DATA_DIR"
 

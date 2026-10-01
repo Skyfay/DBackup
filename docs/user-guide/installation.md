@@ -198,7 +198,7 @@ secrets:
 
 | Mount Point | Required | Purpose |
 | :--- | :---: | :--- |
-| `/data` | ✅ | All persistent data (database, uploads, certificates) |
+| `/data` | ✅ | All persistent data (database and certificates) |
 | `/backups` | ❌ | Optional: used for local backups |
 | `/tmp` | ❌ | Recommended: staging space while a backup is being built |
 

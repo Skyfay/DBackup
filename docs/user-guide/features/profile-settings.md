@@ -21,7 +21,7 @@ Your group decides what you may change of your own profile, like your name, your
 
 ## Account
 
-**Upload a picture** and **Remove** apply at once. The name shows in the audit log, in Recently deleted and as who started a run, and you sign in with the email. **Your access** says in a few sentences what your group lets you do.
+**Upload a picture** and **Remove** apply at once. A picture is a PNG, JPG, GIF or WebP up to 5 MB and part of the configuration backup. The name shows in the audit log, in Recently deleted and as who started a run, and you sign in with the email. **Your access** says in a few sentences what your group lets you do.
 
 ## Security
 

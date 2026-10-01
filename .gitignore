@@ -54,10 +54,6 @@ backups/
 # persistent data (Docker mount point)
 data/
 
-# uploads
-storage/avatars/*
-!storage/avatars/.gitkeepstorage/avatars/.gitkeep
-
 # Jetbrains
 .idea
 

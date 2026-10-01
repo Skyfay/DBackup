@@ -11,7 +11,7 @@ function Switch({
 }: React.ComponentProps<typeof SwitchPrimitive.Root>) {
   return (
     // On takes the tone of the dialog around it, blue while adding and violet while editing.
-    // Outside a task, like in Settings, it is a quiet gray. See --tone-control in globals.css.
+    // Outside a task, like in Settings, it is a soft gray. See --tone-control in globals.css.
     <SwitchPrimitive.Root
       data-slot="switch"
       className={cn(

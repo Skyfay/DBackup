@@ -281,6 +281,7 @@ model User {
   auditLogs        AuditLog[]
   apiKeys          ApiKey[]
   preferences      UserPreference[]
+  avatar           Avatar?
 
   groupId String?
   group   Group?  @relation(fields: [groupId], references: [id])
@@ -577,4 +578,15 @@ model LoginImage {
   size      Int
   data      Bytes
   updatedAt DateTime @updatedAt
+}
+
+// The picture of a person, in the database like the one of the login page, so a configuration
+// backup brings it back. User.image holds its address with the time of the picture.
+model Avatar {
+  userId    String   @id
+  mimeType  String // image/png, image/jpeg, image/gif or image/webp, read from the bytes
+  size      Int
+  data      Bytes
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

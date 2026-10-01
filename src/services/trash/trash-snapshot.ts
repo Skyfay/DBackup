@@ -35,6 +35,8 @@ export interface UserSnapshot {
     passkeys: Passkey[];
     apiKeys: ApiKey[];
     preferences: UserPreference[];
+    /** The picture, its bytes in base64 since the snapshot is JSON. */
+    avatar?: { mimeType: string; size: number; data: string; updatedAt: Date } | null;
 }
 
 interface Snapshot {
@@ -116,10 +118,11 @@ const SNAPSHOTS: Record<TrashKind, (tx: Tx, id: string) => Promise<Snapshot>> = 
     async user(tx, id) {
         const found = await tx.user.findUniqueOrThrow({
             where: { id },
-            include: { accounts: true, twoFactor: true, passkeys: true, apiKeys: true, preferences: true, group: { select: { name: true } } },
+            include: { accounts: true, twoFactor: true, passkeys: true, apiKeys: true, preferences: true, avatar: true, group: { select: { name: true } } },
         });
-        const { accounts, twoFactor, passkeys, apiKeys, preferences, group, ...record } = found;
-        const data: UserSnapshot = { record, accounts, twoFactor, passkeys, apiKeys, preferences };
+        const { accounts, twoFactor, passkeys, apiKeys, preferences, avatar, group, ...record } = found;
+        const picture = avatar && { mimeType: avatar.mimeType, size: avatar.size, data: Buffer.from(avatar.data).toString("base64"), updatedAt: avatar.updatedAt };
+        const data: UserSnapshot = { record, accounts, twoFactor, passkeys, apiKeys, preferences, avatar: picture };
         return {
             name: record.name || record.email,
             detail: [record.email, group?.name ?? "no group"].join(" · "),

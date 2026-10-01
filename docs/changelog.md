@@ -132,6 +132,7 @@ All notable changes to DBackup are documented here.
 - **settings**: A new self-signed certificate keeps the old one when openssl fails, and an uploaded EC or Ed25519 key is checked against its certificate like an RSA key.
 - **settings**: Passkey sign-in can no longer be turned off while `DISABLE_EMAIL_LOGIN` and no sign-in provider leave it the only way in.
 - **profile**: While a passkey counts as the second factor, the profile shows the authenticator app as off instead of on with backup codes the account does not have.
+- **profile**: The profile picture takes files up to 5 MB, as the page says. It failed on any picture over 1 MB before.
 
 ### 🔒 Security
 
@@ -248,6 +249,7 @@ All notable changes to DBackup are documented here.
 - **ui**: A new version shows on the right of the header with a blue dot beside the guides and DBackup on GitHub, and opens a card with how to update. The sidebar no longer shows it at its foot.
 - **ui**: The name under Settings → General heads the sidebar, with DBackup and the version below it. Without a name the sidebar shows DBackup as before.
 - **api**: The new `GET /api/login-image` serves the picture of the login page while it is picked, and `/api/settings/login-image` uploads and removes it with `settings:write`.
+- **profile**: Profile pictures live in the database and come back with a configuration backup. Pictures under `/data/storage/avatars` move there on the first start, and the folder is gone.
 
 ### 🗑️ Removed
 

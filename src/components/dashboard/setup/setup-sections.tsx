@@ -20,7 +20,7 @@ function Marker({ number, state }: { number: number; state: MarkerState }) {
         );
     }
     return (
-        <span className={cn(base, state === "open" ? "bg-tone-control text-tone-control-foreground" : "border-[1.5px] border-input text-muted-foreground")} aria-hidden="true">
+        <span className={cn(base, state === "open" ? "bg-control-neutral text-control-neutral-foreground" : "border-[1.5px] border-input text-muted-foreground")} aria-hidden="true">
             {number}
         </span>
     );

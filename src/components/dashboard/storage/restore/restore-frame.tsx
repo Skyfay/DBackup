@@ -36,8 +36,8 @@ export function RestoreSteps({ step, onStep, databases, files }: { step: Restore
                             active ? "border-foreground/40" : "hover:border-foreground/20"
                         )}
                     >
-                        {/* The current step takes the quiet gray of a ticked checkbox on a page, not the white of a button. */}
-                        <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold", active ? "bg-tone-control text-tone-control-foreground" : entry.done ? "bg-success/15 text-success" : "bg-muted text-muted-foreground")}>
+                        {/* The current step takes the soft gray of a ticked checkbox on a page, not the white of a button. */}
+                        <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold", active ? "bg-control-neutral text-control-neutral-foreground" : entry.done ? "bg-success/15 text-success" : "bg-muted text-muted-foreground")}>
                             {entry.done && !active ? <Check className="size-3.5" aria-hidden="true" /> : entry.number}
                         </span>
                         <entry.icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />

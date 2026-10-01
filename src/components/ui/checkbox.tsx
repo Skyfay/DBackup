@@ -12,7 +12,7 @@ function Checkbox({
   ...props
 }: React.ComponentProps<typeof CheckboxPrimitive.Root>) {
   return (
-    // Checked takes the tone of the dialog around it, a quiet gray outside a task. See --tone-control in globals.css.
+    // Checked takes the tone of the dialog around it, a soft gray outside a task. See --tone-control in globals.css.
     // The dark: variants of checked are needed, or the dark:bg-input/30 of an empty box wins in dark mode.
     <CheckboxPrimitive.Root
       data-slot="checkbox"

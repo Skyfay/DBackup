@@ -50,17 +50,20 @@ describe("the routes of the login picture", () => {
     it("serves the picture to everyone while it is picked, with its type and nothing to sniff", async () => {
         mocks.readPublic.mockResolvedValue({ data: new Uint8Array([1, 2, 3]), mimeType: "image/webp", updatedAt: new Date("2026-10-01T10:00:00.000Z") });
 
-        const response = await publicRoute.GET();
+        const response = await publicRoute.GET(new NextRequest("http://localhost/api/login-image?v=1790000000000"));
 
         expect(response.status).toBe(200);
         expect(response.headers.get("Content-Type")).toBe("image/webp");
         expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+        // The address changes with the picture, so the browser asks for it once.
+        expect(response.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
+        expect((await publicRoute.GET(new NextRequest("http://localhost/api/login-image"))).headers.get("Cache-Control")).toBe("public, max-age=3600");
     });
 
     it("answers 404 while the login page shows the logos", async () => {
         mocks.readPublic.mockResolvedValue(null);
 
-        expect((await publicRoute.GET()).status).toBe(404);
+        expect((await publicRoute.GET(new NextRequest("http://localhost/api/login-image"))).status).toBe(404);
     });
 
     it("refuses an upload without a session and without the right to change the settings", async () => {

@@ -12,7 +12,7 @@ Every delete dialog of these five says where the record goes and until when it c
 | **Saved login** | Its secret |
 | **Connection** | Its settings, its login links and the versions a database server ran |
 | **Job** | Its destinations with their retention, its folders, its notifications and the link of its runs in History |
-| **User** | Their password, second factor, passkeys, API keys and preferences |
+| **User** | Their password, second factor, passkeys, API keys, preferences and picture |
 
 What only belongs to the moment stays gone: a user's sessions end with the delete, and a connection starts its health checks and storage history anew.
 

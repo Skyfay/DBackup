@@ -6,6 +6,7 @@
  */
 
 import prisma from "@/lib/prisma";
+import { imageTypeOf } from "@/lib/core/image-type";
 import { ValidationError } from "@/lib/logging/errors";
 
 export const LOGIN_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
@@ -26,17 +27,10 @@ export interface LoginImageInfo {
 
 const ROW_ID = "login";
 
-function ascii(bytes: Uint8Array, from: number, to: number): string {
-    return String.fromCharCode(...bytes.subarray(from, to));
-}
-
-/** The type of an image by its first bytes, null for anything else, an SVG included. */
-export function imageTypeOf(bytes: Uint8Array): LoginImageType | null {
-    const png = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-    if (bytes.length >= png.length && png.every((value, index) => bytes[index] === value)) return "image/png";
-    if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
-    if (bytes.length >= 12 && ascii(bytes, 0, 4) === "RIFF" && ascii(bytes, 8, 12) === "WEBP") return "image/webp";
-    return null;
+/** The type of a picture the login page shows, null for a GIF and for anything that is no picture. */
+export function loginImageTypeOf(bytes: Uint8Array): LoginImageType | null {
+    const type = imageTypeOf(bytes);
+    return type === "image/gif" ? null : type;
 }
 
 /** The name the settings show, without a path and without characters a header would choke on. */
@@ -90,7 +84,7 @@ export async function getLoginPicture(): Promise<{ src: string } | null> {
 export async function saveLoginImage(fileName: string, bytes: Uint8Array): Promise<LoginImageInfo> {
     if (bytes.length === 0) throw new ValidationError("The file is empty.", { field: "loginImage" });
     if (bytes.length > LOGIN_IMAGE_MAX_BYTES) throw new ValidationError("The picture is larger than 5 MB.", { field: "loginImage" });
-    const mimeType = imageTypeOf(bytes);
+    const mimeType = loginImageTypeOf(bytes);
     if (!mimeType) throw new ValidationError("Only a PNG, JPG or WebP picture works here.", { field: "loginImage" });
 
     const fields = { fileName: cleanName(fileName), mimeType, size: bytes.length, data: Buffer.from(bytes) };

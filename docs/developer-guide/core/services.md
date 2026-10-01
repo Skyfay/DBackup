@@ -458,7 +458,7 @@ await prisma.$transaction(async (tx) => {
 });
 ```
 
-- The snapshot holds the rows as they were stored, secrets still encrypted with `ENCRYPTION_KEY`, and everything that belongs to the record: the destinations, folders, channels and run ids of a job, the accounts, second factor, passkeys, API keys and preferences of a user, the version history of a connection.
+- The snapshot holds the rows as they were stored, secrets still encrypted with `ENCRYPTION_KEY`, and everything that belongs to the record: the destinations, folders, channels and run ids of a job, the accounts, second factor, passkeys, API keys, preferences and picture of a user, the picture in base64, the version history of a connection.
 - Each row keeps the permission of its kind, and `superAdminOnly` for the account of a SuperAdmin. `listTrash` only lists rows the viewer may handle. Restoring, purging and `permanently` need `TRASH_ADMIN_PERMISSION` (`settings:write`) on top, checked by the actions in `src/app/actions/settings/trash.ts` and by every delete action and route. Undo needs only the right of the kind, for the viewer's own delete of the last 5 minutes.
 - `restoreSnapshot` creates the rows again under their old ids in one transaction. A link to a record that is gone meanwhile is dropped with a note, a taken name throws `ConflictError` and the caller asks for another.
 - A new kind of record adds its kind to `TRASH_KINDS`, a snapshot in `trash-snapshot.ts` and a restore in `trash-restore.ts`. A new table that cascades from a kept record belongs in its snapshot, or the restore loses it.

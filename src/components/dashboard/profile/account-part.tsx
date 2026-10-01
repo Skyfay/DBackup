@@ -3,10 +3,9 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowUpRight, Camera, Check, Loader2 } from "lucide-react";
+import { ArrowUpRight, Camera, Check, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { saveProfileAccountAction } from "@/app/actions/auth/profile";
-import { removeAvatar, uploadAvatar } from "@/app/actions/backup/upload";
 import { Field, PartFrame, SaveBar, usePartSave, usePartValues } from "@/components/dashboard/settings/settings-frame";
 import { changesOf } from "@/components/dashboard/settings/settings-values";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -26,6 +25,13 @@ export function initialsOf(name: string): string {
     const words = name.trim().split(/\s+/).filter(Boolean);
     if (words.length === 0) return "?";
     return (words.length === 1 ? words[0].slice(0, 2) : `${words[0][0]}${words[words.length - 1][0]}`).toUpperCase();
+}
+
+/** Sends the picture to the route of the own picture, which answers like an action. */
+async function sendPicture(init: RequestInit): Promise<{ success: boolean; url?: string; error?: string }> {
+    const response = await fetch("/api/user/avatar", init);
+    const answer = (await response.json().catch(() => ({ success: false }))) as { success: boolean; error?: string; data?: { url: string } };
+    return { success: answer.success, url: answer.data?.url, error: answer.error };
 }
 
 /** The picture of the viewer, uploaded or removed at once like a file, not through the save bar. */
@@ -57,9 +63,9 @@ function PictureField({ name, image }: { name: string; image: string | null }) {
     };
 
     const upload = (file: File) => {
-        const data = new FormData();
-        data.append("file", file);
-        void run(() => uploadAvatar(data), (url) => {
+        const body = new FormData();
+        body.append("file", file);
+        void run(() => sendPicture({ method: "POST", body }), (url) => {
             setPicture(url ?? null);
             toast.success("Picture saved");
         }, "The picture could not be saved.");
@@ -78,16 +84,17 @@ function PictureField({ name, image }: { name: string; image: string | null }) {
                         Upload a picture
                     </Button>
                     {picture && (
-                        <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => void run(removeAvatar, () => {
+                        <Button type="button" variant="ghost-destructive" size="sm" disabled={busy} onClick={() => void run(() => sendPicture({ method: "DELETE" }), () => {
                             setPicture(null);
                             toast.success("Picture removed");
                         }, "The picture could not be removed.")}>
+                            <Trash2 />
                             Remove
                         </Button>
                     )}
                 </div>
-                <p className="text-xs text-muted-foreground">PNG or JPG, shown in the sidebar and beside your name.</p>
-                <input ref={input} type="file" accept="image/*" className="hidden" onChange={(event) => event.target.files?.[0] && upload(event.target.files[0])} />
+                <p className="text-xs text-muted-foreground">PNG, JPG, GIF or WebP up to 5 MB, shown in the sidebar and beside your name.</p>
+                <input ref={input} type="file" accept="image/png,image/jpeg,image/gif,image/webp" className="hidden" onChange={(event) => event.target.files?.[0] && upload(event.target.files[0])} />
             </div>
         </div>
     );

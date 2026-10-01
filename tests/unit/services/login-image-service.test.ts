@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { prismaMock } from "@/lib/testing/prisma-mock";
 import { ValidationError } from "@/lib/logging/errors";
-import { getLoginPicture, imageTypeOf, LOGIN_IMAGE_MAX_BYTES, readPublicLoginImage, removeLoginImage, saveLoginImage } from "@/services/system/login-image-service";
+import { getLoginPicture, LOGIN_IMAGE_MAX_BYTES, loginImageTypeOf, readPublicLoginImage, removeLoginImage, saveLoginImage } from "@/services/system/login-image-service";
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 1]);
 const WEBP = new Uint8Array([...new TextEncoder().encode("RIFF"), 0, 0, 0, 0, ...new TextEncoder().encode("WEBP"), 1]);
+const GIF = new TextEncoder().encode("GIF89a\u0001\u0000");
 const SVG = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
 
 const stored = { fileName: "alps.jpg", mimeType: "image/jpeg", size: 6, updatedAt: new Date("2026-10-01T10:00:00.000Z") };
@@ -16,12 +17,12 @@ describe("the picture of the login page", () => {
         prismaMock.loginImage.upsert.mockResolvedValue(stored as never);
     });
 
-    it("knows a PNG, a JPEG and a WebP by their first bytes, and nothing else", () => {
-        expect(imageTypeOf(PNG)).toBe("image/png");
-        expect(imageTypeOf(JPEG)).toBe("image/jpeg");
-        expect(imageTypeOf(WEBP)).toBe("image/webp");
-        expect(imageTypeOf(SVG)).toBeNull();
-        expect(imageTypeOf(new Uint8Array([1, 2, 3]))).toBeNull();
+    it("takes a PNG, a JPEG and a WebP by their first bytes, and no GIF", () => {
+        expect(loginImageTypeOf(PNG)).toBe("image/png");
+        expect(loginImageTypeOf(JPEG)).toBe("image/jpeg");
+        expect(loginImageTypeOf(WEBP)).toBe("image/webp");
+        expect(loginImageTypeOf(GIF)).toBeNull();
+        expect(loginImageTypeOf(SVG)).toBeNull();
     });
 
     it("refuses an SVG, which could carry a script, whatever its name says", async () => {

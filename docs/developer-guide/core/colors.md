@@ -48,7 +48,7 @@ The primitives take a typed `tone` prop from `src/components/ui/tone.ts` and wri
 
 `--tone-ring` follows `create`, `edit`, `pick` and `filter` and stays the quiet gray `--ring` for every other tone. A red or amber border on a field reads as an error, so a destructive or warning dialog keeps the gray ring on its fields.
 
-`--tone-control` is the tone of the task for switches, checkboxes and radio buttons. Where there is no task, on a page, in Settings or in a neutral dialog, it is `--control-neutral`, a quiet gray instead of the white or black of a neutral button, so a setting that is on never outshines the page.
+`--tone-control` is the tone of the task for switches, checkboxes, radio buttons and picked cards. Where there is no task, on a page, in Settings or in a neutral dialog, it is the soft gray `--control-neutral`, brighter than off in dark and darker than off in light, without the glare of the white or black of a button and without a color that means something else. The current step of Quick Setup and a restore takes the same gray through `bg-control-neutral`.
 
 ## Usage
 
@@ -94,7 +94,7 @@ The task colors are CSS variables in `src/app/globals.css`, one per theme, each 
 }
 ```
 
-Changing a task color means changing these values and nothing else, since no component names a task color. The quiet gray of switches and checkboxes outside a task is `--control-neutral` in the same file. A foreground has to keep a contrast of 4.5:1 against its color. That is why light mode uses the darker shades with white text and dark mode the lighter shades with dark text.
+Changing a task color means changing these values and nothing else, since no component names a task color. The soft gray of switches and checkboxes outside a task is `--control-neutral` in the same file. A foreground has to keep a contrast of 4.5:1 against its color. That is why light mode uses the darker shades with white text and dark mode the lighter shades with dark text.
 
 Red text on a light red tint, like the note of a delete dialog or a soft Delete button, misses 4.5:1 with `--destructive` and uses `--destructive-text` instead, a darker red in light mode and `--destructive` itself in dark mode. Use `text-destructive-text` there, never a palette red like `text-red-700`, so the color a person picks for Delete reaches it too.
 

@@ -164,23 +164,26 @@ describe("a user in Recently deleted", () => {
         await db.passkey.create({ data: { id: "pk-1", publicKey: "key", userId: "u-jana", credentialID: "cred-id", counter: 3, deviceType: "multiDevice", backedUp: true } });
         await db.apiKey.create({ data: { id: "api-1", name: "CI", prefix: "dbackup_12345678", hashedKey: "hash", permissions: "[]", userId: "u-jana" } });
         await db.userPreference.create({ data: { userId: "u-jana", key: "theme", value: "dark" } });
+        await db.avatar.create({ data: { userId: "u-jana", mimeType: "image/png", size: 4, data: Buffer.from([0x89, 0x50, 0x4e, 0x47]), updatedAt: now } });
         await db.session.create({ data: { id: "s-1", token: "token", userId: "u-jana", expiresAt: new Date(Date.now() + 86_400_000), createdAt: now, updatedAt: now } });
     });
 
-    it("comes back with the password, second factor, passkeys, API keys and preferences, but signed out", async () => {
+    it("comes back with the password, second factor, passkeys, API keys, preferences and picture, but signed out", async () => {
         const trashId = await trash("user", "u-jana", (tx) => tx.user.delete({ where: { id: "u-jana" } }));
         expect(await db.deletedRecord.findUniqueOrThrow({ where: { id: trashId } })).toMatchObject({ detail: "jana@example.ch · Operators", superAdminOnly: false });
         expect(await db.account.count({ where: { userId: "u-jana" } })).toBe(0);
 
         await expect(restore("user", trashId)).resolves.toEqual({ name: "Jana Keller", notes: [] });
 
-        const user = await db.user.findUniqueOrThrow({ where: { id: "u-jana" }, include: { accounts: true, twoFactor: true, passkeys: true, apiKeys: true, preferences: true, sessions: true } });
+        const user = await db.user.findUniqueOrThrow({ where: { id: "u-jana" }, include: { accounts: true, twoFactor: true, passkeys: true, apiKeys: true, preferences: true, avatar: true, sessions: true } });
         expect(user).toMatchObject({ email: "jana@example.ch", twoFactorEnabled: true, groupId: "g-ops" });
         expect(user.accounts).toMatchObject([{ id: "acc-1", password: "hashed" }]);
         expect(user.twoFactor).toMatchObject({ secret: "encrypted-totp" });
         expect(user.passkeys).toMatchObject([{ credentialID: "cred-id", counter: 3 }]);
         expect(user.apiKeys).toMatchObject([{ id: "api-1", hashedKey: "hash", enabled: true }]);
         expect(user.preferences).toMatchObject([{ key: "theme", value: "dark" }]);
+        expect(user.avatar).toMatchObject({ mimeType: "image/png", size: 4, updatedAt: now });
+        expect(Buffer.from(user.avatar?.data ?? [])).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
         expect(user.sessions).toEqual([]);
     });
 

@@ -89,22 +89,23 @@ export function ColorsPart({ saved }: { saved: TaskColors }) {
                                         onClick={() => replace(option.colors)}
                                         className={cn(
                                             "grid gap-2.5 rounded-xl border p-3.5 text-left outline-none transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring/50",
-                                            picked && "border-foreground ring-1 ring-foreground"
+                                            // Picked like every picked card of the app: a frame and a light veil in the soft gray of a page.
+                                            picked && "border-tone-control/60 bg-tone-control/5 hover:bg-tone-control/10 dark:bg-tone-control/10"
                                         )}
                                     >
                                         <span className="flex items-center gap-2">
                                             <span className="min-w-0 flex-1 text-sm font-semibold">{option.name}</span>
-                                            {picked && <Check className="size-4 shrink-0" aria-hidden="true" />}
+                                            {picked && <Check className="size-4 shrink-0 text-tone-control" aria-hidden="true" />}
                                         </span>
                                         <span className="text-xs text-muted-foreground">{option.description}</span>
                                         <Stripe colors={option.colors} theme={theme} />
                                     </button>
                                 );
                             })}
-                            <div className={cn("grid gap-2.5 rounded-xl border border-dashed p-3.5", !preset && "border-solid border-foreground ring-1 ring-foreground")}>
+                            <div className={cn("grid gap-2.5 rounded-xl border border-dashed p-3.5", !preset && "border-solid border-tone-control/60 bg-tone-control/5 dark:bg-tone-control/10")}>
                                 <span className="flex items-center gap-2">
                                     <span className="min-w-0 flex-1 text-sm font-semibold">Your own</span>
-                                    {!preset && <Check className="size-4 shrink-0" aria-hidden="true" />}
+                                    {!preset && <Check className="size-4 shrink-0 text-tone-control" aria-hidden="true" />}
                                 </span>
                                 <span className="text-xs text-muted-foreground">{preset ? "Starts once you change one below" : "Your colors, as below"}</span>
                                 {preset ? <span className="h-2.5 rounded-full border border-dashed" aria-hidden="true" /> : <Stripe colors={values} theme={theme} />}

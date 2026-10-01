@@ -83,6 +83,9 @@ export function LoginForm({ instance, providers, emailLogin, passkeyLogin, autoR
     const [step, setStep] = useState<"sign-in" | "password" | "factor">("sign-in")
     const [loading, setLoading] = useState(false)
     const [passkeyBusy, setPasskeyBusy] = useState(false)
+    // What better-auth names after the password: totp with an authenticator app, nothing when a
+    // passkey is the second factor. Null when it named none, so the step offers both.
+    const [factors, setFactors] = useState<string[] | null>(null)
     const [problem, setProblem] = useState<LoginProblem | null>(errorCode ? ssoProblem(errorCode) : null)
     const autoProvider = autoRedirectProviderId ? providers.find((provider) => provider.providerId === autoRedirectProviderId) : undefined
     // Derived from props only, so server and client agree and the form never flashes before the
@@ -173,6 +176,8 @@ export function LoginForm({ instance, providers, emailLogin, passkeyLogin, autoR
                 fetchOptions: {
                     onSuccess: (context) => {
                         if (context.data?.twoFactorRedirect) {
+                            const methods = (context.data as { twoFactorMethods?: unknown }).twoFactorMethods
+                            setFactors(Array.isArray(methods) ? methods.map(String) : null)
                             setStep("factor")
                             setLoading(false)
                             return
@@ -182,6 +187,7 @@ export function LoginForm({ instance, providers, emailLogin, passkeyLogin, autoR
                     onError: (context) => {
                         setLoading(false)
                         if (needsSecondFactor(context.error)) {
+                            setFactors(null)
                             setStep("factor")
                             return
                         }
@@ -206,7 +212,7 @@ export function LoginForm({ instance, providers, emailLogin, passkeyLogin, autoR
     if (redirecting && autoProvider) return <RedirectStep provider={autoProvider} />
 
     if (step === "factor") {
-        return <SecondFactorStep email={form.getValues("email")} onBack={backToStart} onPasskey={() => void passkey()} passkeyBusy={passkeyBusy} problem={problem} />
+        return <SecondFactorStep email={form.getValues("email")} factors={factors} onBack={backToStart} onPasskey={() => void passkey()} passkeyBusy={passkeyBusy} problem={problem} />
     }
 
     return (

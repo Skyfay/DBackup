@@ -1,8 +1,8 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, KeyRound, Loader2, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Fingerprint, KeyRound, Loader2, ShieldCheck } from "lucide-react";
 import { authClient } from "@/lib/auth/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,8 @@ const log = logger.child({ component: "second-factor-step" });
 
 interface SecondFactorStepProps {
     email: string;
+    /** The second factors better-auth named after the password, null when it named none. */
+    factors: string[] | null;
     onBack: () => void;
     onPasskey: () => void;
     passkeyBusy: boolean;
@@ -24,8 +26,54 @@ interface SecondFactorStepProps {
     problem?: LoginProblem | null;
 }
 
-/** The second factor after the password: the code of the authenticator app, a backup code or a passkey. */
-export function SecondFactorStep({ email, onBack, onPasskey, passkeyBusy, problem }: SecondFactorStepProps) {
+function BackLink({ onBack }: { onBack: () => void }) {
+    return (
+        <button type="button" onClick={onBack} className="inline-flex items-center gap-1.5 rounded-sm text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50">
+            <ArrowLeft className="size-3.5" aria-hidden="true" />
+            Back to sign in
+        </button>
+    );
+}
+
+/** A passkey as the only second factor: asked for right away, with a button for another try. */
+function PasskeyFactor({ email, onBack, onPasskey, passkeyBusy, problem }: SecondFactorStepProps) {
+    const asked = useRef(false);
+
+    // Opens the prompt of the passkey once the step shows. A browser that wants a click for it
+    // refuses quietly, and the button below asks again.
+    useEffect(() => {
+        if (asked.current) return;
+        asked.current = true;
+        onPasskey();
+    }, [onPasskey]);
+
+    return (
+        <div className="w-full max-w-sm">
+            <span className="mb-5 flex size-10 items-center justify-center rounded-lg border bg-muted" aria-hidden="true">
+                <Fingerprint className="size-4.5" />
+            </span>
+            <LoginHeading title="Confirm it is you" sub={`Use your passkey to finish signing in as ${email}.`} />
+            {problem && <LoginNote title={problem.title}>{problem.text}</LoginNote>}
+            <PasskeyButton label="Use your passkey" onClick={onPasskey} busy={passkeyBusy} primary />
+            <div className="mt-5 flex justify-end">
+                <BackLink onBack={onBack} />
+            </div>
+        </div>
+    );
+}
+
+/**
+ * The second factor after the password. A passkey that counts as the second factor is asked for
+ * right away, without a code. Otherwise the code of the authenticator app, a backup code, or a
+ * passkey instead.
+ */
+export function SecondFactorStep(props: SecondFactorStepProps) {
+    const passkeyOnly = props.factors !== null && !props.factors.includes("totp");
+    return passkeyOnly ? <PasskeyFactor {...props} /> : <CodeFactor {...props} />;
+}
+
+/** The code of the authenticator app, a backup code, or a passkey instead. */
+function CodeFactor({ email, onBack, onPasskey, passkeyBusy, problem }: SecondFactorStepProps) {
     const router = useRouter();
     const codeId = useId();
     const [backup, setBackup] = useState(false);
@@ -107,10 +155,7 @@ export function SecondFactorStep({ email, onBack, onPasskey, passkeyBusy, proble
                     <KeyRound className="size-3.5" aria-hidden="true" />
                     {backup ? "Use the app instead" : "Use a backup code"}
                 </button>
-                <button type="button" onClick={onBack} className="inline-flex items-center gap-1.5 rounded-sm text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50">
-                    <ArrowLeft className="size-3.5" aria-hidden="true" />
-                    Back to sign in
-                </button>
+                <BackLink onBack={onBack} />
             </div>
         </div>
     );

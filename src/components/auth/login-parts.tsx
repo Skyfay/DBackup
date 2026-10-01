@@ -64,9 +64,9 @@ export function ProviderButton({ provider, onClick, disabled }: { provider: Logi
     );
 }
 
-export function PasskeyButton({ label = "Sign in with a passkey", onClick, disabled, busy }: { label?: string; onClick: () => void; disabled?: boolean; busy?: boolean }) {
+export function PasskeyButton({ label = "Sign in with a passkey", onClick, disabled, busy, primary = false }: { label?: string; onClick: () => void; disabled?: boolean; busy?: boolean; primary?: boolean }) {
     return (
-        <Button type="button" variant="outline" size="lg" className="w-full" onClick={onClick} disabled={disabled}>
+        <Button type="button" variant={primary ? "default" : "outline"} size="lg" className="w-full" onClick={onClick} disabled={disabled || busy}>
             {busy ? <Loader2 className="animate-spin" /> : <Fingerprint />}
             {label}
         </Button>

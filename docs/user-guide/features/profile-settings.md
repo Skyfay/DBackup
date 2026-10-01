@@ -27,7 +27,7 @@ Your group decides what you may change of your own profile, like your name, your
 
 - **Password**: **Change password** asks for the one you have now and the new one twice, at least 8 characters.
 - **Authenticator app**: **Turn on** asks for your password, shows a code to scan or a key to enter by hand, checks the first code from the app and ends with backup codes. Each backup code signs you in once when the phone is gone. **New backup codes** replaces them, **Turn off** asks for your password.
-- **A passkey counts as the second factor**: after the password DBackup asks for a passkey instead of a code. It needs a passkey, and the authenticator app off.
+- **A passkey counts as the second factor**: after the password the login page opens the prompt of your passkey right away, without a field for a code. It needs a passkey, and the authenticator app off, which the part then shows as off.
 - **Passkeys**: **Add a passkey** names it, then your browser asks for it. Each passkey can be renamed and deleted. Deleting the last one turns off the passkey as second factor.
 - **Sign-in providers**: the single sign-on accounts linked to you, each with **Unlink**, and the providers you can link with **Link**. The only way you sign in cannot be unlinked.
 

@@ -121,7 +121,7 @@ describe("the sign-in of the login page", () => {
 
     it("takes the code of the authenticator app after the password", async () => {
         const user = renderForm();
-        answer(mocks.email, { data: { twoFactorRedirect: true } });
+        answer(mocks.email, { data: { twoFactorRedirect: true, twoFactorMethods: ["totp"] } });
         answer(mocks.totp, { error: { status: 401, code: "INVALID_CODE" } });
 
         await user.type(screen.getByLabelText("Email"), "manu@example.ch");
@@ -134,6 +134,35 @@ describe("the sign-in of the login page", () => {
 
         expect(mocks.totp).toHaveBeenCalledWith(expect.objectContaining({ code: "482913" }));
         expect(await screen.findByText("The code is wrong. Take the newest one of your app.")).toBeInTheDocument();
+    });
+
+    it("asks for the passkey right away when it is the second factor, without a code field", async () => {
+        const user = renderForm();
+        answer(mocks.email, { data: { twoFactorRedirect: true, twoFactorMethods: [] } });
+        mocks.passkey.mockReturnValue(new Promise(() => undefined));
+
+        await user.type(screen.getByLabelText("Email"), "manu@example.ch");
+        await user.type(screen.getByLabelText("Password"), "correct horse");
+        await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+        expect(await screen.findByRole("heading", { name: "Confirm it is you" })).toBeInTheDocument();
+        expect(screen.getByText("Use your passkey to finish signing in as manu@example.ch.")).toBeInTheDocument();
+        expect(screen.queryByLabelText("Code")).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: /backup code/ })).not.toBeInTheDocument();
+        await waitFor(() => expect(mocks.passkey).toHaveBeenCalledTimes(1));
+    });
+
+    it("offers the code and the passkey both when better-auth names no second factor", async () => {
+        const user = renderForm();
+        answer(mocks.email, { error: { status: 403, code: "TWO_FACTOR_REQUIRED" } });
+
+        await user.type(screen.getByLabelText("Email"), "manu@example.ch");
+        await user.type(screen.getByLabelText("Password"), "correct horse");
+        await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+        expect(await screen.findByLabelText("Code")).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Use a passkey instead" })).toBeInTheDocument();
+        expect(mocks.passkey).not.toHaveBeenCalled();
     });
 
     it("waits for the provider of OIDC_AUTO_REDIRECT, with a way out if it does not answer", async () => {

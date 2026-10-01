@@ -131,7 +131,7 @@ All notable changes to DBackup are documented here.
 - **settings**: The certificate no longer shows HTTPS as off when it cannot be read, or as expired on its last day.
 - **settings**: A new self-signed certificate keeps the old one when openssl fails, and an uploaded EC or Ed25519 key is checked against its certificate like an RSA key.
 - **settings**: Passkey sign-in can no longer be turned off while `DISABLE_EMAIL_LOGIN` and no sign-in provider leave it the only way in.
-
+- **profile**: While a passkey counts as the second factor, the profile shows the authenticator app as off instead of on with backup codes the account does not have.
 
 ### 🔒 Security
 
@@ -209,6 +209,7 @@ All notable changes to DBackup are documented here.
 - **auth**: The login page names the instance beside the logos of everything DBackup backs up, shows the providers with their logos and says at the field what went wrong. An email of a provider's domain says where it signs in before the page leaves for it.
 - **auth**: The first start of a new DBackup offers a first account or the restore of a configuration backup, which takes the backup with its metadata in one drop and the key from its recovery kit.
 - **auth**: While OIDC_AUTO_REDIRECT sends the login page to a provider, the page offers another way to sign in.
+- **auth**: A passkey that counts as the second factor is asked for right after the password, without a field for a code.
 
 ### 🔄 Changed
 

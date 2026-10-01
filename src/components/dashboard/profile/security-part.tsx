@@ -57,6 +57,8 @@ export function SecurityPart({ model }: { model: ProfileModel }) {
     const { can, hasPassword } = model;
     const twoFactor = session ? !!session.user.twoFactorEnabled : model.user.twoFactorEnabled;
     const passkeyFactor = session ? !!(session.user as { passkeyTwoFactor?: boolean | null }).passkeyTwoFactor : model.user.passkeyTwoFactor;
+    // A passkey as the second factor sets the flag of better-auth too, without a code of an app behind it.
+    const app = twoFactor && !passkeyFactor;
     const [dialog, setDialog] = useState<"password" | "on" | "off" | "codes" | null>(null);
     const [switching, setSwitching] = useState(false);
 
@@ -83,7 +85,7 @@ export function SecurityPart({ model }: { model: ProfileModel }) {
         }
     };
 
-    const factorHint = twoFactor
+    const factorHint = app
         ? "Turn off the authenticator app first, one second factor is enough."
         : passkeys && passkeys.length === 0
             ? "Add a passkey first."
@@ -102,11 +104,11 @@ export function SecurityPart({ model }: { model: ProfileModel }) {
                         <Block
                             icon={Smartphone}
                             title="Authenticator app"
-                            on={twoFactor}
-                            text={twoFactor ? "On. After the password DBackup asks for a code from the app." : "Off. Only your password protects the account."}
+                            on={app}
+                            text={app ? "On. After the password DBackup asks for a code from the app." : passkeyFactor ? "Off. A passkey is the second factor instead." : "Off. Only your password protects the account."}
                             setting="profile.authenticator"
                         >
-                            {can.manage2FA && (twoFactor ? (
+                            {can.manage2FA && (app ? (
                                 <>
                                     <Button type="button" variant="outline" size="sm" onClick={() => setDialog("codes")}>New backup codes</Button>
                                     <Button type="button" variant="ghost-destructive" size="sm" onClick={() => setDialog("off")}>Turn off</Button>
@@ -123,7 +125,7 @@ export function SecurityPart({ model }: { model: ProfileModel }) {
                                 description={factorHint}
                                 checked={passkeyFactor}
                                 onCheckedChange={(checked) => void switchPasskeyFactor(checked)}
-                                disabled={!can.managePasskeys || switching || (!passkeyFactor && (twoFactor || !passkeys || passkeys.length === 0))}
+                                disabled={!can.managePasskeys || switching || (!passkeyFactor && (app || !passkeys || passkeys.length === 0))}
                             />
                         </div>
                     </div>

@@ -426,13 +426,15 @@ interface BackupDetailsSheetProps extends Omit<BackupDetailsProps, "data"> {
     /** Stays set while the panel slides out, so its content does not vanish halfway. */
     data: BackupDetailsData | null;
     onClose: () => void;
+    /** Runs once the panel is gone, to put the focus back where the backup was opened. */
+    onCloseAutoFocus?: (event: Event) => void;
 }
 
 /** The details of one backup in a panel from the right, for both lists. */
-export function BackupDetailsSheet({ open, data, onClose, ...props }: BackupDetailsSheetProps) {
+export function BackupDetailsSheet({ open, data, onClose, onCloseAutoFocus, ...props }: BackupDetailsSheetProps) {
     return (
         <Sheet open={open && data !== null} onOpenChange={(next) => !next && onClose()}>
-            <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-xl">
+            <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-xl" onCloseAutoFocus={onCloseAutoFocus}>
                 {data && <BackupDetails data={data} {...props} />}
             </SheetContent>
         </Sheet>

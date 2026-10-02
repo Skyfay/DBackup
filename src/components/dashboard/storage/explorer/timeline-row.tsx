@@ -28,8 +28,10 @@ interface TimelineJobRowProps {
     destinations: Map<string, ExplorerDestination>;
     format: TimelineFormat;
     at: string[];
+    /** What the list open at the timeline holds, marked in the row. */
     pick: TimelinePick | null;
-    onToggle: (pick: TimelinePick) => void;
+    /** Opens the list of a pick at the element it is handed. */
+    onToggle: (pick: TimelinePick, anchor: HTMLElement) => void;
 }
 
 /** A job of the timeline: its name with what it plans and keeps, which lists its backups in view, and a cell per day. */
@@ -40,8 +42,9 @@ export function TimelineJobRow({ row, range, template, destinations, format, at,
         <div className={cn("relative grid items-center border-b px-5 py-2 last:border-b-0", lanePicked && "bg-foreground/[0.045]")} style={template}>
             <button
                 type="button"
-                onClick={() => onToggle({ jobKey: job.key, ...range })}
-                aria-pressed={lanePicked}
+                onClick={(event) => onToggle({ jobKey: job.key, ...range }, event.currentTarget)}
+                aria-haspopup="dialog"
+                aria-expanded={lanePicked}
                 className="flex min-w-0 items-center gap-2.5 rounded-md pr-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             >
                 <JobTile job={job} size="sm" />
@@ -66,7 +69,7 @@ export function TimelineJobRow({ row, range, template, destinations, format, at,
                             format={format}
                             at={at}
                             picked={isPicked(pick, job.key, cell.day, cell.day)}
-                            onPick={() => onToggle({ jobKey: job.key, from: cell.day, to: cell.day })}
+                            onPick={(anchor) => onToggle({ jobKey: job.key, from: cell.day, to: cell.day }, anchor)}
                         />
                     );
                 }

@@ -56,9 +56,9 @@ The timeline of the switch next to the tabs shows every job by day, from md scre
 
 The row **Every job** on top counts the backups of each day, and the filters above narrow the timeline like the list.
 
-The arrows page through the days, a screen at a time. The button with the dates opens a calendar to jump to a day, which then shows in the middle, and **Today** comes back. At today the arrow on the right adds the next 7 days with the runs the schedules plan, dashed, while today stays in view. Hovering a planned day tells whether it starts a new chain and which backups the retention of each destination removes after it.
+The arrows page through the days, a screen at a time. The button with the dates opens a calendar to jump to a day, which then shows in the middle with its backups listed under its date, and **Today** comes back. At today the arrow on the right adds the next 7 days with the runs the schedules plan, dashed, while today stays in view. Hovering a planned day tells whether it starts a new chain and which backups the retention of each destination removes after it.
 
-The list below waits for a click. A day of a job lists its backups on that day, a date the backups of every job that day, and a job its backups in view. The pick shows in the toolbar of the list, and a click on it or a second click on the same cell hides the list again. Missed runs are looked for over the last 90 days, from the last change of the job on.
+A click lists the backups right where it was. A date or the bar of a day lists the backups of every job that day, a job its backups in view, and a day of a job its backups that day, while a day of a job with a single backup opens it at once. A failed check, a missing copy and a run that did not start come first under **Needs a look**, and the search finds a job, a time or a destination. A backup opens in its details, and closing them brings the list back with that backup ticked. A run that did not start leads to its job. **Show in the list** moves to the table with only those backups, shown as a chip in its toolbar that a click removes. Missed runs are looked for over the last 90 days, from the last change of the job on.
 
 ### Actions
 

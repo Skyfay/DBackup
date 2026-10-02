@@ -321,33 +321,76 @@ describe("Backups page", () => {
         }
     });
 
-    it("shows every job by day in the timeline and lists the backups of a picked day of a job below it", async () => {
-        const user = userEvent.setup();
-        measureTimeline();
+    describe("timeline", () => {
         const plan = { timezone: "UTC", days: 7, jobs: [{ jobKey: "job-shop", schedule: "0 3 * * *", enabled: true, createdAt: hoursAgo(2000), retention: null, planned: [{ at: hoursAgo(-24) }], missed: [], truncated: false }] };
-        vi.stubGlobal("fetch", vi.fn((url: string) => {
-            if (url === "/api/storage/explorer") return ok(index);
-            if (url === "/api/storage/explorer/runs") return ok({ runs });
-            if (url === "/api/storage/explorer/plan") return ok(plan);
-            return ok(null);
-        }));
-        renderPage("timeline");
+        const dayOf = (entry: typeof newest) => formatInTimeZone(new Date(entry.createdAt!), "UTC", "EEE, yyyy-MM-dd");
 
-        expect(await screen.findByText("Timeline")).toBeInTheDocument();
-        // The list waits for a pick on the timeline.
-        expect(screen.queryByRole("table")).not.toBeInTheDocument();
+        beforeEach(() => {
+            measureTimeline();
+            vi.stubGlobal("fetch", vi.fn((url: string) => {
+                if (url === "/api/storage/explorer") return ok(index);
+                if (url === "/api/storage/explorer/runs") return ok({ runs });
+                if (url === "/api/storage/explorer/plan") return ok(plan);
+                return ok(null);
+            }));
+        });
 
-        const day = formatInTimeZone(new Date(newest.createdAt!), "UTC", "EEE, yyyy-MM-dd");
-        await user.click(await screen.findByRole("button", { name: `Shop nightly, ${day}` }));
-        expect(await screen.findByRole("table")).toBeInTheDocument();
-        expect(within(table()).getAllByText("Shop nightly")).toHaveLength(1);
+        it("shows every job by day and opens the only backup of a day of a job right away", async () => {
+            const user = userEvent.setup();
+            renderPage("timeline");
 
-        await user.click(screen.getByRole("button", { name: /show them all/ }));
-        await waitFor(() => expect(screen.queryByRole("table")).not.toBeInTheDocument());
+            expect(await screen.findByText("Timeline")).toBeInTheDocument();
+            // A click lists its backups where it was, so no rows wait under the timeline.
+            expect(screen.queryByRole("table")).not.toBeInTheDocument();
 
-        // At today the arrow on the right adds the next days, and goes no further.
-        await user.click(screen.getByRole("button", { name: "Show the next 7 days" }));
-        expect(await screen.findByText(/Next 7 days, as the schedules plan them/)).toBeInTheDocument();
-        expect(screen.getByRole("button", { name: "Later days" })).toBeDisabled();
+            await user.click(await screen.findByRole("button", { name: `Shop nightly, ${dayOf(newest)}` }));
+            const panel = await screen.findByRole("dialog");
+            expect(within(panel).getAllByText(/Shop_nightly_newest\.tar/).length).toBeGreaterThan(0);
+            expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+
+            await user.keyboard("{Escape}");
+            await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+            // At today the arrow on the right adds the next days, and goes no further.
+            await user.click(screen.getByRole("button", { name: "Show the next 7 days" }));
+            expect(await screen.findByText(/Next 7 days, as the schedules plan them/)).toBeInTheDocument();
+            expect(screen.getByRole("button", { name: "Later days" })).toBeDisabled();
+        });
+
+        it("lists the backups of a day at its date with what needs a look first, and comes back to it after a backup", async () => {
+            const user = userEvent.setup();
+            renderPage("timeline");
+
+            await user.click(await screen.findByRole("button", { name: dayOf(older) }));
+            const list = await screen.findByRole("listbox");
+            expect(within(list).getByText("Needs a look")).toBeInTheDocument();
+            const entry = within(list).getByRole("option", { name: /Shop nightly/ });
+            expect(entry).toHaveTextContent("Copy on Cloudflare R2 missing");
+
+            await user.click(entry);
+            const panel = await screen.findByRole("dialog");
+            expect(within(panel).getByText("1 of 2 copies is missing")).toBeInTheDocument();
+            expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+
+            // Closing the backup brings its list back, with the backup ticked.
+            await user.keyboard("{Escape}");
+            const again = await screen.findByRole("listbox");
+            expect(within(again).getByRole("option", { name: /Shop nightly.*Picked/ })).toBeInTheDocument();
+        });
+
+        it("moves what a list holds to the table, as a chip that shows every backup again", async () => {
+            const user = userEvent.setup();
+            renderPage("timeline");
+
+            await user.click(await screen.findByRole("button", { name: dayOf(older) }));
+            await user.click(await screen.findByRole("button", { name: "Show in the list" }));
+
+            expect(await screen.findByRole("table")).toBeInTheDocument();
+            expect(within(table()).getAllByText("Shop nightly")).toHaveLength(1);
+            expect(screen.queryByText("Timeline")).not.toBeInTheDocument();
+
+            await user.click(screen.getByRole("button", { name: /show them all/ }));
+            await waitFor(() => expect(within(table()).getAllByText("Shop nightly")).toHaveLength(2));
+        });
     });
 });

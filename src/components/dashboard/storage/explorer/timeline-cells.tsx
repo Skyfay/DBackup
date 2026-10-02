@@ -20,6 +20,7 @@ export function useTimelineFormat() {
         return {
             dayOf: (iso: string): DayKey => formatDate(iso, "yyyy-MM-dd"),
             date: (day: DayKey) => `${formatDate(noon(day), "EEE")}, ${formatDate(noon(day), "P")}`,
+            long: (day: DayKey) => `${formatDate(noon(day), "EEEE")}, ${formatDate(noon(day), "P")}`,
             short: (day: DayKey) => formatDate(noon(day), "MMM d"),
             dateOf: (iso: string) => formatDate(iso, "P"),
             time: (iso: string) => formatDate(iso, "p"),
@@ -136,18 +137,20 @@ interface CellProps {
     format: TimelineFormat;
     at: string[];
     picked: boolean;
-    onPick: () => void;
+    /** Opens what the day holds at the cell, which it is handed. */
+    onPick: (anchor: HTMLElement) => void;
 }
 
-/** A day of a job. One with backups lists them below on a click, the others only tell what they are on hover. */
+/** A day of a job. One with backups lists them at the cell on a click, the others only tell what they are on hover. */
 export function TimelineCellButton({ cell, job, destinations, format, at, picked, onPick }: CellProps) {
     const pickable = cell.runs.length > 0;
     const button = (
         <button
             type="button"
-            onClick={pickable ? onPick : undefined}
+            onClick={pickable ? (event) => onPick(event.currentTarget) : undefined}
             aria-disabled={!pickable}
-            aria-pressed={pickable ? picked : undefined}
+            aria-haspopup={pickable ? "dialog" : undefined}
+            aria-expanded={pickable ? picked : undefined}
             aria-label={`${job.name}, ${format.date(cell.day)}`}
             className={cn(
                 "flex h-7 w-full min-w-0 items-center justify-center rounded-md text-[11px] font-semibold tabular-nums outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-ring/50",
@@ -197,7 +200,7 @@ export function TimelineTotal({ total, peak, picked, onPick, format }: {
     total: DayTotal;
     peak: number;
     picked: boolean;
-    onPick: () => void;
+    onPick: (anchor: HTMLElement) => void;
     format: TimelineFormat;
 }) {
     const height = total.count === 0 ? 0 : Math.max(4, Math.round((total.count / Math.max(peak, 1)) * 26));
@@ -205,9 +208,10 @@ export function TimelineTotal({ total, peak, picked, onPick, format }: {
     return (
         <button
             type="button"
-            onClick={pickable ? onPick : undefined}
+            onClick={pickable ? (event) => onPick(event.currentTarget) : undefined}
             aria-disabled={!pickable}
-            aria-pressed={pickable ? picked : undefined}
+            aria-haspopup={pickable ? "dialog" : undefined}
+            aria-expanded={pickable ? picked : undefined}
             aria-label={`${total.planned ? `${total.count} planned` : count(total.count, "backup")}, ${format.date(total.day)}`}
             className={cn(
                 "flex h-10 min-w-0 flex-col items-center justify-end gap-0.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/50",

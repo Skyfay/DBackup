@@ -117,8 +117,8 @@ interface TimelineAxisProps {
     pickedDay: DayKey | null;
     template: React.CSSProperties;
     format: TimelineFormat;
-    /** Picks a day that has come. Without it the days are only labels. */
-    onPickDay?: (day: DayKey) => void;
+    /** Picks a day that has come, at the date it is handed. Without it the days are only labels. */
+    onPickDay?: (day: DayKey, anchor: HTMLElement) => void;
 }
 
 /** The row of days: the month on the first day and on the first of a month, the weekday else, and Today. */
@@ -135,9 +135,11 @@ export function TimelineAxis({ days, today, pickedDay, template, format, onPickD
                     <button
                         key={day}
                         type="button"
-                        onClick={pickable ? () => onPickDay(day) : undefined}
+                        data-day={day}
+                        onClick={pickable ? (event) => onPickDay(day, event.currentTarget) : undefined}
                         aria-disabled={!pickable}
-                        aria-pressed={pickable ? day === pickedDay : undefined}
+                        aria-haspopup={pickable ? "dialog" : undefined}
+                        aria-expanded={pickable ? day === pickedDay : undefined}
                         aria-label={format.date(day)}
                         className={cn(
                             "flex h-10 min-w-0 flex-col items-center justify-end rounded-md pb-0.5 text-[11.5px] outline-none tabular-nums focus-visible:ring-2 focus-visible:ring-ring/50",

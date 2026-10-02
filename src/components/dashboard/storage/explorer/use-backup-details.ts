@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { BackupRun, ExplorerDestination, ExplorerFile, ExplorerJob, RunExecution } from "@/services/storage/explorer-types";
 import type { BackupDetailsData } from "./backup-details";
 import { byAnswer, primaryCopy, runKey } from "./backup-filters";
@@ -25,10 +25,12 @@ interface BackupDetailsInput {
 /**
  * The backup whose details show in the side panel. The panel follows its backup, so a reload after
  * a lock or a check shows the new state. History keeps no index by path, so the run that made a
- * backup is asked for when its details open.
+ * backup is asked for when its details open. Whoever opens the panel may ask to be told once it is
+ * gone, like the timeline, which opens its list again.
  */
 export function useBackupDetails({ runs, at, jobsByKey, destinationsById }: BackupDetailsInput) {
     const [details, setDetails] = useState<{ open: boolean; key: string } | null>(null);
+    const onClosedRef = useRef<(() => void) | null>(null);
     const run = details && runs ? runs.find((entry) => runKey(entry) === details.key) ?? null : null;
     const execution = useExplorerData<RunExecution | null>(run ? `/api/storage/explorer/execution?path=${encodeURIComponent(run.path)}` : null);
 
@@ -47,9 +49,23 @@ export function useBackupDetails({ runs, at, jobsByKey, destinationsById }: Back
         };
     }, [run, runs, at, execution.data, jobsByKey, destinationsById]);
 
-    const openRun = useCallback((entry: BackupRun) => setDetails({ open: true, key: runKey(entry) }), []);
+    const openRun = useCallback((entry: BackupRun, onClosed?: () => void) => {
+        onClosedRef.current = onClosed ?? null;
+        setDetails({ open: true, key: runKey(entry) });
+    }, []);
     const close = useCallback(() => setDetails((current) => (current ? { ...current, open: false } : null)), []);
-    const reset = useCallback(() => setDetails(null), []);
+    const reset = useCallback(() => {
+        onClosedRef.current = null;
+        setDetails(null);
+    }, []);
+    /** For `onCloseAutoFocus` of the panel: once it is gone, the one who opened it takes the focus. */
+    const closed = useCallback((event: Event) => {
+        const onClosed = onClosedRef.current;
+        onClosedRef.current = null;
+        if (!onClosed) return;
+        event.preventDefault();
+        onClosed();
+    }, []);
 
-    return { open: details?.open ?? false, run, data, openRun, close, reset };
+    return { open: details?.open ?? false, run, data, openRun, close, reset, closed };
 }

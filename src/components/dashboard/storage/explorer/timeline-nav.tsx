@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -38,7 +38,8 @@ interface TimelineNavProps {
     onToday: () => void;
     onBack: () => void;
     onForward: () => void;
-    onJump: (day: DayKey) => void;
+    /** Runs once the calendar is gone. True when it opened something that took the focus. */
+    onJump: (day: DayKey) => boolean | void;
 }
 
 /**
@@ -49,6 +50,8 @@ interface TimelineNavProps {
 export function TimelineNav({ days, today, last, ahead, ready, pickedDay, problems, problemLabel = "A failed check or a missed run", future = true, onToday, onBack, onForward, onJump }: TimelineNavProps) {
     const format = useTimelineFormat();
     const [open, setOpen] = useState(false);
+    // The day picked in the calendar, jumped to once it closed, so what the jump opens keeps the focus.
+    const jumped = useRef<DayKey | null>(null);
     const atToday = !ahead && last === today;
 
     return (
@@ -67,13 +70,21 @@ export function TimelineNav({ days, today, last, ahead, ready, pickedDay, proble
                         <ChevronDown className="opacity-50" />
                     </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-auto overflow-hidden p-0" align="end">
+                <PopoverContent
+                    className="w-auto overflow-hidden p-0"
+                    align="end"
+                    onCloseAutoFocus={(event) => {
+                        const day = jumped.current;
+                        jumped.current = null;
+                        if (day !== null && onJump(day)) event.preventDefault();
+                    }}
+                >
                     <Calendar
                         mode="single"
                         selected={pickedDay ? toDate(pickedDay) : undefined}
                         onSelect={(date) => {
                             if (!date) return;
-                            onJump(toKey(date));
+                            jumped.current = toKey(date);
                             setOpen(false);
                         }}
                         defaultMonth={toDate(last > today ? today : last)}

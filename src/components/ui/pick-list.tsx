@@ -25,7 +25,11 @@ export interface PickEntry {
     glyph?: LucideIcon;
     /** False for an entry nobody edits, like a policy that ships with DBackup. */
     editable?: boolean;
+    /** What is wrong with it, like a failed check, at the start of its line in the color of the state. */
+    alert?: { text: string; tone: "warning" | "destructive" };
 }
+
+const ALERT_TONES = { warning: "text-warning", destructive: "text-destructive" } as const;
 
 export interface PickGroup {
     /** Left out when the list has a single group. */
@@ -53,7 +57,10 @@ function PickRow({ entry, icon, picked, onPick, onEdit }: PickRowProps) {
             </span>
             <span className="grid min-w-0 flex-1 gap-0.5">
                 <span className="truncate font-medium">{entry.name}</span>
-                <span className="truncate text-xs text-muted-foreground">{entry.meta}</span>
+                <span className="truncate text-xs text-muted-foreground">
+                    {entry.alert && <span className={cn("font-medium", ALERT_TONES[entry.alert.tone])}>{entry.alert.text} · </span>}
+                    {entry.meta}
+                </span>
             </span>
             {picked && (
                 <>
@@ -103,6 +110,8 @@ interface PickListProps {
     /** Beside it, Use none or a note on why there is none. */
     aside?: React.ReactNode;
     searchPlaceholder?: string;
+    /** A max-height of the rows other than the default, for a list that is often long. */
+    listClassName?: string;
 }
 
 /**
@@ -123,6 +132,7 @@ export function PickList({
     onCreate,
     aside,
     searchPlaceholder = "Search by name or description",
+    listClassName,
 }: PickListProps) {
     return (
         <>
@@ -132,7 +142,7 @@ export function PickList({
             </DialogHead>
             <Command>
                 <CommandInput placeholder={searchPlaceholder} />
-                <CommandList>
+                <CommandList scrollClassName={listClassName}>
                     <CommandEmpty className="px-4 py-6 text-center text-sm text-muted-foreground">{emptyText}</CommandEmpty>
                     {groups
                         .filter((group) => group.entries.length > 0)

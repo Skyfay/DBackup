@@ -45,7 +45,10 @@ interface BackupsListProps {
     canDelete: boolean;
     handlersFor: (file: ExplorerFile, destinationId: string) => BackupActionHandlers;
     askDelete: (targets: BackupTarget[], title?: string) => void;
-    onOpen: (run: BackupRun) => void;
+    /** Opens a backup in its details, `onClosed` runs once they are gone again. */
+    onOpen: (run: BackupRun, onClosed?: () => void) => void;
+    /** Moves from the timeline to the list view, for what a list of the timeline holds. */
+    onShowList: () => void;
     onRefresh: () => void;
     refreshing: boolean;
     onChanged: () => void;
@@ -84,6 +87,7 @@ export function BackupsList({
     handlersFor,
     askDelete,
     onOpen,
+    onShowList,
     onRefresh,
     refreshing,
     onChanged,
@@ -109,6 +113,8 @@ export function BackupsList({
         plan,
         destinations: destinationsById,
         at,
+        onOpen,
+        onShowList,
     });
 
     // The table keeps its own search box and filter buttons, but what they leave is worked out

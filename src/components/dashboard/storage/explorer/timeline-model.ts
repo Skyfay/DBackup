@@ -150,7 +150,7 @@ export function totalsOf(rows: TimelineRow[], days: DayKey[], today: DayKey): Da
     });
 }
 
-/** What the list below the timeline shows: the backups of a job, of a day, or of a job on a day. */
+/** What a click on the timeline lists: the backups of a job in view, of a day, or of a job on a day. */
 export interface TimelinePick {
     jobKey?: string;
     from: DayKey;

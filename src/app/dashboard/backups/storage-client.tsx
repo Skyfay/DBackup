@@ -117,6 +117,8 @@ export function StorageClient({
                 if (!saved) toast.error("Your view could not be saved.");
             });
     }, [pageTab]);
+    // Show in the list of the timeline moves to the table for now, the saved view stays the timeline.
+    const showList = useCallback(() => setViews((current) => ({ ...current, backups: "table" })), []);
 
     // How fresh the lists are that the page shows: those of the filtered destinations, of the
     // destinations of the filtered jobs, or of every destination.
@@ -227,6 +229,7 @@ export function StorageClient({
                         handlersFor={handlersFor}
                         askDelete={askDelete}
                         onOpen={details.openRun}
+                        onShowList={showList}
                         onRefresh={reloadAll}
                         refreshing={backups.reloading}
                         onChanged={reloadAll}
@@ -267,6 +270,7 @@ export function StorageClient({
                 open={details.open}
                 data={details.data}
                 onClose={details.close}
+                onCloseAutoFocus={details.closed}
                 destinations={destinationsById}
                 handlersFor={handlersFor}
                 onCheckDestination={(id) => {

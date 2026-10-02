@@ -60,14 +60,17 @@ interface DatabaseStepProps {
     onDownload: (name: string) => void;
 }
 
-/** The server the databases go to, then the databases as rows or as lines. */
+/** The server the databases go to, then, once it answered, the databases as rows or as lines. */
 export function DatabaseStep({ databases, named, loading, canDownload, view, onView, onDownload }: DatabaseStepProps) {
     const [filter, setFilter] = useState<DbFilter>("all");
     const serverName = databases.options.find((option) => option.id === databases.target)?.name ?? null;
     const viewSwitch = <ViewSwitch value={view} onChange={onView} views={VIEWS} />;
 
     let list: React.ReactNode;
-    if (loading) {
+    if (!databases.target || databases.problem) {
+        // Nothing to rename or pick before it is clear what each database meets on the server.
+        list = null;
+    } else if (loading || !databases.ready) {
         list = <Skeleton className="h-64 w-full rounded-xl" />;
     } else if (!named) {
         list = <SingleDump databases={databases} />;

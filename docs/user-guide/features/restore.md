@@ -38,7 +38,9 @@ A backup with databases and folders is restored in two steps, the databases firs
 
 ### Target Server
 
-**Restore into** picks the server the databases go to. It offers only servers of the kind of the backup, and New in its list adds one. Once a server is picked, DBackup compares its version with the one the backup was made on. A backup of a newer version than the server is refused, see [Version Guard](#version-guard).
+**Restore into** picks the server the databases go to. It offers only servers of the kind of the backup, marks one whose last health check failed as **Offline** in red, and New in its list adds one. Once a server is picked, DBackup connects to it and compares its version with the one the backup was made on. A backup of a newer version than the server is refused, see [Version Guard](#version-guard).
+
+When DBackup cannot connect to the picked server, a red note under the field says why, with **Try again**, and **Restore** waits. The databases show once a server answered, since what happens to each depends on what the server holds.
 
 ### Databases
 

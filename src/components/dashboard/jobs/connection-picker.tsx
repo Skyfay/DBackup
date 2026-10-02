@@ -28,19 +28,20 @@ const KINDS: Record<ConnectionKind, { icon: LucideIcon; note: string; noun: stri
 /** Tells the form about a connection added from one of its fields, so every field offers it. */
 export const ConnectionAddedContext = createContext<((option: AdapterOption) => void) | null>(null);
 
-const STATUS: Record<string, string> = { OFFLINE: "Offline", DEGRADED: "Degraded" };
+/** How the last health check found a connection that is not online, in the color of its state. */
+const STATUS: Record<string, PickEntry["alert"]> = { OFFLINE: { text: "Offline", tone: "destructive" }, DEGRADED: { text: "Degraded", tone: "warning" } };
 
-/** A connection in the list: its type, where it points and, when it is not online, how it is. */
+/** A connection in the list: its type, where it points and, first in its color, how it is when it is not online. */
 function entryOf(option: AdapterOption): PickEntry {
     const type = getAdapterDefinition(option.adapterId)?.name ?? option.adapterId;
     const address = option.config ? connectionAddress(option.adapterId, option.config) : null;
-    const status = option.lastStatus ? STATUS[option.lastStatus] : undefined;
     return {
         id: option.id,
         name: option.name,
-        meta: [type, address, status].filter(Boolean).join(" · "),
+        meta: [type, address].filter(Boolean).join(" · "),
         keywords: [type, ...(address ? [address] : [])],
         icon: <AdapterIcon adapterId={option.adapterId} className="size-4" />,
+        alert: option.lastStatus ? STATUS[option.lastStatus] : undefined,
     };
 }
 

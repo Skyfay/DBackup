@@ -97,6 +97,8 @@ export function RestoreClient({ canManageVault = false, canDownload = false, can
         isDirectoryOnly: directoryOnly, targetSourceId: databases.target, planError: folders.planError,
     });
     const serverName = databases.options.find((option) => option.id === databases.target)?.name ?? null;
+    // A server DBackup cannot connect to holds the start back, unless no database goes there.
+    const unreachable = validity.dbTargetNeeded && databases.problem ? `DBackup cannot connect to ${serverName ?? "the server"}` : null;
     const dbCount = named ? pickedCount(databases.rows) : validity.classicMode ? 1 : 0;
     const folderCount = folders.folders.filter((folder) => folder.selected).length;
     const blocker = analysis.loading
@@ -106,7 +108,7 @@ export function RestoreClient({ canManageVault = false, canDownload = false, can
             : restoreBlocker({
                 needsServer: validity.dbTargetNeeded,
                 server: databases.target,
-                blockedBy: databases.compatibility && !databases.compatibility.ok ? databases.compatibility.text : null,
+                blockedBy: unreachable ?? (databases.compatibility && !databases.compatibility.ok ? databases.compatibility.text : null),
                 anything: validity.atLeastOneSelected,
                 folders: folders.folders,
                 planError: folders.planError,
@@ -114,8 +116,10 @@ export function RestoreClient({ canManageVault = false, canDownload = false, can
 
     const what = [dbCount > 0 ? `${plural(dbCount, "database")}${serverName ? ` into ${serverName}` : ""}` : null, folderCount > 0 ? plural(folderCount, "folder") : null].filter(Boolean);
     const title = what.length > 0 ? `Restores ${what.join(" and ")}` : "Nothing is picked yet";
+    // What happens to each database is only known once the server answered.
+    const waiting = !databases.target ? "Pick the server the databases go to" : databases.loadingServer ? "Looking at the server" : unreachable;
     const detail = [
-        named ? databaseSentence(databases.rows) : validity.classicMode ? (databases.classicName ? `The dump comes back as ${databases.classicName}` : "The dump goes back into its original database") : null,
+        named ? (databases.ready || !validity.dbTargetNeeded ? databaseSentence(databases.rows) : waiting) : validity.classicMode ? (databases.classicName ? `The dump comes back as ${databases.classicName}` : "The dump goes back into its original database") : null,
         folders.plan ? `${folders.plan.fileCount.toLocaleString()} files, ${formatBytes(folders.plan.totalBytes)}` : null,
     ].filter(Boolean).join(" · ");
 
@@ -166,7 +170,7 @@ export function RestoreClient({ canManageVault = false, canDownload = false, can
                     <RestoreSteps
                         step={current}
                         onStep={setStep}
-                        databases={{ detail: `${dbCount} of ${analysis.databases.length} picked${serverName ? ` · into ${serverName}` : " · no server yet"}`, done: !validity.dbTargetNeeded || !!databases.target }}
+                        databases={{ detail: `${dbCount} of ${analysis.databases.length} picked${serverName ? ` · into ${serverName}` : " · no server yet"}`, done: !validity.dbTargetNeeded || databases.ready }}
                         files={{ detail: `${folderCount} of ${analysis.directories.length} folders${folders.plan ? ` · ${formatBytes(folders.plan.totalBytes)}` : ""}`, done: validity.dirSelectionValid && folderCount > 0 }}
                     />
                 )}

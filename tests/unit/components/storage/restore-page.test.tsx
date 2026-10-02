@@ -41,9 +41,12 @@ interface Setup {
 function serve({ directories = [], restore = { success: true, executionId: "exec-1" } }: Setup = {}) {
     vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
         const json = (data: unknown, status = 200) => ({ ok: status < 400, status, json: async () => data }) as Response;
-        if (url === "/api/adapters?type=database") return json([{ id: "staging", name: "Shop staging", adapterId: "postgres" }, { id: "crm", name: "CRM", adapterId: "mysql" }]);
+        if (url === "/api/adapters?type=database") {
+            return json([{ id: "staging", name: "Shop staging", adapterId: "postgres" }, { id: "replica", name: "Shop replica", adapterId: "postgres", lastStatus: "OFFLINE" }, { id: "crm", name: "CRM", adapterId: "mysql" }]);
+        }
         if (url === "/api/adapters?type=storage&role=SOURCE") return json([{ id: "web", name: "Web server", adapterId: "sftp" }]);
         if (url === "/api/adapters/database-stats") {
+            if (JSON.parse(String(init?.body ?? "{}")).sourceId === "replica") return json({ success: false, message: "connect ECONNREFUSED 10.0.0.9:5432" }, 500);
             return json({ success: true, serverVersion: "16.4", databases: [{ name: "shop", sizeInBytes: 2.3 * GB }, { name: "orders", sizeInBytes: GB }] });
         }
         if (url === "/api/storage/nas/analyze") {
@@ -78,6 +81,40 @@ describe("Restore page", () => {
         await user.click(screen.getByRole("combobox", { name: "Server to restore into" }));
         expect(screen.getByRole("option", { name: /Shop staging/ })).toBeInTheDocument();
         expect(screen.queryByRole("option", { name: /CRM/ })).not.toBeInTheDocument();
+    });
+
+    it("shows the databases only once a server is picked, so nothing is renamed before it is clear what is there", async () => {
+        const user = userEvent.setup();
+        render(<RestoreClient />);
+
+        expect(await screen.findByText("Pick the server the databases go to")).toBeInTheDocument();
+        expect(screen.queryByText("shop")).not.toBeInTheDocument();
+        expect(screen.queryByRole("textbox", { name: "Name of shop on the server" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("checkbox", { name: "Restore shop" })).not.toBeInTheDocument();
+
+        await pickServer(user);
+        expect(await screen.findByRole("textbox", { name: "Name of shop on the server" })).toBeEnabled();
+    });
+
+    it("says right away when the picked server cannot be reached, and holds Restore back", async () => {
+        const stats = () => vi.mocked(fetch).mock.calls.filter(([url]) => url === "/api/adapters/database-stats").length;
+        const user = userEvent.setup();
+        render(<RestoreClient />);
+
+        await user.click(await screen.findByRole("combobox", { name: "Server to restore into" }));
+        const replica = await screen.findByRole("option", { name: /Shop replica/ });
+        expect(replica).toHaveTextContent("Offline · PostgreSQL");
+        await user.click(replica);
+
+        expect(await screen.findByText(/connect ECONNREFUSED 10\.0\.0\.9:5432/)).toBeInTheDocument();
+        // In the note under the field and in the bar at the foot.
+        expect(screen.getAllByText("DBackup cannot connect to Shop replica")).toHaveLength(2);
+        expect(screen.getByRole("button", { name: "Restore 3 databases" })).toBeDisabled();
+        expect(screen.queryByRole("textbox", { name: "Name of shop on the server" })).not.toBeInTheDocument();
+
+        const before = stats();
+        await user.click(screen.getByRole("button", { name: "Try again" }));
+        await waitFor(() => expect(stats()).toBe(before + 1));
     });
 
     it("shows each database beside the server, with what happens to it, and restores one as a copy", async () => {

@@ -24,7 +24,7 @@ describe("connection picker", () => {
         Element.prototype.scrollIntoView = vi.fn();
     });
 
-    it("lists each connection with its type, where it points and a status that is not online, and picks one", async () => {
+    it("lists each connection with its type, where it points and first a status that is not online, and picks one", async () => {
         const user = userEvent.setup();
         const onChange = renderPicker();
 
@@ -32,7 +32,7 @@ describe("connection picker", () => {
 
         expect(screen.getByText("Pick from Connections")).toBeInTheDocument();
         expect(screen.getByRole("option", { name: /Shop cluster/ })).toHaveTextContent("PostgreSQL · db.internal:5432");
-        expect(screen.getByRole("option", { name: /CRM/ })).toHaveTextContent("MySQL · crm.internal:3306 · Offline");
+        expect(screen.getByRole("option", { name: /CRM/ })).toHaveTextContent("Offline · MySQL · crm.internal:3306");
 
         await user.click(screen.getByRole("option", { name: /CRM/ }));
         expect(onChange).toHaveBeenCalledWith("my");

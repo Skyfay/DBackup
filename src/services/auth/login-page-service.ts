@@ -7,6 +7,8 @@
 import prisma from "@/lib/prisma";
 import { ADAPTER_DEFINITIONS } from "@/lib/adapters/definitions";
 import { getOidcAutoRedirectProviderId, isEmailLoginDisabled } from "@/lib/auth/env-flags";
+import type { PasswordRules } from "@/lib/auth/password-policy";
+import { getPasswordPolicy } from "@/services/auth/password-policy-service";
 import { getLoginPicture } from "@/services/system/login-image-service";
 
 export interface LoginProvider {
@@ -39,6 +41,8 @@ export interface LoginPageModel {
     emailLogin: boolean;
     /** OIDC_AUTO_REDIRECT names an enabled provider. */
     autoRedirectProviderId: string | null;
+    /** What the password of the first account needs, null once anyone has an account. */
+    passwordRules: PasswordRules | null;
 }
 
 function hostOf(issuer: string | null): string | null {
@@ -69,6 +73,8 @@ export async function getLoginPageModel(): Promise<LoginPageModel> {
         getLoginPicture(),
     ]);
 
+    // The page is public, so the rules show only to whoever creates the first account.
+    const passwordRules = userCount === 0 ? await getPasswordPolicy() : null;
     const loginProviders = providers.map(({ issuer, ...provider }) => ({ ...provider, host: hostOf(issuer) }));
     // A value that matches no enabled provider means no redirect. startup-checks.ts reports it, so a
     // provider deleted after the start degrades instead of locking everyone out.
@@ -82,5 +88,6 @@ export async function getLoginPageModel(): Promise<LoginPageModel> {
         passkeyLogin: passkeyOff?.value !== "true",
         emailLogin: !isEmailLoginDisabled(),
         autoRedirectProviderId: redirectTo && loginProviders.some((provider) => provider.providerId === redirectTo) ? redirectTo : null,
+        passwordRules,
     };
 }

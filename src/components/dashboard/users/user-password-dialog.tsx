@@ -4,11 +4,13 @@ import { useId, useState } from "react";
 import { KeyRound, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { setUserPassword } from "@/app/actions/auth/user-security";
+import { PasswordChecklist } from "@/components/auth/password-checklist";
 import { SwitchList, SwitchRow } from "@/components/adapter/setting-switches";
 import { Button } from "@/components/ui/button";
 import { DIALOG_FOOTER, DIALOG_SURFACE, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { passwordProblem, type PasswordRules } from "@/lib/auth/password-policy";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { cn } from "@/lib/utils";
@@ -20,6 +22,8 @@ const log = logger.child({ component: "user-password-dialog" });
 
 interface UserPasswordDialogProps {
     user: UserRow;
+    /** The rules of Settings > Passwords, null while they load. */
+    rules: PasswordRules | null;
     onClose: () => void;
     onDone: () => void;
 }
@@ -29,7 +33,7 @@ interface UserPasswordDialogProps {
  * unless that is turned off, so the old password stops working at once. A user who signs in only
  * with SSO gets a password as a second way in.
  */
-export function UserPasswordDialog({ user, onClose, onDone }: UserPasswordDialogProps) {
+export function UserPasswordDialog({ user, rules, onClose, onDone }: UserPasswordDialogProps) {
     const [password, setPassword] = useState("");
     const [signOut, setSignOut] = useState(true);
     const [problem, setProblem] = useState<string | null>(null);
@@ -39,7 +43,8 @@ export function UserPasswordDialog({ user, onClose, onDone }: UserPasswordDialog
 
     const submit = async (event: React.FormEvent) => {
         event.preventDefault();
-        if (password.length < 8) return setProblem("The password needs at least 8 characters.");
+        const broken = password ? rules && passwordProblem(password, rules, user) : "Enter a password, or click Generate.";
+        if (broken) return setProblem(broken);
         setSaving(true);
         try {
             const result = await setUserPassword(user.id, { password, signOut });
@@ -80,7 +85,10 @@ export function UserPasswordDialog({ user, onClose, onDone }: UserPasswordDialog
                                 }}
                                 aria-invalid={problem ? true : undefined}
                                 aria-describedby={`${fieldId}-hint`}
+                                rules={rules}
+                                owner={user}
                             />
+                            {rules && <PasswordChecklist rules={rules} password={password} owner={user} className="py-0.5" />}
                             {problem ? (
                                 <p id={`${fieldId}-hint`} className="text-sm text-destructive">{problem}</p>
                             ) : (

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { PermissionError } from "@/lib/logging/errors";
+import { PermissionError, ValidationError } from "@/lib/logging/errors";
 
 const mocks = vi.hoisted(() => ({
     allowed: true,
@@ -28,6 +28,7 @@ vi.mock("@/lib/auth/access-control", () => ({
     }),
     getCurrentUserWithGroup: vi.fn(async () => mocks.viewer),
     hasPermission: vi.fn(async () => mocks.mayChangeSettings),
+    currentSessionId: vi.fn(async () => mocks.viewerSession),
 }));
 vi.mock("@/lib/auth", () => ({ auth: { api: { getSession: vi.fn(async () => ({ session: { id: mocks.viewerSession } })) } } }));
 vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
@@ -137,9 +138,17 @@ describe("what an admin may do to other users", () => {
         expect(mocks.service.revokeSessions).not.toHaveBeenCalled();
     });
 
-    it("refuses the own password, a short one and the password of a SuperAdmin", async () => {
+    it("hands on the rule of Settings > Passwords that a new password breaks", async () => {
+        mocks.setPassword.mockRejectedValueOnce(new ValidationError("The password needs 12 characters or more."));
+
+        expect(await setUserPassword("lena", { password: "short", signOut: true })).toEqual({ success: false, error: "The password needs 12 characters or more." });
+        expect(mocks.service.revokeSessions).not.toHaveBeenCalled();
+        expect(mocks.audit).not.toHaveBeenCalled();
+    });
+
+    it("refuses the own password, an empty one and the password of a SuperAdmin", async () => {
         expect(await setUserPassword("admin", { password: "a new password", signOut: true })).toEqual({ success: false, error: "Change your own password under Profile." });
-        expect(await setUserPassword("lena", { password: "short", signOut: true })).toEqual({ success: false, error: "The password needs at least 8 characters." });
+        expect(await setUserPassword("lena", { password: "", signOut: true })).toEqual({ success: false, error: "Enter a password." });
 
         mocks.service.isSuperAdmin.mockResolvedValue(true);
         expect(await setUserPassword("root", { password: "a new password", signOut: true })).toEqual({ success: false, error: "Only a SuperAdmin can set the password of a SuperAdmin." });

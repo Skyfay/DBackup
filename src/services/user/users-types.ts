@@ -1,3 +1,4 @@
+import type { PasswordPolicy } from "@/lib/auth/password-policy";
 import type { DeviceKind, UserAgentInfo } from "@/lib/core/user-agent";
 
 /**
@@ -80,6 +81,8 @@ export interface UsersModel {
     stats: UsersStats;
     /** A SuperAdmin may give the SuperAdmin group and set the password of another SuperAdmin. */
     viewerSuperAdmin: boolean;
+    /** The rules of Settings > Passwords, which Generate and the ticks under a new password follow. */
+    passwordPolicy: PasswordPolicy;
 }
 
 export interface UserSession {

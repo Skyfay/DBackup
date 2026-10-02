@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
     checkPermission: vi.fn(),
     saveGeneral: vi.fn(),
     saveSignIn: vi.fn(),
+    savePasswords: vi.fn(),
     savePrivacy: vi.fn(),
     saveRetention: vi.fn(),
     saveRateLimits: vi.fn(),
@@ -24,6 +25,7 @@ vi.mock("@/services/system/system-settings-service", () => ({
     saveSignInSettings: (...args: unknown[]) => mocks.saveSignIn(...args),
     savePrivacySettings: (...args: unknown[]) => mocks.savePrivacy(...args),
 }));
+vi.mock("@/services/auth/password-policy-service", () => ({ savePasswordPolicy: (...args: unknown[]) => mocks.savePasswords(...args) }));
 vi.mock("@/services/system/data-retention-service", () => ({
     getDataRetentionValues: vi.fn(async () => ({})),
     updateDataRetentionSettings: (...args: unknown[]) => mocks.saveRetention(...args),
@@ -43,9 +45,10 @@ vi.mock("@/services/system/system-task-audit", () => ({
     taskChanges: () => [],
 }));
 vi.mock("@/services/system/settings-audit", () => ({
-    SETTINGS_AREAS: { GENERAL: "General", SIGN_IN: "Sign-in", PRIVACY: "Privacy", RATE_LIMITS: "Rate limits", CONFIG_BACKUP: "Config backup", INTEGRITY: "Integrity checks", DATA_RETENTION: "Data retention" },
+    SETTINGS_AREAS: { GENERAL: "General", SIGN_IN: "Sign-in", PASSWORDS: "Passwords", PRIVACY: "Privacy", RATE_LIMITS: "Rate limits", CONFIG_BACKUP: "Config backup", INTEGRITY: "Integrity checks", DATA_RETENTION: "Data retention" },
     generalSettings: vi.fn(async () => ({ fields: {}, values: {} })),
     signInSettings: vi.fn(async () => ({ fields: {}, values: {} })),
+    passwordSettings: vi.fn(async () => ({ fields: {}, values: {} })),
     privacySettings: vi.fn(async () => ({ fields: {}, values: {} })),
     rateLimitSettings: vi.fn(async () => ({ fields: {}, values: {} })),
     configBackupSettings: vi.fn(async () => ({ fields: {}, values: {} })),
@@ -54,7 +57,7 @@ vi.mock("@/services/system/settings-audit", () => ({
     retentionChanges: () => [],
 }));
 
-const { saveGeneralSettingsAction, saveSignInSettingsAction } = await import("@/app/actions/settings/settings");
+const { saveGeneralSettingsAction, savePasswordSettingsAction, saveSignInSettingsAction } = await import("@/app/actions/settings/settings");
 const { savePrivacySettingsAction } = await import("@/app/actions/settings/privacy-settings");
 const { saveDataRetentionAction } = await import("@/app/actions/settings/data-retention");
 const { updateRateLimitSettings } = await import("@/app/actions/settings/rate-limit-settings");
@@ -68,6 +71,7 @@ const CONFIG = { enabled: false, storageId: "", profileId: "", schedule: "0 3 * 
 const SAVES = [
     ["General", () => saveGeneralSettingsAction(GENERAL)],
     ["Sign-in", () => saveSignInSettingsAction({ sessionDuration: 604800, passkeyLogin: true, loginLook: "logos" })],
+    ["Passwords", () => savePasswordSettingsAction({ level: "strong", minLength: 16, upper: true, lower: true, digits: true, special: 1, notName: true })],
     ["Privacy", () => savePrivacySettingsAction({ includeActorInMetadata: false })],
     ["Data retention", () => saveDataRetentionAction({ auditLog: 365 })],
     ["Rate limits", () => updateRateLimitSettings({ auth: LIMIT, api: LIMIT, mutation: LIMIT })],
@@ -89,9 +93,17 @@ describe("the actions of the Settings page", () => {
         await expect(save()).rejects.toBeInstanceOf(PermissionError);
 
         expect(mocks.checkPermission).toHaveBeenCalledWith("settings:write");
-        for (const service of [mocks.saveGeneral, mocks.saveSignIn, mocks.savePrivacy, mocks.saveRetention, mocks.saveRateLimits, mocks.saveConfigBackup, mocks.saveTask, mocks.startTask]) {
+        for (const service of [mocks.saveGeneral, mocks.saveSignIn, mocks.savePasswords, mocks.savePrivacy, mocks.saveRetention, mocks.saveRateLimits, mocks.saveConfigBackup, mocks.saveTask, mocks.startTask]) {
             expect(service).not.toHaveBeenCalled();
         }
+    });
+
+    it("refuses password rules below what better-auth asks, before anything is saved", async () => {
+        expect(await savePasswordSettingsAction({ level: "custom", minLength: 6, upper: false, lower: false, digits: false, special: 0, notName: false })).toMatchObject({
+            success: false,
+            field: "minLength",
+        });
+        expect(mocks.savePasswords).not.toHaveBeenCalled();
     });
 
     it("refuses a task that does not exist, which could write any setting of the form task.x before", async () => {

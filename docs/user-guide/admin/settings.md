@@ -1,6 +1,6 @@
 # Settings
 
-The Settings page holds what applies to the whole instance: its name and clock, the system tasks, the notifications, the records DBackup keeps of itself, the configuration backup and how people sign in. Looking at it needs `settings:read`, changing anything needs `settings:write`.
+The Settings page holds what applies to the whole instance: its name and clock, the system tasks, the notifications, the records DBackup keeps of itself, the configuration backup, how people sign in and what a password needs. Looking at it needs `settings:read`, changing anything needs `settings:write`.
 
 ## The Page
 
@@ -82,6 +82,27 @@ A change here saves at once, without the bar at the foot. See [Notifications](/u
 A picture is kept the moment it is dropped and shows once **Your own image** is saved. **Remove** deletes it, and the login page shows the logos again. The logos stand still for anyone whose system asks for reduced motion.
 
 `DISABLE_EMAIL_LOGIN=true` on the container turns the password sign-in off, and the part shows whether it is. While it is off and no sign-in provider is on, a passkey is the only way in, so its button cannot be turned off. The sign-in providers are set up under Users & Groups, see [SSO / OIDC](/user-guide/admin/sso).
+
+## Passwords
+
+What a new password needs: the one of a new user, one an admin sets, the change of one's own and the first account. **Strength** picks a level that fills in the rules below it, and changing a rule makes it **Custom**.
+
+| Level | A new password needs |
+| :--- | :--- |
+| **Basic** | 8 characters or more, nothing else. What DBackup asked before the rules. |
+| **Standard** | 12 characters or more, an upper and a lower case letter and a number, and not the name or the email. The level of a new instance. |
+| **Strong** | 16 characters or more, an upper and a lower case letter, a number and a special character, and not the name or the email. |
+
+| Rule | What it does |
+| :--- | :--- |
+| **Minimum length** | From 8 to 128 characters. |
+| **Upper case letters**, **Lower case letters**, **Numbers** | At least one of each that is on. |
+| **Special characters** | At least as many as set, from 1 to 8. Every character that is no letter, number or space counts, like `#` or `€`. |
+| **Not the name or the email** | Refuses a password that holds a word of the name or of the email before the @, from 3 letters on. |
+
+Below the rules they stand in one sentence, beside a password **Generate** would make. Generate makes 16 characters, or the minimum length when it is longer, and its special characters are only `! @ * - _ .`, which every keyboard has and no shell or URL trips over.
+
+The fields of a new password tick off each rule as it holds, and the server refuses a password that breaks one, whichever way it comes in. Passwords that are set stay valid, the rules apply from their next change. An instance that ran before the rules keeps **Basic** after the update.
 
 ## HTTPS
 

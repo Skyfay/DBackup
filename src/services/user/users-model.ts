@@ -3,6 +3,7 @@ import { AUDIT_ACTIONS } from "@/lib/core/audit-types";
 import { attentionOf, type TabAttention } from "@/lib/core/tab-attention";
 import { parseUserAgent } from "@/lib/core/user-agent";
 import { SOON_MS } from "@/services/auth/api-keys-types";
+import { getPasswordPolicy } from "@/services/auth/password-policy-service";
 import type { SecondFactor, SignInMethod, UserRow, UserSignIn, UsersGroup, UsersModel } from "./users-types";
 
 /** The name of the group that passes every check. */
@@ -116,7 +117,7 @@ interface BuildInput {
 }
 
 /** The Users tab: every user with how they sign in, and the numbers above the list. */
-export function buildUsersModel({ users, groups, providers, logins, viewerId, viewerSuperAdmin, now = Date.now() }: BuildInput): UsersModel {
+export function buildUsersModel({ users, groups, providers, logins, viewerId, viewerSuperAdmin, now = Date.now() }: BuildInput): Omit<UsersModel, "passwordPolicy"> {
     const providerMap = new Map(providers.map((provider) => [provider.providerId, provider]));
     const devices = new Set<string>();
     let sessions = 0;
@@ -179,7 +180,7 @@ export function buildUsersModel({ users, groups, providers, logins, viewerId, vi
 
 /** Loads the Users tab. The password hashes of the accounts never leave the database. */
 export async function getUsersModel(viewerId: string | null, viewerSuperAdmin: boolean): Promise<UsersModel> {
-    const [users, groups, providers] = await Promise.all([
+    const [users, groups, providers, passwordPolicy] = await Promise.all([
         prisma.user.findMany({
             select: {
                 id: true,
@@ -197,6 +198,7 @@ export async function getUsersModel(viewerId: string | null, viewerSuperAdmin: b
         }),
         prisma.group.findMany({ select: { id: true, name: true, permissions: true, _count: { select: { users: true } } } }),
         prisma.ssoProvider.findMany({ select: { providerId: true, name: true, adapterId: true } }),
+        getPasswordPolicy(),
     ]);
 
     // One entry per user, the newest, since the rows come newest first.
@@ -207,7 +209,7 @@ export async function getUsersModel(viewerId: string | null, viewerSuperAdmin: b
         select: { userId: true, createdAt: true, userAgent: true, ipAddress: true },
     });
 
-    return buildUsersModel({
+    const model = buildUsersModel({
         users,
         groups,
         providers,
@@ -215,6 +217,7 @@ export async function getUsersModel(viewerId: string | null, viewerSuperAdmin: b
         viewerId,
         viewerSuperAdmin,
     });
+    return { ...model, passwordPolicy };
 }
 
 /**

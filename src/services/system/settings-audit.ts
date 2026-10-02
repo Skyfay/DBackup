@@ -3,6 +3,8 @@ import { diffFields, type AuditField, type AuditValue } from "@/lib/core/audit-d
 import type { AuditChange } from "@/lib/core/audit-types";
 import { DATA_RETENTION_SETTINGS, formatRetentionDays, type DataRetentionId } from "@/lib/core/data-retention";
 import { RATE_LIMIT_DEFAULTS, RATE_LIMIT_KEYS } from "@/lib/rate-limit";
+import { LEVEL_NAMES } from "@/lib/auth/password-policy";
+import { getPasswordPolicy } from "@/services/auth/password-policy-service";
 import type { CertificateInfo } from "@/services/system/certificate-service";
 
 /**
@@ -14,6 +16,7 @@ import type { CertificateInfo } from "@/services/system/certificate-service";
 export const SETTINGS_AREAS = {
     GENERAL: "General",
     SIGN_IN: "Sign-in",
+    PASSWORDS: "Passwords",
     DATA_RETENTION: "Data retention",
     NOTIFICATIONS: "Notifications",
     RATE_LIMITS: "Rate limits",
@@ -135,6 +138,33 @@ const CONFIG_BACKUP: StoredSetting[] = [
 export async function generalSettings(): Promise<SettingsSnapshot> {
     const { STUCK_TIMEOUT_SETTING, DEFAULT_STUCK_TIMEOUT_MINUTES } = await import("@/services/system/stuck-execution-service");
     return readStored(general(STUCK_TIMEOUT_SETTING, DEFAULT_STUCK_TIMEOUT_MINUTES));
+}
+
+const PASSWORD_FIELDS: Record<string, AuditField> = {
+    level: { label: "Strength" },
+    minLength: { label: "Minimum length" },
+    upper: { label: "Upper case letters" },
+    lower: { label: "Lower case letters" },
+    digits: { label: "Numbers" },
+    special: { label: "Special characters" },
+    notName: { label: "Not the name or the email" },
+};
+
+/** The rules of new passwords as they apply, the level by its name. */
+export async function passwordSettings(): Promise<SettingsSnapshot> {
+    const policy = await getPasswordPolicy();
+    return {
+        fields: PASSWORD_FIELDS,
+        values: {
+            level: LEVEL_NAMES[policy.level],
+            minLength: `${policy.minLength} characters`,
+            upper: policy.upper,
+            lower: policy.lower,
+            digits: policy.digits,
+            special: policy.special > 0 ? `At least ${policy.special}` : false,
+            notName: policy.notName,
+        },
+    };
 }
 
 export const signInSettings = () => readStored(SIGN_IN);

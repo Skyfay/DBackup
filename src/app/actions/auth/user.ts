@@ -1,25 +1,29 @@
 "use server"
 
 import { revalidatePath } from "next/cache";
-import { checkPermission, getCurrentUserWithGroup, hasPermission } from "@/lib/auth/access-control";
+import { checkPermission, currentSessionId, getCurrentUserWithGroup, hasPermission } from "@/lib/auth/access-control";
+import { MAX_PASSWORD_LENGTH } from "@/lib/auth/password-policy";
 import { PERMISSIONS, TRASH_ADMIN_PERMISSION } from "@/lib/auth/permissions";
+import { authService } from "@/services/auth/auth-service";
 import { userService } from "@/services/user/user-service";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, getErrorMessage } from "@/lib/logging/errors";
+import { wrapError, getErrorMessage, ValidationError } from "@/lib/logging/errors";
 import { notify } from "@/services/notifications/system-notification-service";
 import { NOTIFICATION_EVENTS } from "@/lib/notifications";
 import { BulkIdsSchema } from "@/lib/core/bulk-schema";
 import { DeleteModeSchema, PERMANENT_DELETE_REFUSED, type DeleteMode } from "@/lib/core/delete-mode";
 import { z } from "zod";
+import prisma from "@/lib/prisma";
 
 const log = logger.child({ action: "user" });
 
 const CreateUserSchema = z.object({
     name: z.string().trim().min(2, "Name must be at least 2 characters.").max(100),
     email: z.string().trim().email("Invalid email address."),
-    password: z.string().min(8, "Password must be at least 8 characters.").max(128, "Password can have at most 128 characters."),
+    // The rules of Settings > Passwords are checked by the service, which names the one it breaks.
+    password: z.string().min(1, "Enter a password.").max(MAX_PASSWORD_LENGTH, `Password can have at most ${MAX_PASSWORD_LENGTH} characters.`),
     /** The group the user starts in, none for a user who sees nothing until someone picks one. */
     groupId: z.string().min(1).nullable(),
 });
@@ -168,79 +172,51 @@ export async function togglePasskeyTwoFactor(userId: string, enabled: boolean) {
     }
 }
 
-import { auth } from "@/lib/auth";
-import { headers } from "next/headers";
-import prisma from "@/lib/prisma";
+const OwnPasswordSchema = z.object({
+    currentPassword: z.string().min(1, "Enter the password you have now."),
+    // The rules of Settings > Passwords are checked by the service, which names the one it breaks.
+    newPassword: z.string().min(1, "Enter a new password.").max(MAX_PASSWORD_LENGTH, `The password can have at most ${MAX_PASSWORD_LENGTH} characters.`),
+});
 
-// @no-permission-required - Self-service: Users can always change their own password
+/**
+ * Changes the own password with the current one. The new one follows the rules of
+ * Settings > Passwords, and every other session of the account ends, so the old password stops
+ * working everywhere at once.
+ * @no-permission-required - Self-service: Users can always change their own password
+ */
 export async function updateOwnPassword(currentPassword: string, newPassword: string) {
     const currentUser = await getCurrentUserWithGroup();
     if (!currentUser) throw new Error("Unauthorized");
     if (!(await hasPermission(PERMISSIONS.PROFILE.UPDATE_PASSWORD))) {
         return { success: false, error: "Your group may not change your password." };
     }
+    const parsed = OwnPasswordSchema.safeParse({ currentPassword, newPassword });
+    if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid request" };
 
-    // 1. Verify user has a credential account
-    const account = await prisma.account.findFirst({
-        where: {
-            userId: currentUser.id,
-            providerId: "credential"
-        }
-    });
-
+    const account = await prisma.account.findFirst({ where: { userId: currentUser.id, providerId: "credential" }, select: { id: true } });
     if (!account) {
         return { success: false, error: "No password account found. Please set up a password first." };
     }
 
-    // 2. Verify current password by attempting a "dry run" sign-in
     try {
-        await auth.api.signInEmail({
-            body: {
-                email: currentUser.email,
-                password: currentPassword
-            },
-            asResponse: true // Prevent actual sign-in side effects (cookies)
-        });
-    } catch (_error: unknown) {
-        // better-auth throws on failed sign-in
-        return { success: false, error: "Incorrect current password" };
-    }
-
-    // 3. Update password via delete & set sequence
-    // Using setPassword requires the user to NOT have a password.
-    // Since changePassword endpoint is strict about session type, we must use this workaround.
-    try {
-        const headersList = await headers();
-
-        // Transaction manually managed: Delete then Set
-        // 1. Delete credential account
-        await prisma.account.deleteMany({
-            where: {
-                userId: currentUser.id,
-                providerId: "credential"
-            }
-        });
-
-        // 2. Set new password
-        await auth.api.setPassword({
-            headers: headersList,
-            body: {
-                newPassword: newPassword,
-                // Passing revokeOtherSessions: true if supported would be good,
-                // but setPassword might not support it in all versions.
-            }
-        });
+        // Checked against the stored hash, without signing in.
+        if (!(await authService.verifyPassword(currentUser.id, parsed.data.currentPassword))) {
+            return { success: false, error: "Incorrect current password" };
+        }
+        await authService.setPassword(currentUser.id, parsed.data.newPassword);
+        const signedOut = await userService.revokeSessions(currentUser.id, await currentSessionId());
 
         await auditService.log(
             currentUser.id,
             AUDIT_ACTIONS.UPDATE,
             AUDIT_RESOURCES.USER,
-            { change: "Password Changed" },
+            { change: "Password Changed", signedOut },
             currentUser.id
         );
 
-        return { success: true };
+        return { success: true, data: { signedOut } };
     } catch (error: unknown) {
+        if (error instanceof ValidationError) return { success: false, error: error.message };
         log.error("Failed to update password", { userId: currentUser.id }, wrapError(error));
         return { success: false, error: getErrorMessage(error) || "Failed to update password" };
     }

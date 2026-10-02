@@ -6,6 +6,7 @@ import {
     FileCog,
     Gauge,
     History,
+    KeyRound,
     ListChecks,
     Lock,
     LogIn,
@@ -27,6 +28,7 @@ export type SettingsPartId =
     | "config-backup"
     | "recently-deleted"
     | "sign-in"
+    | "passwords"
     | "https"
     | "rate-limits"
     | "privacy";
@@ -66,6 +68,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         label: "Security",
         parts: [
             { id: "sign-in", label: "Sign-in", icon: LogIn, description: "What the login page shows, how people sign in and how long they stay signed in." },
+            { id: "passwords", label: "Passwords", icon: KeyRound, description: "What a new password needs: for a new user, one an admin sets, and every change of one's own." },
             { id: "https", label: "HTTPS", icon: Lock, description: "The certificate DBackup answers with." },
             { id: "rate-limits", label: "Rate limits", icon: Gauge, description: "How many requests one address may make in a time window, against guessing and flooding." },
             { id: "privacy", label: "Privacy", icon: EyeOff, description: "What DBackup writes beside your backups, where it is not encrypted." },

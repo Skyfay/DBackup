@@ -61,6 +61,7 @@ All notable changes to DBackup are documented here.
 - **ui**: The numbers above every list are tiles with an icon, and what each means shows on hover. Jobs and Connections have them too, with how the latest runs went, what answers and how fast.
 - **ui**: A search in the middle of the header, or Ctrl+K (⌘K on macOS) anywhere, finds the jobs, connections, databases, backups, runs, people, groups, API keys, templates, Vault entries, settings and pages you may open. It also starts a found job and switches the theme.
 - **auth**: The login page can show a picture of your own instead of the logos, chosen under Settings › Sign-in. The picture lives in the database and comes back with the configuration backup.
+- **auth**: **Settings → Passwords** sets what a new password needs, as Basic, Standard, Strong or rules of its own, with Standard on a new instance and Basic kept on an updated one. Every field for a new password ticks off the rules as they hold, Generate follows them and the server refuses a password that breaks one.
 
 
 ### 🐛 Bug Fixes
@@ -147,6 +148,7 @@ All notable changes to DBackup are documented here.
 ### 🔒 Security
 
 - **profile**: What a group may change of the own profile now holds on the server too, the name, the email, the password, the second factor, the passkeys and the linked sign-in providers. Before, only the page hid the buttons.
+- **profile**: **Change password** under Profile refuses a wrong current password. It took any before, so whoever had a signed-in browser could change the password.
 - **connections**: The health check history of a connection needs the read permission of its kind, like its details. Reading sources or destinations was enough for every kind before.
 - **connections**: The file browser of a path field no longer follows a link into a system folder it keeps out, like /proc or /System.
 - **connections**: The folder browser of a Google Drive connection only takes folder IDs made of letters, digits, hyphens and underscores, so a crafted ID can no longer widen its list of folders to every file of the drive. The folder browsers of Dropbox and OneDrive turn down a path with a `..` part.
@@ -271,6 +273,7 @@ All notable changes to DBackup are documented here.
 - **profile**: Profile pictures live in the database and come back with a configuration backup. Pictures under `/data/storage/avatars` move there on the first start, and the folder is gone.
 - **connections**: The lists of the Connections page are called Databases, Directory sources, Destinations and Channels everywhere, and their New buttons and dialogs name what they add.
 - **api**: The success rate of `GET /api/dashboard/stats` counts a partial run as one that did not succeed, like every success share of the dashboard.
+- **profile**: A new password from **Change password** signs you out of every other browser, like a password an admin sets.
 
 ### 🗑️ Removed
 

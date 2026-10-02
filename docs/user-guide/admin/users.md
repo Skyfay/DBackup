@@ -34,7 +34,7 @@ The numbers above the list count the users without a group, the users who sign i
 
 1. Click **New user**
 2. Enter the name and the email
-3. Enter a password, or click **Generate** for one of 16 characters, which then shows so you can hand it on
+3. Enter a password, or click **Generate** for one that follows the rules under **Settings → Passwords**, which then shows so you can hand it on. The rules tick off under the field as they hold
 4. Pick the group from the list. Each row says what the group lets its members do, and the search finds a group by its name or by those words
 5. Click **Create user**
 
@@ -63,7 +63,7 @@ All of them need the permission to manage users and are written to the audit log
 ### Set a New Password
 
 1. Click **Set a new one** in the panel, or **Set a new password** in the menu
-2. Enter a password or click **Generate**
+2. Enter a password or click **Generate**, under the rules of **Settings → Passwords**
 3. Leave **Sign them out everywhere** on, so the old password stops working at once
 4. Click **Set password**
 
@@ -91,7 +91,7 @@ A deleted user waits in [Recently deleted](/user-guide/admin/recently-deleted) f
 
 ### Password Login
 
-Passwords are hashed by Better Auth with scrypt and need at least 8 characters, with no other rules. Users change their own under **Profile → Security**.
+Passwords are hashed by Better Auth with scrypt. What a new one needs is set under [Settings → Passwords](/user-guide/admin/settings#passwords), Standard on a new instance with 12 characters, an upper and a lower case letter and a number. Users change their own under **Profile → Security**.
 
 ### Two-Factor Authentication (2FA)
 

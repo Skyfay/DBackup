@@ -1,13 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { headers } from "next/headers";
 import { z } from "zod";
-import { auth } from "@/lib/auth";
-import { checkPermission, getCurrentUserWithGroup } from "@/lib/auth/access-control";
+import { checkPermission, currentSessionId, getCurrentUserWithGroup } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
-import { getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { MAX_PASSWORD_LENGTH } from "@/lib/auth/password-policy";
+import { getErrorMessage, ValidationError, wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { auditService } from "@/services/audit-service";
 import { authService } from "@/services/auth/auth-service";
@@ -23,7 +22,8 @@ const log = logger.child({ action: "user-security" });
 const IdSchema = z.string().min(1).max(200);
 
 const PasswordSchema = z.object({
-    password: z.string().min(8, "The password needs at least 8 characters.").max(128, "The password can have at most 128 characters."),
+    // The rules of Settings > Passwords are checked by the service, which names the one it breaks.
+    password: z.string().min(1, "Enter a password.").max(MAX_PASSWORD_LENGTH, `The password can have at most ${MAX_PASSWORD_LENGTH} characters.`),
     /** Ends the sessions the user holds, so the old password stops working everywhere at once. */
     signOut: z.boolean(),
 });
@@ -31,16 +31,6 @@ const PasswordSchema = z.object({
 /** Whether the user is a SuperAdmin whom the caller, who is none, may not touch. */
 async function guardsSuperAdmin(userId: string, caller: { group: { name: string } | null } | null): Promise<boolean> {
     return caller?.group?.name !== "SuperAdmin" && (await userService.isSuperAdmin(userId));
-}
-
-/** The session of whoever calls, which signing out someone's sessions never ends. */
-async function viewerSessionId(): Promise<string | null> {
-    try {
-        const session = await auth.api.getSession({ headers: await headers() });
-        return session?.session.id ?? null;
-    } catch {
-        return null;
-    }
 }
 
 /**
@@ -72,6 +62,7 @@ export async function setUserPassword(userId: string, input: z.input<typeof Pass
         revalidatePath("/dashboard/users");
         return { success: true, data: { signedOut } };
     } catch (error: unknown) {
+        if (error instanceof ValidationError) return { success: false, error: error.message };
         log.error("Setting a password failed", { userId: id.data }, wrapError(error));
         return { success: false, error: getErrorMessage(error) || "The password could not be set." };
     }
@@ -119,7 +110,7 @@ export async function revokeUserSession(userId: string, sessionId: string) {
         return { success: false, error: "Only a SuperAdmin can sign out a SuperAdmin." };
     }
 
-    if (session.data === (await viewerSessionId())) {
+    if (session.data === (await currentSessionId())) {
         return { success: false, error: "This is the session you are using. Sign out from the menu instead." };
     }
 
@@ -152,7 +143,7 @@ export async function revokeUserSessions(userId: string) {
     }
 
     try {
-        const keep = currentUser?.id === id.data ? await viewerSessionId() : null;
+        const keep = currentUser?.id === id.data ? await currentSessionId() : null;
         const count = await userService.revokeSessions(id.data, keep);
         if (currentUser) {
             await auditService.log(currentUser.id, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.USER, { change: "Sessions Revoked", count }, id.data);

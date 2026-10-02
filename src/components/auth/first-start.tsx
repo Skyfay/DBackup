@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ArrowRight, RotateCcw, ServerCog, UserPlus, type LucideIcon } from "lucide-react";
 import { toneAttribute, type Tone } from "@/components/ui/tone";
+import type { PasswordRules } from "@/lib/auth/password-policy";
 import { cn } from "@/lib/utils";
 import { FirstAccountForm } from "./first-account-form";
 import { LoginHeading } from "./login-parts";
@@ -61,11 +62,11 @@ function SoonWay() {
  * backup of another DBackup, and the runner that comes later. DISABLE_EMAIL_LOGIN leaves the
  * restore, since the first account signs in with a password.
  */
-export function FirstStart({ allowSignUp }: { allowSignUp: boolean }) {
+export function FirstStart({ allowSignUp, passwordRules }: { allowSignUp: boolean; passwordRules: PasswordRules | null }) {
     const [way, setWay] = useState<"choice" | "account" | "restore">("choice");
     const back = () => setWay("choice");
 
-    if (way === "account") return <FirstAccountForm onBack={back} />;
+    if (way === "account") return <FirstAccountForm rules={passwordRules} onBack={back} />;
     if (way === "restore") return <SetupRestore onBack={back} />;
 
     return (

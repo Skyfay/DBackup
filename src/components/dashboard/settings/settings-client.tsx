@@ -13,6 +13,7 @@ import { DatabasePart } from "./database-part";
 import { GeneralPart } from "./general-part";
 import { HttpsPart } from "./https-part";
 import { NotificationsPart } from "./notifications-part";
+import { PasswordsPart } from "./passwords-part";
 import { PrivacyPart } from "./privacy-part";
 import { RateLimitsPart } from "./rate-limits-part";
 import { RecentlyDeletedPart } from "./recently-deleted-part";
@@ -132,6 +133,7 @@ export function SettingsClient({ model, viewerName }: SettingsClientProps) {
             case "config-backup": return <ConfigBackupPart model={model.configBackup} isSuperAdmin={model.isSuperAdmin} />;
             case "recently-deleted": return <RecentlyDeletedPart rows={model.trash} />;
             case "sign-in": return <SignInPart model={model.signIn} />;
+            case "passwords": return <PasswordsPart saved={model.passwords} />;
             case "https": return <HttpsPart certificate={model.certificate} />;
             case "rate-limits": return <RateLimitsPart saved={model.rateLimits} />;
             case "privacy": return <PrivacyPart saved={model.privacy} viewerName={viewerName} />;

@@ -25,7 +25,7 @@ src/services/
   jobs/          job-service.ts, job-list-service.ts and job-overview.ts (the Jobs page), schedule-load-service.ts (the schedule picker), job-timeline-service.ts (the Timeline and Upcoming views, with the queue played through by `planQueue` in `lib/core/queue-plan.ts`)
   backup/        backup-service.ts (runJob), retention-service.ts (GFS), encryption-service.ts, integrity-service.ts
   restore/       restore-service.ts, preflight.ts, pipeline.ts, smart-recovery.ts, types.ts
-  auth/          auth-service.ts, api-key-service.ts, credential-service.ts, api-keys-model.ts (API keys tab page model), api-key-details.ts (the panel of a key), login-page-service.ts (what the public login page shows, never a secret of a provider)
+  auth/          auth-service.ts, api-key-service.ts, credential-service.ts, api-keys-model.ts (API keys tab page model), api-key-details.ts (the panel of a key), login-page-service.ts (what the public login page shows, never a secret of a provider), password-policy-service.ts (the rules of Settings > Passwords)
   sso/           oidc-provider-service.ts, oidc-registry.ts, oidc-discovery.ts (the endpoints of a provider), sso-providers-model.ts (SSO tab page model)
   storage/       storage-service.ts, verification-service.ts, storage-alert-service.ts
   databases/     database-list-service.ts (cached database lists), database-explorer-service.ts (Database Explorer page model)
@@ -94,6 +94,10 @@ Nobody changes or deletes the group they are in, and an API key never gets more 
 ### The own profile
 
 The `profile:*` permissions decide what someone changes of their own account, on the server as well as on the page. The actions in `actions/auth/profile.ts` check the permission of each field that changes, `updateOwnPassword`, `togglePasskeyTwoFactor` and the SSO link actions check theirs, and `src/lib/auth/profile-guard.ts` refuses the better-auth endpoints the browser calls itself, like `/two-factor/enable` or `/passkey/delete-passkey`, from `beforeAuth` in `src/lib/auth/index.ts`. A new better-auth endpoint that changes the profile goes into `PROFILE_ENDPOINTS`.
+
+## Password rules
+
+Every new password follows the rules of Settings > Passwords, in `src/lib/auth/password-policy.ts` for the server and the browser alike. `authService.createUser` and `authService.setPassword` check them through `assertPasswordAllowed`, and `password-guard.ts` checks the better-auth endpoints the browser calls itself, like sign-up and change-password. A new way to set a password goes through one of them, and its field shows `PasswordChecklist` from `components/auth/` under it, with Generate from the same module.
 
 ## Global search
 

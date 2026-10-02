@@ -20,6 +20,7 @@ describe("what the login page shows", () => {
         prismaMock.user.count.mockResolvedValue(2);
         prismaMock.ssoProvider.findMany.mockResolvedValue([authentik] as never);
         prismaMock.systemSetting.findUnique.mockResolvedValue(null);
+        prismaMock.systemSetting.findMany.mockResolvedValue([]);
         mocks.redirect.mockReturnValue(undefined);
         mocks.emailOff.mockReturnValue(false);
         mocks.picture.mockResolvedValue(null);
@@ -39,6 +40,14 @@ describe("what the login page shows", () => {
         prismaMock.user.count.mockResolvedValue(0);
 
         expect((await getLoginPageModel()).firstStart).toBe(true);
+    });
+
+    it("tells the rules of a password only to whoever creates the first account", async () => {
+        expect((await getLoginPageModel()).passwordRules).toBeNull();
+        expect(prismaMock.systemSetting.findMany).not.toHaveBeenCalled();
+
+        prismaMock.user.count.mockResolvedValue(0);
+        expect((await getLoginPageModel()).passwordRules).toMatchObject({ level: "standard", minLength: 12, digits: true });
     });
 
     it("goes straight to a provider only when OIDC_AUTO_REDIRECT names one that is on", async () => {

@@ -1,14 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useRouter } from "next/navigation";
 import { Loader2, ShieldCheck, UserPlus } from "lucide-react";
 import { signUp } from "@/lib/auth/client";
+import { passwordProblem, type PasswordRules } from "@/lib/auth/password-policy";
+import { PasswordChecklist } from "./password-checklist";
 import { Button } from "@/components/ui/button";
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
@@ -16,19 +18,28 @@ import { BackHeading, PasswordInput } from "./login-parts";
 
 const log = logger.child({ component: "first-account-form" });
 
-const schema = z.object({
-    name: z.string().trim().max(100),
-    email: z.string().trim().email("Enter an email address."),
-    password: z.string().min(8, "At least 8 characters."),
-});
+/** The fields of the first account, whose password follows the rules of Settings > Passwords like every other. */
+function schemaFor(rules: PasswordRules | null) {
+    return z
+        .object({
+            name: z.string().trim().max(100),
+            email: z.string().trim().email("Enter an email address."),
+            password: z.string().min(1, "Enter a password."),
+        })
+        .superRefine((values, ctx) => {
+            const problem = rules ? passwordProblem(values.password, rules, values) : null;
+            if (problem) ctx.addIssue({ code: "custom", path: ["password"], message: problem });
+        });
+}
 
-type Values = z.infer<typeof schema>;
+type Values = z.infer<ReturnType<typeof schemaFor>>;
 
 /** The first account of a new DBackup, which becomes its SuperAdmin. */
-export function FirstAccountForm({ onBack }: { onBack: () => void }) {
+export function FirstAccountForm({ rules, onBack }: { rules: PasswordRules | null; onBack: () => void }) {
     const router = useRouter();
     const [busy, setBusy] = useState(false);
-    const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: { name: "", email: "", password: "" } });
+    const form = useForm<Values>({ resolver: zodResolver(schemaFor(rules)), defaultValues: { name: "", email: "", password: "" } });
+    const [name, email, password] = useWatch({ control: form.control, name: ["name", "email", "password"] });
 
     const submit = form.handleSubmit(async ({ name, email, password }) => {
         setBusy(true);
@@ -95,7 +106,7 @@ export function FirstAccountForm({ onBack }: { onBack: () => void }) {
                                 <FormControl>
                                     <PasswordInput autoComplete="new-password" {...field} />
                                 </FormControl>
-                                <FormDescription>At least 8 characters.</FormDescription>
+                                {rules && <PasswordChecklist rules={rules} password={password} owner={{ name, email }} />}
                                 <FormMessage />
                             </FormItem>
                         )}

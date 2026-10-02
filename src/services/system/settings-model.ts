@@ -11,6 +11,7 @@ import { getRateLimitConfig } from "@/lib/rate-limit/server";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
 import { getNotificationsModel } from "@/services/notifications/notification-settings-service";
+import { getPasswordPolicy } from "@/services/auth/password-policy-service";
 import { getConfigBackupSettings } from "@/services/config/config-backup-settings";
 import { listTrash } from "@/services/trash/trash-service";
 import { getCertificateInfo } from "./certificate-service";
@@ -37,12 +38,13 @@ async function orNull<T>(what: string, read: () => Promise<T> | T): Promise<T | 
 
 export async function getSettingsModel({ permissions, ...viewer }: { canManage: boolean; isSuperAdmin: boolean; permissions: string[] }): Promise<SettingsModel> {
     const general = await getGeneralSettings();
-    const [signIn, lastWayIn, loginImage, providers, privacy, retention, database, configBackup, storage, keys, configRun, rateLimits, certificate, tasks, integrity, notifications, trash] =
+    const [signIn, lastWayIn, loginImage, providers, passwords, privacy, retention, database, configBackup, storage, keys, configRun, rateLimits, certificate, tasks, integrity, notifications, trash] =
         await Promise.all([
             getSignInSettings(),
             passkeyIsLastWayIn(),
             getLoginImageInfo(),
             prisma.ssoProvider.findMany({ select: { name: true, adapterId: true, enabled: true }, orderBy: { name: "asc" } }),
+            getPasswordPolicy(),
             getPrivacySettings(),
             getDataRetentionOverview(),
             // Size figures come from the file system. A failure there should not take the whole page down.
@@ -67,6 +69,7 @@ export async function getSettingsModel({ permissions, ...viewer }: { canManage: 
         ...viewer,
         general,
         signIn: { ...signIn, emailLoginDisabledByEnv: isEmailLoginDisabled(), providers, passkeyIsLastWayIn: lastWayIn, loginImage },
+        passwords,
         privacy,
         retention,
         database,

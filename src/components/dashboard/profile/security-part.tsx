@@ -140,7 +140,7 @@ export function SecurityPart({ model }: { model: ProfileModel }) {
 
             {model.showSignInProviders && <SignInProviders canManage={can.manageSso} />}
 
-            <PasswordDialog open={dialog === "password"} onOpenChange={(open) => setDialog(open ? "password" : null)} />
+            <PasswordDialog open={dialog === "password"} onOpenChange={(open) => setDialog(open ? "password" : null)} rules={model.passwordPolicy} owner={model.user} />
             <TwoFactorOnDialog open={dialog === "on"} onOpenChange={(open) => setDialog(open ? "on" : null)} onDone={changed} />
             <TwoFactorOffDialog open={dialog === "off"} onOpenChange={(open) => setDialog(open ? "off" : null)} onDone={changed} />
             <BackupCodesDialog open={dialog === "codes"} onOpenChange={(open) => setDialog(open ? "codes" : null)} />

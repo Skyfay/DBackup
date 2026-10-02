@@ -206,6 +206,7 @@ export function UsersTab({ ref, cards, canManage, initialLayout }: UsersTabProps
                 open={form.open}
                 user={form.user}
                 groups={model?.groups ?? []}
+                passwordRules={model?.passwordPolicy ?? null}
                 viewerSuperAdmin={viewerSuperAdmin}
                 onOpenChange={(next) => setForm((current) => ({ ...current, open: next }))}
                 onSaved={afterChange}
@@ -214,6 +215,7 @@ export function UsersTab({ ref, cards, canManage, initialLayout }: UsersTabProps
             {password && (
                 <UserPasswordDialog
                     user={password}
+                    rules={model?.passwordPolicy ?? null}
                     onClose={() => setPassword(null)}
                     onDone={() => {
                         setPassword(null);

@@ -10,8 +10,9 @@ import type { TaskRunRecord } from "./system-task-service";
 import type { IntegritySettings, SystemTaskRow } from "./system-task-settings";
 import type { GeneralSettings, PrivacySettings, SignInSettings } from "./system-settings-service";
 import type { LoginImageInfo } from "./login-image-service";
+import type { PasswordPolicy } from "@/lib/auth/password-policy";
 
-export type { ConfigBackupSettings, CertificateInfo, DatabaseInfo, GeneralSettings, IntegritySettings, PrivacySettings, RateLimitConfig, SignInSettings, SystemTaskRow, TaskRunRecord, TrashRow };
+export type { ConfigBackupSettings, CertificateInfo, DatabaseInfo, GeneralSettings, IntegritySettings, PasswordPolicy, PrivacySettings, RateLimitConfig, SignInSettings, SystemTaskRow, TaskRunRecord, TrashRow };
 
 /** A sign-in provider as the Sign-in part names it. */
 export interface SettingsProvider {
@@ -42,6 +43,8 @@ export interface SettingsModel {
         /** The picture of the login page, kept while the logos show too. */
         loginImage: LoginImageInfo | null;
     };
+    /** The rules of every new password. */
+    passwords: PasswordPolicy;
     privacy: PrivacySettings;
     retention: {
         values: Record<DataRetentionId, number>;

@@ -1,12 +1,14 @@
 import { auth } from "@/lib/auth";
 import { ValidationError } from "@/lib/logging/errors";
+import { assertPasswordAllowed } from "@/services/auth/password-policy-service";
 
 export const authService = {
   /**
-   * Create a new user via the auth provider.
-   * This handles password hashing and initial setup via Better-Auth.
+   * Create a new user via the auth provider, with a password that follows the rules of
+   * Settings > Passwords. This handles password hashing and initial setup via Better-Auth.
    */
   async createUser(data: { name: string; email: string; password: string }) {
+    await assertPasswordAllowed(data.password, data);
     try {
       // creating user via better-auth api
       const result = await auth.api.signUpEmail({
@@ -40,13 +42,13 @@ export const authService = {
   /**
    * Sets a new password for a user, the way the admin plugin of Better Auth does it: the hash
    * goes into the credential account, which is created for a user who signed in without one.
-   * The limits are the ones sign-up checks.
+   * The password follows the rules of Settings > Passwords, which never ask less than sign-up.
    */
   async setPassword(userId: string, password: string) {
     const ctx = await auth.$context;
-    const { minPasswordLength, maxPasswordLength } = ctx.password.config;
-    if (password.length < minPasswordLength) throw new ValidationError(`The password needs at least ${minPasswordLength} characters.`);
-    if (password.length > maxPasswordLength) throw new ValidationError(`The password can have at most ${maxPasswordLength} characters.`);
+    const user = await ctx.internalAdapter.findUserById(userId);
+    if (!user) throw new ValidationError("The user no longer exists.");
+    await assertPasswordAllowed(password, user);
 
     const hash = await ctx.password.hash(password);
     const accounts = await ctx.internalAdapter.findAccounts(userId);
@@ -55,5 +57,13 @@ export const authService = {
     } else {
       await ctx.internalAdapter.createAccount({ userId, providerId: "credential", accountId: userId, password: hash });
     }
+  },
+
+  /** Whether a password is the one of the user, checked against the hash of their credential account. */
+  async verifyPassword(userId: string, password: string): Promise<boolean> {
+    const ctx = await auth.$context;
+    const account = (await ctx.internalAdapter.findAccounts(userId)).find((entry) => entry.providerId === "credential");
+    if (!account?.password) return false;
+    return ctx.password.verify({ hash: account.password, password });
   },
 };

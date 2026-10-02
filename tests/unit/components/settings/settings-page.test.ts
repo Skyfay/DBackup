@@ -4,6 +4,8 @@ import { partFromAddress } from "@/components/dashboard/settings/settings-parts"
 import { partStates } from "@/components/dashboard/settings/settings-states";
 import { changesOf, minutesText, offsetLabel, secondsText, withSaved, zoneExample } from "@/components/dashboard/settings/settings-values";
 import { triggerSample } from "@/components/dashboard/settings/privacy-part";
+import { passwordChanges } from "@/components/dashboard/settings/passwords-part";
+import { policyOf } from "@/lib/auth/password-policy";
 import type { SettingsModel, SystemTaskRow } from "@/services/system/settings-types";
 
 const TASKS = [
@@ -40,6 +42,7 @@ function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
         isSuperAdmin: true,
         general: { instanceName: "", timezone: "UTC", maxConcurrentJobs: 1, stuckTimeoutMinutes: 360, checkForUpdates: true, showQuickSetup: false },
         signIn: { sessionDuration: 604800, passkeyLogin: true, loginLook: "logos", emailLoginDisabledByEnv: false, providers: [], passkeyIsLastWayIn: false, loginImage: null },
+        passwords: policyOf("standard"),
         privacy: { includeActorInMetadata: true },
         retention: { values: {} as SettingsModel["retention"]["values"], counts: {} as SettingsModel["retention"]["counts"] },
         database: null,
@@ -107,6 +110,13 @@ describe("the search of the Settings page", () => {
         expect(searchSettings(index, "meta json").hits.map((hit) => hit.id)).toEqual(["privacy.actor"]);
     });
 
+    it("finds a rule of new passwords in its part", () => {
+        const search = searchSettings(index, "special characters");
+
+        expect(search.hits.map((hit) => hit.id)).toEqual(["passwords.special"]);
+        expect(search.counts).toEqual({ passwords: 1 });
+    });
+
     it("finds nothing for an empty search", () => {
         expect(searchSettings(index, "  ")).toEqual({ hits: [], counts: {} });
     });
@@ -159,6 +169,11 @@ describe("the state of each part in the navigation", () => {
     it("names how many notification events are on", () => {
         expect(partStates(model()).notifications).toEqual({ text: "2 of 3" });
     });
+
+    it("names the level of the password rules", () => {
+        expect(partStates(model()).passwords).toEqual({ text: "Standard" });
+        expect(partStates(model({ passwords: { ...policyOf("basic"), level: "custom", minLength: 10 } })).passwords).toEqual({ text: "Custom" });
+    });
 });
 
 describe("the words of the Settings page", () => {
@@ -194,6 +209,16 @@ describe("the words of the Settings page", () => {
             { label: "Runs at the same time", from: "1", to: "2" },
             { label: "Look for new versions", from: "on", to: "off" },
         ]);
+    });
+
+    it("names a new level of the password rules alone, and each rule once they are custom", () => {
+        expect(passwordChanges(policyOf("basic"), policyOf("strong"))).toEqual([{ label: "Strength", from: "Basic", to: "Strong" }]);
+        expect(passwordChanges(policyOf("strong"), { ...policyOf("strong"), level: "custom", minLength: 14, special: 2 })).toEqual([
+            { label: "Strength", from: "Strong", to: "Custom" },
+            { label: "Minimum length", from: "16 characters", to: "14 characters" },
+            { label: "Special characters", from: "at least 1", to: "at least 2" },
+        ]);
+        expect(passwordChanges(policyOf("standard"), policyOf("standard"))).toEqual([]);
     });
 
     it("shows the metadata of a backup with the name of who started it only while the switch is on", () => {

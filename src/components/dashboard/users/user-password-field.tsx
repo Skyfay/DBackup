@@ -4,23 +4,20 @@ import { useState } from "react";
 import { Eye, EyeOff, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { LEVEL_RULES, generatePassword, type PasswordOwner, type PasswordRules } from "@/lib/auth/password-policy";
 import { cn } from "@/lib/utils";
-
-/** Letters and digits nobody mixes up when reading them out, so no l and 1 or O and 0. */
-const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
-
-export function generatePassword(length = 16): string {
-    const values = crypto.getRandomValues(new Uint32Array(length));
-    return Array.from(values, (value) => ALPHABET[value % ALPHABET.length]).join("");
-}
 
 interface PasswordFieldProps extends Omit<React.ComponentProps<typeof Input>, "type" | "value" | "onChange"> {
     value: string;
     onChange: (value: string) => void;
+    /** The rules of Settings > Passwords that Generate follows, the ones of Strong while they load. */
+    rules: PasswordRules | null;
+    /** Whose password it is, so Generate leaves out their name. */
+    owner?: PasswordOwner;
 }
 
 /** A password with Show inside the field and Generate beside it. A generated password shows at once, so it can be handed on. */
-export function PasswordField({ value, onChange, className, ...props }: PasswordFieldProps) {
+export function PasswordField({ value, onChange, rules, owner, className, ...props }: PasswordFieldProps) {
     const [visible, setVisible] = useState(false);
     return (
         <div className="flex items-center gap-2">
@@ -51,7 +48,7 @@ export function PasswordField({ value, onChange, className, ...props }: Password
                 type="button"
                 variant="outline"
                 onClick={() => {
-                    onChange(generatePassword());
+                    onChange(generatePassword(rules ?? LEVEL_RULES.strong, owner));
                     setVisible(true);
                 }}
             >

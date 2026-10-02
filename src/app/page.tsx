@@ -25,7 +25,7 @@ export default async function Home({ searchParams }: HomeProps) {
     return (
         <LoginLayout instanceName={model.instanceName} picture={model.picture} adapters={model.adapters}>
             {model.firstStart ? (
-                <FirstStart allowSignUp={model.emailLogin} />
+                <FirstStart allowSignUp={model.emailLogin} passwordRules={model.passwordRules} />
             ) : (
                 <LoginForm
                     instance={model.instanceName ?? "DBackup"}

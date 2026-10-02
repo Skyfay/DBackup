@@ -6,6 +6,8 @@
 import prisma from "@/lib/prisma";
 import { accessSentences, summarizeAccess } from "@/lib/auth/access-summary";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import type { PasswordPolicy } from "@/lib/auth/password-policy";
+import { getPasswordPolicy } from "@/services/auth/password-policy-service";
 import type { TaskColors } from "@/lib/core/task-colors";
 import { getTaskColors } from "./preference-service";
 
@@ -30,6 +32,8 @@ export interface ProfileModel {
     access: string[];
     /** Signs in with a password, so the password and the authenticator app apply. */
     hasPassword: boolean;
+    /** The rules of Settings > Passwords, which a new password of one's own follows. */
+    passwordPolicy: PasswordPolicy;
     /** A sign-in provider exists or the user is linked to one, so the part lists them. */
     showSignInProviders: boolean;
     /** How many browsers are signed in as the user. */
@@ -49,7 +53,7 @@ export interface ProfileModel {
 
 export async function getProfileModel(userId: string, viewer: { permissions: string[]; isSuperAdmin: boolean }): Promise<ProfileModel> {
     const { permissions, isSuperAdmin } = viewer;
-    const [user, hasPassword, providers, linked, sessions, colors] = await Promise.all([
+    const [user, hasPassword, providers, linked, sessions, colors, passwordPolicy] = await Promise.all([
         prisma.user.findUniqueOrThrow({
             where: { id: userId },
             select: {
@@ -62,6 +66,7 @@ export async function getProfileModel(userId: string, viewer: { permissions: str
         prisma.account.count({ where: { userId, NOT: { providerId: "credential" } } }),
         prisma.session.count({ where: { userId, expiresAt: { gt: new Date() } } }),
         getTaskColors(userId),
+        getPasswordPolicy(),
     ]);
     const has = (permission: string) => isSuperAdmin || permissions.includes(permission);
     const { group, ...rest } = user;
@@ -71,6 +76,7 @@ export async function getProfileModel(userId: string, viewer: { permissions: str
         group,
         access: accessSentences(summarizeAccess(permissions, isSuperAdmin)),
         hasPassword,
+        passwordPolicy,
         showSignInProviders: providers > 0 || linked > 0,
         sessions,
         colors,

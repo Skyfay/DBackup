@@ -1,3 +1,4 @@
+import { LEVEL_NAMES } from "@/lib/auth/password-policy";
 import { formatBytes } from "@/lib/utils";
 import type { SettingsModel } from "@/services/system/settings-types";
 import type { SettingsPartId } from "./settings-parts";
@@ -46,6 +47,7 @@ export function partStates(model: SettingsModel): Partial<Record<SettingsPartId,
         database: model.database ? { text: formatBytes(model.database.totalBytes, 0) } : null,
         "config-backup": configBackupState(model.configBackup),
         "recently-deleted": model.trash.length > 0 ? { text: String(model.trash.length) } : null,
+        passwords: { text: LEVEL_NAMES[model.passwords.level] },
         https: certificateState(model.certificate),
     };
     return Object.fromEntries(Object.entries(states).filter(([, state]) => state)) as Partial<Record<SettingsPartId, PartState>>;

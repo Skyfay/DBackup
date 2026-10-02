@@ -5,6 +5,7 @@ import { Check, Copy, KeyRound, Loader2, ShieldCheck, ShieldOff, Smartphone } fr
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
 import { updateOwnPassword } from "@/app/actions/auth/user";
+import { PasswordChecklist } from "@/components/auth/password-checklist";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog, DIALOG_FOOTER, DIALOG_SURFACE, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -12,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { Tone } from "@/components/ui/tone";
 import { authClient } from "@/lib/auth/client";
+import { passwordProblem, type PasswordOwner, type PasswordRules } from "@/lib/auth/password-policy";
 import { COPY_FAILED, copyToClipboard } from "@/lib/clipboard";
 import { wrapError } from "@/lib/logging/errors";
 import { logger } from "@/lib/logging/logger";
@@ -56,12 +58,21 @@ export function StepDialog({ open, onOpenChange, tone, icon, title, note, busy =
     );
 }
 
-function SecretField({ label, value, onChange, autoFocus = false }: { label: string; value: string; onChange: (value: string) => void; autoFocus?: boolean }) {
+interface SecretFieldProps {
+    label: string;
+    value: string;
+    onChange: (value: string) => void;
+    autoFocus?: boolean;
+    /** "new-password" for a new one, so a password manager offers to make it. */
+    autoComplete?: string;
+}
+
+function SecretField({ label, value, onChange, autoFocus = false, autoComplete = "current-password" }: SecretFieldProps) {
     const id = useId();
     return (
         <div className="grid gap-2">
             <Label htmlFor={id}>{label}</Label>
-            <Input id={id} type="password" value={value} autoFocus={autoFocus} autoComplete="current-password" onChange={(event) => onChange(event.target.value)} />
+            <Input id={id} type="password" value={value} autoFocus={autoFocus} autoComplete={autoComplete} onChange={(event) => onChange(event.target.value)} />
         </div>
     );
 }
@@ -101,14 +112,25 @@ function BackupCodes({ codes }: { codes: string[] }) {
     );
 }
 
-/** Changes the password of the viewer with the current one. */
-export function PasswordDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+interface PasswordDialogProps {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    /** The rules of Settings > Passwords. */
+    rules: PasswordRules;
+    owner: PasswordOwner;
+}
+
+/**
+ * Changes the password of the viewer with the current one. The rules tick off under the new one,
+ * and Change password waits until every rule holds and both fields match.
+ */
+export function PasswordDialog({ open, onOpenChange, rules, owner }: PasswordDialogProps) {
     const [current, setCurrent] = useState("");
     const [next, setNext] = useState("");
     const [again, setAgain] = useState("");
     const [busy, setBusy] = useState(false);
     const mismatch = again.length > 0 && next !== again;
-    const tooShort = next.length > 0 && next.length < 8;
+    const ready = current.length > 0 && passwordProblem(next, rules, owner) === null && next === again;
 
     const close = (value: boolean) => {
         if (!value) {
@@ -120,7 +142,7 @@ export function PasswordDialog({ open, onOpenChange }: { open: boolean; onOpenCh
     };
 
     const submit = async () => {
-        if (!current || next.length < 8 || next !== again) return;
+        if (!ready) return;
         setBusy(true);
         try {
             const result = await updateOwnPassword(current, next);
@@ -128,7 +150,8 @@ export function PasswordDialog({ open, onOpenChange }: { open: boolean; onOpenCh
                 toast.error(result.error || "The password could not be changed.");
                 return;
             }
-            toast.success("Password changed");
+            const ended = result.data?.signedOut ?? 0;
+            toast.success(ended > 0 ? `Password changed, ${ended} other ${ended === 1 ? "session" : "sessions"} ended` : "Password changed");
             close(false);
         } catch (error) {
             log.warn("Changing the own password failed", {}, wrapError(error));
@@ -151,7 +174,7 @@ export function PasswordDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             footer={
                 <>
                     <Button type="button" variant="outline" onClick={() => close(false)} disabled={busy}>Cancel</Button>
-                    <Button type="submit" disabled={busy || !current || next.length < 8 || next !== again}>
+                    <Button type="submit" disabled={busy || !ready}>
                         <Pending busy={busy} />
                         Change password
                     </Button>
@@ -160,13 +183,14 @@ export function PasswordDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         >
             <SecretField label="Current password" value={current} onChange={setCurrent} autoFocus />
             <div className="grid gap-2">
-                <SecretField label="New password" value={next} onChange={setNext} />
-                <p className={cn("text-xs", tooShort ? "text-destructive" : "text-muted-foreground")}>At least 8 characters.</p>
+                <SecretField label="New password" value={next} onChange={setNext} autoComplete="new-password" />
+                <PasswordChecklist rules={rules} password={next} owner={owner} />
             </div>
             <div className="grid gap-2">
-                <SecretField label="New password again" value={again} onChange={setAgain} />
+                <SecretField label="New password again" value={again} onChange={setAgain} autoComplete="new-password" />
                 {mismatch && <p className="text-xs text-destructive">The two do not match.</p>}
             </div>
+            <p className="text-xs text-muted-foreground">An admin sets these rules under Settings › Passwords. A new password signs you out of every other browser.</p>
         </StepDialog>
     );
 }

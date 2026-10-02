@@ -3,6 +3,7 @@ import { searchSettings } from "@/components/dashboard/settings/settings-index";
 import { profileIndex } from "@/components/dashboard/profile/profile-index";
 import { PROFILE_PARTS, profilePartFromAddress } from "@/components/dashboard/profile/profile-parts";
 import { profileStates } from "@/components/dashboard/profile/profile-states";
+import { policyOf } from "@/lib/auth/password-policy";
 import { DEFAULT_TASK_COLORS } from "@/lib/core/task-colors";
 import type { ProfileModel } from "@/services/user/profile-model";
 
@@ -12,6 +13,7 @@ function model(overrides: Partial<ProfileModel["user"]> = {}, rest: Partial<Prof
         group: { id: "g1", name: "Operators" },
         access: ["Sees everything.", "Changes nothing."],
         hasPassword: true,
+        passwordPolicy: policyOf("standard"),
         showSignInProviders: false,
         sessions: 2,
         colors: DEFAULT_TASK_COLORS,

@@ -1,5 +1,5 @@
 /**
- * What the Sign-in tab of the Users & Groups page shows: every provider with the people linked
+ * What the SSO tab of the Users & Groups page shows: every provider with the people linked
  * through it, its last sign-in and what happens to new people. Plain data, so the browser can
  * import it without the services behind it. Never the client secret.
  */

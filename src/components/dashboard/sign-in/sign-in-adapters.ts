@@ -1,5 +1,5 @@
 /**
- * What the Sign-in tab says about each provider type: its name, what it asks for, and what to set
+ * What the SSO tab says about each provider type: its name, what it asks for, and what to set
  * up on the side of the provider. The fields themselves come with the page model.
  */
 

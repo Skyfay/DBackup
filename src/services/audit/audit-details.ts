@@ -24,7 +24,7 @@ function recordLink(record: AuditRecord, name: string | null): AuditDetails["rec
         case AUDIT_RESOURCES.API_KEY:
             return page("API keys", `${USERS}?tab=apikeys`);
         case AUDIT_RESOURCES.SSO_PROVIDER:
-            return page("Sign-in", `${USERS}?tab=sso`);
+            return page("SSO", `${USERS}?tab=sso`);
         case AUDIT_RESOURCES.ADAPTER:
         case AUDIT_RESOURCES.SOURCE:
             return page("Connections", "/dashboard/connections");

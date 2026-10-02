@@ -35,16 +35,16 @@ const LABELS: Record<UsersPageTab, string> = {
     users: "Users",
     groups: "Groups",
     apikeys: "API keys",
+    sso: "SSO",
     audit: "Audit log",
-    sso: "Sign-in",
 };
 
 const ICONS: Record<UsersPageTab, LucideIcon> = {
     users: User,
     groups: Users,
     apikeys: KeyRound,
-    audit: ScrollText,
     sso: LogIn,
+    audit: ScrollText,
 };
 
 interface UsersClientProps {
@@ -74,9 +74,9 @@ interface UsersClientProps {
 }
 
 /**
- * The Users & Groups page: the users, the groups, the API keys, the audit log and the ways to
- * sign in. The tab lives in the address, the buttons beside the tabs belong to the open one, and a
- * phone gets cards.
+ * The Users & Groups page: the users, the groups, the API keys, the ways to sign in and, last, the
+ * audit log of them all. The tab lives in the address, the buttons beside the tabs belong to the
+ * open one, and a phone gets cards.
  */
 export function UsersClient(props: UsersClientProps) {
     const { canReadUsers, canManageUsers, canReadGroups, canManageGroups, canReadApiKeys, canManageApiKeys, canOpenRuns, canReadAudit, canReadSignIn, viewerSuperAdmin, attention, layouts } = props;
@@ -97,8 +97,8 @@ export function UsersClient(props: UsersClientProps) {
         ...(canReadUsers ? ["users" as const] : []),
         ...(canReadGroups ? ["groups" as const] : []),
         ...(canReadApiKeys ? ["apikeys" as const] : []),
-        ...(canReadAudit ? ["audit" as const] : []),
         ...(canReadSignIn ? ["sso" as const] : []),
+        ...(canReadAudit ? ["audit" as const] : []),
     ];
     const requested = searchParams.get("tab") as UsersPageTab | null;
     const active = requested && tabs.includes(requested) ? requested : tabs[0];

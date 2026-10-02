@@ -11,7 +11,7 @@ Single sign-on runs on the **SSO plugin of better-auth**, which speaks the proto
 | `src/services/sso/oidc-registry.ts` | `OIDC_ADAPTERS`, the list the dialogs offer |
 | `src/services/sso/oidc-discovery.ts` | `discoverEndpoints`: checks the fields of a type and reads its endpoints |
 | `src/services/sso/oidc-provider-service.ts` | Creates, changes, switches and deletes providers, encrypting the credentials |
-| `src/services/sso/sso-providers-model.ts` | The Sign-in tab of Users & Groups, never the client secret |
+| `src/services/sso/sso-providers-model.ts` | The SSO tab of Users & Groups, never the client secret |
 | `src/lib/auth/sso-guard.ts` | The hooks that refuse a provider that is off, refuse unwanted sign-ups and place new people in a group |
 | `src/components/oidc/provider-logos.ts` | The logos of the provider types |
 

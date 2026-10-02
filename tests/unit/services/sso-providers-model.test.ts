@@ -57,7 +57,7 @@ const build = (overrides: Partial<Parameters<typeof buildSsoProvidersModel>[0]> 
         ...overrides,
     });
 
-describe("the Sign-in tab", () => {
+describe("the SSO tab", () => {
     it("never reads the client secret or the config better-auth keeps it in", () => {
         expect(PROVIDER_SELECT).not.toHaveProperty("clientSecret");
         expect(PROVIDER_SELECT).not.toHaveProperty("oidcConfig");

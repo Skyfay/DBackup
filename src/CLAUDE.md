@@ -26,7 +26,7 @@ src/services/
   backup/        backup-service.ts (runJob), retention-service.ts (GFS), encryption-service.ts, integrity-service.ts
   restore/       restore-service.ts, preflight.ts, pipeline.ts, smart-recovery.ts, types.ts
   auth/          auth-service.ts, api-key-service.ts, credential-service.ts, api-keys-model.ts (API keys tab page model), api-key-details.ts (the panel of a key), login-page-service.ts (what the public login page shows, never a secret of a provider)
-  sso/           oidc-provider-service.ts, oidc-registry.ts, oidc-discovery.ts (the endpoints of a provider), sso-providers-model.ts (Sign-in tab page model)
+  sso/           oidc-provider-service.ts, oidc-registry.ts, oidc-discovery.ts (the endpoints of a provider), sso-providers-model.ts (SSO tab page model)
   storage/       storage-service.ts, verification-service.ts, storage-alert-service.ts
   databases/     database-list-service.ts (cached database lists), database-explorer-service.ts (Database Explorer page model)
   history/       run-list-service.ts (the runs of the History page), run-detail-service.ts (the page of a run), run-steps.ts, run-summary.ts, run-dumps.ts, run-checks.ts, run-problems.ts, known-problems.ts

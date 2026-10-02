@@ -150,7 +150,7 @@ interface BuildInput {
 
 const byNewestSignIn = (a: SsoPerson, b: SsoPerson) => (b.lastSignInAt ?? "").localeCompare(a.lastSignInAt ?? "") || a.name.localeCompare(b.name);
 
-/** The Sign-in tab: every provider with who is linked through it, and the numbers above the list. */
+/** The SSO tab: every provider with who is linked through it, and the numbers above the list. */
 export function buildSsoProvidersModel(input: BuildInput): SsoProvidersModel {
     const { providers, people, groups, signIns, passwordSignIn, passkeys, autoRedirect, callbackBase, canManage } = input;
     const ways: SignInWays = { passwordSignIn, passkeys, enabled: new Map(providers.filter((provider) => provider.enabled).map((provider) => [provider.providerId, provider.name])) };
@@ -237,7 +237,7 @@ export function buildSsoProvidersModel(input: BuildInput): SsoProvidersModel {
     };
 }
 
-/** Loads the Sign-in tab. The client secret never leaves the database. */
+/** Loads the SSO tab. The client secret never leaves the database. */
 export async function getSsoProvidersModel(canManage: boolean): Promise<SsoProvidersModel> {
     const since = new Date(Date.now() - SIGN_IN_WINDOW_MS);
     const [providers, groups, signIns, passkeySetting] = await Promise.all([

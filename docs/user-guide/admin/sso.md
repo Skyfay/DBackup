@@ -14,9 +14,9 @@ Sign in to DBackup through an OpenID Connect provider like Authentik, Authelia, 
 
 The four named providers read their endpoints from the OpenID configuration of the provider. Any other provider, like Zitadel, Kanidm or Microsoft Entra ID, works with the last one.
 
-## The Sign-in Tab
+## The SSO Tab
 
-Open **Users & Groups → Sign-in**. Seeing it needs `settings:read`. Only a SuperAdmin adds, changes, switches and deletes providers.
+Open **Users & Groups → SSO**. Seeing it needs `settings:read`. Only a SuperAdmin adds, changes, switches and deletes providers.
 
 ::: warning A provider holds the keys to every account
 A provider that names the email of a user in DBackup signs in as that user, and DBackup asks no second factor after a sign-in through a provider. That is why only a SuperAdmin adds or changes one. Add only providers you run or trust.

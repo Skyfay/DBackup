@@ -7,7 +7,7 @@ import type { TabAttention } from "@/lib/core/tab-attention";
 
 export const USERS_TABLE_ID = "users.users";
 
-export type UsersPageTab = "users" | "groups" | "apikeys" | "audit" | "sso";
+export type UsersPageTab = "users" | "groups" | "apikeys" | "sso" | "audit";
 
 /** What needs a look in each tab, left out for a tab the viewer cannot open or with nothing to fix. */
 export type UsersPageAttention = Partial<Record<UsersPageTab, TabAttention>>;

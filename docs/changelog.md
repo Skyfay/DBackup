@@ -44,7 +44,7 @@ All notable changes to DBackup are documented here.
 - **users**: New API key starts from a common task like CI/CD, monitoring or a dashboard widget, from a copy of a key or from nothing. The name, the end and the permissions of a key can be edited later without a new secret.
 - **users**: The Audit log tab lists every entry as a sentence with who did it, the area, the browser and the address, filtered by person, API key, area, action and period, and marks a sign-in from a new place. An entry opens with what changed before and after, the earlier entries of its record, and for a sign-in everything done in that session.
 - **users**: A timeline above the audit log shows who did how much on which day, and Export CSV downloads the entries its filters keep.
-- **users**: The Sign-in tab lists every sign-in provider with its logo, where it signs in, who is linked through it, the last sign-in and what happens to someone new, as a table or as cards. A provider opens a panel with what to set up in the provider, the people linked through it and its endpoints, with Check connection.
+- **users**: The SSO tab lists every sign-in provider with its logo, where it signs in, who is linked through it, the last sign-in and what happens to someone new, as a table or as cards. A provider opens a panel with what to set up in the provider, the people linked through it and its endpoints, with Check connection.
 - **users**: New provider starts from the provider as a card and checks its URL right away, beside the steps to set it up in the provider with the callback URL to copy. Edit never shows the client secret, and Delete names who cannot sign in afterwards.
 - **SSO**: Each sign-in provider puts the people it adds into a group picked for it. They started without a group and saw nothing before.
 - **settings**: The Settings page lists its parts on the left with the state of each, like a configuration backup that is off or a certificate that runs out soon, and a search finds every setting. Changes wait in a bar at the foot until they are saved, and a phone lists the parts and opens each on its own.
@@ -160,7 +160,7 @@ All notable changes to DBackup are documented here.
 - **auth**: Rotating the API key of someone else needs a group that may do everything the key may do, since the new secret hands out its permissions.
 - **audit**: Changing, deleting and cloning a job, restoring a database, downloading or deleting a single backup, cancelling a run, the settings, the config import, sign-in providers, sign-outs and failed sign-ins are written to the audit log. None of them left an entry before.
 - **auth**: The browser no longer writes its own sign-in to the audit log, which let any signed-in user add sign-ins at will.
-- **SSO**: The Sign-in tab no longer sends the client secret of every provider to the browser. Reading the settings was enough to get them before.
+- **SSO**: The SSO tab no longer sends the client secret of every provider to the browser. Reading the settings was enough to get them before.
 - **SSO**: A disabled sign-in provider signs nobody in. It was only left off the login page before, so a crafted request still signed in through it.
 - **SSO**: A sign-in provider adds someone new only when it is set to. The browser decided it before, so a crafted request added people through any provider.
 - **SSO**: The Keycloak provider checks its URL before it reads the configuration, like the other providers, which keeps it away from cloud metadata endpoints.
@@ -247,13 +247,13 @@ All notable changes to DBackup are documented here.
 - **api**: The new `GET /api/vault/credentials` returns every credential profile with the connections that use it, and `GET /api/vault/keys` every encryption key with its jobs, its backups per destination and its last recovery kit.
 - **api**: The new `GET /api/templates` returns every template with the jobs, destinations and folders that use it.
 - **api**: The new `POST /api/adapters/browse-location` lists the folders of a storage connection from the values of its form, for the folder button of the connection form.
-- **ui**: The Access Management page is called Users & Groups like its entry in the sidebar, and its SSO / OIDC tab is called Sign-in.
+- **ui**: The Access Management page is called Users & Groups like its entry in the sidebar, and its SSO / OIDC tab is called SSO.
 - **api**: The new `GET /api/users` returns every user with how they sign in, their group, their open sessions and the numbers of the Users tab, and `GET /api/users/{id}` one user with their sessions, passkeys, API keys and latest activity.
 - **api**: The new `GET /api/groups` returns every group with its members, what the audit log knows about it and the numbers of the Groups tab, and `GET /api/groups/{id}` the changes of one group.
 - **auth**: A new API key runs out after 90 days unless another end is picked, and two keys can no longer share a name.
 - **api**: The new `GET /api/api-keys` returns every key with its owner, what it may do right now and the numbers of the API keys tab, and `GET /api/api-keys/{id}` the runs one key started.
 - **api**: The new `GET /api/audit`, `/api/audit/{id}`, `/api/audit/timeline` and `/api/audit/export` return the audit log a page at a time, one entry, the entries per person and day, and the filtered entries as CSV.
-- **api**: The new `GET /api/sso-providers` returns every sign-in provider with the people linked through it and the numbers of the Sign-in tab, never a client secret.
+- **api**: The new `GET /api/sso-providers` returns every sign-in provider with the people linked through it and the numbers of the SSO tab, never a client secret.
 - **SSO**: The provider ID of a sign-in provider stays once it is saved, since its callback URL and every link to it use it.
 - **settings**: Check for updates follows **Look for new versions** under General and the stuck run watchdog follows the time there, so each has one switch. An update turns that setting off once where the task alone was off.
 - **api**: `GET /api/settings/system-tasks` also returns the last run of each task with how long it took and what it did, whether it runs now and which setting it follows.
@@ -309,7 +309,7 @@ All notable changes to DBackup are documented here.
 - **docs**: The groups guide describes the Groups tab, the areas and levels of the permissions, the templates of a new group and how a delete moves the members.
 - **docs**: The API key guide describes the API keys tab, the tasks of New API key, the end after 90 days and why a key never does more than its owner. It no longer lists a `storage:write` permission or claims that the audit log names the key of every request.
 - **docs**: A new Audit Log guide describes the tab, its filters, the timeline, the export and what is recorded. The developer guide describes how an entry is written, and the API key and user guides point to it.
-- **docs**: The SSO guide describes the Sign-in tab, New provider, Disable and Delete and the group of new people, and no longer claims that a provider takes several email domains. The developer guide describes how the server decides who signs in through which provider.
+- **docs**: The SSO guide describes the SSO tab, New provider, Disable and Delete and the group of new people, and no longer claims that a provider takes several email domains. The developer guide describes how the server decides who signs in through which provider.
 - **docs**: The groups guide lists what only a SuperAdmin does, and the config backup guide says who restores a configuration and where.
 - **docs**: A new Settings guide describes the parts of the page, the search, the save bar and every system task with what it follows. The guides for data retention, rate limits, the configuration backup and time zones use the new names.
 - **docs**: The notification and settings guides describe the list of system notifications, its Edit dialog, the actions for several events and the default reminder of each event. The developer guide names the new actions and where a new event gets its test data.

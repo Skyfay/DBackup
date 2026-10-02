@@ -9,7 +9,7 @@ import { getSsoProvidersModel } from "@/services/sso/sso-providers-model";
 const log = logger.child({ route: "sso-providers" });
 
 /**
- * The Sign-in tab: every provider with who is linked through it. Never the client secret. The
+ * The SSO tab: every provider with who is linked through it. Never the client secret. The
  * groups new people can start in come along only for a SuperAdmin, who alone changes providers.
  */
 export async function GET() {

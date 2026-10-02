@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { KeyRound } from "lucide-react";
+import { KeyRound, Unplug } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -9,12 +9,14 @@ import { ConnectionHealthPopover } from "./connection-health-popover";
 import { cn } from "@/lib/utils";
 import type { HealthBucket } from "@/services/adapters/connection-overview";
 
-export type ConnectionHealth = "ONLINE" | "DEGRADED" | "OFFLINE" | "PENDING";
+/** `AWAY` is an air-gapped destination that is not connected, which is how it is meant to be. */
+export type ConnectionHealth = "ONLINE" | "DEGRADED" | "OFFLINE" | "AWAY" | "PENDING";
 
 const HEALTH: Record<ConnectionHealth, { label: string; dot: string; text: string }> = {
     ONLINE: { label: "Online", dot: "bg-success", text: "text-foreground" },
     DEGRADED: { label: "Degraded", dot: "bg-warning", text: "text-warning" },
     OFFLINE: { label: "Offline", dot: "bg-destructive", text: "text-destructive" },
+    AWAY: { label: "Not connected", dot: "", text: "text-muted-foreground" },
     PENDING: { label: "Not checked", dot: "bg-muted-foreground/40", text: "text-muted-foreground" },
 };
 
@@ -90,7 +92,11 @@ export function StatusCell({ status, configId, lastCheckedAt, detail, error, int
     const style = HEALTH[status];
     const label = (
         <>
-            <span className={cn("size-2 shrink-0 rounded-full", style.dot)} aria-hidden="true" />
+            {status === "AWAY" ? (
+                <Unplug className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+            ) : (
+                <span className={cn("size-2 shrink-0 rounded-full", style.dot)} aria-hidden="true" />
+            )}
             <span className={cn("text-sm", style.text)}>{style.label}</span>
             {detail && <span className="text-xs text-muted-foreground tabular-nums">{detail}</span>}
         </>
@@ -125,13 +131,14 @@ export function StatusCell({ status, configId, lastCheckedAt, detail, error, int
 }
 
 /** One bar per hour of the last day, and the share of checks that passed. */
-export function HealthBars({ buckets, passed }: { buckets: HealthBucket[]; passed: number | null }) {
+/** The checks of the last 24 hours by the hour. An air-gapped destination draws its hours away in gray, not as a failure. */
+export function HealthBars({ buckets, passed, airGapped = false }: { buckets: HealthBucket[]; passed: number | null; airGapped?: boolean }) {
     if (passed === null) return <Muted>-</Muted>;
     return (
         <div className="flex items-center gap-2">
             <div className="flex h-3.5 items-stretch gap-px" aria-hidden="true">
                 {buckets.map((bucket, hour) => (
-                    <span key={hour} className={cn("w-0.75 rounded-xs", BUCKETS[bucket])} />
+                    <span key={hour} className={cn("w-0.75 rounded-xs", airGapped && bucket !== "ok" && bucket !== "none" ? "bg-muted-foreground/35" : BUCKETS[bucket])} />
                 ))}
             </div>
             <span className="text-xs text-muted-foreground tabular-nums">

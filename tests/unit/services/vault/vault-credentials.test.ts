@@ -13,6 +13,7 @@ function use(overrides: Partial<ListedProfile["uses"][number]> = {}): ListedProf
         storageRole: "DESTINATION",
         lastStatus: "ONLINE",
         lastHealthCheck: new Date("2026-09-27T11:59:00Z"),
+        metadata: null,
         slot: "primary",
         ...overrides,
     };

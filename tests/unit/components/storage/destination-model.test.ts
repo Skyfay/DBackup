@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { jobsAt, limitShare, statesOfDestination, statesOfJob, summarizeDestinations, typeOfJob } from "@/components/dashboard/storage/explorer/destination-model";
 import { destination, hoursAgo, index, job, newest, runs } from "./explorer-fixtures";
+import { answerOf, isStale } from "@/components/dashboard/storage/explorer/explorer-state";
 
 const alertsOff = destination("x", "X").alerts;
 
@@ -47,6 +48,20 @@ describe("states of a destination", () => {
         expect(statesOfDestination(destination("new", "New", { listedAt: null }))).toEqual(["online", "behind"]);
     });
 
+    it("is away while it is air-gapped and not connected, never offline or behind, and online once it is connected", () => {
+        const usb = destination("usb", "USB rotation", {
+            airGapped: true,
+            health: { status: "OFFLINE", checkedAt: hoursAgo(0), error: "No such directory", latencyMs: null, answeredAt: hoursAgo(72) },
+            listError: "No such directory",
+        });
+
+        expect(statesOfDestination(usb)).toEqual(["away"]);
+        expect(answerOf({ ...usb, health: { ...usb.health, status: "DEGRADED" } })).toBe("away");
+        expect(isStale(usb)).toBe(false);
+        expect(answerOf({ ...usb, health: { ...usb.health, status: "ONLINE" } })).toBe("online");
+        expect(isStale({ ...usb, health: { ...usb.health, status: "ONLINE" } })).toBe(true);
+    });
+
     it("fills a share of its storage limit only while the limit alert is on", () => {
         expect(limitShare(destination("nas", "NAS", { size: 300 }))).toBeNull();
         expect(limitShare(destination("nas", "NAS", { size: 300, alerts: { ...alertsOff, storageLimit: { enabled: true, bytes: 1_200, active: false } } }))).toBe(0.25);
@@ -65,7 +80,16 @@ describe("numbers above the destinations", () => {
             }),
         ]);
 
-        expect(summary).toEqual({ destinations: 2, answering: 1, size: 1_000, growth: 50, backups: 7, alerts: ["Storage limit at R2"] });
+        expect(summary).toEqual({ destinations: 2, answering: 1, away: 0, size: 1_000, growth: 50, backups: 7, alerts: ["Storage limit at R2"] });
+    });
+
+    it("counts an air-gapped destination that is not connected apart from the ones that should answer", () => {
+        const summary = summarizeDestinations([
+            destination("nas", "NAS"),
+            destination("usb", "USB rotation", { airGapped: true, health: { status: "OFFLINE", checkedAt: hoursAgo(0), error: null, latencyMs: null, answeredAt: null } }),
+        ]);
+
+        expect(summary).toMatchObject({ destinations: 2, answering: 1, away: 1 });
     });
 
     it("has no growth when no destination was measured a week ago", () => {

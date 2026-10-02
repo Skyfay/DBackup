@@ -91,6 +91,15 @@ export const EVENT_DEFINITIONS: NotificationEventDefinition[] = [
     supportsReminder: true,
     defaultReminderHours: 24,
   },
+  {
+    // Once each time it goes away, from the first run that leaves it out. A destination that is
+    // away on purpose needs no reminders.
+    id: NOTIFICATION_EVENTS.AIRGAP_SKIPPED,
+    name: "An air-gapped destination was skipped",
+    description: "A backup run left out an air-gapped destination that was not connected.",
+    category: "storage",
+    defaultEnabled: false,
+  },
 
   // ── Update Events ────────────────────────────────────────────
   {

@@ -27,7 +27,8 @@ export interface VaultConnection {
     /** Its own login, or the one of the SSH server it reaches its target through. */
     slot: "primary" | "ssh";
     /** The last health check, null before the first one. */
-    status: "ONLINE" | "DEGRADED" | "OFFLINE" | null;
+    /** `AWAY` is an air-gapped destination that is not connected. */
+    status: "ONLINE" | "DEGRADED" | "OFFLINE" | "AWAY" | null;
 }
 
 export interface VaultCredential {

@@ -53,6 +53,15 @@ describe("the dots of the page tabs worked out on the server", () => {
         expect(prismaMock.adapterConfig.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { lastStatus: { in: ["OFFLINE", "DEGRADED"] } } }));
     });
 
+    it("leaves an air-gapped destination that is not connected out of the Destinations tab", async () => {
+        prismaMock.adapterConfig.findMany.mockResolvedValue([
+            { name: "USB rotation", type: "storage", storageRole: "DESTINATION", lastStatus: "OFFLINE", metadata: JSON.stringify({ airGapped: true }) },
+            { name: "NAS", type: "storage", storageRole: "DESTINATION", lastStatus: "OFFLINE", metadata: null },
+        ] as never);
+
+        expect((await getConnectionAttention()).destinations).toEqual({ tone: "destructive", note: "NAS does not answer" });
+    });
+
     it("marks History by the newest run of each job and the newest message of each channel, not by older failures", async () => {
         const newest = new Date("2026-09-30T03:00:00.000Z");
         mocked(prismaMock.execution.groupBy).mockResolvedValue([{ jobId: "mysql", _max: { startedAt: newest } }, { jobId: "files", _max: { startedAt: newest } }] as never);

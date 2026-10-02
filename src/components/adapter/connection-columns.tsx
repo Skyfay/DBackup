@@ -16,6 +16,7 @@ import {
     UsedByCell,
     type ConnectionHealth,
 } from "./connection-cells";
+import { isAirGapped } from "@/lib/core/air-gap";
 
 /** The four lists on the Connections page. Each keeps its own column layout. */
 export type ConnectionKind = "database" | "source" | "destination" | "notification";
@@ -34,6 +35,8 @@ export const kindNames = new Map(ADAPTER_DEFINITIONS.map((definition) => [defini
 export function healthOf(config: AdapterConfig): ConnectionHealth {
     if (!config.lastHealthCheck) return "PENDING";
     const status = config.lastStatus ?? "ONLINE";
+    // An air-gapped destination that is not connected is away on purpose, never offline.
+    if (status !== "ONLINE" && isAirGapped(config)) return "AWAY";
     return status === "DEGRADED" || status === "OFFLINE" ? status : "ONLINE";
 }
 
@@ -124,7 +127,7 @@ export function connectionColumns({ kind, canViewHealth, renderActions, onOpen }
         meta: { defaultHidden },
         cell: ({ row }) => {
             const overview = row.original.overview;
-            return overview ? <HealthBars buckets={overview.health} passed={overview.checksPassed} /> : <Muted>-</Muted>;
+            return overview ? <HealthBars buckets={overview.health} passed={overview.checksPassed} airGapped={isAirGapped(row.original)} /> : <Muted>-</Muted>;
         },
     });
     const credential: ColumnDef<AdapterConfig> = {

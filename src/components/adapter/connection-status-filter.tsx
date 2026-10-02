@@ -2,6 +2,7 @@
 
 import { QuickFilter } from "@/components/ui/quick-filter";
 import type { AdapterConfig } from "./types";
+import { isAirGapped } from "@/lib/core/air-gap";
 
 export type StatusFilter = "all" | "online" | "issues" | "unused";
 
@@ -20,7 +21,8 @@ export function matchesStatus(config: AdapterConfig, filter: StatusFilter): bool
         case "online":
             return Boolean(config.lastHealthCheck) && (config.lastStatus ?? "ONLINE") === "ONLINE";
         case "issues":
-            return config.lastStatus === "OFFLINE" || config.lastStatus === "DEGRADED";
+            // An air-gapped destination that is not connected is away on purpose.
+            return (config.lastStatus === "OFFLINE" || config.lastStatus === "DEGRADED") && !isAirGapped(config);
         case "unused": {
             const used = config.overview?.usedBy;
             return used !== undefined && used.jobs + used.templates === 0;

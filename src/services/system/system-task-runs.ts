@@ -19,6 +19,7 @@ import { getErrorMessage, wrapError } from "@/lib/logging/errors";
 import { recordVersionIfChanged } from "./db-version-service";
 import { databaseListService } from "@/services/databases/database-list-service";
 import type { IntegrityCopy } from "@/services/backup/integrity-service";
+import { isAirGapped, isNotConnected } from "@/lib/core/air-gap";
 
 const log = logger.child({ service: "SystemTaskService" });
 
@@ -269,10 +270,12 @@ export async function updateDbVersions(): Promise<TaskOutcome> {
 }
 
 export async function warmupStorageCache(): Promise<TaskOutcome> {
-    const adapters = await prisma.adapterConfig.findMany({
+    const rows = await prisma.adapterConfig.findMany({
         where: { type: "storage", storageRole: STORAGE_ROLES.DESTINATION },
-        select: { id: true, name: true },
+        select: { id: true, name: true, type: true, storageRole: true, metadata: true, lastStatus: true },
     });
+    // An air-gapped destination that is not connected is compared the next hour it is.
+    const adapters = rows.filter((row) => !isNotConnected(row));
     log.info("Pre-warming storage cache", { count: adapters.length });
     const { storageService } = await import("@/services/storage/storage-service");
     let failed = 0;
@@ -289,6 +292,8 @@ export async function warmupStorageCache(): Promise<TaskOutcome> {
                 log.debug("Warmed storage cache", { adapterId: adapter.id, name: adapter.name });
             }
         } catch (e: unknown) {
+            // Unplugged between its last check and now, which is no failure for an air-gapped one.
+            if (isAirGapped(adapter)) continue;
             failed++;
             log.warn("Failed to warm/reconcile cache for adapter", { adapterId: adapter.id, name: adapter.name }, wrapError(e));
         }

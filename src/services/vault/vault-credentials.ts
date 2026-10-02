@@ -4,6 +4,7 @@ import { listCredentialProfilesForVault } from "@/services/auth/credential-servi
 import { getDataRetentionValues } from "@/services/system/data-retention-service";
 import { credentialAudit, type CredentialAudit } from "./vault-audit";
 import type { VaultConnection, VaultConnectionRole, VaultCredential, VaultCredentialsModel } from "./vault-types";
+import { isNotConnected } from "@/lib/core/air-gap";
 
 /** The window of the reveals above the list. */
 const REVEAL_WINDOW_MS = 30 * 86_400_000;
@@ -19,7 +20,8 @@ function roleOf(use: Pick<ListedUse, "type" | "storageRole">): VaultConnectionRo
 }
 
 function connectionOf(use: ListedUse): VaultConnection {
-    const status = use.lastStatus === "DEGRADED" || use.lastStatus === "OFFLINE" ? use.lastStatus : "ONLINE";
+    // An air-gapped destination that is not connected is away on purpose, never offline.
+    const status = isNotConnected(use) ? "AWAY" : use.lastStatus === "DEGRADED" || use.lastStatus === "OFFLINE" ? use.lastStatus : "ONLINE";
     return {
         id: use.id,
         name: use.name,

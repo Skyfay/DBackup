@@ -93,6 +93,15 @@ export function buildTestData(eventType: string): NotificationEventData | null {
         timestamp: now,
       },
     },
+    airgap_skipped: {
+      eventType: "airgap_skipped",
+      data: {
+        storageName: "USB rotation (Test)",
+        jobName: "Shop MySQL (Test)",
+        lastConnectedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+        timestamp: now,
+      },
+    },
     update_available: {
       eventType: "update_available",
       data: {

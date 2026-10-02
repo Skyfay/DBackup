@@ -151,7 +151,36 @@ describe("connection form", () => {
         const body = JSON.parse(String(init?.body));
         expect(body).toMatchObject({ type: "storage", storageRole: "DESTINATION", config: { region: "eu-central-1", bucket: "backups" } });
         // Integrity checks are on unless switched off, which the API reads as skipVerification.
-        expect(body.metadata).toEqual({ healthNotificationsDisabled: false, skipVerification: false });
+        expect(body.metadata).toEqual({ healthNotificationsDisabled: false, skipVerification: false, airGapped: false });
+    });
+
+    it("marks a destination air-gapped under Behavior, which turns its health alerts off", async () => {
+        const user = userEvent.setup();
+        const onSaved = renderForm("s3-aws", vi.fn(), STORAGE_ROLES.DESTINATION);
+        const behavior = within(screen.getByRole("tabpanel", { name: /Behavior/, hidden: true }));
+
+        expect(behavior.getByRole("switch", { name: "Health alerts", hidden: true })).toBeChecked();
+        await user.click(behavior.getByRole("switch", { name: "Air-gapped", hidden: true }));
+        expect(behavior.getByRole("switch", { name: "Health alerts", hidden: true })).not.toBeChecked();
+        expect(behavior.getByRole("switch", { name: "Health alerts", hidden: true })).toBeDisabled();
+
+        await user.type(screen.getByLabelText("Name"), "USB rotation");
+        await user.type(screen.getByLabelText("Region"), "eu-central-1");
+        await user.type(screen.getByLabelText("Bucket"), "backups");
+        await user.click(screen.getByRole("button", { name: "Create destination" }));
+        await waitFor(() => expect(onSaved).toHaveBeenCalled());
+
+        const [, init] = mockFetch.mock.calls.find(([url]) => url === "/api/adapters")!;
+        expect(JSON.parse(String(init?.body)).metadata).toMatchObject({ airGapped: true });
+    });
+
+    it("has no air-gapped switch for a directory source, which every run reads from", async () => {
+        const user = userEvent.setup();
+        renderForm("s3-aws", vi.fn(), STORAGE_ROLES.DESTINATION);
+
+        await user.click(screen.getByRole("radio", { name: /Directory source/ }));
+
+        expect(screen.getByRole("tabpanel", { name: /Behavior/, hidden: true })).not.toHaveTextContent("Air-gapped");
     });
 
     it("browses the folders of a server before the connection is saved and takes the picked one", async () => {

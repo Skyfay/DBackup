@@ -21,7 +21,9 @@ export async function stepRetention(ctx: RunnerContext) {
     for (const dest of ctx.destinations) {
         // Only apply retention to destinations that had a successful upload
         if (!dest.uploadResult?.success) {
-            ctx.log(`[${dest.configName}] Retention: Skipped (upload was not successful)`);
+            ctx.log(dest.uploadResult?.skipped
+                ? `[${dest.configName}] Retention: Skipped until it is connected`
+                : `[${dest.configName}] Retention: Skipped (upload was not successful)`);
             continue;
         }
 

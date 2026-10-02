@@ -2,6 +2,8 @@ import type { Prisma } from "@prisma/client";
 import { subDays } from "date-fns";
 import prisma from "@/lib/prisma";
 import { getJobOverviews, type JobOverview } from "./job-overview";
+import { isAirGapped } from "@/lib/core/air-gap";
+import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 
 /** What a list shows of a connection a job uses. Never its config, which holds hosts and secrets. */
 const connectionFields = { id: true, name: true, adapterId: true, lastStatus: true } satisfies Prisma.AdapterConfigSelect;
@@ -77,17 +79,34 @@ function parsePatterns(value: string): string[] {
     }
 }
 
+/** The ids of the air-gapped destinations, see `lib/core/air-gap.ts`. */
+async function airGappedDestinations(): Promise<Set<string>> {
+    const rows = await prisma.adapterConfig.findMany({
+        where: { type: "storage", storageRole: STORAGE_ROLES.DESTINATION },
+        select: { id: true, type: true, storageRole: true, metadata: true },
+    });
+    return new Set(rows.filter((row) => isAirGapped(row)).map((row) => row.id));
+}
+
 /**
  * Every job with what the Jobs page shows and the form edits, plus how it is doing. The
  * connections it uses come with their name and type only, so reading jobs never reveals more
  * of a connection than the connection lists do.
  */
 export async function getJobList(): Promise<JobListItem[]> {
-    const jobs = await prisma.job.findMany({ select: jobListSelect, orderBy: { createdAt: "desc" } });
+    const [jobs, airGapped] = await Promise.all([
+        prisma.job.findMany({ select: jobListSelect, orderBy: { createdAt: "desc" } }),
+        airGappedDestinations(),
+    ]);
     const overviews = await getJobOverviews(jobs);
 
     return jobs.map((job) => ({
         ...job,
+        // An air-gapped destination that is not connected is away on purpose, never offline.
+        destinations: job.destinations.map((destination) =>
+            airGapped.has(destination.configId) && destination.config.lastStatus !== "ONLINE"
+                ? { ...destination, config: { ...destination.config, lastStatus: "AWAY" } }
+                : destination),
         createdAt: job.createdAt.toISOString(),
         sources: job.sources.map(({ excludePatterns, excludePatternPresets, ...source }) => ({
             ...source,

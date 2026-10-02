@@ -10,6 +10,7 @@ import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { apiKeys, credentials, groups, keys, templates, users } from "./search-admin";
 import { MIN_QUERY_LENGTH, PER_KIND, type SearchHit, type SearchScope } from "./search-types";
+import { isNotConnected } from "@/lib/core/air-gap";
 
 const log = logger.child({ service: "SearchService" });
 
@@ -53,7 +54,7 @@ async function connections(query: string, types: SearchScope["connections"]): Pr
         where: { name: { contains: query }, type: { in: [...types] } },
         orderBy: { name: "asc" },
         take: PER_KIND + 1,
-        select: { id: true, name: true, adapterId: true, type: true, storageRole: true, lastStatus: true },
+        select: { id: true, name: true, adapterId: true, type: true, storageRole: true, lastStatus: true, metadata: true },
     });
     return found.map((config) => ({
         kind: "connection",
@@ -62,7 +63,8 @@ async function connections(query: string, types: SearchScope["connections"]): Pr
         adapterId: config.adapterId,
         type: config.type,
         storageRole: config.storageRole,
-        status: config.lastStatus,
+        // An air-gapped destination that is not connected is away, never offline.
+        status: isNotConnected(config) ? "AWAY" : config.lastStatus,
     }));
 }
 

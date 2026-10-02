@@ -119,8 +119,9 @@ Backup success/failure notifications are configured **per-job** (Job → Notific
 | **Storage grows fast** | The size of a destination changed a lot between two measurements | On, reminds every day |
 | **Storage nearly full** | A destination nears the size limit of its alert | On, reminds every day |
 | **A backup is missing** | A destination got nothing new within the time of its alert | On, reminds every day |
+| **An air-gapped destination was skipped** | A backup run left out an [air-gapped destination](/user-guide/destinations/#air-gapped-destinations) that was not connected. Sent by the first run that leaves it out, once each time it goes away | Off |
 
-These events are configured per destination on the **Backups** page: open the **Destinations** tab, pick the destination and use **Edit alerts**.
+The first three are configured per destination on the **Backups** page: open the **Destinations** tab, pick the destination and use **Edit alerts**.
 
 #### Update Events
 
@@ -138,7 +139,7 @@ These events are configured per destination on the **Backups** page: open the **
 
 Health checks run every minute. A connection is only reported offline after repeated failures, so a short blip stays quiet.
 
-To silence the offline and back alerts for one connection, turn off **Health alerts** in the **Behavior** part of its edit form. The health checks keep running. Several databases can be switched at once: tick them on the **Databases** tab of **Connections** and pick **Turn off notifications** under **More**.
+An air-gapped destination sends neither of the two. To silence the offline and back alerts for another connection, turn off **Health alerts** in the **Behavior** part of its edit form. The health checks keep running. Several databases can be switched at once: tick them on the **Databases** tab of **Connections** and pick **Turn off notifications** under **More**.
 
 #### Integrity Events
 
@@ -185,7 +186,7 @@ Some events last, like a connection that stays offline. While they last, they se
 
 | Event | Default reminder |
 | :--- | :--- |
-| Storage events, **A connection is offline** | Every day |
+| Storage events, **A connection is offline** | Every day, except **An air-gapped destination was skipped**, which has none |
 | **A new version is out** | Every 7 days |
 
 ### Send a Test

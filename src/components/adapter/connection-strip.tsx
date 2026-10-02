@@ -7,6 +7,7 @@ import { namesFor } from "@/lib/core/tab-attention";
 import { formatBytes } from "@/lib/utils";
 import { kindNames, type ConnectionKind } from "./connection-columns";
 import type { AdapterConfig } from "./types";
+import { isAirGapped } from "@/lib/core/air-gap";
 
 const KIND: Record<ConnectionKind, { label: string; icon: LucideIcon }> = {
     database: { label: "Databases", icon: Database },
@@ -32,23 +33,30 @@ function median(values: number[]): number | null {
     return sorted.length % 2 === 1 ? sorted[middle] : Math.round((sorted[middle - 1] + sorted[middle]) / 2);
 }
 
-/** Whether they answer, like the dot of their status: offline in red, a failed check in amber. */
+/**
+ * Whether they answer, like the dot of their status: offline in red, a failed check in amber. An
+ * air-gapped destination that is not connected is away on purpose and is not counted.
+ */
 function answeringCell(configs: AdapterConfig[]): StripCell {
     const status = (config: AdapterConfig) => config.lastStatus ?? "ONLINE";
-    const offline = configs.filter((config) => status(config) === "OFFLINE").map((config) => config.name);
-    const degraded = configs.filter((config) => status(config) === "DEGRADED").map((config) => config.name);
-    const answering = configs.length - offline.length - degraded.length;
+    const isAway = (config: AdapterConfig) => status(config) !== "ONLINE" && isAirGapped(config);
+    const away = configs.filter(isAway).map((config) => config.name);
+    const expected = configs.filter((config) => !isAway(config));
+    const offline = expected.filter((config) => status(config) === "OFFLINE").map((config) => config.name);
+    const degraded = expected.filter((config) => status(config) === "DEGRADED").map((config) => config.name);
+    const answering = expected.length - offline.length - degraded.length;
     const trouble = [
         ...(offline.length > 0 ? [`${namesFor(offline)} ${offline.length === 1 ? "does" : "do"} not answer`] : []),
         ...(degraded.length > 0 ? [`${namesFor(degraded)} failed ${degraded.length === 1 ? "its" : "their"} last check`] : []),
     ];
+    const awayText = away.length > 0 ? `${namesFor(away)} air-gapped, not connected` : null;
     return {
         label: "Answering",
         icon: Activity,
         value: answering.toLocaleString(),
-        unit: `of ${configs.length.toLocaleString()}`,
+        unit: `of ${expected.length.toLocaleString()}`,
         tone: offline.length > 0 ? "destructive" : degraded.length > 0 ? "warning" : undefined,
-        extra: trouble.length > 0 ? trouble.join(", ") : "every connection answers",
+        extra: [trouble.length > 0 ? trouble.join(", ") : "every connection answers", awayText].filter(Boolean).join(", "),
     };
 }
 

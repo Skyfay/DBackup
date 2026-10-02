@@ -29,6 +29,7 @@ const STATES: { value: DestinationState; label: string; dot?: string }[] = [
     { value: "online", label: "Answers right now", dot: "bg-success" },
     { value: "missed", label: "Missed its last check", dot: "bg-warning" },
     { value: "offline", label: "Offline", dot: "bg-destructive" },
+    { value: "away", label: "Air-gapped, not connected" },
     { value: "behind", label: "Its list is old" },
     { value: "alert", label: "An alert fires" },
 ];
@@ -160,7 +161,8 @@ export function DestinationsView(props: DestinationsViewProps) {
                 id: "state",
                 title: "State",
                 note,
-                options: STATES.map((state) => ({
+                // Not connected is a state of an air-gapped destination only.
+                options: STATES.filter((state) => state.value !== "away" || destinations.some((destination) => destination.airGapped)).map((state) => ({
                     value: state.value,
                     label: state.label,
                     lead: state.dot ? <span className="flex size-4 shrink-0 items-center justify-center"><span className={`size-2 rounded-full ${state.dot}`} /></span> : undefined,
@@ -177,7 +179,12 @@ export function DestinationsView(props: DestinationsViewProps) {
             <ExplorerStrip
                 joined
                 cells={[
-                    { label: "Destinations", icon: HardDrive, value: summary.destinations.toLocaleString(), extra: `${summary.answering} answer right now` },
+                    {
+                        label: "Destinations",
+                        icon: HardDrive,
+                        value: summary.destinations.toLocaleString(),
+                        extra: `${summary.answering} answer right now${summary.away > 0 ? `, ${summary.away} air-gapped not connected` : ""}`,
+                    },
                     { label: "Stored", icon: Layers, value: storedValue, unit: storedUnit, extra: `at ${count(summary.destinations, "destination")}` },
                     { label: "Last 7 days", icon: TrendingUp, value: summary.growth === null ? "-" : signedBytes(summary.growth), extra: summary.growth === null ? "not measured a week ago" : "grown by" },
                     { label: "Backups", icon: Archive, value: summary.backups.toLocaleString(), extra: "copies at every destination" },

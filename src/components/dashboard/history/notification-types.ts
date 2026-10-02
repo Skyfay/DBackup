@@ -41,6 +41,7 @@ export const EVENT_LABELS: Record<string, string> = {
     storage_usage_spike: "Storage spike",
     storage_limit_warning: "Storage limit",
     storage_missing_backup: "Missing backup",
+    airgap_skipped: "Air-gapped skipped",
     update_available: "Update available",
     integrity_check_failure: "Integrity check failed",
     connection_offline: "Connection offline",

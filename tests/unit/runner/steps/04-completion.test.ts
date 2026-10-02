@@ -195,6 +195,26 @@ describe('stepFinalize', () => {
         );
     });
 
+    it('records an air-gapped destination the run left out as skipped and air-gapped, never as failed', async () => {
+        const prisma = (await import('@/lib/prisma')).default;
+        const ctx = makeCtx({
+            destinations: [
+                makeDestination() as any,
+                makeDestination({ configId: 'usb', configName: 'USB rotation', uploadResult: { success: false, skipped: true, error: 'Air-gapped and not connected' } }) as any,
+            ],
+        });
+
+        await stepFinalize(ctx);
+
+        const update = vi.mocked(prisma.execution.update).mock.calls.find(([args]) => (args as { data: { metadata?: string } }).data.metadata)!;
+        const metadata = JSON.parse((update[0] as { data: { metadata: string } }).data.metadata);
+        expect(metadata.destinations).toEqual([
+            expect.objectContaining({ name: 'Local', status: 'success' }),
+            expect.objectContaining({ name: 'USB rotation', status: 'skipped', airGapped: true }),
+        ]);
+        expect(metadata.destinations[0]).not.toHaveProperty('airGapped');
+    });
+
     it('skips notifications when shouldNotify is false (FAILURE_ONLY on Success)', async () => {
         const { renderTemplate } = await import('@/lib/notifications');
         const ctx = makeCtx({ status: 'Success' });

@@ -20,6 +20,7 @@ export const NOTIFICATION_EVENTS = {
   STORAGE_USAGE_SPIKE: "storage_usage_spike",
   STORAGE_LIMIT_WARNING: "storage_limit_warning",
   STORAGE_MISSING_BACKUP: "storage_missing_backup",
+  AIRGAP_SKIPPED: "airgap_skipped",
   UPDATE_AVAILABLE: "update_available",
   CONNECTION_OFFLINE: "connection_offline",
   CONNECTION_ONLINE: "connection_online",
@@ -153,6 +154,15 @@ export interface StorageMissingBackupData {
   timestamp: string;
 }
 
+/** A backup run left out an air-gapped destination that was not connected. */
+export interface AirGapSkippedData {
+  storageName: string;
+  jobName: string;
+  /** When it last answered a health check, while one it kept did. */
+  lastConnectedAt?: string;
+  timestamp: string;
+}
+
 export interface UpdateAvailableData {
   latestVersion: string;
   currentVersion: string;
@@ -216,6 +226,7 @@ export type NotificationEventData =
   | { eventType: typeof NOTIFICATION_EVENTS.STORAGE_USAGE_SPIKE; data: StorageUsageSpikeData }
   | { eventType: typeof NOTIFICATION_EVENTS.STORAGE_LIMIT_WARNING; data: StorageLimitWarningData }
   | { eventType: typeof NOTIFICATION_EVENTS.STORAGE_MISSING_BACKUP; data: StorageMissingBackupData }
+  | { eventType: typeof NOTIFICATION_EVENTS.AIRGAP_SKIPPED; data: AirGapSkippedData }
   | { eventType: typeof NOTIFICATION_EVENTS.UPDATE_AVAILABLE; data: UpdateAvailableData }
   | { eventType: typeof NOTIFICATION_EVENTS.CONNECTION_OFFLINE; data: ConnectionOfflineData }
   | { eventType: typeof NOTIFICATION_EVENTS.CONNECTION_ONLINE; data: ConnectionOnlineData }

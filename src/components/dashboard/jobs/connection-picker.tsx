@@ -14,6 +14,7 @@ import { PERMISSIONS, type Permission } from "@/lib/auth/permissions";
 import { STORAGE_ROLES, type StorageRole } from "@/lib/core/storage-roles";
 import { cn } from "@/lib/utils";
 import type { AdapterOption } from "./job-form-schema";
+import { isAirGapped } from "@/lib/core/air-gap";
 
 export type ConnectionKind = "database" | "destination" | "directory" | "notification";
 
@@ -31,17 +32,21 @@ export const ConnectionAddedContext = createContext<((option: AdapterOption) => 
 /** How the last health check found a connection that is not online, in the color of its state. */
 const STATUS: Record<string, PickEntry["alert"]> = { OFFLINE: { text: "Offline", tone: "destructive" }, DEGRADED: { text: "Degraded", tone: "warning" } };
 
-/** A connection in the list: its type, where it points and, first in its color, how it is when it is not online. */
+/**
+ * A connection in the list: its type, where it points and, first in its color, how it is when it
+ * is not online. An air-gapped destination that is not connected says so without a warning.
+ */
 function entryOf(option: AdapterOption): PickEntry {
     const type = getAdapterDefinition(option.adapterId)?.name ?? option.adapterId;
     const address = option.config ? connectionAddress(option.adapterId, option.config) : null;
+    const away = Boolean(option.lastStatus && option.lastStatus !== "ONLINE") && isAirGapped(option);
     return {
         id: option.id,
         name: option.name,
-        meta: [type, address].filter(Boolean).join(" · "),
+        meta: [type, address, away ? "air-gapped, not connected" : null].filter(Boolean).join(" · "),
         keywords: [type, ...(address ? [address] : [])],
         icon: <AdapterIcon adapterId={option.adapterId} className="size-4" />,
-        alert: option.lastStatus ? STATUS[option.lastStatus] : undefined,
+        alert: !away && option.lastStatus ? STATUS[option.lastStatus] : undefined,
     };
 }
 

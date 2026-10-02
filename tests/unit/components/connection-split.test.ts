@@ -27,6 +27,12 @@ describe("splitGroups", () => {
         expect(splitGroups([config("prod"), config("shop")], true)).toEqual([{ label: null, items: [config("prod"), config("shop")] }]);
     });
 
+    it("leaves an air-gapped destination that is not connected with the rest", () => {
+        const usb = { ...config("usb", "OFFLINE"), type: "storage", metadata: JSON.stringify({ airGapped: true }) };
+
+        expect(splitGroups([config("nas"), usb], true)).toEqual([{ label: null, items: [config("nas"), usb] }]);
+    });
+
     it("ignores the health of notification channels, which have none", () => {
         expect(splitGroups([config("discord", "OFFLINE")], false)[0].label).toBeNull();
     });

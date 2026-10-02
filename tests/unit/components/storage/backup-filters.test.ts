@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { countBackups, filterBackups, primaryCopy, startedByKey, startedByOptions, summarize, targetsOf, type BackupFilters, type BackupLookup } from "@/components/dashboard/storage/explorer/backup-filters";
+import { countBackups, filterBackups, lookupOf, primaryCopy, startedByKey, startedByOptions, summarize, targetsOf, type BackupFilters, type BackupLookup } from "@/components/dashboard/storage/explorer/backup-filters";
 import type { BackupRun, ExplorerFile, ExplorerJob } from "@/services/storage/explorer-types";
 
 const hoursAgo = (hours: number) => new Date(Date.now() - hours * 3_600_000).toISOString();
@@ -69,6 +69,19 @@ describe("the filters of the list of every backup", () => {
         expect(counts.states.unreachable).toBe(2);
         // crm fails its check and cannot be read, shop-new cannot be read, shop-old misses its copy.
         expect(counts.attention).toEqual({ warning: 1, destructive: 2 });
+    });
+
+    it("never counts a backup kept only at an air-gapped destination that is away as out of reach", () => {
+        const health = (status: "ONLINE" | "OFFLINE") => ({ status, checkedAt: null, error: null, latencyMs: null, answeredAt: null });
+        const r2Away = lookupOf(jobs, [
+            { id: "nas", airGapped: false, health: health("OFFLINE") },
+            { id: "r2", airGapped: true, health: health("OFFLINE") },
+        ]);
+
+        expect(r2Away.away).toEqual(new Set(["r2"]));
+        expect(paths(filterBackups(runs, { ...none, at: ["r2"], states: ["unreachable"] }, r2Away))).toEqual([]);
+        // At the NAS, which is not air-gapped, a backup out of reach still is one.
+        expect(paths(filterBackups(runs, { ...none, at: ["nas"], states: ["unreachable"] }, r2Away))).toEqual(["crm.tar", "shop-new.tar", "shop-old.tar", "erp.tar"]);
     });
 
     it("finds a backup by its name or by the name of its job", () => {

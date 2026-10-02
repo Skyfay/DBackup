@@ -1,36 +1,23 @@
 "use client";
 
 import { useMemo } from "react";
-import { Layers, Scissors, X } from "lucide-react";
+import { Layers, Scissors } from "lucide-react";
 import { signedBytes } from "@/components/dashboard/widgets/storage-history-data";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tooltip, TooltipContent, TooltipHead, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn, formatBytes } from "@/lib/utils";
 import type { BackupRun, ExplorerDestination, ExplorerJob, ExplorerPlan } from "@/services/storage/explorer-types";
 import { AnswerDot, DestinationTile, answerOf } from "./explorer-cells";
 import { count } from "./explorer-format";
-import { useTimelineFormat, type TimelineFormat } from "./timeline-cells";
+import { useTimelineFormat } from "./timeline-cells";
+import { DestinationDayCell, type DayCell, type Kind } from "./destinations-timeline-cells";
 import { TimelineAheadCaption, TimelineAxis, TimelineBands, gridTemplate, useColumns, useTimelineWindow } from "./timeline-frame";
 import type { DayKey } from "./timeline-model";
 import { AHEAD, TimelineNav, toDate } from "./timeline-nav";
 
-type Kind = "none" | "in" | "missing" | "offline" | "planned";
-
-interface DayCell {
-    day: DayKey;
-    kind: Kind;
-    /** Backups that arrived that day, or are planned to arrive. */
-    arrived: number;
-    missing: number;
-    /** Backups the retention removes after the runs of that day. */
-    leaving: number;
-    /** How many jobs the planned backups come from. */
-    jobs: number;
-}
-
 interface Tally {
     arrived: number;
     missing: number;
+    away: number;
     leaving: number;
     jobs: Set<string>;
 }
@@ -38,79 +25,11 @@ interface Tally {
 const add = (map: Map<string, Tally>, key: string) => {
     let tally = map.get(key);
     if (!tally) {
-        tally = { arrived: 0, missing: 0, leaving: 0, jobs: new Set() };
+        tally = { arrived: 0, missing: 0, away: 0, leaving: 0, jobs: new Set() };
         map.set(key, tally);
     }
     return tally;
 };
-
-const KINDS: Record<Kind, string> = {
-    none: "",
-    in: "bg-foreground/55 text-card",
-    missing: "border-2 border-warning bg-warning/20 text-warning",
-    offline: "border-2 border-dashed border-destructive bg-destructive/10 text-destructive",
-    planned: "border-[1.5px] border-dashed border-foreground/45 text-muted-foreground",
-};
-
-function CellTip({ cell, destination, format }: { cell: DayCell; destination: ExplorerDestination; format: TimelineFormat }) {
-    const title = `${format.date(cell.day)} at ${destination.name}`;
-    if (cell.kind === "planned") {
-        return (
-            <>
-                <p className="font-medium">{title}</p>
-                <div className="mt-1 space-y-1 text-muted-foreground">
-                    <p>{count(cell.arrived, "backup")} arrive from {count(cell.jobs, "job")}.</p>
-                    {cell.leaving > 0 && <p>{count(cell.leaving, "backup")} age out with the retention.</p>}
-                </div>
-            </>
-        );
-    }
-    return (
-        <>
-            {cell.kind === "offline" && <TooltipHead tone="destructive">Does not answer</TooltipHead>}
-            {cell.kind === "missing" && <TooltipHead tone="warning">A copy is missing</TooltipHead>}
-            <p className={cn(cell.kind !== "offline" && cell.kind !== "missing" && "font-medium")}>{title}</p>
-            <div className="mt-1 space-y-1 text-muted-foreground">
-                <p>{cell.arrived === 0 ? "No backup arrived." : `${count(cell.arrived, "backup")} arrived.`}</p>
-                {cell.missing > 0 && <p>{count(cell.missing, "copy", "copies")} of that day missing here.</p>}
-                {cell.kind === "offline" && <p>Backups that should arrive fail until it answers.</p>}
-            </div>
-        </>
-    );
-}
-
-function Cell({ cell, destination, format, picked, onPick }: { cell: DayCell; destination: ExplorerDestination; format: TimelineFormat; picked: boolean; onPick: () => void }) {
-    const number = cell.arrived > 1 ? cell.arrived : null;
-    const button = (
-        <button
-            type="button"
-            onClick={onPick}
-            aria-label={`${destination.name}, ${format.date(cell.day)}`}
-            className={cn(
-                "relative flex h-7 w-full min-w-0 items-center justify-center rounded-md text-[11px] font-semibold tabular-nums outline-none transition-shadow hover:ring-2 hover:ring-foreground/30 focus-visible:ring-2 focus-visible:ring-ring/50",
-                KINDS[cell.kind],
-                cell.kind === "in" && cell.arrived > 1 && "bg-foreground/85",
-                picked && "ring-2 ring-foreground/40"
-            )}
-        >
-            {cell.kind === "none" ? <span className="size-1 rounded-full bg-foreground/20" /> : cell.kind === "offline" && !number ? <X className="size-3" strokeWidth={3} /> : number}
-            {cell.kind === "planned" && cell.leaving > 0 && (
-                <span className="absolute -top-1.5 -right-1 flex size-3.5 items-center justify-center rounded-full bg-card" aria-hidden="true">
-                    <Scissors className="size-2.5 text-muted-foreground" />
-                </span>
-            )}
-        </button>
-    );
-    if (cell.kind === "none") return button;
-    return (
-        <Tooltip>
-            <TooltipTrigger asChild>{button}</TooltipTrigger>
-            <TooltipContent className="max-w-xs">
-                <CellTip cell={cell} destination={destination} format={format} />
-            </TooltipContent>
-        </Tooltip>
-    );
-}
 
 interface DestinationsTimelineProps {
     /** The destinations the filters leave. */
@@ -138,6 +57,18 @@ export function DestinationsTimeline({ destinations, runs, jobs, plan, picked, o
     // What arrived and went missing at every destination by day, and what the schedules plan there.
     const tallies = useMemo(() => {
         const byKey = new Map<string, Tally>();
+        const jobsByKey = new Map(jobs.map((job) => [job.key, job]));
+        // An air-gapped destination has no missing copies. A run without it counts as a day it was
+        // away, from its first backup on, so its gray days show when it was not connected.
+        const airGapped = new Set(destinations.filter((destination) => destination.airGapped).map((destination) => destination.id));
+        const firstArrival = new Map<string, number>();
+        for (const run of runs) {
+            for (const copy of run.copies) {
+                if (copy.state !== "stored" || !airGapped.has(copy.destinationId)) continue;
+                const at = Date.parse(run.createdAt);
+                if (at < (firstArrival.get(copy.destinationId) ?? Infinity)) firstArrival.set(copy.destinationId, at);
+            }
+        }
         for (const run of runs) {
             const day = format.dayOf(run.createdAt);
             for (const copy of run.copies) {
@@ -145,8 +76,11 @@ export function DestinationsTimeline({ destinations, runs, jobs, plan, picked, o
                 if (copy.state === "stored") tally.arrived++;
                 else tally.missing++;
             }
+            for (const destinationId of jobsByKey.get(run.jobKey)?.configuredDestinationIds ?? []) {
+                if (!airGapped.has(destinationId) || run.copies.some((copy) => copy.destinationId === destinationId)) continue;
+                if (Date.parse(run.createdAt) > (firstArrival.get(destinationId) ?? Infinity)) add(byKey, `${destinationId}|${day}`).away++;
+            }
         }
-        const jobsByKey = new Map(jobs.map((job) => [job.key, job]));
         for (const entry of plan?.jobs ?? []) {
             const job = jobsByKey.get(entry.jobKey);
             if (!job) continue;
@@ -162,7 +96,7 @@ export function DestinationsTimeline({ destinations, runs, jobs, plan, picked, o
             }
         }
         return byKey;
-    }, [runs, jobs, plan, today, format]);
+    }, [runs, jobs, destinations, plan, today, format]);
 
     const rows = useMemo(() => destinations.map((destination) => ({
         destination,
@@ -170,11 +104,15 @@ export function DestinationsTimeline({ destinations, runs, jobs, plan, picked, o
             const tally = tallies.get(`${destination.id}|${day}`);
             const arrived = tally?.arrived ?? 0;
             const missing = tally?.missing ?? 0;
+            const away = tally?.away ?? 0;
             const future = day > today;
+            const answer = answerOf(destination);
             const kind: Kind = future
                 ? arrived > 0 ? "planned" : "none"
-                : day === today && answerOf(destination) === "offline" ? "offline" : missing > 0 ? "missing" : arrived > 0 ? "in" : "none";
-            return { day, kind, arrived, missing, leaving: tally?.leaving ?? 0, jobs: tally?.jobs.size ?? 0 };
+                : day === today && answer === "offline" ? "offline"
+                    : day === today && answer === "away" && arrived === 0 ? "away"
+                        : missing > 0 ? "missing" : arrived > 0 ? "in" : away > 0 ? "away" : "none";
+            return { day, kind, arrived, missing, away, leaving: tally?.leaving ?? 0, jobs: tally?.jobs.size ?? 0 };
         }),
     })), [destinations, days, tallies, today]);
 
@@ -268,7 +206,7 @@ export function DestinationsTimeline({ destinations, runs, jobs, plan, picked, o
                                 </span>
                             </button>
                             {cells.map((cell) => (
-                                <Cell key={cell.day} cell={cell} destination={destination} format={format} picked={picked === destination.id} onPick={() => onPick(destination.id)} />
+                                <DestinationDayCell key={cell.day} cell={cell} destination={destination} format={format} picked={picked === destination.id} onPick={() => onPick(destination.id)} />
                             ))}
                         </div>
                     ))}
@@ -279,6 +217,9 @@ export function DestinationsTimeline({ destinations, runs, jobs, plan, picked, o
                 <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3.5 rounded-[4px] bg-foreground/55" />Backups arrived</span>
                 <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3.5 rounded-[4px] border-2 border-warning bg-warning/20" />A copy is missing</span>
                 <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3.5 rounded-[4px] border-2 border-dashed border-destructive" />Does not answer today</span>
+                {destinations.some((destination) => destination.airGapped) && (
+                    <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3.5 rounded-[4px] border border-dashed border-muted-foreground/60" />Air-gapped, not connected</span>
+                )}
                 <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3.5 rounded-[4px] border-[1.5px] border-dashed border-foreground/55" />Planned</span>
                 <span className="inline-flex items-center gap-1.5"><Scissors className="size-3.5" aria-hidden="true" />Retention removes backups</span>
                 <span className="ml-auto">A click on a destination shows its details</span>

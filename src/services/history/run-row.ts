@@ -1,4 +1,5 @@
 import type { RunCopies, RunLive, RunRow, RunStarter, RunStatus, RunUpload } from "./run-types";
+import { AIR_GAP_SKIP } from "@/lib/core/air-gap";
 
 /**
  * A run as the History page shows it, out of its execution record. Pure, so the list, the page
@@ -109,12 +110,15 @@ export function adapterOf(record: RunRecord, metadata: RunMetadata): string | nu
 
 /** The copies of a backup: the per-destination result of a finished run, the live upload list of a running one. */
 export function copiesOf(metadata: RunMetadata): RunCopies | null {
-    const finished = Array.isArray(metadata.destinations) ? metadata.destinations as { name?: unknown; status?: unknown }[] : null;
+    // An air-gapped destination the run left out is no copy that should be there.
+    const finished = Array.isArray(metadata.destinations)
+        ? (metadata.destinations as { name?: unknown; status?: unknown; airGapped?: unknown }[]).filter((entry) => entry.airGapped !== true)
+        : null;
     if (finished && finished.length > 0) {
         const failed = finished.filter((entry) => entry.status === "failed").map((entry) => String(entry.name ?? "A destination"));
         return { stored: finished.filter((entry) => entry.status === "success").length, total: finished.length, failed };
     }
-    const uploads = uploadsOf(metadata);
+    const uploads = uploadsOf(metadata).filter((upload) => !(upload.state === "skipped" && upload.error === AIR_GAP_SKIP));
     if (uploads.length === 0) return null;
     return {
         stored: uploads.filter((upload) => upload.state === "done").length,

@@ -220,6 +220,7 @@ function BehaviorPart({ adapter, storageRole, onStorageRoleChange, storageRoleLo
     const labelId = useId();
     const roles = ROLE_OPTIONS.filter((option) => supportsStorageRole(adapter.supportedRoles, option.value as StorageRole));
     const isSource = storageRole === STORAGE_ROLES.SOURCE;
+    const airGapped = !isSource && metadata.airGapped;
 
     return (
         <>
@@ -240,23 +241,42 @@ function BehaviorPart({ adapter, storageRole, onStorageRoleChange, storageRoleLo
                 </div>
             )}
             <SwitchList>
+                {/* Only a destination is connected now and then on purpose. A source is read from by every run. */}
+                {!isSource && (
+                    <SwitchRow
+                        title="Air-gapped"
+                        description="Connected only now and then, like a USB disk you plug in once a week. While it is not connected, runs skip it and nothing about it counts as a problem."
+                        checked={metadata.airGapped}
+                        onCheckedChange={(on) => onMetadataChange({ ...metadata, airGapped: on })}
+                    />
+                )}
                 <SwitchRow
                     title="Health alerts"
-                    description={`Notify when this ${isSource ? "source" : "destination"} goes offline or comes back. The checks run either way.`}
-                    checked={!metadata.healthNotificationsDisabled}
+                    description={
+                        airGapped
+                            ? "Off while it is air-gapped, since it is away most of the time on purpose. The checks still note when it was connected."
+                            : `Notify when this ${isSource ? "source" : "destination"} goes offline or comes back. The checks run either way.`
+                    }
+                    checked={!airGapped && !metadata.healthNotificationsDisabled}
                     onCheckedChange={(on) => onMetadataChange({ ...metadata, healthNotificationsDisabled: !on })}
+                    disabled={airGapped}
                 />
                 {/* Only a destination holds backups, so only it has any to check. The stored value stays
                     on a source, so switching the role back does not lose it. */}
                 {!isSource && (
                     <SwitchRow
                         title="Integrity checks"
-                        description="Include this destination in the scheduled integrity check."
+                        description={airGapped ? "Include this destination in the scheduled integrity check, whenever it is connected." : "Include this destination in the scheduled integrity check."}
                         checked={!metadata.skipVerification}
                         onCheckedChange={(on) => onMetadataChange({ ...metadata, skipVerification: !on })}
                     />
                 )}
             </SwitchList>
+            {airGapped && (
+                <p className="text-xs text-muted-foreground">
+                    A run that finds it not connected leaves it out and still counts as a success, as long as another destination took the backup.
+                </p>
+            )}
         </>
     );
 }

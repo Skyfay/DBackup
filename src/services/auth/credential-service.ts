@@ -221,6 +221,8 @@ const vaultConnectionFields = {
     storageRole: true,
     lastStatus: true,
     lastHealthCheck: true,
+    // Only the switches, so an air-gapped destination that is away shows as such.
+    metadata: true,
 } as const;
 
 /**

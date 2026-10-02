@@ -4,6 +4,7 @@ import { formatBytes, formatDuration } from "@/lib/utils";
 import { buildDumps, outputsOf, type DumpRecord } from "./run-dumps";
 import { isStepSummary, SUMMARY_LINES } from "./run-steps";
 import type { RunDump, RunNotification, RunOutput, RunStep, RunStepSummary, RunSummaryItem, RunUpload } from "./run-types";
+import { AIR_GAP_SKIP } from "@/lib/core/air-gap";
 
 /**
  * Every step of a backup told in a sentence or two, with a row for each database, folder,
@@ -123,8 +124,12 @@ function processing(entries: LogEntry[], input: SummaryInput, dumps: RunDump[]):
     return `Packed ${what || "everything"} into one archive of ${size}${treatment ? `, ${treatment}` : ""}.`;
 }
 
+/** A destination the run left out because it is air-gapped and was not connected. */
+const isAway = (upload: RunUpload) => upload.state === "skipped" && upload.error === AIR_GAP_SKIP;
+
 function uploadText(upload: RunUpload, uploads: RunUpload[]): string {
     if (upload.state === "failed") return upload.error ?? "failed";
+    if (isAway(upload)) return "air-gapped, not connected";
     if (upload.state === "skipped") return "skipped";
     if (upload.state === "waiting") {
         const busy = uploads.find((entry) => entry.state === "uploading");
@@ -146,9 +151,13 @@ function uploading(entries: LogEntry[], input: SummaryInput): { text: string | n
     }));
     const stored = input.uploads.filter((upload) => upload.state === "done").length;
     if (items.length === 0) return { text: null, items };
+    // An air-gapped destination that was away is no copy that should be there.
+    const away = input.uploads.filter(isAway).map((upload) => upload.name);
+    const expected = items.length - away.length;
+    const awayText = away.length > 0 ? `, ${listOf(away)} ${away.length === 1 ? "was" : "were"} not connected` : "";
     const text = input.live
         ? `Stores the archive at ${items.length > 1 ? "each destination, one after the other" : input.uploads[0].name}.`
-        : stored === items.length ? `Stored the archive at ${plural(stored, "destination")}.` : `Stored the archive at ${stored} of ${plural(items.length, "destination")}.`;
+        : stored === expected ? `Stored the archive at ${plural(stored, "destination")}${awayText}.` : `Stored the archive at ${stored} of ${plural(expected, "destination")}${awayText}.`;
     return { text, items };
 }
 
@@ -186,6 +195,7 @@ function retention(entries: LogEntry[]): { text: string | null; items: RunSummar
         const kept = text.match(/^Retention: Keeping (\d+), Deleting (\d+)\./);
         if (kept) return { state: "done", text: Number(kept[2]) > 0 ? `kept ${kept[1]}, removed ${kept[2]}` : `kept all ${kept[1]}` };
         if (/^Retention: Skipped \(upload was not successful\)/.test(text)) return { state: "skipped", text: "skipped, its upload failed" };
+        if (/^Retention: Skipped until it is connected/.test(text)) return { state: "skipped", text: "skipped until it is connected" };
         const error = text.match(/^Retention (?:Process )?Error[^:]*: (.+)$/);
         return error ? { state: "failed", text: error[1] } : null;
     });

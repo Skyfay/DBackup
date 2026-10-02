@@ -61,6 +61,30 @@ Pick **Create as directory source** in the menu of a destination, or **Create as
 4. Leave **Used as** on **Backup destination** in the **Behavior** part
 5. Click **Test connection**, then **Create destination**
 
+## Air-Gapped Destinations
+
+A destination that is connected only now and then, like a USB disk you plug in once a week or a server that is switched on for its backups, can be marked **Air-gapped** in the **Behavior** part of its form. Being away is then how it is meant to be, not a problem.
+
+While it is not connected:
+
+- A run asks it right before its upload and leaves it out when it does not answer. The run stays a **Success** as long as another destination took the backup. A run that reaches no destination at all fails.
+- No **A connection is offline** or **A connection is back** notification goes out for it, so its **Health alerts** switch is off.
+- **Connections** and the **Backups** page show it as **Not connected** in gray, with since when, instead of offline in red.
+- A backup made meanwhile is no missing copy there. A copy that lies on it shows grayed out with an unplugged icon, and the destinations timeline marks the days it was away in gray.
+- The integrity check, the hourly list refresh and retention leave it alone, and an incremental chain carries on without it.
+
+Once it answers again, the next run uploads to it as usual and its copies get their green dot back. An incremental job starts a new full backup if the destination lacks part of the current chain.
+
+::: tip Get told when a run left it out
+The system notification **An air-gapped destination was skipped** reports the first run that leaves it out, once each time it goes away. It is off by default, see [Notifications](/user-guide/features/notifications#storage-events).
+:::
+
+::: warning Removable disks
+Point a Local Filesystem destination at a folder on the disk, not at its mount point. An empty mount point answers like a connected disk, and the backups would land on the system disk.
+:::
+
+The configuration backup is no run of a job, so a configuration backup to an air-gapped destination that is not connected still fails and reports it.
+
 ## Storage Structure
 
 Backups are organized by job name with sidecar metadata files:

@@ -42,10 +42,14 @@ export interface DestinationContext {
     retentionPolicySource?: 'template' | 'default' | 'legacy' | 'none';
     priority: number;
     adapterId: string;
+    /** Connected only now and then, so the run leaves it out while it does not answer. */
+    airGapped?: boolean;
     uploadResult?: {
         success: boolean;
         path?: string;
         error?: string;
+        /** Left out as an air-gapped destination that was not connected, which is no failure. */
+        skipped?: boolean;
     };
 }
 
@@ -74,7 +78,7 @@ export interface UploadState {
     configId: string;
     name: string;
     adapterId: string;
-    state: "waiting" | "uploading" | "done" | "failed";
+    state: "waiting" | "uploading" | "done" | "failed" | "skipped";
     /** Bytes sent so far, null while the size of the archive is not known. */
     bytes: number | null;
     total: number | null;

@@ -1,6 +1,6 @@
 import { attentionOf, combineAttention, namesFor, type TabAttention } from "@/lib/core/tab-attention";
 import type { BackupRun, ExplorerDestination, ExplorerJob } from "@/services/storage/explorer-types";
-import { isStale } from "./explorer-state";
+import { answerOf, isStale } from "./explorer-state";
 
 /**
  * The Destinations tab: what each destination holds by job, what its states are for the filters,
@@ -71,14 +71,14 @@ export function typeOfJob(job: ExplorerJob): string {
     return job.sourceType ?? "folders";
 }
 
-/** The states a destination can be filtered by. */
-export type DestinationState = "online" | "missed" | "offline" | "behind" | "alert";
+/** The states a destination can be filtered by. `away` is an air-gapped one that is not connected. */
+export type DestinationState = "online" | "missed" | "offline" | "away" | "behind" | "alert";
 
 export function statesOfDestination(destination: ExplorerDestination): DestinationState[] {
-    const { status } = destination.health;
+    const answer = answerOf(destination);
     const alert = Object.values(destination.alerts).some((entry) => entry.active);
     return [
-        status === "OFFLINE" ? "offline" : status === "DEGRADED" ? "missed" : "online",
+        answer,
         ...(isStale(destination) || !destination.listedAt ? ["behind" as const] : []),
         ...(alert ? ["alert" as const] : []),
     ];
@@ -104,9 +104,12 @@ export function backupsAttention(jobs: ExplorerJob[]): TabAttention | undefined 
     );
 }
 
-/** The dot of the Destinations tab: one that does not answer is red, one that failed a check or has an alert on amber. */
+/**
+ * The dot of the Destinations tab: one that does not answer is red, one that failed a check or has
+ * an alert on amber. An air-gapped one that is not connected is meant to be away and marks nothing.
+ */
 export function destinationsAttention(destinations: ExplorerDestination[]): TabAttention | undefined {
-    const named = (status: string) => destinations.filter((destination) => destination.health.status === status).map((destination) => destination.name);
+    const named = (status: string) => destinations.filter((destination) => destination.health.status === status && !destination.airGapped).map((destination) => destination.name);
     const alerts = destinations.flatMap((destination) => activeAlerts(destination).map((name) => `${name} at ${destination.name}`));
     return combineAttention(
         attentionOf("destructive", named("OFFLINE"), "does not answer", "do not answer"),
@@ -130,6 +133,8 @@ export function jobsOfDestination(destinationId: string, jobs: ExplorerJob[]): E
 export interface DestinationsSummary {
     destinations: number;
     answering: number;
+    /** Air-gapped destinations that are not connected, which is how they are meant to be. */
+    away: number;
     size: number;
     /** What the destinations with a measurement a week old grew, null when none has one. */
     growth: number | null;
@@ -142,6 +147,7 @@ export function summarizeDestinations(destinations: ExplorerDestination[]): Dest
     return {
         destinations: destinations.length,
         answering: destinations.filter((destination) => destination.health.status === "ONLINE").length,
+        away: destinations.filter((destination) => answerOf(destination) === "away").length,
         size: destinations.reduce((sum, destination) => sum + destination.size, 0),
         growth: grown.length > 0 ? grown.reduce((sum, destination) => sum + (destination.growth ?? 0), 0) : null,
         backups: destinations.reduce((sum, destination) => sum + destination.count, 0),

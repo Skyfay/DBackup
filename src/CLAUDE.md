@@ -176,6 +176,8 @@ Context flows through `RunnerContext` in `src/lib/runner/types.ts`. Add a step b
 
 **Execution statuses**: `Pending`, `Running`, `Success`, `Partial`, `Failed`, `Cancelled`. `Partial` is set in `03-upload.ts` when some destinations succeed and others fail.
 
+**Air-gapped destinations** (`src/lib/core/air-gap.ts`, `airGapped` in the metadata of the connection) are connected only now and then. The upload asks one right before it with `isConnected` from `steps/air-gap.ts` and skips it when it does not answer, which keeps the run a `Success`. Anything that counts copies, connections that do not answer or offline alerts leaves one out through `isAirGapped` or `isNotConnected`, so a new place that does goes through them too.
+
 ## Queue system (`src/lib/execution/queue-manager.ts`)
 
 FIFO queue with configurable concurrency:
@@ -274,7 +276,7 @@ Defined in `src/lib/notifications/` - `types.ts` holds the `NOTIFICATION_EVENTS`
 | Auth | `USER_LOGIN`, `USER_CREATED` |
 | Restore | `RESTORE_COMPLETE`, `RESTORE_FAILURE` |
 | System | `CONFIG_BACKUP`, `SYSTEM_ERROR` |
-| Storage | `STORAGE_USAGE_SPIKE`, `STORAGE_LIMIT_WARNING`, `STORAGE_MISSING_BACKUP` |
+| Storage | `STORAGE_USAGE_SPIKE`, `STORAGE_LIMIT_WARNING`, `STORAGE_MISSING_BACKUP`, `AIRGAP_SKIPPED` |
 | Updates | `UPDATE_AVAILABLE` |
 | Backup | `INTEGRITY_CHECK_FAILURE` |
 | Health | `CONNECTION_OFFLINE`, `CONNECTION_ONLINE`, `DB_VERSION_CHANGED` |

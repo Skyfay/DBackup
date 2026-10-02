@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleX, Clock, ClockAlert, FolderOpen, KeyRound, Layers, Lock, MousePointerClick, Settings2, ShieldCheck, Unlink } from "lucide-react";
+import { CircleX, Clock, ClockAlert, FolderOpen, KeyRound, Layers, Lock, MousePointerClick, Settings2, ShieldCheck, Unlink, Unplug } from "lucide-react";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { RelativeTime } from "@/components/dashboard/widgets/relative-time";
 import { Tooltip, TooltipContent, TooltipHead, TooltipTrigger } from "@/components/ui/tooltip";
@@ -43,53 +43,68 @@ export function DestinationTile({ destination, size = "md" }: { destination: Pic
 }
 
 
-const ANSWER_DOT: Record<Answer, string> = { online: "bg-success", missed: "bg-warning", offline: "bg-destructive" };
+const ANSWER_DOT: Record<Exclude<Answer, "away">, string> = { online: "bg-success", missed: "bg-warning", offline: "bg-destructive" };
 
+/** The state of a destination as a dot in its color, or the plug of an air-gapped one that is away. */
 export function AnswerDot({ answer }: { answer: Answer }) {
+    if (answer === "away") return <Unplug className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />;
     return <span className={cn("size-1.5 shrink-0 rounded-full", ANSWER_DOT[answer])} aria-hidden="true" />;
 }
+
+const ANSWER_TEXT: Record<Answer, string> = { online: "text-success", missed: "text-warning", offline: "text-destructive", away: "text-muted-foreground" };
 
 /** Whether a destination answers right now, as the connection check last saw it, with the time it took or since when it does not. */
 export function AnswerText({ destination, className }: { destination: ExplorerDestination; className?: string }) {
     const answer = answerOf(destination);
     const { latencyMs, answeredAt } = destination.health;
     return (
-        <span className={cn("inline-flex shrink-0 items-center gap-1.5 text-xs font-medium", answer === "online" ? "text-success" : answer === "missed" ? "text-warning" : "text-destructive", className)}>
+        <span className={cn("inline-flex shrink-0 items-center gap-1.5 text-xs font-medium", ANSWER_TEXT[answer], className)}>
             <AnswerDot answer={answer} />
             {answer === "online" && `Online${latencyMs !== null ? ` · ${latencyMs} ms` : ""}`}
             {answer === "missed" && "Missed its last check"}
             {answer === "offline" && (answeredAt ? <>Offline since <DateDisplay date={answeredAt} format="Pp" /></> : "Offline")}
+            {answer === "away" && (answeredAt ? <>Not connected · since <DateDisplay date={answeredAt} format="Pp" /></> : "Not connected")}
         </span>
     );
 }
 
-/** What the dot and the clock on a copy mean, under the toolbar of a list that shows copies. */
-export function AnswerLegend() {
+/** What the dot and the clock on a copy mean, under the toolbar of a list that shows copies. The plug only shows with an air-gapped destination. */
+export function AnswerLegend({ airGapped = false }: { airGapped?: boolean }) {
     return (
         <p className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 pb-3 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1.5"><AnswerDot answer="online" />Answers right now</span>
             <span className="inline-flex items-center gap-1.5"><AnswerDot answer="missed" />Missed its last check</span>
             <span className="inline-flex items-center gap-1.5"><AnswerDot answer="offline" />Offline, a restore from it fails</span>
+            {airGapped && <span className="inline-flex items-center gap-1.5"><AnswerDot answer="away" />Air-gapped, not connected</span>}
             <span className="inline-flex items-center gap-1.5"><ClockAlert className="size-3.5 text-warning" aria-hidden="true" />Its list is old</span>
         </p>
     );
 }
 
-const ANSWER_TONES: Record<Answer, "success" | "warning" | "destructive"> = { online: "success", missed: "warning", offline: "destructive" };
-const ANSWER_WORDS: Record<Answer, string> = { online: "answers right now", missed: "missed its last check", offline: "is offline" };
+const ANSWER_TONES: Record<Exclude<Answer, "away">, "success" | "warning" | "destructive"> = { online: "success", missed: "warning", offline: "destructive" };
+const ANSWER_WORDS: Record<Answer, string> = { online: "answers right now", missed: "missed its last check", offline: "is offline", away: "is not connected" };
 
 /** The state of a destination in words, for the hover of a copy. */
 function AnswerTip({ destination, alternative }: { destination: ExplorerDestination; alternative?: string }) {
     const answer = answerOf(destination);
     const { health } = destination;
+    // A long name gives way, so the state after it always shows.
+    const head = (
+        <span className="flex min-w-0 gap-1">
+            <span className="truncate">{destination.name}</span> <span className="shrink-0">{ANSWER_WORDS[answer]}</span>
+        </span>
+    );
     return (
         <>
-            <TooltipHead tone={ANSWER_TONES[answer]}>
-                {/* A long name gives way, so the state after it always shows. */}
-                <span className="flex min-w-0 gap-1">
-                    <span className="truncate">{destination.name}</span> <span className="shrink-0">{ANSWER_WORDS[answer]}</span>
-                </span>
-            </TooltipHead>
+            {answer === "away" ? (
+                // Away is how an air-gapped destination is meant to be, so its head stays neutral.
+                <div className="-mx-3 -mt-2 mb-1.5 flex min-w-0 items-center gap-2 rounded-t-[7px] border-b px-3 py-1.5 font-semibold">
+                    <AnswerDot answer="away" />
+                    {head}
+                </div>
+            ) : (
+                <TooltipHead tone={ANSWER_TONES[answer]}>{head}</TooltipHead>
+            )}
             <div className="space-y-1 text-muted-foreground">
                 {answer === "online" && (
                     <p>
@@ -98,13 +113,19 @@ function AnswerTip({ destination, alternative }: { destination: ExplorerDestinat
                     </p>
                 )}
                 {answer === "missed" && <p>A restore or download of this copy may fail until it answers again.</p>}
+                {answer === "away" && (
+                    <p>
+                        It is air-gapped{health.answeredAt && <> and was last connected <DateDisplay date={health.answeredAt} format="Pp" /></>}. Connect it to restore or download this copy.
+                        {alternative && ` ${alternative} holds the same backup and answers right now.`}
+                    </p>
+                )}
                 {answer === "offline" && (
                     <>
                         <p>{health.answeredAt ? <>No answer since <DateDisplay date={health.answeredAt} format="Pp" />.</> : "No answer in the checks DBackup keeps."}</p>
                         <p>A restore or download of this copy fails until it answers.{alternative && ` ${alternative} holds the same backup and answers right now.`}</p>
                     </>
                 )}
-                {destination.listError && answer !== "offline" && (
+                {destination.listError && answer !== "offline" && answer !== "away" && (
                     <p>Its last listing failed{destination.listedAt && <>, so this is its list of <DateDisplay date={destination.listedAt} format="Pp" /></>}.</p>
                 )}
             </div>
@@ -134,12 +155,14 @@ export function CopyChip({ destination, state, alternative }: CopyChipProps) {
         );
     }
     const answer = destination ? answerOf(destination) : null;
-    const listOld = destination !== undefined && destination.listError !== null && answer !== "offline";
+    const listOld = destination !== undefined && destination.listError !== null && answer !== "offline" && answer !== "away";
+    // A copy at an air-gapped destination that is away is grayed out, it reads once that is connected.
+    const away = answer === "away";
     const chip = (
         <span className="inline-flex h-6 items-center gap-1.5 rounded-md bg-muted px-2 text-xs font-medium whitespace-nowrap">
             {answer && <AnswerDot answer={answer} />}
-            {destination && <AdapterIcon adapterId={destination.adapterId} className="size-3.5" />}
-            <span className={cn(answer === "offline" && "text-muted-foreground")}>{name}</span>
+            {destination && <AdapterIcon adapterId={destination.adapterId} className={cn("size-3.5", away && "opacity-50 grayscale")} />}
+            <span className={cn((answer === "offline" || away) && "text-muted-foreground")}>{name}</span>
             {answer === "offline" && <span className="text-[11px] text-destructive">offline</span>}
             {listOld && <ClockAlert className="size-3.5 text-warning" aria-label="Its list is old" />}
         </span>

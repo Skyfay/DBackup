@@ -10,6 +10,7 @@ import { deriveHealth, extractLastError, latestFinishedRun, mergeRuns } from "./
 import { buildUpcomingSchedule } from "./schedule";
 import { failedTrend, successRateTrend, valueDaysAgo } from "./trends";
 import type { DashboardHealth, DashboardJobRow, DashboardOverview, RunSummary, UnhealthyJob } from "./types";
+import { isAirGapped } from "@/lib/core/air-gap";
 
 const JOB_ROWS = 8;
 /** Unhealthy jobs the banner shows with their own error and actions. */
@@ -138,7 +139,10 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
         }),
         getLatestJobs(LATEST_EXECUTIONS),
         prisma.adapterConfig.count({ where: { type: { in: HEALTH_CHECKED_TYPES } } }),
-        prisma.adapterConfig.count({ where: { type: { in: HEALTH_CHECKED_TYPES }, lastStatus: "OFFLINE" } }),
+        // An air-gapped destination that is not connected is away on purpose, so it is not counted.
+        prisma.adapterConfig
+            .findMany({ where: { type: { in: HEALTH_CHECKED_TYPES }, lastStatus: "OFFLINE" }, select: { type: true, storageRole: true, metadata: true } })
+            .then((rows) => rows.filter((row) => !isAirGapped(row)).length),
     ]);
 
     const liveRuns = liveExecutions.map(toRunSummary);

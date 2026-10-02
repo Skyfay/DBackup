@@ -15,6 +15,7 @@ export function destination(id: string, name: string, overrides: Partial<Explore
         id,
         name,
         adapterId: "local-filesystem",
+        airGapped: false,
         listedAt: hoursAgo(0.5),
         listError: null,
         listing: false,

@@ -109,8 +109,15 @@ function collect(jobs: JobRecord[], listings: DestinationListing[]): Map<string,
  * reported. One the job no longer writes to, and every destination of a deleted job, is only held
  * to the runs between its oldest and its newest backup, since nothing says when the job stopped
  * writing to it. Locked backups are left out of both limits, they stay past the retention on purpose.
+ * An air-gapped destination never misses a backup, it gets what runs while it is connected.
  */
-export function runsOf(key: string, expected: string[], byDestination: Map<string, ExplorerFile[]>, configured: Set<string> = new Set(expected)): BackupRun[] {
+export function runsOf(
+    key: string,
+    expected: string[],
+    byDestination: Map<string, ExplorerFile[]>,
+    configured: Set<string> = new Set(expected),
+    airGapped: Set<string> = new Set(),
+): BackupRun[] {
     const oldest = new Map<string, number>();
     const newest = new Map<string, number>();
     const paths = new Map<string, Map<string, ExplorerFile>>();
@@ -145,6 +152,7 @@ export function runsOf(key: string, expected: string[], byDestination: Map<strin
                 copies.push({ destinationId, state: "stored", file });
                 continue;
             }
+            if (airGapped.has(destinationId)) continue;
             const since = oldest.get(destinationId);
             const until = configured.has(destinationId) ? Infinity : newest.get(destinationId) ?? -Infinity;
             if (since !== undefined && since < createdAt && createdAt < until) copies.push({ destinationId, state: "missing" });
@@ -165,8 +173,8 @@ function nameOf(key: string, files: ExplorerFile[]): string {
 
 const KIND_ORDER: Record<ExplorerJobKind, number> = { job: 0, deleted: 1, system: 2, none: 3 };
 
-/** Every job with backups or a destination, and its runs. */
-export function buildExplorer(jobs: JobRecord[], listings: DestinationListing[]): ExplorerModel {
+/** Every job with backups or a destination, and its runs. `airGapped` are the destinations connected only now and then. */
+export function buildExplorer(jobs: JobRecord[], listings: DestinationListing[], airGapped: Set<string> = new Set()): ExplorerModel {
     const jobsById = new Map(jobs.map((job) => [job.id, job]));
     const collected = collect(jobs, listings);
     const result: ExplorerJob[] = [];
@@ -183,7 +191,7 @@ export function buildExplorer(jobs: JobRecord[], listings: DestinationListing[])
         const configured = record?.destinationIds ?? [];
         const holding = [...byDestination.keys()].filter((id) => !configured.includes(id)).sort();
         const expected = [...configured, ...holding];
-        const runs = runsOf(key, expected, byDestination, new Set(configured));
+        const runs = runsOf(key, expected, byDestination, new Set(configured), airGapped);
         runsByKey.set(key, runs);
 
         const sample = files.find((file) => file.sourceType) ?? files[0];

@@ -9,7 +9,7 @@ import { DateDisplay } from "@/components/utils/date-display";
 import { cn, formatBytes } from "@/lib/utils";
 import type { ExplorerDestination, ExplorerJob } from "@/services/storage/explorer-types";
 import { activeAlerts, jobsOfDestination, limitShare, statesOfDestination } from "./destination-model";
-import { AnswerText, DestinationTile, JobIcon } from "./explorer-cells";
+import { AnswerText, DestinationTile, JobIcon, answerOf, isStale } from "./explorer-cells";
 import { count } from "./explorer-format";
 
 interface ColumnsInput {
@@ -52,10 +52,10 @@ function StoredCell({ destination }: { destination: ExplorerDestination }) {
     );
 }
 
-/** How old the list of a destination is, the date in amber when it is behind. */
+/** How old the list of a destination is, the date in amber when it is behind. An air-gapped one away keeps its list without a warning. */
 function ListCell({ destination }: { destination: ExplorerDestination }) {
-    const behind = destination.listError !== null || destination.health.status === "OFFLINE" || !destination.listedAt;
-    if (!destination.listedAt) return <span className="text-xs text-warning">Not compared yet</span>;
+    const behind = isStale(destination) || !destination.listedAt;
+    if (!destination.listedAt) return <span className={cn("text-xs", answerOf(destination) === "away" ? "text-muted-foreground" : "text-warning")}>Not compared yet</span>;
     if (behind) {
         return (
             <span className="inline-flex items-center gap-1.5 text-xs whitespace-nowrap text-warning">
@@ -91,7 +91,10 @@ export function destinationColumns({ jobs, renderActions }: ColumnsInput): Colum
                     <DestinationTile destination={row.original} />
                     <div className="min-w-0">
                         <p className="truncate font-medium">{row.original.name}</p>
-                        <p className="truncate text-xs text-muted-foreground">{kindNames.get(row.original.adapterId) ?? row.original.adapterId}</p>
+                        <p className="truncate text-xs text-muted-foreground">
+                            {kindNames.get(row.original.adapterId) ?? row.original.adapterId}
+                            {row.original.airGapped && " · air-gapped"}
+                        </p>
                     </div>
                 </div>
             ),

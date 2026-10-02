@@ -98,8 +98,10 @@ export async function stepFinalize(ctx: RunnerContext) {
         name: d.configName,
         adapterId: d.adapterId,
         path: d.uploadResult?.path,
-        status: d.uploadResult?.success ? "success" : (d.uploadResult ? "failed" : "skipped"),
+        status: d.uploadResult?.success ? "success" : (d.uploadResult && !d.uploadResult.skipped ? "failed" : "skipped"),
         error: d.uploadResult?.error,
+        // Left out on purpose, so no page counts it as a copy that should be there.
+        ...(d.uploadResult?.skipped ? { airGapped: true } : {}),
     }));
 
     const executionMetadata = {

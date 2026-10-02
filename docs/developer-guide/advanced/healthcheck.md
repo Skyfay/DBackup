@@ -76,6 +76,8 @@ const DEFAULT_REMINDER_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 h: re-notify int
 6. Writes a `HealthCheckLog` record and updates the cached fields on `AdapterConfig`
 7. Sends an offline notification if the adapter just went `OFFLINE` (with 24 h cooldown for persistent failures)
 
+An air-gapped destination (`isAirGapped` in `src/lib/core/air-gap.ts`) is checked and logged like any other, but sends neither `CONNECTION_OFFLINE` nor `CONNECTION_ONLINE`, and an offline state left from before it was marked is dropped. The pages read a status other than `ONLINE` of one as not connected, with `isNotConnected`, never as offline.
+
 ### `ping()` vs `test()`
 
 `ping()` is a lightweight connectivity check that must not write any files to storage. `test()` is the full write/delete verification. The health check system always prefers `ping()` to avoid polluting storage with test files every minute.

@@ -517,6 +517,46 @@ describe("Notification Templates", () => {
       });
     });
 
+    describe("AIRGAP_SKIPPED", () => {
+      it("says which job ran without the destination and how long it has been away, in gray as nothing is wrong", () => {
+        const payload = renderTemplate({
+          eventType: NOTIFICATION_EVENTS.AIRGAP_SKIPPED,
+          data: {
+            storageName: "USB rotation",
+            jobName: "Shop nightly",
+            lastConnectedAt: "2026-09-28T08:00:00Z",
+            timestamp: "2026-10-02T03:00:00Z",
+          },
+        });
+
+        expect(payload.title).toBe("USB rotation was skipped");
+        expect(payload.message).toBe("Shop nightly ran without 'USB rotation', since it is air-gapped and not connected. It was last connected 3 days ago.");
+        expect(payload).toMatchObject({ success: true, badge: "Air-gapped", color: "#6b7280" });
+        expect(payload.fields).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ name: "Destination", value: "USB rotation" }),
+            expect.objectContaining({ name: "Job", value: "Shop nightly" }),
+            expect.objectContaining({ name: "Last Connected", value: "2026-09-28T08:00:00Z" }),
+          ])
+        );
+      });
+
+      it("counts hours for the first two days and leaves the time out when it never answered a check", () => {
+        const recent = renderTemplate({
+          eventType: NOTIFICATION_EVENTS.AIRGAP_SKIPPED,
+          data: { storageName: "USB", jobName: "Shop", lastConnectedAt: "2026-10-01T03:00:00Z", timestamp: "2026-10-02T03:00:00Z" },
+        });
+        expect(recent.message).toContain("It was last connected 24 hours ago.");
+
+        const never = renderTemplate({
+          eventType: NOTIFICATION_EVENTS.AIRGAP_SKIPPED,
+          data: { storageName: "USB", jobName: "Shop", timestamp: "2026-10-02T03:00:00Z" },
+        });
+        expect(never.message).not.toContain("last connected");
+        expect(never.fields?.map((field) => field.name)).not.toContain("Last Connected");
+      });
+    });
+
     // ── Update / Connection Templates ─────────────────────────────
 
     describe("UPDATE_AVAILABLE", () => {

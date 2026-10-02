@@ -61,7 +61,8 @@ export function DestinationDetails({ destination, runs, jobs, destinations, canD
                         <AnswerText destination={destination} />
                     </div>
                     <p className="truncate text-sm text-muted-foreground">
-                        {kindNames.get(destination.adapterId) ?? destination.adapterId} · {count(entries.length, "job")} with backups here
+                        {kindNames.get(destination.adapterId) ?? destination.adapterId}
+                        {destination.airGapped && " · air-gapped"} · {count(entries.length, "job")} with backups here
                     </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
@@ -93,7 +94,8 @@ export function DestinationDetails({ destination, runs, jobs, destinations, canD
                 </div>
             </div>
 
-            {destination.health.status !== "ONLINE" && (
+            {/* An air-gapped destination that is away says so in its head, it is no issue. */}
+            {destination.health.status !== "ONLINE" && !destination.airGapped && (
                 <IssueBanner status={destination.health.status} error={destination.health.error} lastPassedAt={destination.health.answeredAt} />
             )}
 

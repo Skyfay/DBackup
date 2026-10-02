@@ -9,6 +9,7 @@ import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { INTEGRITY_CHECK_STAGES } from "@/lib/core/logs";
 import { isBackupFile } from "@/lib/core/backup-files";
+import { isAirGapped } from "@/lib/core/air-gap";
 
 const log = logger.child({ service: "IntegrityService" });
 
@@ -324,6 +325,11 @@ export class IntegrityService {
       try {
         allFiles = await adapter.list(config, "");
       } catch (e: unknown) {
+        // An air-gapped destination that is not connected is checked the next time it is.
+        if (isAirGapped(dest.config)) {
+          callbacks?.onLog(`${dest.config.name}: air-gapped and not connected - skipping`, "info");
+          continue;
+        }
         const msg = e instanceof Error ? e.message : String(e);
         log.warn("Could not list destination", { destination: dest.config.name }, wrapError(e));
         callbacks?.onLog(`${dest.config.name}: listing failed - ${msg}`, "error");
@@ -397,6 +403,11 @@ export class IntegrityService {
     try {
       allFiles = await adapter.list(config, "");
     } catch (e: unknown) {
+      // An air-gapped destination that is not connected is checked the next time it is.
+      if (isAirGapped(storageConfig)) {
+        callbacks?.onLog(`${storageConfig.name}: air-gapped and not connected - skipping`, "info");
+        return [];
+      }
       log.warn(
         "Could not list storage root, falling back to active jobs",
         { destination: storageConfig.name },

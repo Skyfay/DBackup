@@ -174,6 +174,23 @@ describe('IntegrityService', () => {
         expect(result.skipped).toBe(1);
     });
 
+    it('skips an air-gapped destination that cannot be listed, without the job fallback or a scan failure', async () => {
+        const adapter = makeStorageAdapter({ list: vi.fn().mockRejectedValue(new Error('No such directory')) });
+        (prisma.adapterConfig.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+            {
+                id: 'usb', adapterId: 'local', name: 'USB rotation', config: '{}', type: 'storage', storageRole: 'DESTINATION',
+                metadata: JSON.stringify({ airGapped: true }), primaryCredentialId: null, sshCredentialId: null,
+            },
+        ]);
+        (registry.get as ReturnType<typeof vi.fn>).mockReturnValue(adapter);
+
+        const result = await integrityService.runFullIntegrityCheck();
+
+        expect(prisma.job.findMany).not.toHaveBeenCalled();
+        expect(adapter.list).toHaveBeenCalledTimes(1);
+        expect(result.scanFailed).toBe(0);
+    });
+
     it('skips unknown storage adapter (not in registry)', async () => {
         (prisma.adapterConfig.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
             { id: 's2', adapterId: 'unknown-adapter', name: 'Unknown', config: '{}', primaryCredentialId: null, sshCredentialId: null },
@@ -298,6 +315,20 @@ describe('IntegrityService', () => {
 
             expect(result.totalFiles).toBe(1);
             expect(result.passed).toBe(1);
+        });
+
+        it('skips an air-gapped destination that cannot be listed without counting a scan failure', async () => {
+            const adapter = makeStorageAdapter({ list: vi.fn().mockRejectedValue(new Error('No such directory')) });
+            const job = makeJobWithDest('ProdJob', 'usb');
+            job.destinations[0].config.metadata = JSON.stringify({ airGapped: true }) as never;
+            (prisma.job.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([job]);
+            (registry.get as ReturnType<typeof vi.fn>).mockReturnValue(adapter);
+            const onLog = vi.fn();
+
+            const result = await integrityService.runFullIntegrityCheck({ onLog, onStage: vi.fn(), onFileProgress: vi.fn() } as never);
+
+            expect(result.scanFailed).toBe(0);
+            expect(onLog).toHaveBeenCalledWith('Storage for ProdJob: air-gapped and not connected - skipping', 'info');
         });
 
         it('skips jobs with skipVerification flag', async () => {

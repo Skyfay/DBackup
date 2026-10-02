@@ -33,12 +33,15 @@ export interface BackupLookup {
     jobs: Map<string, ExplorerJob>;
     /** Ids of the destinations whose last connection check got an answer. */
     answering: Set<string>;
+    /** Ids of the air-gapped destinations that are not connected, which is how they are meant to be. */
+    away?: Set<string>;
 }
 
 /** The lookup for these jobs and destinations. A destination answers unless it missed its last check or is offline. */
-export function lookupOf(jobs: Map<string, ExplorerJob>, destinations: Pick<ExplorerDestination, "id" | "health">[]): BackupLookup {
+export function lookupOf(jobs: Map<string, ExplorerJob>, destinations: Pick<ExplorerDestination, "id" | "health" | "airGapped">[]): BackupLookup {
     const answering = destinations.filter((destination) => destination.health.status !== "OFFLINE" && destination.health.status !== "DEGRADED");
-    return { jobs, answering: new Set(answering.map((destination) => destination.id)) };
+    const away = destinations.filter((destination) => destination.airGapped && destination.health.status !== "ONLINE");
+    return { jobs, answering: new Set(answering.map((destination) => destination.id)), away: new Set(away.map((destination) => destination.id)) };
 }
 
 /** A filter left out, for the counts beside that filter. */
@@ -116,10 +119,14 @@ export function primaryCopy(run: BackupRun, at: string[] = [], rank?: (destinati
 export const failedCheck = (run: BackupRun, at: string[] = []) => copiesIn(run, at).some((copy) => copy.file?.verification?.passed === false);
 export const hasMissing = (run: BackupRun, at: string[] = []) => copiesIn(run, at).some((copy) => copy.state === "missing");
 export const isLocked = (run: BackupRun, at: string[] = []) => copiesIn(run, at).some((copy) => copy.file?.locked);
-/** Whether no copy can be read right now: each stored one lies at a destination that does not answer. */
-export const noAnswer = (run: BackupRun, at: string[], answering: Set<string>) => {
+/**
+ * Whether no copy can be read right now: each stored one lies at a destination that does not
+ * answer. A backup kept only at air-gapped destinations that are away is no problem, it reads
+ * once one of them is connected.
+ */
+export const noAnswer = (run: BackupRun, at: string[], answering: Set<string>, away: Set<string> = new Set()) => {
     const targets = targetsOf(run, at);
-    return targets.length > 0 && !targets.some((target) => answering.has(target.destinationId));
+    return targets.length > 0 && !targets.some((target) => answering.has(target.destinationId)) && !targets.every((target) => away.has(target.destinationId));
 };
 
 /** The check to show for a run: a failed copy wins, then the one the list shows. */
@@ -135,7 +142,7 @@ function inState(run: BackupRun, state: BackupState, at: string[], lookup: Backu
         case "failed":
             return failedCheck(run, at);
         case "unreachable":
-            return noAnswer(run, at, lookup.answering);
+            return noAnswer(run, at, lookup.answering, lookup.away);
         case "locked":
             return isLocked(run, at);
         case "deleted":

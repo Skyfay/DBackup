@@ -54,6 +54,11 @@ describe("what a run backed up", () => {
         ]);
         expect(destinationsOfRun(null)).toEqual([]);
     });
+
+    it("leaves out an air-gapped destination the run skipped", () => {
+        const metadata = JSON.stringify({ destinations: [{ name: "NAS", adapterId: "sftp", status: "success" }, { name: "USB", adapterId: "local-filesystem", status: "skipped", airGapped: true }] });
+        expect(destinationsOfRun(metadata)).toEqual([{ name: "NAS", adapterId: "sftp", ok: true }]);
+    });
 });
 
 describe("the last backup of each database", () => {

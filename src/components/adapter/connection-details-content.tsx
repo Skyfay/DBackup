@@ -20,8 +20,8 @@ import { DetailStats, FactList, HealthTimeline, IssueBanner, Section, UsageList,
 
 const log = logger.child({ component: "connection-details" });
 
-const STATUS_CLASS = { ONLINE: "text-success", DEGRADED: "text-warning", OFFLINE: "text-destructive", PENDING: "text-muted-foreground" };
-const STATUS_LABEL = { ONLINE: "Online", DEGRADED: "Degraded", OFFLINE: "Offline", PENDING: "Not checked" };
+const STATUS_CLASS = { ONLINE: "text-success", DEGRADED: "text-warning", OFFLINE: "text-destructive", AWAY: "text-muted-foreground", PENDING: "text-muted-foreground" };
+const STATUS_LABEL = { ONLINE: "Online", DEGRADED: "Degraded", OFFLINE: "Offline", AWAY: "Not connected", PENDING: "Not checked" };
 
 type DetailsResult = { id: string; data: ConnectionDetails } | { id: string; error: string };
 

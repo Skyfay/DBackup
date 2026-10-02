@@ -121,4 +121,15 @@ describe("the numbers of the Connections page", () => {
         expect(tileOf("Failed")).toHaveTextContent("1");
         expect(screen.getByText("the last message of Slack ops failed")).toBeInTheDocument();
     });
+
+    it("leave an air-gapped destination that is not connected out of the ones that should answer, and name it", () => {
+        render(<ConnectionStrip kind="destination" configs={[
+            connection("NAS", {}, "ONLINE", "local-filesystem"),
+            { ...connection("USB rotation", {}, "OFFLINE", "local-filesystem"), type: "storage", metadata: JSON.stringify({ airGapped: true }) },
+        ] as never} />);
+
+        expect(tileOf("Answering")).toHaveTextContent("1of 1");
+        expect(tileOf("Answering").querySelector(".text-destructive")).toBeNull();
+        expect(screen.getByText("every connection answers, USB rotation air-gapped, not connected")).toBeInTheDocument();
+    });
 });

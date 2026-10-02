@@ -17,6 +17,8 @@ export interface ExplorerDestination {
     id: string;
     name: string;
     adapterId: string;
+    /** Connected only now and then, so not answering is no problem and a backup it lacks is no copy missing. */
+    airGapped: boolean;
     /** Whether it checks a backup by its own checksum, without a download. */
     checksNatively?: boolean;
     /** When the listing was last compared with the storage. Null while it could not be listed at all. */

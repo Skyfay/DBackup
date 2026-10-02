@@ -15,6 +15,7 @@ import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { attentionOf, combineAttention, type TabAttention } from "@/lib/core/tab-attention";
 import { keepInTrash } from "@/services/trash/trash-snapshot";
 import type { DeleteOptions } from "@/services/trash/trash-types";
+import { isAirGapped } from "@/lib/core/air-gap";
 
 const log = logger.child({ service: "AdapterService" });
 
@@ -249,11 +250,13 @@ export async function getAdapterTypes(ids: string[]): Promise<string[]> {
 
 /** Which connections of each kind the health check finds failing, for the dots of the Connections tabs. */
 export async function getConnectionAttention(): Promise<Record<"databases" | "sources" | "destinations" | "notifications", TabAttention | undefined>> {
-    const failing = await prisma.adapterConfig.findMany({
+    const rows = await prisma.adapterConfig.findMany({
         where: { lastStatus: { in: ["OFFLINE", "DEGRADED"] } },
-        select: { name: true, type: true, storageRole: true, lastStatus: true },
+        select: { name: true, type: true, storageRole: true, lastStatus: true, metadata: true },
         orderBy: { name: "asc" },
     });
+    // An air-gapped destination that is not connected is away on purpose.
+    const failing = rows.filter((adapter) => !isAirGapped(adapter));
     // A connection that does not answer is red, one that failed a check or two amber.
     const of = (type: string, role?: string) => {
         const list = failing.filter((adapter) => adapter.type === type && (!role || adapter.storageRole === role));

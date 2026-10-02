@@ -98,8 +98,11 @@ describe("getDashboardOverview", () => {
             { id: "live-1", jobId: "manual", status: "Running", startedAt: new Date("2026-09-21T09:58:00.000Z"), endedAt: null },
         ] as never);
         // 13 watched connections, 2 of them offline.
-        prismaMock.adapterConfig.count.mockImplementation(((args: { where?: { lastStatus?: string } }) =>
-            Promise.resolve(args?.where?.lastStatus === "OFFLINE" ? 2 : 13)) as never);
+        prismaMock.adapterConfig.count.mockResolvedValue(13);
+        prismaMock.adapterConfig.findMany.mockResolvedValue([
+            { type: "database", storageRole: null, metadata: null },
+            { type: "storage", storageRole: "DESTINATION", metadata: "{}" },
+        ] as never);
         prismaMock.execution.findUnique.mockResolvedValue({
             logs: JSON.stringify([{ level: "error", message: "connect ECONNREFUSED 10.0.4.41:5432" }]),
         } as never);
@@ -159,9 +162,20 @@ describe("getDashboardOverview", () => {
     it("only counts database and storage connections, the ones the health check watches", async () => {
         await getDashboardOverview();
 
-        expect(prismaMock.adapterConfig.count).toHaveBeenCalledWith({
+        expect(prismaMock.adapterConfig.findMany).toHaveBeenCalledWith(expect.objectContaining({
             where: { type: { in: ["database", "storage"] }, lastStatus: "OFFLINE" },
-        });
+        }));
+    });
+
+    it("leaves an air-gapped destination that is not connected out of the offline connections", async () => {
+        prismaMock.adapterConfig.findMany.mockResolvedValue([
+            { type: "database", storageRole: null, metadata: null },
+            { type: "storage", storageRole: "DESTINATION", metadata: JSON.stringify({ airGapped: true }) },
+        ] as never);
+
+        const { strip } = await getDashboardOverview();
+
+        expect(strip.offlineConnections).toBe(1);
     });
 
     it("builds the upcoming runs from the enabled schedules only", async () => {

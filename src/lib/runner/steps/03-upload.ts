@@ -17,6 +17,8 @@ import { INDEX_SIDECAR_SUFFIX } from "@/lib/archive/format";
 import { chainSegment } from "@/lib/templates/naming-template-engine";
 import { withStorageSession } from "./upload-helpers";
 import { verificationService } from "@/services/storage/verification-service";
+import { AIR_GAP_SKIP } from "@/lib/core/air-gap";
+import { isConnected, reportSkippedAirGaps } from "./air-gap";
 
 export async function stepUpload(ctx: RunnerContext) {
     if (!ctx.job || ctx.destinations.length === 0 || !ctx.tempFile) throw new Error("Context not ready for upload");
@@ -238,6 +240,13 @@ export async function stepUpload(ctx: RunnerContext) {
     for (let i = 0; i < totalDests; i++) {
         const dest = ctx.destinations[i];
         const destLabel = `[${dest.configName}]`;
+        // An air-gapped destination that is not connected is left out, which is no failure.
+        if (dest.airGapped && !(await isConnected(dest))) {
+            dest.uploadResult = { success: false, skipped: true, error: AIR_GAP_SKIP };
+            reportUpload(i, { state: "skipped", error: AIR_GAP_SKIP, endedAt: new Date().toISOString() });
+            ctx.log(`${destLabel} ${AIR_GAP_SKIP}, skipped`);
+            continue;
+        }
         const uploadStart = Date.now();
         reportUpload(i, { state: "uploading", bytes: 0, startedAt: new Date(uploadStart).toISOString() });
         const destProgress = (percent: number) => {
@@ -351,23 +360,33 @@ export async function stepUpload(ctx: RunnerContext) {
 
     // --- EVALUATE RESULTS (before verification so summary appears in Uploading stage) ---
     const successCount = ctx.destinations.filter(d => d.uploadResult?.success).length;
-    const failCount = ctx.destinations.filter(d => d.uploadResult && !d.uploadResult.success).length;
+    const skipped = ctx.destinations.filter(d => d.uploadResult?.skipped);
+    const failCount = ctx.destinations.filter(d => d.uploadResult && !d.uploadResult.success && !d.uploadResult.skipped).length;
 
     const firstSuccess = ctx.destinations.find(d => d.uploadResult?.success);
     if (firstSuccess) {
         ctx.finalRemotePath = firstSuccess.uploadResult!.path;
     }
 
+    // A backup that reached no destination at all is lost, whether they failed or were away.
     if (successCount === 0) {
-        throw new Error(`All ${failCount} destination upload(s) failed`);
+        throw new Error(skipped.length === 0
+            ? `All ${failCount} destination upload(s) failed`
+            : failCount === 0
+                ? "No destination took the backup, every one is air-gapped and not connected"
+                : `No destination took the backup, ${failCount} failed and ${skipped.length} air-gapped not connected`);
     }
 
+    const away = skipped.length > 0 ? `, ${skipped.length} air-gapped not connected` : "";
     if (failCount > 0) {
         ctx.status = "Partial";
-        ctx.log(`Upload summary: ${successCount}/${totalDests} successful, ${failCount} failed`, 'warning');
+        ctx.log(`Upload summary: ${successCount}/${totalDests} successful, ${failCount} failed${away}`, 'warning');
+    } else if (skipped.length > 0) {
+        ctx.log(`Upload summary: ${successCount}/${totalDests} successful${away}`);
     } else {
         ctx.log(`Upload summary: All ${successCount} destination(s) successful`);
     }
+    await reportSkippedAirGaps(ctx, skipped);
 
     // --- POST-UPLOAD VERIFICATION ---
     const postVerifySetting = await prisma.systemSetting.findUnique({ where: { key: "backup.postUploadVerify" } });

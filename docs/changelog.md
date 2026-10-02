@@ -62,6 +62,8 @@ All notable changes to DBackup are documented here.
 - **ui**: A search in the middle of the header, or Ctrl+K (⌘K on macOS) anywhere, finds the jobs, connections, databases, backups, runs, people, groups, API keys, templates, Vault entries, settings and pages you may open. It also starts a found job and switches the theme.
 - **auth**: The login page can show a picture of your own instead of the logos, chosen under Settings › Sign-in. The picture lives in the database and comes back with the configuration backup.
 - **auth**: **Settings → Passwords** sets what a new password needs, as Basic, Standard, Strong or rules of its own, with Standard on a new instance and Basic kept on an updated one. Every field for a new password ticks off the rules as they hold, Generate follows them and the server refuses a password that breaks one.
+- **storage**: A destination connected only now and then, like a USB disk, can be marked **Air-gapped** under Behavior. While it is not connected, runs skip it and stay a success, and it raises no offline alert and no missing copy but shows as not connected in gray.
+- **notifications**: The new system notification **An air-gapped destination was skipped** reports the first run that leaves out an air-gapped destination, once each time it goes away. It is off by default.
 
 
 ### 🐛 Bug Fixes
@@ -326,6 +328,7 @@ All notable changes to DBackup are documented here.
 - **docs**: A new Recently Deleted guide describes what a delete keeps, the list, a restore and who sees what. The key, credential profile, user, job, data retention and API guides say where a delete goes, and the developer guide describes the snapshot of a delete.
 - **api**: The API reference in the app lists the bulk endpoints of the docs site again, and the download of a recovery kit has its real address, `GET /api/vault/recovery-kit?ids=`.
 - **docs**: The guides name the tabs of the Connections page and their New buttons as the app shows them, and the restore guide the dialog that asks for a key.
+- **docs**: The destination guide describes air-gapped destinations, and the notification and Backups guides follow them. The runner and health check pages for developers describe how a run and the health check treat one.
 
 
 ### 🧪 Tests
@@ -340,6 +343,7 @@ All notable changes to DBackup are documented here.
 - **tests**: New tests cover the colors of the tasks, the actions of the profile and what a group may change of it, also where the browser calls better-auth itself.
 - **tests**: The guard of the retired connection pages checks their redirects in `next.config.ts` and that no page stands in for them.
 - **tests**: The design guard also catches boxes that scroll sideways and checks the primitives, and its two baselines are at zero. New guards check that every page of the dashboard has a loading state and a title and that both copies of the API reference match.
+- **tests**: New tests cover air-gapped destinations in a run, the health check, the chain planner, the integrity check and the pages that count copies or connections that do not answer.
 
 
 ### 🔧 CI/CD

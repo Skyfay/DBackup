@@ -326,6 +326,28 @@ describe("refreshStorageStatsCache", () => {
     expect(result[0]).toMatchObject({ size: 800, count: 2, scanError: true, lastScanAt: "2026-09-21T05:00:00.000Z" });
   });
 
+  it("keeps the last scan of an air-gapped destination that is not connected without listing it", async () => {
+    const list = vi.fn();
+    vi.mocked(registry.get).mockReturnValue({ list } as any);
+
+    prismaMock.adapterConfig.findMany.mockResolvedValue([
+      {
+        id: "usb", name: "USB rotation", adapterId: "local-filesystem", type: "storage", storageRole: "DESTINATION",
+        config: "{}", lastStatus: "OFFLINE", metadata: JSON.stringify({ airGapped: true }),
+      } as any,
+    ]);
+    prismaMock.storageSnapshot.findFirst.mockResolvedValue({
+      size: BigInt(4096),
+      count: 4,
+      createdAt: new Date("2026-09-27T05:00:00.000Z"),
+    } as any);
+
+    const result = await refreshStorageStatsCache();
+
+    expect(list).not.toHaveBeenCalled();
+    expect(result[0]).toMatchObject({ configId: "usb", size: 4096, count: 4, scanError: true, lastScanAt: "2026-09-27T05:00:00.000Z" });
+  });
+
   it("saves storage snapshots and checks alerts after a successful refresh", async () => {
     const mockAdapter = {
       list: vi.fn().mockResolvedValue([

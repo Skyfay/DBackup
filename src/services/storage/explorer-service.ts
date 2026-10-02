@@ -8,6 +8,7 @@ import { defaultAlertConfig, defaultAlertStates, getAlertConfig, getAlertStates 
 import { retentionConfigOf } from "./explorer-plan";
 import { buildExplorer, normalizePath, type DestinationListing, type ExplorerModel, type JobRecord } from "./explorer-model";
 import type { DestinationAlerts, ExplorerBackup, ExplorerBackups, ExplorerDestination, ExplorerFile, ExplorerIndex, HealthStatus, RunExecution } from "./explorer-types";
+import { isAirGapped, isNotConnected } from "@/lib/core/air-gap";
 
 const log = logger.child({ service: "StorageExplorerService" });
 
@@ -71,7 +72,7 @@ export class StorageExplorerService {
         const [configs, jobs] = await Promise.all([
             prisma.adapterConfig.findMany({
                 where: { type: "storage", storageRole: STORAGE_ROLES.DESTINATION },
-                select: { id: true, name: true, adapterId: true, lastStatus: true, lastHealthCheck: true, lastError: true },
+                select: { id: true, name: true, adapterId: true, type: true, storageRole: true, metadata: true, lastStatus: true, lastHealthCheck: true, lastError: true },
                 orderBy: { name: "asc" },
             }),
             this.loadJobs(),
@@ -85,7 +86,8 @@ export class StorageExplorerService {
                 log.warn("Could not read the cached listing", { destinationId: config.id }, wrapError(error));
                 return null;
             });
-            if (config.lastStatus !== "OFFLINE") {
+            // An air-gapped destination is listed again once it is connected.
+            if (config.lastStatus !== "OFFLINE" && !isNotConnected(config)) {
                 if (!cached || !cached.current) storageService.refreshInBackground(config.id, "rebuild");
                 else if (isListingStale(cached.listedAt)) storageService.refreshInBackground(config.id, "reconcile");
             }
@@ -113,6 +115,7 @@ export class StorageExplorerService {
                 id: config.id,
                 name: config.name,
                 adapterId: config.adapterId,
+                airGapped: isAirGapped(config),
                 checksNatively: checksNatively(config.adapterId),
                 listedAt,
                 listError: error,
@@ -126,7 +129,8 @@ export class StorageExplorerService {
         });
 
         const listings: DestinationListing[] = configs.map((config, index) => ({ destinationId: config.id, files: listed[index].files }));
-        return { destinations, model: buildExplorer(jobs, listings) };
+        const airGapped = new Set(destinations.filter((destination) => destination.airGapped).map((destination) => destination.id));
+        return { destinations, model: buildExplorer(jobs, listings, airGapped) };
     }
 
     /**

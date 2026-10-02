@@ -33,6 +33,8 @@ A dot on every copy in **Stored at** tells whether its destination answers right
 
 A copy shows as **missing** when a destination of the job holds older backups of it but not this one. A destination added to the job later, or one whose retention keeps fewer backups, is not reported for the runs it never had. A destination the job no longer writes to, and every destination of a deleted job, only counts for the runs between its oldest and its newest backup of the job.
 
+An [air-gapped destination](/user-guide/destinations/#air-gapped-destinations) that is not connected shows its copies grayed out with an unplugged icon instead of a dot, and hovering one says since when it is not connected. A backup made while it was away never shows as missing there, and it gets nothing in **Stored at** for that destination.
+
 ### Filters
 
 The filters beside the search narrow the list. Each opens a list with a search, a checkbox per entry and the number of backups every entry would leave, and several entries can be picked. The box beside the search picks every entry the search shows, the foot tells how many are picked and **Clear** empties the filter, and a filter that holds something is framed in the color of filtering:
@@ -99,6 +101,7 @@ The timeline of the switch next to the tabs shows every destination by day, from
 
 - a filled cell counts the backups that arrived that day
 - amber marks a day with a missing copy, and a red cross today at a destination that does not answer
+- gray dashes mark the days an air-gapped destination was not connected while its jobs ran, and hovering one says how many backups ran without it and when it was last connected
 - at today the arrow on the right adds the next 7 days with the backups the schedules plan, dashed, and scissors where the retention removes backups after them
 
 The row **Every destination** on top counts the backups of each day. The arrows, the calendar and **Today** work like on the timeline of the backups. The list waits under the timeline, and a click on a destination or one of its days shows its details under it.

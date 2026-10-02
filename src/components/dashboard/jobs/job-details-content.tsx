@@ -31,6 +31,8 @@ const HEALTH: Record<string, { label: string; dot: string; text: string }> = {
     ONLINE: { label: "Online", dot: "bg-success", text: "text-muted-foreground" },
     DEGRADED: { label: "Degraded", dot: "bg-warning", text: "text-warning" },
     OFFLINE: { label: "Offline", dot: "bg-destructive", text: "text-destructive" },
+    // An air-gapped destination that is not connected, which the run skips without a failure.
+    AWAY: { label: "Not connected", dot: "bg-muted-foreground/40", text: "text-muted-foreground" },
 };
 
 /** Who compresses: DBackup, PostgreSQL itself for a dump on its own, or nobody. */

@@ -8,6 +8,7 @@ import { cn, formatDuration } from "@/lib/utils";
 import type { RunDetail, RunStep, RunStepState, RunUpload } from "@/services/history/run-types";
 import { LiveBar } from "./run-cells";
 import { RunningIcon } from "./run-live";
+import { AIR_GAP_SKIP } from "@/lib/core/air-gap";
 
 export function StepIcon({ state, className }: { state: RunStepState; className?: string }) {
     if (state === "running") return <RunningIcon className={className} />;
@@ -37,21 +38,26 @@ function noteOf(step: RunStep, run: RunDetail): string | null {
     if (step.state === "skipped") return "skipped";
     if (step.state === "pending") return "next";
     if (step.name === "Dumping Databases" && run.databases.length > 0) return `${run.databases.length} ${run.databases.length === 1 ? "database" : "databases"}`;
-    if (step.name === "Uploading" && run.uploads.length > 0) return `${run.uploads.filter((upload) => upload.state === "done").length} of ${run.uploads.length} stored`;
+    if (step.name === "Uploading" && run.uploads.length > 0) {
+        // An air-gapped destination that was away is no copy that should be there.
+        const expected = run.uploads.filter((upload) => !(upload.state === "skipped" && upload.error === AIR_GAP_SKIP)).length;
+        return `${run.uploads.filter((upload) => upload.state === "done").length} of ${expected} stored`;
+    }
     if (step.name === "Sending Notifications" && run.notifications.length > 0) return `${run.notifications.filter((entry) => entry.status === "Success").length} of ${run.notifications.length} sent`;
     return null;
 }
 
 function uploadText(upload: RunUpload): string {
     if (upload.state === "failed") return upload.error ?? "failed";
+    if (upload.state === "skipped" && upload.error === AIR_GAP_SKIP) return "air-gapped, not connected";
     if (upload.state === "waiting") return "waits";
     if (upload.state === "uploading") return upload.bytes !== null && upload.total ? `${Math.round((upload.bytes / upload.total) * 100)} %` : "starting";
     if (upload.startedAt && upload.endedAt) return `stored in ${formatDuration(Date.parse(upload.endedAt) - Date.parse(upload.startedAt))}`;
     return upload.state === "done" ? "stored" : "skipped";
 }
 
-function SubLine({ adapterId, name, text, state, share }: { adapterId: string; name: string; text: string; state: "done" | "failed" | "running" | "waiting"; share?: number | null }) {
-    const icon: RunStepState = state === "done" ? "done" : state === "failed" ? "failed" : state === "running" ? "running" : "pending";
+function SubLine({ adapterId, name, text, state, share }: { adapterId: string; name: string; text: string; state: "done" | "failed" | "running" | "waiting" | "skipped"; share?: number | null }) {
+    const icon: RunStepState = state === "done" ? "done" : state === "failed" ? "failed" : state === "running" ? "running" : state === "skipped" ? "skipped" : "pending";
     return (
         <div className="py-1.5 pr-2.5 pl-9">
             <div className="flex min-w-0 items-center gap-2 text-sm">
@@ -124,7 +130,7 @@ export function StepsPane({ run, now, picked, onPick, className }: StepsPaneProp
                                         adapterId={upload.adapterId}
                                         name={upload.name}
                                         text={uploadText(upload)}
-                                        state={upload.state === "uploading" ? "running" : upload.state === "done" ? "done" : upload.state === "failed" ? "failed" : "waiting"}
+                                        state={upload.state === "uploading" ? "running" : upload.state === "done" || upload.state === "failed" || upload.state === "skipped" ? upload.state : "waiting"}
                                         share={upload.bytes !== null && upload.total ? Math.round((upload.bytes / upload.total) * 100) : null}
                                     />
                                 ))}

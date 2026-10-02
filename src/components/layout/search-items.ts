@@ -121,7 +121,7 @@ function connectionRole(hit: Extract<SearchHit, { kind: "connection" }>): string
 }
 
 const ROLE_WORDS: Record<string, string> = { database: "Database connection", source: "Directory source", destination: "Destination", notification: "Channel" };
-const STATUS_WORDS: Record<string, string> = { OFFLINE: "does not answer", DEGRADED: "failed its last check", ONLINE: "answers" };
+const STATUS_WORDS: Record<string, string> = { OFFLINE: "does not answer", DEGRADED: "failed its last check", ONLINE: "answers", AWAY: "air-gapped, not connected" };
 const RUN_WORDS: Record<string, string> = { Success: "Succeeded", Failed: "Failed", Partial: "Missed a copy", Running: "Running", Pending: "Waiting", Cancelled: "Cancelled" };
 const TEMPLATE_WORDS: Record<TemplateKind, string> = { retention: "Retention policy", naming: "File name", schedules: "Schedule preset", notifications: "Notification template", excludes: "Exclude patterns" };
 

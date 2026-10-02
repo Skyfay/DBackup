@@ -114,6 +114,20 @@ describe('stepRetention', () => {
         );
     });
 
+    it('leaves an air-gapped destination that was not connected until it is', async () => {
+        const { RetentionService } = await import('@/services/backup/retention-service');
+        const dest = makeDestination({
+            configName: 'USB rotation',
+            uploadResult: { success: false, skipped: true, error: 'Air-gapped and not connected' },
+        });
+        const ctx = makeCtx({ destinations: [dest] });
+
+        await stepRetention(ctx);
+
+        expect(RetentionService.calculateRetention).not.toHaveBeenCalled();
+        expect(ctx.log).toHaveBeenCalledWith('[USB rotation] Retention: Skipped until it is connected');
+    });
+
     it('skips retention when destination has no policy (mode NONE)', async () => {
         const { RetentionService } = await import('@/services/backup/retention-service');
         const dest = makeDestination({ retention: { mode: 'NONE' } });

@@ -75,6 +75,20 @@ describe('the Backups page never waits for a storage', () => {
         expect(index.destinations[0]).toMatchObject({ listError: 'NT_STATUS_IO_TIMEOUT', listing: false, health: { status: 'OFFLINE' } });
     });
 
+    it('leaves an air-gapped destination that is not connected alone, and marks it air-gapped', async () => {
+        prismaMock.adapterConfig.findMany.mockResolvedValue([
+            { ...destination('usb', 'DEGRADED'), type: 'storage', storageRole: 'DESTINATION', metadata: JSON.stringify({ airGapped: true }) },
+            destination('nas'),
+        ] as never);
+        storage.readCachedListing.mockResolvedValue(null);
+
+        const index = await service.getIndex();
+
+        expect(storage.refreshInBackground).toHaveBeenCalledTimes(1);
+        expect(storage.refreshInBackground).toHaveBeenCalledWith('nas', 'rebuild');
+        expect(index.destinations.map((entry) => [entry.id, entry.airGapped])).toEqual([['usb', true], ['nas', false]]);
+    });
+
     it('tells how long the last connection check took and when an offline destination last answered', async () => {
         prismaMock.adapterConfig.findMany.mockResolvedValue([destination('nas'), destination('r2', 'OFFLINE')] as never);
         storage.readCachedListing.mockResolvedValue(null);

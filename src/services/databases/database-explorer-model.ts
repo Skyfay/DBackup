@@ -98,14 +98,17 @@ export function namesOfRun(metadata: string | null | undefined): string[] | null
     return stringList(meta.names) ?? stringList(databases?.names) ?? stringList(meta.databases) ?? stringList(multiDb?.databases);
 }
 
-/** Where a run uploaded its backup and whether each upload worked. */
+/**
+ * Where a run uploaded its backup and whether each upload worked. An air-gapped destination the run
+ * left out is no upload that failed, and the backup is not there, so it is not listed.
+ */
 export function destinationsOfRun(metadata: string | null | undefined): DatabaseRun["destinations"] {
     const meta = parseObject(metadata);
     const list = Array.isArray(meta?.destinations) ? (meta.destinations as unknown[]) : [];
     return list.flatMap((entry) => {
         if (!entry || typeof entry !== "object") return [];
-        const destination = entry as { name?: unknown; adapterId?: unknown; status?: unknown };
-        if (typeof destination.name !== "string") return [];
+        const destination = entry as { name?: unknown; adapterId?: unknown; status?: unknown; airGapped?: unknown };
+        if (typeof destination.name !== "string" || destination.airGapped === true) return [];
         return [{ name: destination.name, adapterId: typeof destination.adapterId === "string" ? destination.adapterId : "", ok: destination.status === "success" }];
     });
 }

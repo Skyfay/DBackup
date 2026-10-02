@@ -87,6 +87,24 @@ describe("the summary of a run", () => {
         expect(uploading.items.map((item) => [item.label, item.state, item.text])).toEqual([["Local", "running", "50 %"], ["Cloudflare R2", "waiting", "waits for Local"]]);
     });
 
+    it("tells an air-gapped destination that was not connected apart from a failed one, and does not count it", () => {
+        const entries = [
+            ...mongoLog().filter((entry) => entry.stage !== "Applying Retention"),
+            line("Applying Retention", "[Local] Retention: No policy configured. Skipping."),
+            line("Applying Retention", "[USB rotation] Retention: Skipped until it is connected"),
+            done("Applying Retention", 1),
+        ];
+        const uploads = [local(), local({ configId: "usb", name: "USB rotation", state: "skipped", error: "Air-gapped and not connected", startedAt: null })];
+        const summary = buildSummary(input(entries, { uploads }));
+
+        expect(told(summary, "Uploading").text).toBe("Stored the archive at 1 destination, USB rotation was not connected.");
+        expect(told(summary, "Uploading").items.map((item) => [item.label, item.state, item.text])).toEqual([
+            ["Local", "done", "stored in 2s"],
+            ["USB rotation", "skipped", "air-gapped, not connected"],
+        ]);
+        expect(told(summary, "Applying Retention").items).toContainEqual(expect.objectContaining({ label: "USB rotation", state: "skipped", text: "skipped until it is connected" }));
+    });
+
     it("gives every folder its files, and a channel that failed its error", () => {
         second = 0;
         const entries = [

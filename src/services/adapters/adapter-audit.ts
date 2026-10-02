@@ -24,6 +24,11 @@ const FLAGS = {
     skipVerification: "Integrity checks",
 } as const;
 
+/** The switches stored the way they read. */
+const STRAIGHT_FLAGS = {
+    airGapped: "Air-gapped",
+} as const;
+
 /** The columns of a connection an edit can change besides its name and its config. */
 export interface ConnectionColumns {
     primaryCredentialId?: string | null;
@@ -112,7 +117,7 @@ async function columnChanges(type: string, before: ConnectionColumns, after: Con
         primaryCredentialId: { label: "Login" },
         sshCredentialId: { label: "SSH login" },
         ...(type === "storage" ? { storageRole: { label: "Role" } } : {}),
-        ...Object.fromEntries(Object.entries(FLAGS).map(([key, label]) => [key, { label }])),
+        ...Object.fromEntries(Object.entries({ ...FLAGS, ...STRAIGHT_FLAGS }).map(([key, label]) => [key, { label }])),
     };
     const values = (columns: ConnectionColumns): Record<string, AuditValue> => {
         const metadata = parseMetadata(columns.metadata);
@@ -122,6 +127,7 @@ async function columnChanges(type: string, before: ConnectionColumns, after: Con
             storageRole: roleText(columns.storageRole),
             // On means on, like the switches of the form.
             ...Object.fromEntries(Object.keys(FLAGS).map((key) => [key, metadata[key] !== true])),
+            ...Object.fromEntries(Object.keys(STRAIGHT_FLAGS).map((key) => [key, metadata[key] === true])),
         };
     };
     return diffFields(values(before), values(after), fields);

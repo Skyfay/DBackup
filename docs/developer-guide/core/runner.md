@@ -236,6 +236,18 @@ export async function stepUpload(ctx: RunnerContext): Promise<void> {
 
 > **Key design:** The dump/compress/encrypt pipeline runs only once. The resulting temp file is uploaded to each destination in order. If at least one succeeds but not all, the execution is marked `"Partial"`.
 
+#### Air-gapped destinations
+
+A destination with `airGapped: true` in its metadata (`isAirGapped` in `src/lib/core/air-gap.ts`, read into `DestinationContext.airGapped` by step 1) is connected only now and then. Right before its upload the step asks it with `isConnected` from `steps/air-gap.ts`, the `ping()` the health check uses. One that does not answer gets `uploadResult = { success: false, skipped: true }` and is no failure:
+
+| Outcome | Status |
+|---------|--------|
+| Every other destination stored the backup | `Success` |
+| A destination that answered failed its upload | `Partial` |
+| No destination took the backup, skipped ones included | the step throws, `Failed` |
+
+`reportSkippedAirGaps` then sends the `AIRGAP_SKIPPED` system event, once per time away: it keeps the time of its last report per destination under `airgap.skipped.state` and stays quiet until a `HealthCheckLog` of `ONLINE` is newer than that. Step 4 records a skipped destination with `status: "skipped"` and `airGapped: true`, which every page that counts copies leaves out, and step 5 leaves its retention for a later run. The chain planner treats one that does not answer as `away`, which never forces a full.
+
 ### Step 4: Completion (`04-completion.ts`)
 
 Cleans up, finalizes the execution, sends notifications, and logs notification delivery.

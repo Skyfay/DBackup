@@ -36,6 +36,13 @@ describe("the dots of the page tabs that work out what needs a look in the brows
         expect(destinationsAttention([destinations[2]] as never)).toBeUndefined();
     });
 
+    it("leaves an air-gapped destination that is not connected out of the dot of the Destinations tab", () => {
+        const usb = { name: "USB rotation", airGapped: true, health: { status: "OFFLINE" }, alerts: quiet };
+
+        expect(destinationsAttention([usb] as never)).toBeUndefined();
+        expect(destinationsAttention([usb, { ...usb, name: "NAS", airGapped: false }] as never)).toEqual({ tone: "destructive", note: "NAS does not answer" });
+    });
+
     it("marks the Explorer tabs for databases in no job, while the jobs show, and for servers that fail", () => {
         const overview = { servers: [{ name: "db-prod", status: "OFFLINE" }, { name: "db-stage", status: "DEGRADED" }, { name: "db-dev", status: "ONLINE" }] };
 

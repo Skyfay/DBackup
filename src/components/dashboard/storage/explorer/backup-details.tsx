@@ -137,11 +137,14 @@ function ChainSection({ chain, file }: { chain: ExplorerFile[]; file: ExplorerFi
 function ReadFrom({ here, alternative }: { here: ExplorerDestination; alternative?: string }) {
     const answer = answerOf(here);
     return (
-        <p className={cn("flex items-center gap-2 text-xs", answer === "online" ? "text-muted-foreground" : answer === "missed" ? "text-warning" : "text-destructive")}>
+        <p className={cn("flex items-center gap-2 text-xs", answer === "online" || answer === "away" ? "text-muted-foreground" : answer === "missed" ? "text-warning" : "text-destructive")}>
             <AnswerDot answer={answer} />
             <span className="min-w-0">
                 {answer === "online" && <>Restore and download read from <span className="font-medium text-foreground">{here.name}</span>, which answers right now.</>}
                 {answer === "missed" && <>Restore and download read from {here.name}, which missed its last check.</>}
+                {answer === "away" && (alternative
+                    ? <>{here.name} is air-gapped and not connected. {alternative} holds the same backup and answers right now.</>
+                    : <>{here.name} is air-gapped and not connected. Connect it to restore or download this backup.</>)}
                 {answer === "offline" && (alternative
                     ? <>{here.name} is offline. {alternative} holds the same backup and answers right now.</>
                     : <>No copy answers right now. Restore and download fail until {here.name} answers again.</>)}
@@ -305,7 +308,8 @@ export function BackupDetails({ data, destinations, handlersFor, onDeleteEverywh
                                 const destination = destinations.get(copy.destinationId);
                                 const copyFile = copy.file;
                                 const copyHandlers = copyFile ? handlersFor(copyFile, copy.destinationId) : null;
-                                const offline = copy.state === "stored" && destination !== undefined && answerOf(destination) === "offline";
+                                const answer = copy.state === "stored" && destination !== undefined ? answerOf(destination) : null;
+                                const offline = answer === "offline";
                                 return (
                                     <li key={copy.destinationId} className={cn("flex items-center gap-3 px-3 py-2", copy.state === "missing" && "bg-warning/5")}>
                                         {destination ? <DestinationTile destination={destination} /> : <span className="size-8" />}
@@ -326,10 +330,14 @@ export function BackupDetails({ data, destinations, handlersFor, onDeleteEverywh
                                                     : copyFile?.verification?.passed
                                                         ? <>Verified <DateDisplay date={copyFile.verification.verifiedAt} format="Pp" /></>
                                                         : copyFile?.verification ? "Check failed" : "Not checked"}
-                                                {offline ? " · a restore from here fails" : copy.state === "stored" && destination?.listError ? " · its list is old" : ""}
+                                                {offline
+                                                    ? " · a restore from here fails"
+                                                    : answer === "away"
+                                                        ? " · connect it to restore from here"
+                                                        : copy.state === "stored" && destination?.listError ? " · its list is old" : ""}
                                             </span>
                                         </div>
-                                        {offline && onCheckDestination ? (
+                                        {(offline || answer === "away") && onCheckDestination ? (
                                             <Button variant="outline" size="sm" className="h-7" onClick={() => onCheckDestination(copy.destinationId)}>
                                                 <RefreshCw />
                                                 Check now

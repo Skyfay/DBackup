@@ -10,8 +10,8 @@ import { healthOf } from "./connection-columns";
 import { connectionAddress } from "@/lib/adapters/connection-summary";
 import { resolveSelection, splitGroups } from "./connection-split";
 
-const DOTS = { ONLINE: "bg-success", DEGRADED: "bg-warning", OFFLINE: "bg-destructive", PENDING: "bg-muted-foreground/40" };
-const LABELS = { ONLINE: "Online", DEGRADED: "Degraded", OFFLINE: "Offline", PENDING: "Not checked" };
+const DOTS = { ONLINE: "bg-success", DEGRADED: "bg-warning", OFFLINE: "bg-destructive", AWAY: "bg-muted-foreground/40", PENDING: "bg-muted-foreground/40" };
+const LABELS = { ONLINE: "Online", DEGRADED: "Degraded", OFFLINE: "Offline", AWAY: "Air-gapped, not connected", PENDING: "Not checked" };
 
 interface ConnectionSplitViewProps {
     /** The connections after search and filters, in table order. */

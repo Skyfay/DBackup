@@ -10,7 +10,10 @@ import { getJobList, getJobRunHistory } from "@/services/jobs/job-list-service";
 const connectionSelect = { select: { id: true, name: true, adapterId: true, lastStatus: true } };
 
 describe("job list", () => {
-    beforeEach(() => vi.clearAllMocks());
+    beforeEach(() => {
+        vi.clearAllMocks();
+        prismaMock.adapterConfig.findMany.mockResolvedValue([]);
+    });
 
     it("gives the connections of a job with their name and type only, never their config", async () => {
         prismaMock.job.findMany.mockResolvedValue([
@@ -18,6 +21,7 @@ describe("job list", () => {
                 id: "files",
                 name: "Uploads",
                 createdAt: new Date("2026-03-12T10:00:00Z"),
+                destinations: [],
                 sources: [{ configId: "nas", priority: 0, path: "/srv", excludePatterns: '["*.tmp"]', stopContainers: true, excludePatternPresets: [{ id: "preset-1" }], config: { id: "nas", name: "NAS", adapterId: "sftp", lastStatus: "ONLINE" } }],
             },
         ] as never);
@@ -33,6 +37,29 @@ describe("job list", () => {
         expect(job.createdAt).toBe("2026-03-12T10:00:00.000Z");
         expect(job.sources[0]).toMatchObject({ excludePatterns: ["*.tmp"], excludePatternPresetIds: ["preset-1"] });
         expect(job.overview.status).toBe("Success");
+    });
+
+    it("shows an air-gapped destination that is not connected as away, and keeps another one offline", async () => {
+        prismaMock.adapterConfig.findMany.mockResolvedValue([
+            { id: "usb", type: "storage", storageRole: "DESTINATION", metadata: JSON.stringify({ airGapped: true }) },
+            { id: "nas", type: "storage", storageRole: "DESTINATION", metadata: null },
+        ] as never);
+        prismaMock.job.findMany.mockResolvedValue([
+            {
+                id: "shop",
+                name: "Shop",
+                createdAt: new Date("2026-03-12T10:00:00Z"),
+                sources: [],
+                destinations: [
+                    { configId: "usb", priority: 0, config: { id: "usb", name: "USB rotation", adapterId: "local-filesystem", lastStatus: "OFFLINE" } },
+                    { configId: "nas", priority: 1, config: { id: "nas", name: "NAS", adapterId: "smb", lastStatus: "OFFLINE" } },
+                ],
+            },
+        ] as never);
+
+        const [job] = await getJobList();
+
+        expect(job.destinations.map((destination) => destination.config.lastStatus)).toEqual(["AWAY", "OFFLINE"]);
     });
 });
 

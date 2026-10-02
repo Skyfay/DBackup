@@ -85,6 +85,17 @@ describe('buildExplorer', () => {
         expect(model.jobs[0].missingCopies).toBe(1);
     });
 
+    it('never reports a copy as missing on an air-gapped destination, which only gets the runs while it is connected', () => {
+        const model = buildExplorer([job()], [
+            { destinationId: NAS, files: [file(21), file(22), file(23)] },
+            { destinationId: R2, files: [file(21), file(23)] },
+        ], new Set([R2]));
+
+        const run = model.runs.get('job-shop')!.find((entry) => entry.createdAt.startsWith('2026-09-22'))!;
+        expect(run.copies.map((copy) => copy.destinationId)).toEqual([NAS]);
+        expect(model.jobs[0].missingCopies).toBe(0);
+    });
+
     it('does not report runs from before a destination joined or past its shorter retention', () => {
         const model = buildExplorer([job()], [
             { destinationId: NAS, files: [file(20), file(21), file(22), file(23)] },

@@ -11,6 +11,7 @@ import { wrapError } from "@/lib/logging/errors";
 import { checkStorageAlerts } from "@/services/storage/storage-alert-service";
 import { isBackupFile } from "@/lib/core/backup-files";
 import { invalidateDashboardCache } from "@/services/dashboard/cache";
+import { isNotConnected } from "@/lib/core/air-gap";
 
 export interface DashboardStats {
   totalJobs: number;
@@ -351,6 +352,8 @@ export async function refreshStorageStatsCache(): Promise<StorageVolumeEntry[]> 
 
   // Query all adapters in parallel for maximum speed
   const promises = storageAdapters.map(async (adapterConfig) => {
+    // An air-gapped destination that is not connected keeps the values of its last scan, without a warning.
+    if (isNotConnected(adapterConfig)) return lastScannedEntry(adapterConfig);
     try {
       const adapter = registry.get(adapterConfig.adapterId) as StorageAdapter;
       if (!adapter) return null;

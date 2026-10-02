@@ -23,6 +23,7 @@ const HEADS: Record<ConnectionHealth, { tone: Tone; icon: typeof Check }> = {
     ONLINE: { tone: "success", icon: Check },
     DEGRADED: { tone: "warning", icon: TriangleAlert },
     OFFLINE: { tone: "destructive", icon: Unplug },
+    AWAY: { tone: "neutral", icon: Unplug },
     PENDING: { tone: "neutral", icon: Clock },
 };
 
@@ -151,6 +152,12 @@ function headline(
     }
     if (status === "OFFLINE") {
         return { title: since ? `Offline for ${since}` : "Offline", note: row.error || newest?.error || "No answer" };
+    }
+    if (status === "AWAY") {
+        return {
+            title: since ? `Not connected for ${since}` : "Not connected",
+            note: data?.lastPassedAt ? <>Air-gapped, last connected <RelativeTime date={data.lastPassedAt} /></> : "Air-gapped, away on purpose",
+        };
     }
     return { title: "Not checked yet", note: "Waiting for the first health check" };
 }

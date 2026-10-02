@@ -265,7 +265,7 @@ export function BackupsList({
                 searchPlaceholder="Search backups"
                 filterableColumns={filterableColumns}
                 manualFiltering
-                toolbarNote={<AnswerLegend />}
+                toolbarNote={<AnswerLegend airGapped={destinations.some((destination) => destination.airGapped)} />}
                 toolbarExtra={timeline.chip}
                 aboveRows={timeline.above}
                 hideRows={timeline.hideRows}

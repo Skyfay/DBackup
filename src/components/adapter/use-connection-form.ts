@@ -24,6 +24,8 @@ export interface ConnectionMetadata {
     isRestoreExcluded: boolean;
     /** Backup destinations only. */
     skipVerification: boolean;
+    /** Backup destinations only, connected now and then, see `lib/core/air-gap.ts`. */
+    airGapped: boolean;
 }
 
 /** What every part of the form gets to work with, whatever it shows. */
@@ -96,6 +98,7 @@ export function useConnectionForm({ adapter, initialData, defaultRole, lockRole 
         healthNotificationsDisabled: storedMetadata.healthNotificationsDisabled === true,
         isRestoreExcluded: storedMetadata.isRestoreExcluded === true,
         skipVerification: storedMetadata.skipVerification === true,
+        airGapped: storedMetadata.airGapped === true,
     });
     const [storageRole, setStorageRole] = useState<StorageRole>(() => initialRole(adapter, initialData, defaultRole));
     const [primaryCredentialId, setPrimaryCredentialId] = useState<string | null>(initialData?.primaryCredentialId ?? null);
@@ -160,7 +163,7 @@ export function useConnectionForm({ adapter, initialData, defaultRole, lockRole 
             return { ...storedMetadata, healthNotificationsDisabled: metadata.healthNotificationsDisabled, isRestoreExcluded: metadata.isRestoreExcluded };
         }
         if (adapter.type === "storage") {
-            return { ...storedMetadata, healthNotificationsDisabled: metadata.healthNotificationsDisabled, skipVerification: metadata.skipVerification };
+            return { ...storedMetadata, healthNotificationsDisabled: metadata.healthNotificationsDisabled, skipVerification: metadata.skipVerification, airGapped: metadata.airGapped };
         }
         return storedMetadata;
     };

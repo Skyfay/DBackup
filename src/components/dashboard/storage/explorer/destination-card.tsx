@@ -44,7 +44,8 @@ export function DestinationCard({ destination, jobs, picked, onPick, actions }: 
                         {destination.name}
                     </button>
                     <p className="truncate text-xs text-muted-foreground">
-                        {kindNames.get(destination.adapterId) ?? destination.adapterId} · {count(jobCount, "job")}
+                        {kindNames.get(destination.adapterId) ?? destination.adapterId}
+                        {destination.airGapped && " · air-gapped"} · {count(jobCount, "job")}
                     </p>
                 </div>
                 <AnswerText destination={destination} className="shrink-0" />

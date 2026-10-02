@@ -22,6 +22,7 @@ const STATUS: Record<NonNullable<VaultConnection["status"]> | "NONE", { label: s
     ONLINE: { label: "Online", dot: "bg-success" },
     DEGRADED: { label: "Degraded", dot: "bg-warning" },
     OFFLINE: { label: "Offline", dot: "bg-destructive" },
+    AWAY: { label: "Air-gapped, not connected", dot: "bg-muted-foreground/40" },
     NONE: { label: "Not checked", dot: "bg-muted-foreground/40" },
 };
 

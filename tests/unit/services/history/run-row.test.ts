@@ -47,6 +47,17 @@ describe("copiesOf", () => {
     it("has none for a run without destinations", () => {
         expect(copiesOf({})).toBeNull();
     });
+
+    it("leaves out an air-gapped destination the run skipped, finished or live", () => {
+        const finished = parseMetadata(JSON.stringify({ destinations: [{ name: "NAS", status: "success" }, { name: "USB rotation", status: "skipped", airGapped: true }] }));
+        expect(copiesOf(finished)).toEqual({ stored: 1, total: 1, failed: [] });
+
+        const live = parseMetadata(JSON.stringify({ uploads: [
+            { configId: "nas", name: "NAS", state: "uploading" },
+            { configId: "usb", name: "USB rotation", state: "skipped", error: "Air-gapped and not connected" },
+        ] }));
+        expect(copiesOf(live)).toEqual({ stored: 0, total: 1, failed: [] });
+    });
 });
 
 describe("noteOf", () => {

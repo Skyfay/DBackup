@@ -1,4 +1,5 @@
 import type { AdapterConfig } from "./types";
+import { isAirGapped } from "@/lib/core/air-gap";
 
 export interface SplitGroup {
     /** Null when the list needs no heading at all. */
@@ -6,7 +7,8 @@ export interface SplitGroup {
     items: AdapterConfig[];
 }
 
-const needsAttention = (config: AdapterConfig) => config.lastStatus === "OFFLINE" || config.lastStatus === "DEGRADED";
+// An air-gapped destination that is not connected is away on purpose.
+const needsAttention = (config: AdapterConfig) => (config.lastStatus === "OFFLINE" || config.lastStatus === "DEGRADED") && !isAirGapped(config);
 
 /**
  * The list of the split view: problems first under their own heading, the rest after them

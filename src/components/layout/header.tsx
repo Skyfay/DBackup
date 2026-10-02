@@ -21,6 +21,8 @@ interface HeaderProps {
 /** The bar on top of every page: the sidebar toggle and where you are, the search in the middle, the guides, GitHub and the update on the right. */
 export function Header({ updateAvailable, currentVersion, latestVersion, apple, userId }: HeaderProps) {
     const pathname = usePathname()
+    // The field in the middle and, below lg, the button in the group on the right open the same search.
+    const [searchOpen, setSearchOpen] = React.useState(false)
     // Split path, filtering empty strings
     const segments = pathname.split('/').filter(Boolean)
 
@@ -60,10 +62,10 @@ export function Header({ updateAvailable, currentVersion, latestVersion, apple, 
                 </nav>
             </div>
             <div className="flex justify-center lg:w-[min(32rem,36vw)]">
-                <GlobalSearch apple={apple} userId={userId} />
+                <GlobalSearch apple={apple} userId={userId} open={searchOpen} onOpenChange={setSearchOpen} />
             </div>
             <div className="flex justify-end">
-                <HeaderLinks updateAvailable={updateAvailable} currentVersion={currentVersion} latestVersion={latestVersion} />
+                <HeaderLinks updateAvailable={updateAvailable} currentVersion={currentVersion} latestVersion={latestVersion} onSearch={() => setSearchOpen(true)} />
             </div>
         </header>
     )

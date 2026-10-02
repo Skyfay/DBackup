@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Command as CommandPrimitive } from "cmdk";
 import { ArrowDown, ArrowUp, CornerDownLeft, Loader2, Search } from "lucide-react";
 import { useTheme } from "next-themes";
-import { Button } from "@/components/ui/button";
 import { AdapterIcon } from "@/components/adapter/adapter-icon";
 import { startRun } from "@/components/dashboard/history/run-actions";
 import { useViewerPermissions } from "@/components/permissions/permissions-context";
@@ -217,25 +216,39 @@ interface GlobalSearchProps {
     /** Whether the browser runs on a Mac, iPhone or iPad, read from the request, so the keys show right from the first paint. */
     apple?: boolean;
     userId?: string;
+    /** Set with `onOpenChange` when something else opens the search too, like its button in the group on the right of the header. */
+    open?: boolean;
+    onOpenChange?: (open: boolean) => void;
 }
 
 /**
- * The search field in the middle of the header, a button on a phone, and Cmd K or Ctrl K anywhere.
- * Both open the search over the page.
+ * The search field in the middle of the header from lg up, and Cmd K or Ctrl K anywhere. Both
+ * open the search over the page. Below lg the header shows its button in the group on the right.
  */
-export function GlobalSearch({ apple = false, userId }: GlobalSearchProps) {
-    const [open, setOpen] = useState(false);
+export function GlobalSearch({ apple = false, userId, open: openProp, onOpenChange }: GlobalSearchProps) {
+    const [ownOpen, setOwnOpen] = useState(false);
+    const controlled = openProp !== undefined;
+    const open = controlled ? openProp : ownOpen;
+    const setOpen = useCallback((next: boolean) => {
+        if (!controlled) setOwnOpen(next);
+        onOpenChange?.(next);
+    }, [controlled, onOpenChange]);
+    // The keys toggle it, so the listener reads whether it is open now without being added again.
+    const openRef = useRef(open);
+    useEffect(() => {
+        openRef.current = open;
+    }, [open]);
 
     useEffect(() => {
         const onKey = (event: KeyboardEvent) => {
             if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
                 event.preventDefault();
-                setOpen((current) => !current);
+                setOpen(!openRef.current);
             }
         };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
-    }, []);
+    }, [setOpen]);
 
     return (
         <>
@@ -250,9 +263,6 @@ export function GlobalSearch({ apple = false, userId }: GlobalSearchProps) {
                 <span className="truncate">Search jobs, connections, backups and settings</span>
                 <SearchShortcut apple={apple} className="ml-auto bg-sidebar" />
             </button>
-            <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setOpen(true)} aria-label="Search">
-                <Search />
-            </Button>
             {open && <SearchDialog open={open} onOpenChange={setOpen} userId={userId} />}
         </>
     );

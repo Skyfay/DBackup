@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -65,6 +66,29 @@ describe("the search in the header", () => {
         await user.keyboard("{Control>}k{/Control}");
 
         expect(await screen.findByRole("dialog", { name: "Search" })).toBeInTheDocument();
+    });
+
+    it("opens from the first button of the group on the right of the header, where a phone has it", async () => {
+        function Head() {
+            const [open, setOpen] = useState(false);
+            return (
+                <PermissionsProvider permissions={[PERMISSIONS.JOBS.READ]}>
+                    <TooltipProvider>
+                        <GlobalSearch open={open} onOpenChange={setOpen} />
+                        <HeaderLinks onSearch={() => setOpen(true)} />
+                    </TooltipProvider>
+                </PermissionsProvider>
+            );
+        }
+        render(<Head />);
+        const user = userEvent.setup();
+
+        await user.click(screen.getByRole("button", { name: "Search" }));
+        expect(await screen.findByRole("dialog", { name: "Search" })).toBeInTheDocument();
+
+        // The keys still close it while the header holds whether it is open.
+        await user.keyboard("{Control>}k{/Control}");
+        await waitFor(() => expect(screen.queryByRole("dialog", { name: "Search" })).not.toBeInTheDocument());
     });
 
     it("offers the pages the viewer may open and asks the server nothing while the field is empty", async () => {

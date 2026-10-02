@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Icon } from "@iconify/react";
 import githubIcon from "@iconify-icons/simple-icons/github";
-import { ArrowUpRight, BookOpen, CircleArrowUp, Sparkles } from "lucide-react";
+import { ArrowUpRight, BookOpen, CircleArrowUp, Search, Sparkles } from "lucide-react";
 import { CopyButton } from "@/components/dashboard/history/run-command";
 import { Button } from "@/components/ui/button";
 import { DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
@@ -41,6 +41,8 @@ interface HeaderLinksProps {
     currentVersion?: string;
     /** The newest release as GitHub names it, like v3.4.0. */
     latestVersion?: string;
+    /** Opens the search, from the first button of the group below lg, where the field in the middle has no room. */
+    onSearch?: () => void;
 }
 
 /**
@@ -48,12 +50,17 @@ interface HeaderLinksProps {
  * update with a blue dot. One group like the view switch of a list. The update opens a card in the
  * look of the dialogs with how to get it.
  */
-export function HeaderLinks({ updateAvailable = false, currentVersion, latestVersion }: HeaderLinksProps) {
+export function HeaderLinks({ updateAvailable = false, currentVersion, latestVersion, onSearch }: HeaderLinksProps) {
     const [open, setOpen] = useState(false);
     const latest = latestVersion ? (latestVersion.startsWith("v") ? latestVersion : `v${latestVersion}`) : "A new version";
 
     return (
         <div className="inline-flex h-9 items-center rounded-lg bg-muted p-0.75">
+            {onSearch && (
+                <button type="button" onClick={onSearch} aria-label="Search" className={cn(SEGMENT, "lg:hidden")}>
+                    <Search aria-hidden="true" />
+                </button>
+            )}
             <LinkSegment href={GUIDES_URL} label="Guides">
                 <BookOpen aria-hidden="true" />
             </LinkSegment>

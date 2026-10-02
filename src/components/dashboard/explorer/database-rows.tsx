@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, Database, RefreshCw, Table2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Database, Table2 } from "lucide-react";
 import { count } from "@/components/dashboard/storage/explorer/explorer-format";
 import { Button } from "@/components/ui/button";
+import { RefreshButton } from "@/components/ui/refresh-button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -149,9 +150,7 @@ export function DatabaseRows({ sourceId, adapterId, database, table, title, serv
                                     })}
                                 />
                             )}
-                            <Button variant="outline" size="icon" className="size-8" aria-label={`Read the ${noun} again`} onClick={() => setVersion((value) => value + 1)} disabled={loading}>
-                                <RefreshCw className={cn(loading && "animate-spin")} />
-                            </Button>
+                            <RefreshButton variant="outline" onRefresh={() => setVersion((value) => value + 1)} busy={loading} label={`Read the ${noun} again`} className="size-8" />
                         </div>
                     </div>
 

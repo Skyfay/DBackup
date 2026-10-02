@@ -51,7 +51,8 @@ interface DataTableProps<TData, TValue> {
     filterableColumns?: DataTableFilterableColumn<TData>[];
     initialColumnVisibility?: VisibilityState;
     autoResetPageIndex?: boolean;
-    onRefresh?: () => void;
+    /** Loads the rows again. A promise keeps the refresh button turning until it settles. */
+    onRefresh?: () => unknown;
     isLoading?: boolean;
 
     // Row selection & bulk actions

@@ -175,6 +175,7 @@ All notable changes to DBackup are documented here.
 
 ### 🎨 Improvements
 
+- **ui**: The refresh button of every list turns for at least a second after a click, as long as the list loads, and takes no further click until it is done.
 - **ui**: The menu of your account at the foot of the sidebar switches the theme in one click, leads straight to Security and Colors of your profile and lists the help with What's new in this version.
 - **ui**: The sidebar collapses to icons with the new button in the header or Ctrl+B (⌘B on macOS), and small screens get it as a slide-in menu. Both themes use a new zinc color palette where dialogs, menus and buttons, and the fields and switches in them, take the color of their task, like blue to add and violet to edit, and the interface uses the Geist font on every operating system.
 - **dashboard**: The overview was rebuilt with a status banner that names a failing job and can rerun it, trend cards, a switch between the latest executions and the jobs, and a backup calendar that shows as many weeks as the screen fits. It works on phones, and its statistics are cached for a minute or until the next backup finishes or a job changes.

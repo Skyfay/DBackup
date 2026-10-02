@@ -6,6 +6,7 @@ import { FileBrowserFilter, FileBrowserFooter, HiddenToggle } from "@/components
 import { Button } from "@/components/ui/button";
 import { DIALOG_SURFACE, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { RefreshButton } from "@/components/ui/refresh-button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn, formatBytes } from "@/lib/utils";
@@ -102,9 +103,7 @@ function PickerBody({ onOpenChange, configId, connectionName, initialRows, onCon
                                 {matches} of {volumes.length} match
                             </span>
                         )}
-                        <Button type="button" variant="outline" size="icon" className="size-8 shrink-0" onClick={reload} aria-label="Load the volumes again">
-                            <RotateCw className="size-3.5" />
-                        </Button>
+                        <RefreshButton variant="outline" onRefresh={reload} busy={listing.status === "loading"} label="Load the volumes again" icon={RotateCw} iconClassName="size-3.5" className="size-8 shrink-0" />
                     </div>
                     <ScrollArea className="min-h-0 flex-1">
                         {listing.status === "loading" ? (

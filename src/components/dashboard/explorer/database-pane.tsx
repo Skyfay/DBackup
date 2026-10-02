@@ -1,8 +1,8 @@
 "use client";
 
-import { Lock, RefreshCw, Search, type LucideIcon } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Lock, Search, type LucideIcon } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { RefreshButton } from "@/components/ui/refresh-button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
@@ -54,9 +54,7 @@ export function PaneHead({ title, sub, refreshLabel, busy, onRefresh }: { title:
                 <p className="font-semibold">{title}</p>
                 <p className="truncate text-sm text-muted-foreground">{sub}</p>
             </div>
-            <Button variant="ghost" size="icon" className="size-8" aria-label={refreshLabel} onClick={onRefresh} disabled={busy}>
-                <RefreshCw className={cn(busy && "animate-spin")} />
-            </Button>
+            <RefreshButton onRefresh={onRefresh} busy={busy} label={refreshLabel} className="size-8" />
         </div>
     );
 }

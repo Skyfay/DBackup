@@ -245,8 +245,8 @@ export function JobsClient({
                         searchPlaceholder="Search jobs"
                         toolbarExtra={<JobStatusFilter value={filter} onChange={setFilter} jobs={jobs} />}
                         onRefresh={() => {
-                            void refresh();
                             if (timelineView) timeline.reload();
+                            return refresh();
                         }}
                         isLoading={isLoading}
                         // Selecting for bulk actions is a table thing. Cards keep to one job at a time.

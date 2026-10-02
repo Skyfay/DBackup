@@ -5,16 +5,17 @@ import { Table } from "@tanstack/react-table";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { X, RefreshCw, Search } from "lucide-react";
+import { X, Search } from "lucide-react";
+import { RefreshButton } from "@/components/ui/refresh-button";
 import { DataTableFacetedFilter } from "./data-table-faceted-filter";
 import type { DataTableFilterableColumn } from "./data-table-types";
-import { cn } from "@/lib/utils";
 
 interface DataTableToolbarProps<TData> {
     table: Table<TData>;
     searchKey: string;
     filterableColumns: DataTableFilterableColumn<TData>[];
-    onRefresh?: () => void;
+    /** Loads the list again. A promise keeps the button turning until it settles. */
+    onRefresh?: () => unknown;
     isLoading?: boolean;
     searchPlaceholder?: string;
     /** Extra controls after the filters. */
@@ -76,18 +77,7 @@ export function DataTableToolbar<TData>({
             {/* On a phone it follows the filters at the left edge, pushed to the right only once the row has room. */}
             <div className="flex items-center gap-1 sm:ml-auto">
                 {columnSettings}
-                {onRefresh && (
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={onRefresh}
-                        aria-label="Refresh"
-                        className="size-8 p-0 text-muted-foreground"
-                        disabled={isLoading}
-                    >
-                        <RefreshCw className={cn(isLoading && "animate-spin")} />
-                    </Button>
-                )}
+                {onRefresh && <RefreshButton onRefresh={onRefresh} busy={isLoading} label="Refresh" size="sm" className="size-8 p-0 text-muted-foreground" />}
             </div>
         </div>
     );

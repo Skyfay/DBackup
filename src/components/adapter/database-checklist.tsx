@@ -7,6 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Highlight } from "@/components/ui/highlight";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RefreshButton } from "@/components/ui/refresh-button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn, formatBytes } from "@/lib/utils";
@@ -161,9 +162,7 @@ function Checklist({ sourceId, value, onChange, onUseAll }: DatabaseChecklistPro
                         {sort === "name" ? "Name" : "Size"}
                     </Button>
                 )}
-                <Button type="button" variant="outline" size="icon" className="size-8" onClick={reload} aria-label="Load the databases again">
-                    <RotateCw className="size-3.5" />
-                </Button>
+                <RefreshButton variant="outline" onRefresh={reload} label="Load the databases again" icon={RotateCw} iconClassName="size-3.5" className="size-8" />
             </div>
 
             <ScrollArea className="*:data-[slot=scroll-area-viewport]:max-h-52 [&>[data-slot=scroll-area-viewport]>div]:block!">

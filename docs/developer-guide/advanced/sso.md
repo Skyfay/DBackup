@@ -56,6 +56,8 @@ The credentials are encrypted with `ENCRYPTION_KEY`, and the extension of the Pr
 2. better-auth sends the browser to the provider, which returns it to `/api/auth/sso/callback/{providerId}`. `BETTER_AUTH_URL` is the start of that URL.
 3. better-auth reads the user info. An account linked before signs in. An existing user of the same email is linked when the provider marks the email as verified, since the SSO plugin runs with `trustEmailVerified`. Anyone else is added or turned away. The second factor of a user is not asked, better-auth asks it only after a password.
 
+Since an existing user of the same email is linked, nobody may prepare an account for someone else. `src/lib/auth/sign-up-guard.ts` refuses a sign-up from the browser once the first account exists, so every later account comes from New user, which signs up from the server, or from a provider.
+
 The hooks in `sso-guard.ts` decide what the browser cannot:
 
 | Hook | Refuses or does |

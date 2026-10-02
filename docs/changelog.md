@@ -149,6 +149,7 @@ All notable changes to DBackup are documented here.
 
 - **profile**: What a group may change of the own profile now holds on the server too, the name, the email, the password, the second factor, the passkeys and the linked sign-in providers. Before, only the page hid the buttons.
 - **profile**: **Change password** under Profile refuses a wrong current password. It took any before, so whoever had a signed-in browser could change the password.
+- **auth**: The browser can no longer create an account once the first one exists. Anyone could sign up before, and an account made with the email of someone who later signed in through a provider got linked to them with a password its maker knew.
 - **connections**: The health check history of a connection needs the read permission of its kind, like its details. Reading sources or destinations was enough for every kind before.
 - **connections**: The file browser of a path field no longer follows a link into a system folder it keeps out, like /proc or /System.
 - **connections**: The folder browser of a Google Drive connection only takes folder IDs made of letters, digits, hyphens and underscores, so a crafted ID can no longer widen its list of folders to every file of the drive. The folder browsers of Dropbox and OneDrive turn down a path with a `..` part.

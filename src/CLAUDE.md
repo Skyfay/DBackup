@@ -87,7 +87,7 @@ Permission categories: `USERS`, `GROUPS`, `SOURCES`, `DESTINATIONS`, `JOBS`, `ST
 No permission is enough for what decides who is a SuperAdmin or who signs in as whom. These actions check their permission first, then refuse anyone whose group is not SuperAdmin:
 
 - Making someone a SuperAdmin, and changing the group, the password, the second factor or the sessions of a SuperAdmin or deleting one (`actions/auth/user.ts`, `user-security.ts`, `group.ts`).
-- Sign-in providers (`actions/auth/oidc.ts`) and the configuration restore (`actions/backup/config-management.ts` and the routes under `api/settings/config-backup/restore`, which also refuse API keys). The routes under `api/setup/restore` answer only while no account exists.
+- Sign-in providers (`actions/auth/oidc.ts`) and the configuration restore (`actions/backup/config-management.ts` and the routes under `api/settings/config-backup/restore`, which also refuse API keys). The routes under `api/setup/restore` answer only while no account exists, and `src/lib/auth/sign-up-guard.ts` refuses a sign-up from the browser once one does, so New user signs up from the server.
 
 Nobody changes or deletes the group they are in, and an API key never gets more than its owner holds. A new action of this kind follows the same pattern and gets a guard test.
 

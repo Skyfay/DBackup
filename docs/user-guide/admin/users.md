@@ -11,7 +11,7 @@ The first account becomes the administrator:
 4. This account is a SuperAdmin with every permission
 
 ::: warning First User Only
-Self-registration is only available for the first user. Additional users must be created by an admin.
+Self-registration is only available for the first user. Once it exists, DBackup refuses every other sign-up, also one sent to its API directly. Additional users are created by an admin, or by a sign-in provider that adds people.
 :::
 
 ## The Users Tab

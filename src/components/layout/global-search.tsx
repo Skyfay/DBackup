@@ -239,14 +239,16 @@ export function GlobalSearch({ apple = false, userId }: GlobalSearchProps) {
 
     return (
         <>
+            {/* Filled like the group of Guides and GitHub beside it, with its height and corners. A
+                hover moves the fill one step towards the text, lighter in dark mode, darker in light. */}
             <button
                 type="button"
                 onClick={() => setOpen(true)}
-                className="hidden h-9 w-full items-center gap-2.5 rounded-lg border bg-background px-3 text-sm text-muted-foreground outline-none transition-colors hover:border-foreground/20 focus-visible:ring-2 focus-visible:ring-ring/50 lg:flex"
+                className="hidden h-9 w-full items-center gap-2.5 rounded-lg bg-muted pr-1.5 pl-3 text-sm text-muted-foreground outline-none transition-colors hover:bg-[color-mix(in_oklab,var(--muted),var(--foreground)_6%)] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 lg:flex"
             >
                 <Search className="size-4 shrink-0" aria-hidden="true" />
                 <span className="truncate">Search jobs, connections, backups and settings</span>
-                <SearchShortcut apple={apple} className="ml-auto" />
+                <SearchShortcut apple={apple} className="ml-auto bg-sidebar" />
             </button>
             <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setOpen(true)} aria-label="Search">
                 <Search />

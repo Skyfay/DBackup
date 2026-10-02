@@ -245,7 +245,7 @@ function BehaviorPart({ adapter, storageRole, onStorageRoleChange, storageRoleLo
                 {!isSource && (
                     <SwitchRow
                         title="Air-gapped"
-                        description="Connected only now and then, like a USB disk you plug in once a week. While it is not connected, runs skip it and nothing about it counts as a problem."
+                        description="Connected only now and then, like a USB disk you plug in once a week or a NAS that is only on for its backups. While it is not connected, runs skip it and nothing about it counts as a problem."
                         checked={metadata.airGapped}
                         onCheckedChange={(on) => onMetadataChange({ ...metadata, airGapped: on })}
                     />

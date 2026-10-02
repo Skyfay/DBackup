@@ -19,6 +19,10 @@ const FLAG_ACTIONS = {
     "enable-health-alerts": { healthNotificationsDisabled: false },
     "exclude-from-restore": { isRestoreExcluded: true },
     "include-in-restore": { isRestoreExcluded: false },
+    "disable-integrity-checks": { skipVerification: true },
+    "enable-integrity-checks": { skipVerification: false },
+    "mark-air-gapped": { airGapped: true },
+    "unmark-air-gapped": { airGapped: false },
 } satisfies Record<string, AdapterFlagChange>;
 
 type FlagAction = keyof typeof FLAG_ACTIONS;

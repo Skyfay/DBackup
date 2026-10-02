@@ -34,10 +34,37 @@ describe("connectionBulkActions", () => {
         expect(available([config("a"), config("b", { healthNotificationsDisabled: true })])).toContain("disable-health-alerts");
     });
 
-    it("keeps the other lists to deleting and offers nothing without the edit permission", () => {
-        expect(connectionBulkActions("destination", true, TRASH).map((action) => action.id)).toEqual(["delete"]);
+    it("keeps notification channels to deleting and offers nothing without the edit permission", () => {
         expect(connectionBulkActions("notification", true, TRASH).map((action) => action.id)).toEqual(["delete"]);
         expect(connectionBulkActions("database", false, TRASH)).toEqual([]);
+    });
+
+    it("switches the health alerts of directory sources, and nothing that only a destination has", () => {
+        expect(connectionBulkActions("source", true, TRASH).map((action) => action.id)).toEqual(["delete", "disable-health-alerts", "enable-health-alerts"]);
+    });
+
+    it("switches the health alerts, the integrity checks and air-gapped of destinations, only in the direction that changes something", () => {
+        const destination = (id: string, metadata: Record<string, unknown> = {}) => ({ ...config(id, metadata), adapterId: "smb", type: "storage", storageRole: "DESTINATION" as const });
+        const offered = (rows: AdapterConfig[]) =>
+            connectionBulkActions("destination", true, TRASH).filter((action) => action.isAvailable?.(rows) ?? true).map((action) => action.id);
+
+        expect(offered([destination("nas")])).toEqual(["delete", "disable-health-alerts", "disable-integrity-checks", "mark-air-gapped"]);
+        expect(offered([destination("nas", { healthNotificationsDisabled: true, skipVerification: true, airGapped: true })])).toEqual([
+            "delete",
+            "enable-integrity-checks",
+            "unmark-air-gapped",
+        ]);
+    });
+
+    it("leaves an air-gapped destination out of its health alerts, which it never sends", () => {
+        const usb = { ...config("usb", { airGapped: true }), name: "USB rotation", adapterId: "local-filesystem", type: "storage", storageRole: "DESTINATION" as const };
+        const nas = { ...config("nas"), adapterId: "smb", type: "storage", storageRole: "DESTINATION" as const };
+        const turnOff = connectionBulkActions("destination", true, TRASH).find((action) => action.id === "disable-health-alerts")!;
+
+        expect(turnOff.ineligible?.(usb)).toBe("It is air-gapped and sends no health alerts");
+        expect(turnOff.ineligible?.(nas)).toBeNull();
+        expect(turnOff.isAvailable?.([usb])).toBe(false);
+        expect(turnOff.isAvailable?.([usb, nas])).toBe(true);
     });
 
     it("lists a connection in the confirmation with its name and type", () => {

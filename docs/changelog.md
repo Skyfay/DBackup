@@ -17,7 +17,7 @@ All notable changes to DBackup are documented here.
 - **ui**: The profile sets the rows per page, now up to 100, and the row height every table starts with. A table with a Columns menu keeps what was picked on it until its Reset.
 - **connections**: A click on a connection opens a panel with what is wrong with it, its health checks of the last day, the jobs and templates using it with their last backup, and its settings. The connection test and editing are one click away from there.
 - **connections**: The Connections page shows its connections as a table, as cards or as a list with the details beside it, and remembers the choice for each user. Phones always get the cards.
-- **connections**: Several database connections can have their health check notifications turned off or on, and be excluded from or included in restores, in one step.
+- **connections**: Several databases, directory sources or destinations can have their health check notifications turned off or on in one step. Databases can also be excluded from or included in restores together, and destinations get their integrity checks switched or are marked air-gapped.
 - **connections**: A right click on a connection opens its actions, and on one of several selected rows the actions for the whole selection. A long press does the same on a phone.
 - **connections**: Picking the type of a new connection now happens in one searchable list, grouped by what the type is. Databases are grouped by relational, document, key value and file based, notification channels by chat, push, email and SMS, and webhook.
 - **jobs**: The jobs table shows each job's last run with its error or live progress, its last 12 runs as bars, where it backs up to and when it runs next. The Jobs page can also show its jobs as cards with the way of each backup, and phones always get the cards.
@@ -62,7 +62,7 @@ All notable changes to DBackup are documented here.
 - **ui**: A search in the middle of the header, or Ctrl+K (⌘K on macOS) anywhere, finds the jobs, connections, databases, backups, runs, people, groups, API keys, templates, Vault entries, settings and pages you may open. It also starts a found job and switches the theme.
 - **auth**: The login page can show a picture of your own instead of the logos, chosen under Settings › Sign-in. The picture lives in the database and comes back with the configuration backup.
 - **auth**: **Settings → Passwords** sets what a new password needs, as Basic, Standard, Strong or rules of its own, with Standard on a new instance and Basic kept on an updated one. Every field for a new password ticks off the rules as they hold, Generate follows them and the server refuses a password that breaks one.
-- **storage**: A destination connected only now and then, like a USB disk, can be marked **Air-gapped** under Behavior. While it is not connected, runs skip it and stay a success, and it raises no offline alert and no missing copy but shows as not connected in gray.
+- **storage**: A destination connected only now and then, like a USB disk or a NAS that is only on for its backups, can be marked **Air-gapped** under Behavior. While it is not connected, runs skip it and stay a success, and it raises no offline alert and no missing copy but shows as not connected in gray.
 - **notifications**: The new system notification **An air-gapped destination was skipped** reports the first run that leaves out an air-gapped destination, once each time it goes away. It is off by default.
 
 
@@ -328,7 +328,8 @@ All notable changes to DBackup are documented here.
 - **docs**: A new Recently Deleted guide describes what a delete keeps, the list, a restore and who sees what. The key, credential profile, user, job, data retention and API guides say where a delete goes, and the developer guide describes the snapshot of a delete.
 - **api**: The API reference in the app lists the bulk endpoints of the docs site again, and the download of a recovery kit has its real address, `GET /api/vault/recovery-kit?ids=`.
 - **docs**: The guides name the tabs of the Connections page and their New buttons as the app shows them, and the restore guide the dialog that asks for a key.
-- **docs**: The destination guide describes air-gapped destinations, and the notification and Backups guides follow them. The runner and health check pages for developers describe how a run and the health check treat one.
+- **api**: The API reference lists every action of `POST /api/adapters/bulk`, not only the delete.
+- **docs**: The destination guide describes air-gapped destinations, and the notification, verification and Backups guides follow them along with the new settings for several connections. The runner and health check pages for developers describe how a run and the health check treat one.
 
 
 ### 🧪 Tests

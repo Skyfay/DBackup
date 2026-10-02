@@ -83,6 +83,8 @@ DBackup includes a **Scheduled Integrity Check** job that periodically verifies 
 
 Results are written back to the sidecars as they complete, so the Backups page badges stay up to date without any manual action.
 
+A destination whose **Integrity checks** are off in the **Behavior** part of its form is left out, and an [air-gapped destination](/user-guide/destinations/#air-gapped-destinations) is checked whenever it is connected. Several destinations are switched at once: tick them on the **Destinations** tab of **Connections** and pick **Turn off integrity checks** or **Turn on integrity checks** under **More**.
+
 The scheduler can be configured under **Settings - Scheduler** (cron expression). A weekly or monthly check on your full archive is a reasonable default for most setups.
 
 ::: info What counts as "scheduled"

@@ -269,6 +269,18 @@ describe("POST /api/adapters/bulk", () => {
         );
         expect(mocks.checkPermissionWithContext).toHaveBeenCalledWith(expect.anything(), PERMISSIONS.SOURCES.WRITE);
     });
+
+    it("marks destinations air-gapped and switches their integrity checks with the permission of destinations", async () => {
+        mocks.getAuthContext.mockResolvedValue(authed());
+        mocks.getAdapterTypes.mockResolvedValue(["storage"]);
+        mocks.updateAdapterFlags.mockReset().mockResolvedValue({ succeeded: ["nas"], failed: [] });
+
+        expect((await bulkAdapters(request({ action: "mark-air-gapped", ids: ["nas"] }))).status).toBe(200);
+        expect(mocks.updateAdapterFlags).toHaveBeenLastCalledWith(["nas"], { airGapped: true });
+        expect((await bulkAdapters(request({ action: "disable-integrity-checks", ids: ["nas"] }))).status).toBe(200);
+        expect(mocks.updateAdapterFlags).toHaveBeenLastCalledWith(["nas"], { skipVerification: true });
+        expect(mocks.checkPermissionWithContext).toHaveBeenCalledWith(expect.anything(), PERMISSIONS.DESTINATIONS.WRITE);
+    });
 });
 
 describe("POST /api/storage/[id]/files/bulk", () => {

@@ -1,13 +1,14 @@
-import { Bell, BellOff, Eye, EyeOff, Trash } from "lucide-react";
+import { Bell, BellOff, Eye, EyeOff, Plug, ShieldCheck, ShieldOff, Trash, Unplug } from "lucide-react";
 import type { BulkAction, BulkTrash } from "@/components/ui/data-table";
 import { requestBulk } from "@/lib/bulk-request";
+import { isAirGapped } from "@/lib/core/air-gap";
 import type { AdapterConfig } from "./types";
 import { kindNames, type ConnectionKind } from "./connection-columns";
 import { adapterTypeIcon } from "./connection-type-icon";
 
 const UPDATED = { verb: "update", verbPast: "updated", noun: "connection" };
 
-function flags(config: AdapterConfig): { healthNotificationsDisabled?: boolean; isRestoreExcluded?: boolean } {
+function flags(config: AdapterConfig): { healthNotificationsDisabled?: boolean; isRestoreExcluded?: boolean; skipVerification?: boolean; airGapped?: boolean } {
     try {
         return config.metadata ? JSON.parse(config.metadata) : {};
     } catch {
@@ -44,9 +45,8 @@ const run = (action: string) => (rows: AdapterConfig[], { permanently }: { perma
 
 /**
  * A setting switched on many connections at once. It only shows while at least one selected
- * connection would change, so the menu never offers what is already so. A later setting that
- * only some adapters know would hide itself through `isAvailable` as soon as one of those
- * without it is selected.
+ * connection would change, so the menu never offers what is already so. A connection the setting
+ * does not apply to is `ineligible`, left out and never sent.
  */
 function setting(
     id: string,
@@ -54,6 +54,7 @@ function setting(
     group: string,
     icon: BulkAction<AdapterConfig>["icon"],
     changes: (config: AdapterConfig) => boolean,
+    ineligible?: (config: AdapterConfig) => string | null,
 ): BulkAction<AdapterConfig> {
     return {
         id,
@@ -63,16 +64,21 @@ function setting(
         placement: "menu",
         icon,
         ...ITEM,
-        isAvailable: (rows) => rows.some(changes),
+        ...(ineligible ? { ineligible } : {}),
+        isAvailable: (rows) => rows.some((config) => !ineligible?.(config) && changes(config)),
         run: run(id),
     };
 }
 
+/** An air-gapped destination sends no health alerts at all, so its form shows the switch off and locked. */
+const noHealthAlerts = (config: AdapterConfig) => (isAirGapped(config) ? "It is air-gapped and sends no health alerts" : null);
+
 /**
  * What a selection of connections can do together. Every list can delete, into Recently deleted
- * with `trash`. Databases also switch their health check notifications and whether they are
- * restore targets, which every database adapter supports. The other lists keep to deleting for
- * now, their settings differ too much from one adapter to the next.
+ * with `trash`. Databases, directory sources and destinations also switch their health check
+ * notifications, databases whether they are restore targets, and destinations their integrity
+ * checks and whether they are air-gapped, the switches of the Behavior part every adapter of the
+ * kind has. Notification channels keep to deleting.
  */
 export function connectionBulkActions(kind: ConnectionKind, canManage: boolean, trash: Omit<BulkTrash<AdapterConfig>, "permanentLine">): BulkAction<AdapterConfig>[] {
     if (!canManage) return [];
@@ -98,12 +104,27 @@ export function connectionBulkActions(kind: ConnectionKind, canManage: boolean, 
         run: run("delete"),
     };
 
-    if (kind !== "database") return [remove];
+    if (kind === "notification") return [remove];
+
+    const healthAlerts = [
+        setting("disable-health-alerts", "Turn off notifications", "Health check notifications", BellOff, (config) => !flags(config).healthNotificationsDisabled, noHealthAlerts),
+        setting("enable-health-alerts", "Turn on notifications", "Health check notifications", Bell, (config) => flags(config).healthNotificationsDisabled === true, noHealthAlerts),
+    ];
+    if (kind === "source") return [remove, ...healthAlerts];
+    if (kind === "destination") {
+        return [
+            remove,
+            ...healthAlerts,
+            setting("disable-integrity-checks", "Turn off integrity checks", "Integrity checks", ShieldOff, (config) => !flags(config).skipVerification),
+            setting("enable-integrity-checks", "Turn on integrity checks", "Integrity checks", ShieldCheck, (config) => flags(config).skipVerification === true),
+            setting("mark-air-gapped", "Mark as air-gapped", "Air-gapped", Unplug, (config) => !flags(config).airGapped),
+            setting("unmark-air-gapped", "Mark as not air-gapped", "Air-gapped", Plug, (config) => flags(config).airGapped === true),
+        ];
+    }
 
     return [
         remove,
-        setting("disable-health-alerts", "Turn off notifications", "Health check notifications", BellOff, (config) => !flags(config).healthNotificationsDisabled),
-        setting("enable-health-alerts", "Turn on notifications", "Health check notifications", Bell, (config) => flags(config).healthNotificationsDisabled === true),
+        ...healthAlerts,
         setting("exclude-from-restore", "Exclude from restore", "Restore", EyeOff, (config) => !flags(config).isRestoreExcluded),
         setting("include-in-restore", "Include in restore", "Restore", Eye, (config) => flags(config).isRestoreExcluded === true),
     ];

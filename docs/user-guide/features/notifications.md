@@ -139,7 +139,7 @@ The first three are configured per destination on the **Backups** page: open the
 
 Health checks run every minute. A connection is only reported offline after repeated failures, so a short blip stays quiet.
 
-An air-gapped destination sends neither of the two. To silence the offline and back alerts for another connection, turn off **Health alerts** in the **Behavior** part of its edit form. The health checks keep running. Several databases can be switched at once: tick them on the **Databases** tab of **Connections** and pick **Turn off notifications** under **More**.
+An air-gapped destination sends neither of the two. To silence the offline and back alerts for another connection, turn off **Health alerts** in the **Behavior** part of its edit form. The health checks keep running. Several connections can be switched at once: tick them on the **Databases**, **Directory sources** or **Destinations** tab of **Connections** and pick **Turn off notifications** under **More**.
 
 #### Integrity Events
 

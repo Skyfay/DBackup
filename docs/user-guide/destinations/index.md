@@ -63,7 +63,9 @@ Pick **Create as directory source** in the menu of a destination, or **Create as
 
 ## Air-Gapped Destinations
 
-A destination that is connected only now and then, like a USB disk you plug in once a week or a server that is switched on for its backups, can be marked **Air-gapped** in the **Behavior** part of its form. Being away is then how it is meant to be, not a problem.
+A destination that is connected only now and then, like a USB disk you plug in once a week or a NAS that is only switched on for its backups, can be marked **Air-gapped** in the **Behavior** part of its form. This works with every destination type, since DBackup asks it with the same connection check the health check uses. Being away is then how it is meant to be, not a problem.
+
+Several destinations are marked at once: tick them on the **Destinations** tab of **Connections** and pick **Mark as air-gapped** under **More**.
 
 While it is not connected:
 

@@ -184,10 +184,17 @@ export interface AdapterFlagChange {
     healthNotificationsDisabled?: boolean;
     /** Keeps a database connection out of the restore targets. */
     isRestoreExcluded?: boolean;
+    /** Leaves a destination out of the scheduled integrity check. */
+    skipVerification?: boolean;
+    /** A destination connected only now and then, see `lib/core/air-gap.ts`. */
+    airGapped?: boolean;
 }
 
-/** Only these adapter types read each flag. Setting it on another type would do nothing. */
-const FLAG_TYPES: Record<keyof AdapterFlagChange, { types: string[]; refusal: string }> = {
+/**
+ * Only these adapter types read each flag, and some only as a backup destination. Setting it
+ * anywhere else would do nothing.
+ */
+const FLAG_TYPES: Record<keyof AdapterFlagChange, { types: string[]; destinationOnly?: boolean; refusal: string }> = {
     healthNotificationsDisabled: {
         types: ["database", "storage"],
         refusal: "Notification channels have no health checks.",
@@ -195,6 +202,16 @@ const FLAG_TYPES: Record<keyof AdapterFlagChange, { types: string[]; refusal: st
     isRestoreExcluded: {
         types: ["database"],
         refusal: "Only database connections are restore targets.",
+    },
+    skipVerification: {
+        types: ["storage"],
+        destinationOnly: true,
+        refusal: "Only backup destinations hold backups to check.",
+    },
+    airGapped: {
+        types: ["storage"],
+        destinationOnly: true,
+        refusal: "Only a backup destination can be air-gapped.",
     },
 };
 
@@ -217,7 +234,7 @@ export async function updateAdapterFlags(ids: string[], change: AdapterFlagChang
 
     const adapters = await prisma.adapterConfig.findMany({
         where: { id: { in: ids } },
-        select: { id: true, name: true, type: true, metadata: true },
+        select: { id: true, name: true, type: true, storageRole: true, metadata: true },
     });
     const byId = new Map(adapters.map((adapter) => [adapter.id, adapter]));
     const keys = Object.keys(change) as (keyof AdapterFlagChange)[];
@@ -228,7 +245,9 @@ export async function updateAdapterFlags(ids: string[], change: AdapterFlagChang
             const adapter = byId.get(id);
             if (!adapter) throw new NotFoundError("Connection", id);
             for (const key of keys) {
-                if (!FLAG_TYPES[key].types.includes(adapter.type)) throw new ValidationError(FLAG_TYPES[key].refusal);
+                const rule = FLAG_TYPES[key];
+                const misplaced = rule.destinationOnly === true && adapter.storageRole !== STORAGE_ROLES.DESTINATION;
+                if (!rule.types.includes(adapter.type) || misplaced) throw new ValidationError(rule.refusal);
             }
             // The rest of the metadata, like the detected version, stays as it is.
             const metadata = { ...parseMetadata(adapter.metadata), ...change };

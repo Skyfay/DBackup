@@ -2,9 +2,10 @@ import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 
 /**
  * An air-gapped destination is connected only now and then, like a USB disk plugged in once a
- * week. While it is not connected nothing about it is a problem: a run leaves it out, the health
- * check reports nothing, and a backup made meanwhile is not a copy missing there. The switch lives
- * in the metadata of its connection, beside the other switches of its form.
+ * week or a NAS that is only on for its backups, whatever its adapter. While it is not connected
+ * nothing about it is a problem: a run leaves it out, the health check reports nothing, and a
+ * backup made meanwhile is not a copy missing there. The switch lives in the metadata of its
+ * connection, beside the other switches of its form.
  */
 
 export const AIR_GAPPED_KEY = "airGapped";

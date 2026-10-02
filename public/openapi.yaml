@@ -846,9 +846,10 @@ paths:
   /adapters/bulk:
     post:
       tags: [Adapters]
-      summary: Bulk Delete Adapters
+      summary: Bulk Delete Adapters or Switch Their Settings
       description: |
-        Deletes several adapter configurations in a single request.
+        Deletes several adapter configurations in a single request, or switches one setting
+        of the Behavior part on all of them.
 
         Permissions are checked per distinct adapter type in the selection, so a mixed
         batch requires every matching write permission (`sources:write`,
@@ -857,6 +858,15 @@ paths:
         An adapter still referenced by a job, a directory source or a notification template
         is kept and reported in `data.failed` with the names holding it. The request itself
         still answers `200`.
+
+        | Action | What it switches | Applies to |
+        | :--- | :--- | :--- |
+        | `disable-health-alerts`, `enable-health-alerts` | The offline and back notifications | Databases, directory sources and destinations |
+        | `exclude-from-restore`, `include-in-restore` | Whether it is a restore target | Databases |
+        | `disable-integrity-checks`, `enable-integrity-checks` | Whether the scheduled integrity check includes it | Destinations |
+        | `mark-air-gapped`, `unmark-air-gapped` | Whether it is connected only now and then | Destinations |
+
+        An adapter a setting does not apply to is reported in `data.failed` with the reason.
       operationId: bulkDeleteAdapters
       security:
         - BearerAuth: []
@@ -870,15 +880,27 @@ paths:
               properties:
                 action:
                   type: string
-                  enum: [delete]
+                  enum:
+                    - delete
+                    - disable-health-alerts
+                    - enable-health-alerts
+                    - exclude-from-restore
+                    - include-in-restore
+                    - disable-integrity-checks
+                    - enable-integrity-checks
+                    - mark-air-gapped
+                    - unmark-air-gapped
                 ids:
                   type: array
                   items: { type: string }
                   minItems: 1
                   maxItems: 200
+                permanently:
+                  type: boolean
+                  description: A delete skips Recently deleted. Needs `settings:write`.
       responses:
         "200":
-          description: Deletion applied, with per-adapter outcomes
+          description: Deletion or change applied, with per-adapter outcomes
           content:
             application/json:
               schema:

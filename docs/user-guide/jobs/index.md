@@ -25,7 +25,15 @@ A job defines:
 
 The **Columns** menu adds what a job keeps, who it notifies and when it was added, and moves or hides the rest. The filters beside the search show **All**, the jobs that **Need attention** because their last run failed or was partial, the **Running** ones and the **Paused** ones, each with how many jobs it holds.
 
-The switch beside **New job** shows the jobs as a table or as cards. A card shows the way of a backup from left to right: the source, what happens on the way and the destinations. A phone always shows the cards. The page remembers the view per user.
+The switch beside **New job** shows the jobs as a table, as cards, on a **Timeline** or as **Upcoming**. A card shows the way of a backup from left to right: the source, what happens on the way and the destinations. A phone always shows the cards. The page remembers the view per user.
+
+### Timeline and Upcoming
+
+The **Timeline** draws a row per job over the hours, the last 6 and the next 24, or whole days with **3 days** and **Week**. A run that ran shows its outcome and how long it took, a running one how far it got, and a planned one is dashed as long as the last runs of the job took. A run that waits for a free slot of the queue is hatched amber from when it was due until it starts, and the row **Every job** on top marks every moment more runs want a slot than **Max Concurrent Jobs** allows (see [Concurrent Execution](#concurrent-execution)). Hovering a run names the jobs it waits for, a click opens the page of a run that ran or the details of the job. The arrows move a screen at a time, as far as a week back and a week ahead.
+
+**Upcoming** lists what runs and waits now, then every planned run by day and time with its usual length, whether it waits in the queue and when it starts. A job that runs more often than every two hours stays one line on top with how often it waits, the runs of the last 6 hours fold into one line, and the jobs with nothing planned in the range are named at the end. A click on a run opens the details of its job.
+
+Both views show the jobs the search and the filters leave.
 
 A click on a job opens its details: the last run and how often the last 30 days succeeded, the next run, the size of the last backup, the last 30 runs as bars, what goes in, the destinations with what each keeps, and the settings.
 

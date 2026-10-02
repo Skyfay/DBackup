@@ -1,6 +1,6 @@
 "use client";
 
-import { ChartGantt, LayoutGrid, LayoutPanelLeft, List, Waypoints } from "lucide-react";
+import { ChartGantt, ClockArrowUp, LayoutGrid, LayoutPanelLeft, List, Waypoints } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { ViewMode } from "@/lib/core/table-preferences";
 
@@ -9,6 +9,7 @@ const OPTIONS: { value: ViewMode; label: string; Icon: typeof List }[] = [
     { value: "cards", label: "Cards", Icon: LayoutGrid },
     { value: "split", label: "List and details", Icon: LayoutPanelLeft },
     { value: "timeline", label: "Timeline", Icon: ChartGantt },
+    { value: "upcoming", label: "Upcoming", Icon: ClockArrowUp },
     { value: "lines", label: "Lines", Icon: Waypoints },
 ];
 
@@ -22,7 +23,7 @@ interface ViewSwitchProps {
     views?: ViewMode[];
 }
 
-/** Switches a list page between table, cards, the list with details beside it, a timeline and lines. */
+/** Switches a list page between table, cards, the list with details beside it, a timeline, lines and the runs to come. */
 export function ViewSwitch({ value, onChange, views = LIST_VIEWS }: ViewSwitchProps) {
     const options = OPTIONS.filter((option) => views.includes(option.value));
     return (

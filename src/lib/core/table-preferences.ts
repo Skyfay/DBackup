@@ -44,17 +44,20 @@ export const TableIdSchema = z.string().regex(/^[a-z0-9-]+(\.[a-z0-9-]+)*$/).max
 export const PageIdSchema = TableIdSchema;
 
 /**
- * How a list page shows its records. "split" is a list with the details beside it, "timeline" a grid of days above the list,
- * "lines" what goes where drawn as lines, like on the restore page.
+ * How a list page shows its records. "split" is a list with the details beside it, "timeline" a grid of days or hours above the list,
+ * "lines" what goes where drawn as lines, like on the restore page, "upcoming" the runs to come by time, like on the Jobs page.
  */
-export const VIEW_MODES = ["table", "cards", "split", "timeline", "lines"] as const;
+export const VIEW_MODES = ["table", "cards", "split", "timeline", "lines", "upcoming"] as const;
 export const ViewModeSchema = z.enum(VIEW_MODES);
 export type ViewMode = z.infer<typeof ViewModeSchema>;
 
-/** The views every list page has. The Backups page and the Database Explorer add the timeline, the restore page the lines. */
-export type ListViewMode = Exclude<ViewMode, "timeline" | "lines">;
+/**
+ * The views every list page has. The Backups page, the Database Explorer and the Jobs page add the timeline, the restore
+ * page the lines, the Jobs page Upcoming.
+ */
+export type ListViewMode = Exclude<ViewMode, "timeline" | "lines" | "upcoming">;
 
-/** A saved view for a page without a timeline or lines, which shows the table instead. */
+/** A saved view for a page without a timeline, lines or Upcoming, which shows the table instead. */
 export function listView(view: ViewMode): ListViewMode {
-    return view === "timeline" || view === "lines" ? "table" : view;
+    return view === "timeline" || view === "lines" || view === "upcoming" ? "table" : view;
 }

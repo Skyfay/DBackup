@@ -22,7 +22,7 @@ Services must not perform permission checks - that is the caller's job. Services
 
 ```
 src/services/
-  jobs/          job-service.ts
+  jobs/          job-service.ts, job-list-service.ts and job-overview.ts (the Jobs page), schedule-load-service.ts (the schedule picker), job-timeline-service.ts (the Timeline and Upcoming views, with the queue played through by `planQueue` in `lib/core/queue-plan.ts`)
   backup/        backup-service.ts (runJob), retention-service.ts (GFS), encryption-service.ts, integrity-service.ts
   restore/       restore-service.ts, preflight.ts, pipeline.ts, smart-recovery.ts, types.ts
   auth/          auth-service.ts, api-key-service.ts, credential-service.ts, api-keys-model.ts (API keys tab page model), api-key-details.ts (the panel of a key), login-page-service.ts (what the public login page shows, never a secret of a provider)

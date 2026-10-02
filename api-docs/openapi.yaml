@@ -332,6 +332,35 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /jobs/timeline:
+    get:
+      tags: [Jobs]
+      summary: Get Job Timeline
+      description: |
+        Returns the runs of every job a week back and the runs its schedule plans a week ahead. A run that runs or waits in the queue and every planned run come with when the queue is expected to start and end it and which jobs hold the slots while it waits. The Timeline and Upcoming views of the Jobs page cut their range from it.
+
+        **Required permission:** `jobs:read`
+      operationId: getJobTimeline
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Runs and plan of every job
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/JobTimeline"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /jobs/{id}/runs:
     get:
       tags: [Jobs]
@@ -3372,6 +3401,100 @@ components:
                 type: integer
                 description: The average length of the job's recent finished runs, one minute without any
                 example: 360000
+
+    JobTimeline:
+      type: object
+      properties:
+        now:
+          type: string
+          format: date-time
+        from:
+          type: string
+          format: date-time
+          description: A week before now, the oldest run included
+        to:
+          type: string
+          format: date-time
+          description: A week after now, the last planned run included
+        slots:
+          type: integer
+          description: How many runs the queue takes at once, the Max Concurrent Jobs setting
+          example: 1
+        estimates:
+          type: object
+          description: The usual length of a run per job ID in milliseconds, from its recent finished runs
+          additionalProperties:
+            type: integer
+          example: { "a1b2c3": 1440000 }
+        failing:
+          type: array
+          description: Jobs whose newest outcome failed
+          items:
+            type: string
+        runs:
+          type: array
+          description: Runs that ran, run or wait in the queue, oldest first
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              jobId:
+                type: string
+              status:
+                type: string
+                enum: [Success, Failed, Partial, Cancelled, Running, Pending]
+              startedAt:
+                type: string
+                format: date-time
+                description: When it started, or when it was queued while it is Pending
+              endedAt:
+                type: [string, "null"]
+                format: date-time
+              stage:
+                type: [string, "null"]
+              progress:
+                type: [integer, "null"]
+              expectedStart:
+                type: [string, "null"]
+                format: date-time
+                description: For a run that runs or waits, when it is expected to start
+              expectedEnd:
+                type: [string, "null"]
+                format: date-time
+              waitsFor:
+                type: array
+                description: For a run that waits, the jobs whose runs hold the slots
+                items:
+                  type: string
+        planned:
+          type: array
+          description: The runs the schedules plan, soonest first
+          items:
+            type: object
+            properties:
+              jobId:
+                type: string
+              due:
+                type: string
+                format: date-time
+                description: When the schedule starts it
+              start:
+                type: string
+                format: date-time
+                description: When the queue is expected to start it, later than due while it waits for a slot
+              end:
+                type: string
+                format: date-time
+              waitsFor:
+                type: array
+                items:
+                  type: string
+        truncated:
+          type: array
+          description: Jobs that run more often than every five minutes, whose plan stops early
+          items:
+            type: string
 
     CreateJobRequest:
       type: object

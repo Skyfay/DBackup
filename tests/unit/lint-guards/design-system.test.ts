@@ -155,6 +155,9 @@ describe("Task colors", () => {
         "job-status-filter.tsx",
         "job-details-content.tsx",
         "job-run-chart.tsx",
+        // A job's live run on the Timeline and Upcoming views of the Jobs page.
+        "timeline-bars.tsx",
+        "jobs-upcoming.tsx",
         // A live run in History: the progress bar of its row and card, and the live parts of its page,
         // like the row of what runs now and the copy an integrity check checks now.
         "run-cells.tsx",

@@ -19,6 +19,9 @@ import { JobContextMenu, JobRowActions } from "@/components/dashboard/jobs/job-m
 import { jobsAttention, matchesJobFilter, type JobFilter } from "@/components/dashboard/jobs/job-status";
 import { JobsStrip } from "@/components/dashboard/jobs/jobs-strip";
 import { JobStatusFilter } from "@/components/dashboard/jobs/job-status-filter";
+import { JobsTimeline } from "@/components/dashboard/jobs/timeline/jobs-timeline";
+import { JobsUpcoming } from "@/components/dashboard/jobs/timeline/jobs-upcoming";
+import { useJobTimeline } from "@/components/dashboard/jobs/timeline/use-job-timeline";
 import { JOBS_PAGE_ID, JOBS_TABLE_ID } from "@/components/dashboard/jobs/job-tables";
 import { useJobList } from "@/components/dashboard/jobs/use-job-list";
 import { useRunJob } from "@/components/dashboard/widgets/use-run-job";
@@ -35,7 +38,7 @@ import { ViewSwitch } from "@/components/ui/view-switch";
 import { useIsMobileState } from "@/hooks/use-mobile";
 import { useTableLayout } from "@/hooks/use-table-layout";
 import { requestBulk } from "@/lib/bulk-request";
-import { listView, type ListViewMode, type TablePreferences, type ViewMode } from "@/lib/core/table-preferences";
+import type { TablePreferences, ViewMode } from "@/lib/core/table-preferences";
 import { STORAGE_ROLES } from "@/lib/core/storage-roles";
 import { cn } from "@/lib/utils";
 import type { JobListItem } from "@/services/jobs/job-list-service";
@@ -57,8 +60,8 @@ interface JobsClientProps {
     initialView: ViewMode;
 }
 
-/** The views the Jobs page offers. A third one, around the coming runs, is still to be designed. */
-const VIEWS: ViewMode[] = ["table", "cards"];
+/** The views the Jobs page offers: the table, cards, the runs over the hours, and the runs to come by time. */
+const VIEWS: ViewMode[] = ["table", "cards", "timeline", "upcoming"];
 
 function LoadingList() {
     return (
@@ -103,11 +106,14 @@ export function JobsClient({
     const { runJob, startingJobId } = useRunJob("jobs");
     const layout = useTableLayout(JOBS_TABLE_ID, initialLayout);
     const [filter, setFilter] = useState<JobFilter>("all");
-    const [view, setView] = useState<ListViewMode>(VIEWS.includes(initialView) ? listView(initialView) : "table");
+    const [view, setView] = useState<ViewMode>(VIEWS.includes(initialView) ? initialView : "table");
     // A phone has no room for the table, so it always gets the cards and no switch. The list
     // waits until the screen is measured, so a phone never flashes the table first.
     const isMobile = useIsMobileState();
-    const shownView: ListViewMode | undefined = isMobile === undefined ? undefined : isMobile ? "cards" : view;
+    const shownView: ViewMode | undefined = isMobile === undefined ? undefined : isMobile ? "cards" : view;
+    // Timeline and Upcoming draw the jobs the search and filters leave above rows they hide.
+    const timelineView = shownView === "timeline" || shownView === "upcoming";
+    const timeline = useJobTimeline(timelineView);
 
     const [form, setForm] = useState<{ open: boolean; job: JobListItem | null }>({ open: false, job: null });
     const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -118,8 +124,8 @@ export function JobsClient({
     const [details, setDetails] = useState<{ id: string; open: boolean } | null>(null);
 
     const changeView = useCallback((next: ViewMode) => {
-        setView(listView(next));
-        saveViewLayout(JOBS_PAGE_ID, listView(next))
+        setView(next);
+        saveViewLayout(JOBS_PAGE_ID, next)
             .then((result) => result.success)
             .catch(() => false)
             .then((saved) => {
@@ -238,7 +244,10 @@ export function JobsClient({
                         searchKey="name"
                         searchPlaceholder="Search jobs"
                         toolbarExtra={<JobStatusFilter value={filter} onChange={setFilter} jobs={jobs} />}
-                        onRefresh={refresh}
+                        onRefresh={() => {
+                            void refresh();
+                            if (timelineView) timeline.reload();
+                        }}
                         isLoading={isLoading}
                         // Selecting for bulk actions is a table thing. Cards keep to one job at a time.
                         enableRowSelection={canManage && shownView === "table"}
@@ -248,7 +257,13 @@ export function JobsClient({
                         onBulkActionComplete={reload}
                         columnLayout={layout}
                         onRowClick={openDetails}
-                        view={shownView}
+                        view={shownView === "cards" ? "cards" : "table"}
+                        aboveRows={timelineView
+                            ? (rows) => shownView === "timeline"
+                                ? <JobsTimeline jobs={rows.map((row) => row.original)} allJobs={jobs} timeline={timeline} canViewHistory={canViewHistory} onOpenJob={openDetails} />
+                                : <JobsUpcoming jobs={rows.map((row) => row.original)} allJobs={jobs} timeline={timeline} onOpenJob={openDetails} />
+                            : undefined}
+                        hideRows={timelineView}
                         renderCard={(row) => <JobCard job={row.original} onOpen={openDetails} actions={renderActions(row.original)} />}
                         // A card shows the way of a backup from left to right, which needs more room than three abreast leave.
                         cardGridClassName="lg:grid-cols-2"

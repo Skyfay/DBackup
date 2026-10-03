@@ -7,278 +7,114 @@ All notable changes to DBackup are documented here.
 
 > ⚠️ **Breaking:** Retention now follows a renamed job into the folder of its old name, where its backups stayed untouched until now. The first run of such a job after updating removes the backups there that its policy no longer keeps, all at once. Locked backups stay, so lock anything in the old folder you want to keep before updating. The Backups page lists those backups under the job, and the retention step of that first run names every folder it looked at.
 
-> ⚠️ **Breaking:** The configuration backup is always encrypted now, since it holds every login. One that was on without an encryption key fails until a key is picked under **Settings → Configuration backup**.
+> ⚠️ **Breaking:** The configuration backup is a copy of the whole database now, always encrypted, and restores only as a whole. One that was on without an encryption key fails until a key is picked under **Settings → Configuration backup**. A restore replaces the database, so what was added after the backup is gone and the history becomes the one of the backup, which is empty without **Include the history**. A single deleted key, login, connection, job or user comes back from **Settings → Recently deleted** instead, and the JSON files of older versions still restore in parts.
 
-> ⚠️ **Breaking:** A configuration backup is a copy of the whole database now and restores only as a whole. The restore replaces the database, so what was added after the backup is gone and the history becomes the one of the backup, which is empty without **Include the history**. A single deleted key, login, connection, job or user comes back from **Settings → Recently deleted** instead, which keeps them for 30 days by default. Restoring in parts stays for the JSON files of older versions only and gets no more work, since keeping it in step with every table cost more than it was worth.
+> ⚠️ **Breaking:** The API no longer returns the configs of the connections a job uses, neither in `GET /api/jobs` nor in the answer to creating, changing or cloning a job, where a connection keeps its `id`, `name` and `adapterId`. `GET /api/jobs` also moved `lastRunAt` and `nextRunAt` to `overview.lastRun.startedAt` and `overview.nextRunAt`, lists the exclude presets of a folder as `excludePatternPresetIds` and leaves out `updatedAt` and the `id` of each destination entry.
 
 ### ✨ Features
 
-- **connections**: The connection tables show each connection's status with its response time, how many jobs use it, its last backup and its health checks of the last 24 hours. Every user can switch columns on and off, drag them into order and pick a row height, and the layout is saved to their account.
-- **ui**: The profile sets the rows per page, now up to 100, and the row height every table starts with. A table with a Columns menu keeps what was picked on it until its Reset.
-- **connections**: A click on a connection opens a panel with what is wrong with it, its health checks of the last day, the jobs and templates using it with their last backup, and its settings. The connection test and editing are one click away from there.
-- **connections**: The Connections page shows its connections as a table, as cards or as a list with the details beside it, and remembers the choice for each user. Phones always get the cards.
-- **connections**: Several databases, directory sources or destinations can have their health check notifications turned off or on in one step. Databases can also be excluded from or included in restores together, and destinations get their integrity checks switched or are marked air-gapped.
-- **connections**: A right click on a connection opens its actions, and on one of several selected rows the actions for the whole selection. A long press does the same on a phone.
-- **connections**: Picking the type of a new connection now happens in one searchable list, grouped by what the type is. Databases are grouped by relational, document, key value and file based, notification channels by chat, push, email and SMS, and webhook.
-- **jobs**: The jobs table shows each job's last run with its error or live progress, its last 12 runs as bars, where it backs up to and when it runs next. The Jobs page can also show its jobs as cards with the way of each backup, and phones always get the cards.
-- **jobs**: A click on a job opens a panel with its live progress or last error, the length of its latest runs, its success rate over 30 days and what it backs up to where. Its actions open from there, from the button at the end of the row and with a right click on the row.
-- **jobs**: The Jobs page shows its runs on a timeline by the hour, with how long each took or will take and where a run waits in the queue. Upcoming lists every run the schedules plan by day and time, folding a job that runs every hour into one line.
-- **jobs**: The file names of a job warn when two runs of its schedule would get the same name, which replaces the earlier backup at every destination, and offer a template with the time. The field also shows a name the job will write.
-- **storage**: The Backups page lists every backup of every job with the destinations that hold a copy and marks a missing copy, filtered by job, by destination, by who started it and by state, and shown as a table, as a timeline of every job by day with the runs its schedule plans for the next week, or as cards on a phone. The Destinations tab lists every destination with its status, size, growth and alerts as a table or a timeline by day, with the details of a picked one under it showing its size over time, its alerts and every job with backups there.
-- **storage**: A click on a backup on the Backups page opens its copies with whether their destination answers right now, its chain, what it holds and its last integrity check. The backups of a deleted job stay listed and can be deleted together, and the page tells how old the list of each destination is and compares it with the storage on request.
-- **storage**: The restore page shows the databases of a backup row by row beside the server they go to, with what happens to each, filters and a copy beside the ones there in one click, or as lines from the backup to the server. A backup with databases and folders is restored in two steps, and a small timeline of the job picks another backup without going back.
-- **explorer**: The Database Explorer lists every database of every server with the jobs that back it up, its last backup and the ones in no job, as a table or by day with the new versions of each server. A day of the timeline shows its backups in a panel beside it, where a dropdown picks the run and Restore starts with only that database ticked.
-- **explorer**: A database opens as a page of its own with its tables and their rows read live, and a Redis or Valkey server is one entry whose keys a filter finds on the server. The timeline folds a server with many databases into one row and pages its rows like a table.
-- **explorer**: The Servers tab lists every database server with its address, its version, how much of it a job backs up, its kept backups and its status, and marks a server too old for the newest backups of its engine. A server opens as a page of its own with every version it ran, how long it ran each and how many of the backups made on it are kept.
-- **history**: The History page lists backups, restores and the system tasks in one list with the numbers of the last 30 days, filtered by type, job and who started a run. Its notifications open in a side panel with what was sent and the run it was for, and a phone gets cards.
-- **history**: A run opens as a page of its own from every link to it, with a way back to where it was opened, its steps next to their usual time, a summary of what each step did and its log with each problem told once in plain words. A live run fills a row for the database it dumps and the copy it uploads, and an integrity check or a verification lists every copy it checked.
-- **vault**: The Vault lists credential profiles with the connections that log in with each, and encryption keys with a Key ID, the jobs that use them, the backups they protect at each destination and their last recovery kit. A row opens its details in a side panel and its actions with a right click, and a phone gets cards.
-- **vault**: A new key offers its recovery kit right away, and Import key reads a key from the files of a recovery kit. The Vault marks keys that were never in a kit and backups that name a key it does not have.
-- **templates**: The Templates page lists retention policies, file names, schedule presets, notifications and exclude patterns as tables with the jobs, destinations and folders that use each template, its default and what it does. A row opens its details in a side panel and its actions with a right click, and a phone gets cards.
-- **templates**: Editing a retention policy shows what the next run at each of its destinations removes with the change, and a new default names the destinations it reaches first. The exclude preset dialog lists what a preset skips and checks a path against it, and deleting a template names what depends on it.
-- **connections**: The folder of an S3, SFTP, FTP, WebDAV, SMB or Rsync connection can be picked in a browser of its folders, before the connection is saved. The folder button opens once the connection and its login are filled in.
-- **users**: The Users tab lists every user with how they sign in, their second factor, their last sign-in and their open sessions, with the users without a group or with a password alone above the list. A row opens a panel with what their group lets them do in words, their ways to sign in, their sessions, their API keys and their latest activity, and a phone gets cards.
-- **users**: Admins set a new password for a user and end the sessions of a user one by one or all at once. A new password signs the user out everywhere unless that is turned off.
-- **users**: The Groups tab lists every group with what its members may do in one sentence, its members and its share of the permissions, as a table or as cards. A group opens a panel with its level in every area, its members to move and its changes from the audit log.
-- **users**: New group starts from a template, a copy of a group or nothing, and every group is edited area by area with a level and the single permissions below it, each with a sentence.
-- **users**: The API keys tab lists every key with its owner, what it may do in one sentence, its state, its last use and when it runs out, as a table or as cards. A key opens a panel with its permissions by area, the runs it started and a first request to try it.
-- **users**: New API key starts from a common task like CI/CD, monitoring or a dashboard widget, from a copy of a key or from nothing. The name, the end and the permissions of a key can be edited later without a new secret.
-- **users**: The Audit log tab lists every entry as a sentence with who did it, the area, the browser and the address, filtered by person, API key, area, action and period, and marks a sign-in from a new place. An entry opens with what changed before and after, the earlier entries of its record, and for a sign-in everything done in that session.
-- **users**: A timeline above the audit log shows who did how much on which day, and Export CSV downloads the entries its filters keep.
-- **users**: The SSO tab lists every sign-in provider with its logo, where it signs in, who is linked through it, the last sign-in and what happens to someone new, as a table or as cards. A provider opens a panel with what to set up in the provider, the people linked through it and its endpoints, with Check connection.
-- **users**: New provider starts from the provider as a card and checks its URL right away, beside the steps to set it up in the provider with the callback URL to copy. Edit never shows the client secret, and Delete names who cannot sign in afterwards.
-- **SSO**: Each sign-in provider puts the people it adds into a group picked for it. They started without a group and saw nothing before.
-- **settings**: The Settings page lists its parts on the left with the state of each, like a configuration backup that is off or a certificate that runs out soon, and a search finds every setting. Changes wait in a bar at the foot until they are saved, and a phone lists the parts and opens each on its own.
-- **settings**: The system tasks are a list with their schedule in words, their last run with what it did and a switch each, and a task opens an Edit dialog with the schedule picker of the jobs. The configuration backup sets its destination, key and schedule in one place and shows when it last ran.
-- **settings**: The system notifications are a list with the channels, the reminder and a switch of each event, and an event opens an Edit dialog with a test. Ticked events go on, off or to other channels together, and an event that goes nowhere shows in amber.
-- **config**: The configuration backup is a copy of the whole database, so it brings back every template, the folders of file jobs, second factors and passkeys, and whatever a later version adds. A restore shows what the backup holds first, then replaces the database and restarts DBackup.
-- **config**: A new DBackup restores a configuration backup on its sign-up page with the key from its recovery kit, and needs neither the old ENCRYPTION_KEY nor the old BETTER_AUTH_SECRET.
-- **profile**: The Profile page is built like Settings, with its parts on the left, their states and a search, and says what your group lets you do. Passkeys can be renamed, and the authenticator app makes new backup codes.
-- **profile**: **Colors** sets the color of every task, like Add, Edit, Delete and Warning, from a set like Colorblind friendly or one of your own, and shows it before it is saved. The colors are yours alone and reach every page.
-- **settings**: Deleted encryption keys, saved logins, connections, jobs and users wait under **Settings → Recently deleted** for 30 days, where someone who may change the settings restores them with everything that belonged to them or deletes them for good. Only they can skip it with **Delete it permanently now**, and the message after a delete offers Undo.
-- **settings**: The new system task **Optimize the database** gives the unused space of the database back to the disk on the first of every month, once at least a fifth of it is unused. Runs that would start meanwhile wait until it is done.
-- **ui**: The tabs of every page show an icon, and a dot in amber or red while their list holds something to fix, like a connection that does not answer or a job whose last run failed. What it is shows on hover.
-- **ui**: The numbers above every list are tiles with an icon, and what each means shows on hover. Jobs and Connections have them too, with how the latest runs went, what answers and how fast.
-- **ui**: A search in the middle of the header, or Ctrl+K (⌘K on macOS) anywhere, finds the jobs, connections, databases, backups, runs, people, groups, API keys, templates, Vault entries, settings and pages you may open. It also starts a found job and switches the theme.
-- **auth**: The login page can show a picture of your own instead of the logos, chosen under Settings › Sign-in. The picture lives in the database and comes back with the configuration backup.
-- **auth**: **Settings → Passwords** sets what a new password needs, as Basic, Standard, Strong or rules of its own, with Standard on a new instance and Basic kept on an updated one. Every field for a new password ticks off the rules as they hold, Generate follows them and the server refuses a password that breaks one.
-- **storage**: A destination connected only now and then, like a USB disk or a NAS that is only on for its backups, can be marked **Air-gapped** under Behavior. While it is not connected, runs skip it and stay a success, and it raises no offline alert and no missing copy but shows as not connected in gray.
-- **notifications**: The new system notification **An air-gapped destination was skipped** reports the first run that leaves out an air-gapped destination, once each time it goes away. It is off by default.
-
+- **ui**: Every page is redesigned in a new color palette where dialogs, menus and buttons take the color of their task, with a sidebar that collapses to icons and a search in the header, Ctrl+K or ⌘K, that finds every job, connection, backup, run, person and setting you may open. Lists show their numbers as tiles and a dot on their tab for what needs a look, open a record in a side panel, offer its actions with a right click and turn into cards on a phone.
+- **ui**: Tables keep the columns, the order and the row height each user picks, and the profile sets the rows per page, now up to 100, and the row height every table starts with.
+- **dashboard**: The overview names a failing job and can run it again, shows trend cards, switches between the latest runs and the jobs and fits its backup calendar to the screen. It also works on phones.
+- **setup**: The Quick Setup is one page with its parts one under the other and the backup they add up to beside them. Every part takes a connection or key you have or adds a new one on the spot.
+- **connections**: The Connections page shows every connection with its status, response time, health checks of the last day, the jobs that use it and its last backup, as a table, as cards or as a list with the details beside it. Several connections turn their health alerts, their use for restores, their integrity checks or their air-gapped state on or off in one step.
+- **connections**: A new connection starts from one searchable list of types grouped by kind, and its form shows one part at a time with what is done or still missing. The folder of an S3, SFTP, FTP, WebDAV, SMB or Rsync connection is picked in a browser of its folders before it is saved.
+- **jobs**: The Jobs page shows each job with its last run, its error or live progress, its latest runs, its destinations and its next run, plus a timeline by the hour with the queue and a list of every planned run. The file names of a job warn when two runs would get the same name and overwrite each other.
+- **jobs**: The job form shows one part at a time with what is done or still missing, picks connections, keys and templates from searchable lists that also add new ones, and has parts of its own for compression and for incremental backups with a drawing of the chain. The schedule is picked as hourly, daily, weekly, monthly or cron, with the next runs and a warning when runs would wait for a free slot in the queue.
+- **jobs**: The API trigger dialog creates a key with the two permissions the API needs and fills it into every script and pipeline example.
+- **docker**: The volume picker of a job lists the volumes by Compose stack with the containers that mount each one, and shows which containers the job stops in which order.
+- **storage**: The Backups page lists every backup with the destinations that hold a copy and marks a missing one, as a table, a timeline by day or cards. Its Destinations tab shows the status, size, growth and alerts of every destination and changes the alerts of several at once.
+- **storage**: A backup opens with its copies, its chain, its content and its last integrity check. **Download...** packs any mix of its databases and folders into one tar.gz or writes a curl, wget or PowerShell command for a server, and **Verify integrity** checks one copy or all of them.
+- **storage**: A destination connected only now and then, like a USB disk or a NAS that is only on for its backups, can be marked **Air-gapped**. While it is away, runs skip it and stay a success, it raises no offline alert and no missing copy, and an optional notification reports the first run that left it out.
+- **restore**: The restore page shows each database of a backup beside the server it goes to with what happens to it, and restores a backup with databases and folders in two steps.
+- **Redis**: The restore of a Redis or Valkey backup writes one script for a Docker container, a Compose service, a Linux service or a Windows service, or shows the same commands step by step. The script checks that Redis will read the dump before it stops anything and keeps the old dump.
+- **explorer**: The Database Explorer lists every database of every server with the jobs that back it up and its last backup, shows the tables and rows of a database live and restores one database from a day of its timeline. Its Servers tab shows every server with the versions it ran and marks one too old for its newest backups.
+- **history**: The History page lists backups, restores, system tasks and notifications in one place. A run opens as a page with its steps, a summary of each step, its live progress and its log with every problem told once in plain words.
+- **vault**: The Vault lists saved logins with the connections that use them and encryption keys with a Key ID, the jobs and backups they protect and their last recovery kit. A new key offers its recovery kit right away, and Import key reads a key back from one.
+- **templates**: The Templates page lists retention policies, file names, schedule presets, notifications and exclude patterns with everything that uses them. Editing a retention policy shows what the next run removes, and deleting a template names what depends on it.
+- **users**: Users & Groups has tabs for users, groups, API keys, the audit log and SSO, with a side panel for every row. Admins set the password and end the sessions of a user, groups are edited area by area with a sentence for every permission, and API keys start from a task like CI/CD and can be edited without a new secret.
+- **audit**: The audit log tells every entry as a sentence with the address, browser or API key it came from and what changed before and after, and marks a sign-in from a new place. A timeline shows who did how much on which day, and Export CSV downloads the entries the filters keep.
+- **SSO**: A new sign-in provider is set up beside the steps to take in the provider, its client secret is never shown again, and the people it adds join a group picked for it instead of starting without one.
+- **settings**: The Settings page lists its parts with the state of each and a search, keeps changes in a bar until they are saved, and shows the system tasks and the system notifications as lists with their schedule, last run, channels and a test.
+- **settings**: Deleted keys, saved logins, connections, jobs and users wait under **Settings → Recently deleted** for 30 days, where they come back with everything that belonged to them. The message after a delete offers Undo.
+- **settings**: The new system task **Optimize the database** gives the unused space of the database back to the disk on the first of every month.
+- **auth**: **Settings → Passwords** sets what a new password needs, as Basic, Standard, Strong or rules of its own, which every password field ticks off and the server enforces. The login page is redesigned and can show a picture of your own.
+- **config**: The configuration backup is a copy of the whole database, so it brings back everything, and a restore shows what the backup holds before it replaces the database and restarts DBackup. A new instance restores one on its sign-up page with the key from its recovery kit.
+- **profile**: The Profile page is built like Settings, renames passkeys, makes new backup codes and sets the colors of every task, like Add, Edit and Delete, from a set like Colorblind friendly or one of your own.
+- **api**: The new `GET /api/jobs/{id}/runs` returns the latest runs of a job with its success rate, `GET /api/jobs/schedules` the schedules with the slots of the queue and `GET /api/jobs/timeline` the runs of every job a week back and ahead. `POST /api/adapters/bulk` also switches the health alerts, restores, integrity checks and air-gapped state of several connections.
+- **api**: New endpoints find anything with `GET /api/search`, list runs with `GET /api/history/runs`, databases and their servers with `GET /api/databases` and backups across every destination with `GET /api/storage/explorer`. `GET /api/notification-logs` filters by `channel` and adds the numbers of the last 30 days with `stats=true`.
 
 ### 🐛 Bug Fixes
 
-- **storage**: A destination that cannot be listed during the storage refresh keeps the size and backup count of its last successful scan instead of an estimate from the run history. The dashboard shows how old those values are.
-- **storage**: The storage scan of a local destination no longer fails when retention deletes a backup while it runs.
-- **storage**: The storage history chart shows a shrinking destination with a minus sign and compares against its oldest measurement in the chosen range. Its axes space the days by time and step in round sizes.
-- **ui**: A page with content wider than the window no longer runs past its right edge, where that content was cut off and could not be scrolled to.
-- **ui**: Long names in lists that scroll, like the pickers and the filters of the tables, end with an ellipsis instead of pushing counts and borders out of view.
-- **connections**: Directory sources no longer offer the storage history, which exists only for backup destinations.
-- **templates**: Deleting several retention policies no longer calls them "policys" in the confirmation and in the message afterwards.
-- **connections**: Creating a connection no longer does nothing when a required field sits in a part of the form that is not open. The form opens that part and shows what is missing.
-- **connections**: The text fields and the email recipient field of the connection forms are tied to their labels, so a click on a label puts the cursor in its field and screen readers name the field.
-- **connections**: An empty required field of a new connection shows the adapter's own message, like "Bucket name is required" or "Add at least one recipient", instead of Zod's generic wording.
-- **connections**: Authorizing a cloud drive again checks the new token, instead of still reporting the old one as expired.
-- **connections**: The file browser of a path field answers a missing login or permission with 401 or 403 instead of a server error.
-- **jobs**: The schedule picker shows its times the way the scheduler runs them, without seconds, instead of converting them through the time zone of the browser. A cron expression the scheduler cannot read can no longer be saved to a job or a schedule preset.
-- **templates**: The preview of a naming template ends in .tar like the backup files and shows the time of the scheduler's time zone, instead of .sql and the time of the browser.
-- **jobs**: A run of a job waits while another run of the same job is still going and starts right after. With more than one queue slot both ran at once, planned the same step of an incremental chain and could write the same backup file.
-- **jobs**: Every run keeps its temporary files in a directory of its own, so two runs whose backups get the same name no longer write into one file and delete it under each other.
-- **jobs**: A cloned job keeps the retention policy of each destination, its naming template, its integrity checks and its incremental settings. The copy fell back to the defaults for them before.
-- **jobs**: The examples of the API trigger dialog end on a Partial or Cancelled run. Python, TypeScript and Go waited for them forever, Bash stopped with an unknown status and Ansible gave up after ten minutes.
-- **storage**: Someone who may restore but not download can restore folders, which the count of the picked files turned down before. Download of the picked files only shows with the download permission.
-- **storage**: The restore page says right away when DBackup cannot connect to the server picked to restore into, with the reason and Try again. Nothing showed it before the restore was started.
-- **retention**: A job named like a deleted one no longer deletes the backups the deleted job left in its folder. Retention now leaves out every backup whose `.meta.json` names another job.
-- **retention**: A renamed job keeps applying its policy to the backups it left in the folder of its old name, so its first run after the update removes those the policy no longer keeps there. An incremental job names the rename as the reason for the new chain it starts.
-- **ci**: The `skyfay/dbackup:ci` image ends a Partial run with exit code 2 and a Cancelled one with 1, where it waited until it timed out. It waits up to an hour for a run instead of ten minutes, set with `DBACKUP_TIMEOUT`.
-- **storage**: The steps of the Redis and Valkey restore no longer copy a file their download command never wrote, and no longer stop Redis in a way a Docker restart policy undoes. The check afterwards no longer runs KEYS, which blocks a large instance.
-- **storage**: A download link for a server showed wget and curl with the same link, so whichever ran second failed. The dialog shows one command at a time, and a download that broke off can run again with the same link.
+- **MySQL**: Backups of MySQL and MariaDB hold stored procedures, functions and events and read InnoDB tables from one snapshot, as the guide always said, with three switches under Options to turn them off. A login that may not read events or routines gets a warning in the run instead of a failed backup.
+- **Rsync**: A directory source over rsync copies exactly the files its backup lists, with the exclude patterns read like everywhere else, and its folder tree works on servers without GNU find, like macOS or a NAS with BusyBox. Files in nested folders went missing before, and the run failed on a file that never arrived.
+- **retention**: A job named like a deleted one no longer deletes the backups the deleted job left in its folder.
+- **jobs**: A run of a job waits while another run of the same job is still going, and every run keeps its temporary files in a directory of its own. With more than one queue slot, two runs could plan the same step of an incremental chain or write into the same file before.
+- **jobs**: A cloned job keeps the retention policy of each destination, its naming template, its integrity checks and its incremental settings, which fell back to the defaults before.
 - **jobs**: A finished backup no longer loses the list of its databases and destinations to the last write of its log.
-- **vault**: Deleting an encryption key that a job or the config backup still encrypts with is refused. The job stored its next backups unencrypted without a word before.
-- **templates**: The default retention policy can no longer be deleted or unset, and the built-in policies can no longer be deleted. Every destination that followed the default kept all its backups without a word afterwards.
-- **templates**: The default file name template can no longer be unset, only replaced by another one. Jobs without a template of their own fell back to a pattern the Templates page did not show.
-- **templates**: Deleting an exclude pattern preset says that its folders lose its patterns and lists them. The old dialog said they keep them.
-- **templates**: A deleted schedule preset hands its schedule to the jobs that followed it, and the scheduler picks them up at once. They ran on an older copy of the schedule before, and only after the next refresh of the scheduler.
-- **templates**: Someone who may only read templates no longer sees the buttons to add, change or delete them.
-- **templates**: The exclude groups of DBackup skip folders like node_modules, .git, __pycache__ or .Spotlight-V100 at any depth of a backed up folder, where they matched only at its top or, for the macOS folders, nowhere. An incremental job with such a preset starts a new full backup on its next run.
-- **Rsync**: A directory source over rsync copies exactly the files its backup lists and reports what the exclude patterns kept out, like the other adapters. Rsync read the patterns by its own rules before, skipped files in a nested folder or in a folder named like a file pattern, and the run failed on hashing a file that never arrived.
-- **Rsync**: The folder tree of an rsync directory source lists the folders of servers without GNU find, like macOS or a NAS with BusyBox, where it stayed empty.
-- **users**: New user asks for the group, so a new user no longer signs in to a page that shows nothing until someone edits them.
-- **users**: Deleting a single user asks first, and the own account can no longer be deleted from its row.
-- **users**: Reset 2FA asks first and is written to the audit log.
-- **users**: A user created on the Users page no longer starts with an open session that nobody signed in with.
-- **auth**: The sessions of the profile name an iPhone as iOS instead of macOS.
-- **users**: Deleting a group with members asks which group they move to, where they lost all access without a word before. Deleting several groups leaves out the ones with members instead of claiming to keep them.
-- **users**: Deleting a single group asks first.
-- **auth**: A rotated API key shows the first eight characters of its secret in the list like a new one, instead of four.
-- **auth**: A sign-in through single sign-on is written to the audit log, where only password and passkey sign-ins showed before.
-- **users**: The filters of the audit log keep every picked value instead of only the first, and its search finds the names in the entries, like a job or a backup.
-- **users**: Deleting a user keeps their name in their audit log entries, which showed System/Deleted before.
-- **notifications**: The reminder interval picked for a system notification is saved, and turning it off also stops the reminders of storage alerts. Every save dropped it before, so reminders kept the default of 24 hours and could not be turned off.
-- **notifications**: Each system notification with a reminder names its own default, like 7 days for a new version, where the settings claimed 24 hours for all of them.
-- **notifications**: Send a test of a system notification reports a failure when nothing was sent, where it reported success before, and it also sends while the event is off. The email to the user counts as a delivery.
-- **notifications**: Unticking the last own channel of a system notification no longer sends it back to the default channels without a word. Saving asks for at least one channel instead.
+- **jobs**: A cron expression the scheduler cannot read can no longer be saved to a job, a schedule preset or a system task, and a deleted schedule preset hands its schedule to the jobs that followed it right away.
+- **templates**: The default retention policy and the default file name template can no longer be deleted or unset, and the built-in policies can no longer be deleted. Destinations that followed the default kept every backup without a word before, and jobs without a template could write files named `{name}_` and a date.
+- **templates**: The exclude groups of DBackup skip folders like node_modules, .git or .Spotlight-V100 at any depth of a backed up folder, where they matched only at its top or not at all. An incremental job with such a preset starts a new full backup on its next run.
+- **storage**: A destination that cannot be listed keeps the size and count of its last successful scan instead of an estimate, and the dashboard shows how old they are. The scan of a local destination no longer fails when retention deletes a backup while it runs.
+- **restore**: Someone who may restore but not download can restore folders, which the count of the picked files turned down before.
+- **vault**: Deleting an encryption key that a job or the configuration backup still uses is refused, where the job went on without encryption before.
+- **api**: The examples of the API trigger and the `skyfay/dbackup:ci` image end on a Partial or Cancelled run, where they waited forever, stopped with an unknown status or timed out. The CI image exits with 2 for a Partial run and waits up to an hour, set with `DBACKUP_TIMEOUT`.
+- **connections**: Authorizing a cloud drive again checks the new token instead of still reporting the old one as expired, and the file browser of a path field answers a missing login or permission with 401 or 403 instead of a server error.
+- **users**: Deleting a user or a group and resetting a second factor ask first, and an account can no longer delete itself. The members of a deleted group move to a group picked for them instead of losing all access.
+- **users**: A user created by an admin gets a group right away and no longer starts with an open session nobody signed in with.
+- **audit**: The audit log records sign-ins through SSO and the reset of a second factor, keeps the name of a deleted user and finds the names in its entries.
+- **notifications**: The reminder picked for a system notification is saved and can be turned off, also for storage alerts, and each event names its own default. Every save dropped it before, so reminders kept coming every 24 hours.
+- **notifications**: Send a test of a system notification reports a failure when nothing went out and also works while the event is off, and removing the last own channel of an event no longer sends it to the default channels without a word.
 - **notifications**: A system task that stops with an error sends **A system task failed**, once until it runs through again. The event was listed but never sent.
-- **config**: A configuration restore onto a new instance no longer stops with a foreign key error, like on a retention policy the file does not hold, and it names what it could not bring back ([#171](https://github.com/Skyfay/DBackup/issues/171)). A destination without its policy keeps every backup until one is picked again.
-- **config**: A job whose encryption key does not come back with a configuration restore is paused instead of writing its next backups unencrypted.
-- **config**: Users with two-factor sign-in are no longer locked out after a configuration restore, which holds no second factor. It is off for them until they set it up again.
-- **config**: Restore from a file takes configuration backups up to 10 MB and points to the Backups page for a larger one. It failed on any file over 1 MB before.
-- **config**: **Keeps** of the configuration backup deletes the oldest files again. Every configuration backup stayed on its destination before.
-- **config**: A new configuration backup shows on the Backups page right away with who started it, the schedule, a person or an API key. It showed only after the next scan of its destination before, without a name.
-- **SSO**: Deleting a sign-in provider no longer counts people with a passkey among those who cannot sign in afterwards.
-- **SSO**: The callback URL of a provider starts with `BETTER_AUTH_URL`, which DBackup sends to the provider, instead of the address the admin opened DBackup at.
-- **settings**: A system task set to run at start no longer runs again each time a job or a setting is saved.
-- **settings**: Run now of a system task answers right away instead of after the task finished, and a task that runs already does not start a second time.
-- **settings**: A system task started through the API names the API key in History instead of the person it belongs to, like a job does.
-- **settings**: A schedule set for the configuration backup under System tasks applies on instances that still had one stored by an older version, and the system tasks API refuses an unknown task or a schedule the scheduler cannot read.
-- **settings**: Saving the general settings no longer stores a file name pattern with an unknown token. A job without a naming template used it while no template was the default and named its files `{name}_` and a date.
-- **settings**: Someone who may only read the settings sees them without controls, instead of forms whose changes failed to save. A change that failed to save no longer looks saved.
-- **settings**: The certificate no longer shows HTTPS as off when it cannot be read, or as expired on its last day.
+- **config**: A configuration restore onto a new instance no longer stops on a foreign key error and names what it could not bring back. A job whose key does not come back is paused instead of backing up unencrypted, and users with a second factor are no longer locked out ([#171](https://github.com/Skyfay/DBackup/issues/171)).
+- **config**: The configuration backup deletes its oldest files again as **Keeps** says, and a new one shows on the Backups page right away.
+- **config**: Restore from a file takes configuration backups up to 10 MB, where it failed on any file over 1 MB.
+- **settings**: A system task set to run at start no longer runs again whenever a job or a setting is saved, and Run now answers right away and never starts a task that runs already. A task started through the API names the API key in History, and the schedule of the configuration backup applies again on instances that came from an older version.
 - **settings**: A new self-signed certificate keeps the old one when openssl fails, and an uploaded EC or Ed25519 key is checked against its certificate like an RSA key.
 - **settings**: Passkey sign-in can no longer be turned off while `DISABLE_EMAIL_LOGIN` and no sign-in provider leave it the only way in.
-- **profile**: While a passkey counts as the second factor, the profile shows the authenticator app as off instead of on with backup codes the account does not have.
-- **profile**: The profile picture takes files up to 5 MB, as the page says. It failed on any picture over 1 MB before.
-- **ui**: Copy buttons work on an instance served over plain HTTP, like on an address in the local network, and say so when a copy fails. They did nothing there before, also for a new API key and the backup codes.
-- **auth**: A page opened after the session ended leads to the login page instead of a page that does not exist.
-- **ui**: An instance without internet access no longer waits up to 5 seconds on every page for the check for new versions. The dashboard shows the last answer and asks GitHub in the background.
-- **settings**: Uploading a certificate or making a self-signed one that fails on the way, like on a lost connection, shows an error instead of a dialog that never closes.
-- **notifications**: Tab moves on from the recipients of an email channel instead of staying in the field.
-- **ui**: The old addresses `/dashboard/destinations` and `/dashboard/notifications` open their tab of the Connections page instead of the databases.
-- **jobs**: The list of exclude presets of a folder opens as wide as its field.
-- **history**: The preview of a notification no longer breaks on a payload that is no JSON, and shows it as it went out.
-- **ui**: A long confirmation scrolls between its head and its buttons instead of running off a short window.
-- **MySQL**: Backups of MySQL and MariaDB hold stored procedures, functions and events and read InnoDB tables from one snapshot, as the guide always said, with three switches under Options to turn them off. A login that may not read events or routines gets a warning in the run instead of a failed backup.
+- **SSO**: Deleting a sign-in provider no longer counts people with a passkey among those who cannot sign in afterwards, and its callback URL starts with `BETTER_AUTH_URL` instead of the address the admin opened DBackup at.
+- **profile**: The profile picture takes files up to 5 MB, as the page says, where it failed on any picture over 1 MB.
+- **ui**: Copy buttons work on an instance served over plain HTTP, like an address in the local network, and say so when a copy fails.
+- **ui**: An instance without internet access no longer waits up to 5 seconds on every page for the check for new versions.
+- **ui**: A page opened after the session ended leads to the login page instead of a page that does not exist, and the old addresses of destinations and notifications open their tab of the Connections page.
 
 ### 🔒 Security
 
-- **profile**: What a group may change of the own profile now holds on the server too, the name, the email, the password, the second factor, the passkeys and the linked sign-in providers. Before, only the page hid the buttons.
-- **profile**: **Change password** under Profile refuses a wrong current password. It took any before, so whoever had a signed-in browser could change the password.
 - **auth**: The browser can no longer create an account once the first one exists. Anyone could sign up before, and an account made with the email of someone who later signed in through a provider got linked to them with a password its maker knew.
-- **connections**: The health check history of a connection needs the read permission of its kind, like its details. Reading sources or destinations was enough for every kind before.
-- **connections**: The file browser of a path field no longer follows a link into a system folder it keeps out, like /proc or /System.
-- **connections**: The folder browser of a Google Drive connection only takes folder IDs made of letters, digits, hyphens and underscores, so a crafted ID can no longer widen its list of folders to every file of the drive. The folder browsers of Dropbox and OneDrive turn down a path with a `..` part.
-- **connections**: The folder browsers of Google Drive, Dropbox and OneDrive in the connection form need the right to change destinations and answer 403 without it. Reading destinations was enough to list the folders of any authorized drive before.
-- **vault**: The Vault no longer sends the stored key of an encryption profile to the browser when it lists, creates, imports or renames profiles, not even in its encrypted form.
-- **jobs**: The job list no longer returns the stored configs of the connections a job uses, only their name, type and health. Reading jobs was enough to get them before.
-- **templates**: The notification templates and the Templates page no longer send the stored configs of notification channels to the browser, only the name and type of each channel. Reading jobs or templates was enough to get them before, without the right to read notification channels.
-- **jobs**: Creating, changing and cloning a job no longer answers with the stored configs of its connections, only their name and type. Changing jobs was enough to get them before.
-- **vault**: Revealing an encryption key is written to the audit log, like a revealed credential.
-- **users**: Only a SuperAdmin can move a SuperAdmin into another group or delete one. Anyone who may change users could do both before.
-- **auth**: An API key never uses more than the group of its owner may do, checked at every request, and loses what the group loses. Anyone who may change API keys could give a key any permission before, like changing users.
-- **auth**: Rotating the API key of someone else needs a group that may do everything the key may do, since the new secret hands out its permissions.
-- **audit**: Changing, deleting and cloning a job, restoring a database, downloading or deleting a single backup, cancelling a run, the settings, the config import, sign-in providers, sign-outs and failed sign-ins are written to the audit log. None of them left an entry before.
-- **auth**: The browser no longer writes its own sign-in to the audit log, which let any signed-in user add sign-ins at will.
-- **SSO**: The SSO tab no longer sends the client secret of every provider to the browser. Reading the settings was enough to get them before.
-- **SSO**: A disabled sign-in provider signs nobody in. It was only left off the login page before, so a crafted request still signed in through it.
-- **SSO**: A sign-in provider adds someone new only when it is set to. The browser decided it before, so a crafted request added people through any provider.
-- **SSO**: The Keycloak provider checks its URL before it reads the configuration, like the other providers, which keeps it away from cloud metadata endpoints.
-- **SSO**: Only a SuperAdmin adds, changes, switches and deletes sign-in providers. The right to change the settings was enough before, and a provider signs in as anyone whose email it names.
-- **settings**: Only a SuperAdmin restores a configuration backup, which brings back users and groups. The right to change the settings was enough before.
-- **config**: Restore from a file writes the uploaded file only into the temp folder, whatever path its name holds.
-- **users**: Only a SuperAdmin resets the second factor of a SuperAdmin or signs them out.
-- **users**: Nobody changes the group they are in. Anyone who may change groups could give their own group every permission before.
+- **auth**: An API key never does more than the group of its owner, checked at every request, and rotating the key of someone else needs a group that may do everything the key may. Anyone who may change API keys could give a key any permission before.
 - **auth**: The rate limits count over their whole window again. The counters started over every 30 seconds, which allowed twice the sign-in attempts in a window of a minute.
-
+- **profile**: What a group may change of the own profile, like the email, the password or the second factor, now holds on the server too, where only the page hid the buttons. Change password refuses a wrong current password, which it took before, so a signed-in browser was enough to change it.
+- **users**: Only a SuperAdmin moves, deletes, signs out or resets the second factor of a SuperAdmin, and nobody changes their own group. Anyone who may change users or groups could do so before, up to giving their own group every permission.
+- **SSO**: Only a SuperAdmin manages sign-in providers, a disabled provider signs nobody in, and a provider adds new people only when it is set to, which the browser decided before. The SSO tab no longer sends client secrets to the browser, and the Keycloak provider checks its URL like the others.
+- **config**: Only a SuperAdmin restores a configuration backup, which brings back users and groups, and Restore from a file writes the upload only into the temp folder, whatever path its name holds.
+- **jobs**: Listing, creating, changing and cloning a job no longer answers with the stored configs of its connections, and notification templates no longer send those of their channels. Reading jobs or templates was enough to get them before.
+- **vault**: The Vault no longer sends the stored key of an encryption profile to the browser when it lists, creates, imports or renames profiles.
+- **connections**: The health history of a connection needs the read permission of its kind, and the folder browsers of Google Drive, Dropbox and OneDrive need the right to change destinations. Reading any kind of connection was enough for both before.
+- **connections**: The file browser of a path field no longer follows a link into a system folder like /proc, the Google Drive folder browser only takes real folder IDs, and the Dropbox and OneDrive browsers turn down a path with a `..` part.
+- **audit**: Changing, deleting and cloning a job, restores, downloads and deletes of a single backup, cancelled runs, settings, config imports, sign-in providers, revealed keys, sign-outs and failed sign-ins are written to the audit log. The browser can no longer write sign-ins of its own.
 
 ### 🎨 Improvements
 
-- **ui**: The refresh button of every list turns for at least a second after a click, as long as the list loads, and takes no further click until it is done.
-- **ui**: The menu of your account at the foot of the sidebar switches the theme in one click, leads straight to Security and Colors of your profile and lists the help with What's new in this version.
-- **ui**: The sidebar collapses to icons with the new button in the header or Ctrl+B (⌘B on macOS), and small screens get it as a slide-in menu. Both themes use a new zinc color palette where dialogs, menus and buttons, and the fields and switches in them, take the color of their task, like blue to add and violet to edit, and the interface uses the Geist font on every operating system.
-- **dashboard**: The overview was rebuilt with a status banner that names a failing job and can rerun it, trend cards, a switch between the latest executions and the jobs, and a backup calendar that shows as many weeks as the screen fits. It works on phones, and its statistics are cached for a minute or until the next backup finishes or a job changes.
-- **storage**: The storage history dialog shows one bar a day, with the stored size, the change in the range and the number of backups above the chart. It switches between 7 days, 30 days, 90 days and a year without loading again, and leads on to the Backups page.
-- **storage**: The Backups page opens at once from the lists DBackup keeps and lists a destination without a current list in the background. A destination that does not answer keeps its last list and no longer holds up the page.
-- **ui**: On phones every table leaves out the rows per page picker so its page controls fit, and the Connections page picks its list from a menu instead of a row of tabs.
-- **ui**: A table wider than its card scrolls sideways with the thin scrollbar of the app instead of the one of the browser.
-- **ui**: The filters of the tables open a list in a color of their own with a checkbox per value, and the foot tells how many are picked and clears them. Values without matches under the other filters wait at the end, and the type filter on the Connections page shows each adapter's icon.
-- **ui**: The confirmation before a bulk action and the list of entries it could not process have a new look, with a header tinted for the kind of action. Their lists show each entry with its icon and type where the table has them.
-- **connections**: Deleting connections leaves out the ones a job or a notification template still uses and names them before anything is deleted, instead of reporting them as failed afterwards.
-- **connections**: A click on the status of a connection says in one sentence since when it is online or offline and shows the latest error. Below come the checks of the last hour as bars and their latest changes with the time.
-- **connections**: The form for adding and editing a connection lists its parts on the left, marks the ones that are done or still miss something, and shows one part at a time. The connection type and a storage connection's role are picked from cards that say what each one means, logins are picked or created in one field, and every switch says what it turns on.
-- **connections**: The login field lists every saved login with its description and where it is in use, and puts the logins that other connections of the same kind already use first. The credentials API returns those connection types as `usedBy` with `includeCounts=true`.
-- **vault**: A new credential profile starts with a list of what can be saved and the services that use each kind, while the New button of a login field opens the form for its kind right away. Every secret field has its own button to show what was typed, and an SSH login picks how it signs in and where its key comes from on cards.
-- **connections**: The file browser of a path field starts where the field points and shows the path as clickable parts with a filter, the size and date of every entry and a badge on the files the field takes. Hidden files stay out until asked for, and every entry can be reached with the keyboard.
-- **connections**: The folder button of a Google Drive, Dropbox or OneDrive connection opens the same folder browser as the other connections. Google Drive opens it at the whole path of the folder in the field instead of only its name.
-- **setup**: The Quick Setup is one page with its parts one under the other and the backup they add up to beside them, which fills in as each part is done. Every part takes a connection or key you have or adds one with the dialogs of the Connections page, and the job picks its schedule and its databases on cards.
-- **jobs**: The form for adding and editing a job lists its parts on the left, marks the ones that are done or still miss something, and shows one part at a time. Connections, schedule presets, encryption keys and notification templates are picked from searchable lists that also make a new one.
-- **jobs**: The schedule of a job and of a schedule preset is picked as hourly, daily, weekly or monthly, with several times a day, several weekdays and the last day of the month, or as cron. It shows the next runs and warns with a free time to use when runs would wait because the queue has no slot left.
-- **jobs**: Picking some databases of a source has a search, a checkbox for all of them and the size and tables of each, with how many are picked and how big they are together. Once every database is picked it offers All databases, which also takes the ones added later.
-- **jobs**: The database, the destinations and the folders of a job are picked from lists that show each connection's type, address and status, and New adds a connection right from the job. The retention of a destination is picked from a list that says what each policy keeps and how many destinations follow it.
-- **jobs**: The notifications of a job show each template with its channels and the runs they hear about, and a table of who hears about a run that marks a channel told twice. Channels a job names directly can be turned into a template there.
-- **jobs**: Compression has a part of its own between the destinations and the encryption, with a card and a sentence for every option and the level of pg_dump on a slider. A PostgreSQL job shows whether pg_dump or DBackup compresses the dump and the folders, and what its server version cannot do.
-- **jobs**: A job with folders has an Incremental part after the source, with a card for full or incremental backups and the days between full backups on a stepper. It draws the chain those make on the job's schedule, lists which sources store only their changes, and warns about a long chain with a shorter setting to use.
-- **jobs**: The API trigger dialog lists an Overview, a Setup, the scripts and the pipelines on the left like the job form, with a copy button on every URL and code that follows the theme. Its Setup creates a key with the two rights the API needs and fills it into every example until the dialog closes.
-- **ui**: The fields that pick a login, a connection, a key or a template offer New and Edit only to users who may create or change that kind of entry.
-- **ui**: Cloning a job or a connection, and creating a connection in the other storage role, opens a dialog in the new look. It starts with a name that is free and says what the copy gets and what is left to do.
-- **ui**: Toasts have the new look, with the icon in the color of their kind and a line along the foot for the time they have left. Hovering stops the time and shows Close, and errors and warnings get Copy for their text.
-- **ui**: Tooltips take the surface and border of a popover instead of turning the colors around, and one that tells a state starts with a line tinted in its color.
-- **templates**: The dialog for adding and editing a retention policy has the new look.
-- **templates**: The dialog for adding and editing a notification template has the new look. Each channel is picked from a searchable list that can also add one, and its runs are picked with buttons.
-- **templates**: The dialog for adding and editing a naming template has the new look and warns about a pattern without the time of day. The file names of a job are picked from a searchable list that shows the pattern of each template.
-- **templates**: The dialog for adding and editing a schedule preset has the new look. It and the Templates page now say that a job follows every change to its preset, instead of claiming it keeps its own copy of the schedule.
-- **storage**: The restore of a Redis or Valkey backup writes one script for a Docker container, a Compose service, a Linux service or a Windows service with the one-time download link in it, and switches to the same commands step by step with every value filled in. The script checks that Redis will read the dump before it stops anything, asks for the password instead of writing it into a command and keeps the old dump.
-- **storage**: **Download...** opens one dialog for every download of a backup, where databases and folders are ticked and any mix comes as one tar.gz, with a search in a group from 8 entries on. It downloads in the browser or writes the curl, wget or PowerShell command for a server, and shows when a server fetched the link.
-- **storage**: A download link for databases and folders streams, so the first bytes arrive at once instead of after DBackup wrote the whole download to a temp file. A tar.gz of several databases and folders packs about twice as fast.
-- **storage**: **Verify integrity** opens a dialog with every copy of a backup, its last check and whether the destination checks it without a download, and verifies one copy or all of them. The copies without a download go first, and the dialog shows each copy while it is checked, the bytes of a download included.
-- **docker**: The volume picker of a job lists the volumes by Compose stack with the containers that mount each one, whether they run and where, and shows beside them which containers the job stops in which order. Anonymous volumes go by their container, and the ones no container mounts stay hidden until asked for.
-- **storage**: Ticked destinations on the Backups page can be checked or get their alerts changed together, where every alert stays as each destination has it until it is set for all of them. A list under each alert shows what changes at each destination, and a storage limit that would fire right away is marked.
-- **users**: Editing a group writes what changed to the audit log instead of its whole list of permissions, and a group keeps only permissions DBackup knows.
-- **auth**: Creating an API key writes its permissions, its end and its task to the audit log instead of a count, and an edit writes what it added and removed.
-- **audit**: Every entry of the audit log keeps the address and browser of its request and names the API key it came with. A change keeps what each field was before and after, a secret only that it changed.
-- **auth**: The login page names the instance beside the logos of everything DBackup backs up, shows the providers with their logos and says at the field what went wrong. An email of a provider's domain says where it signs in before the page leaves for it.
-- **auth**: The first start of a new DBackup offers a first account or the restore of a configuration backup, which takes the backup with its metadata in one drop and the key from its recovery kit.
-- **auth**: While OIDC_AUTO_REDIRECT sends the login page to a provider, the page offers another way to sign in.
-- **auth**: A passkey that counts as the second factor is asked for right after the password, without a field for a code.
-- **ui**: An error shows a page of DBackup with Try again and an ID to find it in the log, inside the dashboard with the sidebar, and an unknown address a page with a way back. Both showed the bare page of Next.js before.
+- **storage**: Download links for databases and folders stream, so the first bytes arrive at once instead of after the whole download was written to a temp file, and a tar.gz of several databases and folders packs about twice as fast.
+- **connections**: Deleting connections leaves out the ones a job or a notification template still uses and names them first, and the Connections page and the dashboard stop asking for updates while their browser tab is hidden.
+- **auth**: While `OIDC_AUTO_REDIRECT` sends the login page to a provider, the page offers another way to sign in. A passkey that counts as the second factor is asked for right after the password, without a field for a code.
 - **history**: Cancel run asks before it stops a run and says that a stopped restore may leave its database half restored.
-- **connections**: The Connections page no longer asks for the state of its connections every 10 seconds while its browser tab is hidden.
-- **ui**: Every page names its browser tab, like Jobs, and shows the shape of its content while it loads.
-- **jobs**: The folder tree of a folder source names its buttons and boxes for a screen reader and shows folders that load as placeholders.
-- **jobs**: The exclude presets of a folder open in a list that says what each leaves out, with Edit on a phone too. Edit and New show only for someone who may change templates.
-- **connections**: A Hetzner region, an S3 storage class and an R2 jurisdiction show by their names, like Falkenstein (fsn1), instead of their codes.
+- **ui**: An error shows a page of DBackup with Try again and an ID to find it in the log, and an unknown address a page with a way back, where both showed the bare page of Next.js before. Every page names its browser tab and shows the shape of its content while it loads.
 
 ### 🔄 Changed
 
-- **api**: `GET /api/adapters/{id}/health-history` averages only the checks that passed and also returns the slowest one, since when the current status holds and when a check last passed.
-- **api**: `GET /api/jobs` returns how each job is doing as `overview`, and the connections a job uses with `id`, `name`, `adapterId` and `lastStatus` only. The new `GET /api/jobs/{id}/runs` returns the latest 30 runs of a job with their size, its success rate over 30 days and its last successful backup.
-- **api**: The new `GET /api/jobs/schedules` returns the schedules of the enabled jobs with how long a run usually takes, the slots of the queue and the scheduler's time zone.
-- **api**: The new `GET /api/storage/explorer` returns every job and destination with its backup counts, and `GET /api/storage/explorer/runs` every backup with its copies at every destination. `GET /api/storage/explorer/execution` returns the run that made a backup.
-- **jobs**: The menu of a job opens its backups on the Backups page with one entry instead of one per destination.
-- **storage**: The config backups of DBackup show on the Backups page as an entry of their own instead of behind a switch.
-- **api**: `POST /api/storage/{id}/download-url` takes `databases` and `selections` like `restore-files` and returns the link as `data.url` with `data.token` and `data.fileName`. `GET /api/storage/{id}/download-url?token=` tells the user who made a link whether it was fetched.
-- **api**: The new `POST /api/storage/verify-copies` checks several copies of a backup in one run, which `GET /api/storage/verify-copies?executionId=` follows with the state of every copy. A check records how it ran as `verification.method` in the `.meta.json`.
-- **ui**: The Storage Explorer is called Backups now and sits under Backup in the sidebar beside Connections and Jobs. Its address is /dashboard/backups, and links to the old one still lead there.
-- **api**: The new `GET /api/databases` returns every database of every server with the jobs that back it up, `POST /api/databases/read` reads them from the servers now, and `GET /api/databases/runs` returns the runs and version changes of a time span. The new `GET /api/storage/explorer/backup?path=` returns one backup with its copies, and a restore page link takes `pick` to tick only those databases.
-- **system**: The Update Database Versions task also lists the databases of every server with their sizes, which the Database Explorer shows without asking a server.
-- **api**: The new `GET /api/history/runs` returns a page of runs with the counts beside its filters and the numbers of the last 30 days, and `GET /api/history/runs/{id}` one run with its steps, its problems and its copies. `GET /api/notification-logs` filters by `channel` and adds the numbers and the options of its filters with `stats=true`.
-- **api**: The new `GET /api/databases/servers` returns every database server with its address, response time and kept backups and the newer backup of its engine it is behind, and `GET /api/databases/servers/{id}` one server with its uptime. `GET /api/databases/servers/{id}/versions?page=&size=` returns the versions a server ran a page at a time with the backups made and kept on each.
-- **vault**: Importing a key the Vault already holds is refused with the name of the key that has it.
-- **api**: The new `GET /api/vault/credentials` returns every credential profile with the connections that use it, and `GET /api/vault/keys` every encryption key with its jobs, its backups per destination and its last recovery kit.
-- **api**: The new `GET /api/templates` returns every template with the jobs, destinations and folders that use it.
-- **api**: The new `POST /api/adapters/browse-location` lists the folders of a storage connection from the values of its form, for the folder button of the connection form.
-- **ui**: The Access Management page is called Users & Groups like its entry in the sidebar, and its SSO / OIDC tab is called SSO.
-- **api**: The new `GET /api/users` returns every user with how they sign in, their group, their open sessions and the numbers of the Users tab, and `GET /api/users/{id}` one user with their sessions, passkeys, API keys and latest activity.
-- **api**: The new `GET /api/groups` returns every group with its members, what the audit log knows about it and the numbers of the Groups tab, and `GET /api/groups/{id}` the changes of one group.
+- **ui**: The Storage Explorer is called Backups and sits under Backup in the sidebar, Access Management is called Users & Groups, and the system tasks, the system notification events and the lists of the Connections page have names that say what they hold. Links to the old addresses still lead to the new pages.
+- **api**: Deleting a job, a connection or a saved login through the API moves it to Recently deleted like in the app, also in bulk. `?permanently=true`, or `"permanently": true` in a bulk request, deletes it for good and needs `settings:write`.
+- **api**: `GET /api/adapters/{id}/health-history` averages only the checks that passed and adds the slowest one, since when the status holds and when a check last passed. The success rate of `GET /api/dashboard/stats` counts a partial run as one that did not succeed.
+- **api**: `POST /api/storage/{id}/download-url` takes `databases` and `selections` like `restore-files` and returns the link as `data.url` with `data.token` and `data.fileName`, and a `GET` with the token tells its maker whether the link was fetched. A download that broke off can run again with the same link.
+- **api**: `POST /api/settings/system-tasks` turns down an unknown task or a schedule the scheduler cannot read with 400, and `PUT` answers 409 while the task runs already. `GET` also returns the last run of each task with what it did and the setting it follows.
+- **settings**: The configuration backup includes the history by default, and run logs are kept for a year instead of 90 days. An instance that saved either setting before keeps its choice.
+- **settings**: Check for updates and the stuck run watchdog follow their settings under General, so each has one switch. An update turns the setting off once where only the task was off.
+- **system**: The Database versions task also lists the databases of every server with their sizes, which the Database Explorer shows without asking the servers.
+- **profile**: A new password from **Change password** signs you out of every other browser, and profile pictures live in the database, so they come back with a configuration backup. Pictures under `/data/storage/avatars` move there on the first start.
 - **auth**: A new API key runs out after 90 days unless another end is picked, and two keys can no longer share a name.
-- **api**: The new `GET /api/api-keys` returns every key with its owner, what it may do right now and the numbers of the API keys tab, and `GET /api/api-keys/{id}` the runs one key started.
-- **api**: The new `GET /api/audit`, `/api/audit/{id}`, `/api/audit/timeline` and `/api/audit/export` return the audit log a page at a time, one entry, the entries per person and day, and the filtered entries as CSV.
-- **api**: The new `GET /api/sso-providers` returns every sign-in provider with the people linked through it and the numbers of the SSO tab, never a client secret.
-- **api**: The new `GET /api/jobs/timeline` returns the runs of every job a week back and the runs its schedule plans a week ahead, each with when the queue starts it.
+- **vault**: Importing a key the Vault already holds is refused with the name of the key that has it.
 - **SSO**: The provider ID of a sign-in provider stays once it is saved, since its callback URL and every link to it use it.
-- **settings**: Check for updates follows **Look for new versions** under General and the stuck run watchdog follows the time there, so each has one switch. An update turns that setting off once where the task alone was off.
-- **api**: `GET /api/settings/system-tasks` also returns the last run of each task with how long it took and what it did, whether it runs now and which setting it follows.
-- **notifications**: The system notification events have new names that say what happened, like **Someone signs in** or **A connection is offline**.
-- **config**: **Include the logins** is gone, since the configuration backup always holds them. Configuration files of older versions still restore, in parts from the Backups page or as a whole from a file.
-- **config**: The configuration backup includes the history by default. An instance that saved this setting before keeps its choice.
-- **settings**: Run logs are kept for a year by default instead of 90 days. An instance that saved its data retention before keeps its choice.
-- **api**: The new `GET /api/search?q=` returns the jobs and their backups, connections, databases, latest runs, people, groups, API keys, templates, encryption keys and saved logins whose name holds the query. It finds only the kinds the caller may read.
-- **ui**: A new version shows on the right of the header with a blue dot beside the guides and DBackup on GitHub, and opens a card with how to update. The sidebar no longer shows it at its foot.
-- **ui**: The name under Settings → General heads the sidebar, with DBackup and the version below it. Without a name the sidebar shows DBackup as before.
-- **api**: The new `GET /api/login-image` serves the picture of the login page while it is picked, and `/api/settings/login-image` uploads and removes it with `settings:write`.
-- **profile**: Profile pictures live in the database and come back with a configuration backup. Pictures under `/data/storage/avatars` move there on the first start, and the folder is gone.
-- **connections**: The lists of the Connections page are called Databases, Directory sources, Destinations and Channels everywhere, and their New buttons and dialogs name what they add.
-- **api**: The success rate of `GET /api/dashboard/stats` counts a partial run as one that did not succeed, like every success share of the dashboard.
-- **profile**: A new password from **Change password** signs you out of every other browser, like a password an admin sets.
 
 ### 🗑️ Removed
 
@@ -286,78 +122,24 @@ All notable changes to DBackup are documented here.
 - **explorer**: The General and Version History tabs of the Database Explorer are gone. The timeline marks each new version of a server and the page of a server lists every version it ran.
 - **history**: The System Tasks tab and the log dialog of the History page are gone. The system tasks are a group of the Type filter, and a run opens as a page of its own.
 - **connections**: The red banner about credential profiles from the update to 2.0.0 is gone. A connection without its login still says so in its row.
-- **ui**: Unused components, colors and images left from the start of the project are gone, with the package of the accordion.
 
 ### 📝 Documentation
 
-- **docs**: The start page and the data retention guide describe the new dashboard, and the API reference explains the storage totals of an unreachable destination.
-- **docs**: The storage and notification adapter guides name `connectionAddress()` as the place for the summary shown in the connection tables.
-- **docs**: A new developer page explains the task colors of dialogs, menus and buttons and how to change one.
-- **docs**: The notification and job guides explain how to switch health check notifications and restore exclusion for several databases at once.
-- **docs**: The health check guide describes the new status popover and the added fields of the health history API.
-- **docs**: The source, destination, notification and first steps guides name the fields and parts of the new connection form, and the cloud drive and notification guides describe logging in with a credential profile. The adapter guides explain how the form places new fields.
-- **docs**: The job, template and PostgreSQL guides describe the Compression part and the file name warning. The token tables add `{chain}` and drop `{name}`, which no pattern replaces anymore, and the file names end in .tar.
-- **docs**: The first steps guide walks through the new Quick Setup.
-- **docs**: The encryption guide explains that the encryption service returns profiles without their key.
-- **docs**: The job guide describes the new Jobs page, the parts of the job form and the actions of a job, and the template and retention guides follow the new form. The API reference documents the job list fields and `GET /api/jobs/{id}/runs`.
-- **docs**: The scheduling guide describes the schedule picker and its warning when runs would wait for a free slot.
-- **docs**: The job guide explains how some databases of a source are picked, how connections are added from a job and what the retention list shows.
-- **docs**: The webhook trigger guide describes the new API trigger dialog, the timeout and the exit codes of the CI image, and Partial and Cancelled runs in its examples and API reference. The API key guide points to the Setup of the dialog.
-- **docs**: The Backups guide describes the list of backups, the Destinations tab, both timelines, the details of a backup and how current the lists are. The restore, verification, job, notification, API and storage cache guides follow the new page.
-- **docs**: The restore guide describes the steps of the new restore page, its rows and lines, the folders and what happens before and after the start.
-- **docs**: The Redis, Valkey and restore guides describe the restore script of Redis and Valkey, its steps by hand and what to do when Redis writes an append only file.
-- **docs**: The Backups guide describes the download dialog, and the API reference and the download token page describe links for a pick and their status.
-- **docs**: The verification and Backups guides describe the integrity dialog, and the integrity page explains how the copies of one backup are checked.
-- **docs**: The Docker Volumes guide describes the volume picker with its stacks, the containers of each volume and what the job reads.
-- **docs**: The Storage Explorer guide is the Backups guide now, and its old address points to it.
-- **docs**: The Database Explorer guide describes the list of databases, its timeline, the page of a database, the Servers tab with the page of a server and what shows for a login that may only back up.
-- **docs**: A new History guide describes the list of runs, the page of a run with its summary, log, problems and live state, and the notifications. The job, data retention, logging and API guides follow it.
-- **docs**: The encryption and credential profile guides describe the new Vault page, the Key ID, the recovery kit of a key and why a key in use cannot be deleted. The adapter guides find the Vault in the sidebar instead of under Settings.
-- **docs**: The template guide describes the new Templates page, what a change of a retention policy removes, the exclude presets and what happens to the jobs and folders of a deleted template.
-- **docs**: The file backup and template guides say that the exclude groups of DBackup skip their folders at any depth.
-- **docs**: The S3, SFTP, FTP, WebDAV, SMB and Rsync guides name the folder button of the Location part, and the API reference lists `POST /api/adapters/browse-location`.
-- **docs**: The user guide describes the new Users tab, the details of a user, New user with its group and how an admin sets a password, resets 2FA and signs a user out. The API key and webhook guides find the keys under Users & Groups.
-- **docs**: The groups guide describes the Groups tab, the areas and levels of the permissions, the templates of a new group and how a delete moves the members.
-- **docs**: The API key guide describes the API keys tab, the tasks of New API key, the end after 90 days and why a key never does more than its owner. It no longer lists a `storage:write` permission or claims that the audit log names the key of every request.
-- **docs**: A new Audit Log guide describes the tab, its filters, the timeline, the export and what is recorded. The developer guide describes how an entry is written, and the API key and user guides point to it.
-- **docs**: The SSO guide describes the SSO tab, New provider, Disable and Delete and the group of new people, and no longer claims that a provider takes several email domains. The developer guide describes how the server decides who signs in through which provider.
-- **docs**: The groups guide lists what only a SuperAdmin does, and the config backup guide says who restores a configuration and where.
-- **docs**: A new Settings guide describes the parts of the page, the search, the save bar and every system task with what it follows. The guides for data retention, rate limits, the configuration backup and time zones use the new names.
-- **docs**: The notification and settings guides describe the list of system notifications, its Edit dialog, the actions for several events and the default reminder of each event. The developer guide names the new actions and where a new event gets its test data.
-- **docs**: The system backup guide describes the copy of the database, its restore with a restart, the restore on the sign-up page and the way back to the database before it. The developer guide describes the copy, its checks, the new encryption of its secrets and the swap at the next start.
-- **docs**: The profile guide describes the new page with its parts and the colors of the tasks, and the developer guide how a color of a person reaches every page.
-- **docs**: A new Recently Deleted guide describes what a delete keeps, the list, a restore and who sees what. The key, credential profile, user, job, data retention and API guides say where a delete goes, and the developer guide describes the snapshot of a delete.
-- **api**: The API reference in the app lists the bulk endpoints of the docs site again, and the download of a recovery kit has its real address, `GET /api/vault/recovery-kit?ids=`.
-- **docs**: The guides name the tabs of the Connections page and their New buttons as the app shows them, and the restore guide the dialog that asks for a key.
-- **api**: The API reference lists every action of `POST /api/adapters/bulk`, not only the delete.
-- **docs**: The MySQL guide names the dump flags DBackup really passes, the new switches and the rights a backup and a restore need. The developer pages show the real dump arguments.
-- **docs**: A security policy in SECURITY.md explains how to report a vulnerability privately. The contributing guides base every pull request on the dev branch and name the Node and pnpm versions CI uses.
-- **docs**: The README is shorter, with the highlights, the supported databases and a quick start, and leaves the details to the documentation.
-- **docs**: The destination guide describes air-gapped destinations, and the notification, verification and Backups guides follow them along with the new settings for several connections. The runner and health check pages for developers describe how a run and the health check treat one.
-
+- **docs**: Every guide follows the new pages, with new guides for the Backups page, History, the Database Explorer, the audit log, Settings and Recently deleted. The guides of connections, jobs, templates, the Vault, users, groups, API keys and SSO describe their new tabs, panels and dialogs.
+- **docs**: The guides no longer describe what DBackup does not do, like a `storage:write` permission, several email domains for one SSO provider or the `{name}` token of file names. The MySQL guide names the dump flags DBackup really passes and the rights a backup and a restore need.
+- **api**: The API reference documents the new endpoints, like the runs of a job, the folder browser of a connection and download links, and lists every bulk endpoint and bulk action again. The download of a recovery kit has its real address.
+- **docs**: The developer guide explains the task colors, the adapter form, how audit entries and deletes are kept and how the configuration backup copies the database.
+- **docs**: A security policy explains how to report a vulnerability privately, the contributing guides base every pull request on the dev branch, and the README is shorter.
 
 ### 🧪 Tests
 
-- **tests**: The test that generates an SSH key no longer fails at random during a full run, where the busy crypto thread pool made it slower than the default timeout.
-- **tests**: The palette color guard allows 7 colors without a dark variant, down from 37, and the guard for a height on the root of a scroll area allows 2, down from 3.
-- **tests**: New tests cover the permission check of every save on the Settings page, the settings the system tasks follow and the fixes of the certificate, the scheduler and the rate limits.
-- **tests**: New tests cover saving the system notifications, their tests and a storage alert whose reminder is off.
-- **tests**: New tests cover a configuration restore onto a new instance, the upload of Restore from a file and a failed system task that reports a system error.
-- **tests**: New tests run the copy of the database, its checks, the new encryption of its secrets and its swap before the start against real SQLite files.
-- **tests**: New tests cover Recently deleted, from the rights of each record and the delete routes to a delete and restore against a real SQLite file.
-- **tests**: New tests cover the colors of the tasks, the actions of the profile and what a group may change of it, also where the browser calls better-auth itself.
-- **tests**: The guard of the retired connection pages checks their redirects in `next.config.ts` and that no page stands in for them.
-- **tests**: The design guard also catches boxes that scroll sideways and checks the primitives, and its two baselines are at zero. New guards check that every page of the dashboard has a loading state and a title and that both copies of the API reference match.
-- **tests**: New tests cover air-gapped destinations in a run, the health check, the chain planner, the integrity check and the pages that count copies or connections that do not answer.
-- **tests**: New tests cover the dump flags of MySQL and MariaDB next to the extra options, the check of what a login may read, and a routine and an event through a real backup and restore.
-
+- **tests**: New tests cover the new pages and the server code behind them, from Settings, Recently deleted and the configuration backup to air-gapped destinations and the MySQL dump flags, partly against real SQLite files and database containers. A test that generates an SSH key no longer fails at random during a full run.
+- **tests**: The design guard also catches boxes that scroll sideways and checks the primitives, and its baselines are at zero. New guards check that every dashboard page has a loading state and a title, that the retired connection pages redirect and that both copies of the API reference match.
 
 ### 🔧 CI/CD
 
-- **docker**: The image runs a script before the migrations that swaps in a restored configuration backup.
 - **ci**: Lint, type check, unit tests and the docs build also run on pull requests into dev, not only into main.
 - **github**: The repository shows a Sponsor button for GitHub Sponsors, and a daily workflow draws the sponsors into the Sponsors section of the README.
-
 
 ### 🐳 Docker
 
@@ -365,7 +147,6 @@ All notable changes to DBackup are documented here.
 - **Also tagged as**: `latest`, `vNEXT`
 - **CI Image**: `skyfay/dbackup:ci`
 - **Platforms**: linux/amd64, linux/arm64
-
 
 ## v3.4.0 - Single Database Restores and Downloads, Data Retention Improvement, and Bug Fixes
 

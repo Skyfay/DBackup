@@ -20,7 +20,7 @@ import { RecentlyDeletedPart } from "./recently-deleted-part";
 import { RetentionPart } from "./retention-part";
 import { SettingsFrameContext } from "./settings-frame";
 import { searchSettings, settingsIndex, type SettingEntry } from "./settings-index";
-import { SettingsNav, SettingsPhoneList, SettingsSearchField } from "./settings-nav";
+import { RAIL_STICKY, SettingsNav, SettingsPhoneList, SettingsSearchField } from "./settings-nav";
 import { SETTINGS_GROUPS, partFromAddress, partOf, type SettingsPartId } from "./settings-parts";
 import { SettingsResults } from "./settings-search";
 import { SettingsSkeleton } from "./settings-skeleton";
@@ -162,7 +162,7 @@ export function SettingsClient({ model, viewerName }: SettingsClientProps) {
                 // As tall as the window at least, like a list, so a short part does not end halfway down.
                 <div className="flex min-h-[calc(100svh-6.75rem)] min-w-0 overflow-clip rounded-xl border bg-card text-card-foreground shadow-sm">
                     <div className="shrink-0 border-r">
-                        <div className="sticky top-4">
+                        <div className={RAIL_STICKY}>
                             <SettingsNav groups={SETTINGS_GROUPS} label="Settings" current={current} states={states} term={term} onTermChange={setTerm} counts={searching ? search.counts : null} onOpen={open} />
                         </div>
                     </div>

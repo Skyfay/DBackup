@@ -6,7 +6,7 @@ import { useTheme } from "next-themes";
 import { ArrowLeft } from "lucide-react";
 import { SettingsFrameContext } from "@/components/dashboard/settings/settings-frame";
 import { searchSettings, type SettingEntry } from "@/components/dashboard/settings/settings-index";
-import { SettingsNav, SettingsPhoneList, SettingsSearchField } from "@/components/dashboard/settings/settings-nav";
+import { RAIL_STICKY, SettingsNav, SettingsPhoneList, SettingsSearchField } from "@/components/dashboard/settings/settings-nav";
 import { SettingsResults } from "@/components/dashboard/settings/settings-search";
 import { SettingsSkeleton } from "@/components/dashboard/settings/settings-skeleton";
 import { Button } from "@/components/ui/button";
@@ -145,7 +145,7 @@ export function ProfileClient({ model }: { model: ProfileModel }) {
                 // As tall as the window at least, like Settings, so a short part does not end halfway down.
                 <div className="flex min-h-[calc(100svh-6.75rem)] min-w-0 overflow-clip rounded-xl border bg-card text-card-foreground shadow-sm">
                     <div className="shrink-0 border-r">
-                        <div className="sticky top-4">
+                        <div className={RAIL_STICKY}>
                             <SettingsNav
                                 groups={PROFILE_GROUPS}
                                 label="Profile"

@@ -67,6 +67,13 @@ interface SettingsNavProps<Id extends string> {
     onOpen: (part: Id) => void;
 }
 
+/**
+ * Where the rail of Settings and Profile stays while the page scrolls: exactly where it starts,
+ * below the padding of the page from md up (`md:p-6` in the dashboard layout) and the border of
+ * the card. A smaller offset let it slide up by the difference before it stopped.
+ */
+export const RAIL_STICKY = "sticky top-[calc(1.5rem+1px)]";
+
 /** The parts on the left from md up, grouped, each with its icon and its state. */
 export function SettingsNav<Id extends string>({ groups, label, searchPlaceholder, current, states, term, onTermChange, counts, onOpen }: SettingsNavProps<Id>) {
     return (

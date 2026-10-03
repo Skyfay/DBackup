@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { Star } from "lucide-react";
 import { fetchWithCache } from "@/lib/github";
-import { GITHUB_REPO } from "@/lib/content";
+import { GITHUB_URL, GITHUB_REPO } from "@/lib/content";
+import { cn } from "@/lib/utils";
 
 const CACHE_KEY = "dbackup-gh-stars";
 const CACHE_TTL_MS = 10 * 60 * 1000;
@@ -13,7 +14,7 @@ type State =
   | { status: "ready"; stars: number }
   | { status: "error" };
 
-export function GithubStarsWidget() {
+export function GithubStarsWidget({ className }: { className?: string }) {
   const [state, setState] = useState<State>({ status: "loading" });
 
   useEffect(() => {
@@ -37,18 +38,21 @@ export function GithubStarsWidget() {
 
   return (
     <a
-      href={`https://github.com/${GITHUB_REPO}`}
+      href={GITHUB_URL}
       target="_blank"
       rel="noreferrer"
-      className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
-    >
-      <Star className="size-3.5" />
-      Star on GitHub
-      {state.status === "ready" && (
-        <span className="text-muted-foreground">
-          {new Intl.NumberFormat("en", { notation: "compact" }).format(state.stars)}
-        </span>
+      aria-label="Star DBackup on GitHub"
+      className={cn(
+        "h-9 items-center gap-1.5 rounded-lg border border-input bg-secondary px-3 font-medium transition-colors hover:bg-accent",
+        className
       )}
+    >
+      <Star className="size-4" />
+      <span className="font-normal text-muted-foreground tabular-nums">
+        {state.status === "ready"
+          ? new Intl.NumberFormat("en", { notation: "compact" }).format(state.stars)
+          : "Star"}
+      </span>
     </a>
   );
 }

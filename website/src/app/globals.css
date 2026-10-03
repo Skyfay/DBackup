@@ -4,52 +4,109 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Light mode. The zinc ground of the dark design turned around, with the
+   task tones darkened until they read on white. */
 :root {
   --radius: 0.75rem;
 
-  --background: oklch(0.985 0.004 257);
-  --foreground: oklch(0.17 0.015 257);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.17 0.015 257);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.17 0.015 257);
-  --primary: oklch(0.5 0.13 257);
-  --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.95 0.006 257);
-  --secondary-foreground: oklch(0.25 0.012 257);
-  --muted: oklch(0.95 0.006 257);
-  --muted-foreground: oklch(0.48 0.014 257);
-  --accent: oklch(0.94 0.03 257);
-  --accent-foreground: oklch(0.3 0.05 257);
-  --destructive: oklch(0.577 0.245 27.325);
-  --success: oklch(0.6 0.14 154);
-  --success-foreground: oklch(0.99 0 0);
-  --border: oklch(0.9 0.008 257);
-  --input: oklch(0.9 0.008 257);
-  --ring: oklch(0.5 0.13 257);
+  --background: #f4f4f5;
+  --foreground: #09090b;
+  --card: #ffffff;
+  --card-foreground: #09090b;
+  --surface: #ffffff;
+  --surface-2: #ffffff;
+  --popover: #ffffff;
+  --popover-foreground: #09090b;
+  --primary: #18181b;
+  --primary-foreground: #fafafa;
+  --secondary: #ffffff;
+  --secondary-foreground: #09090b;
+  --muted: #e9e9ec;
+  --muted-foreground: #65656e;
+  --subtle: #3f3f46;
+  --faint: #71717a;
+  --fainter: #a1a1aa;
+  --accent: #f4f4f5;
+  --accent-foreground: #09090b;
+  --destructive: #dc2626;
+  --success: #15803d;
+  --success-foreground: #ffffff;
+  --border: #e4e4e7;
+  --border-strong: #e4e4e7;
+  --input: #d4d4d8;
+  --ring: #2563eb;
+
+  --tone-blue: #2563eb;
+  --tone-blue-soft: #1d4ed8;
+  --tone-violet: #7c3aed;
+  --tone-cyan: #0e7490;
+  --tone-green: #15803d;
+  --tone-amber: #b45309;
+  --tone-red: #dc2626;
+  --tone-ink: #ffffff;
+
+  --shine: #2563eb;
+  --glow-strength: 0.5;
+  --grid-dot: rgb(9 9 11 / 0.09);
+  --grid-line: rgb(9 9 11 / 0.06);
+  --header-bg: rgb(255 255 255 / 0.72);
+  --header-border: rgb(9 9 11 / 0.08);
+  --highlight: rgb(255 255 255 / 0.9);
+  --card-shadow: 0 1px 3px rgb(0 0 0 / 0.06);
+  --lift-shadow: 0 24px 48px -24px rgb(9 9 11 / 0.3);
+  --deep-shadow: 0 40px 70px -30px rgb(9 9 11 / 0.3);
+  --hero-shadow: 0 60px 120px -40px rgb(37 99 235 / 0.3);
 }
 
+/* Dark mode. The colors of the "Home, all in dark" canvas board. */
 .dark {
-  --background: oklch(0.145 0.008 257);
-  --foreground: oklch(0.96 0.004 257);
-  --card: oklch(0.19 0.012 257);
-  --card-foreground: oklch(0.96 0.004 257);
-  --popover: oklch(0.17 0.01 257);
-  --popover-foreground: oklch(0.96 0.004 257);
-  --primary: oklch(0.6 0.1 257);
-  --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.24 0.014 257);
-  --secondary-foreground: oklch(0.96 0.004 257);
-  --muted: oklch(0.22 0.012 257);
-  --muted-foreground: oklch(0.65 0.014 257);
-  --accent: oklch(0.26 0.03 257);
-  --accent-foreground: oklch(0.96 0.004 257);
-  --destructive: oklch(0.6 0.22 25);
-  --success: oklch(0.72 0.17 154);
-  --success-foreground: oklch(0.15 0 0);
-  --border: oklch(1 0 0 / 0.09);
-  --input: oklch(1 0 0 / 0.16);
-  --ring: oklch(0.6 0.1 257);
+  --background: #0a0a0b;
+  --foreground: #fafafa;
+  --card: #111113;
+  --card-foreground: #fafafa;
+  --surface: #141416;
+  --surface-2: #1a1a1c;
+  --popover: #1a1a1c;
+  --popover-foreground: #fafafa;
+  --primary: #fafafa;
+  --primary-foreground: #18181b;
+  --secondary: rgb(49 49 55 / 0.3);
+  --secondary-foreground: #fafafa;
+  --muted: #252528;
+  --muted-foreground: #a1a1aa;
+  --subtle: #d4d4d8;
+  --faint: #71717a;
+  --fainter: #52525b;
+  --accent: #1f1f22;
+  --accent-foreground: #fafafa;
+  --destructive: #f0555a;
+  --success: #34d399;
+  --success-foreground: #0a0a0b;
+  --border: #232326;
+  --border-strong: #2a2a2e;
+  --input: #313137;
+  --ring: #60a5fa;
+
+  --tone-blue: #60a5fa;
+  --tone-blue-soft: #93c5fd;
+  --tone-violet: #a78bfa;
+  --tone-cyan: #22d3ee;
+  --tone-green: #34d399;
+  --tone-amber: #fbbf24;
+  --tone-red: #f0555a;
+  --tone-ink: #0a0a0b;
+
+  --shine: #93c5fd;
+  --glow-strength: 1;
+  --grid-dot: rgb(255 255 255 / 0.09);
+  --grid-line: rgb(255 255 255 / 0.07);
+  --header-bg: rgb(26 26 28 / 0.6);
+  --header-border: rgb(255 255 255 / 0.1);
+  --highlight: rgb(255 255 255 / 0.05);
+  --card-shadow: 0 0 0 0 transparent;
+  --lift-shadow: 0 30px 60px -30px rgb(0 0 0 / 0.9);
+  --deep-shadow: 0 40px 80px -30px rgb(0 0 0 / 0.9);
+  --hero-shadow: 0 60px 120px -40px rgb(37 99 235 / 0.5);
 }
 
 .code-highlight code span {
@@ -64,6 +121,8 @@
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
@@ -72,14 +131,27 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-subtle: var(--subtle);
+  --color-faint: var(--faint);
+  --color-fainter: var(--fainter);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
+  --color-tone-blue: var(--tone-blue);
+  --color-tone-blue-soft: var(--tone-blue-soft);
+  --color-tone-violet: var(--tone-violet);
+  --color-tone-cyan: var(--tone-cyan);
+  --color-tone-green: var(--tone-green);
+  --color-tone-amber: var(--tone-amber);
+  --color-tone-red: var(--tone-red);
+  --color-tone-ink: var(--tone-ink);
 
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
@@ -94,54 +166,574 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    scroll-padding-top: 96px;
+  }
   body {
     @apply bg-background text-foreground;
+    font-size: 14px;
+  }
+  button {
+    cursor: pointer;
   }
 }
 
 @layer utilities {
   .bg-dot-grid {
+    background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  /* A card of the design: a flat panel in dark, a white sheet with a soft
+     shadow in light. */
+  .panel {
+    border: 1px solid var(--border);
+    background-color: var(--card);
+    box-shadow:
+      inset 0 1px 0 var(--highlight),
+      var(--card-shadow);
+  }
+
+  .glass {
+    border: 1px solid var(--header-border);
+    background-color: var(--header-bg);
+    backdrop-filter: blur(14px);
+    box-shadow: inset 0 1px 0 var(--highlight);
+  }
+
+  /* SpotlightCard sets --spot-x and --spot-y from the mouse. */
+  .spotlight:hover {
+    border-color: rgb(var(--spot-rgb) / 0.35);
     background-image: radial-gradient(
-      circle at center,
-      var(--border) 1px,
-      transparent 1px
+      var(--spot-reach) circle at var(--spot-x, 50%) var(--spot-y, 50%),
+      rgb(var(--spot-rgb) / 0.13),
+      transparent 60%
     );
-    background-size: 16px 16px;
   }
 
-  .bg-hero-glow {
-    background-image: radial-gradient(
-        60% 55% at 50% -10%,
-        oklch(0.5 0.12 257 / 0.35),
-        transparent 70%
-      ),
-      radial-gradient(
-        35% 25% at 85% 15%,
-        oklch(0.7 0.15 200 / 0.12),
-        transparent 70%
-      );
+  .fx-lift {
+    transition:
+      transform 0.25s ease,
+      box-shadow 0.25s ease,
+      border-color 0.25s ease;
+  }
+  .fx-lift:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--lift-shadow);
   }
 
-  .bg-grain::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    opacity: 0.04;
-    mix-blend-mode: overlay;
-    pointer-events: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  .fx-btn {
+    transition:
+      transform 0.15s ease,
+      box-shadow 0.15s ease;
+  }
+  .fx-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 24px -10px rgb(96 165 250 / 0.6);
+  }
+
+  .fx-shine {
+    background: linear-gradient(
+      90deg,
+      var(--foreground) 0%,
+      var(--foreground) 40%,
+      var(--shine) 50%,
+      var(--foreground) 60%,
+      var(--foreground) 100%
+    );
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: fx-shine 6s linear infinite;
+  }
+
+  .fx-floor {
+    background-image:
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    background-size: 64px 64px;
+    transform-origin: 50% 0;
+    animation: fx-floor 3s linear infinite;
+  }
+
+  .fx-spin {
+    animation: fx-spin 6s linear infinite;
+  }
+  .fx-spin-slow {
+    animation: fx-spin 10s linear infinite;
+  }
+  .fx-spin-slower {
+    animation: fx-spin 40s linear infinite;
+  }
+  .fx-ping {
+    animation: fx-ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+  .fx-marquee {
+    animation: fx-marquee 45s linear infinite;
+  }
+  .fx-marquee-rev {
+    animation: fx-marquee-rev 45s linear infinite;
+  }
+  .fx-drift {
+    animation: fx-drift 16s ease-in-out infinite;
+  }
+  .fx-drift-2 {
+    animation: fx-drift-2 19s ease-in-out infinite;
+  }
+  .fx-path {
+    animation: fx-path 2.4s linear infinite;
+  }
+  .fx-dash {
+    animation: fx-dash 1s linear infinite;
+  }
+  .fx-ticker {
+    animation: fx-ticker 11s cubic-bezier(0.7, 0, 0.3, 1) infinite;
+  }
+  .fx-pulse {
+    animation: fx-pulse 2s ease-out infinite;
+  }
+  .fx-twinkle {
+    animation: fx-twinkle 3s ease-in-out infinite;
+  }
+  .fx-in {
+    animation: fx-in 0.35s ease-out both;
+  }
+  .fx-blink {
+    animation: fx-blink 1s steps(1) infinite;
+  }
+  .fx-drop {
+    animation: fx-drop 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  .fx-rise {
+    animation: fx-rise 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  .fx-sweep {
+    animation: fx-sweep 7.2s linear infinite;
+  }
+  .fx-orb {
+    animation: fx-orb 2.4s ease-out infinite;
+  }
+  .fx-fall {
+    animation: fx-fall 7s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+  .fx-indet {
+    animation: fx-indet 1.8s ease-in-out infinite;
+  }
+  .fx-stripes {
+    background-image: repeating-linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--tone-amber) 70%, transparent) 0 8px,
+      transparent 8px 12px
+    );
+    background-size: 24px 100%;
+    animation: fx-stripes 1.2s linear infinite;
   }
 }
 
-[data-reveal] {
-  opacity: 0;
-  transform: translateY(12px);
-  transition:
-    opacity 0.5s ease,
-    transform 0.5s ease;
+@keyframes fx-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes fx-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  80%,
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+@keyframes fx-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+@keyframes fx-marquee-rev {
+  from {
+    transform: translateX(-50%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes fx-floor {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 0 64px;
+  }
+}
+@keyframes fx-drift {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(60px, -40px) scale(1.15);
+  }
+}
+@keyframes fx-drift-2 {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1.1);
+  }
+  50% {
+    transform: translate(-70px, 30px) scale(0.95);
+  }
+}
+@keyframes fx-path {
+  from {
+    offset-distance: 0%;
+  }
+  to {
+    offset-distance: 100%;
+  }
+}
+@keyframes fx-dash {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+/* Five names plus the first one again, so the jump back to the start is
+   invisible. Each step moves the column by one sixth of its height. */
+@keyframes fx-ticker {
+  0%,
+  16% {
+    transform: translateY(0);
+  }
+  20%,
+  36% {
+    transform: translateY(-16.6667%);
+  }
+  40%,
+  56% {
+    transform: translateY(-33.3333%);
+  }
+  60%,
+  76% {
+    transform: translateY(-50%);
+  }
+  80%,
+  96% {
+    transform: translateY(-66.6667%);
+  }
+  100% {
+    transform: translateY(-83.3333%);
+  }
+}
+@keyframes fx-shine {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+@keyframes fx-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(96 165 250 / 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 14px rgb(96 165 250 / 0);
+  }
+}
+@keyframes fx-twinkle {
+  0%,
+  100% {
+    opacity: 0.15;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+@keyframes fx-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+/* One column of the backup calendar lights up as the sweep passes it. */
+@keyframes fx-sweep {
+  0%,
+  100% {
+    box-shadow: 0 0 10px color-mix(in srgb, var(--tone-green) 80%, transparent);
+  }
+  3%,
+  97% {
+    box-shadow: none;
+  }
 }
 
-[data-reveal][data-visible="true"] {
-  opacity: 1;
-  transform: translateY(0);
+/* The mobile menu drops out of the header, its rows rise one after the other. */
+@keyframes fx-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fx-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The cursor of the terminals. */
+@keyframes fx-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* The orb of "Now" on the roadmap, breathing in blue. */
+@keyframes fx-orb {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 0 rgb(96 165 250 / 0.5),
+      0 0 40px rgb(96 165 250 / 0.55);
+  }
+  50% {
+    box-shadow:
+      0 0 0 16px rgb(96 165 250 / 0),
+      0 0 60px rgb(96 165 250 / 0.7);
+  }
+}
+/* Sparks running down the roadmap spine. */
+@keyframes fx-fall {
+  0% {
+    transform: translateY(-80px);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(1800px);
+    opacity: 0;
+  }
+}
+@keyframes fx-indet {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(260%);
+  }
+}
+@keyframes fx-stripes {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 24px 0;
+  }
+}
+
+/* Counts a number up from zero. The real value stays in the markup for
+   readers and crawlers, the animated one is drawn by ::after. */
+@property --count {
+  syntax: "<integer>";
+  initial-value: 0;
+  inherits: false;
+}
+.fx-count {
+  --count: var(--to);
+  counter-reset: count var(--count);
+  animation: fx-count 2.2s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+}
+.fx-count::after {
+  content: counter(count);
+}
+/* Only the start is given, the animation ends on the value set above. */
+@keyframes fx-count {
+  from {
+    --count: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fx-count {
+    animation: none;
+  }
+  .fx-spin,
+  .fx-spin-slow,
+  .fx-spin-slower,
+  .fx-ping,
+  .fx-marquee,
+  .fx-marquee-rev,
+  .fx-floor,
+  .fx-drift,
+  .fx-drift-2,
+  .fx-path,
+  .fx-dash,
+  .fx-ticker,
+  .fx-shine,
+  .fx-pulse,
+  .fx-twinkle,
+  .fx-in,
+  .fx-blink,
+  .fx-drop,
+  .fx-rise,
+  .fx-sweep,
+  .fx-orb,
+  .fx-indet,
+  .fx-stripes {
+    animation: none;
+  }
+  .fx-fall {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+/* Blog articles. Rules reach only the direct children of the article, so the
+   MDX components keep their own look. */
+.post-prose > p,
+.post-prose > ul > li,
+.post-prose > ol > li {
+  font-size: 17px;
+  line-height: 1.75;
+  color: var(--subtle);
+}
+.post-prose > p {
+  margin: 0 0 22px;
+}
+.post-prose > h2 {
+  margin: 56px 0 18px;
+  font-size: 28px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  color: var(--foreground);
+}
+.post-prose > h2:first-child {
+  margin-top: 0;
+}
+.post-prose > h3 {
+  margin: 36px 0 12px;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+.post-prose strong {
+  font-weight: 600;
+  color: var(--foreground);
+}
+.post-prose em {
+  color: var(--foreground);
+}
+.post-prose :not(pre) > code {
+  padding: 1px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+  color: var(--foreground);
+}
+.post-prose a {
+  color: var(--tone-blue-soft);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-color: color-mix(in srgb, var(--tone-blue-soft) 40%, transparent);
+}
+.post-prose > ul {
+  margin: 0 0 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.post-prose > ul > li {
+  position: relative;
+  padding-left: 22px;
+}
+.post-prose > ul > li::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 12px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--tone-blue);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--tone-blue) 80%, transparent);
+}
+.post-prose > ol {
+  margin: 0 0 22px;
+  padding-left: 1.4em;
+  list-style: decimal;
+}
+.post-prose > ol > li::marker {
+  color: var(--faint);
+}
+.post-prose figure {
+  margin: 0 0 22px;
+}
+
+/* The cases of a <Costs> box, numbered in amber. */
+.post-costs ul {
+  counter-reset: cost;
+}
+.post-costs li {
+  counter-increment: cost;
+  position: relative;
+  padding: 16px 18px 16px 56px;
+  border-bottom: 1px solid color-mix(in srgb, var(--tone-amber) 10%, transparent);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+}
+.post-costs li:last-child {
+  border-bottom: 0;
+}
+.post-costs li::before {
+  content: counter(cost);
+  position: absolute;
+  left: 18px;
+  top: 16px;
+  display: flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--tone-amber) 35%, transparent);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--tone-amber);
+}
+.post-costs li strong:first-child {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 16px;
+  color: var(--foreground);
 }

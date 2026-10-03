@@ -1,4 +1,4 @@
-import { GITHUB_REPO } from "@/lib/content";
+import { DOCS_URL, GITHUB_REPO } from "@/lib/content";
 
 export type RoadmapStatus = "idea" | "planned" | "in-progress";
 
@@ -226,6 +226,32 @@ export interface ShippedItem {
 
 export const SHIPPED_ITEMS: ShippedItem[] = [
   {
+    slug: "single-database-restores-downloads",
+    title: "Single Database Restores & Downloads",
+    description:
+      "Restore or download one database out of a multi-database backup, reading only that database from the destination. Old execution logs and history entries can be cleaned up automatically, and Settings shows and optimizes the size of the DBackup database.",
+    version: "v3.4.0",
+    releaseDate: "2026-09-16",
+    changelogAnchor: "v3-4-0-single-database-restores-and-downloads-data-retention-improvement-and-bug-fixes",
+  },
+  {
+    slug: "300-github-stars",
+    title: "300 GitHub Stars",
+    description: "DBackup crossed 300 stars on GitHub, thanks to everyone in the community.",
+    releaseDate: "2026-08-25",
+    link: { href: `https://github.com/${GITHUB_REPO}/stargazers`, label: "View on GitHub" },
+    star: true,
+  },
+  {
+    slug: "azure-sql-database-support",
+    title: "Azure SQL Database Support",
+    description:
+      "Azure SQL Database as a new source in beta, backed up through a BACPAC export, plus an hourly tier for Smart (GFS) retention policies.",
+    version: "v3.3.0",
+    releaseDate: "2026-08-15",
+    changelogAnchor: "v3-3-0-azure-sql-database-support-s3-upload-rework-and-general-improvements",
+  },
+  {
     slug: "docker-volume-backups",
     title: "Docker Volume Backups",
     description:
@@ -385,12 +411,22 @@ export interface Milestone {
 
 export const MILESTONES: Milestone[] = [
   {
-    slug: "300-github-stars",
-    title: "300 GitHub Stars",
+    slug: "500-github-stars",
+    title: "500 GitHub Stars",
     description: "Help DBackup reach its next community milestone.",
-    target: 300,
+    target: 500,
     unit: "stars",
     liveSource: "github-stars",
     fallbackCurrent: 0,
   },
 ];
+
+/** Where a shipped entry links to: its own link, its changelog section or the changelog. */
+export function shippedHref(item: ShippedItem): string {
+  if (item.link) return item.link.href;
+  return item.changelogAnchor ? `${DOCS_URL}/changelog#${item.changelogAnchor}` : `${DOCS_URL}/changelog`;
+}
+
+export function issueHref(issueNumber: number): string {
+  return `https://github.com/${GITHUB_REPO}/issues/${issueNumber}`;
+}

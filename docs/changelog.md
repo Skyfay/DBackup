@@ -43,6 +43,7 @@ All notable changes to DBackup are documented here.
 - **profile**: The Profile page is built like Settings, renames passkeys, makes new backup codes and sets the colors of every task, like Add, Edit and Delete, from a set like Colorblind friendly or one of your own.
 - **api**: The new `GET /api/jobs/{id}/runs` returns the latest runs of a job with its success rate, `GET /api/jobs/schedules` the schedules with the slots of the queue and `GET /api/jobs/timeline` the runs of every job a week back and ahead. `POST /api/adapters/bulk` also switches the health alerts, restores, integrity checks and air-gapped state of several connections.
 - **api**: New endpoints find anything with `GET /api/search`, list runs with `GET /api/history/runs`, databases and their servers with `GET /api/databases` and backups across every destination with `GET /api/storage/explorer`. `GET /api/notification-logs` filters by `channel` and adds the numbers of the last 30 days with `stats=true`.
+- **website**: The home page, the blog and the roadmap have a new design in a dark and a light theme, with a live backup run in the hero and the dialogs of the app to try out. The roadmap runs shipped work and plans along one timeline, and the blog has a table of contents in every post and an RSS feed.
 
 ### 🐛 Bug Fixes
 
@@ -133,6 +134,7 @@ All notable changes to DBackup are documented here.
 - **api**: The API reference documents the new endpoints, like the runs of a job, the folder browser of a connection and download links, and lists every bulk endpoint and bulk action again. The download of a recovery kit has its real address.
 - **docs**: The developer guide explains the task colors, the adapter form, how audit entries and deletes are kept and how the configuration backup copies the database.
 - **docs**: A security policy explains how to report a vulnerability privately, the contributing guides base every pull request on the dev branch, and the README is shorter.
+- **docs**: The `docker run` examples write both secrets to a `.env` file once and read it with `--env-file`, so a container made again for an update keeps its keys.
 
 ### 🧪 Tests
 

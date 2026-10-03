@@ -43,6 +43,7 @@ All notable changes to DBackup are documented here.
 - **profile**: The Profile page is built like Settings, renames passkeys, makes new backup codes and sets the colors of every task, like Add, Edit and Delete, from a set like Colorblind friendly or one of your own.
 - **api**: The new `GET /api/jobs/{id}/runs` returns the latest runs of a job with its success rate, `GET /api/jobs/schedules` the schedules with the slots of the queue and `GET /api/jobs/timeline` the runs of every job a week back and ahead. `POST /api/adapters/bulk` also switches the health alerts, restores, integrity checks and air-gapped state of several connections.
 - **api**: New endpoints find anything with `GET /api/search`, list runs with `GET /api/history/runs`, databases and their servers with `GET /api/databases` and backups across every destination with `GET /api/storage/explorer`. `GET /api/notification-logs` filters by `channel` and adds the numbers of the last 30 days with `stats=true`.
+- **website**: The home page and the blog have a new design in a dark and a light theme, with a live backup run in the hero and the dialogs of the app to try out. Blog posts have a table of contents and a reading progress bar, and the blog has an RSS feed.
 
 ### 🐛 Bug Fixes
 

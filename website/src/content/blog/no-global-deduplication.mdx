@@ -4,6 +4,17 @@ date: "2026-07-24"
 excerpt: "File backups forced a choice between a chunk store and archives you can still open by hand. Here is what we picked, what it costs you in storage, and when you should use a different tool."
 tags: ["philosophy", "file-backups", "architecture"]
 author: "Skyfay"
+cover:
+  badge: "TAR"
+  tone: "blue"
+  snippet: "$ tar -xf incr-03.tar\nconfig/  data/  manifest.json"
+  path: "/backups/nextcloud/chain-2026-09"
+  files:
+    - { kind: "Full", name: "full-01.tar", size: "2.4 GB" }
+    - { kind: "Incr", name: "incr-02.tar", size: "38 MB" }
+    - { kind: "Incr", name: "incr-03.tar", size: "12 MB" }
+    - { kind: "Incr", name: "incr-04.tar", size: "41 MB" }
+  command: "$ tar -xf incr-03.tar   # no DBackup needed"
 ---
 
 Adding file and folder backups to DBackup meant answering a question that database dumps never really posed: what does an *incremental* backup look like? A dump is produced whole every run. A directory tree with 48,000 files, of which three changed since yesterday, is a different problem, and the answer to it decides what a backup fundamentally *is*.
@@ -24,6 +35,14 @@ The price is not paid in features. It is paid in what a backup *is*.
 
 In a chunk-based repository, no single file is your backup. Your data lives spread across pack files, addressed by an index, resolvable only by something that implements the whole format: chunking parameters, pack layout, index structure, the encryption scheme wrapped around all of it, and the locking protocol that keeps concurrent operations from corrupting it. Deleting old snapshots is not deleting files, it is garbage collection, because a chunk may still be referenced by a snapshot you are keeping.
 
+<Compare left="Chunk store" right="DBackup">
+  <Row label="What a backup is" left="References into pack files" right="A plain TAR per run" />
+  <Row label="Open without the tool" left="Needs the whole format" right="tar -xf or one Node.js script" />
+  <Row label="Delete old snapshots" left="Garbage collection" right="Delete a folder" />
+  <Row label="Renamed file" left="Stores nothing" right="Stores it again" />
+  <Row label="One byte in 10 GB" left="One chunk" right="The whole 10 GB" />
+</Compare>
+
 That is a lot of machinery to depend on at the exact moment you need it most. These tools are excellent and widely trusted, and a well-maintained open format with several independent implementations is a real answer to that concern. But it is a different answer from the one DBackup makes: that you can get your data back with tools you already have, without trusting anything of ours.
 
 We had already committed to that promise for databases. Every dump DBackup writes is what `pg_dump` or `mysqldump` would have produced on its own, encrypted with AES-256-GCM as a separate step. Building the file side on a chunk store would have meant running two philosophies in one product, and quietly retiring the promise for everything that is not a database.
@@ -31,6 +50,13 @@ We had already committed to that promise for databases. Every dump DBackup write
 ## What DBackup does instead
 
 An incremental run stores **whole changed files**. Files that did not change are not copied, but they are not forgotten either: the new archive's index carries a reference to the archive in the chain that already holds those bytes.
+
+<Chain path="/backups/nextcloud/chain-2026-09" note="One chain, one folder">
+  <ChainFile kind="Full" name="full-01.tar" note="every file, compressed per entry" size="2.4 GB" />
+  <ChainFile kind="Incr" name="incr-02.tar" note="3 changed files, the rest by reference" size="38 MB" />
+  <ChainFile kind="Incr" name="incr-03.tar" note="1 changed file" size="12 MB" />
+  <ChainFile kind="Incr" name="incr-04.tar" note="5 changed files" size="41 MB" />
+</Chain>
 
 The consequences are the point of the design:
 
@@ -44,12 +70,18 @@ The consequences are the point of the design:
 
 Naming the cost is more useful than the design rationale, so here it is.
 
+<Costs title="What it costs" note="Four cases where DBackup stores more">
+
 - **A renamed or moved file is stored again.** Its path changed, and paths are how DBackup identifies files. A chunk store would recognise the content and store nothing.
 - **A one-byte change in a 10 GB file re-stores 10 GB.** There is no sub-file delta. This is the worst case for DBackup, and it is common with disk images, large VM disks and append-only database files that get rewritten.
 - **No deduplication across jobs, sources or chains.** The same file present in two directory sources is stored twice. Starting a new chain re-stores everything.
 - **GFS retention pins whole chains.** A monthly slot landing in the middle of a chain keeps that chain's full backup and its incrementals for as long as that one snapshot is kept.
 
-Two things keep the ordinary case reasonable. Every entry is compressed on its own, so text-heavy trees still shrink normally. And files at or below 64 KB are packed into shared bundles of about 4 MB before being compressed and sealed, which is what keeps a million small files from paying a TAR header, a fresh compression dictionary and an auth tag each. Bundling is applied to encrypted archives only, since a bundle has no single real path and enabling it everywhere would break the `tar -xf` promise.
+</Costs>
+
+Two things keep the ordinary case reasonable. Every entry is compressed on its own, so text-heavy trees still shrink normally. And files at or below 64 KB are packed into shared bundles of about 4 MB before being compressed and sealed, which is what keeps a million small files from paying a TAR header, a fresh compression dictionary and an auth tag each.
+
+<Callout title="Encrypted archives only.">Bundling is applied to encrypted archives only, since a bundle has no single real path and enabling it everywhere would break the `tar -xf` promise.</Callout>
 
 ## When you should use something else
 

@@ -1,17 +1,11 @@
-import { Hero } from "@/components/site/hero";
-import { StatsBand } from "@/components/site/stats-band";
-import { ProductTour } from "@/components/site/product-tour";
-import { FeatureGrid } from "@/components/site/feature-grid";
-import { NoLockInSection } from "@/components/site/no-lockin-section";
-import { AutomationSection } from "@/components/site/automation-section";
-import { Integrations } from "@/components/site/integrations";
-import { QuickStart } from "@/components/site/quick-start";
-import { Faq } from "@/components/site/faq";
-import { BlogTeaser } from "@/components/site/blog-teaser";
-import { CtaBand } from "@/components/site/cta-band";
+import { Hero } from "@/components/site/home/hero";
+import { Features } from "@/components/site/home/features";
+import { CtaBand, LockInBand } from "@/components/site/home/bands";
+import { QuickStart } from "@/components/site/home/quick-start";
+import { Faq } from "@/components/site/home/faq";
 import { JsonLd } from "@/components/site/json-ld";
 import { SITE_URL } from "@/lib/site";
-import { TAGLINE } from "@/lib/content";
+import { FAQS, TAGLINE } from "@/lib/content";
 
 const SOFTWARE_APPLICATION_JSON_LD = {
   "@context": "https://schema.org",
@@ -28,6 +22,19 @@ const SOFTWARE_APPLICATION_JSON_LD = {
   },
 };
 
+const FAQ_JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: FAQS.map((faq) => ({
+    "@type": "Question",
+    name: faq.question,
+    acceptedAnswer: {
+      "@type": "Answer",
+      text: faq.answer,
+    },
+  })),
+};
+
 export const metadata = {
   alternates: {
     canonical: "/",
@@ -38,16 +45,12 @@ export default function Home() {
   return (
     <>
       <JsonLd data={SOFTWARE_APPLICATION_JSON_LD} />
+      <JsonLd data={FAQ_JSON_LD} />
       <Hero />
-      <StatsBand />
-      <Integrations />
-      <ProductTour />
-      <AutomationSection />
-      <FeatureGrid />
-      <NoLockInSection />
+      <Features />
+      <LockInBand />
       <QuickStart />
       <Faq />
-      <BlogTeaser />
       <CtaBand />
     </>
   );

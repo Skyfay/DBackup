@@ -7,16 +7,16 @@ Store backups on the local filesystem of the server running DBackup. Simplest op
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
 | **Name** | Friendly name for this destination | - | ✅ |
-| **Base Path** | Absolute directory path for backups | `/backups` | ❌ |
+| **Folder** | Absolute directory path for backups. The folder button beside the field browses for it, the folder you stand in is the one you pick | `/backups` | ❌ |
 
 ## Setup Guide
 
-1. Go to **Connections** → **Backup Destinations** → **Add New** → **Local Storage**
-2. Enter a name and (optionally) customize the **Base Path**
-3. Click **Test** to verify write access
+1. Go to **Connections** → **Destinations** → **New destination** → **Local Storage**
+2. Enter a name and (optionally) change the **Folder**
+3. Click **Test connection** to verify write access
 
 ::: warning Docker Users
-The Base Path must be a path **inside the container**. Map it to your host via a Docker volume:
+The folder must be a path **inside the container**. Map it to your host via a Docker volume:
 
 ```yaml
 volumes:
@@ -63,4 +63,4 @@ ENOENT: no such file or directory
 
 - [Enable Encryption](/user-guide/security/encryption)
 - [Configure Retention](/user-guide/jobs/retention)
-- [Storage Explorer](/user-guide/features/storage-explorer)
+- [Backups](/user-guide/features/backups)

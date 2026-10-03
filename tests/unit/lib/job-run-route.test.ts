@@ -38,11 +38,16 @@ vi.mock("@/services/backup/backup-service", () => ({
 }));
 
 // Mock auditService
-const mockAuditLog = vi.fn();
+const mockAuditLogFor = vi.fn();
 vi.mock("@/services/audit-service", () => ({
   auditService: {
-    log: (...args: any[]) => mockAuditLog(...args),
+    logFor: (...args: any[]) => mockAuditLogFor(...args),
   },
+}));
+
+// The name of the job, for the audit entry
+vi.mock("@/services/jobs/job-audit", () => ({
+  jobAuditName: async () => "Shop nightly",
 }));
 
 // Mock apiKeyService
@@ -162,7 +167,7 @@ describe("POST /api/jobs/[id]/run", () => {
       executionId: "exec-123",
       message: "Job queued successfully",
     });
-    mockAuditLog.mockResolvedValue(undefined);
+    mockAuditLogFor.mockResolvedValue(undefined);
 
     const response = await POST(createRequest(), createProps("job-42"));
     const body = await response.json();
@@ -189,15 +194,18 @@ describe("POST /api/jobs/[id]/run", () => {
       executionId: "exec-1",
       message: "Queued",
     });
-    mockAuditLog.mockResolvedValue(undefined);
+    mockAuditLogFor.mockResolvedValue(undefined);
 
     await POST(createRequest(), createProps("job-1"));
 
-    expect(mockAuditLog).toHaveBeenCalledWith(
-      "user-1",
+    // The key goes with the caller, so the entry names it in its own column too.
+    expect(mockAuditLogFor).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "user-1", authMethod: "apikey", apiKeyId: "key-99" }),
       "execute",
       "job",
       expect.objectContaining({
+        name: "Shop nightly",
+        executionId: "exec-1",
         trigger: "api",
         apiKeyId: "key-99",
       }),
@@ -218,15 +226,16 @@ describe("POST /api/jobs/[id]/run", () => {
       executionId: "exec-2",
       message: "Queued",
     });
-    mockAuditLog.mockResolvedValue(undefined);
+    mockAuditLogFor.mockResolvedValue(undefined);
 
     await POST(createRequest(), createProps("job-2"));
 
-    expect(mockAuditLog).toHaveBeenCalledWith(
-      "user-1",
+    expect(mockAuditLogFor).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "user-1", authMethod: "session" }),
       "execute",
       "job",
       expect.objectContaining({
+        name: "Shop nightly",
         trigger: "manual",
       }),
       "job-2"

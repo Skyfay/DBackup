@@ -196,13 +196,48 @@ describe('BackupScheduler', () => {
         // @ts-expect-error -- Mock setup
         systemTaskService.getTaskRunOnStartup.mockResolvedValue(true);
 
-        await scheduler.refresh();
+        await scheduler.init();
 
         expect(systemTaskService.runTask).not.toHaveBeenCalled();
 
         await vi.runAllTimersAsync();
 
         expect(systemTaskService.runTask).toHaveBeenCalledWith(SYSTEM_TASKS.HEALTH_CHECK);
+        vi.useRealTimers();
+    });
+
+    it("does not start the tasks set to run at start again when a saved job or setting refreshes it", async () => {
+        vi.useFakeTimers();
+
+        // @ts-expect-error -- Mock setup
+        systemTaskService.getTaskEnabled.mockResolvedValue(true);
+        // @ts-expect-error -- Mock setup
+        systemTaskService.getTaskRunOnStartup.mockResolvedValue(true);
+
+        await scheduler.init();
+        await vi.runAllTimersAsync();
+        expect(systemTaskService.runTask).toHaveBeenCalledTimes(1);
+
+        await scheduler.refresh();
+        await scheduler.refresh();
+        await vi.runAllTimersAsync();
+
+        expect(systemTaskService.runTask).toHaveBeenCalledTimes(1);
+        vi.useRealTimers();
+    });
+
+    it("leaves a task that is off out of the runs at start", async () => {
+        vi.useFakeTimers();
+
+        // @ts-expect-error -- Mock setup
+        systemTaskService.getTaskEnabled.mockResolvedValue(false);
+        // @ts-expect-error -- Mock setup
+        systemTaskService.getTaskRunOnStartup.mockResolvedValue(true);
+
+        await scheduler.init();
+        await vi.runAllTimersAsync();
+
+        expect(systemTaskService.runTask).not.toHaveBeenCalled();
         vi.useRealTimers();
     });
 
@@ -269,7 +304,7 @@ describe('BackupScheduler', () => {
         systemTaskService.runTask.mockRejectedValue(new Error('startup failed'));
         const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-        await scheduler.refresh();
+        await scheduler.init();
         await vi.runAllTimersAsync();
 
         expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Startup task failed'));

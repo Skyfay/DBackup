@@ -8,8 +8,8 @@ import {
 
 describe("Notification Types & Constants", () => {
   describe("NOTIFICATION_EVENTS", () => {
-    it("should define all 16 event types", () => {
-      expect(Object.keys(NOTIFICATION_EVENTS)).toHaveLength(17);
+    it("should define all 18 event types", () => {
+      expect(Object.keys(NOTIFICATION_EVENTS)).toHaveLength(18);
     });
 
     it("should have unique event string values", () => {
@@ -30,16 +30,17 @@ describe("Notification Types & Constants", () => {
       expect(NOTIFICATION_EVENTS.STORAGE_USAGE_SPIKE).toBe("storage_usage_spike");
       expect(NOTIFICATION_EVENTS.STORAGE_LIMIT_WARNING).toBe("storage_limit_warning");
       expect(NOTIFICATION_EVENTS.STORAGE_MISSING_BACKUP).toBe("storage_missing_backup");
+      expect(NOTIFICATION_EVENTS.AIRGAP_SKIPPED).toBe("airgap_skipped");
     });
   });
 });
 
 describe("Notification Event Registry", () => {
   describe("EVENT_DEFINITIONS", () => {
-    it("should define 14 system events (no per-job backup events)", () => {
+    it("should define 15 system events (no per-job backup events)", () => {
       // Per-job backup success/failure excluded; integrity check failure is included
-      // 6 original + 3 storage events + 1 update event + 1 integrity event + 3 health events = 14
-      expect(EVENT_DEFINITIONS.length).toBe(14);
+      // 6 original + 4 storage events + 1 update event + 1 integrity event + 3 health events = 15
+      expect(EVENT_DEFINITIONS.length).toBe(15);
     });
 
     it("should have unique event IDs", () => {
@@ -54,16 +55,20 @@ describe("Notification Event Registry", () => {
       }
     });
 
-    it("should have 3 storage events", () => {
+    it("should have 4 storage events", () => {
       const storageEvents = EVENT_DEFINITIONS.filter((e) => e.category === "storage");
-      expect(storageEvents).toHaveLength(3);
+      expect(storageEvents).toHaveLength(4);
     });
 
-    it("should have all storage events enabled by default", () => {
+    it("should have every storage alert on by default, and the skipped air-gapped destination off", () => {
       const storageEvents = EVENT_DEFINITIONS.filter((e) => e.category === "storage");
       for (const event of storageEvents) {
-        expect(event.defaultEnabled).toBe(true);
+        expect(event.defaultEnabled).toBe(event.id !== NOTIFICATION_EVENTS.AIRGAP_SKIPPED);
       }
+    });
+
+    it("reports a skipped air-gapped destination once each time it goes away, so it has no reminder", () => {
+      expect(getEventDefinition(NOTIFICATION_EVENTS.AIRGAP_SKIPPED)?.supportsReminder).toBeFalsy();
     });
 
     it("should mark auth events as supporting notifyUser", () => {
@@ -100,7 +105,7 @@ describe("Notification Event Registry", () => {
       const def = getEventDefinition(NOTIFICATION_EVENTS.USER_LOGIN);
       expect(def).toBeDefined();
       expect(def!.id).toBe("user_login");
-      expect(def!.name).toBe("User Login");
+      expect(def!.name).toBe("Someone signs in");
     });
 
     it("should return undefined for unknown event type", () => {
@@ -119,7 +124,7 @@ describe("Notification Event Registry", () => {
       expect(grouped.restore).toBeDefined();
       expect(grouped.system).toBeDefined();
       expect(grouped.storage).toBeDefined();
-      expect(grouped.storage.length).toBe(3);
+      expect(grouped.storage.length).toBe(4);
     });
 
     it("should include all events across all categories", () => {

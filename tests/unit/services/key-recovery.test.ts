@@ -23,11 +23,11 @@ vi.mock("@/services/backup/archive-index-service", () => ({
 }));
 
 const getEncryptionProfiles = vi.fn();
-const getProfileMasterKey = vi.fn();
+const findProfileByKey = vi.fn();
 const importEncryptionProfile = vi.fn();
 vi.mock("@/services/backup/encryption-service", () => ({
     getEncryptionProfiles: (...a: unknown[]) => getEncryptionProfiles(...a),
-    getProfileMasterKey: (...a: unknown[]) => getProfileMasterKey(...a),
+    findProfileByKey: (...a: unknown[]) => findProfileByKey(...a),
     importEncryptionProfile: (...a: unknown[]) => importEncryptionProfile(...a),
 }));
 
@@ -70,6 +70,7 @@ describe("recoverEncryptionKey", () => {
     beforeEach(async () => {
         vi.clearAllMocks();
         getEncryptionProfiles.mockResolvedValue([]);
+        findProfileByKey.mockResolvedValue(null);
         importEncryptionProfile.mockImplementation(async (name: string) => ({ id: "new-profile", name }));
         fetchSidecar.mockResolvedValue(await sealedIndex(RIGHT_KEY));
         setupArchiveBackup();
@@ -82,7 +83,9 @@ describe("recoverEncryptionKey", () => {
         expect(importEncryptionProfile).toHaveBeenCalledWith(
             "Recovered - FileBackup",
             RIGHT_KEY.toString("hex"),
-            expect.stringContaining("inc-001.tar")
+            expect.stringContaining("inc-001.tar"),
+            // The profile the backup names, so the Vault counts its backups under the new key.
+            ["deleted-profile"]
         );
     });
 
@@ -96,23 +99,22 @@ describe("recoverEncryptionKey", () => {
     });
 
     it("points at the existing profile rather than storing the same key twice", async () => {
-        getEncryptionProfiles.mockResolvedValue([{ id: "already-here", name: "My Key" }]);
-        getProfileMasterKey.mockResolvedValue(RIGHT_KEY);
+        findProfileByKey.mockResolvedValue({ id: "already-here", name: "My Key" });
 
         const result = await recoverEncryptionKey("dest-1", "FileBackup/inc-001.tar", RIGHT_KEY.toString("hex"));
 
         expect(result).toMatchObject({ status: "existing", profileId: "already-here", profileName: "My Key" });
+        expect(findProfileByKey).toHaveBeenCalledWith(RIGHT_KEY.toString("hex"));
         expect(importEncryptionProfile).not.toHaveBeenCalled();
     });
 
     it("avoids colliding with a profile name that is already taken", async () => {
         getEncryptionProfiles.mockResolvedValue([{ id: "other", name: "Recovered - FileBackup" }]);
-        getProfileMasterKey.mockResolvedValue(WRONG_KEY);
 
         await recoverEncryptionKey("dest-1", "FileBackup/inc-001.tar", RIGHT_KEY.toString("hex"));
 
         expect(importEncryptionProfile).toHaveBeenCalledWith(
-            "Recovered - FileBackup (2)", expect.anything(), expect.anything()
+            "Recovered - FileBackup (2)", expect.anything(), expect.anything(), expect.anything()
         );
     });
 
@@ -120,7 +122,7 @@ describe("recoverEncryptionKey", () => {
         await recoverEncryptionKey("dest-1", "FileBackup/inc-001.tar", RIGHT_KEY.toString("hex"), "Old laptop key");
 
         expect(importEncryptionProfile).toHaveBeenCalledWith(
-            "Old laptop key", expect.anything(), expect.anything()
+            "Old laptop key", expect.anything(), expect.anything(), expect.anything()
         );
     });
 

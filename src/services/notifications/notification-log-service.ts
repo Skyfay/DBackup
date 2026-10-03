@@ -35,6 +35,8 @@ export interface NotificationLogQuery {
   pageSize?: number;
   /** One value or several, matched as any-of. */
   adapterId?: string | string[];
+  /** The name of the channel as it was when the message went out. */
+  channelName?: string | string[];
   eventType?: string | string[];
   status?: string | string[];
   executionId?: string;
@@ -95,10 +97,12 @@ function normalizePageSize(value: number | undefined): number {
 
 /** Prisma `where` for a query. Exported for tests. */
 export function buildNotificationLogWhere(query: NotificationLogQuery): Prisma.NotificationLogWhereInput {
-  const { adapterId, eventType, status, executionId, search } = query;
+  const { adapterId, channelName, eventType, status, executionId, search } = query;
   const where: Prisma.NotificationLogWhereInput = {};
   const adapterIds = toList(adapterId);
   if (adapterIds) where.adapterId = adapterIds;
+  const channels = toList(channelName);
+  if (channels) where.channelName = channels;
   const eventTypes = toList(eventType);
   if (eventTypes) where.eventType = eventTypes;
   const statuses = toList(status);
@@ -113,19 +117,21 @@ export function buildNotificationLogWhere(query: NotificationLogQuery): Prisma.N
 export interface NotificationLogFacets {
   adapterId: Record<string, number>;
   status: Record<string, number>;
+  channelName: Record<string, number>;
+  eventType: Record<string, number>;
 }
 
 /** Per-option counts. Each column honours every other active filter but not its own. */
 export async function getNotificationLogFacets(query: NotificationLogQuery = {}): Promise<NotificationLogFacets> {
-  const count = async (column: "adapterId" | "status") => {
+  const count = async (column: "adapterId" | "status" | "channelName" | "eventType") => {
     const where = buildNotificationLogWhere({ ...query, [column]: undefined });
     const groups = await prisma.notificationLog.groupBy({ by: [column], where, _count: { _all: true } });
     const result: Record<string, number> = {};
     for (const g of groups) result[g[column]] = g._count._all;
     return result;
   };
-  const [adapterId, status] = await Promise.all([count("adapterId"), count("status")]);
-  return { adapterId, status };
+  const [adapterId, status, channelName, eventType] = await Promise.all([count("adapterId"), count("status"), count("channelName"), count("eventType")]);
+  return { adapterId, status, channelName, eventType };
 }
 
 /**
@@ -147,6 +153,48 @@ export async function getNotificationLogs(query: NotificationLogQuery = {}) {
   ]);
 
   return { data, total, page, pageSize };
+}
+
+/** The numbers above the notifications of the History page, over the last 30 days. */
+export interface NotificationStats {
+  sent: number;
+  failed: number;
+  lastFailed: { channelName: string; at: string } | null;
+  channels: string[];
+  events: number;
+}
+
+export async function getNotificationStats(now = new Date()): Promise<NotificationStats> {
+  const since = new Date(now.getTime() - 30 * 86_400_000);
+  const where = { sentAt: { gte: since } };
+  const [byStatus, lastFailed, channels, events] = await Promise.all([
+    prisma.notificationLog.groupBy({ by: ["status"], where, _count: { _all: true } }),
+    prisma.notificationLog.findFirst({ where: { ...where, status: "Failed" }, orderBy: { sentAt: "desc" }, select: { channelName: true, sentAt: true } }),
+    prisma.notificationLog.groupBy({ by: ["channelName"], where, _count: { _all: true }, orderBy: { _count: { channelName: "desc" } } }),
+    prisma.notificationLog.groupBy({ by: ["eventType"], where, _count: { _all: true } }),
+  ]);
+  const count = (status: string) => byStatus.find((group) => group.status === status)?._count._all ?? 0;
+  return {
+    sent: count("Success"),
+    failed: count("Failed"),
+    lastFailed: lastFailed ? { channelName: lastFailed.channelName, at: lastFailed.sentAt.toISOString() } : null,
+    channels: channels.map((group) => group.channelName),
+    events: events.length,
+  };
+}
+
+/** The options of the Channel and Event filters: every channel and every event in the log. */
+export async function getNotificationFilterOptions(): Promise<{ channels: { name: string; adapterId: string }[]; events: string[] }> {
+  const [channels, events] = await Promise.all([
+    prisma.notificationLog.groupBy({ by: ["channelName", "adapterId"], _count: { _all: true } }),
+    prisma.notificationLog.groupBy({ by: ["eventType"], _count: { _all: true } }),
+  ]);
+  const byName = new Map<string, { name: string; adapterId: string }>();
+  for (const group of channels) if (!byName.has(group.channelName)) byName.set(group.channelName, { name: group.channelName, adapterId: group.adapterId });
+  return {
+    channels: [...byName.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    events: events.map((group) => group.eventType).sort(),
+  };
 }
 
 /**

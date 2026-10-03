@@ -1,229 +1,208 @@
 import prisma from "@/lib/prisma";
-import { STORAGE_ROLES } from "@/lib/core/storage-roles";
-import { registry } from "@/lib/core/registry";
-import { runAdapterTest } from "@/lib/transport/adapter-invoke";
 import { registerAdapters } from "@/lib/adapters";
-import { DatabaseAdapter } from "@/lib/core/interfaces";
-import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
-import { updateService } from "./update-service";
+import { isValidCron } from "@/lib/core/cron";
 import { healthCheckService } from "./healthcheck-service";
-import { notify } from "@/services/notifications/system-notification-service";
-import { NOTIFICATION_EVENTS } from "@/lib/notifications/types";
-import { getNotificationConfig } from "@/services/notifications/system-notification-service";
-import { getEventDefinition } from "@/lib/notifications/events";
-import { PERMISSIONS } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
-import { wrapError } from "@/lib/logging/errors";
-import { recordVersionIfChanged } from "./db-version-service";
+import { ValidationError, getErrorMessage, wrapError } from "@/lib/logging/errors";
+import { formatBytes } from "@/lib/utils";
 import { runDataRetention } from "./data-retention-service";
 import { isDatabaseMaintenanceActive } from "@/lib/server/database-maintenance";
+import { NOTIFICATION_EVENTS } from "@/lib/notifications/types";
+import { notify } from "@/services/notifications/system-notification-service";
+import { DEFAULT_TASK_CONFIG, SYSTEM_TASKS } from "./system-task-definitions";
+import { checkForUpdates, startIntegrityCheck, syncPermissions, updateDbVersions, warmupStorageCache, type TaskOutcome } from "./system-task-runs";
+
+export { SYSTEM_TASKS, DEFAULT_TASK_CONFIG } from "./system-task-definitions";
 
 const log = logger.child({ service: "SystemTaskService" });
-
-// Timeout for individual adapter connection tests (15 seconds)
-const ADAPTER_TEST_TIMEOUT_MS = 15_000;
 
 // Ensure adapters are registered for worker context
 registerAdapters();
 
-export const SYSTEM_TASKS = {
-    UPDATE_DB_VERSIONS: "system.update_db_versions",
-    HEALTH_CHECK: "system.health_check",
-    CLEAN_OLD_LOGS: "system.clean_audit_logs",
-    CHECK_FOR_UPDATES: "system.check_for_updates",
-    SYNC_PERMISSIONS: "system.sync_permissions",
-    CONFIG_BACKUP: "system.config_backup",
-    INTEGRITY_CHECK: "system.integrity_check",
-    REFRESH_STORAGE_STATS: "system.refresh_storage_stats",
-    WARMUP_STORAGE_CACHE: "system.warmup_storage_cache",
-    STUCK_EXECUTION_CHECK: "system.stuck_execution_check"
-};
+/** How the last run of a task went, as the Settings page shows it. */
+export interface TaskRunRecord {
+    /** When it started. */
+    at: string;
+    /** How long it took, null when only the start is known from an older version. */
+    durationMs: number | null;
+    ok: boolean;
+    summary: string | null;
+    /** The run in History, for a task that writes one. */
+    executionId?: string;
+    /** The run stopped with an error, rather than with a result that needs a look. */
+    failed?: boolean;
+}
 
-export const DEFAULT_TASK_CONFIG = {
-    [SYSTEM_TASKS.UPDATE_DB_VERSIONS]: {
-        interval: "0 * * * *", // Every hour
-        runOnStartup: true,
-        enabled: true,
-        label: "Update Database Versions",
-        description: "Checks connectivity and fetches version information from all configured database sources."
-    },
-    [SYSTEM_TASKS.SYNC_PERMISSIONS]: {
-        interval: "0 0 * * *", // Daily at midnight
-        runOnStartup: true,
-        enabled: true,
-        label: "Sync SuperAdmin Permissions",
-        description: "Ensures the SuperAdmin group always has all available permissions."
-    },
-    [SYSTEM_TASKS.HEALTH_CHECK]: {
-        interval: "*/1 * * * *", // Every minute
-        runOnStartup: false,
-        enabled: true,
-        label: "Health Check & Connectivity",
-        description: "Periodically pings all configured database and storage adapters to track availability and latency."
-    },
-    [SYSTEM_TASKS.CLEAN_OLD_LOGS]: {
-        interval: "0 0 * * *", // Daily at midnight
-        runOnStartup: true,
-        enabled: true,
-        label: "Clean Old Data",
-        description: "Removes execution logs, execution history, audit logs, notification history, storage usage history and health check history beyond the retention periods set under Settings > General > Data Retention. Backup files are not affected."
-    },
-    [SYSTEM_TASKS.CHECK_FOR_UPDATES]: {
-        interval: "0 0 * * *", // Daily at midnight
-        runOnStartup: true,
-        enabled: true,
-        label: "Check for Updates",
-        description: "Checks if a new version of the application is available in the GitHub Container Registry."
-    },
-    [SYSTEM_TASKS.CONFIG_BACKUP]: {
-        interval: "0 3 * * *", // 3 AM
-        runOnStartup: false,
-        enabled: false, // Default disabled until user enables it
-        label: "Automated Configuration Backup",
-        description: "Backs up the internal system configuration (Settings, Adapters, Jobs, Users) to the configured storage."
-    },
-    [SYSTEM_TASKS.INTEGRITY_CHECK]: {
-        interval: "0 4 * * 0", // Weekly on Sunday at 4 AM
-        runOnStartup: false,
-        enabled: false, // Default disabled - can be resource-intensive
-        label: "Backup Integrity Check",
-        description: "Verifies SHA-256 checksums of all backup files on storage to detect corruption or tampering. Downloads each file temporarily for verification."
-    },
-    [SYSTEM_TASKS.REFRESH_STORAGE_STATS]: {
-        interval: "0 * * * *", // Every hour
-        runOnStartup: true,
-        enabled: true,
-        label: "Refresh Storage Statistics",
-        description: "Queries all storage destinations to update file counts and total sizes displayed on the dashboard. Runs automatically after each backup."
-    },
-    [SYSTEM_TASKS.WARMUP_STORAGE_CACHE]: {
-        interval: "0 * * * *", // Every hour
-        runOnStartup: true,
-        enabled: true,
-        label: "Pre-warm Storage Cache",
-        description: "Keeps the Storage Explorer cache fresh. Reconciles existing caches against remote storage to detect external changes, and pre-populates the cache for adapters not yet loaded."
-    },
-    [SYSTEM_TASKS.STUCK_EXECUTION_CHECK]: {
-        interval: "*/5 * * * *", // Every 5 minutes
-        runOnStartup: false,
-        enabled: true,
-        label: "Stuck Execution Watchdog",
-        description: "Fails backups and restores that have stopped reporting progress. A stuck run counts against the concurrent job limit for as long as it lasts, which silently prevents every job queued behind it from starting. Threshold configurable under Settings."
-    }
-};
+/** Settings of another part that switch a task on and off, so both always agree. */
+const CONFIG_BACKUP_ENABLED = "config.backup.enabled";
+const CONFIG_BACKUP_SCHEDULE = "config.backup.schedule";
+const CHECK_FOR_UPDATES = "general.checkForUpdates";
+
+/** The tasks running right now. On globalThis, since every bundle of Next.js loads this module anew. */
+const globalForTasks = globalThis as unknown as { runningSystemTasks?: Set<string> };
+const running = (globalForTasks.runningSystemTasks ??= new Set<string>());
+
+const defaults = (taskId: string) => DEFAULT_TASK_CONFIG[taskId as keyof typeof DEFAULT_TASK_CONFIG];
+const plural = (count: number, one: string, many: string) => `${count.toLocaleString("en-US")} ${count === 1 ? one : many}`;
+
+async function readSetting(key: string): Promise<string | null> {
+    return (await prisma.systemSetting.findUnique({ where: { key } }))?.value ?? null;
+}
+
+async function writeSetting(key: string, value: string, description?: string) {
+    await prisma.systemSetting.upsert({
+        where: { key },
+        update: { value },
+        create: { key, value, ...(description ? { description } : {}) },
+    });
+}
+
+/** The stuck run watchdog lives in its own module, which pulls the queue in with it. */
+const stuckTimeout = () => import("@/services/system/stuck-execution-service");
 
 export class SystemTaskService {
 
     async getTaskEnabled(taskId: string): Promise<boolean> {
-        // Special mapping for CONFIG_BACKUP to keep sync with Config Backup Settings page
+        // A task that follows a setting of another part is on exactly when that setting is.
         if (taskId === SYSTEM_TASKS.CONFIG_BACKUP) {
-             const legacyKey = "config.backup.enabled";
-             const legacySetting = await prisma.systemSetting.findUnique({ where: { key: legacyKey } });
-             if (legacySetting) return legacySetting.value === 'true';
-             // Fallback to default config if not set
-             return DEFAULT_TASK_CONFIG[taskId].enabled;
+            const value = await readSetting(CONFIG_BACKUP_ENABLED);
+            return value === null ? DEFAULT_TASK_CONFIG[taskId].enabled : value === "true";
+        }
+        if (taskId === SYSTEM_TASKS.CHECK_FOR_UPDATES) {
+            return (await readSetting(CHECK_FOR_UPDATES)) !== "false";
+        }
+        if (taskId === SYSTEM_TASKS.STUCK_EXECUTION_CHECK) {
+            const { STUCK_TIMEOUT_SETTING } = await stuckTimeout();
+            return (await readSetting(STUCK_TIMEOUT_SETTING)) !== "0";
         }
 
-        const key = `task.${taskId}.enabled`;
-        const setting = await prisma.systemSetting.findUnique({ where: { key } });
-
-        if (setting) {
-            return setting.value === 'true';
-        }
+        const value = await readSetting(`task.${taskId}.enabled`);
+        if (value !== null) return value === "true";
 
         // Return default if not set in DB
-        return DEFAULT_TASK_CONFIG[taskId as keyof typeof DEFAULT_TASK_CONFIG]?.enabled ?? true;
+        return defaults(taskId)?.enabled ?? true;
     }
 
     async setTaskEnabled(taskId: string, enabled: boolean) {
-        // Special mapping for CONFIG_BACKUP
         if (taskId === SYSTEM_TASKS.CONFIG_BACKUP) {
-             const legacyKey = "config.backup.enabled";
-             await prisma.systemSetting.upsert({
-                where: { key: legacyKey },
-                update: { value: String(enabled) },
-                create: { key: legacyKey, value: String(enabled), description: "Enable Automated Configuration Backup" }
-            });
+            await writeSetting(CONFIG_BACKUP_ENABLED, String(enabled), "Enable Automated Configuration Backup");
+            return;
+        }
+        if (taskId === SYSTEM_TASKS.CHECK_FOR_UPDATES) {
+            await writeSetting(CHECK_FOR_UPDATES, String(enabled));
+            return;
+        }
+        if (taskId === SYSTEM_TASKS.STUCK_EXECUTION_CHECK) {
+            // Off is the timeout Never. On again brings back the default, unless a time is set.
+            const { STUCK_TIMEOUT_SETTING, DEFAULT_STUCK_TIMEOUT_MINUTES } = await stuckTimeout();
+            const current = await readSetting(STUCK_TIMEOUT_SETTING);
+            if (!enabled) await writeSetting(STUCK_TIMEOUT_SETTING, "0");
+            else if (current === "0") await writeSetting(STUCK_TIMEOUT_SETTING, String(DEFAULT_STUCK_TIMEOUT_MINUTES));
             return;
         }
 
-        const key = `task.${taskId}.enabled`;
-        const value = String(enabled);
-        await prisma.systemSetting.upsert({
-            where: { key },
-            update: { value },
-            create: { key, value, description: `Enabled status for ${taskId}` }
-        });
+        await writeSetting(`task.${taskId}.enabled`, String(enabled), `Enabled status for ${taskId}`);
     }
 
     async getTaskConfig(taskId: string) {
-        // Special mapping: For CONFIG_BACKUP, we use the user-facing setting key if it exists
-        // This ensures the Config Backup Settings UI remains the source of truth,
-        // OR we migrate the logic to use task.* keys entirely.
-        // Given the request to sync, we should probably make getTaskConfig look at the legacy key for this specific task
-        // OR we update the Config Backup Settings UI to save to `task.system.config_backup.schedule`
-
-        const key = `task.${taskId}.schedule`;
+        // The schedule of the configuration backup is set in its own part. An older version
+        // wrote it to the key of the task, which still counts when nothing newer is stored.
         if (taskId === SYSTEM_TASKS.CONFIG_BACKUP) {
-             // Check custom key first, fallback to task key?
-             // Actually, simplest is to use 'config.backup.schedule' as the key for this task
-             const legacyKey = "config.backup.schedule";
-             const legacySetting = await prisma.systemSetting.findUnique({ where: { key: legacyKey } });
-             if (legacySetting) return legacySetting.value;
+            const own = await readSetting(CONFIG_BACKUP_SCHEDULE);
+            if (own) return own;
         }
 
-        const setting = await prisma.systemSetting.findUnique({ where: { key } });
-        return setting?.value || DEFAULT_TASK_CONFIG[taskId as keyof typeof DEFAULT_TASK_CONFIG]?.interval;
-    }
-
-    async getTaskRunOnStartup(taskId: string): Promise<boolean> {
-        const key = `task.${taskId}.runOnStartup`;
-        const setting = await prisma.systemSetting.findUnique({ where: { key } });
-
-        if (setting) {
-            return setting.value === 'true';
-        }
-
-        // Return default if not set in DB
-        return DEFAULT_TASK_CONFIG[taskId as keyof typeof DEFAULT_TASK_CONFIG]?.runOnStartup ?? false;
-    }
-
-    async setTaskRunOnStartup(taskId: string, enabled: boolean) {
-        const key = `task.${taskId}.runOnStartup`;
-        const value = String(enabled);
-        await prisma.systemSetting.upsert({
-            where: { key },
-            update: { value },
-            create: { key, value, description: `Run on startup for ${taskId}` }
-        });
+        const value = await readSetting(`task.${taskId}.schedule`);
+        return value || defaults(taskId)?.interval;
     }
 
     async setTaskConfig(taskId: string, schedule: string) {
-        const key = `task.${taskId}.schedule`;
-        await prisma.systemSetting.upsert({
-            where: { key },
-            update: { value: schedule },
-            create: { key, value: schedule, description: `Schedule for ${taskId}` }
-        });
+        const trimmed = schedule.trim();
+        if (!isValidCron(trimmed)) {
+            throw new ValidationError(`The scheduler cannot read the schedule "${schedule}"`, { field: "schedule" });
+        }
+        if (taskId === SYSTEM_TASKS.CONFIG_BACKUP) {
+            await writeSetting(CONFIG_BACKUP_SCHEDULE, trimmed, "Schedule of the configuration backup");
+            return;
+        }
+        await writeSetting(`task.${taskId}.schedule`, trimmed, `Schedule for ${taskId}`);
+    }
+
+    async getTaskRunOnStartup(taskId: string): Promise<boolean> {
+        const value = await readSetting(`task.${taskId}.runOnStartup`);
+        if (value !== null) return value === "true";
+
+        // Return default if not set in DB
+        return defaults(taskId)?.runOnStartup ?? false;
+    }
+
+    async setTaskRunOnStartup(taskId: string, enabled: boolean) {
+        await writeSetting(`task.${taskId}.runOnStartup`, String(enabled), `Run on startup for ${taskId}`);
     }
 
     async getTaskLastRunAt(taskId: string): Promise<string | null> {
-        const key = `task.${taskId}.lastRunAt`;
-        const setting = await prisma.systemSetting.findUnique({ where: { key } });
-        return setting?.value ?? null;
+        return readSetting(`task.${taskId}.lastRunAt`);
     }
 
-    private async setTaskLastRunAt(taskId: string) {
-        const key = `task.${taskId}.lastRunAt`;
-        const value = new Date().toISOString();
-        await prisma.systemSetting.upsert({
-            where: { key },
-            update: { value },
-            create: { key, value, description: `Last run timestamp for ${taskId}` }
-        });
+    /** How the last run went. A run of an older version left only its start. */
+    async getTaskLastRun(taskId: string): Promise<TaskRunRecord | null> {
+        const [record, startedAt] = await Promise.all([readSetting(`task.${taskId}.lastRun`), this.getTaskLastRunAt(taskId)]);
+        if (record) {
+            try {
+                const parsed = JSON.parse(record) as TaskRunRecord;
+                // A run started since the record was written has not ended yet, its start is newer.
+                if (!startedAt || parsed.at >= startedAt) return parsed;
+            } catch {
+                // A broken record falls back to the start alone.
+            }
+        }
+        return startedAt ? { at: startedAt, durationMs: null, ok: true, summary: null } : null;
     }
 
-    async runTask(taskId: string, triggerType?: "Manual" | "Scheduler", triggerLabel?: string): Promise<string | undefined> {
+    /** The record the last run left, whether or not a run started since. */
+    private async readRecord(taskId: string): Promise<TaskRunRecord | null> {
+        try {
+            const record = await readSetting(`task.${taskId}.lastRun`);
+            return record ? (JSON.parse(record) as TaskRunRecord) : null;
+        } catch {
+            return null;
+        }
+    }
+
+    /** A system error for a task that stopped with an error. Its delivery never holds the task up. */
+    private reportError(taskId: string, error: string) {
+        notify({
+            eventType: NOTIFICATION_EVENTS.SYSTEM_ERROR,
+            data: { component: defaults(taskId)?.label ?? taskId, error, timestamp: new Date().toISOString() },
+        }).catch((notifyError: unknown) => log.warn("Could not report a failed system task", { taskId }, wrapError(notifyError)));
+    }
+
+    isRunning(taskId: string): boolean {
+        return running.has(taskId);
+    }
+
+    private async setTaskLastRunAt(taskId: string, at: Date) {
+        await writeSetting(`task.${taskId}.lastRunAt`, at.toISOString(), `Last run timestamp for ${taskId}`);
+    }
+
+    private async recordRun(taskId: string, startedAt: Date, outcome: TaskOutcome, failed = false) {
+        running.delete(taskId);
+        const record: TaskRunRecord = {
+            at: startedAt.toISOString(),
+            durationMs: Date.now() - startedAt.getTime(),
+            ok: outcome.ok ?? true,
+            summary: outcome.summary ?? null,
+            ...(outcome.executionId ? { executionId: outcome.executionId } : {}),
+            ...(failed ? { failed: true } : {}),
+        };
+        try {
+            await writeSetting(`task.${taskId}.lastRun`, JSON.stringify(record), `Last run of ${taskId}`);
+        } catch (error: unknown) {
+            log.warn("Could not record the run of a system task", { taskId }, wrapError(error));
+        }
+    }
+
+    async runTask(taskId: string, triggerType?: "Manual" | "Scheduler" | "Api", triggerLabel?: string): Promise<string | undefined> {
         // VACUUM or a database download holds Prisma's only connection. A task started now
         // would just queue behind it until the pool timeout fails it.
         if (isDatabaseMaintenanceActive()) {
@@ -232,365 +211,78 @@ export class SystemTaskService {
         }
 
         log.info("Running system task", { taskId });
-        await this.setTaskLastRunAt(taskId);
+        const startedAt = new Date();
+        await this.setTaskLastRunAt(taskId, startedAt);
+        running.add(taskId);
 
+        let outcome: TaskOutcome;
+        try {
+            outcome = await this.execute(taskId, triggerType, triggerLabel, startedAt);
+        } catch (error: unknown) {
+            const message = getErrorMessage(error);
+            const before = await this.readRecord(taskId);
+            await this.recordRun(taskId, startedAt, { ok: false, summary: message }, true);
+            // Reported once, not again while the task keeps failing, until it runs through again.
+            if (!before?.failed) this.reportError(taskId, message);
+            throw error;
+        }
+        // A task that goes on in the background records itself when it ends.
+        if (!outcome.pending) await this.recordRun(taskId, startedAt, outcome);
+        return outcome.executionId;
+    }
+
+    private async execute(taskId: string, triggerType: "Manual" | "Scheduler" | "Api" | undefined, triggerLabel: string | undefined, startedAt: Date): Promise<TaskOutcome> {
         switch (taskId) {
             case SYSTEM_TASKS.UPDATE_DB_VERSIONS:
-                await this.runUpdateDbVersions();
-                break;
+                return updateDbVersions();
             case SYSTEM_TASKS.HEALTH_CHECK:
                 await healthCheckService.performHealthCheck();
-                break;
+                return {};
             case SYSTEM_TASKS.STUCK_EXECUTION_CHECK: {
-                const { sweepStuckExecutions } = await import("@/services/system/stuck-execution-service");
-                await sweepStuckExecutions();
-                break;
+                const { sweepStuckExecutions } = await stuckTimeout();
+                const sweep = await sweepStuckExecutions();
+                if (sweep.cancelled > 0) return { ok: false, summary: `${plural(sweep.cancelled, "stuck run", "stuck runs")} failed` };
+                return { summary: sweep.checked > 0 ? "Nothing stuck" : "Nothing running" };
             }
-            case SYSTEM_TASKS.CLEAN_OLD_LOGS:
-                await this.runCleanOldLogs();
-                break;
+            case SYSTEM_TASKS.CLEAN_OLD_LOGS: {
+                const result = await runDataRetention();
+                const counts = Object.values(result);
+                const removed = counts.reduce<number>((sum, count) => sum + (count ?? 0), 0);
+                return { summary: removed > 0 ? `${removed.toLocaleString("en-US")} removed` : "Nothing to remove" };
+            }
             case SYSTEM_TASKS.SYNC_PERMISSIONS:
-                await this.runSyncPermissions();
-                break;
+                return syncPermissions();
             case SYSTEM_TASKS.CHECK_FOR_UPDATES:
-                await this.runCheckForUpdates();
-                break;
+                return checkForUpdates();
             case SYSTEM_TASKS.CONFIG_BACKUP: {
                 // Dynamic import to avoid circular dep if config-runner imports something that imports this.
                 const { runConfigBackup } = await import("@/lib/runner/config-runner");
-                await runConfigBackup();
-                break;
+                // A run without a trigger comes from the schedule, like a job the scheduler starts.
+                const result = await runConfigBackup({ type: triggerType ?? "Scheduler", label: triggerLabel ?? "Scheduler" });
+                if (!result) return {};
+                return "skipped" in result ? { summary: result.skipped } : { summary: `To ${result.destination}` };
             }
-            case SYSTEM_TASKS.INTEGRITY_CHECK: {
-                const { integrityService } = await import("@/services/backup/integrity-service");
-                const { SystemTaskRunner } = await import("@/lib/runner/system-task-runner");
-                const { INTEGRITY_CHECK_STAGES } = await import("@/lib/core/logs");
-                const { getErrorMessage } = await import("@/lib/logging/errors");
-
-                const runner = await SystemTaskRunner.create(
-                    "IntegrityCheck",
-                    triggerType ?? "Scheduler",
-                    triggerLabel ?? "Scheduler"
-                );
-
-                // Run async without blocking so callers receive the executionId immediately.
-                (async () => {
-                    try {
-                        await runner.start();
-                        const result = await integrityService.runFullIntegrityCheck({
-                            onLog: (msg, level, details) => runner.logEntry(msg, level ?? "info", "general", details),
-                            onStage: (stage) => runner.setStage(stage),
-                            onFileProgress: (done, total) => {
-                                if (total > 0) runner.updateStageProgress((done / total) * 100);
-                            },
-                        });
-                        runner.setStage(INTEGRITY_CHECK_STAGES.COMPLETED);
-                        runner.logEntry(
-                            `${result.passed} passed, ${result.failed} failed, ${result.skipped} skipped of ${result.totalFiles} total${result.scanFailed > 0 ? `, ${result.scanFailed} destination${result.scanFailed !== 1 ? "s" : ""} unreachable` : ""}`,
-                            result.failed > 0 || result.scanFailed > 0 ? "warning" : "success"
-                        );
-                        await runner.finish(result.failed > 0 || result.scanFailed > 0 ? "Partial" : "Success");
-                        log.info("Integrity check completed", {
-                            total: result.totalFiles,
-                            passed: result.passed,
-                            failed: result.failed,
-                            skipped: result.skipped,
-                        });
-                        if (result.failed > 0) {
-                            await notify({
-                                eventType: NOTIFICATION_EVENTS.INTEGRITY_CHECK_FAILURE,
-                                data: {
-                                    totalFiles: result.totalFiles,
-                                    failed: result.failed,
-                                    passed: result.passed,
-                                    skipped: result.skipped,
-                                    triggerType: triggerType === "Manual" ? "Manual" : "Scheduler",
-                                    errors: result.errors,
-                                },
-                            }, { executionId: runner.id });
-                        }
-                    } catch (e: unknown) {
-                        runner.logEntry(getErrorMessage(e), "error");
-                        runner.setStage(INTEGRITY_CHECK_STAGES.FAILED);
-                        await runner.finish("Failed");
-                        log.error("Integrity check failed", {}, wrapError(e));
-                    }
-                })();
-
-                return runner.id;
-            }
+            case SYSTEM_TASKS.INTEGRITY_CHECK:
+                return startIntegrityCheck(triggerType, triggerLabel, (outcome) => this.recordRun(taskId, startedAt, outcome));
             case SYSTEM_TASKS.REFRESH_STORAGE_STATS: {
                 const { refreshStorageStatsCache } = await import("@/services/dashboard-service");
-                await refreshStorageStatsCache();
-                break;
+                const volumes = await refreshStorageStatsCache();
+                return Array.isArray(volumes) ? { summary: plural(volumes.length, "destination", "destinations") } : {};
             }
             case SYSTEM_TASKS.WARMUP_STORAGE_CACHE:
-                await this.runWarmupStorageCache();
-                break;
+                return warmupStorageCache();
+            case SYSTEM_TASKS.OPTIMIZE_DATABASE: {
+                const { optimizeDatabase } = await import("@/services/system/database-optimize");
+                const result = await optimizeDatabase();
+                if (result.status === "skipped") return { summary: result.reclaimableBytes > 0 ? `Only ${formatBytes(result.reclaimableBytes, 1)} unused` : "Nothing unused" };
+                if (result.status === "waited") {
+                    return { ok: false, summary: result.running > 0 ? `${plural(result.running, "run", "runs")} kept going for an hour` : "The database stayed busy for an hour" };
+                }
+                return { summary: `${formatBytes(Math.max(0, result.beforeBytes - result.afterBytes), 1)} freed` };
+            }
             default:
                 log.warn("Unknown system task", { taskId });
-        }
-    }
-
-    private async runCleanOldLogs() {
-        await runDataRetention();
-    }
-
-    private async runCheckForUpdates() {
-        log.debug("Checking for updates");
-        try {
-            const result = await updateService.checkForUpdates();
-
-            if (result.updateAvailable) {
-                log.info("New version available", {
-                    latestVersion: result.latestVersion,
-                    currentVersion: result.currentVersion
-                });
-
-                // Send notification with deduplication
-                await this.notifyUpdateAvailable(result.latestVersion, result.currentVersion);
-            } else {
-                log.debug("Application is up to date", { currentVersion: result.currentVersion });
-
-                // Reset notification state when no longer outdated
-                await this.resetUpdateNotificationState();
-            }
-        } catch (error: unknown) {
-            log.error("Update check failed", {}, wrapError(error));
-        }
-    }
-
-    /**
-     * Send update notification with deduplication.
-     * - Sends immediately when a new version is first detected
-     * - Re-sends after the configured reminder interval (or default 7 days) while still outdated
-     * - Does NOT re-send if the same version was already notified within the interval
-     */
-    private async notifyUpdateAvailable(latestVersion: string, currentVersion: string) {
-        const STATE_KEY = "update.notification.state";
-
-        try {
-            // Load existing state
-            const row = await prisma.systemSetting.findUnique({ where: { key: STATE_KEY } });
-            const state: { lastNotifiedVersion: string | null; lastNotifiedAt: string | null } =
-                row ? JSON.parse(row.value) : { lastNotifiedVersion: null, lastNotifiedAt: null };
-
-            // Determine reminder interval from notification config
-            const config = await getNotificationConfig();
-            const eventConfig = config.events[NOTIFICATION_EVENTS.UPDATE_AVAILABLE];
-            const eventDef = getEventDefinition(NOTIFICATION_EVENTS.UPDATE_AVAILABLE);
-
-            // Default reminder: 7 days (168 hours)
-            const DEFAULT_REMINDER_HOURS = 168;
-            let reminderMs = DEFAULT_REMINDER_HOURS * 60 * 60 * 1000;
-            let reminderDisabled = false;
-
-            if (eventDef?.supportsReminder && eventConfig?.reminderIntervalHours !== undefined && eventConfig.reminderIntervalHours !== null) {
-                if (eventConfig.reminderIntervalHours === 0) {
-                    reminderDisabled = true;
-                } else {
-                    reminderMs = eventConfig.reminderIntervalHours * 60 * 60 * 1000;
-                }
-            }
-
-            // Decide if we should notify
-            const isNewVersion = state.lastNotifiedVersion !== latestVersion;
-            const cooldownElapsed = !reminderDisabled && (!state.lastNotifiedAt ||
-                (Date.now() - new Date(state.lastNotifiedAt).getTime() >= reminderMs));
-
-            if (!isNewVersion && !cooldownElapsed) {
-                log.debug("Skipping update notification (already notified, cooldown active)", {
-                    lastNotifiedVersion: state.lastNotifiedVersion,
-                    lastNotifiedAt: state.lastNotifiedAt,
-                });
-                return;
-            }
-
-            // Dispatch notification
-            await notify({
-                eventType: NOTIFICATION_EVENTS.UPDATE_AVAILABLE,
-                data: {
-                    latestVersion,
-                    currentVersion,
-                    releaseUrl: "https://github.com/Skyfay/DBackup/releases",
-                    timestamp: new Date().toISOString(),
-                },
-            });
-
-            // Update state
-            const newState = {
-                lastNotifiedVersion: latestVersion,
-                lastNotifiedAt: new Date().toISOString(),
-            };
-            await prisma.systemSetting.upsert({
-                where: { key: STATE_KEY },
-                update: { value: JSON.stringify(newState) },
-                create: {
-                    key: STATE_KEY,
-                    value: JSON.stringify(newState),
-                    description: "Update notification deduplication state",
-                },
-            });
-
-            log.info("Update notification sent", { latestVersion, isNewVersion });
-        } catch (error: unknown) {
-            log.error("Failed to send update notification", {}, wrapError(error));
-        }
-    }
-
-    /** Reset update notification state when the app is up to date (allows re-notification for future updates) */
-    private async resetUpdateNotificationState() {
-        const STATE_KEY = "update.notification.state";
-        try {
-            await prisma.systemSetting.deleteMany({ where: { key: STATE_KEY } });
-        } catch {
-            // Ignore - state might not exist
-        }
-    }
-
-    private async runUpdateDbVersions() {
-        const sources = await prisma.adapterConfig.findMany({
-            where: { type: 'database' }
-        });
-
-        for (const source of sources) {
-            try {
-                const adapter = registry.get(source.adapterId) as DatabaseAdapter;
-                if (!adapter) {
-                    log.warn("Adapter implementation not found", { adapterId: source.adapterId });
-                    continue;
-                }
-                if (!adapter.test) {
-                    log.debug("Adapter does not support test/version check", { adapterId: source.adapterId });
-                    continue;
-                }
-
-                // Resolve config (merges credential profile if present)
-                let config;
-                try {
-                    config = await resolveAdapterConfig(source);
-                } catch(e: unknown) {
-                    log.error("Config decrypt failed", { sourceName: source.name }, wrapError(e));
-                    continue;
-                }
-
-                log.debug("Testing connection", { sourceName: source.name, adapterId: source.adapterId });
-                const result = (await runAdapterTest(adapter, config, {
-                    timeoutMs: ADAPTER_TEST_TIMEOUT_MS,
-                    label: source.name,
-                }))!;
-                log.debug("Connection test result", { sourceName: source.name, success: result.success, version: result.version });
-
-                if (result.success && result.version) {
-                    // Update Metadata
-                    const currentMeta = source.metadata ? JSON.parse(source.metadata) : {};
-                    const newMeta = {
-                        ...currentMeta,
-                        engineVersion: result.version,
-                        lastCheck: new Date().toISOString(),
-                        status: 'Online'
-                    };
-
-                    await prisma.adapterConfig.update({
-                        where: { id: source.id },
-                        data: { metadata: JSON.stringify(newMeta) }
-                    });
-                    log.info("Updated database version", { sourceName: source.name, version: result.version });
-
-                    // Record version-history entry only when the detected version differs
-                    // from the last stored entry. Dispatches a notification on change.
-                    try {
-                        // The MSSQL adapter additionally returns `edition` even though it's not
-                        // declared on the shared interface.
-                        const edition = (result as { edition?: string }).edition;
-                        const change = await recordVersionIfChanged(source.id, result.version, edition);
-                        if (change.changed && change.previousVersion !== null) {
-                            // Skip notification for the very first recorded entry per source
-                            // (previousVersion === null) - that's just the baseline.
-                            await notify({
-                                eventType: NOTIFICATION_EVENTS.DB_VERSION_CHANGED,
-                                data: {
-                                    sourceName: source.name,
-                                    sourceId: source.id,
-                                    adapterId: source.adapterId,
-                                    previousVersion: change.previousVersion,
-                                    newVersion: change.newVersion,
-                                    edition,
-                                    timestamp: new Date().toISOString(),
-                                    isDowngrade: change.isDowngrade,
-                                },
-                            });
-                        }
-                    } catch (e: unknown) {
-                        log.error("Failed to record/notify version change", { sourceName: source.name }, wrapError(e));
-                    }
-                } else {
-                    // Mark as offline or warning?
-                     const currentMeta = source.metadata ? JSON.parse(source.metadata) : {};
-                     const newMeta = {
-                        ...currentMeta,
-                        status: 'Unreachable',
-                        lastError: result.message
-                     };
-                     await prisma.adapterConfig.update({
-                        where: { id: source.id },
-                        data: { metadata: JSON.stringify(newMeta) }
-                    });
-                }
-
-            } catch (e: unknown) {
-                log.error("Failed health check for source", { sourceName: source.name }, wrapError(e));
-            }
-        }
-    }
-
-    private async runWarmupStorageCache() {
-        const adapters = await prisma.adapterConfig.findMany({
-            where: { type: "storage", storageRole: STORAGE_ROLES.DESTINATION },
-            select: { id: true, name: true },
-        });
-        log.info("Pre-warming storage cache", { count: adapters.length });
-        const { storageService } = await import("@/services/storage/storage-service");
-        for (const adapter of adapters) {
-            try {
-                // If a cache row already exists: reconcile against remote to detect external changes.
-                // If no cache row: do a full fetch to populate it.
-                const cached = await prisma.storageListCache.findUnique({ where: { adapterConfigId: adapter.id } });
-                if (cached) {
-                    await storageService.reconcileStorageListCache(adapter.id);
-                    log.debug("Reconciled storage cache", { adapterId: adapter.id, name: adapter.name });
-                } else {
-                    await storageService.listFilesWithMetadata(adapter.id);
-                    log.debug("Warmed storage cache", { adapterId: adapter.id, name: adapter.name });
-                }
-            } catch (e: unknown) {
-                log.warn("Failed to warm/reconcile cache for adapter", { adapterId: adapter.id, name: adapter.name }, wrapError(e));
-            }
-        }
-    }
-
-    private async runSyncPermissions() {
-        try {
-            log.debug("Syncing permissions for SuperAdmin group");
-
-            // Flatten all permissions from the source of truth
-            const allPerms = Object.values(PERMISSIONS).flatMap(group => Object.values(group));
-
-            // Update SuperAdmin group(s)
-            // Using updateMany to handle case if multiple groups somehow have this name (though name is unique in schema)
-            const result = await prisma.group.updateMany({
-                where: { name: "SuperAdmin" },
-                data: { permissions: JSON.stringify(allPerms) }
-            });
-
-            if (result.count > 0) {
-                log.info("Updated permissions for SuperAdmin groups", { count: result.count });
-            } else {
-                log.debug("No SuperAdmin group found, skipping permission sync");
-            }
-
-        } catch (error: unknown) {
-            log.error("Failed to sync permissions", {}, wrapError(error));
+                return {};
         }
     }
 }

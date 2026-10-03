@@ -149,7 +149,7 @@ opposite and writes file by file, which is where its parallelism setting matters
 
 ### Parallel Transfers
 
-Each directory source sets its own value under **Connections → Directory Sources → Configuration**.
+Each directory source sets its own value as **Parallel transfers** in the **Speed** part of its form.
 The adapter decides the range, because the sensible limit is a property of the protocol:
 
 | Adapter | Default | Maximum | Why the ceiling is where it is |
@@ -189,8 +189,9 @@ The distinction that decides whether a folder is skipped is the pattern's shape:
 
 The third row is the one that catches people out. Write `node_modules/**`, not `node_modules`.
 
-Attach patterns per source under **Connections → Directory Sources**, or reuse a set across jobs
-with [Exclude Pattern Presets](/user-guide/features/templates).
+Attach patterns per source under **Connections → Directory sources**, or reuse a set across jobs
+with [Exclude Pattern Presets](/user-guide/features/templates). The groups of DBackup a preset
+follows write their folders as `**/node_modules/**`, so they skip them at any depth.
 
 ### While it runs
 

@@ -1,195 +1,80 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { prismaMock } from '@/lib/testing/prisma-mock';
-import { AuditService } from '@/services/audit-service';
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { prismaMock } from "@/lib/testing/prisma-mock";
 
-describe('AuditService', () => {
-    let service: AuditService;
+const request = vi.hoisted(() => ({ headers: null as Headers | null }));
+vi.mock("next/headers", () => ({
+    headers: async () => {
+        if (!request.headers) throw new Error("outside a request");
+        return request.headers;
+    },
+}));
+
+const { AuditService } = await import("@/services/audit-service");
+
+describe("writing an entry of the audit log", () => {
+    let service: InstanceType<typeof AuditService>;
 
     beforeEach(() => {
+        vi.clearAllMocks();
         service = new AuditService();
+        request.headers = null;
+        prismaMock.auditLog.create.mockResolvedValue({} as never);
+        prismaMock.user.findUnique.mockResolvedValue({ name: "Lena Graf" } as never);
+        prismaMock.apiKey.findUnique.mockResolvedValue({ name: "CI pipeline" } as never);
     });
 
-    describe('log()', () => {
-        it('creates an audit log entry with all fields', async () => {
-            prismaMock.auditLog.create.mockResolvedValue({} as any);
+    it("keeps the name of the person, so it stays after they are deleted", async () => {
+        await service.log("lena", "UPDATE", "JOB", { name: "Shop nightly" }, "job-1");
 
-            await service.log('user-1', 'CREATE', 'Job', { ipAddress: '127.0.0.1', userAgent: 'Mozilla' }, 'res-1');
-
-            expect(prismaMock.auditLog.create).toHaveBeenCalledWith({
-                data: expect.objectContaining({
-                    userId: 'user-1',
-                    action: 'CREATE',
-                    resource: 'Job',
-                    resourceId: 'res-1',
-                    ipAddress: '127.0.0.1',
-                    userAgent: 'Mozilla',
-                }),
-            });
-        });
-
-        it('creates an audit log entry with null userId', async () => {
-            prismaMock.auditLog.create.mockResolvedValue({} as any);
-
-            await service.log(null, 'LOGIN', 'Auth');
-
-            expect(prismaMock.auditLog.create).toHaveBeenCalledWith({
-                data: expect.objectContaining({ userId: null, action: 'LOGIN', resource: 'Auth' }),
-            });
-        });
-
-        it('does not throw if prisma.auditLog.create fails', async () => {
-            prismaMock.auditLog.create.mockRejectedValue(new Error('DB error'));
-
-            await expect(service.log('user-1', 'DELETE', 'Backup')).resolves.toBeUndefined();
+        expect(prismaMock.auditLog.create).toHaveBeenCalledWith({
+            data: expect.objectContaining({ userId: "lena", actorName: "Lena Graf", apiKeyId: null, apiKeyName: null, resourceId: "job-1", details: JSON.stringify({ name: "Shop nightly" }) }),
         });
     });
 
-    describe('getLogs()', () => {
-        const mockLogs = [{ id: 'log-1', action: 'CREATE', resource: 'Job', createdAt: new Date(), user: null }];
+    it("takes the address and the browser from the request it is written in", async () => {
+        request.headers = new Headers({ "x-forwarded-for": "203.0.113.45, 10.0.0.1", "user-agent": "curl/8.5.0" });
 
-        it('returns paginated logs with default filter', async () => {
-            prismaMock.auditLog.findMany.mockResolvedValue(mockLogs as any);
-            prismaMock.auditLog.count.mockResolvedValue(1);
+        await service.log("lena", "DELETE", "BACKUP", { file: "a.tar" });
 
-            const result = await service.getLogs();
+        expect(prismaMock.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({ ipAddress: "203.0.113.45", userAgent: "curl/8.5.0" }) });
+    });
 
-            expect(result.logs).toEqual(mockLogs);
-            expect(result.pagination.total).toBe(1);
-            expect(result.pagination.page).toBe(1);
-            expect(result.pagination.limit).toBe(20);
-        });
+    it("writes without an address outside a request, like in a scheduled task", async () => {
+        await service.log(null, "EXECUTE", "SYSTEM", { task: "Health check" });
 
-        it('applies userId filter', async () => {
-            prismaMock.auditLog.findMany.mockResolvedValue([]);
-            prismaMock.auditLog.count.mockResolvedValue(0);
+        expect(prismaMock.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({ userId: null, actorName: null, ipAddress: null, userAgent: null }) });
+    });
 
-            await service.getLogs({ userId: 'user-42' });
+    it("names the API key a request came with, and its owner as the person", async () => {
+        await service.logFor({ userId: "lena", authMethod: "apikey", apiKeyId: "key-1" }, "EXECUTE", "JOB", { name: "Shop nightly" }, "job-1");
 
-            expect(prismaMock.auditLog.findMany).toHaveBeenCalledWith(
-                expect.objectContaining({ where: expect.objectContaining({ userId: 'user-42' }) })
-            );
-        });
-
-        it('applies date range filter', async () => {
-            prismaMock.auditLog.findMany.mockResolvedValue([]);
-            prismaMock.auditLog.count.mockResolvedValue(0);
-
-            const start = new Date('2026-01-01');
-            const end = new Date('2026-12-31');
-            await service.getLogs({ startDate: start, endDate: end });
-
-            expect(prismaMock.auditLog.findMany).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    where: expect.objectContaining({
-                        createdAt: { gte: start, lte: end },
-                    }),
-                })
-            );
-        });
-
-        it('applies search filter using OR clause', async () => {
-            prismaMock.auditLog.findMany.mockResolvedValue([]);
-            prismaMock.auditLog.count.mockResolvedValue(0);
-
-            await service.getLogs({ search: 'test' });
-
-            expect(prismaMock.auditLog.findMany).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    where: expect.objectContaining({ OR: expect.any(Array) }),
-                })
-            );
-        });
-
-        it('calculates correct page count', async () => {
-            prismaMock.auditLog.findMany.mockResolvedValue([]);
-            prismaMock.auditLog.count.mockResolvedValue(45);
-
-            const result = await service.getLogs({ limit: 20 });
-
-            expect(result.pagination.pages).toBe(3);
+        expect(prismaMock.auditLog.create).toHaveBeenCalledWith({
+            data: expect.objectContaining({ userId: "lena", actorName: "Lena Graf", apiKeyId: "key-1", apiKeyName: "CI pipeline" }),
         });
     });
 
-    describe('cleanOldLogs()', () => {
-        it('deletes logs older than the retention days', async () => {
-            prismaMock.auditLog.deleteMany.mockResolvedValue({ count: 5 });
+    it("names no key for a request from the browser", async () => {
+        await service.logFor({ userId: "lena", authMethod: "session", apiKeyId: undefined }, "CREATE", "JOB", { name: "Shop nightly" });
 
-            const result = await service.cleanOldLogs(30);
-
-            expect(prismaMock.auditLog.deleteMany).toHaveBeenCalledWith({
-                where: { createdAt: { lt: expect.any(Date) } },
-            });
-            expect(result.count).toBe(5);
-        });
+        expect(prismaMock.apiKey.findUnique).not.toHaveBeenCalled();
+        expect(prismaMock.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({ apiKeyId: null }) });
     });
 
-    describe('getFilterStats()', () => {
-        it('returns actions and resources', async () => {
-            (prismaMock.auditLog.groupBy as any).mockResolvedValue([
-                { action: 'CREATE', _count: { action: 3 } } as any,
-            ]);
+    it("never fails the action it records", async () => {
+        prismaMock.auditLog.create.mockRejectedValue(new Error("database is locked"));
 
-            const result = await service.getFilterStats();
+        await expect(service.log("lena", "DELETE", "JOB")).resolves.toBeUndefined();
+    });
+});
 
-            expect(result.actions).toEqual([{ value: 'CREATE', count: 3 }]);
-        });
+describe("cleaning the audit log", () => {
+    it("deletes the entries older than the days it keeps", async () => {
+        prismaMock.auditLog.deleteMany.mockResolvedValue({ count: 4 } as never);
 
-        it('applies search filter to the base where clause', async () => {
-            (prismaMock.auditLog.groupBy as any).mockResolvedValue([]);
+        const result = await new AuditService().cleanOldLogs(90);
 
-            await service.getFilterStats({ search: 'admin' });
-
-            expect(prismaMock.auditLog.groupBy).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    where: expect.objectContaining({ OR: expect.any(Array) }),
-                })
-            );
-        });
-
-        it('applies startDate and endDate to the base where clause', async () => {
-            (prismaMock.auditLog.groupBy as any).mockResolvedValue([]);
-
-            const start = new Date('2026-01-01');
-            const end = new Date('2026-06-30');
-            await service.getFilterStats({ startDate: start, endDate: end });
-
-            expect(prismaMock.auditLog.groupBy).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    where: expect.objectContaining({
-                        createdAt: { gte: start, lte: end },
-                    }),
-                })
-            );
-        });
-
-        it('applies only startDate when endDate is omitted', async () => {
-            (prismaMock.auditLog.groupBy as any).mockResolvedValue([]);
-
-            const start = new Date('2026-03-01');
-            await service.getFilterStats({ startDate: start });
-
-            expect(prismaMock.auditLog.groupBy).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    where: expect.objectContaining({
-                        createdAt: { gte: start },
-                    }),
-                })
-            );
-        });
-
-        it('applies only endDate when startDate is omitted', async () => {
-            (prismaMock.auditLog.groupBy as any).mockResolvedValue([]);
-
-            const end = new Date('2026-12-31');
-            await service.getFilterStats({ endDate: end });
-
-            expect(prismaMock.auditLog.groupBy).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    where: expect.objectContaining({
-                        createdAt: { lte: end },
-                    }),
-                })
-            );
-        });
+        expect(result).toEqual({ count: 4 });
+        const cutoff = prismaMock.auditLog.deleteMany.mock.calls[0][0]!.where!.createdAt as { lt: Date };
+        expect(Date.now() - cutoff.lt.getTime()).toBeGreaterThan(89 * 86_400_000);
     });
 });

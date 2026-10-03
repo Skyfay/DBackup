@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { prismaMock } from '@/lib/testing/prisma-mock';
 import { JobService, CreateJobInput } from '@/services/jobs/job-service';
 import { scheduler } from '@/lib/server/scheduler';
+import { invalidateDashboardCache } from '@/services/dashboard/cache';
 
 // Mock the global scheduler singleton to avoid side effects (like starting cron timers)
 vi.mock('@/lib/server/scheduler', () => ({
@@ -9,6 +10,23 @@ vi.mock('@/lib/server/scheduler', () => ({
         refresh: vi.fn().mockResolvedValue(undefined)
     }
 }));
+
+vi.mock('@/services/dashboard/cache', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('@/services/dashboard/cache')>()),
+    invalidateDashboardCache: vi.fn(),
+}));
+
+const trash = vi.hoisted(() => ({ keepInTrash: vi.fn(async () => 'trash-1') }));
+vi.mock('@/services/trash/trash-snapshot', () => trash);
+
+// Every job the service hands out names its connections without their configs.
+const CONNECTION = { select: { id: true, name: true, type: true, adapterId: true } };
+
+/** Every value in a Prisma include, however deep, so a test can look for a config loaded whole. */
+function includeValues(include: unknown): unknown[] {
+    if (!include || typeof include !== 'object') return [include];
+    return Object.entries(include).flatMap(([key, value]) => [[key, value], ...includeValues(value)]);
+}
 
 describe('JobService', () => {
     let service: JobService;
@@ -79,9 +97,9 @@ describe('JobService', () => {
                     }
                 },
                 include: expect.objectContaining({
-                    source: true,
+                    source: CONNECTION,
                     destinations: expect.any(Object),
-                    notifications: true,
+                    notifications: CONNECTION,
                 })
             });
 
@@ -135,9 +153,9 @@ describe('JobService', () => {
             // Assert
             expect(prismaMock.job.findMany).toHaveBeenCalledWith({
                 include: expect.objectContaining({
-                    source: true,
+                    source: CONNECTION,
                     destinations: expect.any(Object),
-                    notifications: true,
+                    notifications: CONNECTION,
                     encryptionProfile: {
                         select: {
                             id: true,
@@ -151,6 +169,20 @@ describe('JobService', () => {
         });
     });
 
+    describe('the jobs it hands out', () => {
+        it('never load the config of a connection, so a response cannot carry one', async () => {
+            prismaMock.job.findMany.mockResolvedValue([]);
+
+            await service.getJobs();
+
+            const { include } = prismaMock.job.findMany.mock.calls[0][0] as { include: Record<string, unknown> };
+            const whole = includeValues(include).filter((entry) => Array.isArray(entry) && entry[1] === true).map((entry) => (entry as [string, unknown])[0]);
+            expect(whole).not.toContain('config');
+            expect(whole).not.toContain('source');
+            expect(whole).not.toContain('notifications');
+        });
+    });
+
     describe('getJobById', () => {
         it('should return a job when found', async () => {
             const mockJob = { id: 'job-1', name: 'Test Job', source: {}, destinations: [], notifications: [], sources: [] };
@@ -160,7 +192,7 @@ describe('JobService', () => {
 
             expect(prismaMock.job.findUnique).toHaveBeenCalledWith({
                 where: { id: 'job-1' },
-                include: expect.objectContaining({ source: true, notifications: true }),
+                include: expect.objectContaining({ source: CONNECTION, notifications: CONNECTION }),
             });
             expect(result).toEqual(mockJob);
         });
@@ -546,15 +578,39 @@ describe('JobService', () => {
     });
 
     describe('deleteJob', () => {
-        it('should delete a job and refresh the scheduler', async () => {
+        beforeEach(() => {
+            prismaMock.$transaction.mockImplementation(async (callback: any) => callback(prismaMock));
+        });
+
+        it('should delete a job into Recently deleted and refresh the scheduler', async () => {
             const deletedJob = { id: 'job-1', name: 'Old Job' };
             prismaMock.job.delete.mockResolvedValue(deletedJob as any);
 
-            const result = await service.deleteJob('job-1');
+            const result = await service.deleteJob('job-1', { by: 'u-1' });
 
+            expect(trash.keepInTrash).toHaveBeenCalledWith(prismaMock, 'job', 'job-1', 'u-1');
             expect(prismaMock.job.delete).toHaveBeenCalledWith({ where: { id: 'job-1' } });
             expect(scheduler.refresh).toHaveBeenCalledTimes(1);
             expect(result).toEqual(deletedJob);
+        });
+
+        it('skips Recently deleted for a job deleted permanently', async () => {
+            prismaMock.job.delete.mockResolvedValue({ id: 'job-1', name: 'Old Job' } as any);
+
+            await service.deleteJob('job-1', { permanently: true });
+
+            expect(trash.keepInTrash).not.toHaveBeenCalled();
+            expect(prismaMock.job.delete).toHaveBeenCalled();
+        });
+
+        // The overview counts the jobs per connection, and the Connections page decides from
+        // that count which connections can be deleted.
+        it('drops the cached connection overview so a freed connection can be deleted at once', async () => {
+            prismaMock.job.delete.mockResolvedValue({ id: 'job-1', name: 'Old Job' } as any);
+
+            await service.deleteJob('job-1');
+
+            expect(invalidateDashboardCache).toHaveBeenCalledTimes(1);
         });
     });
 
@@ -570,12 +626,19 @@ describe('JobService', () => {
             pgCompression: '',
             notificationEvents: 'ALWAYS',
             schedulePresetId: null,
+            namingTemplateId: 'names-1',
+            skipVerification: true,
+            backupMode: 'INCREMENTAL',
+            fullEveryDays: 3,
+            verifyByHash: true,
             notifications: [{ id: 'notif-1' }],
             destinations: [
-                { configId: 'dest-1', priority: 0, retention: '{}' },
-                { configId: 'dest-2', priority: 1, retention: '{"keep":5}' },
+                { configId: 'dest-1', priority: 0, retention: '{}', retentionPolicyId: 'policy-1' },
+                { configId: 'dest-2', priority: 1, retention: '{"keep":5}', retentionPolicyId: null },
             ],
-            sources: [],
+            sources: [
+                { configId: 'files-1', priority: 0, path: '/srv/app', excludePatterns: '["*.tmp"]', stopContainers: false, useStagingCache: false, excludePatternPresets: [{ id: 'preset-1' }] },
+            ],
         };
 
         it('throws when the source job is not found', async () => {
@@ -603,14 +666,45 @@ describe('JobService', () => {
                         notifications: { connect: [{ id: 'notif-1' }] },
                         destinations: {
                             create: [
-                                { configId: 'dest-1', priority: 0, retention: '{}' },
-                                { configId: 'dest-2', priority: 1, retention: '{"keep":5}' },
+                                { configId: 'dest-1', priority: 0, retention: '{}', retentionPolicyId: 'policy-1' },
+                                { configId: 'dest-2', priority: 1, retention: '{"keep":5}', retentionPolicyId: null },
                             ],
                         },
                     }),
                 })
             );
             expect(scheduler.refresh).toHaveBeenCalledTimes(1);
+        });
+
+        it('copies every setting of the job, the retention policy of each destination included, and starts it paused', async () => {
+            prismaMock.job.findUnique.mockResolvedValue(originalJob as any);
+            prismaMock.job.create.mockResolvedValue({ id: 'cloned' } as any);
+
+            await service.cloneJob('job-1', 'Production Backup (Copy)');
+
+            const { data } = prismaMock.job.create.mock.calls[0][0] as { data: Record<string, unknown> };
+            expect(data).toMatchObject({
+                enabled: false,
+                namingTemplateId: 'names-1',
+                skipVerification: true,
+                backupMode: 'INCREMENTAL',
+                fullEveryDays: 3,
+                verifyByHash: true,
+                sources: {
+                    create: [
+                        {
+                            configId: 'files-1',
+                            priority: 0,
+                            path: '/srv/app',
+                            excludePatterns: '["*.tmp"]',
+                            stopContainers: false,
+                            useStagingCache: false,
+                            excludePatternPresets: { connect: [{ id: 'preset-1' }] },
+                        },
+                    ],
+                },
+            });
+            expect((data.destinations as { create: { retentionPolicyId: string | null }[] }).create.map((d) => d.retentionPolicyId)).toEqual(['policy-1', null]);
         });
 
         it('generates "(Copy)" suffix when no name is provided and the base name is free', async () => {

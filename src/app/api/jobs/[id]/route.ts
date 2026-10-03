@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { jobService } from "@/services/jobs/job-service";
-import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
-import { PERMISSIONS } from "@/lib/auth/permissions";
+import { jobAuditSnapshot, jobChangeDetails } from "@/services/jobs/job-audit";
+import { auditService } from "@/services/audit-service";
+import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
+import { getAuthContext, checkPermissionWithContext, hasPermissionWithContext } from "@/lib/auth/access-control";
+import { PERMISSIONS, TRASH_ADMIN_PERMISSION } from "@/lib/auth/permissions";
+import { PERMANENT_DELETE_REFUSED, permanentlyFrom } from "@/lib/core/delete-mode";
 
 export async function DELETE(
     req: NextRequest,
@@ -17,7 +21,14 @@ export async function DELETE(
 
     const params = await props.params;
     try {
-        await jobService.deleteJob(params.id);
+        // The deleted row still names the job, which is all the entry needs of it. Into Recently
+        // deleted, unless `?permanently=true`, which needs the right to change the settings too.
+        const permanently = permanentlyFrom(req.nextUrl.searchParams);
+        if (permanently && !hasPermissionWithContext(ctx, TRASH_ADMIN_PERMISSION)) {
+            return NextResponse.json({ success: false, error: PERMANENT_DELETE_REFUSED }, { status: 403 });
+        }
+        const deleted = await jobService.deleteJob(params.id, { permanently, by: ctx.userId });
+        await auditService.logFor(ctx, AUDIT_ACTIONS.DELETE, AUDIT_RESOURCES.JOB, { name: deleted.name, ...(permanently ? { permanently: true } : {}) }, params.id);
         return NextResponse.json({ success: true });
     } catch (_error) {
         return NextResponse.json({ error: "Failed to delete job" }, { status: 500 });
@@ -40,6 +51,7 @@ export async function PUT(
         const body = await req.json();
         const { name, schedule, sourceId, databases, destinations, sources, notificationIds, notificationTemplateIds, enabled, encryptionProfileId, compression, pgCompression, notificationEvents, namingTemplateId, schedulePresetId, skipVerification, backupMode, fullEveryDays, verifyByHash } = body;
 
+        const before = await jobAuditSnapshot(params.id);
         const updatedJob = await jobService.updateJob(params.id, {
             name,
             schedule,
@@ -75,6 +87,15 @@ export async function PUT(
             fullEveryDays: fullEveryDays !== undefined ? fullEveryDays : undefined,
             verifyByHash: verifyByHash !== undefined ? verifyByHash : undefined,
         });
+
+        const after = await jobAuditSnapshot(params.id);
+        await auditService.logFor(
+            ctx,
+            AUDIT_ACTIONS.UPDATE,
+            AUDIT_RESOURCES.JOB,
+            { ...(before && after ? jobChangeDetails(before, after) : { name: updatedJob.name }) },
+            params.id
+        );
 
         return NextResponse.json(updatedJob);
     } catch (error: unknown) {

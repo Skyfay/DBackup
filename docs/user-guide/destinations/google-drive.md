@@ -30,8 +30,7 @@ While your OAuth consent screen is in "Testing" mode, only users listed as test 
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
 | **Name** | Friendly name for this destination | - | ✅ |
-| **Client ID** | Google OAuth Client ID | - | ✅ |
-| **Client Secret** | Google OAuth Client Secret | - | ✅ |
+| **OAuth app** | `OAUTH` [credential profile](/user-guide/security/credential-profiles) holding the Client ID and Client Secret | - | ✅ |
 | **Folder ID** | Google Drive folder ID for backups | Root | ❌ |
 
 ::: tip Finding the Folder ID
@@ -41,13 +40,13 @@ Open the target folder in Google Drive - the Folder ID is the last part of the U
 
 ## Setup Guide
 
-1. Go to **Connections** → **Backup Destinations** → **Add New** → **Google Drive**
-2. Enter Client ID and Client Secret → **Save**
-3. Click **Authorize with Google** - you'll be redirected to Google
+1. Go to **Connections** → **Destinations** → **New destination** → **Google Drive**
+2. Under **OAuth app**, pick the credential profile holding the Client ID and Client Secret, or create one with **New**
+3. Click **Authorize** - Google opens in a new window
 4. Sign in and grant DBackup access to manage its files
-5. After redirect, the status changes to **green** ("Authorized")
-6. (Optional) Enter a **Folder ID** to store backups in a specific folder
-7. Click **Test** to verify the connection
+5. Once the window closes, the box says **Authorized**
+6. (Optional) Enter a **Folder ID** in the **Location** part, or pick the folder with the folder button beside it
+7. Click **Test connection**, then **Create destination**
 
 ## How It Works
 
@@ -71,7 +70,7 @@ Common causes:
 
 ### Token Expired / Invalid
 
-Click **Re-authorize** in DBackup. Tokens may be invalidated if you revoked access in [Google Account Permissions](https://myaccount.google.com/permissions) or changed the OAuth client configuration.
+Click **Authorize again** in DBackup. Tokens may be invalidated if you revoked access in [Google Account Permissions](https://myaccount.google.com/permissions) or changed the OAuth client configuration.
 
 ### Quota Exceeded
 
@@ -81,4 +80,4 @@ Google Drive has usage limits. Free accounts get 15 GB shared across Gmail, Driv
 
 - [Enable Encryption](/user-guide/security/encryption)
 - [Configure Retention](/user-guide/jobs/retention)
-- [Storage Explorer](/user-guide/features/storage-explorer)
+- [Backups](/user-guide/features/backups)

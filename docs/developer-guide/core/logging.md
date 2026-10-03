@@ -391,7 +391,7 @@ model Execution {
 }
 ```
 
-The **Execution Logs** retention setting (`execution.logRetentionDays`, default 90 days) clears `logs` of finished runs and sets `logsPurgedAt`, while the row itself stays. `GET /api/executions/{id}` returns `logsPurgedAt` so the History dialog can explain the empty log. See `src/services/system/execution-retention.ts`.
+The **Execution Logs** retention setting (`execution.logRetentionDays`, default 365 days) clears `logs` of finished runs and sets `logsPurgedAt`, while the row itself stays. `GET /api/executions/{id}` and `GET /api/history/runs/{id}` return `logsPurgedAt` so the page of a run can explain the empty log. See `src/services/system/execution-retention.ts`.
 
 ### Retrieving Logs
 
@@ -540,6 +540,6 @@ Notification logs are automatically cleaned by the "Clean Old Data" system task:
 
 - **SystemSetting key**: `notification.logRetentionDays`
 - **Default**: 90 days
-- **Configurable**: 7 days to 5 years (Settings → General → Data Retention, shown as **Notification History**)
+- **Configurable**: 7 days to 5 years (Settings → Data retention, shown as **Notification history**)
 
 All retention settings are defined once in `src/lib/core/data-retention.ts` and applied by `runDataRetention()` in `src/services/system/data-retention-service.ts`.

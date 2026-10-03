@@ -1,4 +1,5 @@
 import * as React from "react";
+import type { Tone } from "@/components/ui/tone";
 import type { BulkLabels, BulkResult } from "@/lib/core/bulk";
 
 /**
@@ -13,13 +14,37 @@ export interface DataTableFilterOption {
     label: string
     value: string
     icon?: React.ComponentType<{ className?: string }>
+    /** Drawn before the label in place of the icon, like the logo of a job. */
+    lead?: React.ReactNode
     count?: number
+    /** The heading the option is listed under. Groups keep the order of their first option. */
+    group?: string
+}
+
+/** What the right click menu of a row may do when the row is one of several selected. */
+export interface RowMenuBulk<TData> {
+    selected: TData[];
+    actions: BulkAction<TData>[];
+    start: (action: BulkAction<TData>) => void;
+    clearSelection: () => void;
 }
 
 export interface DataTableFilterableColumn<TData> {
     id: keyof TData | string;
     title: string;
     options: DataTableFilterOption[];
+    /** Classes for the list, like a width for long names. */
+    contentClassName?: string;
+    /** The heading over the options no row has under the other filters, which sit at the end and cannot be picked. */
+    unavailableLabel?: string;
+    /** The title of the open list. `Filter by <title>` when left out. */
+    heading?: string;
+    /** The line under that title, like what the numbers count. */
+    note?: string;
+    /** What the filters leave, like 30 backups, in the foot of the open list. */
+    resultLabel?: string;
+    /** Shown in the closed field while nothing is picked, like how many rows need a look. */
+    hint?: React.ReactNode;
 }
 
 /**
@@ -42,13 +67,17 @@ export interface BulkAction<TData> {
     label?: (rows: TData[]) => string;
     icon?: React.ComponentType<{ className?: string }>;
     variant?: "outline" | "destructive";
+    /** The color of its task, like `edit` for Edit alerts, the same as the entry in the menu of a single row. Quiet when left out. */
+    tone?: Tone;
     /**
      * Omit for an action that runs straight away, such as enabling.
      * Present for anything destructive - the design system requires a confirmation there.
      */
     confirm?: {
         title: (rows: TData[]) => string;
-        description: (rows: TData[]) => React.ReactNode;
+        /** More context in the body. A destructive action already says it cannot be undone. */
+        description?: (rows: TData[]) => React.ReactNode;
+        /** The verb on the button, which adds the count and the noun. Defaults to the labels' verb. */
         confirmLabel?: string;
     };
     /**
@@ -61,8 +90,56 @@ export interface BulkAction<TData> {
     ineligible?: (row: TData) => string | null;
     /** Hides the button entirely, for example when no selected row would change. */
     isAvailable?: (rows: TData[]) => boolean;
+    /**
+     * "menu" puts the action into the More menu of the bar, for settings that would crowd it.
+     * Only the card look of DataTable has that menu. The default look shows every action as a button.
+     */
+    placement?: "bar" | "menu";
+    /** Heading of the section in the More menu. Actions with the same group sit together. */
+    group?: string;
     /** Names a row for the confirmation preview and the failure list. */
     itemName?: (row: TData) => string;
+    /** A small icon before the name in the confirmation, such as the brand of a connection. */
+    itemIcon?: (row: TData) => React.ComponentType<{ className?: string }>;
+    /** A short muted fact after the name in the confirmation, such as the type of a connection. */
+    itemDetail?: (row: TData) => string;
+    /**
+     * A delete that moves its rows to Recently deleted. Its confirmation says so in amber and, for a
+     * viewer who may, offers to delete them permanently now, which turns it red and reaches `run` as
+     * `permanently`. The toast after it offers Undo.
+     */
+    trash?: BulkTrash<TData>;
     /** Performs the action. Reports per-row outcomes rather than throwing on the first failure. */
-    run: (rows: TData[]) => Promise<BulkResult>;
+    run?: (rows: TData[], options: BulkRunOptions) => Promise<BulkResult>;
+    /**
+     * Opens a dialog of its own in place of `run`, for an action that needs settings first,
+     * like the alerts of several destinations. What it did comes back through `onDone` and is
+     * reported and cleared like the result of `run`.
+     */
+    dialog?: (props: BulkDialogProps<TData>) => React.ReactNode;
+}
+
+/** How a bulk action runs, as its confirmation decided. */
+export interface BulkRunOptions {
+    /** A delete with `trash` skips Recently deleted. */
+    permanently: boolean;
+}
+
+/** A delete whose rows wait in Recently deleted, see `trash` on `BulkAction`. */
+export interface BulkTrash<TData> {
+    /** How long Recently deleted keeps them, from Data retention. */
+    days: number;
+    /** Offers the tick that deletes them at once, for a viewer who may skip Recently deleted. */
+    canDeletePermanently: boolean;
+    /** What deleting them at once loses, the line under the tick. */
+    permanentLine?: (rows: TData[]) => string;
+    /** Brings back what the delete just moved there, for Undo in the toast after it. */
+    undo: (ids: string[]) => void;
+}
+
+/** What the dialog of a bulk action gets: the rows it acts on, and how to hand back. */
+export interface BulkDialogProps<TData> {
+    rows: TData[];
+    onClose: () => void;
+    onDone: (result: BulkResult) => void;
 }

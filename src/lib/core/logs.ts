@@ -14,6 +14,27 @@ export interface LogEntry {
 
 // --- Pipeline Stage System ---
 
+/** Stage names of more than one word, in the sentence case every label of the pages uses. */
+const STAGE_LABELS: Record<string, string> = {
+  "Dumping Databases": "Dumping databases",
+  "Collecting Files": "Collecting files",
+  "Applying Retention": "Applying retention",
+  "Sending Notifications": "Sending notifications",
+  "Restoring Databases": "Restoring databases",
+  "Restoring Files": "Restoring files",
+  "Scanning Storage": "Scanning storage",
+  "Verifying Checksums": "Verifying checksums",
+  "Legacy Log": "Legacy log",
+};
+
+/**
+ * The name of a stage as a page shows it. The stored names stay as they are, since the logs of
+ * every run keep them and the pages compare them by value.
+ */
+export function stageLabel(stage: string): string {
+  return STAGE_LABELS[stage] ?? stage;
+}
+
 export const PIPELINE_STAGES = {
   QUEUED: "Queued",
   INITIALIZING: "Initializing",

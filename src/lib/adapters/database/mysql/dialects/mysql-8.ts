@@ -1,5 +1,6 @@
 import { MySQLBaseDialect } from "./mysql-base";
 import type { ExecutionHost } from "@/lib/transport";
+import type { DumpClient } from "../dump-content";
 import { MySQLConfig } from "@/lib/adapters/definitions";
 
 export class MySQL80Dialect extends MySQLBaseDialect {
@@ -7,8 +8,8 @@ export class MySQL80Dialect extends MySQLBaseDialect {
         return version.includes('8.0.') || parseFloat(version) >= 8.0;
     }
 
-    getDumpArgs(config: MySQLConfig, databases: string[], host?: ExecutionHost): string[] {
-        const args = super.getDumpArgs(config, databases, host);
+    getDumpArgs(config: MySQLConfig, databases: string[], host?: ExecutionHost, client?: DumpClient): string[] {
+        const args = super.getDumpArgs(config, databases, host, client);
 
         // MySQL 8 default encoding. A --default-character-set in the source's
         // additional options wins, so a server the version check did not catch

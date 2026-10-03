@@ -39,7 +39,6 @@ vi.mock("@/services/storage/storage-alert-service", () => ({
 import {
   getDashboardStats,
   getActivityData,
-  getJobStatusDistribution,
   getStorageVolume,
   getStorageVolumeCacheAge,
   refreshStorageStatsCache,
@@ -82,6 +81,17 @@ describe("getDashboardStats", () => {
     expect(result.successRate30d).toBe(75); // 15/20 = 75%
     expect(result.totalSnapshots).toBe(4);
     expect(result.totalStorageBytes).toBe(2048);
+  });
+
+  it("counts a partial run against the success rate, like every success share of the dashboard", async () => {
+    prismaMock.job.count.mockResolvedValue(0);
+    prismaMock.execution.count.mockResolvedValue(0);
+
+    await getDashboardStats();
+
+    expect(prismaMock.execution.count).toHaveBeenCalledWith({
+      where: { startedAt: { gte: expect.any(Date) }, status: { in: ["Success", "Partial", "Failed"] } },
+    });
   });
 
   it("returns 100% success rate when no executions exist in the last 30 days", async () => {
@@ -157,50 +167,6 @@ describe("getActivityData", () => {
 });
 
 // ---------------------------------------------------------------------------
-// getJobStatusDistribution
-// ---------------------------------------------------------------------------
-
-describe("getJobStatusDistribution", () => {
-  it("returns non-zero status entries with correct counts", async () => {
-    prismaMock.execution.findMany.mockResolvedValue([
-      { status: "Success" },
-      { status: "Success" },
-      { status: "Failed" },
-    ] as any);
-
-    const result = await getJobStatusDistribution();
-
-    expect(result).toHaveLength(2);
-    expect(result.find((r) => r.status === "Success")?.count).toBe(2);
-    expect(result.find((r) => r.status === "Failed")?.count).toBe(1);
-  });
-
-  it("returns empty array when no executions exist", async () => {
-    prismaMock.execution.findMany.mockResolvedValue([]);
-
-    expect(await getJobStatusDistribution()).toHaveLength(0);
-  });
-
-  it("assigns the correct CSS variable fill color per status", async () => {
-    prismaMock.execution.findMany.mockResolvedValue([
-      { status: "Success" },
-    ] as any);
-
-    const result = await getJobStatusDistribution();
-
-    expect(result[0].fill).toBe("var(--color-completed)");
-  });
-
-  it("ignores unknown statuses not present in the counts map", async () => {
-    prismaMock.execution.findMany.mockResolvedValue([
-      { status: "Unknown" },
-    ] as any);
-
-    expect(await getJobStatusDistribution()).toHaveLength(0);
-  });
-});
-
-// ---------------------------------------------------------------------------
 // getStorageVolumeCacheAge
 // ---------------------------------------------------------------------------
 
@@ -245,35 +211,43 @@ describe("getStorageVolume", () => {
     expect(result).toEqual([]);
   });
 
-  it("falls back to DB estimation when the live refresh throws", async () => {
+  it("falls back to the last scanned values when the live refresh throws", async () => {
     prismaMock.systemSetting.findUnique.mockResolvedValue(null);
     prismaMock.adapterConfig.findMany
       .mockRejectedValueOnce(new Error("Adapter query failed")) // refreshStorageStatsCache throws
-      .mockResolvedValueOnce([]); // getStorageVolumeFromDB succeeds with no adapters
+      .mockResolvedValueOnce([]); // the fallback finds no destinations
 
     const result = await getStorageVolume();
 
     expect(result).toEqual([]);
   });
 
-  it("DB fallback aggregates sizes per adapter from executions table", async () => {
+  it("takes each destination's values from its newest snapshot when the refresh fails", async () => {
     prismaMock.systemSetting.findUnique.mockResolvedValue(null);
     prismaMock.adapterConfig.findMany
       .mockRejectedValueOnce(new Error("Refresh failed")) // triggers fallback
       .mockResolvedValueOnce([
         { id: "cfg-1", name: "Local", adapterId: "local", type: "storage" } as any,
       ]);
-    prismaMock.execution.findMany.mockResolvedValue([
-      { size: BigInt(1024) },
-      { size: BigInt(2048) },
-    ] as any);
+    prismaMock.storageSnapshot.findFirst.mockResolvedValue({
+      size: BigInt(3072),
+      count: 2,
+      createdAt: new Date("2026-09-21T08:00:00.000Z"),
+    } as any);
 
     const result = await getStorageVolume();
 
-    expect(result).toHaveLength(1);
-    expect(result[0].size).toBe(3072);
-    expect(result[0].count).toBe(2);
-    expect(result[0].name).toBe("Local");
+    expect(result).toEqual([{
+      configId: "cfg-1",
+      name: "Local",
+      adapterId: "local",
+      size: 3072,
+      count: 2,
+      scanError: true,
+      lastScanAt: "2026-09-21T08:00:00.000Z",
+    }]);
+    // The run history counts backups that retention deleted, so it is no longer used.
+    expect(prismaMock.execution.findMany).not.toHaveBeenCalled();
   });
 
   it("falls through to a live refresh when cached JSON is corrupted", async () => {
@@ -332,7 +306,7 @@ describe("refreshStorageStatsCache", () => {
     expect(result[0].count).toBe(2);    // 2 backup files
   });
 
-  it("falls back to DB aggregation per adapter when adapter.list() throws", async () => {
+  it("keeps the last scanned values of a destination whose listing fails", async () => {
     vi.mocked(registry.get).mockReturnValue({
       list: vi.fn().mockRejectedValue(new Error("S3 unreachable")),
     } as any);
@@ -340,16 +314,38 @@ describe("refreshStorageStatsCache", () => {
     prismaMock.adapterConfig.findMany.mockResolvedValue([
       { id: "cfg-1", name: "S3", adapterId: "s3", type: "storage", config: "{}" } as any,
     ]);
-    prismaMock.execution.findMany.mockResolvedValue([
-      { size: BigInt(500) },
-      { size: BigInt(300) },
-    ] as any);
+    prismaMock.storageSnapshot.findFirst.mockResolvedValue({
+      size: BigInt(800),
+      count: 2,
+      createdAt: new Date("2026-09-21T05:00:00.000Z"),
+    } as any);
 
     const result = await refreshStorageStatsCache();
 
     expect(result).toHaveLength(1);
-    expect(result[0].size).toBe(800); // 500 + 300
-    expect(result[0].count).toBe(2);
+    expect(result[0]).toMatchObject({ size: 800, count: 2, scanError: true, lastScanAt: "2026-09-21T05:00:00.000Z" });
+  });
+
+  it("keeps the last scan of an air-gapped destination that is not connected without listing it", async () => {
+    const list = vi.fn();
+    vi.mocked(registry.get).mockReturnValue({ list } as any);
+
+    prismaMock.adapterConfig.findMany.mockResolvedValue([
+      {
+        id: "usb", name: "USB rotation", adapterId: "local-filesystem", type: "storage", storageRole: "DESTINATION",
+        config: "{}", lastStatus: "OFFLINE", metadata: JSON.stringify({ airGapped: true }),
+      } as any,
+    ]);
+    prismaMock.storageSnapshot.findFirst.mockResolvedValue({
+      size: BigInt(4096),
+      count: 4,
+      createdAt: new Date("2026-09-27T05:00:00.000Z"),
+    } as any);
+
+    const result = await refreshStorageStatsCache();
+
+    expect(list).not.toHaveBeenCalled();
+    expect(result[0]).toMatchObject({ configId: "usb", size: 4096, count: 4, scanError: true, lastScanAt: "2026-09-27T05:00:00.000Z" });
   });
 
   it("saves storage snapshots and checks alerts after a successful refresh", async () => {

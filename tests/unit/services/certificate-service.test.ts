@@ -53,6 +53,9 @@ import {
   regenerateSelfSignedCert,
 } from "@/services/system/certificate-service";
 
+const PUBLIC_KEY = "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE\n-----END PUBLIC KEY-----";
+const OTHER_PUBLIC_KEY = "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA\n-----END PUBLIC KEY-----";
+
 describe("CertificateService", () => {
   const originalEnv = { ...process.env };
 
@@ -186,6 +189,44 @@ describe("CertificateService", () => {
       expect(info.exists).toBe(true);
       expect(info.issuer).toBe("Error reading certificate");
       expect(info.daysRemaining).toBe(0);
+      // The page tells the failure apart from HTTPS being off.
+      expect(info.error).toBe("openssl not found");
+      expect(info.isHttpsEnabled).toBe(true);
+    });
+
+    it("does not call a certificate on its last day expired", () => {
+      mockExistsSync.mockReturnValue(true);
+      const inTenHours = new Date(Date.now() + 10 * 60 * 60 * 1000);
+      mockExecSync.mockReturnValue([
+        "subject=CN = DBackup",
+        "issuer=CN = DBackup",
+        `notAfter=${inTenHours.toUTCString()}`,
+      ].join("\n"));
+
+      const info = getCertificateInfo();
+
+      expect(info.daysRemaining).toBe(0);
+      expect(info.expired).toBe(false);
+      expect(new Date(info.expiresAt).getTime()).toBeGreaterThan(Date.now());
+    });
+
+    it("calls a certificate past its end expired", () => {
+      mockExistsSync.mockReturnValue(true);
+      const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      mockExecSync.mockReturnValue(["subject=CN = DBackup", "issuer=CN = DBackup", `notAfter=${yesterday.toUTCString()}`].join("\n"));
+
+      expect(getCertificateInfo().expired).toBe(true);
+    });
+
+    it("lists the names and addresses the certificate is valid for", () => {
+      mockExistsSync.mockReturnValue(true);
+      mockExecSync.mockImplementation((cmd: string) =>
+        cmd.includes("subjectAltName")
+          ? "X509v3 Subject Alternative Name: \n    DNS:localhost, IP Address:127.0.0.1, DNS:backup.example.com\n"
+          : "subject=CN = DBackup\nissuer=CN = DBackup\n"
+      );
+
+      expect(getCertificateInfo().names).toEqual(["localhost", "127.0.0.1", "backup.example.com"]);
     });
   });
 
@@ -216,7 +257,7 @@ describe("CertificateService", () => {
           return true;
         return false;
       });
-      mockExecSync.mockReturnValue("");
+      mockExecSync.mockImplementation((cmd: string) => (cmd.includes("-pubkey") || cmd.includes("-pubout") ? PUBLIC_KEY : ""));
 
       uploadCertificate(validCert, validKey);
 
@@ -253,20 +294,18 @@ describe("CertificateService", () => {
       );
     });
 
-    it("should throw when cert and key modulus do not match", () => {
+    it("refuses a private key whose public key is not the one in the certificate", () => {
       mockExistsSync.mockReturnValue(true);
-      let callCount = 0;
       mockExecSync.mockImplementation((cmd: string) => {
-        if (typeof cmd === "string" && cmd.includes("-modulus")) {
-          callCount++;
-          return callCount === 1 ? "Modulus=AAA" : "Modulus=BBB";
-        }
+        if (cmd.includes("-pubkey")) return PUBLIC_KEY;
+        if (cmd.includes("-pubout")) return OTHER_PUBLIC_KEY;
         return "";
       });
 
       expect(() => uploadCertificate(validCert, validKey)).toThrow(
         "do not match"
       );
+      expect(mockRenameSync).not.toHaveBeenCalled();
     });
 
     it("should clean up temp files on validation failure", () => {
@@ -285,25 +324,18 @@ describe("CertificateService", () => {
       expect(mockUnlinkSync).toHaveBeenCalled();
     });
 
-    it("should accept EC key when RSA check fails with unrelated error", () => {
+    it("checks an EC or Ed25519 key against its certificate like an RSA key", () => {
       mockExistsSync.mockReturnValue(true);
+      const commands: string[] = [];
       mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd.includes("openssl rsa") && cmd.includes("-check")) {
-          throw new Error("not an RSA key");
-        }
-        if (cmd.includes("openssl ec") && cmd.includes("-check")) {
-          return "";
-        }
-        if (cmd.includes("openssl x509") && cmd.includes("-modulus")) {
-          return "Modulus=some_ec_value";
-        }
-        if (cmd.includes("openssl rsa") && cmd.includes("-modulus")) {
-          throw new Error("unable to load RSA key");
-        }
-        return "";
+        commands.push(cmd);
+        // Only RSA has a modulus, so an EC key fails anything RSA-only.
+        if (cmd.includes("openssl rsa") || cmd.includes("-modulus")) throw new Error("not an RSA key");
+        return cmd.includes("-pubkey") || cmd.includes("-pubout") ? PUBLIC_KEY : "";
       });
 
       expect(() => uploadCertificate(validCert, validKey)).not.toThrow();
+      expect(commands.some((cmd) => cmd.includes("openssl pkey") && cmd.includes("-pubout"))).toBe(true);
       expect(mockRenameSync).toHaveBeenCalledTimes(2);
     });
   });
@@ -323,14 +355,30 @@ describe("CertificateService", () => {
       );
     });
 
-    it("should remove existing cert files before generating", () => {
-      // First call: CERTS_DIR exists, then cert exists, then key exists
+    it("makes the new files beside the old ones and only then replaces them", () => {
       mockExistsSync.mockReturnValue(true);
       mockExecSync.mockReturnValue("");
 
       regenerateSelfSignedCert();
 
-      expect(mockUnlinkSync).toHaveBeenCalledTimes(2);
+      expect(mockExecSync).toHaveBeenCalledWith(expect.stringContaining("tls.key.new"), expect.any(Object));
+      expect(mockRenameSync).toHaveBeenCalledWith(expect.stringContaining("tls.key.new"), expect.stringMatching(/tls\.key$/));
+      expect(mockRenameSync).toHaveBeenCalledWith(expect.stringContaining("tls.crt.new"), expect.stringMatching(/tls\.crt$/));
+      expect(mockUnlinkSync).not.toHaveBeenCalled();
+    });
+
+    it("keeps the old certificate when openssl fails", () => {
+      mockExistsSync.mockReturnValue(true);
+      mockExecSync.mockImplementation((cmd: string) => {
+        if (cmd.includes("openssl req")) throw new Error("openssl: command not found");
+        return "";
+      });
+
+      expect(() => regenerateSelfSignedCert()).toThrow("Failed to generate TLS certificate");
+
+      expect(mockRenameSync).not.toHaveBeenCalled();
+      // Only the half made new files go, never tls.crt or tls.key.
+      for (const [file] of mockUnlinkSync.mock.calls) expect(String(file)).toMatch(/\.new$/);
     });
 
     it("should call openssl to generate a 365-day self-signed cert", () => {

@@ -1,290 +1,147 @@
 # System Backup (Meta-Backup)
 
-Backup your DBackup configuration for disaster recovery.
+Back up DBackup itself for disaster recovery.
 
 ## Overview
 
-System Backup (also called Meta-Backup) exports your entire DBackup configuration:
+The configuration backup is a copy of the whole database of DBackup, compressed and encrypted with a key of the Vault. After a lost server it brings everything back as it was, including whatever a later version of DBackup adds to its database.
 
-- Database sources
-- Storage destinations
-- Backup jobs
-- Users and groups
-- Encryption profiles
-- Notifications
-- System settings
-
-This enables complete disaster recovery without losing your setup.
+::: tip One deleted record
+A restore always replaces the whole database, including what was added since the backup. To bring back a single deleted key, login, connection, job or user, use [Recently deleted](/user-guide/admin/recently-deleted) instead.
+:::
 
 ## What's Included
 
-| Data | Included | Notes |
-| :--- | :--- | :--- |
-| Adapter Configs | ✅ | Sources, destinations, notifications |
-| Jobs | ✅ | All schedules and settings |
-| Users | ✅ | Accounts and group assignments |
-| Groups | ✅ | RBAC permissions |
-| Encryption Profiles | ✅ | Keys (encrypted) |
-| SSO Providers | ✅ | OIDC configurations |
-| System Settings | ✅ | Concurrency, UI preferences |
-
-### Not Included
-
-| Data | Reason |
+| Data | Included |
 | :--- | :--- |
-| Actual backups | Too large, stored separately |
-| Execution history | Transient data |
-| Temp files | Not needed |
+| Connections, jobs with their destinations and folders, all templates | ✅ |
+| Encryption keys and saved logins | ✅ |
+| Users with their second factor and passkeys, groups, API keys | ✅ |
+| Sign-in providers and settings | ✅ |
+| The `ENCRYPTION_KEY` and `BETTER_AUTH_SECRET` of the instance | ✅ so a new server needs neither |
+| Run history, audit log, notification and storage history | Only with **Include the history** |
+| Sign-ins and caches | ❌ everyone signs in again after a restore |
+| The backups themselves | ❌ they stay at their destinations |
 
 ## Configuration
 
 ### Automated System Backup
 
-1. Go to **Settings** → **System Config**
-2. Enable **Automated Backup**
-3. Configure:
-   - **Destination**: Storage adapter to use
-   - **Encryption Profile**: Required for secrets
-   - **Retention**: Number of backups to keep
+1. Go to **Settings → Configuration backup**
+2. Switch on **Back up the configuration**
+3. Pick:
+   - **Destination**: where the file goes, into its folder `config-backups`
+   - **Encryption key**: the file holds every login, so it is always encrypted
+   - **Schedule**: when it runs, every day at 03:00 by default, picked like the schedule of a job
+   - **Keeps**: how many files stay at the destination, 10 by default
+   - **Include the history**: runs, logs, the audit log and the storage history, on by default
+4. Click **Save changes** in the bar at the foot
 
-### Manual Export
+The system task **Configuration backup** follows this switch and this schedule, so both are set in one place. The top of the part shows when the configuration was last backed up and where to, or why it failed.
 
-1. Go to **Settings** → **System Config**
-2. Click **Export Configuration**
-3. Choose options:
-   - Include secrets (requires encryption)
-4. Download file
+::: warning Keep the key apart
+Keep the [recovery kit](/user-guide/security/recovery-kit) of the key somewhere else than the backup. A lost server takes the Vault with it, and without the key the file cannot be opened.
+:::
 
-## Security
+### A Backup Right Now
 
-### Encryption Required
+Click **Back up now** in the head of the part. It uses the saved settings, so save a change first. The backup shows on the Backups page as soon as it is uploaded, with you under **Started by**.
 
-When exporting secrets (passwords, API keys), encryption is **mandatory**:
-
-1. Create/select an Encryption Profile
-2. System encrypts export with profile key
-3. Store the key separately!
-
-### Without Secrets
-
-Export without secrets includes:
-- All structure and settings
-- Placeholder for credentials
-- Useful for sharing configs
-
-## Backup Process
-
-### Automated Flow
+### The File
 
 ```
-1. Scheduled trigger (System Task)
-
-2. Data Collection
-   └── Fetch all configs from DB
-   └── Decrypt system-encrypted fields
-
-3. Security Check
-   └── If secrets included: require encryption
-   └── If no encryption: exclude secrets
-
-4. Processing Pipeline
-   └── JSON serialization
-   └── Gzip compression
-   └── Encryption (if profile selected)
-
-5. Upload
-   └── Send to destination
-   └── Create metadata file
-
-6. Retention
-   └── Delete old config backups
+config-backups/config_backup_2026-09-29T03-00-00-000Z.db.gz.enc
+config-backups/config_backup_2026-09-29T03-00-00-000Z.db.gz.enc.meta.json
 ```
 
-### File Format
-
-```
-config_backup_2024-01-15T12-00-00.json.gz.enc
-config_backup_2024-01-15T12-00-00.json.gz.enc.meta.json
-```
+The `.meta.json` beside it names the key and holds what its decryption needs. The Backups page lists both files of every destination under **Config backups**, and **Started by** says **Schedule**, the person behind **Back up now** or the API key that started it. **Name who started a backup in its metadata** under **Settings → Privacy** leaves out the name.
 
 ## Restore Process
 
-### From UI (Online Restore)
+Only a SuperAdmin restores a configuration, since it brings back users, groups and sign-in providers. The one exception is the first start of a new DBackup, see [On a New Server](#on-a-new-server).
 
-When you have working DBackup instance:
+### What Happens
 
-1. Go to **Settings** → **System Config**
-2. Click **Restore from Storage**
-3. Select backup file
-4. Configure options:
-   - Overwrite vs Merge
-   - What to restore
-5. Execute restore
+1. DBackup opens the file with the key its metadata names, or any key of the Vault that fits, and asks for one when none does
+2. It checks the file: a database of DBackup, not damaged, and not from a newer version
+3. It shows what the backup holds, then **Replace and restart** starts the restore
+4. DBackup ends, and its container starts it again. The restored copy replaces the database before the migrations run, which bring an older copy up to date
+5. Everyone signs in again, with an account of the backup
 
-### Offline Restore (Disaster Recovery)
+The database of before stays beside it as `dbackup.db.before-restore` in `/data/db`. A backup or restore that runs right now keeps the restore waiting until it has ended, since the restart would stop it. The restart needs a restart policy on the container, like `restart: always` in the compose file of the [installation](/user-guide/installation).
 
-When starting fresh:
+A backup made by a DBackup with another `ENCRYPTION_KEY` or `BETTER_AUTH_SECRET` works too: its logins and second factors are encrypted again for this one.
 
-1. Install new DBackup instance
-2. Go to **Settings** → **System Config**
-3. Click **Offline Restore**
-4. Upload backup file (+ meta.json if encrypted)
-5. If encrypted:
-   - Import encryption key first, OR
-   - Provide key during restore
-6. Execute restore
-7. All configs restored
+### From a Destination
 
-## Restore Strategy
+1. Open **Backups** and find the backup under **Config backups**
+2. Open it. DBackup reads it on the server, so its size does not matter
+3. Check what it holds and click **Replace and restart**
 
-### Overwrite Mode
+### From a File
 
-- Replaces existing entries
-- Updates if ID matches
-- Creates if new
-- Best for: disaster recovery
+1. Go to **Settings → Configuration backup**
+2. Click **Restore from a file**
+3. Pick the backup file and its `.meta.json`
+4. Check what it holds and click **Replace and restart**
 
-### Merge Mode (if available)
+The file can be up to 10 MB. A bigger one, for example with the history, is restored from its destination.
 
-- Keeps existing entries
-- Adds only new items
-- Best for: importing partial configs
+### On a New Server
 
-## Disaster Recovery Procedure
+1. Install a new DBackup. New values for `ENCRYPTION_KEY` and `BETTER_AUTH_SECRET` are fine
+2. On the first start, pick **Restore a backup** instead of **Start fresh**
+3. Drop the backup file and its `.meta.json` together, and paste the key from its recovery kit or drop the kit as `.zip` on the key field
+4. Check what it holds, click **Restore and restart**, then sign in with an account of the backup
 
-### Preparation (Before Disaster)
+This works only while nobody has an account yet. For a file over 10 MB, create an account first, add the destination as a connection, and restore from the **Backups** page.
 
-1. ✅ Enable automated config backup
-2. ✅ Use encrypted backup (with secrets)
-3. ✅ Store encryption key separately:
-   - Password manager
-   - Recovery Kit
-   - Secure offline storage
-4. ✅ Store `ENCRYPTION_KEY` env var:
-   - Password manager
-   - Infrastructure secrets
+### Files of Older Versions
 
-### Recovery Steps
+Files named `config_backup_*.json.gz.enc` come from DBackup versions before the copy of the database. They still restore, in parts from the **Backups** page or as a whole from a file. Restoring in parts exists for these files only and gets no new parts, since keeping it in step with every table cost more than it was worth. Such a restore adds and overwrites and never deletes: a record with the same ID, or the same name, is overwritten and keeps its ID here, and everything that links to it follows.
 
-1. Deploy fresh DBackup:
-   ```bash
-   docker-compose up -d
-   ```
+These files hold no templates, no folders of file jobs and no second factors. A restore drops what links to them, says so afterwards, and does this:
 
-2. Set same `ENCRYPTION_KEY` (or new one)
-
-3. First admin account: Sign up
-
-4. Import encryption profile key:
-   - Settings → Vault → Import Key
-
-5. Offline restore:
-   - Settings → System Config → Offline Restore
-   - Upload backup file
-   - System decrypts with imported key
-
-6. Re-encrypt secrets:
-   - If ENCRYPTION_KEY changed
-   - System re-encrypts with new key
-
-7. Verify:
-   - Check all sources connect
-   - Test backup jobs
-   - Verify notifications
-
-## Best Practices
-
-### Regular Backups
-
-1. Enable automated backup
-2. Set reasonable retention (7-30)
-3. Monitor for failures
-
-### Key Management
-
-Store separately from config backup:
-1. `ENCRYPTION_KEY` → Password manager
-2. Encryption Profile Key → Recovery Kit
-3. Don't store both together!
-
-### Testing Recovery
-
-Periodically test:
-1. Export config
-2. Deploy test instance
-3. Restore config
-4. Verify functionality
-
-### Documentation
-
-Document your setup:
-- `ENCRYPTION_KEY` location
-- Profile key locations
-- Recovery procedure
+| The backup had | After the restore |
+| :--- | :--- |
+| A retention policy on a job destination | The destination keeps every backup until you pick a policy again |
+| A file name template or a schedule preset on a job | The job uses the default file names or its own schedule |
+| An encryption key on a job that is neither in the file nor in the Vault | The job is paused, so it does not back up unencrypted |
+| Folders in a file backup job | The job backs up no folders until it gets them again |
+| Two-factor sign-in for a user | It is off for that user until they set it up again |
+| A job destination or an API key whose connection or user is missing | It is left out |
 
 ## Troubleshooting
 
+### DBackup Does Not Come Back After a Restore
+
+**Cause**: The container has no restart policy, so it stays stopped after DBackup ends.
+
+**Solution**: Start the container. The restore waits for that and runs on the next start. Set `restart: always` or `unless-stopped` for the next time.
+
+### The Backup Comes From a Newer DBackup
+
+**Cause**: The copy knows database changes this version does not.
+
+**Solution**: Update this DBackup to the version of the backup or later, then restore it.
+
 ### Cannot Decrypt Config
 
-**Causes**:
-- Wrong encryption key
-- Profile deleted
-- Metadata missing
+**Causes**: Wrong key, a key deleted from the Vault, or the `.meta.json` is missing.
 
 **Solutions**:
-1. Import original profile key
-2. Check meta.json exists
-3. Use Recovery Kit
+1. Pick the `.meta.json` together with the backup
+2. Paste the key from the recovery kit when DBackup asks for one
 
-### Secrets Not Restored
+### Going Back to the Database Before a Restore
 
-**Cause**: Exported without secrets
+Stop DBackup. In `/data/db`, move the restored `dbackup.db` and its `-wal` and `-shm` files away, then rename `dbackup.db.before-restore` to `dbackup.db`, and its `-wal` and `-shm` files to `dbackup.db-wal` and `dbackup.db-shm` when they are there. Start DBackup again.
 
-**Solutions**:
-1. Re-export with "Include Secrets"
-2. Or manually re-enter credentials
+### Jobs Paused After a Restore of an Older File
 
-### ID Conflicts
+**Cause**: Their encryption key was neither in the file nor in the Vault, and they would have backed up unencrypted.
 
-**Cause**: Same IDs in backup and existing
-
-**Solution**: Choose "Overwrite" mode
-
-## File Format Reference
-
-### JSON Structure
-
-```json
-{
-  "version": "1.0",
-  "timestamp": "2024-01-15T12:00:00Z",
-  "data": {
-    "adapters": [...],
-    "jobs": [...],
-    "users": [...],
-    "groups": [...],
-    "encryptionProfiles": [...],
-    "ssoProviders": [...],
-    "settings": {...}
-  }
-}
-```
-
-### Metadata
-
-```json
-{
-  "encryption": {
-    "enabled": true,
-    "profileId": "uuid",
-    "iv": "hex",
-    "authTag": "hex"
-  },
-  "compression": "GZIP",
-  "includesSecrets": true,
-  "exportedAt": "2024-01-15T12:00:00Z"
-}
-```
+**Solution**: Import the key under **Vault**, or pick another one in the job, then switch the job on again.
 
 ## Next Steps
 

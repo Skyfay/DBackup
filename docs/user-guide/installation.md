@@ -198,7 +198,7 @@ secrets:
 
 | Mount Point | Required | Purpose |
 | :--- | :---: | :--- |
-| `/data` | ✅ | All persistent data (database, uploads, certificates) |
+| `/data` | ✅ | All persistent data (database and certificates) |
 | `/backups` | ❌ | Optional: used for local backups |
 | `/tmp` | ❌ | Recommended: staging space while a backup is being built |
 
@@ -345,6 +345,9 @@ For contributing or local development:
 git clone https://github.com/Skyfay/DBackup.git
 cd DBackup
 
+# Work from dev, which holds everything finished since the last release
+git checkout dev
+
 # Install dependencies
 pnpm install
 
@@ -352,13 +355,11 @@ pnpm install
 cp .env.example .env
 # Edit .env with your configuration
 
-# Initialize database
-npx prisma db push
-npx prisma generate
-
-# Start development server
+# Start development server, which applies the database migrations first
 pnpm dev
 ```
+
+Pull requests go into `dev`, never into `main`. See the [Developer Guide](/developer-guide/#branches-and-pull-requests).
 
 Open [http://localhost:3000](http://localhost:3000).
 

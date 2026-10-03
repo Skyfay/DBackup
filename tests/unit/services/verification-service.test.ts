@@ -245,8 +245,11 @@ describe('VerificationService', () => {
         expect(adapter.download).toHaveBeenCalledWith(
             expect.anything(),
             'backup.sql',
-            expect.stringContaining('/tmp')
+            expect.stringContaining('/tmp'),
+            // The progress of the download, for a caller that asked for it.
+            undefined
         );
+        expect(result.method).toBe('download');
     });
 
     it('returns passed when download checksum matches', async () => {

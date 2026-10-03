@@ -19,6 +19,7 @@ This document covers the API key authentication system and the webhook trigger m
 **Key Principles:**
 - API keys provide stateless, token-based authentication for programmatic access
 - API keys **never** inherit SuperAdmin privileges - only explicitly assigned permissions apply
+- A key never gets more than the group of its owner may do. `validate()` cuts its permissions to that group at every request (`capToOwner` in `src/lib/auth/owner-permissions.ts`)
 - The raw key is shown exactly once at creation; only a scrypt hash is stored (SHA-256 is kept as a legacy fallback and is automatically upgraded on next use)
 - All API routes support both session (cookie) and API key (Bearer token) authentication via the unified `getAuthContext()` function
 
@@ -87,7 +88,7 @@ Keys created before the scrypt upgrade have SHA-256 hashes stored in `hashedKey`
 
 ## API Key Service
 
-Location: `src/services/api-key-service.ts`
+Location: `src/services/auth/api-key-service.ts`
 
 ### Methods
 
@@ -99,7 +100,9 @@ Location: `src/services/api-key-service.ts`
 | `getById` | `(id: string) → ApiKeyListItem` | Get a single key by ID |
 | `toggle` | `(id: string, enabled: boolean) → ApiKeyListItem` | Enable or disable a key |
 | `rotate` | `(id: string) → { apiKey, rawKey }` | Generate a new key, replace the old hash |
-| `updatePermissions` | `(id: string, permissions: string[]) → ApiKeyListItem` | Replace the permission set of an existing key |
+| `update` | `(id, { name, permissions, expiresAt }) → { before, after }` | Change a key and say what it was before. The secret stays |
+| `ownerOf` | `(id: string) → { ownerId, name, permissions, group }` | The owner with their group, which caps what the key may get |
+| `nameTaken` | `(name: string, exceptId?: string) → boolean` | Whether another key has the name in any case. Runs name the key that started them |
 | `delete` | `(id: string) → void` | Delete a key |
 
 ### Validation Flow
@@ -137,6 +140,12 @@ Request with "Authorization: Bearer dbackup_abc123..."
                    ▼
           ┌─────────────────┐
           │ 6. Update Usage │  Fire-and-forget: lastUsedAt = now()
+          └────────┬────────┘
+                   │
+                   ▼
+          ┌─────────────────┐
+          │ 7. Owner Cap    │  permissions ∩ group of the owner
+          │                 │  SuperAdmin group → all it holds, no group → none
           └────────┬────────┘
                    │
                    ▼
@@ -350,13 +359,16 @@ GET /api/executions/:id?includeLogs=true
 
 API key operations generate audit log entries:
 
-| Action | Resource | When |
-|--------|----------|------|
-| `api-key.create` | `api-key` | Key created |
-| `api-key.rotate` | `api-key` | Key rotated (new hash) |
-| `api-key.toggle` | `api-key` | Key enabled/disabled |
-| `api-key.delete` | `api-key` | Key deleted |
-| `execute` | `job` | Job triggered via API (includes `trigger: "api"`) |
+| Action | Resource | When | Details |
+|--------|----------|------|---------|
+| `CREATE` | `API_KEY` | Key created | `name`, `permissions`, `expiresAt`, `template` of the task |
+| `UPDATE` | `API_KEY` | Key edited | `name`, `renamedFrom`, `added`, `removed`, `areas`, `expiresAt` |
+| `UPDATE` | `API_KEY` | Key rotated (new hash) | `name`, `action: "rotate"` |
+| `UPDATE` | `API_KEY` | Key enabled/disabled | `name`, `enabled` |
+| `DELETE` | `API_KEY` | Key deleted | `name`, `prefix` |
+| `EXECUTE` | `JOB` | Job triggered via API | `trigger: "api"`, `apiKeyId` |
+
+The panel of a key finds its runs by `triggerLabel`, which holds the name the key had at run time. A rename is read back from `renamedFrom`, so the runs of earlier names still show.
 
 ## Error Handling
 
@@ -383,21 +395,25 @@ export class ApiKeyError extends DBackupError {
 ## Security Considerations
 
 1. **No SuperAdmin for API Keys**: Even if the key owner is a SuperAdmin, the API key only has its explicitly assigned permissions
-2. **Hash-Only Storage**: Raw keys are never persisted - only SHA-256 hashes
-3. **One-Time Reveal**: The full key is displayed exactly once during creation
-4. **Expiration**: Optional expiry dates provide time-limited access
-5. **Rate Limiting**: API key requests go through the same IP-based rate limiter as browser requests
-6. **Cascade Deletion**: When a user is deleted, all their API keys are automatically removed
+2. **Hash-Only Storage**: Raw keys are never persisted - only scrypt hashes
+3. **Owner Cap**: A key never exceeds the group of its owner, at every request. Creating a key or adding a permission also needs the caller's group to allow it, and only the owner or a user whose group covers the key may rotate it
+4. **One-Time Reveal**: The full key is displayed exactly once, after creation or rotation
+5. **Expiration**: New keys run out after 90 days by default
+6. **Rate Limiting**: API key requests go through the same IP-based rate limiter as browser requests
+7. **Cascade Deletion**: When a user is deleted, all their API keys are automatically removed
 
 ## UI Components
 
 | Component | Location | Purpose |
 |-----------|----------|---------|
-| `CreateApiKeyDialog` | `src/components/api-keys/create-api-key-dialog.tsx` | Create form with name, expiry calendar, permission picker |
-| `ApiKeyTable` | `src/components/api-keys/api-key-table.tsx` | DataTable with toggle, rotate, delete actions |
-| `ApiKeyRevealDialog` | `src/components/api-keys/api-key-reveal-dialog.tsx` | One-time key display with copy button |
-| `ApiTriggerDialog` | `src/components/dashboard/jobs/api-trigger-dialog.tsx` | Code examples (cURL, Bash, Ansible) |
-| `PermissionPicker` | `src/components/permission-picker.tsx` | Reusable permission selector (Groups + API Keys) |
+| `ApiKeysTab` | `src/components/dashboard/api-keys/api-keys-tab.tsx` | The API keys tab: strip, table or cards, bulk actions, loaded from `GET /api/api-keys` |
+| `ApiKeyDetails` | `src/components/dashboard/api-keys/api-key-details.tsx` | The panel of a key, with its runs from `GET /api/api-keys/[id]` |
+| `ApiKeyFormDialog` | `src/components/dashboard/api-keys/api-key-form-dialog.tsx` | New API key (task, copy or Custom, then the editor) and Edit |
+| `ApiKeyCreatedDialog` | `src/components/dashboard/api-keys/api-key-created-dialog.tsx` | One-time key display with a first request |
+| `PermissionEditor` | `src/components/permissions/permission-editor.tsx` | The editor of permissions by area, shared with the groups |
+| `ApiTriggerDialog` | `src/components/dashboard/jobs/api-trigger-dialog.tsx` | Code examples (cURL, Bash, Ansible), makes a key with the CI/CD task |
+
+The tasks of New API key are plain data in `src/lib/auth/api-key-templates.ts`.
 
 ## Adding New API Routes
 

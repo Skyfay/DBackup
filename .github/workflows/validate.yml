@@ -1,6 +1,7 @@
 # ─── Validate ────────────────────────────────────────────────
 # Lint, type checking, and unit tests run in parallel.
-# Triggered on tags and pull requests as a quality gate.
+# A quality gate on every pull request into main or dev, and called by the
+# release workflow on tags.
 
 name: Validate
 
@@ -8,6 +9,7 @@ on:
   pull_request:
     branches:
       - main
+      - dev
   workflow_call:
 
 concurrency:

@@ -10,6 +10,8 @@ import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { checkStorageAlerts } from "@/services/storage/storage-alert-service";
 import { isBackupFile } from "@/lib/core/backup-files";
+import { invalidateDashboardCache } from "@/services/dashboard/cache";
+import { isNotConnected } from "@/lib/core/air-gap";
 
 export interface DashboardStats {
   totalJobs: number;
@@ -31,20 +33,19 @@ export interface ActivityDataPoint {
   cancelled: number;
 }
 
-export interface JobStatusDistribution {
-  status: string;
-  count: number;
-  fill: string;
-}
-
 export interface StorageVolumeEntry {
   configId?: string;
   name: string;
   adapterId: string;
   size: number;
   count: number;
-  /** True when the live adapter scan failed and DB fallback data was used. Snapshots and alerts are skipped for these entries. */
+  /**
+   * True when the destination could not be listed at the last refresh. `size` and `count` then
+   * hold its last successful scan, taken at `lastScanAt`. Snapshots and alerts skip these entries.
+   */
   scanError?: boolean;
+  /** When the values of a failed scan were measured, null when the destination was never scanned. */
+  lastScanAt?: string | null;
 }
 
 export interface StorageSnapshotEntry {
@@ -63,6 +64,8 @@ export interface LatestJobEntry {
   databaseName: string | null;
   startedAt: Date;
   duration: number;
+  /** Bytes stored by the run, null while it runs or when it stored nothing. */
+  size: number | null;
 }
 
 export interface CalendarDayData {
@@ -99,10 +102,11 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     prisma.execution.count({
       where: { status: "Failed", startedAt: { gte: twentyFourHoursAgo } },
     }),
+    // Every finished run, a partial one counting against the rate like on every page of the dashboard.
     prisma.execution.count({
       where: {
         startedAt: { gte: thirtyDaysAgo },
-        status: { in: ["Success", "Failed"] },
+        status: { in: ["Success", "Partial", "Failed"] },
       },
     }),
     prisma.execution.count({
@@ -281,67 +285,6 @@ export async function getCalendarDataForYear(year: number): Promise<CalendarDayD
   return Array.from(dayMap.values());
 }
 
-/**
- * Returns all years that have at least one Backup execution, from the earliest to the current year.
- * Used to populate the year selector in the Backup Calendar Heatmap.
- */
-export async function getAvailableCalendarYears(): Promise<number[]> {
-  const earliest = await prisma.execution.findFirst({
-    where: { type: "Backup" },
-    orderBy: { startedAt: "asc" },
-    select: { startedAt: true },
-  });
-  const currentYear = new Date().getFullYear();
-  if (!earliest) return [currentYear];
-  const firstYear = earliest.startedAt.getFullYear();
-  return Array.from({ length: currentYear - firstYear + 1 }, (_, i) => firstYear + i);
-}
-
-/**
- * Fetches job status distribution for the last 30 days.
- * Used for the Job Status donut chart.
- */
-export async function getJobStatusDistribution(): Promise<JobStatusDistribution[]> {
-  const thirtyDaysAgo = subDays(new Date(), 30);
-
-  const executions = await prisma.execution.findMany({
-    where: { startedAt: { gte: thirtyDaysAgo } },
-    select: { status: true },
-  });
-
-  const counts: Record<string, number> = {
-    Success: 0,
-    Failed: 0,
-    Partial: 0,
-    Running: 0,
-    Pending: 0,
-    Cancelled: 0,
-  };
-
-  for (const exec of executions) {
-    if (exec.status in counts) {
-      counts[exec.status]++;
-    }
-  }
-
-  const colorMap: Record<string, string> = {
-    Success: "var(--color-completed)",
-    Failed: "var(--color-failed)",
-    Partial: "var(--color-partial)",
-    Running: "var(--color-running)",
-    Pending: "var(--color-pending)",
-    Cancelled: "var(--color-cancelled)",
-  };
-
-  return Object.entries(counts)
-    .filter(([, count]) => count > 0)
-    .map(([status, count]) => ({
-      status,
-      count,
-      fill: colorMap[status] ?? "var(--color-chart-1)",
-    }));
-}
-
 const STORAGE_CACHE_KEY = "cache.storageVolume";
 const STORAGE_CACHE_UPDATED_KEY = "cache.storageVolume.updatedAt";
 
@@ -367,12 +310,11 @@ export async function getStorageVolume(): Promise<StorageVolumeEntry[]> {
   }
 
   // No cache yet - do a live refresh to populate it (first load only)
-  // This ensures accurate data from the start instead of inaccurate DB estimation
   try {
     return await refreshStorageStatsCache();
   } catch {
-    // If live refresh fails entirely, fall back to DB estimation
-    return getStorageVolumeFromDB();
+    // If the live refresh fails entirely, show what every destination held at its last scan.
+    return getLastScannedStorageVolume();
   }
 }
 
@@ -410,6 +352,8 @@ export async function refreshStorageStatsCache(): Promise<StorageVolumeEntry[]> 
 
   // Query all adapters in parallel for maximum speed
   const promises = storageAdapters.map(async (adapterConfig) => {
+    // An air-gapped destination that is not connected keeps the values of its last scan, without a warning.
+    if (isNotConnected(adapterConfig)) return lastScannedEntry(adapterConfig);
     try {
       const adapter = registry.get(adapterConfig.adapterId) as StorageAdapter;
       if (!adapter) return null;
@@ -432,31 +376,11 @@ export async function refreshStorageStatsCache(): Promise<StorageVolumeEntry[]> 
         count: backupFiles.length,
       };
     } catch (error) {
-      log.warn("Failed to query storage adapter, using DB fallback", {
+      log.warn("Failed to query storage adapter, keeping its last scanned values", {
         adapter: adapterConfig.name,
         adapterId: adapterConfig.adapterId,
       }, wrapError(error));
-
-      // Fall back to DB aggregation for this adapter
-      const executions = await prisma.execution.findMany({
-        where: {
-          status: "Success",
-          size: { not: null },
-          job: { destinations: { some: { configId: adapterConfig.id } } },
-        },
-        select: { size: true },
-      });
-
-      const totalSize = executions.reduce((sum, ex) => sum + Number(ex.size ?? 0), 0);
-
-      return {
-        configId: adapterConfig.id,
-        name: adapterConfig.name,
-        adapterId: adapterConfig.adapterId,
-        size: totalSize,
-        count: executions.length,
-        scanError: true,
-      };
+      return lastScannedEntry(adapterConfig);
     }
   });
 
@@ -470,6 +394,9 @@ export async function refreshStorageStatsCache(): Promise<StorageVolumeEntry[]> 
   // Save historical snapshots for storage usage over time charts
   await saveStorageSnapshots(results);
 
+  // The dashboard overview caches its storage cards and trends, which this refresh just changed.
+  invalidateDashboardCache();
+
   log.info("Storage statistics cache refreshed", {
     destinations: results.length,
     totalSize: results.reduce((sum, r) => sum + r.size, 0),
@@ -480,39 +407,36 @@ export async function refreshStorageStatsCache(): Promise<StorageVolumeEntry[]> 
 }
 
 /**
- * DB-based storage volume estimation using the Execution table.
- * Used as initial fallback when no cache exists yet.
+ * The values of a destination's last successful scan, from its newest storage snapshot.
+ *
+ * Snapshots are only written for successful scans, so this is what the destination held when it
+ * was last reachable. A sum over the run history would count backups that retention deleted long
+ * ago. A destination without any snapshot reports zero and no scan date.
  */
-async function getStorageVolumeFromDB(): Promise<StorageVolumeEntry[]> {
+async function lastScannedEntry(adapterConfig: { id: string; name: string; adapterId: string }): Promise<StorageVolumeEntry> {
+  const snapshot = await prisma.storageSnapshot.findFirst({
+    where: { adapterConfigId: adapterConfig.id },
+    orderBy: { createdAt: "desc" },
+    select: { size: true, count: true, createdAt: true },
+  });
+
+  return {
+    configId: adapterConfig.id,
+    name: adapterConfig.name,
+    adapterId: adapterConfig.adapterId,
+    size: snapshot ? Number(snapshot.size) : 0,
+    count: snapshot?.count ?? 0,
+    scanError: true,
+    lastScanAt: snapshot?.createdAt.toISOString() ?? null,
+  };
+}
+
+/** Used when no cache exists yet and the live refresh failed as a whole. */
+async function getLastScannedStorageVolume(): Promise<StorageVolumeEntry[]> {
   const storageAdapters = await prisma.adapterConfig.findMany({
     where: { type: "storage", storageRole: STORAGE_ROLES.DESTINATION },
   });
-
-  if (storageAdapters.length === 0) return [];
-
-  const results: StorageVolumeEntry[] = [];
-
-  for (const adapterConfig of storageAdapters) {
-    const executions = await prisma.execution.findMany({
-      where: {
-        status: "Success",
-        size: { not: null },
-        job: { destinations: { some: { configId: adapterConfig.id } } },
-      },
-      select: { size: true },
-    });
-
-    const totalSize = executions.reduce((sum, ex) => sum + Number(ex.size ?? 0), 0);
-
-    results.push({
-      name: adapterConfig.name,
-      adapterId: adapterConfig.adapterId,
-      size: totalSize,
-      count: executions.length,
-    });
-  }
-
-  return results;
+  return Promise.all(storageAdapters.map(lastScannedEntry));
 }
 
 /**
@@ -595,6 +519,7 @@ export async function getLatestJobs(limit: number = 7): Promise<LatestJobEntry[]
       databaseName,
       startedAt: exec.startedAt,
       duration,
+      size: exec.size != null ? Number(exec.size) : null,
     };
   });
 }
@@ -618,8 +543,8 @@ async function saveStorageSnapshots(entries: StorageVolumeEntry[]): Promise<void
   const log = logger.child({ service: "StorageSnapshots" });
 
   try {
-    // Skip entries where the live adapter scan failed - their sizes come from DB fallback
-    // and are unreliable for snapshot history and spike detection.
+    // Skip entries whose scan failed. They repeat the values of an earlier scan, and storing them
+    // as a new measurement would fake a flat history and hide spikes from the alerts.
     const validEntries = entries.filter((entry) => entry.configId && !entry.scanError);
 
     if (validEntries.length < entries.length) {

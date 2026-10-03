@@ -73,16 +73,22 @@ DBackup uses `mariadb-client` which is compatible with MySQL servers. This works
 ### Dump Options
 
 ```bash
-mysqldump \
+mariadb-dump \
+  --defaults-file=/tmp/dbackup_<uuid>.cnf \
   -h hostname \
   -P 3306 \
   -u username \
-  --password=*** \
+  --protocol=tcp \
+  --net-buffer-length=16384 \
   --single-transaction \
   --routines \
-  --triggers \
-  database_name
+  --events \
+  [extra options] \
+  --databases database_name \
+  --default-character-set=utf8mb4
 ```
+
+The three content flags follow the switches of the source, and the tools include triggers on their own. `--default-character-set=utf8mb4` is added for MySQL 8 and later, and `--set-gtid-purged=OFF` when the tool is MySQL's own mysqldump, as over SSH on a MySQL host.
 
 ## MariaDB
 

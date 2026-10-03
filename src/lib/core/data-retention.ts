@@ -17,7 +17,8 @@ export type DataRetentionId =
     | "auditLog"
     | "notificationHistory"
     | "storageUsage"
-    | "healthChecks";
+    | "healthChecks"
+    | "deletedItems";
 
 export interface DataRetentionSetting {
     id: DataRetentionId;
@@ -37,50 +38,58 @@ export const DATA_RETENTION_SETTINGS: readonly DataRetentionSetting[] = [
     {
         id: "executionLogs",
         key: "execution.logRetentionDays",
-        label: "Execution Logs",
-        description: "Detailed step logs of backup, restore and system task runs. The run itself stays in History.",
-        defaultDays: 90,
+        label: "Run logs",
+        description: "The step logs of backups, restores and system tasks. The run stays in History.",
+        defaultDays: 365,
         choices: [7, 14, 30, 60, 90, 180, 365, 730, RETENTION_NEVER],
     },
     {
         id: "executionHistory",
         key: "execution.retentionDays",
-        label: "Execution History",
-        description: `Runs listed under History and counted in dashboard statistics. The newest ${EXECUTION_HISTORY_KEEP_LATEST} runs per job and every run of an active incremental chain are always kept.`,
+        label: "Run history",
+        description: `The runs in History and the numbers of the dashboard. The newest ${EXECUTION_HISTORY_KEEP_LATEST} per job and every run of an incremental chain in use always stay.`,
         defaultDays: RETENTION_NEVER,
         choices: [30, 90, 180, 365, 730, 1095, 1825, RETENTION_NEVER],
     },
     {
         id: "auditLog",
         key: "audit.retentionDays",
-        label: "Audit Log",
-        description: "Record of user actions such as sign-ins and configuration changes.",
+        label: "Audit log",
+        description: "Sign-ins and changes, who did what.",
         defaultDays: 90,
         choices: [30, 60, 90, 180, 365, 730, 1095, 1825],
     },
     {
         id: "notificationHistory",
         key: "notification.logRetentionDays",
-        label: "Notification History",
-        description: "Notifications sent by DBackup, including their rendered content.",
+        label: "Notification history",
+        description: "Every notification DBackup sent, as it was sent.",
         defaultDays: 90,
         choices: [7, 14, 30, 60, 90, 180, 365, 730, 1095, 1825],
     },
     {
         id: "storageUsage",
         key: "storage.snapshotRetentionDays",
-        label: "Storage Usage History",
-        description: "Hourly size measurements behind the storage charts and usage alerts. Backup files are not affected.",
+        label: "Storage history",
+        description: "The hourly sizes behind the storage charts and alerts.",
         defaultDays: 90,
         choices: [7, 14, 30, 60, 90, 180, 365, 730, 1095, 1825],
     },
     {
         id: "healthChecks",
         key: "healthcheck.logRetentionDays",
-        label: "Health Check History",
-        description: "Connection checks against sources and destinations, recorded every minute.",
+        label: "Health check history",
+        description: "The checks of every connection, one a minute.",
         defaultDays: 2,
         choices: [1, 2, 7, 14, 30],
+    },
+    {
+        id: "deletedItems",
+        key: "trash.retentionDays",
+        label: "Deleted items",
+        description: "Keys, saved logins, connections, jobs and users in Recently deleted.",
+        defaultDays: 30,
+        choices: [1, 7, 14, 30, 60, 90],
     },
 ];
 
@@ -88,14 +97,14 @@ export function getDataRetentionSetting(id: string): DataRetentionSetting | unde
     return DATA_RETENTION_SETTINGS.find((s) => s.id === id);
 }
 
-/** "Never", "7 Days", "1 Year", "2 Years". */
+/** "Never", "7 days", "1 year", "2 years". */
 export function formatRetentionDays(days: number): string {
     if (days === RETENTION_NEVER) return "Never";
     if (days % 365 === 0) {
         const years = days / 365;
-        return `${years} Year${years === 1 ? "" : "s"}`;
+        return `${years} year${years === 1 ? "" : "s"}`;
     }
-    return `${days} Day${days === 1 ? "" : "s"}`;
+    return `${days} day${days === 1 ? "" : "s"}`;
 }
 
 /**

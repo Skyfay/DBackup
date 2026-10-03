@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
     );
 
     const profileUrl = new URL("/dashboard/profile", request.url);
-    profileUrl.searchParams.set("tab", "sso");
+    profileUrl.searchParams.set("part", "security");
     profileUrl.searchParams.set("connected", "1");
     return NextResponse.redirect(profileUrl);
 }

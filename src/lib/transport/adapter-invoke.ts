@@ -67,7 +67,11 @@ export async function runAdapterTest(
     });
 }
 
-function withTimeoutInsideScope<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+/**
+ * Rejects when the call takes longer than the timeout. Meant to run inside a host scope, so the
+ * scope still closes its connection when the timeout wins, see `runConnectivityCheck`.
+ */
+export function withTimeoutInsideScope<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
     let timer: NodeJS.Timeout;
     const timeout = new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(new Error(`Timeout after ${timeoutMs}ms: ${label}`)), timeoutMs);

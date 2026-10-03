@@ -87,9 +87,13 @@ The tool picks the right key for each backup by itself, from the profile the bac
 records. Nothing needs choosing.
 `;
 
+    // The id the backups name, so importing the key from this kit into another Vault counts them
+    // under it. A kit with several keys lists theirs in keys/keys.json.
+    const id = single ? `Profile ID: ${profiles[0].id}\n` : "";
+
     return `${heading}
 Generated at: ${generatedAt}
-${covers}
+${id}${covers}
 This kit restores your backups WITHOUT DBackup. Keep it somewhere safe, and NOT next to
 your backups - it contains the ${single ? "key" : "keys"} that open them.
 

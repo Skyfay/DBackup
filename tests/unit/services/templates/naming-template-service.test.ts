@@ -43,13 +43,14 @@ describe("NamingTemplateService", () => {
   // ── Read operations ──────────────────────────────────────────
 
   describe("getNamingTemplates", () => {
-    it("returns all templates ordered by name", async () => {
+    it("returns all templates ordered by name, with how many jobs use each", async () => {
       const templates = [makeTemplate({ id: "a" }), makeTemplate({ id: "b" })];
       prismaMock.namingTemplate.findMany.mockResolvedValue(templates as any);
 
       const result = await getNamingTemplates();
 
       expect(prismaMock.namingTemplate.findMany).toHaveBeenCalledWith({
+        include: { _count: { select: { jobs: true } } },
         orderBy: { name: "asc" },
       });
       expect(result).toHaveLength(2);
@@ -201,6 +202,13 @@ describe("NamingTemplateService", () => {
         where: { isDefault: true, id: { not: "tpl-1" } },
         data: { isDefault: false },
       });
+    });
+
+    it("refuses to leave the jobs without a default template", async () => {
+      prismaMock.namingTemplate.findUnique.mockResolvedValue(makeTemplate({ isDefault: true, isSystem: true }) as any);
+
+      await expect(updateNamingTemplate("tpl-1", { isDefault: false })).rejects.toThrow("Make another template the default instead");
+      expect(prismaMock.namingTemplate.update).not.toHaveBeenCalled();
     });
   });
 

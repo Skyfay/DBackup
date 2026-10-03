@@ -6,6 +6,7 @@ import { registerAdapters } from "@/lib/adapters";
 import { resolveAdapterConfig } from "@/lib/adapters/config-resolver";
 import { resolveExcludePatterns, parseJsonStringArray } from "@/lib/exclude-groups";
 import { RetentionConfiguration } from "@/lib/core/retention";
+import { isAirGapped } from "@/lib/core/air-gap";
 
 // Ensure adapters are loaded
 registerAdapters();
@@ -166,6 +167,7 @@ export async function stepInitialize(ctx: RunnerContext) {
             retentionPolicySource,
             priority: dest.priority,
             adapterId: dest.config.adapterId,
+            airGapped: isAirGapped(dest.config),
         };
         ctx.destinations.push(destCtx);
     }

@@ -302,25 +302,25 @@ describe("getStorageVolume - cache miss behavior", () => {
     expect(result[0].count).toBe(1);
   });
 
-  it("falls back to DB estimation when refreshStorageStatsCache throws entirely", async () => {
+  it("falls back to the last scanned values when refreshStorageStatsCache throws entirely", async () => {
     prismaMock.systemSetting.findUnique.mockResolvedValue(null);
     // First call from refreshStorageStatsCache - throws
-    // Second call from getStorageVolumeFromDB - returns an adapter
+    // Second call from the last-scan fallback - returns an adapter
     prismaMock.adapterConfig.findMany
       .mockRejectedValueOnce(new Error("DB connection error"))
       .mockResolvedValueOnce([
         { id: "cfg-db", name: "DB Only", adapterId: "local", type: "storage" } as any,
       ]);
-    prismaMock.execution.findMany.mockResolvedValue([
-      { size: BigInt(999) },
-    ] as any);
+    prismaMock.storageSnapshot.findFirst.mockResolvedValue({
+      size: BigInt(999),
+      count: 1,
+      createdAt: new Date("2026-09-20T12:00:00.000Z"),
+    } as any);
 
     const result = await getStorageVolume();
 
     expect(result).toHaveLength(1);
-    expect(result[0].name).toBe("DB Only");
-    expect(result[0].size).toBe(999);
-    expect(result[0].count).toBe(1);
+    expect(result[0]).toMatchObject({ name: "DB Only", size: 999, count: 1, scanError: true });
   });
 });
 
@@ -408,7 +408,7 @@ describe("refreshStorageStatsCache - adapter failure fallback", () => {
     prismaMock.systemSetting.findUnique.mockResolvedValue(null);
   });
 
-  it("marks scanError true and uses DB fallback when adapter.list throws", async () => {
+  it("marks scanError true and keeps the last scanned values when adapter.list throws", async () => {
     vi.mocked(registry.get).mockReturnValue({
       list: vi.fn().mockRejectedValue(new Error("Connection refused")),
     } as any);
@@ -416,10 +416,11 @@ describe("refreshStorageStatsCache - adapter failure fallback", () => {
     prismaMock.adapterConfig.findMany.mockResolvedValue([
       { id: "cfg-err", name: "Broken S3", adapterId: "s3", type: "storage", config: "{}" } as any,
     ]);
-    prismaMock.execution.findMany.mockResolvedValue([
-      { size: BigInt(100) },
-      { size: BigInt(200) },
-    ] as any);
+    prismaMock.storageSnapshot.findFirst.mockResolvedValue({
+      size: BigInt(300),
+      count: 2,
+      createdAt: new Date("2026-09-21T06:00:00.000Z"),
+    } as any);
 
     const result = await refreshStorageStatsCache();
 
@@ -427,6 +428,22 @@ describe("refreshStorageStatsCache - adapter failure fallback", () => {
     expect(result[0].scanError).toBe(true);
     expect(result[0].size).toBe(300);
     expect(result[0].count).toBe(2);
+    expect(result[0].lastScanAt).toBe("2026-09-21T06:00:00.000Z");
+  });
+
+  it("reports zero and no scan date for a destination that was never scanned", async () => {
+    vi.mocked(registry.get).mockReturnValue({
+      list: vi.fn().mockRejectedValue(new Error("Connection refused")),
+    } as any);
+
+    prismaMock.adapterConfig.findMany.mockResolvedValue([
+      { id: "cfg-new", name: "New NAS", adapterId: "smb", type: "storage", config: "{}" } as any,
+    ]);
+    prismaMock.storageSnapshot.findFirst.mockResolvedValue(null);
+
+    const result = await refreshStorageStatsCache();
+
+    expect(result[0]).toMatchObject({ size: 0, count: 0, scanError: true, lastScanAt: null });
   });
 
   it("skips snapshots for adapters with scanError and logs a warning", async () => {

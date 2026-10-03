@@ -1,26 +1,50 @@
 "use server"
 
 import { revalidatePath } from "next/cache";
-import { checkPermission, getCurrentUserWithGroup } from "@/lib/auth/access-control";
-import { PERMISSIONS } from "@/lib/auth/permissions";
-import { userService } from "@/services/user/user-service";
+import { checkPermission, currentSessionId, getCurrentUserWithGroup, hasPermission } from "@/lib/auth/access-control";
+import { MAX_PASSWORD_LENGTH } from "@/lib/auth/password-policy";
+import { PERMISSIONS, TRASH_ADMIN_PERMISSION } from "@/lib/auth/permissions";
 import { authService } from "@/services/auth/auth-service";
+import { userService } from "@/services/user/user-service";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { logger } from "@/lib/logging/logger";
-import { wrapError, getErrorMessage } from "@/lib/logging/errors";
+import { wrapError, getErrorMessage, ValidationError } from "@/lib/logging/errors";
 import { notify } from "@/services/notifications/system-notification-service";
 import { NOTIFICATION_EVENTS } from "@/lib/notifications";
 import { BulkIdsSchema } from "@/lib/core/bulk-schema";
+import { DeleteModeSchema, PERMANENT_DELETE_REFUSED, type DeleteMode } from "@/lib/core/delete-mode";
+import { z } from "zod";
+import prisma from "@/lib/prisma";
 
 const log = logger.child({ action: "user" });
 
-export async function createUser(data: { name: string; email: string; password: string }) {
+const CreateUserSchema = z.object({
+    name: z.string().trim().min(2, "Name must be at least 2 characters.").max(100),
+    email: z.string().trim().email("Invalid email address."),
+    // The rules of Settings > Passwords are checked by the service, which names the one it breaks.
+    password: z.string().min(1, "Enter a password.").max(MAX_PASSWORD_LENGTH, `Password can have at most ${MAX_PASSWORD_LENGTH} characters.`),
+    /** The group the user starts in, none for a user who sees nothing until someone picks one. */
+    groupId: z.string().min(1).nullable(),
+});
+
+export type CreateUserInput = z.input<typeof CreateUserSchema>;
+
+export async function createUser(input: CreateUserInput) {
     await checkPermission(PERMISSIONS.USERS.WRITE);
+    const parsed = CreateUserSchema.safeParse(input);
+    if (!parsed.success) {
+        return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid request" };
+    }
+    const data = parsed.data;
     const currentUser = await getCurrentUserWithGroup();
 
+    if (await userService.isSuperAdminGroup(data.groupId) && currentUser?.group?.name !== "SuperAdmin") {
+        return { success: false, error: "Only a SuperAdmin can make someone a SuperAdmin." };
+    }
+
     try {
-        const result = await authService.createUser(data);
+        const user = await userService.createUser(data);
         revalidatePath("/dashboard/users");
 
         if (currentUser) {
@@ -28,8 +52,8 @@ export async function createUser(data: { name: string; email: string; password: 
                 currentUser.id,
                 AUDIT_ACTIONS.CREATE,
                 AUDIT_RESOURCES.USER,
-                { name: data.name, email: data.email },
-                result.user.id
+                { name: data.name, email: data.email, groupId: data.groupId },
+                user.id
             );
         }
 
@@ -44,15 +68,10 @@ export async function createUser(data: { name: string; email: string; password: 
             },
         }).catch(() => {});
 
-        return { success: true };
+        return { success: true, data: { id: user.id } };
     } catch (error: unknown) {
         return { success: false, error: getErrorMessage(error) };
     }
-}
-
-export async function getUsers() {
-    await checkPermission(PERMISSIONS.USERS.READ);
-    return await userService.getUsers();
 }
 
 export async function updateUserGroup(userId: string, groupId: string | null) {
@@ -65,11 +84,12 @@ export async function updateUserGroup(userId: string, groupId: string | null) {
     }
 
     // Only SuperAdmins can assign users to the SuperAdmin group
-    if (groupId && groupId !== "none") {
-        const targetGroup = await (await import("@/lib/prisma")).default.group.findUnique({ where: { id: groupId } });
-        if (targetGroup?.name === "SuperAdmin" && currentUser?.group?.name !== "SuperAdmin") {
-            return { success: false, error: "Only SuperAdmin users can assign the SuperAdmin group." };
-        }
+    const actorSuperAdmin = currentUser?.group?.name === "SuperAdmin";
+    if (await userService.isSuperAdminGroup(groupId) && !actorSuperAdmin) {
+        return { success: false, error: "Only a SuperAdmin can make someone a SuperAdmin." };
+    }
+    if (!actorSuperAdmin && await userService.isSuperAdmin(userId)) {
+        return { success: false, error: "Only a SuperAdmin can change the group of a SuperAdmin." };
     }
 
     try {
@@ -93,24 +113,25 @@ export async function updateUserGroup(userId: string, groupId: string | null) {
     }
 }
 
-export async function resetUserTwoFactor(userId: string) {
-    await checkPermission(PERMISSIONS.USERS.WRITE);
-
-    try {
-        await userService.resetTwoFactor(userId);
-        return { success: true };
-    } catch (error: unknown) {
-        log.error("Failed to reset 2FA", { userId }, wrapError(error));
-        return { success: false, error: getErrorMessage(error) || "Failed to reset 2FA" };
-    }
-}
-
-export async function deleteUser(userId: string) {
+/** Deletes a user, who waits in Recently deleted unless `permanently`. */
+export async function deleteUser(userId: string, mode?: DeleteMode) {
     await checkPermission(PERMISSIONS.USERS.WRITE);
     const currentUser = await getCurrentUserWithGroup();
+    const parsedMode = DeleteModeSchema.safeParse(mode);
+    if (!parsedMode.success) return { success: false, error: "Invalid request" };
+    const { permanently = false } = parsedMode.data;
+    if (permanently && !(await hasPermission(TRASH_ADMIN_PERMISSION))) return { success: false, error: PERMANENT_DELETE_REFUSED };
+
+    // Refused here and not only left out of the menus, like in the bulk delete.
+    if (currentUser?.id === userId) {
+        return { success: false, error: "You cannot delete your own account." };
+    }
+    if (currentUser?.group?.name !== "SuperAdmin" && await userService.isSuperAdmin(userId)) {
+        return { success: false, error: "Only a SuperAdmin can delete a SuperAdmin." };
+    }
 
     try {
-        await userService.deleteUser(userId);
+        const deleted = await userService.deleteUser(userId, { permanently, by: currentUser?.id });
         revalidatePath("/dashboard/users");
         revalidatePath("/dashboard/settings");
 
@@ -119,7 +140,7 @@ export async function deleteUser(userId: string) {
                 currentUser.id,
                 AUDIT_ACTIONS.DELETE,
                 AUDIT_RESOURCES.USER,
-                undefined,
+                { name: deleted.name || deleted.email, ...(permanently ? { permanently: true } : {}) },
                 userId
             );
         }
@@ -134,9 +155,11 @@ export async function togglePasskeyTwoFactor(userId: string, enabled: boolean) {
     const currentUser = await getCurrentUserWithGroup();
     if (!currentUser) throw new Error("Unauthorized");
 
-    // Allow user to edit their own settings, otherwise require permission
+    // Allow user to edit their own settings, as far as their group allows, otherwise require permission
     if (currentUser.id !== userId) {
         await checkPermission(PERMISSIONS.USERS.WRITE);
+    } else if (!(await hasPermission(PERMISSIONS.PROFILE.MANAGE_PASSKEYS))) {
+        return { success: false, error: "Your group may not change your passkeys." };
     }
 
     try {
@@ -149,76 +172,51 @@ export async function togglePasskeyTwoFactor(userId: string, enabled: boolean) {
     }
 }
 
-import { auth } from "@/lib/auth";
-import { headers } from "next/headers";
-import prisma from "@/lib/prisma";
+const OwnPasswordSchema = z.object({
+    currentPassword: z.string().min(1, "Enter the password you have now."),
+    // The rules of Settings > Passwords are checked by the service, which names the one it breaks.
+    newPassword: z.string().min(1, "Enter a new password.").max(MAX_PASSWORD_LENGTH, `The password can have at most ${MAX_PASSWORD_LENGTH} characters.`),
+});
 
-// @no-permission-required - Self-service: Users can always change their own password
+/**
+ * Changes the own password with the current one. The new one follows the rules of
+ * Settings > Passwords, and every other session of the account ends, so the old password stops
+ * working everywhere at once.
+ * @no-permission-required - Self-service: Users can always change their own password
+ */
 export async function updateOwnPassword(currentPassword: string, newPassword: string) {
     const currentUser = await getCurrentUserWithGroup();
     if (!currentUser) throw new Error("Unauthorized");
+    if (!(await hasPermission(PERMISSIONS.PROFILE.UPDATE_PASSWORD))) {
+        return { success: false, error: "Your group may not change your password." };
+    }
+    const parsed = OwnPasswordSchema.safeParse({ currentPassword, newPassword });
+    if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid request" };
 
-    // 1. Verify user has a credential account
-    const account = await prisma.account.findFirst({
-        where: {
-            userId: currentUser.id,
-            providerId: "credential"
-        }
-    });
-
+    const account = await prisma.account.findFirst({ where: { userId: currentUser.id, providerId: "credential" }, select: { id: true } });
     if (!account) {
         return { success: false, error: "No password account found. Please set up a password first." };
     }
 
-    // 2. Verify current password by attempting a "dry run" sign-in
     try {
-        await auth.api.signInEmail({
-            body: {
-                email: currentUser.email,
-                password: currentPassword
-            },
-            asResponse: true // Prevent actual sign-in side effects (cookies)
-        });
-    } catch (_error: unknown) {
-        // better-auth throws on failed sign-in
-        return { success: false, error: "Incorrect current password" };
-    }
-
-    // 3. Update password via delete & set sequence
-    // Using setPassword requires the user to NOT have a password.
-    // Since changePassword endpoint is strict about session type, we must use this workaround.
-    try {
-        const headersList = await headers();
-
-        // Transaction manually managed: Delete then Set
-        // 1. Delete credential account
-        await prisma.account.deleteMany({
-            where: {
-                userId: currentUser.id,
-                providerId: "credential"
-            }
-        });
-
-        // 2. Set new password
-        await auth.api.setPassword({
-            headers: headersList,
-            body: {
-                newPassword: newPassword,
-                // Passing revokeOtherSessions: true if supported would be good,
-                // but setPassword might not support it in all versions.
-            }
-        });
+        // Checked against the stored hash, without signing in.
+        if (!(await authService.verifyPassword(currentUser.id, parsed.data.currentPassword))) {
+            return { success: false, error: "Incorrect current password" };
+        }
+        await authService.setPassword(currentUser.id, parsed.data.newPassword);
+        const signedOut = await userService.revokeSessions(currentUser.id, await currentSessionId());
 
         await auditService.log(
             currentUser.id,
             AUDIT_ACTIONS.UPDATE,
             AUDIT_RESOURCES.USER,
-            { change: "Password Changed" },
+            { change: "Password Changed", signedOut },
             currentUser.id
         );
 
-        return { success: true };
+        return { success: true, data: { signedOut } };
     } catch (error: unknown) {
+        if (error instanceof ValidationError) return { success: false, error: error.message };
         log.error("Failed to update password", { userId: currentUser.id }, wrapError(error));
         return { success: false, error: getErrorMessage(error) || "Failed to update password" };
     }
@@ -231,6 +229,14 @@ export async function updateUser(userId: string, data: { name?: string; email?: 
     // Allow user to edit their own profile, otherwise require permission
     if (currentUser.id !== userId) {
         await checkPermission(PERMISSIONS.USERS.WRITE);
+    } else if (!(await hasPermission(PERMISSIONS.USERS.WRITE))) {
+        // Someone who may not change users changes their own name and email only as far as their group allows.
+        if (data.name !== undefined && data.name !== currentUser.name && !(await hasPermission(PERMISSIONS.PROFILE.UPDATE_NAME))) {
+            return { success: false, error: "Your group may not change your name." };
+        }
+        if (data.email !== undefined && data.email !== currentUser.email && !(await hasPermission(PERMISSIONS.PROFILE.UPDATE_EMAIL))) {
+            return { success: false, error: "Your group may not change your email." };
+        }
     }
 
     try {
@@ -320,25 +326,33 @@ export async function getUserPreference(key: 'autoRedirectOnJobStart'): Promise<
  * a client-side check is not a guarantee. The last-SuperAdmin and last-user guards live in
  * the service and surface as per-user failures.
  */
-export async function bulkDeleteUsers(userIds: string[]) {
+export async function bulkDeleteUsers(userIds: string[], mode?: DeleteMode) {
     await checkPermission(PERMISSIONS.USERS.WRITE);
     const currentUser = await getCurrentUserWithGroup();
 
     const parsed = BulkIdsSchema.safeParse(userIds);
-    if (!parsed.success) {
+    const parsedMode = DeleteModeSchema.safeParse(mode);
+    if (!parsed.success || !parsedMode.success) {
         return { success: false as const, error: "Invalid request" };
     }
+    const { permanently = false } = parsedMode.data;
+    if (permanently && !(await hasPermission(TRASH_ADMIN_PERMISSION))) return { success: false as const, error: PERMANENT_DELETE_REFUSED };
 
     try {
-        const deletable = parsed.data.filter((id) => id !== currentUser?.id);
-        const result = await userService.deleteUsers(deletable);
+        // Someone who is no SuperAdmin cannot delete one, so those are reported instead of sent.
+        const guarded = currentUser?.group?.name === "SuperAdmin" ? [] : await userService.superAdminsAmong(parsed.data);
+        const deletable = parsed.data.filter((id) => id !== currentUser?.id && !guarded.some((user) => user.id === id));
+        const result = await userService.deleteUsers(deletable, { permanently, by: currentUser?.id });
 
-        if (deletable.length !== parsed.data.length) {
+        if (currentUser && parsed.data.includes(currentUser.id)) {
             result.failed.push({
-                id: currentUser!.id,
-                name: currentUser!.name || currentUser!.email,
+                id: currentUser.id,
+                name: currentUser.name || currentUser.email,
                 error: "You cannot delete your own account.",
             });
+        }
+        for (const user of guarded) {
+            if (user.id !== currentUser?.id) result.failed.push({ id: user.id, name: user.name, error: "Only a SuperAdmin can delete a SuperAdmin." });
         }
 
         revalidatePath("/dashboard/users");
@@ -349,7 +363,7 @@ export async function bulkDeleteUsers(userIds: string[]) {
                 currentUser.id,
                 AUDIT_ACTIONS.DELETE,
                 AUDIT_RESOURCES.USER,
-                { bulk: true, requested: parsed.data.length, succeeded: result.succeeded.length, failed: result.failed.length }
+                { bulk: true, requested: parsed.data.length, succeeded: result.succeeded.length, failed: result.failed.length, ...(permanently ? { permanently: true } : {}) }
             );
         }
 

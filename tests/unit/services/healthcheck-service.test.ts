@@ -276,6 +276,50 @@ describe('HealthCheckService', () => {
         expect(mockNotify).not.toHaveBeenCalled();
     });
 
+    it('sends nothing when an air-gapped destination goes, but still records its status', async () => {
+        prismaMock.adapterConfig.findMany.mockResolvedValue([
+            {
+                id: 'usb', name: 'USB rotation', adapterId: 'local-filesystem', config: '{}',
+                consecutiveFailures: 2, type: 'storage', storageRole: 'DESTINATION',
+                metadata: JSON.stringify({ airGapped: true }),
+            },
+        ] as any);
+        prismaMock.systemSetting.findUnique.mockResolvedValue(null);
+        (registry.get as any).mockReturnValue({
+            test: vi.fn().mockResolvedValue({ success: false, message: 'No such directory' })
+        });
+
+        await service.performHealthCheck();
+
+        expect(mockNotify).not.toHaveBeenCalled();
+        expect(prismaMock.adapterConfig.update).toHaveBeenCalledWith(expect.objectContaining({
+            data: expect.objectContaining({ lastStatus: 'OFFLINE' }),
+        }));
+    });
+
+    it('sends nothing when an air-gapped destination comes back, and drops the state left from before it was marked', async () => {
+        prismaMock.adapterConfig.findMany.mockResolvedValue([
+            {
+                id: 'usb', name: 'USB rotation', adapterId: 'local-filesystem', config: '{}',
+                consecutiveFailures: 5, type: 'storage', storageRole: 'DESTINATION',
+                metadata: JSON.stringify({ airGapped: true }),
+            },
+        ] as any);
+        const offlineState = JSON.stringify({ usb: { active: true, lastNotifiedAt: new Date(Date.now() - 3_600_000).toISOString() } });
+        prismaMock.systemSetting.findUnique.mockResolvedValue({ key: 'healthcheck.offline.state', value: offlineState } as any);
+        prismaMock.systemSetting.upsert.mockResolvedValue({} as any);
+        (registry.get as any).mockReturnValue({
+            test: vi.fn().mockResolvedValue({ success: true, message: 'OK' })
+        });
+
+        await service.performHealthCheck();
+
+        expect(mockNotify).not.toHaveBeenCalled();
+        expect(prismaMock.systemSetting.upsert).toHaveBeenCalledWith(expect.objectContaining({
+            update: { value: '{}' },
+        }));
+    });
+
     it('should use custom reminder cooldown from notification config', async () => {
         mockGetNotificationConfig.mockResolvedValue({
             events: { 'connection.offline': { reminderIntervalHours: 1 } }

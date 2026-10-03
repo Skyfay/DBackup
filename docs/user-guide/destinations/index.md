@@ -47,21 +47,45 @@ there, while a source reads from that same path - and a source set to "Back up e
 reads the path itself. One adapter doing both would mean a job backing up its own previous
 archives, growing without limit.
 
-Both live on the **Connections** page, on the **Backup Destinations** and **Directory Sources** tabs.
+Both live on the **Connections** page, on the **Destinations** and **Directory sources** tabs.
 
 ::: tip Same server for both
-Pick **Create as Directory Source** on a destination's row (or the reverse on a source) to
-copy it into the opposite role, credentials and all - then adjust the path. Two adapters
-for one server is intentional: they point at different paths and are monitored separately.
+Pick **Create as directory source** in the menu of a destination, or **Create as backup destination** on a source, to copy it into the opposite role with its login, then adjust the path. Two adapters for one server is intentional: they point at different paths and are monitored separately.
 :::
 
 ## Adding a Destination
 
-1. Navigate to **Connections** → **Backup Destinations** → **Add New**
+1. Navigate to **Connections** → **Destinations** → **New destination**
 2. Select the storage type
-3. Fill in configuration details
-4. Leave **Role** on *Backup Destination*
-5. Click **Test Connection** → **Save**
+3. Fill in the parts listed on the left. A check marks each part that has everything it needs.
+4. Leave **Used as** on **Backup destination** in the **Behavior** part
+5. Click **Test connection**, then **Create destination**
+
+## Air-Gapped Destinations
+
+A destination that is connected only now and then, like a USB disk you plug in once a week or a NAS that is only switched on for its backups, can be marked **Air-gapped** in the **Behavior** part of its form. This works with every destination type, since DBackup asks it with the same connection check the health check uses. Being away is then how it is meant to be, not a problem.
+
+Several destinations are marked at once: tick them on the **Destinations** tab of **Connections** and pick **Mark as air-gapped** under **More**.
+
+While it is not connected:
+
+- A run asks it right before its upload and leaves it out when it does not answer. The run stays a **Success** as long as another destination took the backup. A run that reaches no destination at all fails.
+- No **A connection is offline** or **A connection is back** notification goes out for it, so its **Health alerts** switch is off.
+- **Connections** and the **Backups** page show it as **Not connected** in gray, with since when, instead of offline in red.
+- A backup made meanwhile is no missing copy there. A copy that lies on it shows grayed out with an unplugged icon, and the destinations timeline marks the days it was away in gray.
+- The integrity check, the hourly list refresh and retention leave it alone, and an incremental chain carries on without it.
+
+Once it answers again, the next run uploads to it as usual and its copies get their green dot back. An incremental job starts a new full backup if the destination lacks part of the current chain.
+
+::: tip Get told when a run left it out
+The system notification **An air-gapped destination was skipped** reports the first run that leaves it out, once each time it goes away. It is off by default, see [Notifications](/user-guide/features/notifications#storage-events).
+:::
+
+::: warning Removable disks
+Point a Local Filesystem destination at a folder on the disk, not at its mount point. An empty mount point answers like a connected disk, and the backups would land on the system disk.
+:::
+
+The configuration backup is no run of a job, so a configuration backup to an air-gapped destination that is not connected still fails and reports it.
 
 ## Storage Structure
 
@@ -80,12 +104,12 @@ The `.meta.json` file stores compression, encryption metadata (IV, auth tag, pro
 
 A backup is one large file, so the only way to use more of a fast link is to send several pieces of it at the same time. Every S3 destination (Amazon S3, Cloudflare R2, Hetzner Object Storage, S3-Compatible) splits an upload into parts and sends **8 parts of 8 MB** at once by default.
 
-Both values are adjustable per destination under **Configuration → Parallel Upload Parts**:
+Both values are adjustable per destination in the **Speed** part of its form:
 
 | Field | Description | Default | Range |
 | :--- | :--- | :--- | :--- |
 | **Parts at once** | Parts uploaded simultaneously | `8` | 1 to 32 |
-| **Max part size (MB)** | Upper bound on the size of each part | `8` | 5 to 64 |
+| **Largest part (MB)** | Upper bound on the size of each part | `8` | 5 to 64 |
 
 ### Parts at once is the speed setting
 

@@ -6,8 +6,8 @@ Complete guide to setting up DBackup for development.
 
 ### Required
 
-- **Node.js** 20 or higher
-- **pnpm** (package manager)
+- **Node.js** 24, the version CI and the Docker image use
+- **pnpm** 10
 - **Git**
 
 ### For Testing
@@ -51,7 +51,7 @@ A running `pnpm dev` inherited its environment at launch, and an editor-launched
 ### Ubuntu/Debian Installation
 
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
 sudo apt-get install -y nodejs
 npm install -g pnpm
 
@@ -66,9 +66,14 @@ sudo ./scripts/setup-dev-debian.sh
 git clone https://github.com/Skyfay/DBackup.git
 cd DBackup
 
+# Work from dev, which holds everything finished since the last release
+git checkout dev
+
 # Install dependencies
 pnpm install
 ```
+
+New work happens on a branch off `dev`, and its pull request goes back into `dev`, never into `main`. See [Branches and pull requests](/developer-guide/#branches-and-pull-requests).
 
 ## Environment Configuration
 

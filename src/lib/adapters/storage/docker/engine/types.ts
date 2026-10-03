@@ -26,6 +26,8 @@ export interface VolumeInfo {
     /** Host path the volume's contents live at. Only the local driver reports one. */
     mountpoint?: string;
     labels: Record<string, string>;
+    /** When Docker created it, as an ISO string. Missing where the driver does not say. */
+    createdAt?: string;
 }
 
 export interface ContainerInfo {
@@ -35,6 +37,22 @@ export interface ContainerInfo {
     /** True only for a container that is actually running now. */
     running: boolean;
     labels: Record<string, string>;
+}
+
+/** One mount of a container: a volume, a folder of the host, or one of the rarer kinds. */
+export interface ContainerMount {
+    /** "volume" or "bind", or whatever else Docker calls the kind. */
+    type: string;
+    /** The volume, for a volume mount. */
+    volume?: string;
+    /** Where the container sees it. */
+    destination: string;
+}
+
+/** A container with its image and everything it mounts, for the volume picker of the job form. */
+export interface ContainerDetail extends ContainerInfo {
+    image: string;
+    mounts: ContainerMount[];
 }
 
 export interface DockerEngine {
@@ -57,6 +75,16 @@ export interface DockerEngine {
 
     /** Every container referencing the volume, running or not. */
     containersUsingVolume(name: string): Promise<ContainerInfo[]>;
+    /** Every container of the host, running or not, with its mounts. One call for all of them. */
+    listContainers(): Promise<ContainerDetail[]>;
+    /**
+     * The bytes each volume holds, from `docker system df`.
+     *
+     * Slow on a big host, since the daemon walks every volume to answer, which is why it is a
+     * call of its own rather than part of the volume list. A volume the daemon could not
+     * measure, like one of another driver, is left out.
+     */
+    volumeSizes(): Promise<Map<string, number>>;
     stopContainer(id: string): Promise<void>;
     startContainer(id: string): Promise<void>;
 

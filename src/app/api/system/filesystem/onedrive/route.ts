@@ -1,13 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Client } from "@microsoft/microsoft-graph-client";
+import { z } from "zod";
 import { checkPermission } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getDecryptedCredentialData } from "@/services/auth/credential-service";
 import type { OAuthData } from "@/lib/core/credentials";
+import { cloudFolderPath } from "@/lib/adapters/definitions/shared";
 import { logger } from "@/lib/logging/logger";
-import { wrapError } from "@/lib/logging/errors";
+import { AuthenticationError, PermissionError, wrapError } from "@/lib/logging/errors";
 
 const log = logger.child({ route: "system/filesystem/onedrive" });
+
+const BodySchema = z.object({
+    credentialId: z.string().min(1).max(64),
+    folderPath: cloudFolderPath.optional(),
+});
 
 // Microsoft OAuth token endpoint
 const TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token";
@@ -18,7 +25,7 @@ const TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token";
  *
  * Body: {
  *   credentialId: string, // OAUTH credential profile id
- *   folderPath?: string   // Folder to list ("" or undefined = root)
+ *   folderPath?: string   // Folder to list ("" or undefined = root), without a . or .. part
  * }
  *
  * Credentials are resolved server-side from the OAUTH credential profile - they
@@ -29,14 +36,14 @@ const TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token";
  */
 export async function POST(req: NextRequest) {
     try {
-        await checkPermission(PERMISSIONS.DESTINATIONS.READ);
+        // Only the connection form browses a drive by its OAuth profile, so it takes the right to change destinations.
+        await checkPermission(PERMISSIONS.DESTINATIONS.WRITE);
 
-        const body = await req.json();
-        const { credentialId, folderPath } = body;
-
-        if (!credentialId) {
-            return NextResponse.json({ success: false, error: "Missing credentialId" }, { status: 400 });
+        const parsed = BodySchema.safeParse(await req.json().catch(() => null));
+        if (!parsed.success) {
+            return NextResponse.json({ success: false, error: "Invalid request" }, { status: 400 });
         }
+        const { credentialId, folderPath } = parsed.data;
 
         const config = (await getDecryptedCredentialData(credentialId, "OAUTH")) as OAuthData;
 
@@ -76,7 +83,7 @@ export async function POST(req: NextRequest) {
         });
 
         // Build the API path based on the folder path (avoid regex for user input - ReDoS safe)
-        let currentPath = typeof folderPath === "string" ? folderPath : "";
+        let currentPath = folderPath ?? "";
         while (currentPath.startsWith("/")) currentPath = currentPath.slice(1);
         while (currentPath.endsWith("/")) currentPath = currentPath.slice(0, -1);
         const apiPath = currentPath
@@ -137,6 +144,8 @@ export async function POST(req: NextRequest) {
             },
         });
     } catch (err) {
+        if (err instanceof AuthenticationError) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+        if (err instanceof PermissionError) return NextResponse.json({ success: false, error: "Access denied" }, { status: 403 });
         log.error("OneDrive folder browse failed", {}, wrapError(err));
         const message = err instanceof Error ? err.message : "Failed to browse OneDrive folders";
         return NextResponse.json(

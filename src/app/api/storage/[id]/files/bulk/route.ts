@@ -5,6 +5,7 @@ import { deleteBackupsBulk, setBackupsLocked } from "@/services/storage/bulk-del
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { auditService } from "@/services/audit-service";
+import { destinationAuditName } from "@/services/storage/backup-audit";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { summarizeBulkResult, BULK_REQUEST_LIMIT } from "@/lib/core/bulk";
 import { logger } from "@/lib/logging/logger";
@@ -50,16 +51,18 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
             ? await deleteBackupsBulk(params.id, paths)
             : await setBackupsLocked(params.id, paths, action === "lock");
 
-        await auditService.log(
-            ctx.userId,
+        const destination = await destinationAuditName(params.id);
+        await auditService.logFor(
+            ctx,
             action === "delete" ? AUDIT_ACTIONS.DELETE : AUDIT_ACTIONS.UPDATE,
-            AUDIT_RESOURCES.DESTINATION,
+            AUDIT_RESOURCES.BACKUP,
             {
                 bulk: true,
                 action,
                 requested: paths.length,
                 succeeded: result.succeeded.length,
                 failed: result.failed.length,
+                ...(destination ? { destination } : {}),
             },
             params.id
         );

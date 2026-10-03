@@ -66,7 +66,7 @@ file.backupTimestamp ?? file.lastModified
 
 ### Reading the sidecars
 
-`loadBackupSidecars()` in `src/lib/runner/steps/retention-sidecars.ts` annotates the listed files with `locked`, `chainId` and `backupTimestamp`. It runs once per destination at the end of every successful job, over every backup present, so its round trip count is the dominant cost of the whole step.
+`loadBackupSidecars()` in `src/lib/runner/steps/retention-sidecars.ts` annotates the listed files with `locked`, `chainId`, `jobId` and `backupTimestamp`. It runs once per destination at the end of every successful job, over every backup present, so its round trip count is the dominant cost of the whole step.
 
 Two things keep that bounded:
 
@@ -74,6 +74,14 @@ Two things keep that bounded:
 - **Reads run in batches of `adapter.readConcurrency`.** Unset means serial, which is what every adapter did before the field existed. Only adapters whose `read()` is a stateless HTTP request or a local file access declare `STATELESS_READ_CONCURRENCY`, currently S3, WebDAV, Dropbox, Google Drive, OneDrive and Local.
 
 FTP, SMB, SFTP and rsync deliberately declare nothing. FTP dials a control connection per `read()` and its own upload path runs at `limit: concurrency ?? 1` for exactly that reason, SMB spawns an `smbclient` process per call, and the two SSH-based adapters already gate themselves at four channels. On those the server's connection count is what breaks first, not the bandwidth.
+
+### Backups of another job
+
+`05-retention.ts` hands the policy only the backups whose `jobId` is the running job's or unknown. The folder is named after the job, so a job named like a deleted one lists the backups the deleted job left there, and without the check its policy would count them and delete them. A backup without a sidecar, with an unreadable one or without a `jobId` keeps counting as the job's own, so the check only ever keeps more than before. The Backups page and the retention preview of its timeline group backups by the same `jobId`.
+
+### Former folders of a renamed job
+
+A rename starts a new folder, since uploads go to `<job name>/`. `retention-folders.ts` finds the folders the job left backups in from the cached listing of the destination, which carries the `jobId` of every backup, so the search costs no storage call. A backup of a chain counts for the folder above its chain folder, and the root of the destination is never listed. `05-retention.ts` lists each former folder, reads its sidecars and adds the backups whose `jobId` is the running job's to the ones of the current folder, and the policy judges them together. Unlike the current folder, a backup without a `jobId` never counts there, since the folder may belong to another job by now. Without a cached listing, or with one from before it carried the `jobId`, the run judges the current folder only. The chain planner starts a new chain after a rename and says so, since the chain lies in the old folder.
 
 ### Tier limits and backwards compatibility
 

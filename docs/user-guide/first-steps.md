@@ -6,9 +6,27 @@ This guide walks you through your first login and setting up your first automate
 
 After installation, open [http://localhost:3000](http://localhost:3000) in your browser.
 
-On first launch, you'll see a login page with a "Sign Up" option. This self-registration is **only available for the first user** and creates the administrator account.
+On the first start, the login page asks how you want to start. **Start fresh** creates the first account, which becomes the SuperAdmin. Its password needs 12 characters, an upper and a lower case letter and a number, the level **Standard** of [Settings → Passwords](/user-guide/admin/settings#passwords). **Restore a backup** brings back another DBackup from its configuration backup instead, see [System Backup](/user-guide/features/system-backup#on-a-new-server). Both are there only while nobody has an account, and a third way, using the instance as a runner of another DBackup, is marked as coming soon.
 
-Once logged in, you can use the **Quick Setup Wizard** (available in the sidebar under **Quick Setup**) to configure your first backup in a guided, step-by-step flow - this is the recommended approach for new users. It walks you through creating a database source, storage destination, optional encryption and notifications, and a backup job all in one place.
+Later the login page shows the name set under **Settings → General** and signs you in with your email and password, a passkey or a sign-in provider.
+
+Once logged in, open **Quick Setup** in the sidebar to set up your first backup step by step. This is the recommended approach for new users.
+
+## Quick Setup
+
+The setup is one page. Its parts sit one under the other, the open one in full and the others in a line with what they made. Beside them, the backup they add up to fills in as you go: the database, when it runs, where the backups go, the key and the channel.
+
+1. **Database** - pick a database you already have, or pick a type to add a new one in the same dialog as on the Connections page. Saving it opens the next part.
+2. **Destination** - the same for the place the backups go.
+3. **Encryption** (optional) - take a key from the Vault or create one, or skip the part.
+4. **Notifications** (optional) - take or add a channel that reports the runs, or skip the part.
+5. **Backup job** - name the job, pick when it runs (every hour, every night, every week or a cron expression) and whether it backs up all databases of the server or only some.
+
+**Change** opens a part that is done again, and what you typed into the job stays while you do. The times on the schedule cards are shown in your own time zone. Once the job is created, a card on top says when the first run starts and can start it right away with **Run it now**.
+
+The job keeps the last 10 backups, which you can change later on the job. Encryption and notifications only appear for users who may create them.
+
+The sidebar shows **Quick Setup** while no database is set up. To keep it there afterwards, switch on **Always Show Quick Setup** in the settings.
 
 If you prefer to configure everything manually, follow the steps below.
 
@@ -28,14 +46,14 @@ First, create a place to store your backups.
 
 ### Using Local Filesystem
 
-1. Go to **Connections** in the sidebar, then the **Backup Destinations** tab
-2. Click **Add New**
+1. Go to **Connections** in the sidebar, then the **Destinations** tab
+2. Click **New destination**
 3. Select **Local Filesystem**
 4. Configure:
    - **Name**: `Local Backups`
-   - **Base Path**: `/backups`
-5. Click **Test Connection**
-6. Click **Save**
+   - **Folder**: `/backups`
+5. Click **Test connection**
+6. Click **Create destination**
 
 ::: tip Docker Volume
 When using Docker, `/backups` maps to your host's `./backups` folder via volume mount.
@@ -47,17 +65,18 @@ Now add the database you want to backup.
 
 ### Example: MySQL Database
 
-1. Create a `USERNAME_PASSWORD` credential profile in **Settings → Vault → Credentials** with your database user and password (see [Credential Profiles](/user-guide/security/credential-profiles))
+1. Create a `USERNAME_PASSWORD` credential profile in **Vault → Credentials** with your database user and password (see [Credential Profiles](/user-guide/security/credential-profiles))
 2. Go to **Connections** in the sidebar, then the **Databases** tab
-3. Click **Add New**
+3. Click **New database**
 4. Select **MySQL**
 5. Configure:
    - **Name**: `Production MySQL`
+   - **How DBackup connects**: **Direct**
    - **Host**: `mysql.example.com` (or `host.docker.internal` for host machine)
    - **Port**: `3306`
-   - **Primary Credential**: select the profile you created
-6. Click **Test Connection**
-7. Click **Save**
+   - **Login**: select the profile you created
+6. Click **Test connection**
+7. Click **Create database**
 
 ::: warning Permissions
 Ensure your database user has `SELECT` and `LOCK TABLES` permissions for backup, and `CREATE` permission for restore operations.
@@ -118,7 +137,7 @@ The execution view shows:
 After completion:
 
 1. Check **History** for execution details
-2. Browse **Storage Explorer** to see your backup file
+2. Browse **Backups** to see your backup file
 3. Verify the `.meta.json` sidecar file was created
 
 ## Step 5: Set Up Notifications (Optional)
@@ -127,8 +146,8 @@ Get alerted when backups complete or fail.
 
 ### Discord Webhook
 
-1. Go to **Connections** in the sidebar, then the **Notifications** tab
-2. Click **Add Notification**
+1. Go to **Connections** in the sidebar, then the **Channels** tab
+2. Click **New channel**
 3. Select **Discord Webhook**
 4. Paste your webhook URL
 5. Click **Test** to verify
@@ -142,11 +161,17 @@ Get alerted when backups complete or fail.
 4. Set the **Notification Trigger** (Always, Success only, Failure only)
 5. Save
 
+## Finding Your Way
+
+The sidebar lists the pages, headed by the name set under **Settings → General**. The search in the middle of the header, or **Ctrl+K** (**⌘K** on macOS) on any page, finds jobs, connections, databases, backups, runs, people, groups, API keys, templates, Vault entries, settings and pages by name, and opens the one you pick on its page. It shows only what you may open, the entries you opened last included, and keeps those for you alone. It can also start a job it found, and **Tab** narrows it to one kind.
+
+The buttons on the right of the header lead to the guides and to DBackup on GitHub. A blue dot there marks a new version, and its card says how to update.
+
 ## Next Steps
 
 Congratulations! You've created your first automated backup. Now explore:
 
 - [Encryption Vault](/user-guide/security/encryption) - Secure your backups
 - [Retention Policies](/user-guide/jobs/retention) - Automatic cleanup
-- [Storage Explorer](/user-guide/features/storage-explorer) - Browse and manage backups
+- [Backups](/user-guide/features/backups) - Browse and manage backups
 - [Restore](/user-guide/features/restore) - Restore from backups

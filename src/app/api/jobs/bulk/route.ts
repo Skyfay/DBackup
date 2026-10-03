@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { jobService } from "@/services/jobs/job-service";
-import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
-import { PERMISSIONS } from "@/lib/auth/permissions";
+import { getAuthContext, checkPermissionWithContext, hasPermissionWithContext } from "@/lib/auth/access-control";
+import { PERMISSIONS, TRASH_ADMIN_PERMISSION } from "@/lib/auth/permissions";
+import { PERMANENT_DELETE_REFUSED } from "@/lib/core/delete-mode";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { summarizeBulkResult, BULK_REQUEST_LIMIT } from "@/lib/core/bulk";
@@ -15,6 +16,8 @@ const log = logger.child({ route: "jobs/bulk" });
 const BulkJobsSchema = z.object({
     action: z.enum(["delete", "enable", "disable"]),
     ids: z.array(z.string()).min(1).max(BULK_REQUEST_LIMIT),
+    /** A delete skips Recently deleted. */
+    permanently: z.boolean().optional(),
 });
 
 const LABELS = {
@@ -43,16 +46,19 @@ export async function POST(req: NextRequest) {
         if (!parsed.success) {
             return NextResponse.json({ success: false, error: "Invalid request body" }, { status: 400 });
         }
-        const { action, ids } = parsed.data;
+        const { action, ids, permanently = false } = parsed.data;
+        if (action === "delete" && permanently && !hasPermissionWithContext(ctx, TRASH_ADMIN_PERMISSION)) {
+            return NextResponse.json({ success: false, error: PERMANENT_DELETE_REFUSED }, { status: 403 });
+        }
 
         const result = action === "delete"
-            ? await jobService.deleteJobs(ids)
+            ? await jobService.deleteJobs(ids, { permanently, by: ctx.userId })
             : await jobService.setJobsEnabled(ids, action === "enable");
 
         // One audit entry for the batch. N entries would bury the signal that actually
         // matters, that somebody removed nine jobs in a single gesture.
-        await auditService.log(
-            ctx.userId,
+        await auditService.logFor(
+            ctx,
             action === "delete" ? AUDIT_ACTIONS.DELETE : AUDIT_ACTIONS.UPDATE,
             AUDIT_RESOURCES.JOB,
             {
@@ -61,6 +67,7 @@ export async function POST(req: NextRequest) {
                 requested: ids.length,
                 succeeded: result.succeeded.length,
                 failed: result.failed.length,
+                ...(action === "delete" && permanently ? { permanently: true } : {}),
             }
         );
 

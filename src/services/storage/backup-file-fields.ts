@@ -40,8 +40,13 @@ export function describeBackupFromMetadata(
         }
     }
 
+    const names = Array.isArray(sidecar.databases) ? sidecar.databases : sidecar.databases?.names;
+
     return {
+        ...(sidecar.jobId ? { jobId: sidecar.jobId } : {}),
         jobName: sidecar.jobName || (isConfigBackup ? "Config Backup" : undefined),
+        ...(sidecar.timestamp ? { createdAt: sidecar.timestamp } : {}),
+        ...(names && names.length > 0 ? { databases: names } : {}),
         sourceName: sidecar.sourceName || (isConfigBackup ? "System" : undefined),
         sourceType: sidecar.sourceType || (isConfigBackup ? "SYSTEM" : undefined),
         engineVersion: sidecar.engineVersion,

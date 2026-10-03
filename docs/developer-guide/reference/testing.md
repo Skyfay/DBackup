@@ -244,7 +244,7 @@ End-to-end tests through the UI.
 1. Start dev server: `pnpm dev`
 2. Create test source/destination
 3. Create and run test job
-4. Verify backup in Storage Explorer
+4. Verify backup in Backups page
 5. Test restore functionality
 
 **Automated** (future):

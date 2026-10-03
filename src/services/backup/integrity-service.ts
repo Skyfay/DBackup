@@ -9,6 +9,7 @@ import { logger } from "@/lib/logging/logger";
 import { wrapError } from "@/lib/logging/errors";
 import { INTEGRITY_CHECK_STAGES } from "@/lib/core/logs";
 import { isBackupFile } from "@/lib/core/backup-files";
+import { isAirGapped } from "@/lib/core/air-gap";
 
 const log = logger.child({ service: "IntegrityService" });
 
@@ -29,10 +30,36 @@ export interface IntegrityCheckResult {
   }>;
 }
 
+/** The copies the check is about to go through, by destination. */
+export interface IntegrityPlan {
+  total: number;
+  destinations: { id: string; name: string; adapterId: string; count: number }[];
+}
+
+/** Where the check of one copy stands, sent when it starts, while it downloads and when it ends. */
+export interface IntegrityCopy {
+  index: number;
+  destinationId: string;
+  file: string;
+  size: number | null;
+  state: "checking" | "passed" | "failed" | "skipped" | "error";
+  method?: "native" | "download";
+  /** Bytes downloaded so far and in all, while a copy is downloaded to be hashed. */
+  processed?: number;
+  total?: number;
+  reason?: string;
+  expected?: string;
+  actual?: string;
+}
+
 export interface IntegrityProgressCallbacks {
   onLog: (message: string, level?: "info" | "success" | "warning" | "error", details?: string) => void;
   onStage: (stage: string) => void;
   onFileProgress: (done: number, total: number, currentFile?: string) => void;
+  /** The plan, once every destination is listed. */
+  onPlan?: (plan: IntegrityPlan) => void;
+  /** Every change of a copy, so the page of the run can show each copy it checked. */
+  onCopy?: (copy: IntegrityCopy) => void;
 }
 
 interface IntegrityFilters {
@@ -44,9 +71,29 @@ interface IntegrityFilters {
 interface WorkItem {
   storageConfigId: string;
   destinationName: string;
+  adapterId: string;
   remotePath: string;
   fileName: string;
+  size: number | null;
 }
+
+/** How many copies each destination holds of what the check goes through, in the order it meets them. */
+function planOf(items: WorkItem[]): IntegrityPlan {
+  const destinations = new Map<string, IntegrityPlan["destinations"][number]>();
+  for (const item of items) {
+    const entry = destinations.get(item.storageConfigId);
+    if (entry) entry.count += 1;
+    else destinations.set(item.storageConfigId, { id: item.storageConfigId, name: item.destinationName, adapterId: item.adapterId, count: 1 });
+  }
+  return { total: items.length, destinations: [...destinations.values()] };
+}
+
+const SKIP_REASONS: Record<string, string> = {
+  skipped: "already verified",
+  no_metadata: "no metadata file",
+  no_checksum: "no checksum stored",
+  download_error: "download failed",
+};
 
 export class IntegrityService {
   async runFullIntegrityCheck(callbacks?: IntegrityProgressCallbacks): Promise<IntegrityCheckResult> {
@@ -143,23 +190,30 @@ export class IntegrityService {
 
     // Pass 2: Verify all collected files
     callbacks?.onStage(INTEGRITY_CHECK_STAGES.VERIFYING_CHECKSUMS);
+    callbacks?.onPlan?.(planOf(allWorkItems));
 
     for (let i = 0; i < allWorkItems.length; i++) {
       const item = allWorkItems[i];
       callbacks?.onFileProgress(i, allWorkItems.length, item.fileName);
+      const copy = { index: i, destinationId: item.storageConfigId, file: item.remotePath, size: item.size };
+      callbacks?.onCopy?.({ ...copy, state: "checking" });
 
       try {
         const verifyResult = await verificationService.verifyFile(
           item.storageConfigId,
           item.remotePath,
           "scheduled",
-          { skipIfPassed: filters.skipPassed }
+          {
+            skipIfPassed: filters.skipPassed,
+            onProgress: (processed, total) => callbacks?.onCopy?.({ ...copy, state: "checking", method: "download", processed, total }),
+          }
         );
 
         if (verifyResult.status === "passed") {
           result.verified++;
           result.passed++;
           callbacks?.onLog(`${item.fileName}`, "success");
+          callbacks?.onCopy?.({ ...copy, state: "passed", method: verifyResult.method });
         } else if (verifyResult.status === "failed") {
           result.verified++;
           result.failed++;
@@ -174,20 +228,19 @@ export class IntegrityService {
             "error",
             `Expected: ${verifyResult.expectedChecksum ?? "unknown"}\nActual:   ${verifyResult.actualChecksum ?? "unknown"}`
           );
+          callbacks?.onCopy?.({
+            ...copy, state: "failed", method: verifyResult.method, expected: verifyResult.expectedChecksum, actual: verifyResult.actualChecksum,
+          });
         } else {
           result.skipped++;
-          const skipReasons: Record<string, string> = {
-            skipped: "already verified",
-            no_metadata: "no metadata file",
-            no_checksum: "no checksum stored",
-            download_error: "download failed",
-          };
-          const reason = skipReasons[verifyResult.status] ?? verifyResult.status;
+          const reason = SKIP_REASONS[verifyResult.status] ?? verifyResult.status;
           callbacks?.onLog(`${item.fileName} skipped (${reason})`, "info");
+          callbacks?.onCopy?.({ ...copy, state: verifyResult.status === "download_error" ? "error" : "skipped", method: verifyResult.method, reason });
         }
       } catch (e: unknown) {
         log.error("Failed to verify file", { file: item.fileName, destination: item.destinationName }, wrapError(e));
         callbacks?.onLog(`Failed to verify ${item.fileName}`, "error");
+        callbacks?.onCopy?.({ ...copy, state: "error", reason: e instanceof Error ? e.message : String(e) });
         result.skipped++;
       }
 
@@ -272,6 +325,11 @@ export class IntegrityService {
       try {
         allFiles = await adapter.list(config, "");
       } catch (e: unknown) {
+        // An air-gapped destination that is not connected is checked the next time it is.
+        if (isAirGapped(dest.config)) {
+          callbacks?.onLog(`${dest.config.name}: air-gapped and not connected - skipping`, "info");
+          continue;
+        }
         const msg = e instanceof Error ? e.message : String(e);
         log.warn("Could not list destination", { destination: dest.config.name }, wrapError(e));
         callbacks?.onLog(`${dest.config.name}: listing failed - ${msg}`, "error");
@@ -299,8 +357,10 @@ export class IntegrityService {
         workItems.push({
           storageConfigId: dest.configId,
           destinationName: dest.config.name,
+          adapterId: dest.config.adapterId,
           remotePath: file.path,
           fileName: file.name,
+          size: typeof file.size === "number" ? file.size : null,
         });
 
         const matchingJob = jobNames.find((n) => file.path.startsWith(n + "/"));
@@ -343,6 +403,11 @@ export class IntegrityService {
     try {
       allFiles = await adapter.list(config, "");
     } catch (e: unknown) {
+      // An air-gapped destination that is not connected is checked the next time it is.
+      if (isAirGapped(storageConfig)) {
+        callbacks?.onLog(`${storageConfig.name}: air-gapped and not connected - skipping`, "info");
+        return [];
+      }
       log.warn(
         "Could not list storage root, falling back to active jobs",
         { destination: storageConfig.name },
@@ -375,8 +440,10 @@ export class IntegrityService {
       workItems.push({
         storageConfigId: storageConfig.id,
         destinationName: storageConfig.name,
+        adapterId: storageConfig.adapterId,
         remotePath: file.path,
         fileName: file.name,
+        size: typeof file.size === "number" ? file.size : null,
       });
     }
 

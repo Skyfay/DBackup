@@ -9,6 +9,7 @@ import { wrapError, getErrorMessage } from "@/lib/logging/errors";
 import { renderTemplate, NOTIFICATION_EVENTS } from "@/lib/notifications";
 import { recordNotificationLog } from "@/services/notifications/notification-log-service";
 import { PIPELINE_STAGES } from "@/lib/core/logs";
+import { invalidateDashboardCache } from "@/services/dashboard/cache";
 
 const log = logger.child({ step: "04-completion" });
 
@@ -42,6 +43,13 @@ export async function stepCleanup(ctx: RunnerContext) {
     if (ctx.indexFile) {
         await fs.unlink(ctx.indexFile).catch(() => {
             // File doesn't exist or cleanup failed - ignore, same as the archive above
+        });
+    }
+
+    // The run's own directory, with anything a step left in it.
+    if (ctx.runDir) {
+        await fs.rm(ctx.runDir, { recursive: true, force: true }).catch(() => {
+            // Cleanup failed - ignore, same as the files above
         });
     }
 
@@ -90,8 +98,10 @@ export async function stepFinalize(ctx: RunnerContext) {
         name: d.configName,
         adapterId: d.adapterId,
         path: d.uploadResult?.path,
-        status: d.uploadResult?.success ? "success" : (d.uploadResult ? "failed" : "skipped"),
+        status: d.uploadResult?.success ? "success" : (d.uploadResult && !d.uploadResult.skipped ? "failed" : "skipped"),
         error: d.uploadResult?.error,
+        // Left out on purpose, so no page counts it as a copy that should be there.
+        ...(d.uploadResult?.skipped ? { airGapped: true } : {}),
     }));
 
     const executionMetadata = {
@@ -118,12 +128,15 @@ export async function stepFinalize(ctx: RunnerContext) {
                     baseArchive: ctx.chain.baseArchive ?? null,
                     chainIndex: ctx.chain.index,
                     // The complete snapshot size, as opposed to `size` which is what this
-                    // archive physically stores. The Storage Explorer shows this one.
+                    // archive physically stores. The Backups page shows this one.
                     logicalSize: typeof ctx.metadata?.logicalSize === "number" ? ctx.metadata.logicalSize : null,
                 }
                 : {}),
         }
     });
+
+    // The dashboard caches its charts and counts. This run changes them, whatever its outcome.
+    invalidateDashboardCache();
 
     // 2. Refresh storage statistics cache (non-blocking)
     if (ctx.status === "Success" || ctx.status === "Partial") {

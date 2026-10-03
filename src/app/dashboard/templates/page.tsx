@@ -1,74 +1,34 @@
-import { auth } from "@/lib/auth";
-import { headers } from "next/headers";
+import type { Metadata } from "next";
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
-import { getUserPermissions } from "@/lib/auth/access-control";
+import { TemplatesClient } from "@/components/dashboard/templates/templates-client";
+import { TEMPLATE_TABLE_IDS } from "@/components/dashboard/templates/template-tables";
+import { getCurrentUserWithGroup, getUserPermissions } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { RetentionPolicyList } from "@/components/settings/templates/retention-policy-list";
-import { NamingTemplateList } from "@/components/settings/templates/naming-template-list";
-import { SchedulePresetList } from "@/components/settings/templates/schedule-preset-list";
-import { NotificationTemplateList } from "@/components/settings/templates/notification-template-list";
-import { ExcludePatternPresetList } from "@/components/settings/templates/exclude-pattern-preset-list";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import prisma from "@/lib/prisma";
+import { getTablePreferences } from "@/services/user/preference-service";
 
+/** The name of the browser tab, which the root layout ends with the name of the instance. */
+export const metadata: Metadata = { title: "Templates" };
+
+/**
+ * The Templates page: retention policies, file names, schedule presets, notifications and exclude
+ * patterns. The lists load in the browser, the page only resolves who may do what.
+ */
 export default async function TemplatesPage() {
-    const headersList = await headers();
-    const session = await auth.api.getSession({
-        headers: headersList
-    });
+    const [permissions, user] = await Promise.all([getUserPermissions(), getCurrentUserWithGroup()]);
+    // The login lives on the root page, there is no /login.
+    if (!user) redirect("/");
+    if (!permissions.includes(PERMISSIONS.TEMPLATES.READ)) redirect("/dashboard");
 
-    if (!session) {
-        redirect("/login");
-    }
-
-    const permissions = await getUserPermissions();
-    if (!permissions.includes(PERMISSIONS.TEMPLATES.READ)) {
-        redirect("/dashboard");
-    }
-
-    const notificationChannels = await prisma.adapterConfig.findMany({
-        where: { type: "notification" },
-        orderBy: { name: "asc" },
-    });
+    const layouts = await getTablePreferences(user.id, Object.values(TEMPLATE_TABLE_IDS));
 
     return (
-        <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h2 className="text-3xl font-bold tracking-tight">Templates</h2>
-                    <p className="text-muted-foreground">Manage reusable retention policies, naming templates, schedule presets, and notification templates for your backup jobs.</p>
-                </div>
-            </div>
-
-            <Tabs defaultValue="retention" className="w-full">
-                <TabsList>
-                    <TabsTrigger value="retention">Retention Policies</TabsTrigger>
-                    <TabsTrigger value="naming">Naming Templates</TabsTrigger>
-                    <TabsTrigger value="presets">Schedule Presets</TabsTrigger>
-                    <TabsTrigger value="notifications">Notification Templates</TabsTrigger>
-                    <TabsTrigger value="excludes">Exclude Patterns</TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="retention" className="mt-4">
-                    <RetentionPolicyList />
-                </TabsContent>
-
-                <TabsContent value="naming" className="mt-4">
-                    <NamingTemplateList />
-                </TabsContent>
-
-                <TabsContent value="presets" className="mt-4">
-                    <SchedulePresetList />
-                </TabsContent>
-
-                <TabsContent value="notifications" className="mt-4">
-                    <NotificationTemplateList availableChannels={notificationChannels} />
-                </TabsContent>
-
-                <TabsContent value="excludes" className="mt-4">
-                    <ExcludePatternPresetList />
-                </TabsContent>
-            </Tabs>
+        <div className="space-y-4 md:space-y-6">
+            {/* The header bar already names the page in its breadcrumb. */}
+            <h1 className="sr-only">Templates</h1>
+            <Suspense fallback={null}>
+                <TemplatesClient layouts={layouts} canManage={permissions.includes(PERMISSIONS.TEMPLATES.WRITE)} />
+            </Suspense>
         </div>
     );
 }

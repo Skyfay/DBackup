@@ -335,14 +335,18 @@ src/lib/notifications/
 ├── templates.ts    # Template functions → adapter-agnostic payloads
 └── index.ts        # Barrel exports
 
-src/services/
-└── system-notification-service.ts   # Core dispatch service
+src/services/notifications/
+├── system-notification-service.ts   # Core dispatch service
+├── notification-settings-service.ts # Events, default channels and Send a test of the Settings page
+└── notification-test-data.ts        # Example data of every event for Send a test
 
-src/app/actions/
-└── notification-settings.ts         # Server actions for UI
+src/app/actions/settings/
+└── notification-settings.ts         # Server actions for the Notifications part
 
-src/components/settings/
-└── notification-settings.tsx        # Settings UI component
+src/components/dashboard/settings/
+├── notifications-part.tsx           # The list of events with its bulk actions
+├── notification-dialog.tsx          # Edit of one event
+└── notification-bulk.tsx            # Send to of several events, the default channels
 ```
 
 ### Event Types
@@ -421,8 +425,9 @@ interface SystemNotificationConfig {
   globalChannels: string[];     // Default AdapterConfig IDs
   events: Record<string, {
     enabled: boolean;
-    channels: string[] | null;  // null = use globalChannels
+    channels: string[] | null;  // null = use globalChannels, never an empty list
     notifyUser?: NotifyUserMode; // "none" | "also" | "only"
+    reminderIntervalHours?: number | null; // null = defaultReminderHours of the event, 0 = off
   }>;
 }
 ```
@@ -494,25 +499,26 @@ databaseHooks: {
 
 ### Server Actions
 
-`src/app/actions/notification-settings.ts` provides:
+The Settings page reads the events through `getNotificationsModel()` in `notification-settings-service.ts`, as part of the page model. `src/app/actions/settings/notification-settings.ts` provides:
 
 | Action | Permission | Description |
 | :--- | :--- | :--- |
-| `getNotificationSettings()` | `SETTINGS.READ` | Load config, available channels, event definitions |
-| `updateNotificationSettings(data)` | `SETTINGS.WRITE` | Validate & persist config |
-| `sendTestNotification(eventType)` | `SETTINGS.WRITE` | Send test through enabled channels |
+| `saveNotificationEventsAction(eventIds, patch)` | `SETTINGS.WRITE` | Saves `enabled`, `channels`, `notifyUser` or `reminderHours` of one or several events, with an audit entry |
+| `saveDefaultChannelsAction(ids)` | `SETTINGS.WRITE` | Saves the default channels |
+| `sendTestNotificationAction(eventId)` | `SETTINGS.WRITE` | Sends the example data of `notification-test-data.ts` to the channels of the event |
+
+The service refuses an unknown event, own channels that are empty or no longer exist, and a reminder outside `0` to `MAX_REMINDER_HOURS`. A test goes out while the event is off through `notify(event, { test: true })`, and a test that reached no channel and no user is an error, never a success.
 
 ### UI Component
 
-`src/components/settings/notification-settings.tsx` renders the Settings → Notifications tab:
+`notifications-part.tsx` renders the Notifications part of Settings:
 
-1. **Global Channel Selector** – Multi-select popover with search to choose default notification channels
-2. **Event Cards** – Grouped by category (Auth, Restore, System) with:
-   - Toggle switch (enable/disable)
-   - Channel override popover with per-channel checkboxes
-   - "Notify user directly" dropdown (only for `supportsNotifyUser` events when an email channel is selected)
-   - Test button
-3. **Auto-save** – Every UI change immediately persists via `toast.promise()`
+1. **Default channels** - a strip on top with the logos of the default channels and **Change**
+2. **Event list** - a `DataTable` with where each event goes, its reminder and a switch, plus a filter for On, Off, Own channels and Nowhere
+3. **Edit dialog** - `notification-dialog.tsx` with Report it, Send it to, Tell the user too (only for `supportsNotifyUser` events), Remind while it lasts (only for `supportsReminder` events) and Send a test
+4. **Bulk actions** - Send to, Switch on and Switch off for the ticked events, one save for all of them
+
+A switch or a saved dialog persists at once, the part has no save bar.
 
 ---
 
@@ -552,7 +558,7 @@ Every new notification adapter touches these files:
 | 3 | `src/lib/adapters/index.ts` | Import and register the adapter |
 | 4 | `src/components/adapter/utils.ts` | Import icon and add to `ADAPTER_ICON_MAP` |
 | 5 | `src/components/adapter/form-constants.ts` | Add keys to `NOTIFICATION_CONNECTION_KEYS`, `NOTIFICATION_CONFIG_KEYS`, and `PLACEHOLDERS` |
-| 6 | `src/components/adapter/adapter-manager.tsx` | Add `case` to `getSummary()` for the Details column |
+| 6 | `src/lib/adapters/connection-summary.ts` | Add `case` to `connectionAddress()` for the Sends to column |
 | 7 | `src/components/adapter/schema-field.tsx` | Update `isTextArea` check (only if adapter has multi-line fields) |
 | 8 | `src/app/dashboard/history/notification-preview.tsx` | Add adapter-specific preview component and register in `PREVIEW_COMPONENTS` map (optional) |
 | 9 | `docs/user-guide/notifications/<id>.md` | Create docs page with setup guide |
@@ -727,16 +733,16 @@ const ADAPTER_COLOR_MAP: Record<string, string> = {
 
 ### Step 5 - Configure Form Constants
 
-In `src/components/adapter/form-constants.ts`, categorize your schema fields into connection vs. configuration tabs and add placeholders:
+In `src/components/adapter/form-constants.ts`, sort your schema fields into the two parts of the connection form, **Connection** and **Message**, and add placeholders:
 
 ```typescript
-// Connection tab - fields needed to establish the connection
+// Connection part - fields needed to reach the service
 export const NOTIFICATION_CONNECTION_KEYS = [
   // ... existing keys
   'serverUrl', 'apiToken',  // Add your new keys here
 ];
 
-// Configuration tab - optional settings
+// Message part - how the message looks and who gets it
 export const NOTIFICATION_CONFIG_KEYS = [
   // ... existing keys
   'priority',  // Add your new keys here
@@ -751,7 +757,9 @@ export const PLACEHOLDERS: Record<string, string> = {
 };
 ```
 
-**Which tab?** Connection keys go to "Connection" tab, config keys to "Configuration" tab. Rule of thumb: if the field is needed to reach the service, it's a connection key. If it's an optional behavior setting, it's a config key.
+**Which part?** Connection keys go to the **Connection** part, config keys to the **Message** part. Rule of thumb: if the field is needed to reach the service, it's a connection key. If it shapes the message or picks its recipients, it's a config key. A key neither list names still appears, in the Message part, and a channel without config keys has no Message part and no list of parts at all.
+
+Fields a credential profile fills in, like the webhook URL or the token, are hidden by `credentialManagedKeys()` in `connection-form-schema.ts`, so they need no entry here.
 
 If your adapter has **multi-line text fields** (like `payloadTemplate` or `customHeaders`), also update the `isTextArea` check in `src/components/adapter/schema-field.tsx`:
 
@@ -759,28 +767,26 @@ If your adapter has **multi-line text fields** (like `payloadTemplate` or `custo
 const isTextArea = /* existing checks */ || fieldKey === "myMultiLineField";
 ```
 
-### Step 6 - Add Details Summary
+### Step 6 - Add the Sends to Summary
 
-In `src/components/adapter/adapter-manager.tsx`, add a `case` to the `getSummary()` switch so the **Details** column in the adapter table shows meaningful info instead of `-`:
+In `src/lib/adapters/connection-summary.ts`, add a `case` to the `connectionAddress()` switch so the **Sends to** column of the Notifications table shows meaningful info instead of `-`:
 
 ```typescript
-const getSummary = (adapterId: string, configJson: string) => {
-  const config = JSON.parse(configJson);
-  switch (adapterId) {
+switch (adapterId) {
     // ... existing cases
-    case 'my-service':
-      return <span className="text-muted-foreground">{config.serverUrl}</span>;
-    // ...
-  }
-};
+    case "my-service":
+        return text(config.serverUrl) || null;
+}
 ```
+
+Return a plain string. The table styles it, and `null` shows a dash.
 
 **What to show:** Pick the most identifying field(s) from the config - URL, topic, phone number, channel name, etc. Keep it short and scannable. Examples from existing adapters:
 
-| Adapter | Details output |
+| Adapter | Sends to output |
 | :--- | :--- |
 | Discord / Slack / Teams | `Webhook` |
-| Generic Webhook | `POST → https://...` |
+| Generic Webhook | `POST webhook`, the URL is a secret and never reaches the browser |
 | Gotify | `https://gotify.example.com` |
 | ntfy | `https://ntfy.sh/my-topic` |
 | Telegram | `Chat 123456789` |
@@ -924,11 +930,11 @@ Add the entry under the "Notification Channels" section:
 src/lib/adapters/
 ├── definitions.ts          ← Schema + type + union + ADAPTER_DEFINITIONS
 ├── index.ts                ← Import + registry.register()
+├── connection-summary.ts   ← connectionAddress() case for the Sends to column
 └── notification/
     └── <id>.ts             ← NEW: Adapter implementation
 
 src/components/adapter/
-├── adapter-manager.tsx     ← getSummary() case for Details column
 ├── utils.ts                ← Icon import + ADAPTER_ICON_MAP (+ ADAPTER_COLOR_MAP)
 ├── form-constants.ts       ← CONNECTION_KEYS + CONFIG_KEYS + PLACEHOLDERS
 └── schema-field.tsx        ← isTextArea check (only if multi-line fields)
@@ -1000,8 +1006,11 @@ export type NotificationEventData =
   category: "system",
   defaultEnabled: false,
   // supportsNotifyUser: true  // Only if event carries a user email
+  // supportsReminder: true, defaultReminderHours: 24  // Only if the event lasts and repeats
 },
 ```
+
+The name is a short sentence of what happened, like "A connection is offline", which the Settings list and the search show. Add example data for **Send a test** to `buildTestData()` in `src/services/notifications/notification-test-data.ts`.
 
 ### 4. Create the Template
 
@@ -1043,7 +1052,7 @@ notify({
 });
 ```
 
-The event will automatically appear in the Settings → Notifications UI with its category, description, and default state.
+The event appears in the Notifications part of Settings with its category, description, default state and default reminder.
 
 ## Related Documentation
 

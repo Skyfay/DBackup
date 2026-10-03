@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Copy, Download } from "lucide-react";
 import { toast } from "sonner";
+import { COPY_FAILED, copyToClipboard } from "@/lib/clipboard";
 
 /**
  * The public half of an SSH key, ready to install on a host.
@@ -22,14 +23,7 @@ export function SshPublicKeyPanel({
     fileName?: string;
 }) {
     const copy = () => {
-        if (!navigator.clipboard) {
-            toast.error("Clipboard not available");
-            return;
-        }
-        navigator.clipboard
-            .writeText(publicKey)
-            .then(() => toast.success("Public key copied"))
-            .catch(() => toast.error("Failed to copy"));
+        void copyToClipboard(publicKey).then((copied) => (copied ? toast.success("Public key copied") : toast.error(COPY_FAILED)));
     };
 
     const download = () => {

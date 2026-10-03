@@ -5,7 +5,7 @@ Send HTML notifications via any SMTP server. Supports multiple recipients and pe
 ## Configuration
 
 ::: info Credential Profile required
-Email (SMTP) requires a [Credential Profile](/user-guide/security/credential-profiles) of type `SMTP`. Create one in **Settings → Vault → Credentials** before saving the notification.
+Email (SMTP) requires a [Credential Profile](/user-guide/security/credential-profiles) of type `SMTP`. Create one in **Vault → Credentials** before saving the notification.
 :::
 
 | Field | Description | Default | Required |
@@ -13,7 +13,7 @@ Email (SMTP) requires a [Credential Profile](/user-guide/security/credential-pro
 | **SMTP Host** | Mail server hostname | - | ✅ |
 | **Port** | SMTP port | `587` | ❌ |
 | **Security** | `none`, `ssl`, or `starttls` | `starttls` | ❌ |
-| **Primary Credential** | `SMTP` credential profile (SMTP username + password) | - | ❌ |
+| **SMTP login** | `SMTP` credential profile (SMTP username + password) | - | ❌ |
 | **From** | Sender email address | - | ✅ |
 | **To** | Recipient email address(es) | - | ✅ |
 
@@ -21,12 +21,12 @@ Email (SMTP) requires a [Credential Profile](/user-guide/security/credential-pro
 
 ## Setup Guide
 
-1. Create an `SMTP` credential profile in **Settings → Vault → Credentials** with your SMTP username and password ([guide](/user-guide/security/credential-profiles))
-2. In DBackup: **Notifications** → **Add Notification** → **Email (SMTP)**
+1. Create an `SMTP` credential profile in **Vault → Credentials** with your SMTP username and password ([guide](/user-guide/security/credential-profiles))
+2. In DBackup: **Connections** → **Channels** → **New channel** → **Email (SMTP)**
 3. Enter your SMTP server details (host, port, security mode)
-4. Select the credential profile in the **Primary Credential** picker
-5. Set the From and To addresses (multiple recipients supported)
-6. Click **Test** → check the recipient's inbox (and spam folder) → **Save**
+4. Pick the credential profile under **SMTP login**
+5. In the **Message** part, set the From address and add the recipients under To (several are supported)
+6. Click **Send test** → check the recipient's inbox (and spam folder) → **Create channel**
 
 <details>
 <summary>Common SMTP provider settings</summary>

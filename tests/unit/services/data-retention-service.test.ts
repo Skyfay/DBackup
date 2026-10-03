@@ -8,6 +8,7 @@ const notificationClean = vi.fn();
 const snapshotClean = vi.fn();
 const purgeLogs = vi.fn();
 const deleteRuns = vi.fn();
+const trashClean = vi.fn();
 
 vi.mock("@/services/audit-service", () => ({ auditService: { cleanOldLogs: (...a: unknown[]) => auditClean(...a) } }));
 vi.mock("@/services/system/healthcheck-service", () => ({ healthCheckService: { cleanOldLogs: (...a: unknown[]) => healthClean(...a) } }));
@@ -17,11 +18,12 @@ vi.mock("@/services/system/execution-retention", () => ({
     purgeExecutionLogs: (...a: unknown[]) => purgeLogs(...a),
     deleteOldExecutions: (...a: unknown[]) => deleteRuns(...a),
 }));
+vi.mock("@/services/trash/trash-service", () => ({ cleanTrash: (...a: unknown[]) => trashClean(...a) }));
 vi.mock("@/lib/logging/logger", () => ({
     logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
 }));
 
-const { getDataRetentionValues, updateDataRetentionSetting, runDataRetention } = await import(
+const { getDataRetentionValues, updateDataRetentionSettings, runDataRetention } = await import(
     "@/services/system/data-retention-service"
 );
 
@@ -48,12 +50,13 @@ describe("Data retention settings", () => {
         const values = await getDataRetentionValues();
 
         expect(values).toEqual({
-            executionLogs: 90,
+            executionLogs: 365,
             executionHistory: 0,
             auditLog: 90,
             notificationHistory: 90,
             storageUsage: 90,
             healthChecks: 2,
+            deletedItems: 30,
         });
     });
 
@@ -70,22 +73,27 @@ describe("Data retention settings", () => {
 
         const values = await getDataRetentionValues();
 
-        expect(values).toMatchObject({ executionLogs: 90, auditLog: 90 });
+        expect(values).toMatchObject({ executionLogs: 365, auditLog: 90 });
     });
 
-    it("saves an offered value under the setting's key", async () => {
-        await updateDataRetentionSetting("executionHistory", 365);
+    it("saves the offered values of the save bar under the keys of their settings, in one transaction", async () => {
+        await updateDataRetentionSettings({ executionHistory: 365, auditLog: 730 });
 
         expect(prismaMock.systemSetting.upsert).toHaveBeenCalledWith(expect.objectContaining({
             where: { key: "execution.retentionDays" },
             update: { value: "365" },
         }));
+        expect(prismaMock.systemSetting.upsert).toHaveBeenCalledWith(expect.objectContaining({
+            where: { key: "audit.retentionDays" },
+            update: { value: "730" },
+        }));
+        expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
     });
 
-    it("rejects an unknown setting and a value that is not offered", async () => {
-        await expect(updateDataRetentionSetting("backups", 30)).rejects.toBeInstanceOf(ValidationError);
-        await expect(updateDataRetentionSetting("healthChecks", 3650)).rejects.toBeInstanceOf(ValidationError);
-        expect(prismaMock.systemSetting.upsert).not.toHaveBeenCalled();
+    it("saves nothing when one setting is unknown or one value is not offered", async () => {
+        await expect(updateDataRetentionSettings({ auditLog: 365, backups: 30 })).rejects.toBeInstanceOf(ValidationError);
+        await expect(updateDataRetentionSettings({ auditLog: 365, healthChecks: 3650 })).rejects.toBeInstanceOf(ValidationError);
+        expect(prismaMock.$transaction).not.toHaveBeenCalled();
     });
 });
 
@@ -98,6 +106,7 @@ describe("Data retention cleanup run", () => {
         snapshotClean.mockResolvedValue(7);
         purgeLogs.mockResolvedValue(50);
         deleteRuns.mockResolvedValue(0);
+        trashClean.mockResolvedValue(3);
     });
 
     it("applies each configured period and skips the ones set to never", async () => {
@@ -111,6 +120,7 @@ describe("Data retention cleanup run", () => {
         expect(notificationClean).toHaveBeenCalledWith(90);
         expect(snapshotClean).toHaveBeenCalledWith(90);
         expect(healthClean).toHaveBeenCalledWith(2);
+        expect(trashClean).toHaveBeenCalledWith(30);
         expect(result).toEqual({
             executionHistory: null,
             executionLogs: 50,
@@ -118,6 +128,7 @@ describe("Data retention cleanup run", () => {
             notificationHistory: 2,
             storageUsage: 7,
             healthChecks: 100,
+            deletedItems: 3,
         });
     });
 

@@ -1,23 +1,32 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { KeyRound, Loader2, ShieldAlert } from "lucide-react";
+import { AlertTriangle, KeyRound, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { getEncryptionProfiles, recoverEncryptionKeyAction } from "@/app/actions/backup/encryption";
+import { ChoiceCards } from "@/components/adapter/connection-mode-choice";
+import { Button } from "@/components/ui/button";
+import { DIALOG_FOOTER, DIALOG_SURFACE, DialogHead, dialogNoteClass } from "@/components/ui/confirm-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { PickList, PickTrigger, type PickEntry } from "@/components/ui/pick-list";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
+
+/** A key of the Vault as the dialog lists it. */
+interface VaultKey {
+    id: string;
+    name: string;
+    description: string | null;
+    jobs: number;
+}
+
+function entryOf(key: VaultKey): PickEntry {
+    const usage = key.jobs === 0 ? "Not used by a job" : key.jobs === 1 ? "Used by 1 job" : `Used by ${key.jobs} jobs`;
+    return { id: key.id, name: key.name, meta: [key.description, usage].filter(Boolean).join(" · "), keywords: key.description ? [key.description] : undefined };
+}
 
 export type KeyResolutionResult =
     | { type: "profile"; profileId: string }
@@ -63,7 +72,8 @@ export function EncryptionKeyResolutionDialog({
     loading = false,
     error,
 }: EncryptionKeyResolutionDialogProps) {
-    const [profiles, setProfiles] = useState<{ id: string; name: string }[]>([]);
+    const [profiles, setProfiles] = useState<VaultKey[]>([]);
+    const [picking, setPicking] = useState(false);
     const [selectedProfileId, setSelectedProfileId] = useState<string>("");
     const [rawKeyHex, setRawKeyHex] = useState("");
     const [profileName, setProfileName] = useState("");
@@ -81,7 +91,12 @@ export function EncryptionKeyResolutionDialog({
         if (!open) return;
         getEncryptionProfiles().then((res) => {
             if (res.success && res.data) {
-                const mapped = res.data.map((p: { id: string; name: string }) => ({ id: p.id, name: p.name }));
+                const mapped = res.data.map((p: { id: string; name: string; description?: string | null; _count?: { jobs: number } }) => ({
+                    id: p.id,
+                    name: p.name,
+                    description: p.description ?? null,
+                    jobs: p._count?.jobs ?? 0,
+                }));
                 setProfiles(mapped);
                 setActiveTab(mapped.length === 0 && canUseRawKey ? "rawKey" : "profile");
             } else if (canUseRawKey) {
@@ -99,7 +114,7 @@ export function EncryptionKeyResolutionDialog({
 
         const clean = rawKeyHex.trim();
         if (!/^[0-9a-fA-F]{64}$/.test(clean)) {
-            setRawKeyError("Must be a 64-character hex string (32 bytes).");
+            setRawKeyError("A key is 64 characters of 0 to 9 and a to f.");
             return;
         }
         setRawKeyError("");
@@ -126,7 +141,7 @@ export function EncryptionKeyResolutionDialog({
             // From here it is an ordinary profile, so the retry needs nothing special.
             onConfirm({ type: "profile", profileId: res.data.profileId });
         } catch (e: unknown) {
-            setRawKeyError(e instanceof Error ? e.message : "Could not check this key.");
+            setRawKeyError(e instanceof Error ? e.message : "The key could not be checked.");
         } finally {
             setRecovering(false);
         }
@@ -138,117 +153,130 @@ export function EncryptionKeyResolutionDialog({
         (activeTab === "profile" && !selectedProfileId) ||
         (activeTab === "rawKey" && rawKeyHex.trim().length === 0);
 
+    const picked = profiles.find((profile) => profile.id === selectedProfileId);
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                    <div className="flex items-center gap-2">
-                        <KeyRound className="h-5 w-5 text-amber-500" />
-                        <DialogTitle>Encryption Key Required</DialogTitle>
-                    </div>
-                    <DialogDescription>
-                        The encryption key for this backup could not be resolved automatically.
-                        Please specify the key to use for decryption.
-                    </DialogDescription>
-                </DialogHeader>
+            <DialogContent tone="pick" showCloseButton={false} className={cn(DIALOG_SURFACE, "sm:max-w-lg")}>
+                <DialogHead tone="pick" icon={KeyRound}>
+                    <DialogTitle className="text-base">This backup needs its key</DialogTitle>
+                    <DialogDescription className={dialogNoteClass("pick")}>DBackup found none that opens it</DialogDescription>
+                </DialogHead>
 
-                {profileIdHint && (
-                    <Alert variant="default" className="bg-muted">
-                        <ShieldAlert className="h-4 w-4" />
-                        <AlertDescription className="text-xs font-mono break-all">
-                            Expected profile ID: {profileIdHint}
-                        </AlertDescription>
-                    </Alert>
-                )}
-
-                {error && (
-                    <Alert variant="destructive">
-                        <ShieldAlert className="h-4 w-4" />
-                        <AlertDescription className="text-sm">{error}</AlertDescription>
-                    </Alert>
-                )}
-
-                <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "profile" | "rawKey")}>
-                    <TabsList className="grid w-full grid-cols-2">
-                        <TabsTrigger value="profile">Select Profile</TabsTrigger>
-                        <TabsTrigger value="rawKey" disabled={!canUseRawKey}>Enter Raw Key</TabsTrigger>
-                    </TabsList>
-
-                    <TabsContent value="profile" className="space-y-3 pt-2">
-                        <div className="space-y-2">
-                            <Label>Encryption Profile (Vault)</Label>
-                            {profiles.length === 0 ? (
-                                <p className="text-sm text-muted-foreground">
-                                    {canUseRawKey
-                                        ? "No encryption profiles found in this vault. Import the original key first, or use the raw key tab."
-                                        : "No encryption profiles found in this vault. Ask a vault administrator to import the original key."}
-                                </p>
-                            ) : (
-                                <Select value={selectedProfileId} onValueChange={setSelectedProfileId}>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Select a vault profile..." />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {profiles.map((p) => (
-                                            <SelectItem key={p.id} value={p.id}>
-                                                {p.name}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            )}
-                        </div>
-                    </TabsContent>
-
-                    <TabsContent value="rawKey" className="space-y-3 pt-2">
-                        <div className="space-y-2">
-                            <Label htmlFor="rawKeyHex">Master Key (64-char hex)</Label>
-                            <Input
-                                id="rawKeyHex"
-                                value={rawKeyHex}
-                                onChange={(e) => {
-                                    setRawKeyHex(e.target.value);
-                                    setRawKeyError("");
-                                }}
-                                placeholder="e.g. a3f9c1..."
-                                className="font-mono text-sm"
-                                autoComplete="off"
-                                spellCheck={false}
-                            />
-                            {rawKeyError && (
-                                <p className="text-xs text-destructive">{rawKeyError}</p>
-                            )}
-                            <p className="text-xs text-muted-foreground">
-                                {savesToVault
-                                    ? "The raw 32-byte AES-256-GCM key exported from Security Vault. It is checked against this backup and then saved as a new vault profile, so every later step - including anything running in the background - can use it."
-                                    : "The raw 32-byte AES-256-GCM key exported from Security Vault. This key is used once for decryption and is not stored."}
+                <ScrollArea className="*:data-[slot=scroll-area-viewport]:max-h-[calc(95dvh-9.5rem)]">
+                    <div className="space-y-4 p-5">
+                        {profileIdHint && (
+                            <p className="text-sm text-muted-foreground">
+                                The backup names the key <span className="font-mono text-xs break-all text-foreground">{profileIdHint}</span>, which this Vault does not hold under that name.
                             </p>
-                        </div>
-
-                        {savesToVault && (
-                            <div className="space-y-2">
-                                <Label htmlFor="recoveredProfileName">Save as (optional)</Label>
-                                <Input
-                                    id="recoveredProfileName"
-                                    value={profileName}
-                                    onChange={(e) => setProfileName(e.target.value)}
-                                    placeholder="Named after this backup's job when left empty"
-                                    autoComplete="off"
-                                />
-                            </div>
                         )}
-                    </TabsContent>
-                </Tabs>
 
-                <DialogFooter>
+                        {error && (
+                            <p role="alert" className="flex gap-2.5 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm">
+                                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
+                                <span className="min-w-0 break-words">{error}</span>
+                            </p>
+                        )}
+
+                        <ChoiceCards
+                            value={activeTab}
+                            onValueChange={(next) => setActiveTab(next === "rawKey" ? "rawKey" : "profile")}
+                            options={[
+                                { value: "profile", title: "A key of the Vault", description: "One the Vault holds, maybe under another name." },
+                                {
+                                    value: "rawKey",
+                                    title: "Type the key",
+                                    description: "The 64 characters from its recovery kit.",
+                                    disabled: !canUseRawKey,
+                                    badge: canUseRawKey ? undefined : "Needs the right to write to the Vault",
+                                },
+                            ]}
+                        />
+
+                        {activeTab === "profile" ? (
+                            <div className="space-y-2">
+                                <Label>The key</Label>
+                                {profiles.length === 0 ? (
+                                    <p className="text-sm text-muted-foreground">
+                                        {canUseRawKey
+                                            ? "The Vault holds no key yet. Type the key, or import it into the Vault first."
+                                            : "The Vault holds no key yet. Ask someone who may write to the Vault to import it."}
+                                    </p>
+                                ) : (
+                                    <Popover open={picking} onOpenChange={setPicking} modal>
+                                        <PopoverTrigger asChild>
+                                            <PickTrigger icon={KeyRound} aria-expanded={picking} className="w-full flex-none">
+                                                <span className={cn("truncate", !picked && "text-muted-foreground")}>{picked ? picked.name : "Pick a key"}</span>
+                                            </PickTrigger>
+                                        </PopoverTrigger>
+                                        <PopoverContent tone="pick" align="start" className="w-(--radix-popover-trigger-width) min-w-80 overflow-hidden p-0">
+                                            <PickList
+                                                icon={KeyRound}
+                                                title="Pick from the Vault"
+                                                note="Encryption keys"
+                                                groups={[{ entries: profiles.map(entryOf) }]}
+                                                value={selectedProfileId}
+                                                emptyText="Nothing matches."
+                                                onPick={(id) => {
+                                                    setSelectedProfileId(id);
+                                                    setPicking(false);
+                                                }}
+                                            />
+                                        </PopoverContent>
+                                    </Popover>
+                                )}
+                            </div>
+                        ) : (
+                            <>
+                                <div className="space-y-2">
+                                    <Label htmlFor="rawKeyHex">The key</Label>
+                                    <Input
+                                        id="rawKeyHex"
+                                        value={rawKeyHex}
+                                        onChange={(e) => {
+                                            setRawKeyHex(e.target.value);
+                                            setRawKeyError("");
+                                        }}
+                                        placeholder="64 characters from the recovery kit"
+                                        className="font-mono text-sm"
+                                        autoComplete="off"
+                                        spellCheck={false}
+                                        aria-invalid={rawKeyError ? true : undefined}
+                                    />
+                                    {rawKeyError && <p className="text-xs text-destructive">{rawKeyError}</p>}
+                                    <p className="text-xs text-muted-foreground">
+                                        {savesToVault
+                                            ? "It is checked against this backup and kept in the Vault, so every later step and every run in the background can use it."
+                                            : "It opens this backup once and is not kept."}
+                                    </p>
+                                </div>
+
+                                {savesToVault && (
+                                    <div className="space-y-2">
+                                        <Label htmlFor="recoveredProfileName">Keep it as</Label>
+                                        <Input
+                                            id="recoveredProfileName"
+                                            value={profileName}
+                                            onChange={(e) => setProfileName(e.target.value)}
+                                            placeholder="Named after the job of the backup"
+                                            autoComplete="off"
+                                        />
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </div>
+                </ScrollArea>
+
+                <div className={cn(DIALOG_FOOTER, "flex justify-end gap-2")}>
                     <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
                         Cancel
                     </Button>
                     <Button onClick={handleConfirm} disabled={isConfirmDisabled}>
-                        {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        {recovering ? "Checking key..." : loading ? "Decrypting..." : "Decrypt"}
+                        {busy && <Loader2 className="animate-spin" />}
+                        {recovering ? "Checking the key" : loading ? "Opening the backup" : "Use this key"}
                     </Button>
-                </DialogFooter>
+                </div>
             </DialogContent>
         </Dialog>
     );

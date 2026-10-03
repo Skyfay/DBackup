@@ -279,7 +279,10 @@ export async function streamFileRestore(input: FileRestoreInput): Promise<NodeJS
     // complete: `tar` recreates them on extraction with nothing else required.
     const { payloads, symlinks } = partitionSymlinks(files);
     const tarPack = pack();
-    const gzip = createGzip();
+    // Level 1 packs about twice as fast as the default 6 for a result roughly a tenth larger.
+    // Measured on dump-like text on one core, 90 against 41 MB/s, so on a gigabit link the
+    // default would cap the download instead of the network.
+    const gzip = createGzip({ level: 1 });
     tarPack.pipe(gzip);
     // .pipe() does not carry an error from tarPack across to gzip, and gzip is the only
     // stream the caller holds. Forward it by hand so a mid-stream failure destroys gzip

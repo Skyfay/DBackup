@@ -1,31 +1,26 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { Loader2, Plus, KeyRound, ChevronsUpDown, Check, Pencil } from "lucide-react";
+import { useEffect, useId, useState, useCallback } from "react";
+import { Plus, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
+import { useCan } from "@/components/permissions/permissions-context";
+import { PickTrigger } from "@/components/ui/pick-list";
 import {
     Popover,
     PopoverContent,
     PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-    Command,
-    CommandEmpty,
-    CommandGroup,
-    CommandInput,
-    CommandItem,
-    CommandList,
-    CommandSeparator,
-} from "@/components/ui/command";
-import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
     CredentialProfileDialog,
     type CredentialProfileSummary,
 } from "@/components/settings/credential-profile-dialog";
+import { PERMISSIONS } from "@/lib/auth/permissions";
 import type { CredentialType } from "@/lib/core/credentials";
+import { CREDENTIAL_TYPE_INFO } from "@/components/settings/credential-types";
+import { nounOf } from "@/lib/utils";
+import { LoginList, type PickerAdapter } from "./credential-picker-list";
 
 interface Props {
     slot: "primary" | "ssh";
@@ -35,21 +30,15 @@ interface Props {
     /** Render label/help text inline. */
     label?: string;
     description?: string;
+    /** The kind of connection the login is for, so the list can suggest what its other connections use. */
+    adapter?: PickerAdapter;
+    /** The connection cannot work without a login, so nothing offers to clear it. */
+    required?: boolean;
     /** Notified with the resolved profile object whenever the selection changes (incl. after load). */
     onSelectedProfile?: (profile: CredentialProfileSummary | null) => void;
     /** Increment to trigger a profiles re-fetch (e.g. after OAuth completes). */
     refreshKey?: number;
 }
-
-const TYPE_BADGE: Record<CredentialType, string> = {
-    USERNAME_PASSWORD: "User/Pass",
-    SSH_KEY: "SSH Key",
-    ACCESS_KEY: "Access Key",
-    TOKEN: "Token",
-    SMTP: "SMTP",
-    WEBHOOK: "Webhook",
-    OAUTH: "OAuth",
-};
 
 export function CredentialPicker({
     slot,
@@ -58,6 +47,8 @@ export function CredentialPicker({
     onChange,
     label,
     description,
+    adapter,
+    required = false,
     onSelectedProfile,
     refreshKey,
 }: Props) {
@@ -67,11 +58,13 @@ export function CredentialPicker({
     const [createOpen, setCreateOpen] = useState(false);
     const [editTarget, setEditTarget] = useState<CredentialProfileSummary | null>(null);
     const [editOpen, setEditOpen] = useState(false);
+    const canWrite = useCan(PERMISSIONS.CREDENTIALS.WRITE);
 
     const fetchProfiles = useCallback(async () => {
         setLoading(true);
         try {
-            const res = await fetch(`/api/credentials?type=${requiredType}`);
+            // With their usage, which the list shows and groups by.
+            const res = await fetch(`/api/credentials?type=${requiredType}&includeCounts=true`);
             const result = await res.json();
             if (!res.ok || !result.success) {
                 toast.error(result.error || "Failed to load credential profiles");
@@ -103,127 +96,85 @@ export function CredentialPicker({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selected?.id, selected?.updatedAt]);
 
-    const defaultLabel = slot === "ssh" ? "SSH Credential Profile" : "Credential Profile";
+    const defaultLabel = slot === "ssh" ? "SSH login" : "Login";
     const finalLabel = label ?? defaultLabel;
+    const triggerId = useId();
 
+    // A saved profile is picked from the list, a new one is one click away beside it for a viewer
+    // who may write logins. The profile's secrets never show here, only its name, description and
+    // where it is used.
     return (
-        <div className="space-y-2 rounded-md border bg-muted/20 p-3">
-            <div className="flex items-center justify-between gap-2">
-                <Label className="flex items-center gap-2 text-sm font-medium">
-                    <KeyRound className="h-4 w-4" />
-                    {finalLabel}
-                    <Badge variant="outline" className="font-normal">
-                        {TYPE_BADGE[requiredType]}
-                    </Badge>
-                </Label>
+        <div className="grid gap-2">
+            <div className="flex items-baseline justify-between gap-3">
+                <Label htmlFor={triggerId}>{finalLabel}</Label>
+                <span className="text-xs text-muted-foreground">{CREDENTIAL_TYPE_INFO[requiredType].hint}</span>
             </div>
-            {description && (
-                <p className="text-xs text-muted-foreground">{description}</p>
-            )}
 
-            <Popover open={open} onOpenChange={setOpen}>
-                <PopoverTrigger asChild>
-                    <Button
-                        variant="outline"
-                        role="combobox"
-                        aria-expanded={open}
-                        disabled={loading}
-                        className="w-full min-w-0 justify-between font-normal"
-                    >
-                        {loading ? (
-                            <span className="flex items-center gap-2 text-muted-foreground">
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                Loading...
-                            </span>
-                        ) : selected ? (
-                            <span className="truncate">{selected.name}</span>
-                        ) : (
-                            <span className="text-muted-foreground">None</span>
-                        )}
-                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+            <div className="flex min-w-0 gap-2">
+                <Popover open={open} onOpenChange={setOpen}>
+                    <PopoverTrigger asChild>
+                        <PickTrigger id={triggerId} icon={KeyRound} loading={loading} aria-expanded={open} disabled={loading}>
+                            {loading ? (
+                                <span className="text-muted-foreground">Loading...</span>
+                            ) : selected ? (
+                                <span className="truncate">{selected.name}</span>
+                            ) : (
+                                <span className="truncate text-muted-foreground">
+                                    {profiles.length === 0 ? "No saved login yet" : required ? "Pick from the Vault" : "None"}
+                                </span>
+                            )}
+                        </PickTrigger>
+                    </PopoverTrigger>
+                    {/* On the raised surface, so it stands out from the dialog it opens over. */}
+                    <PopoverContent tone="pick" align="start" className="w-(--radix-popover-trigger-width) min-w-80 overflow-hidden p-0">
+                        <LoginList
+                            profiles={profiles}
+                            value={value}
+                            requiredType={requiredType}
+                            adapter={adapter}
+                            noun={finalLabel}
+                            required={required}
+                            onPick={(id) => {
+                                onChange(id);
+                                setOpen(false);
+                            }}
+                            onEdit={
+                                canWrite
+                                    ? (profile) => {
+                                          setOpen(false);
+                                          setEditTarget(profile);
+                                          setEditOpen(true);
+                                      }
+                                    : undefined
+                            }
+                            onCreate={
+                                canWrite
+                                    ? () => {
+                                          setOpen(false);
+                                          setCreateOpen(true);
+                                      }
+                                    : undefined
+                            }
+                        />
+                    </PopoverContent>
+                </Popover>
+                {canWrite && (
+                    <Button type="button" variant="outline" onClick={() => setCreateOpen(true)}>
+                        <Plus />
+                        New
                     </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                    <Command>
-                        <CommandInput placeholder="Search profile..." />
-                        <CommandList>
-                            <CommandEmpty>No profiles found.</CommandEmpty>
-                            <CommandGroup>
-                                <CommandItem
-                                    value="__none__"
-                                    onSelect={() => {
-                                        onChange(null);
-                                        setOpen(false);
-                                    }}
-                                >
-                                    <Check className={cn("mr-2 h-4 w-4", !value ? "opacity-100" : "opacity-0")} />
-                                    <span className="text-muted-foreground">None</span>
-                                </CommandItem>
-                                {profiles.map((p) => (
-                                    <CommandItem
-                                        key={p.id}
-                                        value={p.name}
-                                        className="group pr-1"
-                                        onSelect={() => {
-                                            onChange(p.id);
-                                            setOpen(false);
-                                        }}
-                                    >
-                                        <Check className={cn("mr-2 h-4 w-4", value === p.id ? "opacity-100" : "opacity-0")} />
-                                        <span className="flex-1">{p.name}</span>
-                                        <button
-                                            type="button"
-                                            className="opacity-0 group-hover:opacity-100 transition-opacity ml-1 rounded p-0.5 hover:bg-accent"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setOpen(false);
-                                                setEditTarget(p);
-                                                setEditOpen(true);
-                                            }}
-                                        >
-                                            <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
-                                        </button>
-                                    </CommandItem>
-                                ))}
-                            </CommandGroup>
-                            <CommandSeparator />
-                            <CommandGroup>
-                                <CommandItem
-                                    value="__create__"
-                                    onSelect={() => {
-                                        setOpen(false);
-                                        setCreateOpen(true);
-                                    }}
-                                    className="font-medium"
-                                >
-                                    <Plus className="mr-2 h-3.5 w-3.5" />
-                                    Create new profile...
-                                </CommandItem>
-                            </CommandGroup>
-                        </CommandList>
-                    </Command>
-                </PopoverContent>
-            </Popover>
+                )}
+            </div>
 
-            {!loading && profiles.length === 0 && (
-                <p className="text-xs text-muted-foreground">
-                    No matching profiles yet. Use{" "}
-                    <Button
-                        type="button"
-                        variant="link"
-                        className="h-auto p-0 text-xs"
-                        onClick={() => setCreateOpen(true)}
-                    >
-                        Create new profile
-                    </Button>{" "}
-                    to add one.
-                </p>
-            )}
+            {description && <p className="text-xs text-muted-foreground">{description}</p>}
 
+            {/* The field knows the kind it needs, so the dialog opens on the form for it, named like the field. */}
             <CredentialProfileDialog
                 open={createOpen}
                 onOpenChange={setCreateOpen}
                 forcedType={requiredType}
+                noun={nounOf(finalLabel)}
+                forName={adapter?.name}
                 onSaved={onCreated}
             />
             <CredentialProfileDialog
@@ -231,8 +182,10 @@ export function CredentialPicker({
                 onOpenChange={(v) => { setEditOpen(v); if (!v) setEditTarget(null); }}
                 editProfile={editTarget}
                 forcedType={requiredType}
+                noun={nounOf(finalLabel)}
                 onSaved={(profile) => {
-                    setProfiles((prev) => prev.map((x) => x.id === profile.id ? profile : x));
+                    // The saved profile comes without its usage, which has not changed.
+                    setProfiles((prev) => prev.map((x) => x.id === profile.id ? { ...x, ...profile } : x));
                     setEditTarget(null);
                     setEditOpen(false);
                 }}

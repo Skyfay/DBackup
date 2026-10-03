@@ -8,9 +8,11 @@ vi.mock('fs/promises', () => ({
     default: {
         access: vi.fn().mockResolvedValue(undefined),
         unlink: vi.fn().mockResolvedValue(undefined),
+        rm: vi.fn().mockResolvedValue(undefined),
     },
     access: vi.fn().mockResolvedValue(undefined),
     unlink: vi.fn().mockResolvedValue(undefined),
+    rm: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@/lib/prisma', () => ({
@@ -143,6 +145,15 @@ describe('stepCleanup', () => {
         expect(fsPromises.default.unlink).not.toHaveBeenCalled();
     });
 
+    it("removes the run's own directory with whatever a step left in it", async () => {
+        const fsPromises = await import('fs/promises');
+        const ctx = makeCtx({ runDir: '/tmp/dbackup-run-1', tempFile: '/tmp/dbackup-run-1/backup.tar' });
+
+        await stepCleanup(ctx);
+
+        expect(fsPromises.default.rm).toHaveBeenCalledWith('/tmp/dbackup-run-1', { recursive: true, force: true });
+    });
+
     it('does nothing when ctx.tempFile is not set', async () => {
         const fsPromises = await import('fs/promises');
         const ctx = makeCtx({ tempFile: undefined });
@@ -182,6 +193,26 @@ describe('stepFinalize', () => {
                 data: expect.objectContaining({ status: 'Success' }),
             }),
         );
+    });
+
+    it('records an air-gapped destination the run left out as skipped and air-gapped, never as failed', async () => {
+        const prisma = (await import('@/lib/prisma')).default;
+        const ctx = makeCtx({
+            destinations: [
+                makeDestination() as any,
+                makeDestination({ configId: 'usb', configName: 'USB rotation', uploadResult: { success: false, skipped: true, error: 'Air-gapped and not connected' } }) as any,
+            ],
+        });
+
+        await stepFinalize(ctx);
+
+        const update = vi.mocked(prisma.execution.update).mock.calls.find(([args]) => (args as { data: { metadata?: string } }).data.metadata)!;
+        const metadata = JSON.parse((update[0] as { data: { metadata: string } }).data.metadata);
+        expect(metadata.destinations).toEqual([
+            expect.objectContaining({ name: 'Local', status: 'success' }),
+            expect.objectContaining({ name: 'USB rotation', status: 'skipped', airGapped: true }),
+        ]);
+        expect(metadata.destinations[0]).not.toHaveProperty('airGapped');
     });
 
     it('skips notifications when shouldNotify is false (FAILURE_ONLY on Success)', async () => {

@@ -1,11 +1,20 @@
 import { betterAuth } from "better-auth";
-import { APIError, createAuthMiddleware } from "better-auth/api";
+import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
+import { PROFILE_CHANGE_REFUSED, profilePermissionFor, userHolds } from "@/lib/auth/profile-guard";
+import { refuseWeakPassword } from "@/lib/auth/password-guard";
+import { refuseLateSignUp } from "@/lib/auth/sign-up-guard";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import prisma from "@/lib/prisma";
 import { twoFactor } from "better-auth/plugins";
 import { passkey } from "@better-auth/passkey";
 import { sso } from "@better-auth/sso";
 import { shouldBlockBrowserEmailAuth } from "@/lib/auth/env-flags";
+import { recordSignIn, recordSignOut } from "@/lib/auth/sign-in-audit";
+import { placeSsoUser, refuseDisabledProvider, refuseSsoSignUp } from "@/lib/auth/sso-guard";
+import { logger } from "@/lib/logging/logger";
+import { wrapError } from "@/lib/logging/errors";
+
+const log = logger.child({ module: "Auth" });
 
 // Default session duration: 7 days (in seconds)
 const DEFAULT_SESSION_DURATION = 3600 * 24 * 7;
@@ -121,15 +130,49 @@ function getTrustedProviders(): string[] {
  * `auth.api.signUpEmail()` behind the admin Users page.
  *
  * The decision itself lives in `shouldBlockBrowserEmailAuth` so it can be tested
- * without standing up better-auth.
+ * without standing up better-auth. It also refuses a sign-up from the browser once the first
+ * account exists (`sign-up-guard.ts`) and a sign-in provider that is off, keeps the own profile
+ * to what the group allows (`profile-guard.ts`), refuses a new password that breaks the rules of
+ * Settings > Passwords (`password-guard.ts`) and writes a sign-out to the audit log.
  */
-const blockEmailLogin = createAuthMiddleware(async (ctx) => {
-    if (!shouldBlockBrowserEmailAuth(ctx.path, Boolean(ctx.request))) return;
+const beforeAuth = createAuthMiddleware(async (ctx) => {
+    if (shouldBlockBrowserEmailAuth(ctx.path, Boolean(ctx.request))) {
+        throw new APIError("FORBIDDEN", {
+            code: "EMAIL_LOGIN_DISABLED",
+            message: "Password sign-in is disabled. Use single sign-on or a passkey.",
+        });
+    }
+    // The browser signs up the first account only. Later ones come from an admin or a provider.
+    await refuseLateSignUp(ctx.path, Boolean(ctx.request));
+    // A provider that is off signs nobody in, not only on the login page.
+    await refuseDisabledProvider(ctx, (url) => ctx.redirect(url));
+    // The own profile follows the group, also where the browser calls better-auth itself.
+    const needed = profilePermissionFor(ctx.path, Boolean(ctx.request));
+    if (needed) {
+        const session = await getSessionFromCtx(ctx);
+        if (session && !(await userHolds(session.user.id, needed))) {
+            throw new APIError("FORBIDDEN", { code: "PROFILE_PERMISSION", message: PROFILE_CHANGE_REFUSED });
+        }
+    }
+    // Every new password follows the rules under Settings > Passwords.
+    await refuseWeakPassword(ctx, () => getSessionFromCtx(ctx));
+    // A sign-out is written before it runs, while the session to end is still there.
+    if (ctx.path === "/sign-out") {
+        try {
+            await recordSignOut(ctx, await getSessionFromCtx(ctx));
+        } catch (error) {
+            log.warn("Writing a sign-out to the audit log failed", {}, wrapError(error));
+        }
+    }
+});
 
-    throw new APIError("FORBIDDEN", {
-        code: "EMAIL_LOGIN_DISABLED",
-        message: "Password sign-in is disabled. Use single sign-on or a passkey.",
-    });
+/** Sign-ins and failed sign-ins in the audit log, whichever way someone signed in. */
+const afterAuth = createAuthMiddleware(async (ctx) => {
+    try {
+        await recordSignIn(ctx);
+    } catch (error) {
+        log.warn("Writing a sign-in to the audit log failed", {}, wrapError(error));
+    }
 });
 
 export const auth = betterAuth({
@@ -214,12 +257,15 @@ export const auth = betterAuth({
         freshAge: 0,
     },
     hooks: {
-        before: blockEmailLogin,
+        before: beforeAuth,
+        after: afterAuth,
     },
     databaseHooks: {
         user: {
             create: {
-                before: async (user) => {
+                before: async (user, context) => {
+                    // The browser asks better-auth to add someone new, the provider decides.
+                    await refuseSsoSignUp(context);
                     // Email verification is not used as a feature anywhere in DBackup
                     // (no verification emails are sent, no login gating on this flag).
                     // Its only remaining effect is better-auth's SSO account-linking check
@@ -231,6 +277,13 @@ export const auth = betterAuth({
                             emailVerified: true,
                         },
                     };
+                },
+                after: async (user, context) => {
+                    try {
+                        await placeSsoUser(user, context);
+                    } catch (error) {
+                        log.warn("Putting a new user of a sign-in provider into its group failed", { userId: user.id }, wrapError(error));
+                    }
                 },
             },
         },
@@ -281,9 +334,9 @@ export const auth = betterAuth({
             // Trust email verification status from IdP
             // This allows automatic user creation without domain matching
             trustEmailVerified: true,
-            // Disable automatic user creation by default.
-            // Each provider can enable it via allowProvisioning flag,
-            // which is passed as requestSignUp from the client.
+            // Disable automatic user creation by default. The login page asks for it with
+            // requestSignUp when a provider adds new people, and refuseSsoSignUp checks the
+            // provider itself, since the browser can ask for anything.
             disableImplicitSignUp: true,
         })
     ]

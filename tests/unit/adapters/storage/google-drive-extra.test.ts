@@ -180,3 +180,25 @@ describe("GoogleDriveAdapter - ping", () => {
         expect(result.message).toContain("DNS resolution failed");
     });
 });
+
+describe("GoogleDriveAdapter - browseDirectories", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it("lists the folders under a folder ID", async () => {
+        mockDrive.files.list.mockResolvedValue({ data: { files: [{ id: "9XyZ", name: "Restores" }] } });
+
+        const entries = await GoogleDriveAdapter.browseDirectories!(validConfig, "1AbC-_x");
+
+        expect(entries).toEqual([{ name: "Restores", path: "9XyZ" }]);
+        expect(mockDrive.files.list).toHaveBeenCalledWith(expect.objectContaining({ q: expect.stringContaining("'1AbC-_x' in parents") }));
+    });
+
+    it("turns down a crafted folder ID before it reaches a query, from the request or the config", async () => {
+        await expect(GoogleDriveAdapter.browseDirectories!(validConfig, "root' in parents or 'x")).rejects.toThrow("Not a Google Drive folder ID.");
+        await expect(GoogleDriveAdapter.browseDirectories!({ ...validConfig, folderId: "a' or 'b" }, "")).rejects.toThrow("Not a Google Drive folder ID.");
+
+        expect(mockDrive.files.list).not.toHaveBeenCalled();
+    });
+});

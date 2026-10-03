@@ -1,0 +1,102 @@
+/**
+ * The parts of the job form, and how far each one is filled in.
+ *
+ * Plain data without React, like the parts of the connection form, so the tests check it without
+ * rendering anything.
+ */
+import type { SectionStatus } from "@/components/adapter/connection-form-layout";
+import { isValidCron } from "@/lib/core/cron";
+import type { JobFormValues } from "./job-form-schema";
+
+export type JobPartId = "basics" | "source" | "incremental" | "destinations" | "compression" | "encryption" | "notifications" | "advanced";
+
+export interface JobPart {
+    id: JobPartId;
+    label: string;
+    /** One line under the title, saying what the part is for. */
+    description: string;
+    /** The fields shown in this part. An error on one of them is counted here. */
+    keys: (keyof JobFormValues)[];
+}
+
+export const JOB_PARTS: JobPart[] = [
+    { id: "basics", label: "Basics", description: "Its name, when it runs and whether it runs on its own.", keys: ["name", "enabled", "scheduleMode", "schedule", "schedulePresetId"] },
+    { id: "source", label: "Source", description: "A database, folders from storage connections, or both in one backup.", keys: ["sourceMode", "sourceId", "databaseScope", "databases", "directorySources"] },
+    // Right after the source, since what can take part comes from there. Only a job with folders shows it, see jobParts.
+    {
+        id: "incremental",
+        label: "Incremental",
+        description: "Store only what changed since the last run, in chains that start with a full backup.",
+        keys: ["backupMode", "fullEveryDays", "verifyByHash"],
+    },
+    { id: "destinations", label: "Destinations", description: "The backup goes to each one in turn, from the top. Each keeps its own backups.", keys: ["destinations"] },
+    // Between the two in the order a run works: the dump is compressed first, then encrypted.
+    { id: "compression", label: "Compression", description: "Makes the backups smaller for a little more work on every run.", keys: ["compression", "pgCompressionAlgo", "pgCompressionLevel"] },
+    { id: "encryption", label: "Encryption", description: "Encrypts every backup before it leaves DBackup.", keys: ["encryptionProfileId"] },
+    { id: "notifications", label: "Notifications", description: "Who hears about a run, and after which runs.", keys: ["notificationTemplateIds", "notificationIds", "notificationEvents"] },
+    { id: "advanced", label: "Advanced", description: "File names and integrity checks.", keys: ["namingTemplateId", "skipVerification"] },
+];
+
+/**
+ * The parts a job shows for its source. Incremental has nothing to choose until the job has folders,
+ * so a job of only a database leaves it out, like a part of the connection form that does not apply
+ * to the picked mode. Its fields are only checked while it shows, see jobSchema.
+ */
+export function jobParts(sourceMode: JobFormValues["sourceMode"]): JobPart[] {
+    return sourceMode === "db" ? JOB_PARTS.filter((part) => part.id !== "incremental") : JOB_PARTS;
+}
+
+/** The fields that failed validation, from react-hook-form's error tree. */
+export function jobErrorKeys(errors: object): string[] {
+    return Object.entries(errors)
+        .filter(([key, value]) => key !== "root" && Boolean(value))
+        .map(([key]) => key);
+}
+
+function partOfKey(key: string): JobPartId {
+    return JOB_PARTS.find((part) => (part.keys as string[]).includes(key))?.id ?? "basics";
+}
+
+/** Whether a part has what the job needs from it. Parts that are all optional have no say. */
+function isDone(id: JobPartId, values: JobFormValues): boolean | null {
+    switch (id) {
+        case "basics":
+            return values.name.trim() !== "" && (values.scheduleMode === "own" ? isValidCron(values.schedule) : Boolean(values.schedulePresetId));
+        case "source": {
+            const database = values.sourceMode === "dirs" || Boolean(values.sourceId);
+            const folders = values.sourceMode === "db"
+                || (values.directorySources.length > 0 && values.directorySources.every((source) => source.configId && source.path));
+            return database && folders;
+        }
+        case "destinations":
+            return values.destinations.length > 0 && values.destinations.every((destination) => destination.configId);
+        default:
+            return null;
+    }
+}
+
+/**
+ * How far each part is. Errors win, and a part only shows a check when it needs something
+ * and has it, so a part that is all optional stays quiet, as in the connection form.
+ */
+export function jobPartStatuses(values: JobFormValues, errorKeys: string[]): Record<JobPartId, SectionStatus> {
+    const errors = new Map<JobPartId, number>();
+    for (const key of new Set(errorKeys)) {
+        const id = partOfKey(key);
+        errors.set(id, (errors.get(id) ?? 0) + 1);
+    }
+
+    const statuses = {} as Record<JobPartId, SectionStatus>;
+    for (const part of JOB_PARTS) {
+        const count = errors.get(part.id) ?? 0;
+        const done = isDone(part.id, values);
+        statuses[part.id] = count > 0 ? { kind: "error", count } : done === null ? { kind: "none" } : done ? { kind: "done" } : { kind: "todo" };
+    }
+    return statuses;
+}
+
+/** The first part with an error, in the order the form lists them, among the parts it shows. */
+export function firstPartWithError(errorKeys: string[], parts: JobPart[] = JOB_PARTS): JobPartId | null {
+    const failing = new Set(errorKeys.map(partOfKey));
+    return parts.find((part) => failing.has(part.id))?.id ?? null;
+}

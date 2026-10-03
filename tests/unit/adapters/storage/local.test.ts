@@ -270,6 +270,29 @@ describe("LocalFileSystemAdapter", () => {
             expect(result[0].name).toBe("backup.sql");
         });
 
+        it("leaves out a file that retention removes between listing and stat", async () => {
+            mockFsReaddir.mockResolvedValue([
+                { name: "old.tar", isFile: () => true, parentPath: "/data/backups/Job" },
+                { name: "new.tar", isFile: () => true, parentPath: "/data/backups/Job" },
+            ]);
+            mockFsStat
+                .mockRejectedValueOnce(Object.assign(new Error("ENOENT: no such file or directory"), { code: "ENOENT" }))
+                .mockResolvedValueOnce({ size: 2048, mtime: new Date() });
+
+            const result = await LocalFileSystemAdapter.list!(config, "");
+
+            expect(result.map((file) => file.name)).toEqual(["new.tar"]);
+        });
+
+        it("still fails the listing when a file cannot be read for another reason", async () => {
+            mockFsReaddir.mockResolvedValue([
+                { name: "locked.tar", isFile: () => true, parentPath: "/data/backups/Job" },
+            ]);
+            mockFsStat.mockRejectedValueOnce(Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" }));
+
+            await expect(LocalFileSystemAdapter.list!(config, "")).rejects.toThrow("EACCES");
+        });
+
         it("throws on unexpected readdir error (not ENOENT)", async () => {
             mockFsAccess.mockResolvedValue(undefined);
             mockFsReaddir.mockRejectedValue(new Error("Permission denied"));

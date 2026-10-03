@@ -311,4 +311,4 @@ already compressed, and it costs the CPU time either way.
 
 - [Encryption](/user-guide/security/encryption) - Encrypt compressed backups
 - [Creating Jobs](/user-guide/jobs/) - Configure compression
-- [Storage Explorer](/user-guide/features/storage-explorer) - View backup sizes
+- [Backups](/user-guide/features/backups) - View backup sizes

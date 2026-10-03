@@ -9,9 +9,12 @@ function ScrollArea({
   className,
   children,
   viewportRef,
+  horizontal = false,
   ...props
 }: React.ComponentProps<typeof ScrollAreaPrimitive.Root> & {
   viewportRef?: React.Ref<HTMLDivElement>;
+  /** Adds the horizontal scrollbar, for a row that can be wider than the screen. */
+  horizontal?: boolean;
 }) {
   return (
     <ScrollAreaPrimitive.Root
@@ -22,11 +25,18 @@ function ScrollArea({
       <ScrollAreaPrimitive.Viewport
         ref={viewportRef}
         data-slot="scroll-area-viewport"
-        className="focus-visible:ring-ring/50 size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:outline-1"
+        className={cn(
+          "focus-visible:ring-ring/50 size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-2 focus-visible:outline-1",
+          // Radix wraps the content in a table, which grows with its widest line so that it can
+          // scroll sideways. Scrolling only down, the content keeps to the width it is given and
+          // long text truncates instead of being cut off at the edge.
+          !horizontal && "[&>div]:block!"
+        )}
       >
         {children}
       </ScrollAreaPrimitive.Viewport>
       <ScrollBar />
+      {horizontal && <ScrollBar orientation="horizontal" />}
       <ScrollAreaPrimitive.Corner />
     </ScrollAreaPrimitive.Root>
   )

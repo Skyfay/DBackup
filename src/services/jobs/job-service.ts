@@ -7,7 +7,10 @@ import { registry } from "@/lib/core/registry";
 import { isCombinableWithDirectories } from "@/lib/adapters/combinable";
 import { registerAdapters } from "@/lib/adapters";
 import { runBulk, type BulkResult } from "@/lib/core/bulk";
+import { invalidateDashboardCache } from "@/services/dashboard/cache";
 import type { DatabaseAdapter } from "@/lib/core/interfaces";
+import { keepInTrash } from "@/services/trash/trash-snapshot";
+import type { DeleteOptions } from "@/services/trash/trash-types";
 
 registerAdapters();
 
@@ -79,23 +82,26 @@ export interface UpdateJobInput {
     verifyByHash?: boolean;
 }
 
+/**
+ * A connection of a job as it may leave this service: which one it is, never its config. The jobs
+ * reach the browser and API clients through the routes, and a config holds hosts, logins, keys and
+ * webhook URLs, even in their encrypted form. The runner loads what it needs itself.
+ */
+const connection = { select: { id: true, name: true, type: true, adapterId: true } } as const;
+
 const jobInclude = {
-    source: true,
+    source: connection,
     destinations: {
-        include: { config: true },
+        include: { config: connection },
         orderBy: { priority: 'asc' as const }
     },
     sources: {
-        include: { config: true, excludePatternPresets: true },
+        include: { config: connection, excludePatternPresets: { select: { id: true } } },
         orderBy: { priority: 'asc' as const }
     },
-    notifications: true,
+    notifications: connection,
     notificationTemplates: {
-        include: {
-            template: {
-                include: { channels: { include: { config: true } } }
-            }
-        },
+        include: { template: { select: { id: true, name: true } } },
         orderBy: { priority: 'asc' as const }
     },
     encryptionProfile: { select: { id: true, name: true } },
@@ -300,7 +306,7 @@ export class JobService {
             include: jobInclude
         });
 
-        scheduler.refresh().catch((e) => log.error("Scheduler refresh failed after createJob", {}, wrapError(e)));
+        this.jobsChanged("createJob");
 
         return newJob;
     }
@@ -429,17 +435,19 @@ export class JobService {
             });
         });
 
-        scheduler.refresh().catch((e) => log.error("Scheduler refresh failed after updateJob", {}, wrapError(e)));
+        this.jobsChanged("updateJob");
 
         return updatedJob;
     }
 
-    async deleteJob(id: string) {
-        const deletedJob = await prisma.job.delete({
-            where: { id },
+    /** Deletes a job, which waits in Recently deleted unless `permanently`. Its runs stay in History. */
+    async deleteJob(id: string, options: DeleteOptions = {}) {
+        const deletedJob = await prisma.$transaction(async (tx) => {
+            if (!options.permanently) await keepInTrash(tx, "job", id, options.by);
+            return tx.job.delete({ where: { id } });
         });
 
-        scheduler.refresh().catch((e) => log.error("Scheduler refresh failed after deleteJob", {}, wrapError(e)));
+        this.jobsChanged("deleteJob");
 
         return deletedJob;
     }
@@ -451,17 +459,22 @@ export class JobService {
      * job on each call, so refreshing inside the loop would repeat the identical full
      * rebuild N times to reach the same state.
      */
-    async deleteJobs(ids: string[]): Promise<BulkResult> {
+    async deleteJobs(ids: string[], options: DeleteOptions = {}): Promise<BulkResult> {
         const names = await this.jobNamesById(ids);
 
         const result = await runBulk(
             ids,
-            async (id) => { await prisma.job.delete({ where: { id } }); },
+            async (id) => {
+                await prisma.$transaction(async (tx) => {
+                    if (!options.permanently) await keepInTrash(tx, "job", id, options.by);
+                    await tx.job.delete({ where: { id } });
+                });
+            },
             (id) => names.get(id)
         );
 
         if (result.succeeded.length > 0) {
-            scheduler.refresh().catch((e) => log.error("Scheduler refresh failed after deleteJobs", {}, wrapError(e)));
+            this.jobsChanged("deleteJobs");
         }
 
         return result;
@@ -527,6 +540,9 @@ export class JobService {
             }
         }
 
+        // The copy has every setting of the original and only starts paused, so it does not run
+        // beside it before it is checked. Its incremental chain starts over, since chains are kept
+        // per job.
         const clonedJob = await prisma.job.create({
             data: {
                 name: uniqueName,
@@ -539,6 +555,11 @@ export class JobService {
                 pgCompression: original.pgCompression,
                 notificationEvents: original.notificationEvents,
                 schedulePresetId: original.schedulePresetId ?? null,
+                namingTemplateId: original.namingTemplateId ?? null,
+                skipVerification: original.skipVerification,
+                backupMode: original.backupMode,
+                fullEveryDays: original.fullEveryDays,
+                verifyByHash: original.verifyByHash,
                 notifications: {
                     connect: original.notifications.map((n) => ({ id: n.id }))
                 },
@@ -554,7 +575,8 @@ export class JobService {
                     create: original.destinations.map((d) => ({
                         configId: d.configId,
                         priority: d.priority,
-                        retention: d.retention
+                        retention: d.retention,
+                        retentionPolicyId: d.retentionPolicyId ?? null,
                     }))
                 },
                 sources: original.sources.length
@@ -565,6 +587,7 @@ export class JobService {
                             path: s.path,
                             excludePatterns: s.excludePatterns,
                             stopContainers: s.stopContainers,
+                            useStagingCache: s.useStagingCache,
                             excludePatternPresets: {
                                 connect: s.excludePatternPresets.map((p) => ({ id: p.id })),
                             },
@@ -575,9 +598,19 @@ export class JobService {
             include: jobInclude
         });
 
-        scheduler.refresh().catch((e) => log.error("Scheduler refresh failed after cloneJob", {}, wrapError(e)));
+        this.jobsChanged("cloneJob");
 
         return clonedJob;
+    }
+
+    /**
+     * Reloads the schedule after jobs were added, changed or removed. It also drops the cached
+     * connection overview, whose count of jobs per connection decides which connections the
+     * Connections page lets you delete.
+     */
+    private jobsChanged(action: string) {
+        scheduler.refresh().catch((e) => log.error(`Scheduler refresh failed after ${action}`, {}, wrapError(e)));
+        invalidateDashboardCache();
     }
 }
 

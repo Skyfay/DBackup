@@ -51,6 +51,7 @@ vi.mock('@/lib/runner/system-task-runner', () => ({
             logEntry: vi.fn(),
             setStage: vi.fn(),
             setProgress: vi.fn(),
+            setExtra: vi.fn(),
         }),
     },
     INTEGRITY_CHECK_STAGE_PROGRESS_MAP: {},
@@ -58,6 +59,9 @@ vi.mock('@/lib/runner/system-task-runner', () => ({
 vi.mock('@/services/dashboard-service', () => ({
     refreshStorageStatsCache: vi.fn().mockResolvedValue(undefined),
     cleanupOldSnapshots: vi.fn().mockResolvedValue(3),
+}));
+vi.mock('@/services/system/database-optimize', () => ({
+    optimizeDatabase: vi.fn().mockResolvedValue({ status: 'skipped', reclaimableBytes: 0 }),
 }));
 vi.mock('@/services/system/db-version-service', () => ({
     recordVersionIfChanged: vi.fn().mockResolvedValue({ changed: false, previousVersion: null, newVersion: '' }),
@@ -278,6 +282,25 @@ describe('SystemTaskService', () => {
             expect(integrityService.runFullIntegrityCheck).toHaveBeenCalledTimes(1);
         });
 
+        it('keeps the plan and every copy an integrity check checked in the metadata of its run', async () => {
+            const { integrityService } = await import('@/services/backup/integrity-service');
+            const { SystemTaskRunner } = await import('@/lib/runner/system-task-runner');
+            vi.mocked(integrityService.runFullIntegrityCheck).mockImplementationOnce(async (callbacks) => {
+                callbacks?.onPlan?.({ total: 1, destinations: [{ id: 's1', name: 'NAS', adapterId: 'sftp', count: 1 }] });
+                callbacks?.onCopy?.({ index: 0, destinationId: 's1', file: 'Shop/a.tar', size: 10, state: 'checking' });
+                callbacks?.onCopy?.({ index: 0, destinationId: 's1', file: 'Shop/a.tar', size: 10, state: 'passed', method: 'native' });
+                return { totalFiles: 1, verified: 1, passed: 1, failed: 0, skipped: 0, scanFailed: 0, errors: [] };
+            });
+
+            await service.runTask(SYSTEM_TASKS.INTEGRITY_CHECK);
+            const runner = await vi.mocked(SystemTaskRunner.create).mock.results.at(-1)!.value;
+            await vi.waitFor(() => expect(runner.finish).toHaveBeenCalled());
+
+            expect(runner.setExtra).toHaveBeenCalledWith({ plan: { total: 1, destinations: [{ id: 's1', name: 'NAS', adapterId: 'sftp', count: 1 }] } });
+            // One entry per copy, the last state it reached.
+            expect(runner.setExtra).toHaveBeenLastCalledWith({ copies: [{ destinationId: 's1', file: 'Shop/a.tar', size: 10, state: 'passed', method: 'native' }] });
+        });
+
         it('calls refreshStorageStatsCache for REFRESH_STORAGE_STATS', async () => {
             const { refreshStorageStatsCache } = await import('@/services/dashboard-service');
 
@@ -468,6 +491,45 @@ describe('SystemTaskService', () => {
             expect(prismaMock.adapterConfig.update).toHaveBeenCalledWith(expect.objectContaining({
                 data: expect.objectContaining({ metadata: expect.stringContaining('Unreachable') }),
             }));
+        });
+
+        describe('OPTIMIZE_DATABASE', () => {
+            /** The run the Settings page shows, as the task recorded it. */
+            async function recorded() {
+                const call = prismaMock.systemSetting.upsert.mock.calls.find(([args]) => args.where.key === `task.${SYSTEM_TASKS.OPTIMIZE_DATABASE}.lastRun`);
+                return JSON.parse((call?.[0].update as { value: string }).value);
+            }
+
+            it('says how much it freed', async () => {
+                const { optimizeDatabase } = await import('@/services/system/database-optimize');
+                vi.mocked(optimizeDatabase).mockResolvedValueOnce({ status: 'done', beforeBytes: 300 * 1024 * 1024, afterBytes: 200 * 1024 * 1024, durationMs: 900 });
+
+                await service.runTask(SYSTEM_TASKS.OPTIMIZE_DATABASE);
+
+                expect(await recorded()).toMatchObject({ ok: true, summary: '100 MB freed' });
+            });
+
+            it('says how little is unused when it leaves the database alone', async () => {
+                const { optimizeDatabase } = await import('@/services/system/database-optimize');
+                vi.mocked(optimizeDatabase).mockResolvedValueOnce({ status: 'skipped', reclaimableBytes: 3 * 1024 * 1024 });
+
+                await service.runTask(SYSTEM_TASKS.OPTIMIZE_DATABASE);
+
+                expect(await recorded()).toMatchObject({ ok: true, summary: 'Only 3 MB unused' });
+            });
+
+            it('needs a look when runs kept going for the whole wait', async () => {
+                const { optimizeDatabase } = await import('@/services/system/database-optimize');
+                vi.mocked(optimizeDatabase).mockResolvedValueOnce({ status: 'waited', running: 2 });
+
+                await service.runTask(SYSTEM_TASKS.OPTIMIZE_DATABASE);
+
+                expect(await recorded()).toMatchObject({ ok: false, summary: '2 runs kept going for an hour' });
+            });
+
+            it('runs once a month and is on by default', () => {
+                expect(DEFAULT_TASK_CONFIG[SYSTEM_TASKS.OPTIMIZE_DATABASE]).toMatchObject({ interval: '0 5 1 * *', enabled: true, runOnStartup: false });
+            });
         });
 
         it('records lastRunAt timestamp when runTask is called', async () => {

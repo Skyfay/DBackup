@@ -12,6 +12,9 @@ const baseMySQLConfig: MySQLConfig = {
     port: 3306,
     user: "root",
     database: "testdb",
+    singleTransaction: true,
+    routines: true,
+    events: true,
     disableSsl: false,
     connectionMode: "direct",
 };
@@ -21,6 +24,9 @@ const baseMariaDBConfig: MariaDBConfig = {
     port: 3306,
     user: "root",
     database: "testdb",
+    singleTransaction: true,
+    routines: true,
+    events: true,
     disableSsl: false,
     connectionMode: "direct",
 };
@@ -131,6 +137,78 @@ describe("MySQLBaseDialect.getDumpArgs", () => {
         const config: MySQLConfig = { ...baseMySQLConfig, disableSsl: true };
         const args = dialect.getDumpArgs(config, ["mydb"]);
         expect(args).toContain("--skip-ssl");
+    });
+});
+
+describe("what a dump holds besides the tables", () => {
+    class ConcreteBase extends MySQLBaseDialect {}
+    const dialect = new ConcreteBase();
+    const count = (args: string[], flag: string) => args.filter((arg) => arg === flag).length;
+
+    it("asks for a snapshot, the routines and the events, also for a source saved before the switches existed", () => {
+        const saved = { host: "localhost", port: 3306, user: "root", database: "shop", connectionMode: "direct" } as unknown as MySQLConfig;
+
+        for (const config of [saved, baseMySQLConfig]) {
+            const args = dialect.getDumpArgs(config, ["shop"]);
+            expect(args).toEqual(expect.arrayContaining(["--single-transaction", "--routines", "--events"]));
+        }
+    });
+
+    it("leaves out each part that is switched off", () => {
+        const args = dialect.getDumpArgs({ ...baseMySQLConfig, singleTransaction: false, routines: false, events: false }, ["shop"]);
+
+        expect(args).not.toContain("--single-transaction");
+        expect(args).not.toContain("--routines");
+        expect(args).not.toContain("--events");
+    });
+
+    it("puts them before the extra options, so a --skip-routines there wins", () => {
+        const args = dialect.getDumpArgs({ ...baseMySQLConfig, options: "--quick --skip-triggers" }, ["shop"]);
+
+        expect(args.indexOf("--events")).toBeLessThan(args.indexOf("--quick"));
+        expect(args.indexOf("--quick")).toBeLessThan(args.indexOf("--databases"));
+    });
+
+    it("adds nothing twice and leaves an option the extra options set in any form to them", () => {
+        const args = dialect.getDumpArgs({ ...baseMySQLConfig, options: "--single_transaction --skip-routines -E" }, ["shop"]);
+
+        expect(count(args, "--single-transaction")).toBe(0);
+        expect(count(args, "--single_transaction")).toBe(1);
+        expect(count(args, "--routines")).toBe(0);
+        expect(count(args, "--events")).toBe(0);
+        expect(args).toContain("--skip-routines");
+    });
+
+    it.each(["--lock-tables", "-l", "--lock-all-tables", "-x", "--lock_tables=ON"])(
+        "leaves the snapshot out when the extra options lock the tables with %s",
+        (option) => {
+            expect(dialect.getDumpArgs({ ...baseMySQLConfig, options: option }, ["shop"])).not.toContain("--single-transaction");
+        },
+    );
+
+    it.each(["--skip-lock-tables", "--lock-tables=0", "--disable-lock-tables"])("keeps the snapshot next to %s", (option) => {
+        expect(dialect.getDumpArgs({ ...baseMySQLConfig, options: option }, ["shop"])).toContain("--single-transaction");
+    });
+
+    it("turns off the GTID set only for MySQL's own mysqldump, and leaves it to the extra options when they set it", () => {
+        expect(dialect.getDumpArgs(baseMySQLConfig, ["shop"], undefined, { setsGtidPurged: true })).toContain("--set-gtid-purged=OFF");
+        expect(dialect.getDumpArgs(baseMySQLConfig, ["shop"], undefined, { setsGtidPurged: false })).not.toContain("--set-gtid-purged=OFF");
+        expect(dialect.getDumpArgs(baseMySQLConfig, ["shop"])).not.toContain("--set-gtid-purged=OFF");
+
+        const own = dialect.getDumpArgs({ ...baseMySQLConfig, options: "--set-gtid-purged=AUTO" }, ["shop"], undefined, { setsGtidPurged: true });
+        expect(own).not.toContain("--set-gtid-purged=OFF");
+        expect(own).toContain("--set-gtid-purged=AUTO");
+    });
+
+    it("holds the same for MariaDB, MySQL 5.7 and MySQL 8", () => {
+        for (const args of [
+            new MariaDBDialect().getDumpArgs(baseMariaDBConfig, ["shop"]),
+            new MySQL57Dialect().getDumpArgs(baseMySQLConfig, ["shop"]),
+            new MySQL80Dialect().getDumpArgs(baseMySQLConfig, ["shop"], undefined, { setsGtidPurged: true }),
+        ]) {
+            expect(args).toEqual(expect.arrayContaining(["--single-transaction", "--routines", "--events"]));
+        }
+        expect(new MySQL80Dialect().getDumpArgs(baseMySQLConfig, ["shop"], undefined, { setsGtidPurged: true })).toContain("--set-gtid-purged=OFF");
     });
 });
 

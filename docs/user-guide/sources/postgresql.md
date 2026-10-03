@@ -15,32 +15,32 @@ DBackup uses `pg_dump` from PostgreSQL 18 client, which is backward compatible w
 | Mode | Description |
 | :--- | :--- |
 | **Direct** | DBackup connects via TCP and runs `pg_dump` locally |
-| **SSH** | DBackup connects via SSH and runs `pg_dump` on the remote host |
+| **Over SSH** | DBackup connects via SSH and runs `pg_dump` on the remote host |
 
 ## Configuration
 
 ::: info Credential Profiles required
-PostgreSQL requires a [Credential Profile](/user-guide/security/credential-profiles). Create an `USERNAME_PASSWORD` profile in **Settings → Vault → Credentials** before saving the source. SSH mode additionally requires an `SSH_KEY` profile.
+PostgreSQL requires a [Credential Profile](/user-guide/security/credential-profiles). Create an `USERNAME_PASSWORD` profile in **Vault → Credentials** before saving the source. SSH mode additionally requires an `SSH_KEY` profile.
 :::
 
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
-| **Connection Mode** | Direct (TCP) or SSH | `Direct` | ✅ |
+| **How DBackup connects** | **Direct** or **Over SSH** | - | ✅ |
 | **Host** | Database server hostname | `localhost` | ✅ |
 | **Port** | PostgreSQL port | `5432` | ✅ |
-| **Primary Credential** | `USERNAME_PASSWORD` credential profile (username + password) | - | ✅ |
+| **Login** | `USERNAME_PASSWORD` credential profile (username + password) | - | ✅ |
 | **Database** | Database name(s) to backup | All databases | ❌ |
-| **Additional Options** | Extra `pg_dump` flags | - | ❌ |
+| **Extra options** | Extra `pg_dump` flags | - | ❌ |
 
 ### SSH Mode Fields
 
-These fields appear when **Connection Mode** is set to **SSH**:
+These fields appear in the **SSH server** part when **How DBackup connects** is set to **Over SSH**:
 
 | Field | Description | Default | Required |
 | :--- | :--- | :--- | :--- |
-| **SSH Host** | SSH server hostname or IP | - | ✅ |
-| **SSH Port** | SSH server port | `22` | ❌ |
-| **SSH Credential** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
+| **SSH host** | SSH server hostname or IP | - | ✅ |
+| **Port** | SSH server port | `22` | ❌ |
+| **SSH login** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
 
 ## Prerequisites
 
@@ -147,9 +147,9 @@ Each backup produces a `.dump` file in PostgreSQL custom format — a compressed
 
 ### Native Dump Compression
 
-PostgreSQL's native dump compression is controlled by the **PostgreSQL Compression** setting on the job (separate from DBackup's pipeline compression). See the [PostgreSQL Compression](#postgresql-compression) section below.
+PostgreSQL's native dump compression is set in the **Compression** part of the job (separate from DBackup's pipeline compression). See the [PostgreSQL Compression](#postgresql-compression) section below.
 
-## Additional Options Examples
+## Extra Options Examples
 
 ```bash
 # Custom output format (compressed)
@@ -173,22 +173,23 @@ PostgreSQL's native dump compression is controlled by the **PostgreSQL Compressi
 
 ## PostgreSQL Compression
 
-PostgreSQL native dump compression is a **job-level** setting configured when creating or editing a backup job (not the source). It controls the `-Z` flag passed to `pg_dump` and is separate from DBackup's own pipeline compression.
+PostgreSQL native dump compression is a **job-level** setting in the **Compression** part of a backup job (not the source). It controls the `-Z` flag passed to `pg_dump` and is separate from DBackup's own pipeline compression. Each option is a card, and the level is a slider between faster and smaller with the default marked.
 
-| Option | Description | PG Version |
-| :--- | :--- | :--- |
-| **Default** (empty) | Gzip level 6 — legacy behavior | All |
-| **None** | No native compression. Use DBackup's pipeline compression instead. | All |
-| **GZIP:N** | Gzip at level N (1–9) | All |
-| **LZ4:N** | LZ4 at level N — fast compression | 14+ |
-| **ZSTD:N** | Zstandard at level N — best ratio | 16+ |
+| Option | Description | Levels | PG Version |
+| :--- | :--- | :--- | :--- |
+| **Gzip** | The usual pick, works everywhere | 0 to 9, default 6 | All |
+| **LZ4** | Fastest, a little larger | 0 to 9, default 1 | 14+ |
+| **Zstd** | Small and fast. Levels above 19 need a lot of memory | 1 to 22, default 3 | 16+ |
+| **None** | No native compression, DBackup compresses the backup instead | | All |
+
+Jobs from before this setting have the old default, which is Gzip at level 6 and shows as that. It stays as it is until the setting is changed.
 
 ::: tip Combining Compression
-If you select **None** here and enable DBackup's Gzip or Brotli compression on the job, the compression happens in the pipeline after the dump — useful when you want a single compression method for all database types.
+With **None** for the dump, the part offers DBackup's own compression for the whole backup, which happens in the pipeline after the dump. That is useful when you want a single compression method for all database types.
 :::
 
 ::: warning LZ4 / ZSTD Version Requirements
-LZ4 requires PostgreSQL 14+ and ZSTD requires PostgreSQL 16+ — **on the PostgreSQL server**, not the DBackup host. Using these on older versions will cause the backup to fail.
+LZ4 requires PostgreSQL 14+ and ZSTD requires PostgreSQL 16+, **on the PostgreSQL server**, not the DBackup host. The job form reads the server's version and keeps these options out of reach, with the version they need, for an older server.
 :::
 
 ## Multi-Database Backups
@@ -221,7 +222,7 @@ Multi-DB backups created before v0.9.1 used `pg_dumpall` and cannot be restored 
 PostgreSQL connections can use SSL:
 
 ```bash
-# Additional Options for SSL
+# Extra options for SSL
 sslmode=require
 ```
 
@@ -339,7 +340,7 @@ dnf install postgresql
 
 To restore a PostgreSQL backup:
 
-1. Go to **Storage Explorer**
+1. Go to **Backups**
 2. Find your backup file
 3. Click **Restore**
 4. Select target database

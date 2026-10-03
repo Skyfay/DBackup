@@ -3,9 +3,10 @@ import { headers } from "next/headers";
 import { Readable } from "stream";
 import { z } from "zod";
 import { registerAdapters } from "@/lib/adapters";
-import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
+import { getAuthContext, checkPermissionWithContext, checkAnyPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { auditService } from "@/services/audit-service";
+import { backupAuditDetails, fileRestoreTarget } from "@/services/storage/backup-audit";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { planFileRestore, restoreFilesToStorage, FileRestoreInput } from "@/services/restore/file-restore";
 import { openArchiveDownload, planArchiveDownload, type ArchiveDownload } from "@/services/restore/archive-download";
@@ -91,11 +92,17 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         const { file, selections, databases, target, excludePatterns, dryRun, prepare, profileIdOverride } = parsed.data;
 
         // A download only reads the backup, so it needs the download permission. Writing
-        // files back into a storage destination is a restore and is gated accordingly.
-        checkPermissionWithContext(
-            ctx,
-            target.kind === "download" ? PERMISSIONS.STORAGE.DOWNLOAD : PERMISSIONS.STORAGE.RESTORE
-        );
+        // files back into a storage destination is a restore and is gated accordingly. A dry run
+        // only counts what a pick holds, which the restore page asks for before a restore, so
+        // either permission may ask for one.
+        if (dryRun) {
+            checkAnyPermissionWithContext(ctx, [PERMISSIONS.STORAGE.RESTORE, PERMISSIONS.STORAGE.DOWNLOAD]);
+        } else {
+            checkPermissionWithContext(
+                ctx,
+                target.kind === "download" ? PERMISSIONS.STORAGE.DOWNLOAD : PERMISSIONS.STORAGE.RESTORE
+            );
+        }
 
         const input: FileRestoreInput = {
             storageConfigId: id, file, selections, databases, excludePatterns, target,
@@ -123,9 +130,9 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         if (target.kind === "download") {
             const download = await openArchiveDownload(input);
 
-            await auditService.log(
-                ctx.userId, AUDIT_ACTIONS.EXPORT, AUDIT_RESOURCES.DESTINATION,
-                { action: "file_restore_download", file, selections, databases }, id
+            await auditService.logFor(
+                ctx, AUDIT_ACTIONS.EXPORT, AUDIT_RESOURCES.BACKUP,
+                { action: "file_restore_download", ...(await backupAuditDetails(id, file)), selections, databases }, id
             );
 
             return downloadResponse(download);
@@ -133,9 +140,10 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
 
         const result = await restoreFilesToStorage(input);
 
-        await auditService.log(
-            ctx.userId, AUDIT_ACTIONS.EXECUTE, AUDIT_RESOURCES.DESTINATION,
-            { action: "file_restore", file, target: target.kind, restored: result.restored, failed: result.failed.length }, id
+        const [backup, into] = await Promise.all([backupAuditDetails(id, file), fileRestoreTarget(target)]);
+        await auditService.logFor(
+            ctx, AUDIT_ACTIONS.RESTORE, AUDIT_RESOURCES.BACKUP,
+            { action: "file_restore", ...backup, ...into, restored: result.restored, failed: result.failed.length }, id
         );
 
         return NextResponse.json({
@@ -191,9 +199,15 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
                 : {}),
         });
 
-        await auditService.log(
-            ctx.userId, AUDIT_ACTIONS.EXPORT, AUDIT_RESOURCES.DESTINATION,
-            { action: "file_restore_download", file: claim.file, selections: claim.selection.selections, databases: claim.selection.databases }, id
+        await auditService.logFor(
+            ctx, AUDIT_ACTIONS.EXPORT, AUDIT_RESOURCES.BACKUP,
+            {
+                action: "file_restore_download",
+                ...(await backupAuditDetails(id, claim.file)),
+                selections: claim.selection.selections,
+                databases: claim.selection.databases,
+            },
+            id
         );
 
         // The name the prepare step promised, so the browser saves what the user was shown.

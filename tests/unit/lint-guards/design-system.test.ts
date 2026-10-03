@@ -1,13 +1,14 @@
 /**
  * Lint Guards: design system conventions that are invisible in review.
  *
- * These four rules exist because breaking them produces code that reads correctly and
+ * These rules exist because breaking them produces code that reads correctly and
  * still looks or behaves wrong - the class of mistake a reviewer skims past. They are
  * documented in src/components/CLAUDE.md; this file is what makes them stick.
  *
- * Two are enforced, two report only. The advisory ones are not weaker rules, they are
- * rules whose existing violation count is too large to fix in one pass - promote them
- * once the backlog is clear.
+ * Most rules fail the build on any violation. Two started with a backlog and are ratcheted:
+ * a baseline count fails the build the moment it grows, and only ever comes down. Both are
+ * at zero now. The primitives in src/components/ui are scanned too, apart from the scroll rule,
+ * since Radix scrolls the content of its menus itself.
  *
  * Run with: pnpm test tests/unit/lint-guards/design-system.test.ts
  */
@@ -81,12 +82,13 @@ describe("Scroll containers", () => {
     /**
      * A raw overflow container renders the native OS scrollbar next to the styled Radix one
      * used everywhere else. It looks like a rendering bug rather than a styling choice, and
-     * it is worst exactly where it is easiest to add - inside dialogs.
+     * it is worst exactly where it is easiest to add - inside dialogs. Sideways counts too: a
+     * wide table or a long line scrolls in <ScrollArea horizontal>.
      */
-    it("should use ScrollArea instead of raw overflow-y-auto", () => {
+    it("should use ScrollArea instead of a raw overflow-auto or overflow-scroll", () => {
         const violations = scan(
             collectTsx(SRC_DIR),
-            (line) => /className=[^>]*\boverflow-(y-)?auto\b/.test(line)
+            (line) => /className=[^>]*\boverflow-(?:[xy]-)?(?:auto|scroll)\b/.test(line)
         );
 
         if (violations.length > 0) {
@@ -116,7 +118,7 @@ describe("Date formatting", () => {
             if (/\.toLocaleDateString\s*\(|\.toLocaleTimeString\s*\(/.test(line)) return true;
             // .toLocaleString() is only a violation on something that is clearly a date.
             return /(new Date\([^)]*\)|\b\w*(?:[Dd]ate|At|[Tt]imestamp))\s*\)?\.toLocaleString\s*\(/.test(line);
-        });
+        }, false);
 
         if (violations.length > 0) {
             expect.fail(
@@ -128,6 +130,72 @@ describe("Date formatting", () => {
         }
 
         expect(collectTsAndTsx(SRC_DIR).length).toBeGreaterThan(0);
+    });
+});
+
+describe("Task colors", () => {
+    /**
+     * A dialog, a popover, a menu entry or a button takes the color of its task through a tone:
+     * blue to add, violet to edit, turquoise to pick. The `info` blue only shows that something is
+     * running, or marks the newest bar of a chart, so reaching for it on a button or a head brings
+     * back the old mix of meanings. Only the components that show one of the two may use it.
+     *
+     * The rules are under Color in src/app/dashboard/CLAUDE.md, the tones in src/components/ui/tone.ts.
+     */
+    const INFO_STATUS_FILES = [
+        "execution-status.tsx",
+        "executions-list.tsx",
+        "jobs-list.tsx",
+        "stats-strip.tsx",
+        "activity-chart.tsx",
+        "storage-history-chart.tsx",
+        // A job's live run: the progress bar on its card and in its details, the running bar of its run chart,
+        // and the dot of the Running filter.
+        "job-card.tsx",
+        "job-status-filter.tsx",
+        "job-details-content.tsx",
+        "job-run-chart.tsx",
+        // A job's live run on the Timeline and Upcoming views of the Jobs page.
+        "timeline-bars.tsx",
+        "jobs-upcoming.tsx",
+        // A live run in History: the progress bar of its row and card, and the live parts of its page,
+        // like the row of what runs now and the copy an integrity check checks now.
+        "run-cells.tsx",
+        "run-live.tsx",
+        "run-summary-parts.tsx",
+        "run-checks.tsx",
+        // A system task that runs now, in the Last run column of the Settings page.
+        "task-columns.tsx",
+    ];
+
+    it("should keep the info blue to the running status", () => {
+        const files = collectTsAndTsx(SRC_DIR).filter((file) => !INFO_STATUS_FILES.includes(path.basename(file)));
+        const violations = scan(
+            files,
+            (line) => /\b(?:bg|text|border|ring|fill|stroke|outline|from|to|via)-info\b|var\(--info\)/.test(line),
+            false
+        );
+
+        if (violations.length > 0) {
+            expect.fail(
+                `Found ${violations.length} use(s) of the info blue outside the running status. ` +
+                `Give the dialog, popover, menu entry or button a tone instead, like tone="create" - ` +
+                `see Color in src/app/dashboard/CLAUDE.md. A component that shows a running status ` +
+                `or the newest bar of a chart belongs in INFO_STATUS_FILES:\n${report(violations)}`
+            );
+        }
+    });
+
+    it("should set a tone through the typed prop, not a raw data-tone attribute", () => {
+        const violations = scan(collectTsx(SRC_DIR), (line) => /\bdata-tone=/.test(line), false);
+
+        if (violations.length > 0) {
+            expect.fail(
+                `Found ${violations.length} raw data-tone attribute(s). Use the tone prop of the ` +
+                `primitive or toneAttribute() from '@/components/ui/tone', so a misspelled tone ` +
+                `fails the type check:\n${report(violations)}`
+            );
+        }
     });
 });
 
@@ -167,11 +235,11 @@ describe("ScrollArea max-height placement", () => {
      * a look in the browser before being rewritten - the baseline stops new ones meanwhile.
      *
      * The credential dialog was one of them, and it did not scroll at all once the SSH fields
-     * grew. Fixed and the baseline lowered to match.
+     * grew. The last two, in the preview of a notification, moved to the viewport as well.
      *
      * Canonical form: *:data-[slot=scroll-area-viewport]:max-h-[...]
      */
-    const BASELINE = 3;
+    const BASELINE = 0;
 
     it("should not add new ScrollAreas with max-h on the root", () => {
         const violations = scan(collectTsx(SRC_DIR), (line) => {
@@ -201,7 +269,7 @@ describe("Dark mode color pairing", () => {
      * Semantic tokens (bg-muted, text-muted-foreground) are already theme-aware and are the
      * preferred fix; an explicit dark: variant is the fallback.
      */
-    const BASELINE = 123;
+    const BASELINE = 0;
 
     it("should not add new palette colors without a dark: counterpart", () => {
         const PALETTE =
@@ -212,7 +280,7 @@ describe("Dark mode color pairing", () => {
             if (!className) return false;
             const classes = className[1] ?? className[2] ?? "";
             return PALETTE.test(classes) && !classes.includes("dark:");
-        });
+        }, false);
 
         ratchet(
             "Palette color without dark: variant",

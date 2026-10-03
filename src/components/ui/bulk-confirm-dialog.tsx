@@ -1,128 +1,64 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, AlertTriangle } from "lucide-react";
-import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { cn } from "@/lib/utils";
+import { ConfirmDialog, DialogItemList, type DialogListItem } from "@/components/ui/confirm-dialog";
+import type { Tone } from "@/components/ui/tone";
 
 export interface BulkConfirmDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     title: string;
-    description: React.ReactNode;
-    /** Names of the rows that will be acted on. */
-    items: string[];
-    /** Rows this action skips, with the reason. Shown so the count is never a surprise. */
-    skipped?: { name: string; reason: string }[];
-    /** How many names to show before summarising the rest. */
-    previewLimit?: number;
+    description?: React.ReactNode;
+    icon?: React.ComponentType<{ className?: string }>;
+    /** The rows that will be acted on. */
+    items: DialogListItem[];
+    /** Rows this action leaves out, each with the reason as its detail. Shown so the count is never a surprise. */
+    skipped?: DialogListItem[];
+    /** Headings of the two lists, shown once some rows are left out. For example "Will be deleted". */
+    itemsLabel: string;
+    skippedLabel: string;
     confirmLabel?: string;
     destructive?: boolean;
+    /** The tone of a confirmation that is not destructive, like warning for a delete into Recently deleted. */
+    tone?: Tone;
+    /** The line under the title. A destructive one says it cannot be undone when left out. */
+    note?: string;
     isPending?: boolean;
     onConfirm: () => void;
+    /** More below the lists, like where deleted rows go. */
+    children?: React.ReactNode;
 }
 
 /**
  * Confirmation for an action about to touch several rows.
  *
  * Lists the rows by name rather than only counting them, because a selection can be
- * changed by a filter after it was made and a bare count would not show that.
+ * changed by a filter after it was made and a bare count would not show that. Rows the
+ * action leaves out get a list of their own, so it is clear beforehand what happens.
  */
-export function BulkConfirmDialog({
-    open,
-    onOpenChange,
-    title,
-    description,
-    items,
-    skipped = [],
-    previewLimit = 8,
-    confirmLabel = "Confirm",
-    destructive = false,
-    isPending = false,
-    onConfirm,
-}: BulkConfirmDialogProps) {
-    const preview = items.slice(0, previewLimit);
-    const remaining = items.length - preview.length;
-
+export function BulkConfirmDialog({ items, skipped = [], itemsLabel, skippedLabel, destructive, note, children, ...props }: BulkConfirmDialogProps) {
     return (
-        <AlertDialog open={open} onOpenChange={(next) => !isPending && onOpenChange(next)}>
-            {/* AlertDialogContent is a grid, and a grid item defaults to min-width:auto.
-                Without min-w-0 on the panels below, a long backup name sets their minimum
-                width and overflows the dialog instead of being truncated. */}
-            <AlertDialogContent>
-                <AlertDialogHeader>
-                    <AlertDialogTitle>{title}</AlertDialogTitle>
-                    <AlertDialogDescription>{description}</AlertDialogDescription>
-                </AlertDialogHeader>
+        <ConfirmDialog {...props} destructive={destructive} note={note ?? (destructive ? "Cannot be undone" : undefined)} disabled={items.length === 0}>
+            {skipped.length === 0 ? (
+                <DialogItemList items={items} />
+            ) : (
+                <>
+                    {items.length > 0 && <ItemGroup label={itemsLabel} items={items} />}
+                    <ItemGroup label={skippedLabel} items={skipped} size="small" />
+                </>
+            )}
+            {children}
+        </ConfirmDialog>
+    );
+}
 
-                {items.length > 0 && (
-                    <ScrollArea className="*:data-[slot=scroll-area-viewport]:max-h-40 min-w-0 rounded-md border bg-muted/40">
-                        <ul className="min-w-0 px-3 py-2 text-sm">
-                            {preview.map((name) => (
-                                <li key={name} className="truncate py-0.5">
-                                    {name}
-                                </li>
-                            ))}
-                            {remaining > 0 && (
-                                <li className="py-0.5 text-muted-foreground">
-                                    and {remaining} more
-                                </li>
-                            )}
-                        </ul>
-                    </ScrollArea>
-                )}
-
-                {skipped.length > 0 && (
-                    <div className="min-w-0 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm dark:border-amber-900/50 dark:bg-amber-950/30">
-                        <p className="flex items-center gap-2 font-medium text-amber-800 dark:text-amber-300">
-                            <AlertTriangle className="h-4 w-4 shrink-0" />
-                            {skipped.length} will be skipped
-                        </p>
-                        <ul className="mt-1 min-w-0 space-y-0.5 text-amber-800/90 dark:text-amber-300/90">
-                            {skipped.slice(0, previewLimit).map((entry) => (
-                                // The reason is the useful half, so the name gives way
-                                // rather than the two sharing the truncation.
-                                <li key={entry.name} className="flex min-w-0 items-baseline gap-1">
-                                    <span className="truncate">{entry.name}</span>
-                                    <span className="shrink-0">- {entry.reason}</span>
-                                </li>
-                            ))}
-                            {skipped.length > previewLimit && (
-                                <li>and {skipped.length - previewLimit} more</li>
-                            )}
-                        </ul>
-                    </div>
-                )}
-
-                <AlertDialogFooter>
-                    <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                        className={cn(
-                            destructive && "bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                        )}
-                        disabled={isPending || items.length === 0}
-                        // Radix closes on click. The dialog has to stay up while the request
-                        // runs, so the close is deferred to the caller.
-                        onClick={(event) => {
-                            event.preventDefault();
-                            onConfirm();
-                        }}
-                    >
-                        {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        {confirmLabel}
-                    </AlertDialogAction>
-                </AlertDialogFooter>
-            </AlertDialogContent>
-        </AlertDialog>
+function ItemGroup({ label, items, size }: { label: string; items: DialogListItem[]; size?: "default" | "small" }) {
+    return (
+        <div className="grid min-w-0 gap-1.5">
+            <p className="text-xs font-medium text-muted-foreground">
+                {label} <span className="tabular-nums">· {items.length}</span>
+            </p>
+            <DialogItemList items={items} size={size} />
+        </div>
     );
 }

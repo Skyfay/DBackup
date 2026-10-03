@@ -1,159 +1,102 @@
 # Audit Log System
 
-The Audit Log system tracks significant user actions (Authentication, Resource Management, etc.) for security and compliance purposes.
+The audit log records sign-ins and every change, run, restore, download and revealed secret, with who did it, from where, and what changed.
 
 ## Architecture
 
 ### Database Schema
 
-The system uses the `AuditLog` model in Prisma:
-
 ```prisma
 model AuditLog {
-  id         String   @id @default(cuid())
-  userId     String?  // Who performed the action (nullable for system actions)
-  action     String   // What happened (e.g., CREATE, DELETE)
-  resource   String   // What was affected (e.g., USER, JOB)
-  resourceId String?  // ID of the affected object
-  details    String?  // JSON string with additional info (diffs, metadata)
-  ipAddress  String?  // Request context
-  userAgent  String?  // Browser/client info
-  createdAt  DateTime @default(now())
-
-  user       User?    @relation(fields: [userId], references: [id])
+  id          String   @id @default(uuid())
+  userId      String?  // Who did it, null for a failed sign-in or a user deleted before names were kept
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  actorName   String?  // The name of the user when the entry was written, kept after the user is deleted
+  apiKeyId    String?  // The API key the request came with
+  apiKeyName  String?  // Its name at the time
+  action      String   // AUDIT_ACTIONS
+  resource    String   // AUDIT_RESOURCES
+  resourceId  String?  // The record the entry is about
+  details     String?  // JSON, see Details below
+  ipAddress   String?  // From X-Forwarded-For or X-Real-IP
+  userAgent   String?
+  createdAt   DateTime @default(now())
 }
 ```
 
 ### Constants
 
-To ensure consistency, we use strict constants for Actions and Resources.
+`src/lib/core/audit-types.ts` holds `AUDIT_ACTIONS` (`LOGIN`, `LOGIN_FAILED`, `LOGOUT`, `CREATE`, `UPDATE`, `DELETE`, `EXECUTE`, `RESTORE`, `EXPORT`) and `AUDIT_RESOURCES` (`AUTH`, `USER`, `GROUP`, `JOB`, `BACKUP`, `ADAPTER`, `VAULT`, `CREDENTIAL`, `API_KEY`, `TEMPLATE`, `SYSTEM`, `SSO_PROVIDER`, plus `SOURCE` and `DESTINATION` from before). `src/lib/core/audit-areas.ts` groups the resources into the areas of the Area filter and the actions into the quick filters. `EXPORT` and `RESTORE` count as sensitive.
 
-**Location**: `src/lib/core/audit-types.ts`
+## Writing an Entry
 
-```typescript
-export const AUDIT_ACTIONS = {
-  LOGIN: 'LOGIN',
-  LOGOUT: 'LOGOUT',
-  CREATE: 'CREATE',
-  UPDATE: 'UPDATE',
-  DELETE: 'DELETE',
-  EXECUTE: 'EXECUTE',
-  EXPORT: 'EXPORT',   // For sensitive data exports (e.g., recovery kit)
-} as const;
-
-export const AUDIT_RESOURCES = {
-  AUTH: 'AUTH',
-  USER: 'USER',
-  GROUP: 'GROUP',
-  SOURCE: 'SOURCE',
-  DESTINATION: 'DESTINATION',
-  JOB: 'JOB',
-  SYSTEM: 'SYSTEM',
-  ADAPTER: 'ADAPTER',
-  VAULT: 'VAULT',       // Encryption profiles / recovery kits
-  CREDENTIAL: 'CREDENTIAL', // Credential profiles
-  API_KEY: 'API_KEY',   // API keys
-  TEMPLATE: 'TEMPLATE', // Naming templates, schedule presets, retention policies
-} as const;
-```
-
-### Service Layer
-
-**Location**: `src/services/audit-service.ts`
-
-The `AuditService` handles:
-- Writing logs to the database (`log()`)
-- Fetching paginated and filtered logs (`getLogs()`)
-- Generating statistics for UI filters (`getFilterStats()`)
-- Retention management (auto-delete old entries)
-
-## Usage Guide
-
-### Logging an Event
-
-Log an event whenever a significant state change occurs (typically in **Server Actions** or **Services**):
+Every Server Action and API route that changes something, runs something or hands out data writes an entry after it succeeded.
 
 ```typescript
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 
-export async function createSource(data: SourceInput) {
-  // 1. Perform Business Logic
-  const newSource = await db.adapterConfig.create({ ... });
+// A Server Action, the session user is the author.
+await auditService.log(user.id, AUDIT_ACTIONS.CREATE, AUDIT_RESOURCES.GROUP, { name: group.name }, group.id);
 
-  // 2. Log the Action
-  if (session?.user) {
-    await auditService.log(
-      session.user.id,           // userId (nullable for system actions)
-      AUDIT_ACTIONS.CREATE,      // action
-      AUDIT_RESOURCES.SOURCE,    // resource
-      { name: newSource.name },  // details (optional, Record<string, any>)
-      newSource.id,              // resourceId (optional)
-    );
-  }
-
-  return newSource;
-}
+// An API route, which may be called with an API key.
+await auditService.logFor(ctx, AUDIT_ACTIONS.UPDATE, AUDIT_RESOURCES.JOB, { name, changes }, job.id);
 ```
 
-### Required Events to Log
+- `logFor(ctx, ...)` takes the `AuthContext` of the route and records the API key when the request came with one. The key acts as its owner, so `userId` is the owner.
+- The service reads the address and the browser from the request it runs in and snapshots the names of the user and the key. Callers never pass them. Outside a request, like in a scheduled task, they stay empty.
+- `log` never throws. A failed write is logged, the action goes on.
 
-| Action | Resource | When |
-|--------|----------|------|
-| LOGIN | USER | Successful authentication |
-| LOGOUT | USER | Session terminated |
-| CREATE | SOURCE/DESTINATION/JOB | New adapter or job created |
-| UPDATE | SOURCE/DESTINATION/JOB | Configuration modified |
-| DELETE | SOURCE/DESTINATION/JOB | Resource removed |
-| EXECUTE | EXECUTION | Backup job triggered |
-| RESTORE | EXECUTION | Database restored |
-| CREATE/UPDATE/DELETE | USER | User management |
-| CREATE/UPDATE/DELETE | GROUP | Permission group changes |
+Sign-ins, failed sign-ins and sign-outs are written by the server around the endpoints of better-auth, in `src/lib/auth/sign-in-audit.ts`: the `after` hook turns a new session into `LOGIN` with its method (`password`, `passkey`, `two-factor`, `sso` with the name of the provider in `provider` and its ID in `providerId`) and a turned down password into `LOGIN_FAILED`, the `before` hook of `/sign-out` writes `LOGOUT`. A password sign-in of someone with a second factor is written by the second step. Someone a sign-in provider adds is written as `CREATE USER` with `via: "sso"`, the provider and the group it put them in, by `placeSsoUser` in `src/lib/auth/sso-guard.ts`.
 
-### Self-Service Actions
+### Details
 
-When a user performs an action on their own account (e.g., password change), tag it appropriately:
+The Audit log tab turns an entry into a sentence with `describeEntry` in `src/lib/core/audit-sentence.ts`, and what changed into rows with `changesOf` in `src/lib/core/audit-changes.ts`. Write details they read:
 
-```typescript
-await auditService.log(
-  userId,
-  AUDIT_ACTIONS.UPDATE,
-  AUDIT_RESOURCES.USER,
-  { field: 'password', selfService: true }, // details
-  userId,                                   // resourceId
-);
-```
+| Key | Holds |
+| :--- | :--- |
+| `name` | The display name of the record. Every create, change and delete names it, so read it before a delete |
+| `file`, `destination`, `job` | A backup: its path, the destination name, the job name |
+| `changes` | `AuditChange[]` from `diffFields` in `src/lib/core/audit-diff.ts`: each field before and after as a person reads it |
+| `renamedFrom`, `clonedFromName` | The old name, the name of the original |
+| `added`, `removed`, `areas` | Permissions of a group or an API key, and the level of each area before and after |
+| `action` | A variant, like `restore`, `download`, `download_link_created`, `lock`, `cancel`, `rotate`, `config_restore`, `audit_export`, `trash_restore` and `trash_purge` for Recently deleted |
+| `permanently` | For a delete that skipped Recently deleted |
+| `originalName` | For a restore from Recently deleted under another name, the name it had |
+| `area` | For `UPDATE SYSTEM`: the settings part a person sees, like `Data retention` |
+| `enabled` | For an enable or disable |
+| `bulk`, `requested`, `succeeded`, `failed` | For a bulk action |
 
-## Retention Policy
+A secret never goes into the details with its value. Mark its field with `secret: true` in `diffFields`, and the entry keeps only that it changed.
 
-Old entries are removed by `auditService.cleanOldLogs(retentionDays)` based on the system setting `audit.retentionDays` (default 90 days, **Audit Log** under Settings → General → Data Retention).
+## Reading the Log
 
-This runs as part of the "Clean Old Data" system task (`system.clean_audit_logs`), together with the other data retention settings.
+`src/services/audit/` builds the Audit log tab of Users & Groups:
+
+| File | Does |
+| :--- | :--- |
+| `audit-query.ts` | `buildAuditWhere(filter, now, omit?)`: who, area, action, quick filter, period or a day range, one record, search |
+| `audit-rows.ts` | An entry as a row: its author, its sentence, the device, and whether a sign-in came from a new network |
+| `audit-list-service.ts` | A page of rows, the counts beside every filter, the options of the Who filter and the numbers of the last 30 days |
+| `audit-details.ts` | The panel of one entry: its changes, the sign-in it came from, the entries of the same record, the session of a sign-in |
+| `audit-timeline.ts` | Entries per person and API key and day, the days cut in the time zone of the viewer |
+| `audit-export.ts` | The filtered entries as CSV, at most 50,000, with cells that start like a formula quoted |
+
+A sign-in counts as from a new place when the person signed in before, but never from its network: the first three parts of an IPv4 address or the first half of an IPv6 address.
 
 ## API Endpoints
 
-### Get Audit Logs
+All need `audit:read`.
 
-```http
-GET /api/audit?page=1&limit=20&action=CREATE&resource=JOB
-```
+| Route | Returns |
+| :--- | :--- |
+| `GET /api/audit` | One page of rows with the counts of every filter, the Who options and the numbers of the last 30 days |
+| `GET /api/audit/{id}` | The panel of one entry, 404 once the log no longer keeps it |
+| `GET /api/audit/timeline?start=&end=&tz=` | Entries per person and day, at most 93 days |
+| `GET /api/audit/export` | The filtered entries as CSV. The export writes an entry of its own |
 
-**Query Parameters:**
+The filters are query parameters shared by all four: `who` (repeatable, `user:<id>`, `key:<id>`, `deleted:<name>` or `unknown`), `area` and `action` (repeatable), `quick` (`all`, `changes`, `signins`, `sensitive`), `period` (`24h`, `7d`, `30d`, `90d`, `all`), `search`, `record` (`<RESOURCE>:<id>`), and `fromDay`, `toDay` with `tz` for a range of days. The list takes `page` and `pageSize` too.
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `page` | number | Page number (default: 1) |
-| `limit` | number | Items per page (default: 20) |
-| `action` | string | Filter by action type |
-| `resource` | string | Filter by resource type |
-| `userId` | string | Filter by user |
-| `startDate` | string | Filter from date (ISO) |
-| `endDate` | string | Filter to date (ISO) |
+## Retention Policy
 
-### Get Filter Statistics
-
-```http
-GET /api/audit/stats
-```
-
-Returns counts grouped by action and resource for building filter dropdowns.
+Old entries are removed by `auditService.cleanOldLogs(retentionDays)` based on the system setting `audit.retentionDays` (default 90 days, **Audit log** under Settings → Data retention). It runs as part of the "Clean old data" system task, together with the other data retention settings.

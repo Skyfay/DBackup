@@ -14,6 +14,7 @@ import { logger } from "@/lib/logging/logger";
 import { wrapError, getErrorMessage, ValidationError, NotFoundError } from "@/lib/logging/errors";
 import { registerAdapters } from "@/lib/adapters";
 import { validateCredentialAssignments } from "@/lib/adapters/credential-validation";
+import { getConnectionOverview } from "@/services/adapters/connection-overview";
 
 registerAdapters();
 
@@ -28,7 +29,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const type = searchParams.get("type");
     // Storage adapters split into two exclusive roles. Callers that only care about one
-    // (the Storage Explorer, the Destinations page) pass it; the job form deliberately
+    // (the Backups page, the Destinations page) pass it; the job form deliberately
     // omits it and splits the single response itself.
     const roleParam = searchParams.get("role")?.toUpperCase();
     const role = isStorageRole(roleParam) ? roleParam : undefined;
@@ -62,6 +63,13 @@ export async function GET(req: NextRequest) {
         // so a decrypted secret can never reach the client regardless of caller
         // permission level. See src/lib/adapters/dto.ts.
         const items = adapters.map(toAdapterListItem);
+
+        // The connection tables ask for usage, last backup and health on top. Other callers
+        // skip it, because it costs several aggregate queries.
+        if (searchParams.get("overview") === "true") {
+            const overview = await getConnectionOverview(items.map((item) => item.id));
+            return NextResponse.json(items.map((item) => ({ ...item, overview: overview.get(item.id) ?? null })));
+        }
 
         return NextResponse.json(items);
     } catch (error: unknown) {
@@ -169,15 +177,13 @@ export async function POST(req: NextRequest) {
             },
         });
 
-        if (ctx) {
-            await auditService.log(
-                ctx.userId,
-                AUDIT_ACTIONS.CREATE,
-                AUDIT_RESOURCES.ADAPTER,
-                { name, type, adapterId },
-                newAdapter.id
-            );
-        }
+        await auditService.logFor(
+            ctx,
+            AUDIT_ACTIONS.CREATE,
+            AUDIT_RESOURCES.ADAPTER,
+            { name, type, adapterId },
+            newAdapter.id
+        );
 
         return NextResponse.json(toAdapterListItem(newAdapter), { status: 201 });
     } catch (error: unknown) {

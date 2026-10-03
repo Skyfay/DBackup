@@ -56,11 +56,13 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
     let currentDetail: string | null = null;
     const stageStartTimes = new Map<string, number>();
     stageStartTimes.set("Initializing", Date.now());
+    // The server the backup goes to, so the History page names the restore after it.
+    let target: { id: string; name: string; adapterId: string } | null = null;
 
     const flusher = createLogFlusher({
         executionId,
         getLogs: () => internalLogs,
-        getMetadata: () => ({ progress: currentProgress, stage: currentStage, detail: currentDetail }),
+        getMetadata: () => ({ progress: currentProgress, stage: currentStage, detail: currentDetail, ...(target ? { target } : {}) }),
     });
 
     const flushLogs = async (force = false) => {
@@ -152,6 +154,7 @@ export async function runRestorePipeline(executionId: string, input: RestoreInpu
             }
             resolvedSourceName = sourceConfig.name;
             resolvedSourceType = sourceConfig.adapterId;
+            target = { id: sourceConfig.id, name: sourceConfig.name, adapterId: sourceConfig.adapterId };
 
             sourceAdapter = registry.get(sourceConfig.adapterId) as DatabaseAdapter;
             if (!sourceAdapter) {

@@ -27,6 +27,7 @@ import { deriveArchiveKeys } from "@/lib/crypto/kdf";
 import { parseIndex } from "@/lib/archive/index-file";
 import { EncryptionKeyRequiredError, ValidationError, getErrorMessage } from "@/lib/logging/errors";
 import { getEncryptionProfiles, getProfileMasterKey } from "./encryption-service";
+import { rememberKeyFor } from "@/services/vault/key-aliases";
 
 /**
  * Progress sink. Restores write these into the execution log where the user reads them, so
@@ -121,6 +122,8 @@ export async function resolveBackupKey({
             const candidate = await getProfileMasterKey(profile.id);
             if (await verify(candidate)) {
                 say(`Smart Recovery Successful: Matched key from profile '${profile.name}'.`, "success");
+                // So the Vault counts the backups of the missing profile under the key that opens them.
+                await rememberKeyFor(profile.id, profileId);
                 return candidate;
             }
         } catch (e: unknown) {

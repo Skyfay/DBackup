@@ -5,7 +5,8 @@
  * already the library that parses these keys at connect time, so a key it writes is a key it
  * can read, and the output is the same canonical `-----BEGIN OPENSSH PRIVATE KEY-----` file
  * that `ssh-keygen` produces. The Rsync destination hands the key to the OpenSSH client
- * instead, which reads the same format.
+ * instead, which reads the same format. The one ed25519 key in 256 that ssh2 writes a byte short
+ * is made again, see `generateReadablePair`.
  *
  * A passphrase is optional and produces the same `bcrypt` KDF plus `aes256-ctr` encryption
  * that `ssh-keygen` writes, so both readers accept it. The one place it does not work is the
@@ -52,7 +53,7 @@ export async function generateSshKeyPair(
     comment: string,
     passphrase?: string
 ): Promise<GeneratedSshKey> {
-    const pair = await generatePair(keyType, sanitizeKeyComment(comment), passphrase);
+    const pair = await generateReadablePair(keyType, sanitizeKeyComment(comment), passphrase);
     return {
         privateKey: pair.private,
         publicKey: pair.public,
@@ -112,6 +113,44 @@ export function sshFingerprint(publicKeyLine: string): string | null {
 /** OpenSSH prints the SHA-256 of the raw public key blob, base64 without padding. */
 function fingerprintOf(publicBlob: Buffer): string {
     return `SHA256:${createHash("sha256").update(publicBlob).digest("base64").replace(/=+$/, "")}`;
+}
+
+/** An ed25519 public key is 32 bytes, and neither ssh2 nor OpenSSH reads one of another length. */
+const ED25519_PUBLIC_KEY_BYTES = 32;
+
+/** How often a key that came out a byte short is made again before generation gives up. */
+const MAX_ATTEMPTS = 8;
+
+/**
+ * ssh2 strips every leading zero byte of an ed25519 public key, not only the one its DER
+ * encoding adds, so a key whose public half starts with a zero byte comes out a byte short.
+ * That is about one key in 256, and no SSH client reads it, ssh2 included. Such a key is thrown
+ * away and made again, which leaves out a share of all keys far too small to matter.
+ */
+async function generateReadablePair(
+    keyType: SshKeyType,
+    comment: string,
+    passphrase?: string
+): Promise<KeyPair> {
+    for (let attempt = 1; ; attempt++) {
+        const pair = await generatePair(keyType, comment, passphrase);
+        if (keyType !== "ed25519" || publicKeyLength(pair.public) === ED25519_PUBLIC_KEY_BYTES) return pair;
+        if (attempt >= MAX_ATTEMPTS) {
+            throw new Error(`Failed to generate a readable ${keyType} key in ${MAX_ATTEMPTS} attempts.`);
+        }
+    }
+}
+
+/**
+ * The length of the key in the `authorized_keys` line of a key type that holds a single value,
+ * like ed25519, or -1 when the line holds none.
+ */
+function publicKeyLength(publicKeyLine: string): number {
+    const blob = Buffer.from(publicKeyLine.trim().split(/\s+/)[1] ?? "", "base64");
+    if (blob.length < 4) return -1;
+    const keyAt = 4 + blob.readUInt32BE(0);
+    if (blob.length < keyAt + 4) return -1;
+    return blob.readUInt32BE(keyAt);
 }
 
 /**

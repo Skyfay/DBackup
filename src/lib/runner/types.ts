@@ -42,10 +42,14 @@ export interface DestinationContext {
     retentionPolicySource?: 'template' | 'default' | 'legacy' | 'none';
     priority: number;
     adapterId: string;
+    /** Connected only now and then, so the run leaves it out while it does not answer. */
+    airGapped?: boolean;
     uploadResult?: {
         success: boolean;
         path?: string;
         error?: string;
+        /** Left out as an air-gapped destination that was not connected, which is no failure. */
+        skipped?: boolean;
     };
 }
 
@@ -69,6 +73,33 @@ export interface DirectorySourceContext {
     stopContainers?: boolean;
 }
 
+/** One destination of the upload step while a run is live. */
+export interface UploadState {
+    configId: string;
+    name: string;
+    adapterId: string;
+    state: "waiting" | "uploading" | "done" | "failed" | "skipped";
+    /** Bytes sent so far, null while the size of the archive is not known. */
+    bytes: number | null;
+    total: number | null;
+    error: string | null;
+    startedAt: string | null;
+    endedAt: string | null;
+}
+
+/**
+ * One database of the dump step. Kept in the metadata of the run, so its page shows how far a
+ * dump has got, and the next run of the job can tell how far along it is against this size.
+ */
+export interface DumpState {
+    name: string;
+    state: "waiting" | "dumping" | "done" | "failed";
+    /** Bytes written so far, and the size of the dump once it is done. */
+    bytes: number | null;
+    startedAt: string | null;
+    endedAt: string | null;
+}
+
 export interface RunnerContext {
     jobId: string;
     job?: JobWithRelations;
@@ -83,6 +114,10 @@ export interface RunnerContext {
     setStage: (stage: PipelineStage) => void;
     updateDetail: (detail: string) => void;
     updateStageProgress: (internalPercent: number) => void;
+    /** Where the upload stands at each destination, kept in the live metadata for the page of the run. */
+    setUploads?: (uploads: UploadState[]) => void;
+    /** Where the dump stands for each database, kept in the metadata like the uploads. */
+    setDumps?: (dumps: DumpState[]) => void;
 
     /** The optional database source. Each of its databases becomes one archive entry. */
     sourceAdapter?: DatabaseAdapter;
@@ -110,6 +145,11 @@ export interface RunnerContext {
     destinations: DestinationContext[];
 
     // File paths
+    /**
+     * Directory of this run's own files: the archive, its index and its metadata. Made per run,
+     * so two runs never share a file, and removed as a whole by the cleanup.
+     */
+    runDir?: string;
     tempFile?: string;
     /**
      * Local path of the seekable archive's index sidecar, set by the dump step for every

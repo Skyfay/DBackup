@@ -5,7 +5,7 @@ Store backups on a remote server via SSH File Transfer Protocol. Supports passwo
 ## Configuration
 
 ::: info Credential Profile required
-SFTP requires a [Credential Profile](/user-guide/security/credential-profiles) of type `SSH_KEY`. Create one in **Settings → Vault → Credentials** before saving the destination.
+SFTP requires a [Credential Profile](/user-guide/security/credential-profiles) of type `SSH_KEY`. Create one in **Vault → Credentials** before saving the destination.
 :::
 
 | Field | Description | Default | Required |
@@ -13,8 +13,8 @@ SFTP requires a [Credential Profile](/user-guide/security/credential-profiles) o
 | **Name** | Friendly name for this destination | - | ✅ |
 | **Host** | Hostname or IP of the SFTP server | - | ✅ |
 | **Port** | SSH port | `22` | ❌ |
-| **Primary Credential** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
-| **Path Prefix** | Remote directory for backups | - | ❌ |
+| **Login** | `SSH_KEY` credential profile (username + key or password) | - | ✅ |
+| **Folder** | Remote directory for backups. The folder button beside it browses the server from its top once the connection and its login are filled in | - | ❌ |
 
 ### Authentication Methods (via `SSH_KEY` profile)
 
@@ -28,7 +28,7 @@ Select the auth type when creating the `SSH_KEY` credential profile in the Vault
 
 ## Setup Guide
 
-1. Create an `SSH_KEY` credential profile in **Settings → Vault → Credentials** ([guide](/user-guide/security/credential-profiles))
+1. Create an `SSH_KEY` credential profile in **Vault → Credentials** ([guide](/user-guide/security/credential-profiles))
 2. Ensure the target server has SSH/SFTP enabled
 3. Create a dedicated user for backups (recommended):
    ```bash
@@ -36,10 +36,10 @@ Select the auth type when creating the `SSH_KEY` credential profile in the Vault
    sudo mkdir -p /home/dbackup/backups
    sudo chown dbackup: /home/dbackup/backups
    ```
-4. Go to **Connections** → **Backup Destinations** → **Add New** → **SFTP**
-5. Enter Host and select the credential profile in the **Primary Credential** picker
-6. (Optional) Set **Path Prefix** to the remote backup directory (e.g. `/home/dbackup/backups`)
-7. Click **Test** to verify the connection
+4. Go to **Connections** → **Destinations** → **New destination** → **SFTP**
+5. Enter Host and pick the credential profile under **Login**
+6. (Optional) Set a **Folder** in the **Location** part to the remote backup directory (e.g. `/home/dbackup/backups`), or pick it with the folder button (📂)
+7. Click **Test connection** to verify the connection
 
 ::: tip Private Key Format
 Paste the entire PEM key content including the `-----BEGIN` and `-----END` lines when creating the credential profile. Supports RSA, ED25519, and ECDSA keys.
@@ -48,7 +48,7 @@ Paste the entire PEM key content including the `-----BEGIN` and `-----END` lines
 ## How It Works
 
 - Files are uploaded via SFTP (SSH subsystem) - all transfers are encrypted in transit
-- DBackup creates subdirectories per job within the Path Prefix automatically
+- DBackup creates subdirectories per job within the folder automatically
 - All credentials (passwords, private keys) are stored AES-256-GCM encrypted in the database
 
 ## Troubleshooting
@@ -89,4 +89,4 @@ Host key verification failed
 
 - [Enable Encryption](/user-guide/security/encryption)
 - [Configure Retention](/user-guide/jobs/retention)
-- [Storage Explorer](/user-guide/features/storage-explorer)
+- [Backups](/user-guide/features/backups)

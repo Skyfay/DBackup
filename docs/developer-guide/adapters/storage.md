@@ -445,7 +445,7 @@ const SFTPAdapter: StorageAdapter = {
 
 ## The `read()` Method
 
-The optional `read()` method is crucial for the Storage Explorer. It allows reading small text files (like `.meta.json`) without downloading to disk:
+The optional `read()` method is crucial for the Backups page. It allows reading small text files (like `.meta.json`) without downloading to disk:
 
 ```typescript
 async read(config, path) {
@@ -543,7 +543,7 @@ export const WebDAVAdapter: StorageAdapter = {
 ```
 
 ::: tip read() method
-The `read()` method is used by the Storage Explorer to read `.meta.json` sidecar files. If not implemented, the system falls back to download → read → delete, which is slower.
+The `read()` method is used by the Backups page to read `.meta.json` sidecar files. If not implemented, the system falls back to download → read → delete, which is slower.
 :::
 
 ::: tip test() method
@@ -561,9 +561,9 @@ registry.register(WebDAVAdapter);
 
 #### 5. UI: Form field rendering (`src/components/adapter/form-constants.ts`)
 
-The adapter form renders fields dynamically from the Zod schema. Fields are split into two tabs based on these arrays:
+The adapter form renders fields dynamically from the Zod schema and splits them into parts, listed on the left of the dialog. The layout comes from `storage-form-layout.ts`, which reads these arrays:
 
-**Connection tab** - Add any new connection-related field keys your schema introduces:
+**Connection part** - Add any new connection-related field keys your schema introduces. Keys a credential profile fills in, like `username` or `accessKeyId`, are hidden automatically:
 ```typescript
 export const STORAGE_CONNECTION_KEYS = [
     'host', 'port',
@@ -576,7 +576,7 @@ export const STORAGE_CONNECTION_KEYS = [
 ];
 ```
 
-**Configuration tab** - Add any new config-related field keys:
+**Location and Options parts** - Add any new config-related field keys. The keys also listed in `STORAGE_LOCATION_KEYS` go to the **Location** part, the rest and `STORAGE_ADVANCED_KEYS` to **Options**:
 ```typescript
 export const STORAGE_CONFIG_KEYS = [
     'pathPrefix', 'storageClass', 'forcePathStyle',
@@ -596,9 +596,11 @@ export const PLACEHOLDERS: Record<string, string> = {
 };
 ```
 
-::: warning
-If your schema introduces field keys that are not in either `STORAGE_CONNECTION_KEYS` or `STORAGE_CONFIG_KEYS`, those fields will **not appear** in the form UI. This is the most common issue when adding a new adapter.
+::: tip
+A key your schema introduces that no array names still shows up, in the **Options** part, so a new field is never invisible. List it anyway when it belongs in the Connection or Location part, or when its position matters.
 :::
+
+The parts that depend on the role are added by the layout itself: **Speed** holds parallel transfers for a directory source and the parallel upload parts for a destination with `multipartUpload`, and **Behavior** holds the role, the health alerts and, for a destination, the integrity checks.
 
 #### 6. UI: Adapter icon (`src/components/adapter/utils.ts`)
 
@@ -618,16 +620,16 @@ import myBrandIcon from "@iconify-icons/logos/my-brand-icon";
 
 3. If using Simple Icons (monochrome), also add a brand color to `ADAPTER_COLOR_MAP`.
 
-#### 7. UI: Details column (`src/components/adapter/adapter-manager.tsx`)
+#### 7. UI: Location column (`src/lib/adapters/connection-summary.ts`)
 
-Add a case to the `getSummary()` function to show a useful detail in the adapter table:
+Add a case to `connectionAddress()` so the Location column of the connection table shows where the adapter points:
 
 ```typescript
-case 'webdav':
-    return <span className="text-muted-foreground">{config.pathPrefix || config.url}</span>;
+case "webdav":
+    return text(config.pathPrefix) || text(config.url) || null;
 ```
 
-Always use the `text-muted-foreground` class for consistency.
+Return a plain string. The table styles it, and `null` shows a dash.
 
 #### 8. RBAC: Permission regex (`src/app/api/adapters/`)
 
@@ -673,9 +675,9 @@ brew install your-package
 | 2 | `src/lib/adapters/definitions.ts` | Zod schema, config type, `StorageConfig` union, `ADAPTER_DEFINITIONS` |
 | 3 | `src/lib/adapters/storage/<name>.ts` | Full adapter implementation (6 methods) |
 | 4 | `src/lib/adapters/index.ts` | Import + `registry.register()` |
-| 5 | `src/components/adapter/form-constants.ts` | `STORAGE_CONNECTION_KEYS`, `STORAGE_CONFIG_KEYS`, `PLACEHOLDERS` |
+| 5 | `src/components/adapter/form-constants.ts` | `STORAGE_CONNECTION_KEYS`, `STORAGE_CONFIG_KEYS`, `STORAGE_LOCATION_KEYS`, `PLACEHOLDERS` |
 | 6 | `src/components/adapter/utils.ts` | `ADAPTER_ICON_MAP` + optional `ADAPTER_COLOR_MAP` ([Icon System](/developer-guide/core/icons)) |
-| 7 | `src/components/adapter/adapter-manager.tsx` | `getSummary()` case for details column |
+| 7 | `src/lib/adapters/connection-summary.ts` | `connectionAddress()` case for the Location column |
 | 8 | `src/app/api/adapters/test-connection/route.ts` | Add ID to storage permission regex |
 | 9 | `src/app/api/adapters/access-check/route.ts` | Add ID to storage permission regex |
 | 10 | `Dockerfile` | System CLI tools (if needed) |
@@ -690,17 +692,16 @@ If the new adapter requires browser-based OAuth (e.g., Google Drive, Dropbox, On
 | :--- | :--- | :--- |
 | 13 | `src/app/api/adapters/<name>/auth/route.ts` | OAuth authorization URL generation endpoint |
 | 14 | `src/app/api/adapters/<name>/callback/route.ts` | OAuth callback - exchange code for tokens, store refresh token encrypted |
-| 15 | `src/components/adapter/<name>-oauth-button.tsx` | OAuth button component with authorized/unauthorized status |
-| 16 | `src/components/adapter/form-sections.tsx` | Special form layout: show OAuth button in connection tab, hide auto-managed fields (e.g., `refreshToken`) |
+| 15 | `src/components/adapter/oauth-authorization.tsx` | An entry in `PROVIDERS` with the drive's name, whose sign-in page opens and the segment of its routes. An adapter whose primary credential is `OAUTH` gets the authorization box and the Location folder field on its own. |
+| 16 | `src/components/adapter/cloud-folder-field.tsx` | An entry in `DRIVES` with the provider's name and the body key of its browse route, if it has one. The field opens the shared `FolderPickerDialog` with it. |
 | 17 | `src/lib/crypto.ts` | Add OAuth secret fields to `SENSITIVE_KEYS` (e.g., `clientSecret`, `refreshToken`) |
-| 18 | `src/app/api/system/filesystem/<name>/route.ts` | Folder browse API (if provider supports folder selection) |
-| 19 | `src/components/adapter/<name>-folder-browser.tsx` | Folder browser dialog (if provider supports folder selection) |
+| 18 | `src/app/api/system/filesystem/<name>/route.ts` | Folder browse API (if provider supports folder selection). It answers with `data.entries` of `{ name, path }`. A drive that keeps its folder by ID, like Google Drive, also answers `trail: true` with the folders from the top down to it. |
 
 **Reference implementations**: See the Google Drive, Dropbox, and OneDrive adapters for complete examples of this pattern:
 - Storage adapters: `src/lib/adapters/storage/google-drive.ts`, `src/lib/adapters/storage/dropbox.ts`, `src/lib/adapters/storage/onedrive.ts`
 - OAuth routes: `src/app/api/adapters/google-drive/`, `src/app/api/adapters/dropbox/`, and `src/app/api/adapters/onedrive/` (each with `auth/` + `callback/`)
-- OAuth buttons: `src/components/adapter/google-drive-oauth-button.tsx`, `src/components/adapter/dropbox-oauth-button.tsx`, `src/components/adapter/onedrive-oauth-button.tsx`
-- Folder browsers: `src/components/adapter/google-drive-folder-browser.tsx`, `src/components/adapter/dropbox-folder-browser.tsx`, `src/components/adapter/onedrive-folder-browser.tsx`
+- OAuth authorization: `src/components/adapter/oauth-authorization.tsx`, one component for all three providers
+- Folder browser: `src/components/adapter/cloud-folder-field.tsx`, which lists each drive through its browse API in the shared `FolderPickerDialog`
 - Folder browse APIs: `src/app/api/system/filesystem/google-drive/route.ts`, `src/app/api/system/filesystem/dropbox/route.ts`, `src/app/api/system/filesystem/onedrive/route.ts`
 
 ## Related Documentation

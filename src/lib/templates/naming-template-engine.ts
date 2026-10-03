@@ -92,6 +92,17 @@ function applyDateTokens(
     .replace(/ss/g, fmt("ss"));
 }
 
+/**
+ * The job and database names as a file name carries them: everything but letters and digits
+ * becomes "_", several databases are joined with "_", and none stands for all of them.
+ */
+export function fileNameParts(jobName: string, databases: string[]): { jobName: string; dbName: string } {
+  return {
+    jobName: jobName.replace(/[^a-z0-9]/gi, "_"),
+    dbName: databases.length === 0 ? "all" : databases.map((db) => db.replace(/[^a-z0-9]/gi, "_")).join("_"),
+  };
+}
+
 /** True when the pattern positions the chain segment itself, so nothing has to be prepended. */
 export function patternUsesChain(pattern: string): boolean {
   return /\{chain\}/.test(pattern);

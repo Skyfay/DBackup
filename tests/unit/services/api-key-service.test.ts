@@ -20,6 +20,8 @@ describe("ApiKeyService", () => {
   let service: ApiKeyService;
 
   const mockUser = { name: "Test User", email: "test@test.com" };
+  /** An owner whose group allows everything the keys below hold. */
+  const owner = { group: { name: "Operators", permissions: '["jobs:read","jobs:execute","history:read"]' } };
 
   beforeEach(() => {
     service = new ApiKeyService();
@@ -334,7 +336,7 @@ describe("ApiKeyService", () => {
       const updateCall = prismaMock.apiKey.update.mock.calls[0][0];
       expect(updateCall.data.hashedKey).not.toBe("old-hash");
       expect(updateCall.data.hashedKey).toHaveLength(64); // scrypt 32-byte hex
-      expect(updateCall.data.prefix).toMatch(/^dbackup_/);
+      expect(updateCall.data.prefix).toMatch(/^dbackup_[a-f0-9]{8}$/);
     });
 
     it("should throw NotFoundError if key does not exist", async () => {
@@ -345,42 +347,74 @@ describe("ApiKeyService", () => {
   });
 
   // ========================================================================
-  // updatePermissions()
+  // update()
   // ========================================================================
-  describe("updatePermissions", () => {
-    it("should update the permissions JSON", async () => {
-      prismaMock.apiKey.findUnique.mockResolvedValue({ id: "key-1" } as any);
-      prismaMock.apiKey.update.mockResolvedValue({
-        id: "key-1",
-        name: "Key",
-        prefix: "dbackup_aaaaaaaa",
-        permissions: '["jobs:read","jobs:write","jobs:execute"]',
-        userId: "user-1",
-        user: mockUser,
-        expiresAt: null,
-        lastUsedAt: null,
-        enabled: true,
-        createdAt: new Date(),
-      } as any);
+  describe("update", () => {
+    it("should save the name, the permissions and the end, and say what they were", async () => {
+      const before = new Date("2026-12-01");
+      const after = new Date("2027-03-01");
+      prismaMock.apiKey.findUnique.mockResolvedValue({ id: "key-1", name: "Old", permissions: '["jobs:read"]', expiresAt: before } as any);
+      prismaMock.apiKey.update.mockResolvedValue({} as any);
 
-      const result = await service.updatePermissions("key-1", [
-        "jobs:read",
-        "jobs:write",
-        "jobs:execute",
-      ] as any);
+      const result = await service.update("key-1", { name: "New", permissions: ["jobs:read", "jobs:execute"] as any, expiresAt: after });
 
-      expect(result.permissions).toEqual(["jobs:read", "jobs:write", "jobs:execute"]);
-      expect(prismaMock.apiKey.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: { permissions: '["jobs:read","jobs:write","jobs:execute"]' },
-        })
-      );
+      expect(prismaMock.apiKey.update).toHaveBeenCalledWith({
+        where: { id: "key-1" },
+        data: { name: "New", permissions: '["jobs:read","jobs:execute"]', expiresAt: after },
+      });
+      expect(result.before).toEqual({ name: "Old", permissions: ["jobs:read"], expiresAt: before });
+    });
+
+    it("should keep the secret", async () => {
+      prismaMock.apiKey.findUnique.mockResolvedValue({ id: "key-1", name: "Key", permissions: "[]", expiresAt: null } as any);
+      prismaMock.apiKey.update.mockResolvedValue({} as any);
+
+      await service.update("key-1", { name: "Key", permissions: [], expiresAt: null });
+
+      const data = prismaMock.apiKey.update.mock.calls[0][0].data;
+      expect(data).not.toHaveProperty("hashedKey");
+      expect(data).not.toHaveProperty("prefix");
     });
 
     it("should throw NotFoundError if key does not exist", async () => {
       prismaMock.apiKey.findUnique.mockResolvedValue(null);
 
-      await expect(service.updatePermissions("nonexistent", [])).rejects.toThrow(NotFoundError);
+      await expect(service.update("nonexistent", { name: "Key", permissions: [], expiresAt: null })).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  // ========================================================================
+  // ownerOf() and nameTaken()
+  // ========================================================================
+  describe("ownerOf", () => {
+    it("should return the owner with the group and what the key holds", async () => {
+      const group = { name: "Operators", permissions: '["jobs:read"]' };
+      prismaMock.apiKey.findUnique.mockResolvedValue({ userId: "user-1", name: "Key", permissions: '["jobs:read","users:write"]', user: { group } } as any);
+
+      await expect(service.ownerOf("key-1")).resolves.toEqual({ ownerId: "user-1", name: "Key", permissions: ["jobs:read", "users:write"], group });
+    });
+
+    it("should throw NotFoundError if key does not exist", async () => {
+      prismaMock.apiKey.findUnique.mockResolvedValue(null);
+
+      await expect(service.ownerOf("nonexistent")).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe("nameTaken", () => {
+    it("should find another key by its name in any case", async () => {
+      prismaMock.apiKey.findMany.mockResolvedValue([{ name: "CI pipeline" }] as any);
+
+      await expect(service.nameTaken("ci Pipeline ")).resolves.toBe(true);
+      await expect(service.nameTaken("Monitoring")).resolves.toBe(false);
+    });
+
+    it("should leave out the key being renamed", async () => {
+      prismaMock.apiKey.findMany.mockResolvedValue([] as any);
+
+      await service.nameTaken("CI pipeline", "key-1");
+
+      expect(prismaMock.apiKey.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: { not: "key-1" } } }));
     });
   });
 
@@ -411,6 +445,7 @@ describe("ApiKeyService", () => {
         userId: "user-1",
         permissions: '["jobs:execute","history:read"]',
         enabled: true,
+        user: owner,
         expiresAt: futureDate,
       } as any);
 
@@ -432,6 +467,7 @@ describe("ApiKeyService", () => {
         userId: "user-1",
         permissions: '["jobs:read"]',
         enabled: true,
+        user: owner,
         expiresAt: null,
       } as any);
 
@@ -531,7 +567,8 @@ describe("ApiKeyService", () => {
           userId: "user-1",
           permissions: '["jobs:read"]',
           enabled: true,
-          expiresAt: null,
+          user: owner,
+        expiresAt: null,
         } as any);
 
       prismaMock.apiKey.update.mockResolvedValue({} as any);
@@ -558,6 +595,7 @@ describe("ApiKeyService", () => {
         userId: "user-1",
         permissions: '["jobs:read"]',
         enabled: true,
+        user: owner,
         expiresAt: null,
       } as any);
 
@@ -580,6 +618,7 @@ describe("ApiKeyService", () => {
         userId: "user-1",
         permissions: '["jobs:read"]',
         enabled: true,
+        user: owner,
         expiresAt: null,
       } as any);
 
@@ -594,6 +633,54 @@ describe("ApiKeyService", () => {
         const updateData = prismaMock.apiKey.update.mock.calls[0][0].data;
         expect(updateData).not.toHaveProperty("hashedKey");
       }
+    });
+
+    it("should never give a key more than the group of its owner may do", async () => {
+      prismaMock.apiKey.findUnique.mockResolvedValue({
+        id: "key-1",
+        userId: "user-1",
+        permissions: '["jobs:execute","users:write","groups:write"]',
+        enabled: true,
+        user: { group: { name: "Operators", permissions: '["jobs:execute","jobs:read"]' } },
+        expiresAt: null,
+      } as any);
+      prismaMock.apiKey.update.mockResolvedValue({} as any);
+
+      const result = await service.validate("dbackup_" + "a".repeat(60));
+
+      expect(result!.permissions).toEqual(["jobs:execute"]);
+    });
+
+    it("should let a key of a SuperAdmin keep what it holds", async () => {
+      prismaMock.apiKey.findUnique.mockResolvedValue({
+        id: "key-1",
+        userId: "user-1",
+        permissions: '["users:write","settings:write"]',
+        enabled: true,
+        user: { group: { name: "SuperAdmin", permissions: "[]" } },
+        expiresAt: null,
+      } as any);
+      prismaMock.apiKey.update.mockResolvedValue({} as any);
+
+      const result = await service.validate("dbackup_" + "a".repeat(60));
+
+      expect(result!.permissions).toEqual(["users:write", "settings:write"]);
+    });
+
+    it("should leave a key of an owner without a group nothing", async () => {
+      prismaMock.apiKey.findUnique.mockResolvedValue({
+        id: "key-1",
+        userId: "user-1",
+        permissions: '["jobs:read"]',
+        enabled: true,
+        user: { group: null },
+        expiresAt: null,
+      } as any);
+      prismaMock.apiKey.update.mockResolvedValue({} as any);
+
+      const result = await service.validate("dbackup_" + "a".repeat(60));
+
+      expect(result!.permissions).toEqual([]);
     });
   });
 });

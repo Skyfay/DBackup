@@ -1,0 +1,12 @@
+{
+  "name": "dbackup-sponsors",
+  "private": true,
+  "type": "module",
+  "description": "Renders the GitHub Sponsors of Skyfay into the images the READMEs embed, see .github/workflows/sponsors.yml",
+  "scripts": {
+    "render": "sponsorkit"
+  },
+  "devDependencies": {
+    "sponsorkit": "18.0.0"
+  }
+}

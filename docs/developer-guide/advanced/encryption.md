@@ -144,31 +144,25 @@ model EncryptionProfile {
 
 ```typescript
 // src/services/backup/encryption-service.ts
-export const EncryptionService = {
-  async createProfile(name: string) {
-    // Generate 32-byte random key
-    const masterKey = randomBytes(32).toString("hex");
+export async function createEncryptionProfile(name: string, description?: string) {
+  // Generate a 32-byte random key and encrypt it with the system key before storage
+  const encryptedMasterKey = encrypt(crypto.randomBytes(32).toString("hex"));
 
-    // Encrypt with system key before storage
-    const encryptedKey = encrypt(masterKey);
+  return prisma.encryptionProfile.create({
+    data: { name, description, secretKey: encryptedMasterKey },
+    select: summaryFields, // everything but secretKey
+  });
+}
 
-    return prisma.encryptionProfile.create({
-      data: { name, secretKey: encryptedKey },
-    });
-  },
+export async function getProfileMasterKey(profileId: string): Promise<Buffer> {
+  const profile = await prisma.encryptionProfile.findUnique({ where: { id: profileId } });
+  if (!profile) throw new Error(`Encryption profile not found: ${profileId}`);
 
-  async getDecryptedKey(profileId: string): Promise<Buffer> {
-    const profile = await prisma.encryptionProfile.findUnique({
-      where: { id: profileId },
-    });
-
-    if (!profile) throw new Error("Profile not found");
-
-    const keyHex = decrypt(profile.secretKey);
-    return Buffer.from(keyHex, "hex");
-  },
-};
+  return Buffer.from(decrypt(profile.secretKey), "hex");
+}
 ```
+
+Every function of the service that returns profiles, the list included, selects `summaryFields` and returns an `EncryptionProfileSummary`. Their results reach the browser through the Server Actions, so `secretKey` stays out of them even in its encrypted form. The key only leaves the service through `getProfileMasterKey()` and `getDecryptedMasterKey()`, which read one profile by id for a backup, a restore, revealing the master key in the Vault or a recovery kit.
 
 ## Backup Encryption Pipeline
 

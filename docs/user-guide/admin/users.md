@@ -1,84 +1,97 @@
 # User Management
 
-Manage user accounts in DBackup.
-
-## Overview
-
-DBackup supports multiple users with role-based access control:
-- Multiple user accounts
-- Group-based permissions
-- SSO/OIDC integration
-- Two-factor authentication
+Manage the people who sign in to DBackup, how they sign in and what their group lets them do.
 
 ## First User
 
-The first user to sign up becomes the administrator:
-1. Open DBackup login page
-2. Click **Sign Up**
+The first account becomes the administrator:
+1. Open the login page of the new DBackup
+2. Pick **Start fresh**
 3. Create your account
-4. This account has full permissions
+4. This account is a SuperAdmin with every permission
 
 ::: warning First User Only
-Self-registration is only available for the first user. Additional users must be created by an admin.
+Self-registration is only available for the first user. Once it exists, DBackup refuses every other sign-up, also one sent to its API directly. Additional users are created by an admin, or by a sign-in provider that adds people.
 :::
 
-## Managing Users
+## The Users Tab
 
-### View Users
+Go to **Users & Groups** in the sidebar. The **Users** tab lists every user:
 
-1. Go to **Users** in the sidebar
-2. See all user accounts
-3. View status, groups, 2FA status
-
-### Create User
-
-1. Click **Add User**
-2. Enter:
-   - Email address
-   - Name
-   - Password
-   - Group assignment
-3. Save
-
-### Edit User
-
-1. Click on a user
-2. Modify:
-   - Name
-   - Email
-   - Group assignment
-3. Save
-
-### Delete User
-
-1. Click user's menu (⋮)
-2. Select **Delete**
-3. Confirm deletion
-
-::: danger Cannot Undo
-User deletion is permanent. The user loses access immediately.
-:::
-
-## User Properties
-
-| Property | Description |
+| Column | Shows |
 | :--- | :--- |
-| **Email** | Login identifier, must be unique |
-| **Name** | Display name |
-| **Password** | Login password |
-| **Group** | Permission group |
-| **2FA Status** | Whether TOTP is enabled |
-| **Created** | Account creation date |
-| **Last Login** | Most recent login |
+| **User** | Name and email. Your own row is marked **You** |
+| **Group** | The group of the user, or **No group** in amber |
+| **Signs in with** | Password, passkeys and the SSO providers linked to the account |
+| **2FA** | **App** or **Passkey** when DBackup asks for a second factor, **Via SSO** for a user who only signs in through SSO, **Off** otherwise |
+| **Last sign-in** | When and with which browser, from the audit log and the sessions |
+| **Sessions** | Browsers signed in as the user right now |
+| **API keys** | Keys the user owns |
+
+The numbers above the list count the users without a group, the users who sign in with a password alone, who signed in during the last 30 days and the open sessions. The quick filters **No second factor** and **No group** find the users that need a look. On a phone the users show as cards.
+
+## Create a User
+
+1. Click **New user**
+2. Enter the name and the email
+3. Enter a password, or click **Generate** for one that follows the rules under **Settings → Passwords**, which then shows so you can hand it on. The rules tick off under the field as they hold
+4. Pick the group from the list. Each row says what the group lets its members do, and the search finds a group by its name or by those words
+5. Click **Create user**
+
+The user can sign in right away and changes the password under **Profile → Security**.
+
+::: info No group and SuperAdmin
+**No group** creates a user who signs in but sees and does nothing until someone picks a group. Only a SuperAdmin can make someone a SuperAdmin.
+:::
+
+## The Details of a User
+
+A click on a user opens a panel:
+
+- **Access** says in words what the group lets the user see, do and change, and how many of the 39 permissions that is
+- **Signs in with** lists the password with the date it was set, the authenticator app, the passkeys and the linked SSO providers
+- **Sessions** lists the browsers signed in as the user, with the address and when each signed in
+- **API keys** lists the keys the user owns, whether they work and when they were last used
+- **Activity** shows the newest entries of the audit log written by the user
+
+**Edit**, the menu beside it and the right click on a row offer the actions below.
+
+## Admin Actions
+
+All of them need the permission to manage users and are written to the audit log.
+
+### Set a New Password
+
+1. Click **Set a new one** in the panel, or **Set a new password** in the menu
+2. Enter a password or click **Generate**, under the rules of **Settings → Passwords**
+3. Leave **Sign them out everywhere** on, so the old password stops working at once
+4. Click **Set password**
+
+A user who signs in only through SSO gets a password as a second way in. Your own password changes under **Profile → Security**, which asks for the current one. Only a SuperAdmin sets the password of a SuperAdmin.
+
+### Reset 2FA
+
+**Reset 2FA** removes the authenticator app and the passkey as second factor after asking. The user signs in with the password alone until they set up a second factor again under **Profile → Security**. Only a SuperAdmin resets the second factor of a SuperAdmin.
+
+### Sign Out
+
+**Sign out** in the panel ends one session, **Sign out everywhere** ends all of them. On your own account it reads **Sign out other sessions** and keeps the browser you use. API keys keep working. Only a SuperAdmin signs out a SuperAdmin.
+
+### Change the Group
+
+Click **Edit** or **Change group** and pick another card. Permissions change with the next request of the user. Nobody changes their own group, and only a SuperAdmin moves a SuperAdmin into another group.
+
+### Delete a User
+
+Click **Delete** in the menu of the user and confirm. Their sessions end at once and they cannot sign in anymore, while the audit log keeps what they did under their name. Tick several rows to delete them together.
+
+A deleted user waits in [Recently deleted](/user-guide/admin/recently-deleted) for 30 days and comes back from there with their password, second factor, passkeys and API keys. With the right to change the settings, tick **Delete it permanently now** for an account that has to be gone at once. Your own account, the last SuperAdmin and the last account cannot be deleted, and only a SuperAdmin deletes or restores a SuperAdmin.
 
 ## Authentication
 
 ### Password Login
 
-Standard email/password authentication:
-- Passwords are hashed with bcrypt
-- No password complexity requirements enforced
-- Users can change their own passwords
+Passwords are hashed by Better Auth with scrypt. What a new one needs is set under [Settings → Passwords](/user-guide/admin/settings#passwords), Standard on a new instance with 12 characters, an upper and a lower case letter and a number. Users change their own under **Profile → Security**.
 
 ### Two-Factor Authentication (2FA)
 
@@ -97,74 +110,15 @@ Hardware security key or biometric:
 3. Follow browser prompts
 4. Name the passkey
 
+A passkey can also serve as the second factor after the password.
+
 ### SSO/OIDC
 
 See [SSO/OIDC](/user-guide/admin/sso) for enterprise authentication.
 
-## Admin Actions
-
-### Reset 2FA
-
-If user loses their 2FA device:
-1. Admin edits user
-2. Click **Reset 2FA**
-3. User can re-enroll
-
-### Reset Password
-
-1. Admin edits user
-2. Click **Reset Password**
-3. Enter new password
-4. User can change after login
-
-### Change Group
-
-1. Admin edits user
-2. Select different group
-3. Permissions change immediately
-
-## User Profiles
-
-Users can manage their own:
-- Display name
-- Email (if permitted)
-- Password
-- 2FA settings
-- Passkeys
-- Avatar
-
-Located in **Profile** section after clicking user avatar.
-
-## Audit Logging
-
-User actions are logged:
-- Login attempts
-- Permission changes
-- Account modifications
-
-View in **Settings** → **Audit Log**.
-
-## Best Practices
-
-### Account Security
-
-1. **Enable 2FA** for all users
-2. **Use strong passwords**
-3. **Limit admin accounts**
-4. **Regular access reviews**
-
-### Permissions
-
-1. **Least privilege** - Give minimum needed
-2. **Group-based** - Avoid individual permissions
-3. **Document access** - Know who has what
-
-### Offboarding
-
-When users leave:
-1. Delete or disable account
-2. Review their group's access
-3. Rotate shared secrets if needed
+::: tip Keep access tight
+Give each person their own account, put them in the smallest group that covers their work and check the **No second factor** filter from time to time.
+:::
 
 ## Troubleshooting
 
@@ -172,9 +126,8 @@ When users leave:
 
 **Check**:
 1. Email is correct
-2. Password is correct
+2. Password is correct, or set a new one for the user
 3. 2FA code is current (30-second window)
-4. Account isn't disabled
 
 ### 2FA Not Working
 
@@ -185,15 +138,12 @@ When users leave:
 
 **Solutions**:
 1. Check device time is synced
-2. Admin can reset 2FA
-3. Use recovery code
+2. Use a recovery code
+3. An admin resets 2FA from the details of the user
 
-### Permissions Not Working
+### A User Sees Nothing
 
-**Check**:
-1. User is in correct group
-2. Group has required permission
-3. Cache might need refresh (re-login)
+The user has no group. Open the user and click **Change group**.
 
 ## Next Steps
 

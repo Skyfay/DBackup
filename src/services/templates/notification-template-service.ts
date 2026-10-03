@@ -1,7 +1,9 @@
+import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { runBulk, type BulkResult } from "@/lib/core/bulk";
 import { logger } from "@/lib/logging/logger";
 import { NotFoundError, ServiceError } from "@/lib/logging/errors";
+import { invalidateDashboardCache } from "@/services/dashboard/cache";
 
 const log = logger.child({ service: "NotificationTemplateService" });
 
@@ -10,10 +12,26 @@ export interface NotificationTemplateChannelInput {
   events: string; // Pipe-separated: "SUCCESS|PARTIAL|FAILED"
 }
 
+/** A channel of a template as it may leave this service: which connection it is, never its config. */
+export interface TemplateChannelConnection {
+  id: string;
+  name: string;
+  adapterId: string;
+}
+
+/**
+ * The channels of every template this service returns. The results reach the browser through the
+ * Server Actions, so the config of a channel stays out, which holds webhook URLs, tokens and
+ * passwords, even in their encrypted form.
+ */
+const withChannels = {
+  channels: { include: { config: { select: { id: true, name: true, adapterId: true } } } },
+} satisfies Prisma.NotificationTemplateInclude;
+
 export async function getNotificationTemplates() {
   return prisma.notificationTemplate.findMany({
     include: {
-      channels: { include: { config: true } },
+      ...withChannels,
       _count: { select: { jobs: true } },
     },
     orderBy: { name: "asc" },
@@ -23,7 +41,7 @@ export async function getNotificationTemplates() {
 export async function getNotificationTemplateById(id: string) {
   const template = await prisma.notificationTemplate.findUnique({
     where: { id },
-    include: { channels: { include: { config: true } } },
+    include: withChannels,
   });
   if (!template) throw new NotFoundError("NotificationTemplate", id);
   return template;
@@ -65,9 +83,11 @@ export async function createNotificationTemplate(input: {
         })),
       },
     },
-    include: { channels: { include: { config: true } } },
+    include: withChannels,
   });
 
+  // The Connections page counts the templates sending through each channel.
+  invalidateDashboardCache();
   log.info("Notification template created", { id: template.id, name: template.name });
   return template;
 }
@@ -132,10 +152,11 @@ export async function updateNotificationTemplate(
         ...(input.description !== undefined && { description: input.description }),
         ...(input.isDefault !== undefined && { isDefault: input.isDefault }),
       },
-      include: { channels: { include: { config: true } } },
+      include: withChannels,
     });
   });
 
+  invalidateDashboardCache();
   log.info("Notification template updated", { id });
   return updated;
 }
@@ -151,7 +172,7 @@ export async function setDefaultNotificationTemplate(id: string) {
   const updated = await prisma.notificationTemplate.update({
     where: { id },
     data: { isDefault: true },
-    include: { channels: { include: { config: true } } },
+    include: withChannels,
   });
 
   log.info("Default notification template set", { id });
@@ -166,7 +187,8 @@ export async function unsetDefaultNotificationTemplate() {
   log.info("Default notification template cleared");
 }
 
-export async function deleteNotificationTemplate(id: string) {
+/** Deletes a template no job uses. Returns the name it had, for the audit log. */
+export async function deleteNotificationTemplate(id: string): Promise<{ name: string }> {
   const template = await prisma.notificationTemplate.findUnique({
     where: { id },
     include: { jobs: { select: { id: true } } },
@@ -189,7 +211,9 @@ export async function deleteNotificationTemplate(id: string) {
   }
 
   await prisma.notificationTemplate.delete({ where: { id } });
+  invalidateDashboardCache();
   log.info("Notification template deleted", { id });
+  return { name: template.name };
 }
 
 /**

@@ -1,0 +1,85 @@
+# ─── Sponsors ────────────────────────────────────────────────
+# Draws the GitHub Sponsors of Skyfay into two images on the sponsors branch,
+# which the READMEs of DBackup and SkySend embed, so no README needs a commit.
+# What each tier shows is set in .github/sponsors/sponsorkit.config.mjs.
+#
+# Needs the secret SPONSORS_TOKEN, a classic token of Skyfay with read:user,
+# since the token of a workflow cannot read sponsorships.
+
+name: Sponsors
+
+on:
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+  # A change of what the tiers show draws the images again right away. The
+  # first merge into dev also creates the sponsors branch, before any release.
+  push:
+    branches:
+      - main
+      - dev
+    paths:
+      - ".github/sponsors/**"
+      - ".github/workflows/sponsors.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sponsors
+  cancel-in-progress: true
+
+jobs:
+  render:
+    name: Render
+    runs-on: ubuntu-latest
+    # A fork has neither the token nor sponsors of its own.
+    if: github.repository == 'Skyfay/DBackup'
+    defaults:
+      run:
+        working-directory: .github/sponsors
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: .github/sponsors/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Render the sponsors
+        env:
+          SPONSORKIT_GITHUB_TOKEN: ${{ secrets.SPONSORS_TOKEN }}
+          SPONSORKIT_GITHUB_LOGIN: Skyfay
+        run: pnpm exec sponsorkit --force
+
+      - name: Publish to the sponsors branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          out="$PWD/sponsorkit"
+          site="$RUNNER_TEMP/sponsors"
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git ls-remote --exit-code --heads "$remote" sponsors > /dev/null; then
+            git clone --depth 1 --branch sponsors "$remote" "$site"
+          else
+            git init --initial-branch sponsors "$site"
+            git -C "$site" remote add origin "$remote"
+          fi
+          cp "$out/sponsors.svg" "$out/sponsors-onetime.svg" "$site/"
+          cd "$site"
+          git add sponsors.svg sponsors-onetime.svg
+          if git diff --cached --quiet; then
+            echo "The sponsors did not change."
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit --quiet -m "Update the sponsors"
+          git push origin sponsors

@@ -179,6 +179,16 @@ export async function getCurrentUserWithGroup() {
     return user;
 }
 
+/** The id of the session the request comes with, which ending someone's sessions keeps. */
+export async function currentSessionId(): Promise<string | null> {
+    try {
+        const session = await auth.api.getSession({ headers: await headers() });
+        return session?.session.id ?? null;
+    } catch {
+        return null;
+    }
+}
+
 export async function checkPermission(permission: Permission) {
     const user = await getCurrentUserWithGroup();
 

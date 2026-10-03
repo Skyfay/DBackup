@@ -6,61 +6,45 @@ Configure how many requests clients can send to the application within a given t
 
 DBackup enforces rate limits at the middleware level - every incoming request is checked before reaching any route handler. Limits are applied **per IP address** and are split into three categories:
 
-| Category | Applies To | Default |
+| Limit | Applies To | Default |
 | :--- | :--- | :--- |
-| **Authentication** | Login attempts (`/api/auth/sign-in`) | 5 requests / 60 seconds |
-| **API Read** | All `GET` / `HEAD` requests to `/api/*` | 100 requests / 60 seconds |
-| **API Write** | All `POST` / `PUT` / `DELETE` requests to `/api/*` | 20 requests / 60 seconds |
+| **Sign-ins** | Login attempts (`/api/auth/sign-in`) | 5 requests / 60 seconds |
+| **Reads through the API** | All `GET` / `HEAD` requests to `/api/*` | 100 requests / 60 seconds |
+| **Changes through the API** | All `POST` / `PUT` / `DELETE` requests to `/api/*` | 20 requests / 60 seconds |
 
-When a client exceeds the limit, the server responds with **HTTP 429 Too Many Requests** until the time window resets.
+When a client exceeds the limit, the server responds with **HTTP 429 Too Many Requests** until the time window is over.
 
 ## Configuring Rate Limits
 
-Navigate to **Settings → Rate Limits** to adjust the limits.
+Go to **Settings → Rate limits**. Each limit reads as a sentence, like `5 requests every 60 seconds per address`, with its default beside it:
 
-### Rate Limit Categories
+- **Requests**: how many requests one address may make within the window, from 1 up to 1000 (10000 for reads).
+- **Seconds**: the length of the window, from 10 to 3600 seconds.
 
-Each category has two settings:
+A change waits in the bar at the foot of the part until **Save changes**. **Reset to defaults** puts the defaults into the fields, which also wait for **Save changes**.
 
-- **Max Requests**: The maximum number of requests allowed within the time window
-- **Time Window (seconds)**: The duration in seconds before the request counter resets
+### Sign-ins
 
-### Authentication
-
-Controls login attempt rate limiting. Keep this low to protect against brute-force password attacks.
+Slows down guessing passwords on the login page. Keep it low.
 
 ::: warning
-Setting authentication rate limits too high weakens brute-force protection. The default of 5 attempts per 60 seconds is recommended for most deployments.
+A higher limit for sign-ins weakens the protection against guessing passwords. The default of 5 attempts per 60 seconds suits most deployments.
 :::
 
-### API Read
+### Reads Through the API
 
-Controls the rate of read-only API requests (GET/HEAD). This includes dashboard data loading, file listing, and status polling. Increase this if you have many concurrent users or API integrations polling frequently.
+Every `GET` to `/api`, from the browser and from API keys, like the data of the dashboard, file lists and status polling. Raise it for many users at once or for integrations that poll often.
 
-### API Write
+### Changes Through the API
 
-Controls the rate of write operations (POST/PUT/DELETE). This includes creating jobs, triggering backups, changing settings, and other mutations.
-
-## Auto-Save
-
-Changes are saved automatically after a short delay (800ms debounce). A toast notification confirms each save. No "Save" button is needed.
-
-## Reset to Defaults
-
-Click the **Reset to Defaults** button at the top of the Rate Limits tab to restore all values to their defaults:
-
-| Category | Max Requests | Time Window |
-| :--- | :--- | :--- |
-| Authentication | 5 | 60s |
-| API Read | 100 | 60s |
-| API Write | 20 | 60s |
+Every `POST`, `PUT` and `DELETE` to `/api`, like triggering a job through its API or an upload. Changes made in the app itself go through Server Actions, which these limits do not count.
 
 ## How It Works
 
 Rate limits are enforced in the Next.js middleware, which runs on every request. The middleware uses in-memory counters (via `rate-limiter-flexible`) per IP address.
 
 ::: info
-After changing rate limit settings, the middleware picks up the new values within **30 seconds**. No server restart is required.
+After a change the middleware picks up the new limits within **30 seconds**, without a restart. A limit that did not change keeps its counters, so a window always counts its full length.
 :::
 
 ## API Key Requests

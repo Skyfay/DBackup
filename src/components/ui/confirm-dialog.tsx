@@ -1,0 +1,228 @@
+"use client";
+
+import * as React from "react";
+import { AlertTriangle, ArrowLeft, Info, Loader2 } from "lucide-react";
+import {
+    AlertDialog,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { toneAttribute, type Tone } from "@/components/ui/tone";
+import { cn } from "@/lib/utils";
+
+type IconComponent = React.ComponentType<{ className?: string }>;
+
+// The head is tinted in its tone like the banners on the Overview, a neutral one in the muted
+// gray. The head sets the tone itself, so a popover inside a dialog of another task keeps its own.
+function headClasses(tone: Tone): { head: string; tile: string } {
+    return tone === "neutral"
+        ? { head: "bg-muted/40", tile: "bg-muted text-foreground" }
+        : { head: "border-tone/20 bg-tone/5 dark:bg-tone/10", tile: "bg-tone/12 text-tone" };
+}
+
+// The note under the title is in the tone. Red misses 4.5:1 on the tint in light mode and gets the
+// darker `--destructive-text` there, which follows the color a person picked for Delete, and the
+// tones that report no action keep the muted gray.
+const NOTES: Partial<Record<Tone, string>> = {
+    destructive: "text-destructive-text",
+    success: "text-muted-foreground",
+    neutral: "text-muted-foreground",
+};
+
+/** Classes shared by the dialogs built on DialogHead: the raised surface and the button strip. */
+export const DIALOG_SURFACE = "gap-0 overflow-hidden rounded-xl bg-card p-0 sm:max-w-md";
+export const DIALOG_FOOTER = "shrink-0 border-t bg-page/60 px-5 py-3";
+
+interface DialogHeadProps {
+    tone: Tone;
+    icon: IconComponent;
+    /** Tighter padding for a popover. */
+    className?: string;
+    /** One control on the right, such as the way back to a previous step. */
+    action?: React.ReactNode;
+    children: React.ReactNode;
+}
+
+/** The tinted head of a dialog or a popover: an icon tile, the title and a short note. */
+export function DialogHead({ tone, icon: Icon, className, action, children }: DialogHeadProps) {
+    const classes = headClasses(tone);
+    return (
+        <div {...toneAttribute(tone)} className={cn("flex min-w-0 shrink-0 items-center gap-3 border-b px-5 py-4", classes.head, className)}>
+            <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg", classes.tile)} aria-hidden="true">
+                <Icon className="size-4" />
+            </span>
+            <div className="grid min-w-0 flex-1 gap-0.5">{children}</div>
+            {action && <div className="shrink-0">{action}</div>}
+        </div>
+    );
+}
+
+/**
+ * The way back to the first step of a dialog in two steps, like Change type, for the `action` of
+ * its `DialogHead`. Its arrow takes the tone of the head, and a frame with a light tint in it
+ * shows only on hover, so the head stays calm.
+ */
+export function DialogBackButton({ children, ...props }: React.ComponentProps<typeof Button>) {
+    return (
+        <Button type="button" variant="ghost-tone" size="sm" {...props}>
+            <ArrowLeft />
+            {children}
+        </Button>
+    );
+}
+
+/** The classes of the note under a dialog title, in the tone's color. Only valid inside a `DialogHead`. */
+export function dialogNoteClass(tone: Tone): string {
+    return cn("text-xs font-medium", NOTES[tone] ?? "text-tone");
+}
+
+export interface DialogListItem {
+    name: string;
+    /** A short fact after the name, such as the type of a connection or why it is left out. */
+    detail?: string;
+    /** "warning" colors the detail, for an entry the action leaves out. */
+    detailTone?: "muted" | "warning";
+    /** A line under the name, such as why it failed. */
+    description?: string;
+    icon?: IconComponent;
+}
+
+/** The records a confirmation or a report is about, one row each. It scrolls once it gets long. */
+export function DialogItemList({ items, size = "default" }: { items: DialogListItem[]; size?: "default" | "small" }) {
+    return (
+        // Block instead of Radix's `display: table` wrapper, so long names are cut off.
+        <ScrollArea
+            className={cn(
+                "min-w-0 rounded-lg border [&>[data-slot=scroll-area-viewport]>div]:block!",
+                size === "small" ? "*:data-[slot=scroll-area-viewport]:max-h-32" : "*:data-[slot=scroll-area-viewport]:max-h-60"
+            )}
+        >
+            <ul className="divide-y text-sm">
+                {items.map((item, index) => (
+                    // Names are not unique, and the rows hold no state of their own.
+                    <DialogItem key={index} item={item} />
+                ))}
+            </ul>
+        </ScrollArea>
+    );
+}
+
+function DialogItem({ item }: { item: DialogListItem }) {
+    const Icon = item.icon;
+    return (
+        <li className="flex min-w-0 items-start gap-2.5 px-3 py-2">
+            {Icon && <Icon className="mt-0.5 size-4 shrink-0" />}
+            <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-baseline gap-2">
+                    <span className="min-w-0 flex-1 truncate font-medium" title={item.name}>
+                        {item.name}
+                    </span>
+                    {item.detail && (
+                        <span className={cn("shrink-0 text-xs", item.detailTone === "warning" ? "text-warning" : "text-muted-foreground")}>
+                            {item.detail}
+                        </span>
+                    )}
+                </div>
+                {item.description && <p className="mt-0.5 text-muted-foreground">{item.description}</p>}
+            </div>
+        </li>
+    );
+}
+
+// A tinted red instead of a filled one. The text is darker in light mode for the same reason as the note.
+const SOFT_DESTRUCTIVE =
+    "border border-destructive/25 bg-destructive/10 text-destructive-text hover:bg-destructive/15 dark:bg-destructive/15 dark:hover:bg-destructive/25";
+
+export interface ConfirmDialogProps {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    title: string;
+    /** A short line under the title in the tone's color, such as "Cannot be undone". */
+    note?: string;
+    /** More context above the body. */
+    description?: React.ReactNode;
+    /** Shown in the tile of the head. Falls back to a warning or an info sign. */
+    icon?: IconComponent;
+    confirmLabel?: string;
+    /** The button that closes without acting, Cancel unless the action is a cancel itself. */
+    cancelLabel?: string;
+    destructive?: boolean;
+    /** The tone of the head when it is neither destructive nor neutral, like warning for a report of what failed. */
+    tone?: Tone;
+    /** Keeps the dialog open with a spinner while the action runs. */
+    isPending?: boolean;
+    /** Blocks the confirm button, for example when nothing is left to act on. */
+    disabled?: boolean;
+    onConfirm: () => void;
+    /** What the action touches, usually a DialogItemList. */
+    children?: React.ReactNode;
+    /** A wider dialog for a body with a choice, like `sm:max-w-xl`. */
+    className?: string;
+}
+
+/**
+ * Asks before an action. The head carries the tone, red for a destructive action, and the
+ * body shows what the action touches. Focus starts on Cancel, so Enter never confirms by
+ * accident.
+ */
+export function ConfirmDialog({
+    open,
+    onOpenChange,
+    title,
+    note,
+    description,
+    icon,
+    confirmLabel = "Confirm",
+    cancelLabel = "Cancel",
+    destructive = false,
+    tone: toneOverride,
+    isPending = false,
+    disabled = false,
+    onConfirm,
+    children,
+    className,
+}: ConfirmDialogProps) {
+    const tone: Tone = toneOverride ?? (destructive ? "destructive" : "neutral");
+    // Screen readers announce the note, or the description when there is no note.
+    const bodyText = description && (note ? <p className="text-sm text-muted-foreground">{description}</p> : <AlertDialogDescription>{description}</AlertDialogDescription>);
+
+    return (
+        <AlertDialog open={open} onOpenChange={(next) => !isPending && onOpenChange(next)}>
+            {/* The tone reaches the confirm button too, so a warning asks with an amber one. */}
+            <AlertDialogContent tone={tone} className={cn(DIALOG_SURFACE, className)} {...(!note && !description ? { "aria-describedby": undefined } : {})}>
+                <DialogHead tone={tone} icon={icon ?? (tone === "destructive" || tone === "warning" ? AlertTriangle : Info)}>
+                    <AlertDialogTitle className="text-base">{title}</AlertDialogTitle>
+                    {note && <AlertDialogDescription className={dialogNoteClass(tone)}>{note}</AlertDialogDescription>}
+                </DialogHead>
+                {/* The body scrolls on its own once a long one meets a short window, while the head
+                    and the buttons stay. Inside, min-w-0 cuts a long name off instead of widening it. */}
+                {(bodyText || children) && (
+                    <ScrollArea className="min-h-0 flex-1">
+                        <div className="grid min-w-0 gap-4 px-5 py-4">
+                            {bodyText}
+                            {children}
+                        </div>
+                    </ScrollArea>
+                )}
+                <AlertDialogFooter className={DIALOG_FOOTER}>
+                    <AlertDialogCancel disabled={isPending}>{cancelLabel}</AlertDialogCancel>
+                    {/* A plain button, since the Radix action would close the dialog before the action ran. */}
+                    <Button
+                        variant={destructive ? "destructive" : "default"}
+                        className={cn(destructive && SOFT_DESTRUCTIVE)}
+                        disabled={isPending || disabled}
+                        onClick={onConfirm}
+                    >
+                        {isPending && <Loader2 className="animate-spin" />}
+                        {confirmLabel}
+                    </Button>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+    );
+}

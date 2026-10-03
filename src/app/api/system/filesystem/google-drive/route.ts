@@ -1,13 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
-import { google } from "googleapis";
+import { google, type drive_v3 } from "googleapis";
+import { z } from "zod";
 import { checkPermission } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { isDriveFolderId } from "@/lib/adapters/storage/google-drive";
 import { getDecryptedCredentialData } from "@/services/auth/credential-service";
 import type { OAuthData } from "@/lib/core/credentials";
 import { logger } from "@/lib/logging/logger";
-import { wrapError } from "@/lib/logging/errors";
+import { AuthenticationError, PermissionError, wrapError } from "@/lib/logging/errors";
 
 const log = logger.child({ route: "system/filesystem/google-drive" });
+
+const BodySchema = z.object({
+    credentialId: z.string().min(1).max(64),
+    // Goes into a Drive query, so only an ID Google could have made passes, "" for My Drive.
+    folderId: z.string().max(256).refine((id) => id === "" || isDriveFolderId(id), "Not a Google Drive folder ID").optional(),
+    trail: z.boolean().optional(),
+});
+
+/** Deeper than any folder someone picks, so a loop in the parents cannot walk forever. */
+const MAX_TRAIL = 64;
+
+/**
+ * The folders from the top of My Drive down to `folderId`, walked up by parent. The walk ends at
+ * My Drive, or at a folder shared from another drive whose parent the account cannot read.
+ */
+async function trailOf(drive: drive_v3.Drive, folderId: string): Promise<Array<{ name: string; path: string }>> {
+    const top = (await drive.files.get({ fileId: "root", fields: "id" })).data.id;
+    const trail: Array<{ name: string; path: string }> = [];
+    let id: string | undefined = folderId;
+    while (id && id !== "root" && id !== top && trail.length < MAX_TRAIL) {
+        const folder: drive_v3.Schema$File | null = await drive.files.get({ fileId: id, fields: "id, name, parents" }).then((res) => res.data, () => null);
+        if (!folder) break;
+        trail.unshift({ name: folder.name || "Untitled", path: folder.id || id });
+        id = folder.parents?.[0];
+    }
+    return trail;
+}
 
 /**
  * POST /api/system/filesystem/google-drive
@@ -15,7 +44,8 @@ const log = logger.child({ route: "system/filesystem/google-drive" });
  *
  * Body: {
  *   credentialId: string, // OAUTH credential profile id
- *   folderId?: string     // Folder to list (undefined = root)
+ *   folderId?: string,    // Folder to list (undefined = root), only letters, digits, - and _
+ *   trail?: boolean       // Return the folders from the top down to folderId instead of listing it
  * }
  *
  * Credentials are resolved server-side from the OAUTH credential profile - they
@@ -23,19 +53,21 @@ const log = logger.child({ route: "system/filesystem/google-drive" });
  *
  * Returns the same shape as the local/remote filesystem API:
  * { success, data: { currentPath, parentPath, entries: [{ name, type, path }] } }
+ * or, with `trail`, { success, data: { trail: [{ name, path }] } }, which is where the picker
+ * opens for a connection that holds a folder.
  *
  * For Google Drive, "path" is the folder ID (not a filesystem path).
  */
 export async function POST(req: NextRequest) {
     try {
-        await checkPermission(PERMISSIONS.DESTINATIONS.READ);
+        // Only the connection form browses a drive by its OAuth profile, so it takes the right to change destinations.
+        await checkPermission(PERMISSIONS.DESTINATIONS.WRITE);
 
-        const body = await req.json();
-        const { credentialId, folderId } = body;
-
-        if (!credentialId) {
-            return NextResponse.json({ success: false, error: "Missing credentialId" }, { status: 400 });
+        const parsed = BodySchema.safeParse(await req.json().catch(() => null));
+        if (!parsed.success) {
+            return NextResponse.json({ success: false, error: "Invalid request" }, { status: 400 });
         }
+        const { credentialId, folderId, trail } = parsed.data;
 
         const config = (await getDecryptedCredentialData(credentialId, "OAUTH")) as OAuthData;
 
@@ -53,6 +85,10 @@ export async function POST(req: NextRequest) {
         oauth2Client.setCredentials({ refresh_token: config.refreshToken });
 
         const drive = google.drive({ version: "v3", auth: oauth2Client });
+
+        if (trail) {
+            return NextResponse.json({ success: true, data: { trail: await trailOf(drive, folderId || "root") } });
+        }
 
         const parentId = folderId || "root";
 
@@ -124,6 +160,8 @@ export async function POST(req: NextRequest) {
             },
         });
     } catch (err) {
+        if (err instanceof AuthenticationError) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+        if (err instanceof PermissionError) return NextResponse.json({ success: false, error: "Access denied" }, { status: 403 });
         log.error("Google Drive folder browse failed", {}, wrapError(err));
         const message = err instanceof Error ? err.message : "Failed to browse Google Drive folders";
         return NextResponse.json(

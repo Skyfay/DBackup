@@ -86,7 +86,7 @@ export interface BackupMetadata {
      * Whether this backup stores everything or only what changed.
      *
      * Written for **every** backup, including database-only ones that have no notion of
-     * chains yet, so the Storage Explorer can label them uniformly and a future
+     * chains yet, so the Backups page can label them uniformly and a future
      * incremental database mode does not need a second signal.
      */
     backupType?: 'full' | 'incremental';
@@ -114,6 +114,8 @@ export interface BackupMetadata {
         passed: boolean;
         trigger: 'manual' | 'post-upload' | 'scheduled';
         actualChecksum?: string;
+        /** How it was checked: by the checksum the destination keeps, or by downloading and hashing it. Absent on older checks. */
+        method?: 'native' | 'download';
     };
     /** Trigger information - what initiated the backup */
     trigger?: {
@@ -399,6 +401,13 @@ export type FileInfo = {
      * others.
      */
     chainId?: string;
+    /**
+     * The job that made this backup, read from its `.meta.json`.
+     *
+     * Retention leaves a backup of another job alone. A job named like a deleted one writes
+     * into the same folder, and the backups the deleted job left there are not its to delete.
+     */
+    jobId?: string;
 };
 
 /** Optional options passed to upload() for adapters that support native checksum storage. */

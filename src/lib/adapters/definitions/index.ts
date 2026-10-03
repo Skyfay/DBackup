@@ -23,16 +23,16 @@ export * from "./storage";
 export * from "./notification";
 
 export const ADAPTER_DEFINITIONS: AdapterDefinition[] = [
-    { id: "mysql", type: "database", name: "MySQL", configSchema: MySQLSchema },
-    { id: "mariadb", type: "database", name: "MariaDB", configSchema: MariaDBSchema },
-    { id: "postgres", type: "database", name: "PostgreSQL", configSchema: PostgresSchema },
-    { id: "mongodb", type: "database", name: "MongoDB", configSchema: MongoDBSchema },
-    { id: "sqlite", type: "database", name: "SQLite", configSchema: SQLiteSchema },
-    { id: "mssql", type: "database", name: "Microsoft SQL Server", configSchema: MSSQLSchema },
-    { id: "azure-sql", type: "database", name: "Azure SQL Database", beta: true, configSchema: AzureSQLSchema },
-    { id: "redis", type: "database", name: "Redis", configSchema: RedisSchema },
-    { id: "valkey", type: "database", name: "Valkey", configSchema: RedisSchema },
-    { id: "firebird", type: "database", name: "Firebird", beta: true, configSchema: FirebirdSchema },
+    { id: "mysql", type: "database", group: "Relational", name: "MySQL", configSchema: MySQLSchema },
+    { id: "mariadb", type: "database", group: "Relational", name: "MariaDB", configSchema: MariaDBSchema },
+    { id: "postgres", type: "database", group: "Relational", name: "PostgreSQL", configSchema: PostgresSchema },
+    { id: "mongodb", type: "database", group: "Document", name: "MongoDB", configSchema: MongoDBSchema },
+    { id: "sqlite", type: "database", group: "File based", name: "SQLite", configSchema: SQLiteSchema },
+    { id: "mssql", type: "database", group: "Relational", name: "Microsoft SQL Server", configSchema: MSSQLSchema },
+    { id: "azure-sql", type: "database", group: "Relational", name: "Azure SQL Database", beta: true, configSchema: AzureSQLSchema },
+    { id: "redis", type: "database", group: "Key value", name: "Redis", configSchema: RedisSchema },
+    { id: "valkey", type: "database", group: "Key value", name: "Valkey", configSchema: RedisSchema },
+    { id: "firebird", type: "database", group: "Relational", name: "Firebird", beta: true, configSchema: FirebirdSchema },
 
     { id: "local-filesystem", type: "storage", group: "Local", name: "Local Filesystem", configSchema: LocalStorageSchema },
     {
@@ -113,15 +113,15 @@ export const ADAPTER_DEFINITIONS: AdapterDefinition[] = [
         transferConcurrency: { default: 4, max: 8 },
     },
 
-    { id: "discord", type: "notification", name: "Discord Webhook", configSchema: DiscordSchema },
-    { id: "slack", type: "notification", name: "Slack Webhook", configSchema: SlackSchema },
-    { id: "teams", type: "notification", name: "Microsoft Teams", configSchema: TeamsSchema },
-    { id: "generic-webhook", type: "notification", name: "Generic Webhook", configSchema: GenericWebhookSchema },
-    { id: "gotify", type: "notification", name: "Gotify", configSchema: GotifySchema },
-    { id: "ntfy", type: "notification", name: "ntfy", configSchema: NtfySchema },
-    { id: "telegram", type: "notification", name: "Telegram", configSchema: TelegramSchema },
-    { id: "twilio-sms", type: "notification", name: "SMS (Twilio)", configSchema: TwilioSmsSchema },
-    { id: "email", type: "notification", name: "Email (SMTP)", configSchema: EmailSchema },
+    { id: "discord", type: "notification", group: "Chat", name: "Discord Webhook", configSchema: DiscordSchema },
+    { id: "slack", type: "notification", group: "Chat", name: "Slack Webhook", configSchema: SlackSchema },
+    { id: "teams", type: "notification", group: "Chat", name: "Microsoft Teams", configSchema: TeamsSchema },
+    { id: "generic-webhook", type: "notification", group: "Webhook", name: "Generic Webhook", configSchema: GenericWebhookSchema },
+    { id: "gotify", type: "notification", group: "Push", name: "Gotify", configSchema: GotifySchema },
+    { id: "ntfy", type: "notification", group: "Push", name: "ntfy", configSchema: NtfySchema },
+    { id: "telegram", type: "notification", group: "Chat", name: "Telegram", configSchema: TelegramSchema },
+    { id: "twilio-sms", type: "notification", group: "Email and SMS", name: "SMS (Twilio)", configSchema: TwilioSmsSchema },
+    { id: "email", type: "notification", group: "Email and SMS", name: "Email (SMTP)", configSchema: EmailSchema },
 ];
 
 // Attach credential requirements to every definition for the client form layer.

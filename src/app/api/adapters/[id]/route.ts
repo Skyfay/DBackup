@@ -8,13 +8,15 @@ import { toAdapterListItem } from "@/lib/adapters/dto";
 import { headers } from "next/headers";
 import { auditService } from "@/services/audit-service";
 import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
-import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
-import { getWritePermissionForAdapterType } from "@/lib/auth/permissions";
+import { getAuthContext, checkPermissionWithContext, hasPermissionWithContext } from "@/lib/auth/access-control";
+import { TRASH_ADMIN_PERMISSION, getWritePermissionForAdapterType } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logging/logger";
 import { wrapError, getErrorMessage, ValidationError, NotFoundError, ConflictError } from "@/lib/logging/errors";
 import { registerAdapters } from "@/lib/adapters";
 import { validateCredentialAssignments } from "@/lib/adapters/credential-validation";
 import { deleteAdapter } from "@/services/adapters/adapter-service";
+import { connectionChanges } from "@/services/adapters/adapter-audit";
+import { PERMANENT_DELETE_REFUSED, permanentlyFrom } from "@/lib/core/delete-mode";
 
 registerAdapters();
 
@@ -41,17 +43,20 @@ export async function DELETE(
         }
         checkPermissionWithContext(ctx, getWritePermissionForAdapterType(adapter.type));
 
-        const deletedAdapter = await deleteAdapter(params.id);
-
-        if (ctx) {
-            await auditService.log(
-                ctx.userId,
-                AUDIT_ACTIONS.DELETE,
-                AUDIT_RESOURCES.ADAPTER,
-                { name: deletedAdapter.name },
-                params.id
-            );
+        // Into Recently deleted, unless `?permanently=true`, which needs the right to change the settings too.
+        const permanently = permanentlyFrom(req.nextUrl.searchParams);
+        if (permanently && !hasPermissionWithContext(ctx, TRASH_ADMIN_PERMISSION)) {
+            return NextResponse.json({ success: false, error: PERMANENT_DELETE_REFUSED }, { status: 403 });
         }
+        const deletedAdapter = await deleteAdapter(params.id, { permanently, by: ctx.userId });
+
+        await auditService.logFor(
+            ctx,
+            AUDIT_ACTIONS.DELETE,
+            AUDIT_RESOURCES.ADAPTER,
+            { name: deletedAdapter.name, ...(permanently ? { permanently: true } : {}) },
+            params.id
+        );
 
         return NextResponse.json({ success: true });
     } catch (error: unknown) {
@@ -81,7 +86,11 @@ export async function PUT(
         // RBAC: Check permission based on adapter type
         const existingAdapter = await prisma.adapterConfig.findUnique({
             where: { id: params.id },
-            select: { type: true, adapterId: true, lastError: true, config: true, storageRole: true }
+            select: {
+                type: true, adapterId: true, lastError: true, config: true, storageRole: true,
+                // What the audit entry compares the edit with.
+                name: true, primaryCredentialId: true, sshCredentialId: true, metadata: true,
+            }
         });
         if (!existingAdapter) {
             return NextResponse.json({ success: false, error: "Adapter not found" }, { status: 404 });
@@ -130,9 +139,10 @@ export async function PUT(
         // Kept in scope for the snapshot check below, which has to probe with the real
         // secrets rather than the redacted ones the form submits.
         let mergedPlainConfig: Record<string, unknown> | undefined;
+        // The config as it was, which the audit entry compares the merged one with.
+        let existingDecrypted: unknown = {};
         if (config !== undefined) {
             const incomingConfig = typeof config === 'string' ? JSON.parse(config) : config;
-            let existingDecrypted: unknown = {};
             try {
                 existingDecrypted = decryptConfig(JSON.parse(existingAdapter.config));
             } catch (e) {
@@ -222,15 +232,24 @@ export async function PUT(
             }
         });
 
-        if (ctx) {
-            await auditService.log(
-                ctx.userId,
-                AUDIT_ACTIONS.UPDATE,
-                AUDIT_RESOURCES.ADAPTER,
-                { name },
-                updatedAdapter.id
-            );
-        }
+        // Secrets are compared, never written: a changed one is only marked as changed.
+        const changes = await connectionChanges(
+            existingAdapter.type,
+            existingAdapter,
+            updatedAdapter,
+            mergedPlainConfig !== undefined ? { before: existingDecrypted, after: mergedPlainConfig } : undefined
+        );
+        await auditService.logFor(
+            ctx,
+            AUDIT_ACTIONS.UPDATE,
+            AUDIT_RESOURCES.ADAPTER,
+            {
+                name: updatedAdapter.name,
+                ...(existingAdapter.name !== updatedAdapter.name ? { renamedFrom: existingAdapter.name } : {}),
+                changes,
+            },
+            updatedAdapter.id
+        );
 
         return NextResponse.json(toAdapterListItem(updatedAdapter));
     } catch (_error) {

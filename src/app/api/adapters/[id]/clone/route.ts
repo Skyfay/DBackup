@@ -100,11 +100,11 @@ export async function POST(
             }
         });
 
-        await auditService.log(
-            ctx.userId,
+        await auditService.logFor(
+            ctx,
             AUDIT_ACTIONS.CREATE,
             AUDIT_RESOURCES.ADAPTER,
-            { name: cloned.name, clonedFrom: original.id },
+            { name: cloned.name, clonedFrom: original.id, clonedFromName: original.name },
             cloned.id
         );
 

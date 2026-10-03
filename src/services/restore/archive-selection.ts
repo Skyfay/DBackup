@@ -37,7 +37,7 @@ export interface ResolvedContents {
  * Expands a request into the files and database dumps it covers.
  *
  * Asking for neither files nor databases means the complete snapshot, which is what the
- * Storage Explorer's download sends, so the user gets every file and every dump rather than
+ * Backups page's download sends, so the user gets every file and every dump rather than
  * an incremental's delta. Asking for either one means exactly that and nothing of the other
  * kind. Exclude patterns only ever apply to files.
  */

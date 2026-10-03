@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { registerAdapters } from "@/lib/adapters";
 import { storageService } from "@/services/storage/storage-service";
+import { backupAuditDetails } from "@/services/storage/backup-audit";
+import { auditService } from "@/services/audit-service";
+import { AUDIT_ACTIONS, AUDIT_RESOURCES } from "@/lib/core/audit-types";
 import { headers } from "next/headers";
 import { getAuthContext, checkPermissionWithContext } from "@/lib/auth/access-control";
 import { PERMISSIONS } from "@/lib/auth/permissions";
@@ -72,6 +75,8 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ id: st
         if (!success) {
              return NextResponse.json({ error: "Failed to delete file" }, { status: 500 });
         }
+
+        await auditService.logFor(ctx, AUDIT_ACTIONS.DELETE, AUDIT_RESOURCES.BACKUP, { ...(await backupAuditDetails(params.id, path)) }, params.id);
 
         // Refresh storage stats cache after file deletion (non-blocking)
         import("@/services/dashboard-service").then(({ refreshStorageStatsCache }) => {

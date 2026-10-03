@@ -45,5 +45,5 @@ export function useDateFormatter() {
     [userTimezone, dateFormat, timeFormat]
   )
 
-  return { formatDate }
+  return { formatDate, timezone: userTimezone as string }
 }

@@ -19,6 +19,7 @@ import {
   StorageUsageSpikeData,
   StorageLimitWarningData,
   StorageMissingBackupData,
+  AirGapSkippedData,
   UpdateAvailableData,
   ConnectionOfflineData,
   ConnectionOnlineData,
@@ -344,6 +345,37 @@ function storageMissingBackupTemplate(
   };
 }
 
+/** How long before `to` the time `from` was, in hours for two days and in days after that. */
+function agoText(from: string, to: string): string | null {
+  const ms = Date.parse(to) - Date.parse(from);
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  const hours = Math.floor(ms / 3_600_000);
+  if (hours < 1) return "less than an hour ago";
+  if (hours < 48) return `${hours} ${hours === 1 ? "hour" : "hours"} ago`;
+  return `${Math.floor(hours / 24)} days ago`;
+}
+
+function airGapSkippedTemplate(data: AirGapSkippedData): NotificationPayload {
+  const ago = data.lastConnectedAt ? agoText(data.lastConnectedAt, data.timestamp) : null;
+  return {
+    title: `${data.storageName} was skipped`,
+    message: `${data.jobName} ran without '${data.storageName}', since it is air-gapped and not connected.${
+      ago ? ` It was last connected ${ago}.` : ""
+    }`,
+    fields: [
+      { name: "Destination", value: data.storageName, inline: true },
+      { name: "Job", value: data.jobName, inline: true },
+      ...(data.lastConnectedAt
+        ? [{ name: "Last Connected", value: data.lastConnectedAt, inline: true }]
+        : []),
+      { name: "Time", value: data.timestamp, inline: true },
+    ],
+    color: "#6b7280", // gray, nothing is wrong
+    success: true,
+    badge: "Air-gapped",
+  };
+}
+
 function updateAvailableTemplate(
   data: UpdateAvailableData
 ): NotificationPayload {
@@ -510,6 +542,8 @@ export function renderTemplate(
       return storageLimitWarningTemplate(event.data);
     case NOTIFICATION_EVENTS.STORAGE_MISSING_BACKUP:
       return storageMissingBackupTemplate(event.data);
+    case NOTIFICATION_EVENTS.AIRGAP_SKIPPED:
+      return airGapSkippedTemplate(event.data);
     case NOTIFICATION_EVENTS.UPDATE_AVAILABLE:
       return updateAvailableTemplate(event.data);
     case NOTIFICATION_EVENTS.CONNECTION_OFFLINE:

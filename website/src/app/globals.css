@@ -302,6 +302,24 @@
   .fx-sweep {
     animation: fx-sweep 7.2s linear infinite;
   }
+  .fx-orb {
+    animation: fx-orb 2.4s ease-out infinite;
+  }
+  .fx-fall {
+    animation: fx-fall 7s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+  .fx-indet {
+    animation: fx-indet 1.8s ease-in-out infinite;
+  }
+  .fx-stripes {
+    background-image: repeating-linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--tone-amber) 70%, transparent) 0 8px,
+      transparent 8px 12px
+    );
+    background-size: 24px 100%;
+    animation: fx-stripes 1.2s linear infinite;
+  }
 }
 
 @keyframes fx-spin {
@@ -452,6 +470,51 @@
   }
 }
 
+/* The orb of "Now" on the roadmap, breathing in blue. */
+@keyframes fx-orb {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 0 rgb(96 165 250 / 0.5),
+      0 0 40px rgb(96 165 250 / 0.55);
+  }
+  50% {
+    box-shadow:
+      0 0 0 16px rgb(96 165 250 / 0),
+      0 0 60px rgb(96 165 250 / 0.7);
+  }
+}
+/* Sparks running down the roadmap spine. */
+@keyframes fx-fall {
+  0% {
+    transform: translateY(-80px);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(1800px);
+    opacity: 0;
+  }
+}
+@keyframes fx-indet {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(260%);
+  }
+}
+@keyframes fx-stripes {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 24px 0;
+  }
+}
+
 /* Counts a number up from zero. The real value stays in the markup for
    readers and crawlers, the animated one is drawn by ::after. */
 @property --count {
@@ -494,8 +557,15 @@
   .fx-pulse,
   .fx-twinkle,
   .fx-in,
-  .fx-sweep {
+  .fx-sweep,
+  .fx-orb,
+  .fx-indet,
+  .fx-stripes {
     animation: none;
+  }
+  .fx-fall {
+    animation: none;
+    opacity: 0;
   }
 }
 
@@ -620,17 +690,4 @@
   margin-bottom: 4px;
   font-size: 16px;
   color: var(--foreground);
-}
-
-[data-reveal] {
-  opacity: 0;
-  transform: translateY(12px);
-  transition:
-    opacity 0.5s ease,
-    transform 0.5s ease;
-}
-
-[data-reveal][data-visible="true"] {
-  opacity: 1;
-  transform: translateY(0);
 }

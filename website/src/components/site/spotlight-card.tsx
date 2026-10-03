@@ -9,6 +9,8 @@ type Props<T extends ElementType> = {
   rgb?: string;
   /** The radius of the light in px. */
   reach?: number;
+  /** Leaves out the card look, for rows that only light up on hover. */
+  bare?: boolean;
 } & ComponentProps<T>;
 
 /**
@@ -19,6 +21,7 @@ export function SpotlightCard<T extends ElementType = "div">({
   as,
   rgb = "96 165 250",
   reach = 480,
+  bare = false,
   className,
   style,
   onMouseMove,
@@ -35,7 +38,7 @@ export function SpotlightCard<T extends ElementType = "div">({
         onMouseMove?.(e);
       }}
       style={{ "--spot-rgb": rgb, "--spot-reach": `${reach}px`, ...style }}
-      className={cn("spotlight panel fx-lift relative min-w-0 overflow-hidden", className)}
+      className={cn("spotlight relative min-w-0", !bare && "panel fx-lift overflow-hidden", className)}
     />
   );
 }

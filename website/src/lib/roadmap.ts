@@ -1,4 +1,4 @@
-import { GITHUB_REPO } from "@/lib/content";
+import { DOCS_URL, GITHUB_REPO } from "@/lib/content";
 
 export type RoadmapStatus = "idea" | "planned" | "in-progress";
 
@@ -394,3 +394,13 @@ export const MILESTONES: Milestone[] = [
     fallbackCurrent: 0,
   },
 ];
+
+/** Where a shipped entry links to: its own link, its changelog section or the changelog. */
+export function shippedHref(item: ShippedItem): string {
+  if (item.link) return item.link.href;
+  return item.changelogAnchor ? `${DOCS_URL}/changelog#${item.changelogAnchor}` : `${DOCS_URL}/changelog`;
+}
+
+export function issueHref(issueNumber: number): string {
+  return `https://github.com/${GITHUB_REPO}/issues/${issueNumber}`;
+}

@@ -11,7 +11,6 @@ import { CopyLinkButton, ReadingProgress, TableOfContents } from "@/components/s
 import { CONIC, Glow, SpinBorder } from "@/components/site/fx";
 import { JsonLd } from "@/components/site/json-ld";
 import {
-  formatPostDate,
   getAllPosts,
   getAllSlugs,
   getHeadings,
@@ -20,6 +19,7 @@ import {
 } from "@/lib/blog";
 import { ARCHIVE_FORMAT_URL, DISCORD_URL } from "@/lib/content";
 import { SITE_URL } from "@/lib/site";
+import { formatDate } from "@/lib/utils";
 
 // CodeBlock renders its own theme-aware box, so a light/dark theme pair here
 // tracks the site's toggle.
@@ -64,7 +64,7 @@ export default async function BlogPostPage({
   const post = getPostBySlug(slug);
   const headings = getHeadings(post.content);
   const [titleHead, titleTail] = splitTitle(post.title);
-  const meta = `${formatPostDate(post.date)} · ${post.readingMinutes} min read`;
+  const meta = `${formatDate(post.date)} · ${post.readingMinutes} min read`;
 
   const posts = getAllPosts();
   const index = posts.findIndex((p) => p.slug === slug);
@@ -183,7 +183,7 @@ export default async function BlogPostPage({
               </span>
               <span className="text-lg font-semibold tracking-[-0.02em]">{neighbour.title}</span>
               <span className="text-[13px] text-muted-foreground">
-                {formatPostDate(neighbour.date)} · {neighbour.readingMinutes} min read
+                {formatDate(neighbour.date)} · {neighbour.readingMinutes} min read
               </span>
             </Link>
           )}

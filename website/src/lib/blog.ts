@@ -92,15 +92,6 @@ export function getHeadings(content: string): Heading[] {
     });
 }
 
-export function formatPostDate(date: string): string {
-  return new Date(date).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
-}
-
 /** Splits a title at its dash or colon, so the second half can carry the shine. */
 export function splitTitle(title: string): [string, string | null] {
   const dash = title.indexOf(" - ");

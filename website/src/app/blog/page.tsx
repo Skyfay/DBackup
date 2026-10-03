@@ -2,7 +2,8 @@ import { Bell } from "lucide-react";
 import { BlogIndex } from "@/components/site/blog/blog-index";
 import { PageBackdrop } from "@/components/site/blog/page-backdrop";
 import { Eyebrow, Glow } from "@/components/site/fx";
-import { formatPostDate, getAllPosts } from "@/lib/blog";
+import { getAllPosts } from "@/lib/blog";
+import { formatDate } from "@/lib/utils";
 import { CHANGELOG_URL, GITHUB_URL } from "@/lib/content";
 
 export const metadata = {
@@ -17,7 +18,7 @@ export const metadata = {
 
 export default function BlogIndexPage() {
   const posts = getAllPosts();
-  const dates = Object.fromEntries(posts.map((p) => [p.slug, formatPostDate(p.date)]));
+  const dates = Object.fromEntries(posts.map((p) => [p.slug, formatDate(p.date)]));
 
   return (
     <div className="relative">

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, ChevronRight } from "lucide-react";
 import { AdapterIcon } from "@/components/site/adapter-icon";
-import { CopyCommand } from "@/components/site/home/copy-command";
+import { ContributorsPill } from "@/components/site/home/contributors-pill";
 import { LiveRun } from "@/components/site/home/live-run";
 import { Counters } from "@/components/site/home/counters";
 import { AdapterMarquee } from "@/components/site/home/adapter-marquee";
@@ -12,12 +12,14 @@ import { cn } from "@/lib/utils";
 
 // The rolling name in the headline. The first entry comes again at the end,
 // so the loop back to the top cannot be seen.
+// Each tile takes the color of its logo, and the two red ones never follow
+// each other.
 const TICKER = [
   { id: "postgres", label: "PostgreSQL", rgb: "37 99 235" },
-  { id: "mysql", label: "MySQL", rgb: "14 116 144" },
-  { id: "mongodb", label: "MongoDB", rgb: "21 128 61" },
   { id: "redis", label: "Redis", rgb: "220 38 38" },
-  { id: "mssql", label: "SQL Server", rgb: "124 58 237" },
+  { id: "mongodb", label: "MongoDB", rgb: "21 128 61" },
+  { id: "mssql", label: "SQL Server", rgb: "204 41 39" },
+  { id: "mysql", label: "MySQL", rgb: "14 116 144" },
 ];
 
 function Ticker() {
@@ -115,7 +117,7 @@ export function Hero() {
             Get started
             <ArrowRight className="size-4" />
           </Link>
-          <CopyCommand command="docker pull skyfay/dbackup" />
+          <ContributorsPill />
         </div>
       </div>
 

@@ -48,11 +48,11 @@ prisma/dev.db-shm
 prisma/dev.db-wal
 db-data/
 
-# backups
-backups/
+# backups (Docker mount point, root only so src/app/dashboard/backups stays tracked)
+/backups/
 
-# persistent data (Docker mount point)
-data/
+# persistent data (Docker mount point, root only)
+/data/
 
 # Jetbrains
 .idea

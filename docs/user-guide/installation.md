@@ -38,12 +38,15 @@ services:
 ```
 
 ```bash [Docker Run]
+# Once: write both secrets to .env and keep the file
+echo "ENCRYPTION_KEY=$(openssl rand -hex 32)" > .env
+echo "BETTER_AUTH_SECRET=$(openssl rand -base64 32)" >> .env
+
 docker run -d \
   --name dbackup \
   --restart always \
   -p 3000:3000 \
-  -e ENCRYPTION_KEY="$(openssl rand -hex 32)" \
-  -e BETTER_AUTH_SECRET="$(openssl rand -base64 32)" \
+  --env-file .env \
   -e BETTER_AUTH_URL="https://localhost:3000" \
   -v "$(pwd)/data:/data" \
   -v "$(pwd)/backups:/backups" \
@@ -51,6 +54,10 @@ docker run -d \
   skyfay/dbackup:latest
 ```
 
+:::
+
+::: warning Keep both secrets for good
+Generate them once and start every new container with the same values, for example after `docker rm` for an update. A new `ENCRYPTION_KEY` leaves every saved login and key unreadable. A new `BETTER_AUTH_SECRET` signs everyone out and breaks two-factor sign-in. Do not put `$(openssl rand ...)` straight into `docker run`, since it makes new values every time the command runs.
 :::
 
 ### Generate Secrets

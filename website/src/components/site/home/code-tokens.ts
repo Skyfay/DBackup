@@ -57,14 +57,20 @@ export const COMPOSE_LINES: CodeLine[] = [
 /** The lines of the compose file that hold a secret to fill in, counted from 0. */
 export const COMPOSE_SECRET_LINES = [7, 9];
 
+/**
+ * Both secrets go to a .env file once, so a container made again for an
+ * update starts with the same keys. Inline $(openssl ...) in the run command
+ * would make new ones on every docker run.
+ */
 export const RUN_LINES: CodeLine[] = [
+  [["echo", "command"], [' "', "string"], ["ENCRYPTION_KEY", "env"], ["=", "punct"], ["$(openssl rand -hex 32)", "subshell"], ['"', "string"], [" > ", "punct"], [".env", "value"]],
+  [["echo", "command"], [' "', "string"], ["BETTER_AUTH_SECRET", "env"], ["=", "punct"], ["$(openssl rand -base64 32)", "subshell"], ['"', "string"], [" >> ", "punct"], [".env", "value"]],
   [["docker", "command"], [" run", "key"], [" -d", "flag"], [" --name", "flag"], [" dbackup", "value"], [" --restart", "flag"], [" always", "keyword"], [" \\", "punct"]],
   [["  -p", "flag"], [" 3000:3000", "string"], [" \\", "punct"]],
-  [["  -e", "flag"], [" ENCRYPTION_KEY", "env"], ["=", "punct"], ["$(openssl rand -hex 32)", "subshell"], [" \\", "punct"]],
+  [["  --env-file", "flag"], [" .env", "value"], [" \\", "punct"]],
   [["  -e", "flag"], [" BETTER_AUTH_URL", "env"], ["=", "punct"], ["https://localhost:3000", "url"], [" \\", "punct"]],
-  [["  -e", "flag"], [" BETTER_AUTH_SECRET", "env"], ["=", "punct"], ["$(openssl rand -base64 32)", "subshell"], [" \\", "punct"]],
-  [["  -v", "flag"], [" ./data", "value"], [":/data", "tag"], [" \\", "punct"]],
-  [["  -v", "flag"], [" ./backups", "value"], [":/backups", "tag"], [" \\", "punct"]],
+  [["  -v", "flag"], [' "', "string"], ["$(pwd)", "subshell"], ["/data", "value"], [":/data", "tag"], ['"', "string"], [" \\", "punct"]],
+  [["  -v", "flag"], [' "', "string"], ["$(pwd)", "subshell"], ["/backups", "value"], [":/backups", "tag"], ['"', "string"], [" \\", "punct"]],
   [["  skyfay/dbackup", "value"], [":latest", "tag"]],
 ];
 
@@ -91,15 +97,20 @@ export function composeLines(keys: Keys | null): CodeLine[] {
   });
 }
 
-/** The docker run command, with the generated keys in place of the two openssl calls. */
+/** The docker run commands, with the generated keys in place of the two openssl calls. */
 export function runLines(keys: Keys | null): CodeLine[] {
   if (!keys) return RUN_LINES;
   return RUN_LINES.map((line) =>
     line.map(([text, kind]): Token => {
-      if (kind !== "subshell") return [text, kind];
+      if (!text.startsWith("$(openssl")) return [text, kind];
       return [text.includes("-hex") ? keys.hex : keys.base64, "secret"];
     })
   );
+}
+
+/** Whether a line goes on to the next one with a trailing backslash. */
+export function continuesOnNextLine(line: CodeLine): boolean {
+  return line.length > 0 && line[line.length - 1][0].endsWith("\\");
 }
 
 /** A long key cut in the middle for the editor. The copied text keeps it whole. */

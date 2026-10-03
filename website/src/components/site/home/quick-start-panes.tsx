@@ -3,6 +3,7 @@ import { Check, ChevronLeft, ChevronRight, KeyRound, Lock, RefreshCw } from "luc
 import {
   COMPOSE_SECRET_LINES,
   TOKEN_CLASS,
+  continuesOnNextLine,
   shortenSecret,
   type CodeLine,
 } from "@/components/site/home/code-tokens";
@@ -202,7 +203,7 @@ const RUN_OUTPUT: CodeLine[] = [
   [["7f3a9c2e41b8d6f05e13a7c9b2d4e8f1a6c3b5d7e9f0a2b4c6d8e0f1a3b5c7d9", "value"]],
 ];
 
-/** The second terminal: the docker run command is pasted, then Docker answers. */
+/** The second terminal: the commands are pasted, then Docker answers. */
 export function RunTerminal({ stage, local, lines: source }: { stage: number; local: number; lines: CodeLine[] }) {
   let budget = stage === 0 ? local * 8 : Infinity;
   const lines: { line: CodeLine; budget: number }[] = [];
@@ -215,10 +216,10 @@ export function RunTerminal({ stage, local, lines: source }: { stage: number; lo
   const shown = stage === 0 ? 0 : stage > 1 ? RUN_OUTPUT.length : Math.min(RUN_OUTPUT.length, Math.floor(local / 6) + 1);
 
   return (
-    <div aria-hidden="true" className="absolute inset-0 overflow-x-auto px-5 py-4 font-mono text-[13px] leading-6 whitespace-pre">
+    <div aria-hidden="true" className="absolute inset-0 overflow-x-auto px-4 py-4 font-mono text-[13px] leading-6 whitespace-pre">
       {lines.map(({ line, budget: b }, i) => (
         <div key={i}>
-          {i === 0 && <span className="text-[#60a5fa]">~ $ </span>}
+          {(i === 0 || !continuesOnNextLine(source[i - 1])) && <span className="text-[#60a5fa]">~ $ </span>}
           <Tokens line={line} budget={b} />
           {pasting && i === lines.length - 1 && <Cursor />}
         </div>

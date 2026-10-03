@@ -87,9 +87,12 @@ Get DBackup running in minutes with Docker:
 ::: code-group
 
 ```bash [Docker Run]
+# Once: write both secrets to .env and keep the file
+echo "ENCRYPTION_KEY=$(openssl rand -hex 32)" > .env
+echo "BETTER_AUTH_SECRET=$(openssl rand -base64 32)" >> .env
+
 docker run -d --name dbackup -p 3000:3000 \
-  -e ENCRYPTION_KEY="$(openssl rand -hex 32)" \
-  -e BETTER_AUTH_SECRET="$(openssl rand -base64 32)" \
+  --env-file .env \
   -e BETTER_AUTH_URL="https://localhost:3000" \
   -v "$(pwd)/data:/data" \
   -v "$(pwd)/backups:/backups" \

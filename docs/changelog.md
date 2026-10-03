@@ -132,6 +132,7 @@ All notable changes to DBackup are documented here.
 - **api**: The API reference documents the new endpoints, like the runs of a job, the folder browser of a connection and download links, and lists every bulk endpoint and bulk action again. The download of a recovery kit has its real address.
 - **docs**: The developer guide explains the task colors, the adapter form, how audit entries and deletes are kept and how the configuration backup copies the database.
 - **docs**: A security policy explains how to report a vulnerability privately, the contributing guides base every pull request on the dev branch, and the README is shorter.
+- **docs**: The `docker run` examples write both secrets to a `.env` file once and read it with `--env-file`, so a container made again for an update keeps its keys.
 
 ### 🧪 Tests
 

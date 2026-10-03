@@ -38,7 +38,7 @@ const TABS = {
     lang: "Shell",
     lines: runLines,
     steps: [
-      { title: "Copy the command", text: "Both secrets are generated as it runs.", status: "Paste the command" },
+      { title: "Copy the commands", text: "They write both secrets to .env once, keep that file.", status: "Paste the commands" },
       { title: "Start the container", text: "Docker pulls the image and starts it on port 3000.", status: "Pulling the image and starting it" },
       { title: "Follow Quick Setup", text: "Source, destination and schedule in one flow.", status: "Quick Setup on localhost:3000" },
     ],

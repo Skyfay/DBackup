@@ -508,8 +508,9 @@ export interface DirectoryDownloadOptions {
      * Aborts the collection.
      *
      * Checked before the listing, by the walk itself where the adapter supports it, and
-     * before each file transfer starts. Transfers already in flight run to completion, so
-     * cancellation is bounded by one file rather than by the rest of the source.
+     * before each file transfer starts. A transfer already in flight is torn down rather
+     * than waited out - the connections underneath it are dropped, and Rsync kills the
+     * process it drives - so a cancel takes effect on a single large file too.
      */
     signal?: AbortSignal;
     /**

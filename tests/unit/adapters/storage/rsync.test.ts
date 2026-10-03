@@ -716,6 +716,244 @@ describe("RsyncAdapter", () => {
         });
     });
 
+    // ===== downloadDirectory() on an incremental run =====
+
+    describe("downloadDirectory() incremental", () => {
+        /** One line of the remote `find`, as the listing parses it. */
+        const found = (relativePath: string, size = 10) => `/backups/Job/${relativePath}\t${size}\t1700000000.0\tf\t`;
+        /** The same for a symbolic link, which carries its target in the last column. */
+        const foundLink = (relativePath: string, target: string) => `/backups/Job/${relativePath}\t7\t1700000000.0\tl\t${target}`;
+
+        /** The relative paths rsync was handed through --files-from. */
+        function handedToRsync(): string[] {
+            const fromList = mockRsyncSet.mock.calls.find(([option]) => option === "files-from")?.[1] as string | undefined;
+            if (!fromList) return [];
+            const written = mockFsWriteFile.mock.calls.find(([file]) => file === fromList)?.[1] as string;
+            return written.split("\0").filter(Boolean);
+        }
+
+        it("hands rsync only the changed files and carries the rest forward", async () => {
+            sshSucceeds([found("changed.txt", 100), found("same.txt", 200), found("also-same.txt", 300)].join("\n"));
+
+            const result = await RsyncAdapter.downloadDirectory!(
+                agentConfig, "Job", "/local/job", undefined, undefined, undefined,
+                { shouldDownload: (entry) => entry.relativePath === "changed.txt" }
+            );
+
+            // The destination tree is new on every run, so rsync cannot work this out itself.
+            expect(handedToRsync()).toEqual(["changed.txt"]);
+            // Every file still belongs to the snapshot. The two that did not move are marked
+            // unchanged, which is what the runner turns into a carry-forward reference.
+            expect(result.entries.map((e) => [e.relativePath, e.unchanged ?? false])).toEqual([
+                ["changed.txt", false],
+                ["same.txt", true],
+                ["also-same.txt", true],
+            ]);
+            expect(result.files).toBe(3);
+            // Only what moved, so the run reports the bandwidth it actually spent.
+            expect(result.bytes).toBe(100);
+        });
+
+        it("never asks about a symbolic link and always transfers it", async () => {
+            sshSucceeds([found("a.txt"), foundLink("link", "/etc/hosts")].join("\n"));
+            const shouldDownload = vi.fn().mockReturnValue(false);
+
+            const result = await RsyncAdapter.downloadDirectory!(
+                agentConfig, "Job", "/local/job", undefined, undefined, undefined, { shouldDownload }
+            );
+
+            // Marking a link unchanged would hand it to the carry-forward path, which links do
+            // not take part in, and it would disappear from the snapshot.
+            expect(shouldDownload).toHaveBeenCalledTimes(1);
+            expect(shouldDownload).toHaveBeenCalledWith(expect.objectContaining({ relativePath: "a.txt" }));
+            expect(handedToRsync()).toEqual(["link"]);
+            expect(result.entries.find((e) => e.relativePath === "link")?.unchanged).toBeUndefined();
+        });
+
+        it("starts no transfer at all when nothing changed", async () => {
+            sshSucceeds([found("a.txt", 10), found("b.txt", 20)].join("\n"));
+            const onLog = vi.fn();
+
+            const result = await RsyncAdapter.downloadDirectory!(
+                agentConfig, "Job", "/local/job", undefined, undefined, onLog, { shouldDownload: () => false }
+            );
+
+            // An empty list is legal, but running rsync to copy nothing still costs an SSH login.
+            expect(mockRsyncExecute).not.toHaveBeenCalled();
+            expect(result).toEqual({
+                files: 2,
+                bytes: 0,
+                entries: [
+                    { relativePath: "a.txt", size: 10, lastModified: new Date(1700000000000), unchanged: true },
+                    { relativePath: "b.txt", size: 20, lastModified: new Date(1700000000000), unchanged: true },
+                ],
+                failures: [],
+            });
+            expect(onLog.mock.calls.map(([message]) => String(message)))
+                .toContain("2 of 2 file(s) unchanged, not transferred");
+        });
+
+        it("counts the files it skipped towards the progress it reports", async () => {
+            sshSucceeds([found("changed.txt", 100), found("same.txt", 200)].join("\n"));
+            mockRsyncExecute.mockImplementation(
+                (callback: (err: null, code: number, cmd: string) => void, stdoutCb: (data: Buffer) => void) => {
+                    stdoutCb(Buffer.from(" 100  100%   1.00MB/s    0:00:00  (xfr#1, to-chk=0/1)\n"));
+                    callback(null, 0, "rsync ...");
+                }
+            );
+            const onProgress = vi.fn();
+
+            await RsyncAdapter.downloadDirectory!(
+                agentConfig, "Job", "/local/job", undefined, onProgress, undefined,
+                { shouldDownload: (entry) => entry.relativePath === "changed.txt" }
+            );
+
+            // rsync counts only the one file it was given. Reported against the whole source,
+            // or an incremental would start at zero out of two and jump at the end.
+            expect(onProgress).toHaveBeenCalledWith(100, 100, 2, 2);
+        });
+
+        it("transfers everything when no predicate is given, as a full run does", async () => {
+            sshSucceeds([found("a.txt", 10), found("b.txt", 20)].join("\n"));
+
+            const result = await RsyncAdapter.downloadDirectory!(agentConfig, "Job", "/local/job");
+
+            expect(handedToRsync()).toEqual(["a.txt", "b.txt"]);
+            expect(result.entries.every((e) => e.unchanged === undefined)).toBe(true);
+            expect(result.bytes).toBe(30);
+        });
+    });
+
+    // ===== downloadDirectory() cancellation =====
+
+    describe("downloadDirectory() cancel", () => {
+        const found = (relativePath: string, size = 10) => `/backups/Job/${relativePath}\t${size}\t1700000000.0\tf\t`;
+
+        /**
+         * A transfer that stays alive until something kills it, as a large file would.
+         *
+         * Returns the kill spy and a way to let the process report its own exit, so a test
+         * can choose whether it dies on the signal or ignores it.
+         */
+        function rsyncHangs() {
+            const kill = vi.fn();
+            let report: ((error: Error | null) => void) | undefined;
+            mockRsyncExecute.mockImplementation((callback: (err: Error | null, code: number, cmd: string) => void) => {
+                report = (error) => callback(error, error ? 20 : 0, "rsync ...");
+                return { kill };
+            });
+            return { kill, started: () => report !== undefined, exits: (error: Error | null) => report!(error) };
+        }
+
+        it("ends the running transfer instead of waiting it out", async () => {
+            sshSucceeds(found("big.bin", 1_000_000_000));
+            const proc = rsyncHangs();
+            const controller = new AbortController();
+
+            const pending = RsyncAdapter.downloadDirectory!(
+                agentConfig, "Job", "/local/job", undefined, undefined, undefined, { signal: controller.signal }
+            );
+            await vi.waitFor(() => expect(proc.started()).toBe(true));
+
+            // rsync has no way to be asked to stop, so the process is signalled.
+            controller.abort(new Error("Cancelled by the user"));
+            expect(proc.kill).toHaveBeenCalledWith("SIGTERM");
+
+            // The cancel answers now. Waiting for the process to report its own death would
+            // hang the run on a child that cannot be reached at all.
+            await expect(pending).rejects.toThrow("Cancelled by the user");
+        });
+
+        it("kills a transfer outright when it does not end on the signal", async () => {
+            vi.useFakeTimers();
+            try {
+                sshSucceeds(found("big.bin", 1_000_000_000));
+                const proc = rsyncHangs();
+                const controller = new AbortController();
+
+                const pending = RsyncAdapter.downloadDirectory!(
+                    agentConfig, "Job", "/local/job", undefined, undefined, undefined, { signal: controller.signal }
+                );
+                await vi.waitFor(() => expect(proc.started()).toBe(true));
+                controller.abort(new Error("Cancelled by the user"));
+                await expect(pending).rejects.toThrow("Cancelled by the user");
+
+                // A transfer blocked on a socket whose other end is gone never handles
+                // SIGTERM, so without this a cancel waits out the TCP timeout.
+                expect(proc.kill).not.toHaveBeenCalledWith("SIGKILL");
+                vi.advanceTimersByTime(5000);
+                expect(proc.kill).toHaveBeenCalledWith("SIGKILL");
+            } finally {
+                vi.useRealTimers();
+            }
+        });
+
+        it("leaves a transfer that ends on the signal alone afterwards", async () => {
+            vi.useFakeTimers();
+            try {
+                sshSucceeds(found("big.bin", 1_000_000_000));
+                const proc = rsyncHangs();
+                const controller = new AbortController();
+
+                const pending = RsyncAdapter.downloadDirectory!(
+                    agentConfig, "Job", "/local/job", undefined, undefined, undefined, { signal: controller.signal }
+                );
+                await vi.waitFor(() => expect(proc.started()).toBe(true));
+                controller.abort(new Error("Cancelled by the user"));
+                await expect(pending).rejects.toThrow("Cancelled by the user");
+
+                // It reported its exit, so there is nothing left to escalate against. A
+                // SIGKILL at this point would land on whatever reused the process id.
+                proc.exits(new Error("rsync error: received SIGTERM"));
+                vi.advanceTimersByTime(5000);
+                expect(proc.kill).not.toHaveBeenCalledWith("SIGKILL");
+            } finally {
+                vi.useRealTimers();
+            }
+        });
+
+        it("reports a cancelled run as cancelled, not as a source that failed", async () => {
+            sshSucceeds(found("big.bin", 1_000_000_000));
+            const proc = rsyncHangs();
+            const controller = new AbortController();
+            const onLog = vi.fn();
+
+            const pending = RsyncAdapter.downloadDirectory!(
+                agentConfig, "Job", "/local/job", undefined, undefined, onLog, { signal: controller.signal }
+            );
+            await vi.waitFor(() => expect(proc.started()).toBe(true));
+            controller.abort(new Error("Cancelled by the user"));
+            await expect(pending).rejects.toThrow("Cancelled by the user");
+            proc.exits(new Error("rsync error: received SIGTERM"));
+
+            // A red line in the history of a run whose only story is that someone stopped it.
+            expect(onLog.mock.calls.filter(([, level]) => level === "error")).toEqual([]);
+        });
+
+        it("opens no SSH session when the run was cancelled before it started", async () => {
+            const controller = new AbortController();
+            controller.abort(new Error("Cancelled by the user"));
+
+            await expect(RsyncAdapter.downloadDirectory!(
+                agentConfig, "Job", "/local/job", undefined, undefined, undefined, { signal: controller.signal }
+            )).rejects.toThrow("Cancelled by the user");
+
+            // Checked before the listing, so a cancel during an earlier source does not cost
+            // this one a login and a `find` over the whole tree.
+            expect(mockExecFileCb).not.toHaveBeenCalled();
+            expect(mockRsyncExecute).not.toHaveBeenCalled();
+        });
+
+        it("transfers to the end when no signal is given", async () => {
+            sshSucceeds(found("a.txt"));
+
+            const result = await RsyncAdapter.downloadDirectory!(agentConfig, "Job", "/local/job");
+
+            expect(result.files).toBe(1);
+            expect(mockRsyncExecute).toHaveBeenCalled();
+        });
+    });
+
     // ===== browseDirectories() =====
 
     describe("browseDirectories()", () => {

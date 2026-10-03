@@ -35,7 +35,7 @@
 -->
 
 <div align="center">
-  <video src="https://github.com/user-attachments/assets/1f6ba8c7-8b66-4b43-a0de-d4c4e0617205" width="800" autoplay muted loop playsinline></video>
+  <img src="https://raw.githubusercontent.com/Skyfay/DBackup/main/docs/public/readme-banner.png" alt="The DBackup overview on a desktop and a phone, with the databases it backs up" width="800">
 </div>
 
 ### What is DBackup?

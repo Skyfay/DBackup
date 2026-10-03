@@ -135,6 +135,7 @@ All notable changes to DBackup are documented here.
 - **docs**: The developer guide explains the task colors, the adapter form, how audit entries and deletes are kept and how the configuration backup copies the database.
 - **docs**: A security policy explains how to report a vulnerability privately, the contributing guides base every pull request on the dev branch, and the README is shorter.
 - **docs**: The `docker run` examples write both secrets to a `.env` file once and read it with `--env-file`, so a container made again for an update keeps its keys.
+- **docs**: The README opens with a banner of the new interface on a desktop and a phone instead of a video of the old one.
 
 ### 🧪 Tests
 

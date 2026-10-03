@@ -1,4 +1,6 @@
 declare module "rsync" {
+    import type { ChildProcess } from "child_process";
+
     class Rsync {
         constructor();
         shell(shell: string): Rsync;
@@ -14,11 +16,12 @@ declare module "rsync" {
         env(env: Record<string, string>): Rsync;
         command(): string;
         args(): string[];
+        /** Returns the spawned child, which is what makes a running transfer killable. */
         execute(
             callback: (error: Error | null, code: number, cmd: string) => void,
             stdoutHandler?: (data: Buffer) => void,
             stderrHandler?: (data: Buffer) => void
-        ): any;
+        ): ChildProcess;
         dry(): Rsync;
         compress(): Rsync;
         archive(): Rsync;

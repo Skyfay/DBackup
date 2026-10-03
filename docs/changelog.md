@@ -331,6 +331,7 @@ All notable changes to DBackup are documented here.
 - **docs**: The guides name the tabs of the Connections page and their New buttons as the app shows them, and the restore guide the dialog that asks for a key.
 - **api**: The API reference lists every action of `POST /api/adapters/bulk`, not only the delete.
 - **docs**: The MySQL guide names the dump flags DBackup really passes, the new switches and the rights a backup and a restore need. The developer pages show the real dump arguments.
+- **docs**: A security policy in SECURITY.md explains how to report a vulnerability privately. The contributing guides base every pull request on the dev branch and name the Node and pnpm versions CI uses.
 - **docs**: The destination guide describes air-gapped destinations, and the notification, verification and Backups guides follow them along with the new settings for several connections. The runner and health check pages for developers describe how a run and the health check treat one.
 
 
@@ -353,6 +354,8 @@ All notable changes to DBackup are documented here.
 ### 🔧 CI/CD
 
 - **docker**: The image runs a script before the migrations that swaps in a restored configuration backup.
+- **ci**: Lint, type check, unit tests and the docs build also run on pull requests into dev, not only into main.
+- **github**: The repository shows a Sponsor button that leads to GitHub Sponsors.
 
 
 ### 🐳 Docker

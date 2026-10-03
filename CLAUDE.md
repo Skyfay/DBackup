@@ -27,6 +27,7 @@ Claude Code loads the nearest `CLAUDE.md` when you touch files in a directory. R
 6. **Never run `prisma migrate dev` while `pnpm dev` is running**, and never use `prisma db push`. See [Prisma migrations](#prisma-migrations).
 7. **Every Server Action and API route starts with a permission check.** See [src/CLAUDE.md](src/CLAUDE.md).
 8. **Never run `git commit`, `git push`, or `git merge`.** The maintainer commits everything himself. Finish the work, run `pnpm validate`, leave the files in the working tree, and report what changed. This holds even when a plan, a task list, or your own earlier message says "one commit per step" - a plan you wrote is not permission. Never add a `Co-Authored-By` trailer for an AI tool. If a commit was already created by mistake, undo it with `git reset --soft HEAD~1` so the work stays staged, and never force-push to fix it without asking first.
+9. **Branches: feature branch, then `dev`, then `main`.** Work happens on a feature branch off `dev`, its pull request goes into `dev`, and a release merges `dev` into `main`. A pull request or a base branch suggested to anyone points at `dev`, never at `main`.
 
 ## Architecture (4 layers)
 

@@ -2,9 +2,11 @@ import { BaseDialect } from "../../common/dialect";
 import { MySQLConfig } from "@/lib/adapters/definitions";
 import type { ExecutionHost } from "@/lib/transport";
 import { buildConnectionArgs } from "../args";
+import { contentArgs, optionTokens, type DumpClient } from "../dump-content";
 
 export class MySQLBaseDialect extends BaseDialect {
-    getDumpArgs(config: MySQLConfig, databases: string[], host?: ExecutionHost): string[] {
+    /** `client` is the dump tool that runs, which decides the flags only MySQL's own mysqldump knows. */
+    getDumpArgs(config: MySQLConfig, databases: string[], host?: ExecutionHost, client?: DumpClient): string[] {
         const args = [
             ...buildConnectionArgs(config, host, { includeSsl: false }),
             '--net-buffer-length=16384' // Limit INSERT size to ~16KB to prevent OOM during restore
@@ -12,9 +14,9 @@ export class MySQLBaseDialect extends BaseDialect {
 
         this.appendAuthArgs(args, config);
 
-        if (config.options) {
-            args.push(...config.options.split(' ').filter((s: string) => s.trim().length > 0));
-        }
+        // What the dump holds besides tables, before the extra options so a --skip-routines there wins.
+        args.push(...contentArgs(config, client));
+        args.push(...optionTokens(config.options));
 
         // Single database dump (Multi-DB is handled via TAR in dump.ts)
         if (databases.length === 1) {

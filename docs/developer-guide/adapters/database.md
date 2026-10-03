@@ -339,55 +339,39 @@ const MySQLSchema = z.object({
   password: z.string().optional(),
   database: z.union([z.string(), z.array(z.string())]).default(""),
   options: z.string().optional().describe("Additional mysqldump options"),
+  singleTransaction: z.boolean().default(true),
+  routines: z.boolean().default(true),
+  events: z.boolean().default(true),
   disableSsl: z.boolean().default(false).describe("Disable SSL"),
   ...sshFields,
 });
 ```
 
+`singleTransaction`, `routines` and `events` are the switches under **Options** in the form. A source saved before they existed lacks them, and every one that is not `false` counts as on.
+
 ### Dump Implementation
 
+`dumpOne()` dumps one database through `dumpSingleDatabase()` in `mysql/dump.ts`:
+
+1. `host.which("mariadb-dump", "mysqldump")` picks the tool, and `dumpClientOf()` in `mysql/dump-content.ts` asks it for `--version` once per host. Only MySQL's own mysqldump knows `--set-gtid-purged`, MariaDB's refuses it.
+2. `readableContent()` asks the server with the login of the source: `SHOW EVENTS` fails without the EVENT privilege, and routines in `information_schema.ROUTINES` without a definition are ones the login may not read. The dump tool would give up on either, so the part is left out for that database with a warning.
+3. `dialect.getDumpArgs(config, [dbName], host, client)` builds the argv.
+
 ```typescript
-async dump(config, destinationPath, streams = []) {
-  const validated = MySQLSchema.parse(config);
-
-  const args = [
-    `-h${validated.host}`,
-    `-P${validated.port}`,
-    `-u${validated.username}`,
-    `--password=${validated.password}`,
-    "--single-transaction",
-    "--routines",
-    "--triggers",
-  ];
-
-  // Single database or all
-  if (validated.database) {
-    args.push(validated.database);
-  } else if (validated.databases?.length) {
-    args.push("--databases", ...validated.databases);
-  } else {
-    args.push("--all-databases");
-  }
-
-  // Execute mysqldump
-  const { stdout, stderr } = await execAsync(
-    `mysqldump ${args.join(" ")}`
-  );
-
-  // Write through stream pipeline
-  await pipeline(
-    Readable.from(stdout),
-    ...streams,
-    createWriteStream(destinationPath)
-  );
-
-  return {
-    success: true,
-    size: (await stat(destinationPath)).size,
-    logs: stderr ? [stderr] : [],
-  };
-}
+[
+  "-h", "db.internal", "-P", "3306", "-u", "backup", "--protocol=tcp",
+  "--net-buffer-length=16384",
+  "--single-transaction", "--routines", "--events", // contentArgs()
+  "--set-gtid-purged=OFF",                            // MySQL's own mysqldump only
+  ...optionTokens(config.options),                    // the extra options, which win
+  "--databases", "shop",
+  "--default-character-set=utf8mb4",                  // MySQL 8 and later
+]
 ```
+
+The content flags go before the extra options, so a `--skip-routines` there still wins. `plannedContent()` leaves out a flag the extra options already set in any form, and the snapshot when they lock the tables with `--lock-tables` or `--lock-all-tables`, which the tools would silently drop or refuse next to it. Triggers need no flag, the tools include them on their own.
+
+The password reaches the tool through a `--defaults-file` that `withAuthArgs()` writes, never through argv, and stdout goes straight into the dump file.
 
 ### Restore Implementation
 

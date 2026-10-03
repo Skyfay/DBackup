@@ -91,6 +91,34 @@ describe("describeProblem", () => {
     });
 });
 
+describe("MySQL and MariaDB lines", () => {
+    const source = { subject: "Shop cluster", step: "Dumping Databases", jobName: "Shop offsite", subjectKind: "source" as const, subjectId: "src-1" };
+
+    it("tell which part of a database the dump left out and what to grant, with the source to open", () => {
+        const events = describeProblem("Events of shop left out: the login may not read them. Grant it EVENT on the database, or turn off Events in the source.", "warning", source);
+        const routines = describeProblem("Stored procedures and functions of shop left out: the login may not read function f_add. Grant it SHOW_ROUTINE ...", "warning", source);
+
+        expect(events).toMatchObject({ title: "The events of shop are not in the backup", actions: [{ kind: "source", id: "src-1", label: "Open source" }] });
+        expect(events.help).toContain("Grant it EVENT");
+        expect(routines.title).toBe("Routines of shop are not in the backup");
+        expect(routines.help).toContain("SHOW_ROUTINE");
+    });
+
+    it("explain a restore that binary logging or another definer stops", () => {
+        const restore = { ...source, step: "Restoring" };
+
+        expect(describeProblem("MySQL: ERROR 1419 (HY000) at line 60: You do not have the SUPER privilege and binary logging is enabled (you *might* want to use the less safe log_bin_trust_function_creators variable)", "error", restore).help)
+            .toContain("log_bin_trust_function_creators");
+        for (const line of [
+            "MySQL: ERROR 1227 (42000) at line 60: Access denied; you need (at least one of) the SUPER privilege(s) for this operation",
+            "MySQL: ERROR 1227 (42000) at line 56: Access denied; you need (at least one of) the SUPER or SET_ANY_DEFINER privilege(s) for this operation",
+            "MySQL: ERROR 1227 (42000) at line 60: Access denied; you need (at least one of) the SET USER privilege(s) for this operation",
+        ]) {
+            expect(describeProblem(line, "error", restore).title).toBe("The backup holds objects of another user");
+        }
+    });
+});
+
 describe("markSteps", () => {
     it("marks the lines of each problem and counts a failed notification on its step", () => {
         const { problems, lineProblems } = buildProblems(offsiteLog, [telegram], targets);

@@ -14,6 +14,9 @@ describe('MySQL Dialects', () => {
         port: 3306,
         user: 'root',
         database: 'testdb',
+        singleTransaction: true,
+        routines: true,
+        events: true,
         disableSsl: true,
     };
 

@@ -84,7 +84,8 @@ export const PLACEHOLDERS: Record<string, string> = {
     "mssql.sshPort": "22",
     "mssql.sshPrivateKey": "-----BEGIN RSA PRIVATE KEY-----\n\n\n-----END RSA PRIVATE KEY-----",
     // Options Examples
-    "mysql.options": "--single-transaction --quick",
+    "mysql.options": "--ignore-table=shop.sessions",
+    "mariadb.options": "--ignore-table=shop.sessions",
     "postgres.options": "--clean --if-exists",
     "mongodb.options": "--gzip --oplog",
     "firebird.options": "-v -g",

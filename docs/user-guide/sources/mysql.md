@@ -33,7 +33,10 @@ MySQL / MariaDB requires a [Credential Profile](/user-guide/security/credential-
 | **Port** | MySQL port | `3306` | ✅ |
 | **Login** | `USERNAME_PASSWORD` credential profile (username + password) | - | ✅ |
 | **Database** | Database name(s) to backup | All databases | ❌ |
-| **Extra options** | Extra `mysqldump` flags | - | ❌ |
+| **Extra options** | Extra `mysqldump` flags. They come after the three switches below and win over them | - | ❌ |
+| **Consistent snapshot** | Reads each database at one point in time (`--single-transaction`) instead of locking its tables while it is dumped | On | ❌ |
+| **Stored procedures and functions** | Backs up the routines of each database (`--routines`) | On | ❌ |
+| **Events** | Backs up the scheduled events of each database (`--events`) | On | ❌ |
 | **Disable SSL** | Disable SSL for self-signed certificates | `false` | ❌ |
 
 ### SSH Mode Fields
@@ -119,12 +122,23 @@ GRANT SELECT, SHOW VIEW, TRIGGER, LOCK TABLES, EVENT ON *.* TO 'dbackup'@'%';
 FLUSH PRIVILEGES;
 
 -- For restore operations (optional):
-GRANT CREATE, DROP, ALTER, INSERT, DELETE, UPDATE ON *.* TO 'dbackup'@'%';
+GRANT CREATE, DROP, ALTER, INDEX, REFERENCES, INSERT, LOCK TABLES, CREATE VIEW, CREATE ROUTINE, ALTER ROUTINE ON *.* TO 'dbackup'@'%';
 ```
 
 ::: tip Minimal Permissions
-For backup-only operations, `SELECT`, `SHOW VIEW`, `TRIGGER`, and `LOCK TABLES` are sufficient.
+For backups, `SELECT`, `SHOW VIEW`, `TRIGGER` and `EVENT` are enough. `LOCK TABLES` is only needed with **Consistent snapshot** turned off.
+
+`SELECT` on `*.*` also lets the login read the stored procedures and functions of other users. A login with `SELECT` on single databases needs `SHOW_ROUTINE` on MySQL 8.0.20 and later, or `SELECT` on `mysql.proc` on older MySQL and on MariaDB, otherwise their routines are missing from the backup without an error.
 :::
+
+#### What a restore needs
+
+A restore runs as the login of the source and creates tables, views, triggers, routines and events. The grants above cover that together with the ones for backups. Two cases need more:
+
+- **Objects of another user**: a trigger, view, routine or event that names another user as its definer needs `SUPER`, `SET_ANY_DEFINER` (MySQL 8.2 and later), `SET_USER_ID` (MySQL 8.0) or `SET USER` (MariaDB).
+- **Binary logging**: with it on, the default on MySQL 8.0 and later, MySQL lets only a login with `SUPER` create triggers and stored functions. Restore with such a login, or set `log_bin_trust_function_creators = 1` on the server.
+
+The restore stops at the first statement it may not run, after the tables and their data are in. Restored events start running on the target if the event scheduler is on there, so restoring production into a staging server runs its events there too.
 
 ### 2. Configure in DBackup
 
@@ -186,12 +200,21 @@ Use `mysql` as the hostname in DBackup.
 
 ### Direct Mode
 
-DBackup uses `mysqldump` (or `mariadb-dump` for MariaDB) with these default flags:
+DBackup runs `mariadb-dump` from its image against MySQL and MariaDB alike, with these flags for the switches under **Options**:
 
-- `--single-transaction` - Consistent backup without locking (InnoDB)
-- `--routines` - Includes stored procedures and functions
-- `--triggers` - Includes triggers
-- `--events` - Includes scheduled events
+- `--single-transaction` - **Consistent snapshot**, reads InnoDB tables at one point in time without blocking writes
+- `--routines` - **Stored procedures and functions**
+- `--events` - **Events**
+
+Triggers and views are always included, the dump tools add them on their own.
+
+**Extra options** come after these flags, so `--skip-routines` there turns the routines off as well. DBackup adds no flag the extra options already set, and leaves out the snapshot when they contain `--lock-tables` or `--lock-all-tables`, which cannot be combined with it.
+
+::: warning MyISAM and Aria tables
+The snapshot only covers transactional tables. MyISAM and Aria tables are read without a lock, so writes to them during the dump can leave them inconsistent. Turn off **Consistent snapshot** for a source whose MyISAM tables change while it is backed up, which locks the tables of each database during its dump instead.
+:::
+
+Before it dumps a database, DBackup checks whether the login may read its events and the code of its routines. The dump tools give up on either instead of skipping it, even for a database without any events. So DBackup leaves the part out for that database and writes a warning to the run with the right to grant, and the backup of everything else goes ahead.
 
 Output: `.sql` file with `CREATE` and `INSERT` statements.
 
@@ -201,7 +224,7 @@ In SSH mode, DBackup:
 
 1. Connects to the remote server via SSH
 2. Checks that `mysqldump` (or `mariadb-dump`) is available on the remote host
-3. Executes the dump command remotely with the same flags as direct mode
+3. Executes the dump command remotely with the same flags as direct mode. When the remote tool is MySQL's own `mysqldump`, DBackup adds `--set-gtid-purged=OFF`, so a server with GTIDs needs no `RELOAD` for the snapshot and the dump carries no GTID set that a restore onto another server refuses
 4. Streams the SQL output back over the SSH connection
 5. Applies compression and encryption locally on the DBackup server
 6. Uploads the processed backup to the configured storage destination
@@ -262,7 +285,7 @@ ERROR 1045 (28000): Access denied for user 'backup'@'172.17.0.1'
 **Solution:** Grant access from Docker network:
 ```sql
 CREATE USER 'dbackup'@'172.17.%' IDENTIFIED BY 'password';
-GRANT SELECT, SHOW VIEW, TRIGGER, LOCK TABLES ON *.* TO 'dbackup'@'172.17.%';
+GRANT SELECT, SHOW VIEW, TRIGGER, LOCK TABLES, EVENT ON *.* TO 'dbackup'@'172.17.%';
 ```
 
 ### Connection Timeout

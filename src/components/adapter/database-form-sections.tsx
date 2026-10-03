@@ -32,6 +32,15 @@ const DESCRIPTIONS: Record<string, string> = {
 
 /** Booleans of the database schemas, as sentences that are true when the switch is on. */
 const SWITCHES: Record<string, { title: string; description: string }> = {
+    singleTransaction: {
+        title: "Consistent snapshot",
+        description: "Reads InnoDB tables at one point in time without blocking writes. Off, the tables of each database are locked while it is dumped.",
+    },
+    routines: {
+        title: "Stored procedures and functions",
+        description: "Backs them up too. The login needs SHOW_ROUTINE on MySQL 8.0.20 and later, or SELECT on mysql.proc.",
+    },
+    events: { title: "Events", description: "Backs up the scheduled events too. The login needs the EVENT privilege." },
     tls: { title: "TLS", description: "Encrypt the connection to the server." },
     disableSsl: { title: "Disable SSL", description: "For development databases with a self-signed certificate." },
     encrypt: { title: "Encrypt the connection", description: "Required by Azure SQL and most hosted servers." },

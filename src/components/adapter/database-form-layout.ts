@@ -25,7 +25,8 @@ export function sshToolOf(adapterId: string): string | undefined {
  */
 const OPTION_KEYS = [
     "authenticationDatabase", "mode", "sentinelMasterName", "sentinelNodes", "database",
-    "firebirdBinaryPath", "requestTimeout", "options", "tls", "disableSsl", "encrypt", "trustServerCertificate",
+    "firebirdBinaryPath", "requestTimeout", "options", "singleTransaction", "routines", "events",
+    "tls", "disableSsl", "encrypt", "trustServerCertificate",
 ];
 
 const REDIS_IDS = new Set(["redis", "valkey"]);

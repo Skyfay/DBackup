@@ -42,6 +42,20 @@ export function fillRequiredText(adapter: AdapterDefinition, config: Record<stri
 }
 
 /**
+ * A switch a saved config lacks shows the default of its schema, which is what the adapter does
+ * without it. A connection saved before a switch existed would otherwise show it off, like the
+ * dump switches of MySQL that are on for every source saved earlier.
+ */
+export function fillMissingSwitches(adapter: AdapterDefinition, config: Record<string, unknown>): Record<string, unknown> {
+    for (const [key, node] of Object.entries(adapter.configSchema.shape as Record<string, SchemaNode>)) {
+        if (config[key] !== undefined || baseType(node) !== "boolean") continue;
+        const parsed = node.safeParse(undefined);
+        if (parsed.success && typeof parsed.data === "boolean") config[key] = parsed.data;
+    }
+    return config;
+}
+
+/**
  * A new connection starts with the defaults its schema declares, like the port, and with
  * an empty list where the schema wants one. Without it a required list such as the Firebird
  * aliases reports a missing value in Zod's words instead of its own message.

@@ -17,6 +17,13 @@ describe("database form parts", () => {
         expect(ids("mysql", {})).toEqual(["connection", "options", "behavior"]);
     });
 
+    it("lists the dump switches of MySQL and MariaDB under Options, after the extra options and before SSL", () => {
+        for (const id of ["mysql", "mariadb"]) {
+            const options = databaseLayout(adapter(id), { connectionMode: "direct" }).find((section) => section.id === "options")?.keys;
+            expect(options).toEqual(["options", "singleTransaction", "routines", "events", "disableSsl"]);
+        }
+    });
+
     it("keeps host, port and login in the first part for a direct connection", () => {
         const [connection] = databaseLayout(adapter("postgres"), { connectionMode: "direct" });
         expect(connection.keys).toEqual(expect.arrayContaining(["host", "port", LOGIN_KEY]));

@@ -8,6 +8,11 @@ export const MySQLSchema = z.object({
     password: z.string().optional(),
     database: z.union([z.string(), z.array(z.string())]).default(""),
     options: z.string().optional().describe("Additional mysqldump options"),
+    // What the dump holds besides tables, views and triggers. A source saved before these existed
+    // lacks them, which counts as on, see `dump-content.ts`.
+    singleTransaction: z.boolean().default(true).describe("Read each database from one consistent snapshot instead of locking its tables"),
+    routines: z.boolean().default(true).describe("Include stored procedures and functions"),
+    events: z.boolean().default(true).describe("Include scheduled events"),
     disableSsl: z.boolean().default(false).describe("Disable SSL (Use for self-signed development DBs)"),
     ...sshFields,
 });
@@ -19,6 +24,11 @@ export const MariaDBSchema = z.object({
     password: z.string().optional(),
     database: z.union([z.string(), z.array(z.string())]).default(""),
     options: z.string().optional().describe("Additional mariadb-dump options"),
+    // What the dump holds besides tables, views and triggers. A source saved before these existed
+    // lacks them, which counts as on, see `dump-content.ts`.
+    singleTransaction: z.boolean().default(true).describe("Read each database from one consistent snapshot instead of locking its tables"),
+    routines: z.boolean().default(true).describe("Include stored procedures and functions"),
+    events: z.boolean().default(true).describe("Include scheduled events"),
     disableSsl: z.boolean().default(false).describe("Disable SSL (Use for self-signed development DBs)"),
     ...sshFields,
 });

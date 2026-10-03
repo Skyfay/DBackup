@@ -72,6 +72,33 @@ const KNOWN: KnownProblem[] = [
         }),
     },
     {
+        // The dump step leaves out what the login of a MySQL or MariaDB source may not read.
+        test: /^(Events|Stored procedures and functions) of (.+?) left out: the login may not read/,
+        describe: (context, match) => ({
+            title: match[1] === "Events" ? `The events of ${match[2]} are not in the backup` : `Routines of ${match[2]} are not in the backup`,
+            help: match[1] === "Events"
+                ? "The login may not read them. Grant it EVENT on the database, or turn off Events in the Options of the source."
+                : "The login may not read their code. Grant it SHOW_ROUTINE on MySQL 8.0.20 and later or SELECT on mysql.proc on older servers, or turn off Stored procedures and functions in the Options of the source.",
+            actions: connection(context),
+        }),
+    },
+    {
+        test: /You do not have the SUPER privilege and binary logging is enabled/i,
+        describe: (context) => ({
+            title: "The server refuses triggers and functions from this login",
+            help: "With binary logging on, MySQL lets only a login with SUPER create triggers and stored functions. Restore with such a login, or set log_bin_trust_function_creators to 1 on the server.",
+            actions: connection(context),
+        }),
+    },
+    {
+        test: /you need \(at least one of\) the (SUPER|SET USER|SET_USER_ID|SET_ANY_DEFINER)\b[^)]*privilege/i,
+        describe: (context) => ({
+            title: "The backup holds objects of another user",
+            help: "Its triggers, views or routines name another user as their definer. Restore with a login that has SUPER, SET_ANY_DEFINER or SET_USER_ID on MySQL, or SET USER on MariaDB.",
+            actions: connection(context),
+        }),
+    },
+    {
         test: /permission denied for (table|schema|database|relation|sequence)|must be owner of|insufficient privilege/i,
         describe: (context) => ({
             title: "The login may not read everything",

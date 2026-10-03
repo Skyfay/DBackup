@@ -9,7 +9,7 @@ import type { StorageRole } from "@/lib/core/storage-roles";
 import type { CredentialProfileSummary } from "@/components/settings/credential-profile-dialog";
 import type { AdapterConfig } from "./types";
 import { buildConnectionFormSchema, type ConnectionFormValues } from "./connection-form-schema";
-import { defaultConfig, fillRequiredText, initialRole, parseObject } from "./connection-form-defaults";
+import { defaultConfig, fillMissingSwitches, fillRequiredText, initialRole, parseObject } from "./connection-form-defaults";
 
 export type ConnectionTestState =
     | { status: "idle" }
@@ -87,7 +87,7 @@ export function useConnectionForm({ adapter, initialData, defaultRole, lockRole 
         defaultValues: {
             name: initialData?.name ?? "",
             adapterId: adapter.id,
-            config: fillRequiredText(adapter, initialData ? parseObject(initialData.config) : defaultConfig(adapter)),
+            config: fillRequiredText(adapter, initialData ? fillMissingSwitches(adapter, parseObject(initialData.config)) : defaultConfig(adapter)),
         },
         // The form moves to the part with the error itself. Focusing a field in a hidden part fails.
         shouldFocusError: false,

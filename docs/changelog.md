@@ -147,6 +147,7 @@ All notable changes to DBackup are documented here.
 - **jobs**: The list of exclude presets of a folder opens as wide as its field.
 - **history**: The preview of a notification no longer breaks on a payload that is no JSON, and shows it as it went out.
 - **ui**: A long confirmation scrolls between its head and its buttons instead of running off a short window.
+- **MySQL**: Backups of MySQL and MariaDB hold stored procedures, functions and events and read InnoDB tables from one snapshot, as the guide always said, with three switches under Options to turn them off. A login that may not read events or routines gets a warning in the run instead of a failed backup.
 
 ### 🔒 Security
 
@@ -329,6 +330,7 @@ All notable changes to DBackup are documented here.
 - **api**: The API reference in the app lists the bulk endpoints of the docs site again, and the download of a recovery kit has its real address, `GET /api/vault/recovery-kit?ids=`.
 - **docs**: The guides name the tabs of the Connections page and their New buttons as the app shows them, and the restore guide the dialog that asks for a key.
 - **api**: The API reference lists every action of `POST /api/adapters/bulk`, not only the delete.
+- **docs**: The MySQL guide names the dump flags DBackup really passes, the new switches and the rights a backup and a restore need. The developer pages show the real dump arguments.
 - **docs**: The destination guide describes air-gapped destinations, and the notification, verification and Backups guides follow them along with the new settings for several connections. The runner and health check pages for developers describe how a run and the health check treat one.
 
 
@@ -345,6 +347,7 @@ All notable changes to DBackup are documented here.
 - **tests**: The guard of the retired connection pages checks their redirects in `next.config.ts` and that no page stands in for them.
 - **tests**: The design guard also catches boxes that scroll sideways and checks the primitives, and its two baselines are at zero. New guards check that every page of the dashboard has a loading state and a title and that both copies of the API reference match.
 - **tests**: New tests cover air-gapped destinations in a run, the health check, the chain planner, the integrity check and the pages that count copies or connections that do not answer.
+- **tests**: New tests cover the dump flags of MySQL and MariaDB next to the extra options, the check of what a login may read, and a routine and an event through a real backup and restore.
 
 
 ### 🔧 CI/CD

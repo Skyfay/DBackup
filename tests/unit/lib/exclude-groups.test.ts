@@ -128,7 +128,7 @@ describe("parseJsonStringArray", () => {
 describe("the folders of a group", () => {
     const folders = EXCLUDE_GROUPS.flatMap((group) => group.patterns.filter((pattern) => pattern.endsWith("/**")));
     // A folder whose name is a glob, like .Trash-*, stands in with a real name.
-    const nameOf = (pattern: string) => pattern.slice("**/".length, -"/**".length).replace("*", "1000");
+    const nameOf = (pattern: string) => pattern.slice("**/".length, -"/**".length).replace(/\*/g, "1000");
 
     it("are all written to match at any depth", () => {
         expect(folders.length).toBeGreaterThan(0);

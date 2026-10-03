@@ -1,9 +1,9 @@
-import { StorageAdapter, StorageSession, FileInfo, DirectoryDownloadResult, DirectoryFileEntry, DirectoryBrowseEntry, ListTreeResult } from "@/lib/core/interfaces";
+import { StorageAdapter, StorageSession, FileInfo, DirectoryDownloadOptions, DirectoryDownloadResult, DirectoryFileEntry, DirectoryBrowseEntry, ListTreeResult } from "@/lib/core/interfaces";
 import { RsyncSchema, type SFTPConfig } from "@/lib/adapters/definitions";
 import { connectSFTP, endSftpClient } from "./sftp";
 import { Readable } from "stream";
 import Rsync from "rsync";
-import { exec, execFile } from "child_process";
+import { exec, execFile, type ChildProcess } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
@@ -264,13 +264,72 @@ async function closeSshMaster(config: RsyncConfig, keyFile: string | undefined, 
 }
 
 /**
+ * How long a cancelled transfer is given to end itself before it is killed outright.
+ *
+ * SIGTERM lets rsync finish the file it is writing and close the SSH session, which is what
+ * keeps `--partial` data usable and the remote socket from being left half-open. A transfer
+ * blocked on a socket whose other end is gone never gets to handle the signal at all, so
+ * without the escalation a cancel would wait out the TCP timeout instead of the grace period.
+ */
+const ABORT_GRACE_MS = 5000;
+
+/**
  * Wraps rsync.execute in a Promise.
  * All error messages are sanitized to prevent password/key leaks.
+ *
+ * With a signal, the transfer is killable: rsync has no way to be asked to stop, so the
+ * process is ended. Without one, nothing changes - a transfer runs to completion.
  */
-function executeRsync(rsync: Rsync, onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void): Promise<void> {
+function executeRsync(
+    rsync: Rsync,
+    onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void,
+    signal?: AbortSignal
+): Promise<void> {
     return new Promise((resolve, reject) => {
-        rsync.execute(
+        if (signal?.aborted) return reject(signal.reason);
+
+        let killTimer: NodeJS.Timeout | undefined;
+        // Initialized here rather than only assigned below, so the handler can be installed
+        // before the process starts. `undefined` is also what a wrapper that returns nothing
+        // leaves behind, and the kill path is the one place that must not throw on that.
+        let child: ChildProcess | undefined = undefined;
+
+        /** Drops the handler and the escalation timer the cancel path installs. */
+        const release = () => {
+            signal?.removeEventListener("abort", onAbort);
+            // The process ended on its own, so there is nothing left to escalate against.
+            // A SIGKILL past this point would land on whatever reused the process id.
+            if (killTimer) clearTimeout(killTimer);
+        };
+
+        const onAbort = () => {
+            // SIGTERM first, so rsync closes the file it is writing and ends its SSH session.
+            child?.kill("SIGTERM");
+            killTimer = setTimeout(() => child?.kill("SIGKILL"), ABORT_GRACE_MS);
+            // Unreferenced so a run already on its way out is not held open by a timer that
+            // only exists for a process which has most likely already gone.
+            killTimer.unref?.();
+
+            // Rejected right here rather than waiting for the process to report its own
+            // death. A cancel has to take effect now, and a child that cannot be reached at
+            // all would otherwise leave the run waiting on a transfer nobody will hear from
+            // again - which is the whole failure this exists to end.
+            reject(signal!.reason);
+        };
+
+        // Installed before the transfer starts, so a cancel arriving while rsync is being
+        // spawned is not lost. The handler tolerates a child that does not exist yet.
+        signal?.addEventListener("abort", onAbort, { once: true });
+
+        child = rsync.execute(
             (error: Error | null, code: number, cmd: string) => {
+                release();
+
+                // A transfer killed by the abort above exits non-zero and reports the signal
+                // that ended it. The promise already carries the cancellation, so this only
+                // has to stay quiet instead of reporting a source that refused its files.
+                if (signal?.aborted) return;
+
                 if (error) {
                     reject(new Error(`rsync exited with code ${code}: ${sanitizeCommand(error.message)} (cmd: ${sanitizeCommand(cmd)})`));
                 } else {
@@ -618,6 +677,13 @@ export const RsyncAdapter: StorageAdapter = {
      * index (for the manifest's Tier-A searchable listing) comes from the existing recursive
      * listing (a fast SSH `find`), filtered by the exclude patterns like every other adapter,
      * and the transfer takes exactly that list, so excluded files are never transferred at all.
+     *
+     * An incremental run narrows that same list to the files the chain does not already hold,
+     * so the whole source is listed but only the changed part is transferred.
+     *
+     * A cancel ends the transfer: rsync cannot be asked to stop, so the process is killed.
+     * Before that, a cancel only took effect between two sources, which on a single large
+     * source meant waiting out the whole thing.
      */
     async downloadDirectory(
         config: RsyncConfig,
@@ -625,11 +691,16 @@ export const RsyncAdapter: StorageAdapter = {
         localPath: string,
         excludePatterns?: string[],
         onProgress?: (processedBytes: number, totalBytes: number, processedFiles: number, totalFiles: number) => void,
-        onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void
+        onLog?: (msg: string, level?: LogLevel, type?: LogType, details?: string) => void,
+        options?: DirectoryDownloadOptions
     ): Promise<DirectoryDownloadResult> {
         let keyFile: string | undefined;
         let listFile: string | undefined;
         try {
+            // Checked before the listing, so a run cancelled while an earlier source was still
+            // finishing never opens an SSH session for this one.
+            options?.signal?.throwIfAborted();
+
             if (config.authType === "privateKey" && config.privateKey) {
                 keyFile = await writeTempKey(config.privateKey);
             }
@@ -666,17 +737,55 @@ export const RsyncAdapter: StorageAdapter = {
                 onLog(message, "info", "storage", details);
             }
 
-            const totalBytes = entries.reduce((sum, e) => sum + e.size, 0);
+            // Incremental runs hand down a predicate that answers, per file, whether the chain
+            // already holds it. Honoured by narrowing the --files-from list rather than by
+            // handing the source to the generic per-file collector: that one calls download()
+            // once per file, which here means one rsync process and one SSH login each, so a
+            // source of many small files would come out slower than transferring all of them
+            // in a single native sync. The destination tree is new on every run, so rsync's
+            // own quick check has nothing to compare against and cannot make this decision.
+            //
+            // A link is never asked about, the same order the generic collector keeps: there
+            // are no bytes to skip, and answering "unchanged" would mark it for carry-forward,
+            // which links deliberately do not take part in - it would drop out of the snapshot.
+            const toTransfer: DirectoryFileEntry[] = [];
+            const resultEntries: DirectoryFileEntry[] = [];
+            for (const entry of entries) {
+                if (entry.linkTarget === undefined && options?.shouldDownload && !options.shouldDownload(entry)) {
+                    resultEntries.push({ ...entry, unchanged: true });
+                    continue;
+                }
+                toTransfer.push(entry);
+                resultEntries.push(entry);
+            }
+
             const totalFiles = entries.length;
+            const transferFiles = toTransfer.length;
+            const unchangedFiles = totalFiles - transferFiles;
+            // Only what moves counts, which is the same split the generic collector reports:
+            // an unchanged file lands in the file count at zero bytes.
+            const totalBytes = toTransfer.reduce((sum, e) => sum + e.size, 0);
 
             if (totalFiles === 0) {
                 if (onLog) onLog(`No files found under ${remotePath}`, "info", "storage");
                 return { files: 0, bytes: 0, entries: [], failures: [] };
             }
 
+            if (unchangedFiles > 0 && onLog) {
+                onLog(`${unchangedFiles} of ${totalFiles} file(s) unchanged, not transferred`, "info", "storage");
+            }
+
+            // The chain already holds every file of this source. rsync reads an empty
+            // --files-from without complaining, but a transfer that copies nothing still
+            // costs an SSH login, so it is skipped outright.
+            if (transferFiles === 0) {
+                if (onProgress) onProgress(0, 0, totalFiles, totalFiles);
+                return { files: totalFiles, bytes: 0, entries: resultEntries, failures: [] };
+            }
+
             await fs.mkdir(localPath, { recursive: true });
 
-            if (onLog) onLog(`Starting rsync directory download from: ${config.host}:${remotePath} (${totalFiles} file(s))`, "info", "storage");
+            if (onLog) onLog(`Starting rsync directory download from: ${config.host}:${remotePath} (${transferFiles} file(s))`, "info", "storage");
 
             const rsync = await createRsyncInstance(config, keyFile);
             // Without it the transfer still reports progress, just per file rather than as one
@@ -689,7 +798,7 @@ export const RsyncAdapter: StorageAdapter = {
             // then named files that never arrived, and hashing them failed the run. With
             // --files-from, -a copies links as links and does not recurse, and rsync 2.6.9,
             // rsync 3 and Apple's openrsync all read the list, NUL-separated with --from0.
-            listFile = await writeFileList(entries.map((e) => e.relativePath));
+            listFile = await writeFileList(toTransfer.map((e) => e.relativePath));
             rsync.set("files-from", listFile);
             rsync.set("from0");
 
@@ -710,7 +819,10 @@ export const RsyncAdapter: StorageAdapter = {
                     const remaining = parseInt(match[3], 10);
                     const totalToCheck = parseInt(match[4], 10);
                     const processedFiles = Math.max(0, totalToCheck - remaining);
-                    onProgress(bytes, totalBytes, Math.min(processedFiles, totalFiles), totalFiles);
+                    // rsync counts only what it was given, so its figure is offset by the
+                    // files that never entered the list. Without that the bar of an
+                    // incremental would start at zero out of the full source and jump.
+                    onProgress(bytes, totalBytes, unchangedFiles + Math.min(processedFiles, transferFiles), totalFiles);
                 }
 
                 // rsync narrates every file and every progress tick on stdout. Execution logs are
@@ -720,13 +832,17 @@ export const RsyncAdapter: StorageAdapter = {
                 // reported through onProgress and the totals are summarised below, so only what
                 // rsync sends to stderr (warnings, refusals) earns a line here.
                 if (onLog && level && level !== "info") onLog(msg, level, type, details);
-            });
+            }, options?.signal);
 
             if (onProgress) onProgress(totalBytes, totalBytes, totalFiles, totalFiles);
-            if (onLog) onLog(`Rsync directory download completed: ${totalFiles} file(s), ${totalBytes} bytes`, "info", "storage");
+            if (onLog) onLog(`Rsync directory download completed: ${transferFiles} file(s), ${totalBytes} bytes`, "info", "storage");
 
-            return { files: totalFiles, bytes: totalBytes, entries, failures: [] };
+            return { files: totalFiles, bytes: totalBytes, entries: resultEntries, failures: [] };
         } catch (error: unknown) {
+            // A transfer torn down by the cancellation is a cancelled run, not a source that
+            // failed. Logged as an error it would leave a red line in the history of a run
+            // whose only story is that someone stopped it.
+            if (options?.signal?.aborted) throw error;
             log.error("Rsync directory download failed", { host: config.host, remotePath }, wrapError(error));
             if (onLog) onLog(`Rsync directory download failed: ${sanitizeError(error)}`, "error", "storage");
             throw error;

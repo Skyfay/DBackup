@@ -57,29 +57,6 @@ export const NOTIFICATION_CHANNELS: AdapterItem[] = [
   { id: "email", label: "Email (SMTP)" },
 ];
 
-export const COMPOSE_SNIPPET = `services:
-  dbackup:
-    image: skyfay/dbackup:latest
-    restart: always
-    ports:
-      - "3000:3000"
-    environment:
-      - ENCRYPTION_KEY=       # openssl rand -hex 32
-      - BETTER_AUTH_URL=https://localhost:3000
-      - BETTER_AUTH_SECRET=   # openssl rand -base64 32
-    volumes:
-      - ./data:/data
-      - ./backups:/backups`;
-
-export const DOCKER_RUN_SNIPPET = `docker run -d --name dbackup --restart always \\
-  -p 3000:3000 \\
-  -e ENCRYPTION_KEY=$(openssl rand -hex 32) \\
-  -e BETTER_AUTH_URL=https://localhost:3000 \\
-  -e BETTER_AUTH_SECRET=$(openssl rand -base64 32) \\
-  -v ./data:/data \\
-  -v ./backups:/backups \\
-  skyfay/dbackup:latest`;
-
 export const FAQS = [
   {
     question: "What happens if DBackup becomes unavailable - can I still restore?",

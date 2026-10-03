@@ -299,6 +299,9 @@
   .fx-in {
     animation: fx-in 0.35s ease-out both;
   }
+  .fx-blink {
+    animation: fx-blink 1s steps(1) infinite;
+  }
   .fx-sweep {
     animation: fx-sweep 7.2s linear infinite;
   }
@@ -470,6 +473,18 @@
   }
 }
 
+/* The cursor of the terminals. */
+@keyframes fx-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
 /* The orb of "Now" on the roadmap, breathing in blue. */
 @keyframes fx-orb {
   0%,
@@ -557,6 +572,7 @@
   .fx-pulse,
   .fx-twinkle,
   .fx-in,
+  .fx-blink,
   .fx-sweep,
   .fx-orb,
   .fx-indet,

@@ -332,6 +332,7 @@ All notable changes to DBackup are documented here.
 - **api**: The API reference lists every action of `POST /api/adapters/bulk`, not only the delete.
 - **docs**: The MySQL guide names the dump flags DBackup really passes, the new switches and the rights a backup and a restore need. The developer pages show the real dump arguments.
 - **docs**: A security policy in SECURITY.md explains how to report a vulnerability privately. The contributing guides base every pull request on the dev branch and name the Node and pnpm versions CI uses.
+- **docs**: The README is shorter, with the highlights, the supported databases and a quick start, and leaves the details to the documentation.
 - **docs**: The destination guide describes air-gapped destinations, and the notification, verification and Backups guides follow them along with the new settings for several connections. The runner and health check pages for developers describe how a run and the health check treat one.
 
 

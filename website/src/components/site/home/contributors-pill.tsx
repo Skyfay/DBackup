@@ -16,6 +16,8 @@ interface Contributor {
 const CACHE_KEY = "dbackup-gh-contributors";
 const CACHE_TTL_MS = 30 * 60 * 1000;
 const MAX_AVATARS = 7;
+/** A phone shows fewer faces, so the pill keeps to one line beside its text. */
+const MOBILE_AVATARS = 5;
 
 /**
  * The people behind DBackup beside the main button of the hero. The avatars
@@ -65,8 +67,9 @@ export function ContributorsPill() {
           <span
             key={c.login}
             className={cn(
-              "group/av relative z-[var(--z)] block rounded-full shadow-[0_0_0_2px_var(--surface-2)] transition-[margin,transform] duration-200 hover:z-20 hover:-translate-y-[3px] hover:scale-110",
-              i > 0 && "-ml-2.5 group-hover:-ml-0.5"
+              "group/av relative z-[var(--z)] rounded-full shadow-[0_0_0_2px_var(--surface-2)] transition-[margin,transform] duration-200 hover:z-20 hover:-translate-y-[3px] hover:scale-110",
+              i > 0 && "-ml-2.5 group-hover:-ml-0.5",
+              i >= MOBILE_AVATARS ? "hidden sm:block" : "block"
             )}
             style={{ "--z": shown.length - i } as CSSProperties}
           >
@@ -86,11 +89,11 @@ export function ContributorsPill() {
           </span>
         ))}
       </span>
-      <span className="flex flex-col items-start text-left leading-tight">
+      <span className="flex flex-col items-start text-left leading-tight whitespace-nowrap">
         <span className="font-medium text-foreground">
           {people && people.length > 0 ? `${people.length} contributors` : "Open source"}
         </span>
-        <span className="text-xs text-muted-foreground">Built in the open on GitHub</span>
+        <span className="hidden text-xs text-muted-foreground sm:block">Built in the open on GitHub</span>
       </span>
       <ChevronRight className="size-4 text-muted-foreground transition-transform duration-200 group-hover:translate-x-[3px]" />
     </a>

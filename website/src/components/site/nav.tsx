@@ -1,16 +1,9 @@
 import Link from "next/link";
 import Image from "next/image";
-import { Menu } from "lucide-react";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
 import { GithubStarsWidget } from "@/components/site/github-stars-widget";
 import { ThemeToggle } from "@/components/site/theme-toggle";
 import { NavLinks } from "@/components/site/nav-links";
+import { MobileMenu } from "@/components/site/mobile-menu";
 
 // The header floats over the top of every page as a glass pill, so each
 // page starts its first section with room for it (pt-[172px] on the hero).
@@ -35,32 +28,7 @@ export function Nav() {
             Get started
           </Link>
 
-          <Sheet>
-            <SheetTrigger asChild>
-              <button
-                type="button"
-                aria-label="Open menu"
-                className="flex size-9 items-center justify-center rounded-lg border border-input bg-secondary lg:hidden"
-              >
-                <Menu className="size-4" />
-              </button>
-            </SheetTrigger>
-            <SheetContent side="right" className="bg-background">
-              <SheetHeader>
-                <SheetTitle>DBackup</SheetTitle>
-              </SheetHeader>
-              <div className="flex flex-col gap-4 px-4">
-                <NavLinks className="flex flex-col gap-1" linkClassName="h-10 text-[15px]" />
-                <GithubStarsWidget className="flex w-fit" />
-                <Link
-                  href="/#start"
-                  className="flex h-10 items-center justify-center rounded-lg bg-primary px-4 font-medium text-primary-foreground"
-                >
-                  Get started
-                </Link>
-              </div>
-            </SheetContent>
-          </Sheet>
+          <MobileMenu />
         </div>
       </div>
     </header>

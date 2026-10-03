@@ -302,6 +302,12 @@
   .fx-blink {
     animation: fx-blink 1s steps(1) infinite;
   }
+  .fx-drop {
+    animation: fx-drop 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  .fx-rise {
+    animation: fx-rise 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
   .fx-sweep {
     animation: fx-sweep 7.2s linear infinite;
   }
@@ -473,6 +479,28 @@
   }
 }
 
+/* The mobile menu drops out of the header, its rows rise one after the other. */
+@keyframes fx-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fx-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 /* The cursor of the terminals. */
 @keyframes fx-blink {
   0%,
@@ -573,6 +601,8 @@
   .fx-twinkle,
   .fx-in,
   .fx-blink,
+  .fx-drop,
+  .fx-rise,
   .fx-sweep,
   .fx-orb,
   .fx-indet,

@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { MDXRemote } from "next-mdx-remote/rsc";
 import rehypePrettyCode from "rehype-pretty-code";
 import { PageBackdrop } from "@/components/site/blog/page-backdrop";
@@ -65,6 +65,8 @@ export default async function BlogPostPage({
   const headings = getHeadings(post.content);
   const [titleHead, titleTail] = splitTitle(post.title);
   const meta = `${formatDate(post.date)} · ${post.readingMinutes} min read`;
+  const tone = `var(--tone-${post.cover?.tone ?? "blue"})`;
+  const tint = (pct: number) => `color-mix(in srgb, ${tone} ${pct}%, transparent)`;
 
   const posts = getAllPosts();
   const index = posts.findIndex((p) => p.slug === slug);
@@ -88,15 +90,27 @@ export default async function BlogPostPage({
       <PageBackdrop />
 
       <header className="relative mx-auto flex max-w-[1088px] flex-col gap-[22px] px-6 pt-[124px] sm:pt-[156px]">
-        <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[13px] text-muted-foreground">
-          <Link href="/blog" className="flex items-center gap-1.5 hover:text-foreground">
-            <ChevronLeft className="size-3.5" />
+        <nav aria-label="Breadcrumb" className="flex items-center gap-2">
+          <Link
+            href="/blog"
+            className="group inline-flex h-8 items-center gap-1.5 rounded-full border border-border-strong bg-surface/70 pr-3 pl-1.5 text-[13px] font-medium text-subtle backdrop-blur transition-colors hover:border-input hover:text-foreground"
+          >
+            <span className="flex size-5 items-center justify-center rounded-full bg-muted transition-transform duration-200 group-hover:-translate-x-0.5">
+              <ArrowLeft className="size-3" />
+            </span>
             Blog
           </Link>
           {post.tags[0] && (
             <>
-              <span className="text-fainter">/</span>
-              <span>{post.tags[0]}</span>
+              <ChevronRight aria-hidden="true" className="size-3.5 text-fainter" />
+              <Link
+                href={`/blog/?tag=${encodeURIComponent(post.tags[0])}`}
+                className="inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[13px] font-medium transition-[filter] hover:brightness-110"
+                style={{ color: tone, borderColor: tint(30), background: tint(10) }}
+              >
+                <span aria-hidden="true" className="size-1.5 rounded-full bg-current shadow-[0_0_8px_currentColor]" />
+                {post.tags[0]}
+              </Link>
             </>
           )}
         </nav>
@@ -105,13 +119,15 @@ export default async function BlogPostPage({
           {titleTail && <span className="fx-shine">{titleTail}</span>}
         </h1>
         <p className="max-w-[760px] text-lg leading-[1.55] text-muted-foreground sm:text-xl">{post.excerpt}</p>
-        <div className="flex flex-wrap items-center gap-3.5 pt-1.5">
-          <AuthorAvatar name={post.author} size={40} />
-          <div>
-            <div className="font-semibold">{post.author}</div>
-            <div className="text-[13px] text-muted-foreground">{meta}</div>
+        <div className="flex flex-wrap items-center gap-x-3.5 gap-y-3 pt-1.5">
+          <div className="flex items-center gap-3.5">
+            <AuthorAvatar name={post.author} size={40} />
+            <div>
+              <div className="font-semibold">{post.author}</div>
+              <div className="text-[13px] text-muted-foreground">{meta}</div>
+            </div>
           </div>
-          <div className="flex flex-wrap gap-1.5 sm:ml-3">
+          <div className="order-last flex w-full flex-wrap gap-1.5 sm:order-none sm:ml-3 sm:w-auto">
             {post.tags.map((t) => (
               <Tag key={t}>{t}</Tag>
             ))}

@@ -58,13 +58,14 @@ export function CopyLinkButton() {
     <button
       type="button"
       onClick={copy}
+      aria-label={copied ? "Link copied" : "Copy link"}
       className={cn(
-        "flex h-[34px] items-center gap-1.5 rounded-lg border px-3 font-medium transition-all duration-200",
+        "flex size-10 items-center justify-center gap-1.5 rounded-full border font-medium transition-all duration-200 sm:h-[34px] sm:w-auto sm:rounded-lg sm:px-3",
         copied ? "border-tone-green/35 bg-tone-green/10 text-tone-green" : "border-input bg-secondary"
       )}
     >
-      {copied ? <Check className="size-3.5" strokeWidth={2.4} /> : <Link2 className="size-3.5" />}
-      {copied ? "Link copied" : "Copy link"}
+      {copied ? <Check className="size-4 sm:size-3.5" strokeWidth={2.4} /> : <Link2 className="size-4 sm:size-3.5" />}
+      <span className="hidden sm:inline">{copied ? "Link copied" : "Copy link"}</span>
     </button>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Rss } from "lucide-react";
 import { CONIC, SpinBorder } from "@/components/site/fx";
@@ -21,12 +21,31 @@ function Tag({ children }: { children: string }) {
 export function BlogIndex({ posts, dates }: { posts: PostSummary[]; dates: Record<string, string> }) {
   const [tag, setTag] = useState("all");
 
+  // A post links to the list filtered by its tag as /blog/?tag=name. The
+  // page is static, so the filter is read once it runs in the browser.
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get("tag");
+    if (wanted && posts.some((p) => p.tags.includes(wanted))) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setTag(wanted);
+    }
+  }, [posts]);
+
+  function pickTag(next: string) {
+    setTag(next);
+    const url = new URL(window.location.href);
+    if (next === "all") url.searchParams.delete("tag");
+    else url.searchParams.set("tag", next);
+    window.history.replaceState(null, "", url);
+  }
+
   const counts = new Map<string, number>();
   posts.forEach((p) => p.tags.forEach((t) => counts.set(t, (counts.get(t) ?? 0) + 1)));
   const tags = [...counts.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, MAX_TAGS)
     .map(([name]) => name);
+  if (tag !== "all" && !tags.includes(tag)) tags.push(tag);
 
   const filtered = posts.filter((p) => tag === "all" || p.tags.includes(tag));
   const featured = tag === "all" ? posts[0] : undefined;
@@ -43,7 +62,7 @@ export function BlogIndex({ posts, dates }: { posts: PostSummary[]; dates: Recor
                 key={t}
                 type="button"
                 aria-pressed={on}
-                onClick={() => setTag(t)}
+                onClick={() => pickTag(t)}
                 className={cn(
                   "inline-flex h-[30px] items-center gap-1.5 rounded-full border px-3 text-[13px] font-medium transition-all duration-200",
                   on

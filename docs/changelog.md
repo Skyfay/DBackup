@@ -355,7 +355,7 @@ All notable changes to DBackup are documented here.
 
 - **docker**: The image runs a script before the migrations that swaps in a restored configuration backup.
 - **ci**: Lint, type check, unit tests and the docs build also run on pull requests into dev, not only into main.
-- **github**: The repository shows a Sponsor button that leads to GitHub Sponsors.
+- **github**: The repository shows a Sponsor button for GitHub Sponsors, and a daily workflow draws the sponsors into the Sponsors section of the README.
 
 
 ### 🐳 Docker

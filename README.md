@@ -46,6 +46,8 @@
 <!-- Premium Sponsors ($500 a month): their logo at the very top, linking to their site. Kept by hand,
      uncomment and fill in, one link per sponsor:
 <p align="center">
+  <sub>🏆 Premium Sponsors · $500 a month</sub>
+  <br>
   <a href="https://example.com"><img src="https://example.com/logo.svg" alt="Company" height="60"></a>
 </p>
 -->
@@ -270,6 +272,8 @@ DBackup is free and open source. [Sponsoring it](https://github.com/sponsors/Sky
 <!-- Company Sponsors ($150 a month): their logo shown large, linking to their site. Kept by hand,
      uncomment and fill in, one link per sponsor:
 <p align="center">
+  <strong>🏢 Company Sponsors</strong> · $150 a month
+  <br><br>
   <a href="https://example.com"><img src="https://example.com/logo.svg" alt="Company" height="80"></a>
 </p>
 -->
@@ -284,6 +288,8 @@ DBackup is free and open source. [Sponsoring it](https://github.com/sponsors/Sky
 
 <!-- Patrons ($500 once): their logo with a link to their site. Kept by hand, one link per sponsor. -->
 <p align="center">
+  <strong>🏆 Patrons</strong> · $500 once
+  <br><br>
   <a href="https://www.ictwebsolution.nl"><img src="https://github.com/kayvanaarssen.png?size=160" alt="Kay van Aarssen" height="80"></a>
   <br>
   <a href="https://www.ictwebsolution.nl"><sub>Kay van Aarssen</sub></a>

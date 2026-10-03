@@ -29,8 +29,8 @@ export default defineConfig({
             includePastSponsors: false,
             filter: (sponsorship) => !sponsorship.isOneTime && sponsorship.monthlyDollars >= 15 && sponsorship.monthlyDollars < 150,
             tiers: [
-                { title: "Backers", preset: named },
-                { title: "Sponsors", monthlyDollars: 50, preset: namedLarge },
+                { title: "Backers · from $15 a month", preset: named },
+                { title: "Sponsors · from $50 a month", monthlyDollars: 50, preset: namedLarge },
             ],
         },
         {
@@ -38,7 +38,7 @@ export default defineConfig({
             name: "sponsors-onetime",
             onBeforeRenderer: (sponsorships) => sponsorships.map((sponsorship) => ({ ...sponsorship, monthlyDollars: price(sponsorship) })),
             filter: (sponsorship) => sponsorship.isOneTime && sponsorship.monthlyDollars >= 100 && sponsorship.monthlyDollars < 500,
-            tiers: [{ title: "One-time Backers", preset: namedLarge }],
+            tiers: [{ title: "Backers · from $100 once", preset: namedLarge }],
         },
     ],
 });

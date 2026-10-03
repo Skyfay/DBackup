@@ -12,6 +12,15 @@ on:
   schedule:
     - cron: "23 4 * * *"
   workflow_dispatch:
+  # A change of what the tiers show draws the images again right away. The
+  # first merge into dev also creates the sponsors branch, before any release.
+  push:
+    branches:
+      - main
+      - dev
+    paths:
+      - ".github/sponsors/**"
+      - ".github/workflows/sponsors.yml"
 
 permissions:
   contents: write

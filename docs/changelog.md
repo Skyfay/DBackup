@@ -48,6 +48,7 @@ All notable changes to DBackup are documented here.
 
 - **MySQL**: Backups of MySQL and MariaDB hold stored procedures, functions and events and read InnoDB tables from one snapshot, as the guide always said, with three switches under Options to turn them off. A login that may not read events or routines gets a warning in the run instead of a failed backup.
 - **Rsync**: A directory source over rsync copies exactly the files its backup lists, with the exclude patterns read like everywhere else, and its folder tree works on servers without GNU find, like macOS or a NAS with BusyBox. Files in nested folders went missing before, and the run failed on a file that never arrived.
+- **ssh**: An ed25519 key generated in DBackup always works now. About one in 256 came out a byte short and never connected, so a key like that needs to be generated again.
 - **retention**: A job named like a deleted one no longer deletes the backups the deleted job left in its folder.
 - **jobs**: A run of a job waits while another run of the same job is still going, and every run keeps its temporary files in a directory of its own. With more than one queue slot, two runs could plan the same step of an incremental chain or write into the same file before.
 - **jobs**: A cloned job keeps the retention policy of each destination, its naming template, its integrity checks and its incremental settings, which fell back to the defaults before.

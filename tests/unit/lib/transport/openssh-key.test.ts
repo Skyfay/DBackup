@@ -20,6 +20,34 @@ function parse(privateKey: string) {
     return parsed;
 }
 
+/**
+ * What ssh2 hands back for an ed25519 key whose public half starts with a zero byte: a public
+ * key one byte short, and a private key nothing reads.
+ */
+function shortEd25519Pair() {
+    const name = Buffer.from("ssh-ed25519");
+    const blob = Buffer.alloc(4 + name.length + 4 + 31, 7);
+    blob.writeUInt32BE(name.length, 0);
+    name.copy(blob, 4);
+    blob.writeUInt32BE(31, 4 + name.length);
+    return {
+        private: "-----BEGIN OPENSSH PRIVATE KEY-----\nbroken\n-----END OPENSSH PRIVATE KEY-----\n",
+        public: `ssh-ed25519 ${blob.toString("base64")} dbackup@prod`,
+    };
+}
+
+/** Lets ssh2's keygen answer with the short pair, the next `times` calls or every one. */
+function answerShort(times?: number) {
+    const spy = vi.spyOn(sshUtils, "generateKeyPair");
+    const short = (...args: unknown[]) => {
+        const done = args[args.length - 1] as (err: Error | null, pair: ReturnType<typeof shortEd25519Pair>) => void;
+        done(null, shortEd25519Pair());
+    };
+    if (times === undefined) spy.mockImplementation(short);
+    else for (let i = 0; i < times; i++) spy.mockImplementationOnce(short);
+    return spy;
+}
+
 const EXPECTED_ALGORITHM: Record<SshKeyType, string> = {
     ed25519: "ssh-ed25519",
     "rsa-4096": "ssh-rsa",
@@ -46,6 +74,27 @@ describe("SSH keypair generation", () => {
 
         expect(key.fingerprint).toMatch(/^SHA256:[A-Za-z0-9+/]{43}$/);
     }, 60_000);
+
+    it("makes an ed25519 key again when ssh2 wrote it a byte short", async () => {
+        const spy = answerShort(2);
+        try {
+            const key = await generateSshKeyPair("ed25519", "dbackup@prod");
+            expect(spy).toHaveBeenCalledTimes(3);
+            expect(parse(key.privateKey).type).toBe("ssh-ed25519");
+        } finally {
+            spy.mockRestore();
+        }
+    });
+
+    it("gives up when every attempt comes out a byte short", async () => {
+        const spy = answerShort();
+        try {
+            await expect(generateSshKeyPair("ed25519", "dbackup@prod")).rejects.toThrow(/readable ed25519 key/);
+            expect(spy).toHaveBeenCalledTimes(8);
+        } finally {
+            spy.mockRestore();
+        }
+    });
 
     it("leaves the key unencrypted when no passphrase is given", async () => {
         const key = await generateSshKeyPair("ed25519", "dbackup@prod");
